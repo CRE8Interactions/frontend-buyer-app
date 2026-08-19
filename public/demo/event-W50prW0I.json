@@ -1,0 +1,162 @@
+{
+  "event": {
+    "ageMinimum": null,
+    "age_restriction": null,
+    "allAges": false,
+    "display_start_time": true,
+    "doorsOpen": "2026-07-28T23:30:00.000Z",
+    "end": "2026-07-29T04:30:00.000Z",
+    "eventVisibility": "2026-03-01T19:00:00.000Z",
+    "forecasted": true,
+    "generalOnsale": "2026-04-22T18:00:00.000Z",
+    "globalTicketLimit": null,
+    "hideGeneralOnsale": false,
+    "hide_doors_open": true,
+    "hide_end_date": false,
+    "hide_start_date": false,
+    "id": 1104,
+    "includeFees": true,
+    "includeServiceFees": true,
+    "includeTaxes": false,
+    "invite_only": false,
+    "is18andUp": false,
+    "is21andUp": true,
+    "isFeatured": false,
+    "name": "NM State Aggies vs. UTEP Miners",
+    "online_event": false,
+    "organizationUUID": "1e26e63c-a29a-432d-9997-9d4fe9c7d668",
+    "password": null,
+    "presentedBy": null,
+    "realDoorsOpen": null,
+    "realEndtime": null,
+    "realStartTime": null,
+    "resaleEnableMinimum": false,
+    "resaleMinimumPercentage": 0,
+    "scheduled": false,
+    "scheduledTime": null,
+    "seoUrl": "ogden-raptors-vs.-long-beach-coast",
+    "shareable": true,
+    "shortCode": "W50prW0I",
+    "show_remaining": false,
+    "slug": "nmstate-vs-utep",
+    "soldOut": false,
+    "start": "2026-07-29T00:30:00.000Z",
+    "status": "on_sale",
+    "ticketLimit": false,
+    "updatedAt": "2026-07-27T12:00:06.585Z",
+    "uuid": "f0f482b8-a279-48a6-9c78-4552ee689201",
+    "summary": "New Mexico State Aggies host the UTEP Miners in the Battle of I-10 at Aggie Memorial Stadium.",
+    "image": {
+      "url": "/clients/nmstate.png"
+    },
+    "attractions": [
+      {
+        "id": 964,
+        "name": "NM State Aggies",
+        "primary": true,
+        "createdAt": "2026-02-27T20:31:15.926Z",
+        "updatedAt": "2026-02-27T20:31:15.926Z",
+        "order": 1,
+        "artwork": {
+          "url": "/clients/nmstate.png"
+        }
+      },
+      {
+        "id": 965,
+        "name": "UTEP Miners",
+        "primary": false,
+        "createdAt": "2026-02-27T20:31:15.930Z",
+        "updatedAt": "2026-02-27T20:31:15.930Z",
+        "order": 2,
+        "artwork": {
+          "url": "/clients/nmstate.png"
+        }
+      }
+    ],
+    "organization": {
+      "meta_pixel_id": null,
+      "tracking_enabled": null,
+      "track_page_views": null,
+      "track_checkout_started": null,
+      "track_purchases": null,
+      "google_tag_manager_id": null,
+      "google_ads_id": null,
+      "google_ads_conversion_label": null,
+      "tiktok_pixel_id": null,
+      "linkedin_partner_id": null,
+      "name": "New Mexico State venues",
+      "slug": "nm-state",
+      "branding": {
+        "enabled": true,
+        "primaryColor": "#1a3a6b",
+        "buttonColor": "#1a3a6b",
+        "logo": {
+          "url": "/clients/raptors.svg"
+        }
+      }
+    },
+    "venue": {
+      "id": 46,
+      "name": "Aggie Memorial Stadium",
+      "capacity": 5769,
+      "age_restriction": null,
+      "description": "Outdoor football stadium on the campus of New Mexico State University, home of Aggie football since 1978.",
+      "uuid": "13958366-29ab-4068-86fe-849b379fd9db",
+      "website": null,
+      "createdAt": "2025-03-05T15:39:11.395Z",
+      "updatedAt": "2026-06-10T12:12:23.353Z",
+      "slug": "aggie-memorial-stadium",
+      "timezone": "America/Denver",
+      "type": "outdoor",
+      "isActive": true,
+      "deactivatedOn": null,
+      "address": [
+        {
+          "id": 88,
+          "address_1": "1810 E University Ave",
+          "address_2": null,
+          "city": "Las Cruces",
+          "state": "nm",
+          "zipcode": "88003",
+          "latitude": null,
+          "longitude": null,
+          "country": "us"
+        }
+      ],
+      "image": [
+        {
+          "id": 629,
+          "name": "Profile Picture.png",
+          "alternativeText": null,
+          "caption": null,
+          "width": 500,
+          "height": 500,
+          "formats": {
+            "thumbnail": {
+              "ext": ".png",
+              "url": "https://blocktickets-development.nyc3.digitaloceanspaces.com/6402d0220980f00ce07809a9d7c24b39.png",
+              "hash": "6402d0220980f00ce07809a9d7c24b39",
+              "mime": "image/png",
+              "name": "thumbnail_Profile Picture.png",
+              "path": null,
+              "size": 40.74,
+              "width": 156,
+              "height": 156
+            }
+          },
+          "hash": "9d29feaca54a9e730ca6dcf788422cdd",
+          "ext": ".png",
+          "mime": "image/png",
+          "size": 110.25,
+          "url": "https://blocktickets-development.nyc3.digitaloceanspaces.com/9d29feaca54a9e730ca6dcf788422cdd.png",
+          "previewUrl": null,
+          "provider": "strapi-provider-upload-dos",
+          "provider_metadata": null,
+          "createdAt": "2025-03-05T15:35:57.811Z",
+          "updatedAt": "2025-03-05T15:35:57.811Z",
+          "folderPath": "/"
+        }
+      ]
+    }
+  }
+}

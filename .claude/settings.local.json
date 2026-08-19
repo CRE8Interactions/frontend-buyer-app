@@ -1,0 +1,35 @@
+{
+  "permissions": {
+    "allow": [
+      "mcp__Claude_Preview__preview_start",
+      "Bash(npm install *)",
+      "Skill(code-review)",
+      "Skill(code-review:*)",
+      "Bash(ls ~/.claude/CLAUDE.md)",
+      "Bash(ls CLAUDE.local.md)",
+      "Bash(ls node_modules/next/dist/docs/)",
+      "Bash(sort -t: -k2 -rn)",
+      "Bash(ls 01-app/03-api-reference/01-directives)",
+      "Bash(ls 01-app/03-api-reference/02-components)",
+      "Bash(npx tsc *)",
+      "Bash(node -e \"console.log\\(require\\('./node_modules/next/package.json'\\).version\\)\")",
+      "Bash(grep -rn \"color-scheme\" app components --include=\"*.css\" --include=\"*.tsx\")",
+      "Bash(grep -rn \"font-sans\\\\|font-mono\\\\|tabular-nums\" app components --include=\"*.tsx\" -l)",
+      "Bash(awk -F: '{s+=$2} END {print \"total eslint-disables:\", s}')",
+      "Bash(mv components/walletSections.tsx lib/)",
+      "Bash(mv components/demoAuth.ts lib/)",
+      "Bash(git mv *)",
+      "Bash(mv components/WalletMenu.tsx components/organisms/)",
+      "Bash(xargs perl -pi -e ' *)",
+      "Bash(perl -pi -e 's|import AppShell, \\\\{ inputCls, labelCls \\\\} from \"\\\\@/components/templates/AppShell\";|import AppShell from \"\\\\@/components/templates/AppShell\";\\\\nimport { inputCls, labelCls } from \"\\\\@/components/atoms/form\";|' app/login/page.tsx)",
+      "Bash(perl -pi -e 's|import \\\\{ cardCls, inputCls, labelCls \\\\} from \"\\\\@/components/templates/AppShell\";|import { cardCls } from \"\\\\@/components/molecules/Card\";\\\\nimport { inputCls, labelCls } from \"\\\\@/components/atoms/form\";|' app/settings/page.tsx)",
+      "Bash(perl -pi -e 's|import \\\\{ Modal, cardCls \\\\} from \"\\\\@/components/templates/AppShell\";|import Modal from \"\\\\@/components/molecules/Modal\";\\\\nimport { cardCls } from \"\\\\@/components/molecules/Card\";|' app/my-events/page.tsx)",
+      "Bash(perl -pi -e 's|import AppShell, \\\\{ BackChip, Modal, inputCls, labelCls \\\\} from \"\\\\@/components/templates/AppShell\";|import AppShell from \"\\\\@/components/templates/AppShell\";\\\\nimport Modal from \"\\\\@/components/molecules/Modal\";\\\\nimport BackChip from \"\\\\@/components/molecules/BackChip\";\\\\nimport { chipBtnSmCls } from \"\\\\@/components/molecules/Card\";\\\\nimport { inputCls, labelCls } from \"\\\\@/components/atoms/form\";|' \"app/my-events/[slug]/page.tsx\")",
+      "Bash(perl -pi -e 's|import AppShell, \\\\{ BackChip, Modal, cardCls, labelCls \\\\} from \"\\\\@/components/templates/AppShell\";|import AppShell from \"\\\\@/components/templates/AppShell\";\\\\nimport Modal from \"\\\\@/components/molecules/Modal\";\\\\nimport BackChip from \"\\\\@/components/molecules/BackChip\";\\\\nimport { cardCls } from \"\\\\@/components/molecules/Card\";\\\\nimport { labelCls } from \"\\\\@/components/atoms/form\";|' \"app/my-packages/[slug]/page.tsx\")",
+      "Bash(perl -0pi -e 's|const chipBtn =\\\\n  \"inline-flex items-center gap-2 rounded-full border border-white/15 bg-white/\\\\[0\\\\.04\\\\] px-4 py-2 text-\\\\[13px\\\\] font-semibold transition-colors hover:bg-white/\\\\[0\\\\.1\\\\]\";\\\\n\\\\n||' \"app/my-events/[slug]/page.tsx\")",
+      "Bash(perl -pi -e 's|\\\\bchipBtn\\\\b|chipBtnSmCls|g' \"app/my-events/[slug]/page.tsx\")",
+      "Bash(npx eslint *)",
+      "Bash(npm run *)"
+    ]
+  }
+}

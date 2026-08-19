@@ -1,0 +1,141 @@
+import { afterEach, describe, expect, it } from "vitest";
+import { DEMO_EVENTS, DEMO_ORGS } from "@/lib/demo/fixtures";
+import {
+  cacheEventBranding,
+  cacheOrgBranding,
+  cacheOrgsBranding,
+  getCachedOrgBranding,
+  getLoaderBranding,
+  getLoaderBrandingFromCookieValue,
+  isPlatformLoaderPath,
+  LOADER_BRANDING_COOKIE,
+  resolveLoaderBrandingForRender,
+} from "@/lib/orgBrandingCache";
+
+const raptors = DEMO_ORGS.find((org) => org.slug === "ogden-raptors")!;
+const icedogs = DEMO_ORGS.find((org) => org.slug === "niagara-icedogs")!;
+const icedogsEvent = DEMO_EVENTS.find(
+  (event) => event.organization.slug === "niagara-icedogs",
+)!;
+
+afterEach(() => {
+  sessionStorage.clear();
+  document.cookie = `${LOADER_BRANDING_COOKIE}=; Max-Age=0; Path=/`;
+});
+
+describe("org branding cookie", () => {
+  it("keeps last-used tenant branding ready after sessionStorage is empty", () => {
+    cacheOrgBranding(raptors);
+    sessionStorage.clear();
+
+    const branding = getCachedOrgBranding();
+    expect(branding?.name).toBe(raptors.name);
+    expect(branding?.primaryColor).toBe(raptors.branding.primaryColor);
+    expect(branding?.logoSrc).toBe(raptors.branding.logo.url);
+    expect(getLoaderBranding("/checkout/")).toMatchObject({
+      name: raptors.name,
+      primaryColor: raptors.branding.primaryColor,
+    });
+    expect(getLoaderBranding("/checkout/checkout-success/")).toMatchObject({
+      name: raptors.name,
+      primaryColor: raptors.branding.primaryColor,
+    });
+    expect(getLoaderBranding(`/${raptors.slug}/`)).toMatchObject({
+      name: raptors.name,
+    });
+    expect(getLoaderBranding(`/${raptors.slug}/package/pkg-1/`)).toMatchObject({
+      name: raptors.name,
+      primaryColor: raptors.branding.primaryColor,
+    });
+  });
+
+  it("does not invent branding when the cookie and session cache are empty", () => {
+    expect(getCachedOrgBranding()).toBeNull();
+    expect(getLoaderBranding("/e/any/event")).toBeNull();
+    expect(getLoaderBrandingFromCookieValue(undefined)).toBeNull();
+    expect(getLoaderBrandingFromCookieValue("not-json")).toBeNull();
+  });
+});
+
+describe("org switch loader branding", () => {
+  it("paints the destination org when that team is already cached", () => {
+    cacheOrgBranding(raptors);
+    cacheOrgsBranding([icedogs]);
+    cacheEventBranding(icedogsEvent, icedogs, { touchLast: false });
+
+    expect(getLoaderBranding(`/${icedogs.slug}/`)).toMatchObject({
+      name: icedogs.name,
+      primaryColor: icedogs.branding.primaryColor,
+    });
+    expect(
+      getLoaderBranding(`/e/${icedogsEvent.seoUrl}/${icedogsEvent.shortCode}`),
+    ).toMatchObject({
+      name: icedogs.name,
+    });
+  });
+
+  it("does not paint the previous org on another team's storefront or event", () => {
+    cacheOrgBranding(raptors);
+    const lastCookie = {
+      slug: raptors.slug,
+      name: raptors.name,
+      primaryColor: raptors.branding.primaryColor,
+      logoSrc: raptors.branding.logo.url,
+    };
+
+    expect(getLoaderBranding(`/${icedogs.slug}/`)).toBeNull();
+    expect(getLoaderBranding("/e/other-event/OTH1")).toBeNull();
+    expect(getLoaderBranding(`/${icedogs.slug}/`, {}, lastCookie)).toBeNull();
+    expect(getCachedOrgBranding(icedogs.slug)).toBeNull();
+    expect(getCachedOrgBranding(raptors.slug)?.name).toBe(raptors.name);
+  });
+
+  it("does not reuse last-used branding on home, browse, or Our Story", () => {
+    cacheOrgBranding(raptors);
+
+    expect(isPlatformLoaderPath("/")).toBe(true);
+    expect(isPlatformLoaderPath("/browse/")).toBe(true);
+    expect(isPlatformLoaderPath("/our-story")).toBe(true);
+    expect(getLoaderBranding("/")).toBeNull();
+    expect(getLoaderBranding("/browse/")).toBeNull();
+    expect(getLoaderBranding("/our-story/")).toBeNull();
+    expect(getLoaderBranding("/checkout/")).toMatchObject({
+      name: raptors.name,
+    });
+  });
+});
+
+describe("hydrate-safe loader branding", () => {
+  it("does not paint session-cached branding on an event route before the client cache is allowed", () => {
+    cacheEventBranding(icedogsEvent, icedogs);
+    const path = `/e/${icedogsEvent.seoUrl}/${icedogsEvent.shortCode}/tickets/`;
+
+    expect(
+      resolveLoaderBrandingForRender(path, { allowClientCache: false }),
+    ).toBeNull();
+    expect(
+      resolveLoaderBrandingForRender(path, { allowClientCache: true }),
+    ).toMatchObject({
+      name: icedogs.name,
+      primaryColor: icedogs.branding.primaryColor,
+    });
+  });
+
+  it("still uses explicit page branding on the first paint", () => {
+    const path = `/e/${icedogsEvent.seoUrl}/${icedogsEvent.shortCode}/tickets/`;
+
+    expect(
+      resolveLoaderBrandingForRender(path, {
+        allowClientCache: false,
+        branding: {
+          primaryColor: raptors.branding.primaryColor,
+          logoSrc: raptors.branding.logo.url,
+          name: raptors.name,
+        },
+      }),
+    ).toMatchObject({
+      name: raptors.name,
+      primaryColor: raptors.branding.primaryColor,
+    });
+  });
+});

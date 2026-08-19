@@ -1,0 +1,24 @@
+# Blocktickets marketing site — DigitalOcean App Platform (static site)
+#
+# Before deploy:
+#   1. Replace github repo/branch below
+#   2. Attach your custom domain in the DO dashboard
+#   3. No env vars required for the static marketing build
+
+name: blocktickets-marketing
+region: nyc
+
+static_sites:
+  - name: web
+    github:
+      repo: CRE8Interactions/blocktickets-new
+      branch: main
+      deploy_on_push: true
+    source_dir: /
+    environment_slug: node-js
+    build_command: npm ci && npm run build
+    output_dir: out
+    index_document: index.html
+    catchall_document: index.html
+    routes:
+      - path: /

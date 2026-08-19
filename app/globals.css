@@ -1,0 +1,543 @@
+@import "tailwindcss";
+
+:root {
+  --bg: #051b35;
+  --fg: #fafafa;
+  --muted: #9da2b3;
+  --line: rgba(255, 255, 255, 0.1);
+  --line-soft: rgba(255, 255, 255, 0.08);
+  --accent: #a6e773;
+}
+
+/* react-phone-number-input on navy surfaces */
+.PhoneInput {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.PhoneInputInput {
+  flex: 1;
+  background: transparent;
+  border: 0;
+  outline: none;
+  color: #fff;
+  font-size: 15px;
+  height: 40px;
+}
+.PhoneInputCountryIcon {
+  border-radius: 2px;
+}
+.PhoneInputCountrySelect {
+  background: transparent;
+  color: #fff;
+}
+
+* {
+  box-sizing: border-box;
+}
+button,
+[type="button"],
+[type="submit"],
+[type="reset"] {
+  cursor: pointer;
+}
+html {
+  -webkit-text-size-adjust: 100%;
+}
+body {
+  background: var(--bg);
+  color: var(--fg);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+  overflow-x: clip;
+}
+
+/* ---------- layout helpers ---------- */
+.container-x {
+  width: 100%;
+  max-width: 1200px;
+  margin-inline: auto;
+  padding-inline: 24px;
+}
+@media (min-width: 1024px) {
+  .container-x {
+    padding-inline: 40px;
+  }
+}
+
+.eyebrow {
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.h2 {
+  font-size: clamp(30px, 4vw, 48px);
+  line-height: 1.05;
+  letter-spacing: -0.025em;
+  font-weight: 600;
+  color: var(--fg);
+}
+.lede {
+  color: var(--muted);
+  font-size: clamp(15px, 1.4vw, 18px);
+  line-height: 1.6;
+}
+.card {
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid var(--line-soft);
+  border-radius: 18px;
+}
+
+/* ---------- buttons ---------- */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  height: 44px;
+  padding: 0 22px;
+  border-radius: 8px;
+  font-weight: 500;
+  font-size: 14px;
+  white-space: nowrap;
+  cursor: pointer;
+  transition:
+    background 0.18s ease,
+    color 0.18s ease,
+    border-color 0.18s ease,
+    transform 0.18s ease;
+}
+.btn svg {
+  width: 16px;
+  height: 16px;
+}
+.btn-primary {
+  background: var(--accent);
+  color: #051b35;
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+}
+.btn-primary:hover {
+  background: #b9ef93;
+}
+.btn-ghost {
+  color: var(--fg);
+}
+.btn-ghost:hover {
+  background: rgba(255, 255, 255, 0.06);
+}
+.btn-outline {
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  color: #f4f4f5;
+}
+.btn-outline:hover {
+  background: rgba(255, 255, 255, 0.05);
+}
+.btn-sm {
+  height: 36px;
+  padding: 0 14px;
+}
+.btn .arrow {
+  transition: transform 0.18s ease;
+}
+.btn:hover .arrow {
+  transform: translateX(2px);
+}
+
+/* ---------- scroll reveal ---------- */
+.reveal {
+  opacity: 0;
+  transform: translateY(24px);
+  transition:
+    opacity 0.7s cubic-bezier(0.2, 0.8, 0.2, 1),
+    transform 0.7s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+.reveal.in {
+  opacity: 1;
+  transform: none;
+}
+@media (prefers-reduced-motion: reduce) {
+  .reveal {
+    opacity: 1;
+    transform: none;
+    transition: none;
+  }
+}
+
+/* ---------- brand pop ---------- */
+/* Faint rounded-grid field, fading out radially — gives the page a lit
+   backdrop instead of flat navy. Layer inside a positioned parent. */
+.bg-grid {
+  background-image:
+    linear-gradient(rgba(255, 255, 255, 0.045) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.045) 1px, transparent 1px);
+  background-size: 56px 56px;
+  -webkit-mask-image: radial-gradient(
+    ellipse 90% 65% at 50% 0%,
+    black,
+    transparent 72%
+  );
+  mask-image: radial-gradient(
+    ellipse 90% 65% at 50% 0%,
+    black,
+    transparent 72%
+  );
+}
+
+/* Glassy icon tile — electric-blue glass with a top highlight and neon edge. */
+.tile-glass {
+  position: relative;
+  background:
+    linear-gradient(
+      145deg,
+      rgba(96, 165, 250, 0.22),
+      rgba(59, 130, 246, 0.06) 45%,
+      rgba(56, 116, 224, 0.16)
+    ),
+    #0a2747;
+  border: 1px solid rgba(96, 165, 250, 0.4);
+  box-shadow:
+    0 0 26px -4px rgba(59, 130, 246, 0.45),
+    inset 0 1px 0 rgba(255, 255, 255, 0.3),
+    inset 0 -10px 18px rgba(5, 27, 53, 0.55);
+}
+
+/* Neon-edge card — for the one card per screen that should own the moment. */
+.card-glow {
+  border-color: rgba(96, 165, 250, 0.3);
+  box-shadow:
+    0 0 0 1px rgba(96, 165, 250, 0.14),
+    0 0 44px -10px rgba(59, 130, 246, 0.4),
+    0 20px 50px -24px rgba(0, 0, 0, 0.7);
+}
+
+/* ---------- legal / policy docs ---------- */
+.legal-doc {
+  color: var(--muted);
+  font-size: 15px;
+  line-height: 1.7;
+}
+.legal-doc .legal-lead {
+  color: #bcbfcc;
+  font-size: clamp(15px, 1.4vw, 17px);
+  line-height: 1.65;
+  margin-bottom: 1.25rem;
+}
+.legal-doc .legal-header {
+  margin-top: 2.5rem;
+  margin-bottom: 1rem;
+  padding-top: 1.5rem;
+  border-top: 1px solid var(--line);
+}
+.legal-doc .legal-h2 {
+  color: var(--fg);
+  font-size: clamp(20px, 2.2vw, 26px);
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  line-height: 1.25;
+  margin-top: 2.25rem;
+  margin-bottom: 0.85rem;
+}
+.legal-doc .legal-header .legal-h2 {
+  margin-top: 0;
+}
+.legal-doc .legal-h3 {
+  color: var(--fg);
+  font-size: 16px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  margin-top: 1.5rem;
+  margin-bottom: 0.5rem;
+}
+.legal-doc .legal-h4 {
+  color: #edeef7;
+  font-size: 14px;
+  font-weight: 600;
+  margin-top: 1.15rem;
+  margin-bottom: 0.4rem;
+}
+.legal-doc section {
+  margin-top: 0.5rem;
+}
+.legal-doc p {
+  margin-bottom: 0.9rem;
+}
+.legal-doc ul {
+  margin: 0.5rem 0 1rem;
+  padding-left: 1.25rem;
+  list-style: disc;
+}
+.legal-doc ul ul {
+  margin-top: 0.4rem;
+  margin-bottom: 0.4rem;
+}
+.legal-doc li {
+  margin-bottom: 0.45rem;
+}
+.legal-doc .legal-dl-list {
+  list-style: none;
+  padding-left: 0;
+}
+.legal-doc .legal-dl-list > li {
+  margin-bottom: 1.1rem;
+  padding: 1rem 1.1rem;
+  border: 1px solid var(--line-soft);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.02);
+}
+.legal-doc dl {
+  margin: 0;
+}
+.legal-doc dt {
+  color: var(--fg);
+  font-weight: 600;
+  display: inline;
+}
+.legal-doc dd {
+  display: inline;
+  margin: 0;
+}
+.legal-doc a {
+  color: var(--accent);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.legal-doc a:hover {
+  color: #7ec8fa;
+}
+
+/* ---------- phone input (login) ---------- */
+.phone-input .PhoneInputInput {
+  background: transparent;
+  border: 0;
+  outline: none;
+  color: white;
+  width: 100%;
+  font-size: 15px;
+}
+.phone-input .PhoneInputCountryIcon {
+  border-radius: 2px;
+}
+.phone-input .PhoneInputCountrySelectArrow {
+  color: #9da2b3;
+  opacity: 1;
+}
+
+/* ---------- misc ---------- */
+.blur-word {
+  color: var(--fg);
+  filter: blur(2.5px);
+}
+.bar {
+  background: linear-gradient(
+    180deg,
+    rgba(166, 231, 115, 0.85) 0%,
+    rgba(166, 231, 115, 0.35) 100%
+  );
+  border-radius: 6px 6px 0 0;
+}
+
+/* ---------- Blocktickets spinners ---------- */
+@keyframes bt-sp {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@keyframes bt-bp {
+  0%,
+  80%,
+  100% {
+    opacity: 0.2;
+    transform: scale(0.8);
+  }
+  40% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+@keyframes bt-bn {
+  0%,
+  80%,
+  100% {
+    transform: translateY(0);
+    opacity: 0.4;
+  }
+  40% {
+    transform: translateY(-6px);
+    opacity: 1;
+  }
+}
+@keyframes bt-sl {
+  0% {
+    transform: translateX(-100%);
+  }
+  100% {
+    transform: translateX(350%);
+  }
+}
+@keyframes bt-sh {
+  0% {
+    background-position: 200% 0;
+  }
+  100% {
+    background-position: -200% 0;
+  }
+}
+/* Full-screen brand loader (from Loaders.dc.html) */
+@keyframes bt-stack {
+  0%, 12% { opacity: 0; transform: translateY(10px) scale(0.86); }
+  26%, 74% { opacity: 1; transform: translateY(0) scale(1); }
+  88%, 100% { opacity: 0; transform: translateY(-10px) scale(0.86); }
+}
+@keyframes bt-bar {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(100%); }
+}
+@keyframes bt-breathe {
+  0%, 100% { opacity: 0.55; }
+  50% { opacity: 1; }
+}
+@keyframes bt-spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+@keyframes bt-rise {
+  0% { opacity: 0; transform: translateY(6px); }
+  100% { opacity: 1; transform: translateY(0); }
+}
+@keyframes bt-emA {
+  0%,
+  78%,
+  100% {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  10%,
+  68% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+@keyframes bt-emB {
+  0%,
+  16%,
+  78%,
+  100% {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  26%,
+  68% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+@keyframes bt-emC {
+  0%,
+  32%,
+  78%,
+  100% {
+    opacity: 0;
+    transform: scale(0.45) rotate(-28deg);
+  }
+  42%,
+  68% {
+    opacity: 1;
+    transform: scale(1) rotate(0deg);
+  }
+}
+@keyframes bt-qspin {
+  0% {
+    transform: rotate(0deg);
+  }
+  20%,
+  25% {
+    transform: rotate(90deg);
+  }
+  45%,
+  50% {
+    transform: rotate(180deg);
+  }
+  70%,
+  75% {
+    transform: rotate(270deg);
+  }
+  95%,
+  100% {
+    transform: rotate(360deg);
+  }
+}
+@keyframes bt-breath {
+  0%,
+  100% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.06);
+  }
+}
+
+.bt-sp-ring {
+  animation: bt-sp 0.8s linear infinite;
+}
+.bt-sp-bp {
+  animation: bt-bp 1.2s ease-in-out infinite;
+}
+.bt-sp-bn {
+  animation: bt-bn 1.2s ease-in-out infinite;
+}
+.bt-sp-sl {
+  animation: bt-sl 1.6s ease-in-out infinite;
+}
+.bt-sp-sh {
+  animation: bt-sh 1.4s ease-in-out infinite;
+}
+.bt-sp-emA,
+.bt-sp-emB,
+.bt-sp-emC {
+  transform-box: fill-box;
+  transform-origin: center;
+  will-change: transform, opacity;
+}
+.bt-sp-emA {
+  animation: bt-emA 2.2s ease-in-out infinite;
+}
+.bt-sp-emB {
+  animation: bt-emB 2.2s ease-in-out infinite;
+}
+.bt-sp-emC {
+  animation: bt-emC 2.2s ease-in-out infinite;
+}
+.bt-sp-qspin {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: bt-qspin 2.4s cubic-bezier(0.2, 0.8, 0.2, 1) infinite;
+  will-change: transform;
+}
+.bt-sp-breath {
+  transform-origin: center;
+  animation: bt-breath 2s ease-in-out infinite;
+  will-change: transform;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .bt-sp-ring,
+  .bt-sp-bp,
+  .bt-sp-bn,
+  .bt-sp-sl,
+  .bt-sp-sh,
+  .bt-sp-emA,
+  .bt-sp-emB,
+  .bt-sp-emC,
+  .bt-sp-qspin,
+  .bt-sp-breath {
+    animation: none !important;
+  }
+  .bt-sp-emA,
+  .bt-sp-emB,
+  .bt-sp-emC {
+    opacity: 1;
+    transform: none;
+  }
+}
