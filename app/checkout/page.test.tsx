@@ -1,4 +1,4 @@
-import { act, render, screen, waitFor, within } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ReactNode } from "react";
@@ -6,12 +6,13 @@ import {
   DEMO_EVENTS,
   DEMO_ORGS,
   DEMO_SEATED_TICKET_GROUPS,
+  demoAccessPassCheckoutCart,
   demoCheckoutCart,
   demoFlexPackCheckoutCart,
   demoPackageCheckoutCart,
 } from "@/lib/demo/fixtures";
 import { FLEX_PACK_VOUCHER_FEE_USD } from "@/lib/flexPackDisplay";
-import { packageOrderSummary } from "@/lib/ticketSummary";
+import { packageOrderSummary, ticketSelectionSummary } from "@/lib/ticketSummary";
 import { formatVenueLocationFromVenue } from "@/lib/venueLocation";
 
 const navState = { cartId: "cart-raptors-1", extra: "" };
@@ -123,13 +124,20 @@ vi.mock("@/lib/tracking", () => ({
 
 import CheckoutPageRoute from "@/app/checkout/page";
 import GlobalRouteTransitionLoader from "@/components/molecules/GlobalRouteTransitionLoader";
-import { dropUserCart, getCart, getPaymentIntent, processOrder } from "@/lib/api";
+import {
+  dropUserCart,
+  getCart,
+  getPaymentIntent,
+  processOrder,
+  redeemPromoCode,
+  removePromoCode,
+} from "@/lib/api";
 import { setLastKnown, useAuth } from "@/lib/auth";
 import {
   CHECKOUT_HOLD_SECONDS,
   formatHoldClock,
 } from "@/lib/checkoutBranding";
-import { eventPurchasePath, formatCurrency, packagePurchasePath } from "@/lib/helpers";
+import { eventPurchasePath, flexPackPurchasePath, formatCurrency, imageUrl, packagePurchasePath } from "@/lib/helpers";
 import { cacheOrgBranding } from "@/lib/orgBrandingCache";
 import { getSeatViewImageCandidates } from "@/lib/seatView";
 import { setCheckoutReturnPath } from "@/lib/cart";
@@ -139,6 +147,8 @@ const mockedGetCart = vi.mocked(getCart);
 const mockedGetPaymentIntent = vi.mocked(getPaymentIntent);
 const mockedDropUserCart = vi.mocked(dropUserCart);
 const mockedProcessOrder = vi.mocked(processOrder);
+const mockedRedeemPromo = vi.mocked(redeemPromoCode);
+const mockedRemovePromo = vi.mocked(removePromoCode);
 const mockedUseAuth = vi.mocked(useAuth);
 const mockedSetLastKnown = vi.mocked(setLastKnown);
 
@@ -193,6 +203,9 @@ describe("Checkout page", () => {
     } as never);
     mockedDropUserCart.mockResolvedValue({} as never);
     mockedProcessOrder.mockResolvedValue({} as never);
+    mockedRedeemPromo.mockReset();
+    mockedRemovePromo.mockReset();
+    mockedRemovePromo.mockResolvedValue({} as never);
     stripeMocks.submit.mockResolvedValue({});
     stripeMocks.confirmPayment.mockResolvedValue({});
     stripeMocks.retrievePaymentIntent.mockResolvedValue({
@@ -517,6 +530,37 @@ describe("Checkout page", () => {
     expect(screen.queryByText(/Seat 7/)).not.toBeInTheDocument();
   });
 
+  it("summarizes an event purchase with tickets and tax", async () => {
+    const cart = demoCheckoutCart({ ticketCount: 2 });
+    const summary = ticketSelectionSummary(cart.tickets);
+    mockedGetCart.mockResolvedValue({ data: cart } as never);
+    render(<CheckoutPageRoute />);
+
+    expect(
+      await screen.findByText(
+        `Tickets: ${formatCurrency(summary.unit)} x ${summary.count}`,
+      ),
+    ).toBeInTheDocument();
+    expect(screen.getByText("Tax")).toBeInTheDocument();
+    expect(screen.getByText("Total")).toBeInTheDocument();
+    expect(screen.queryByText("Subtotal")).not.toBeInTheDocument();
+    expect(screen.queryByText("Processing Fee")).not.toBeInTheDocument();
+    expect(screen.queryByText("Service Fee")).not.toBeInTheDocument();
+  });
+
+  it("does not list event processing or service fees even when the cart has them", async () => {
+    const cart = demoCheckoutCart({ serviceFee: 2.5, processingFee: 0.5 });
+    mockedGetCart.mockResolvedValue({ data: cart } as never);
+    render(<CheckoutPageRoute />);
+
+    expect(
+      await screen.findByText(/Tickets:/),
+    ).toBeInTheDocument();
+    expect(screen.getByText("Tax")).toBeInTheDocument();
+    expect(screen.queryByText("Processing Fee")).not.toBeInTheDocument();
+    expect(screen.queryByText("Service Fee")).not.toBeInTheDocument();
+  });
+
   it("summarizes a package order with season seats", async () => {
     const cart = demoPackageCheckoutCart();
     const summary = packageOrderSummary(cart.package, cart.tickets);
@@ -621,7 +665,7 @@ describe("Checkout page", () => {
     expect(screen.queryByText(/Sec /)).not.toBeInTheDocument();
   });
 
-  it("does not list package fee lines when the cart has no fees", async () => {
+  it("still lists package processing and service fees when they are zero", async () => {
     const cart = demoPackageCheckoutCart({
       serviceFee: 0,
       processingFee: 0,
@@ -632,8 +676,78 @@ describe("Checkout page", () => {
     expect(await screen.findByText(cart.package.name)).toBeInTheDocument();
     expect(screen.getByText("Subtotal")).toBeInTheDocument();
     expect(screen.getByText("Tax")).toBeInTheDocument();
-    expect(screen.queryByText("Processing Fee")).not.toBeInTheDocument();
-    expect(screen.queryByText("Service Fee")).not.toBeInTheDocument();
+    expect(screen.getByText("Processing Fee")).toBeInTheDocument();
+    expect(screen.getByText("Service Fee")).toBeInTheDocument();
+    expect(screen.getAllByText(formatCurrency(0)).length).toBeGreaterThan(0);
+  });
+
+  it("does not show a promo code field for a package purchase", async () => {
+    const cart = demoPackageCheckoutCart();
+    mockedGetCart.mockResolvedValue({ data: cart } as never);
+    render(<CheckoutPageRoute />);
+
+    expect(await screen.findByText(cart.package.name)).toBeInTheDocument();
+    expect(
+      screen.queryByPlaceholderText(/enter promo code/i),
+    ).not.toBeInTheDocument();
+    expect(screen.queryByText(/promo code/i)).not.toBeInTheDocument();
+  });
+
+  it("does not show a promo code field for a flex pack purchase", async () => {
+    const cart = demoFlexPackCheckoutCart();
+    mockedGetCart.mockResolvedValue({ data: cart } as never);
+    render(<CheckoutPageRoute />);
+
+    expect(await screen.findByText(cart.flex_pack.name)).toBeInTheDocument();
+    expect(
+      screen.queryByPlaceholderText(/enter promo code/i),
+    ).not.toBeInTheDocument();
+    expect(screen.queryByText(/promo code/i)).not.toBeInTheDocument();
+  });
+
+  it("does not show a promo code field for an access pass purchase", async () => {
+    const cart = demoAccessPassCheckoutCart();
+    mockedGetCart.mockResolvedValue({ data: cart } as never);
+    render(<CheckoutPageRoute />);
+
+    expect(
+      await screen.findByText(cart.access_pass_template.name),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByPlaceholderText(/enter promo code/i),
+    ).not.toBeInTheDocument();
+    expect(screen.queryByText(/promo code/i)).not.toBeInTheDocument();
+  });
+
+  it("shows the package artwork instead of the first game poster", async () => {
+    const base = demoPackageCheckoutCart();
+    const cart = demoPackageCheckoutCart({
+      package: {
+        image: { url: "/cases/nmstate.jpg" },
+        events: base.package.events.map((event) => ({
+          ...event,
+          image: { url: "/clients/nmstate.png" },
+        })),
+      },
+    });
+    mockedGetCart.mockResolvedValue({ data: cart } as never);
+    render(<CheckoutPageRoute />);
+
+    expect(await screen.findByAltText(cart.package.name)).toHaveAttribute(
+      "src",
+      imageUrl(cart.package.image),
+    );
+  });
+
+  it("shows the flex pack artwork in the order summary", async () => {
+    const cart = demoFlexPackCheckoutCart();
+    mockedGetCart.mockResolvedValue({ data: cart } as never);
+    render(<CheckoutPageRoute />);
+
+    expect(await screen.findByAltText(cart.flex_pack.name)).toHaveAttribute(
+      "src",
+      imageUrl(cart.flex_pack.image),
+    );
   });
 
   it("summarizes a flex pack with the $1 voucher fee and processing fee", async () => {
@@ -674,7 +788,7 @@ describe("Checkout page", () => {
     ).toBeInTheDocument();
   });
 
-  it("does not list a flex pack processing fee when it is zero", async () => {
+  it("still lists a flex pack processing fee when it is zero", async () => {
     const cart = demoFlexPackCheckoutCart({ processingFee: 0 });
     mockedGetCart.mockResolvedValue({ data: cart } as never);
     render(<CheckoutPageRoute />);
@@ -682,7 +796,75 @@ describe("Checkout page", () => {
     expect(await screen.findByText(cart.flex_pack.name)).toBeInTheDocument();
     expect(screen.getByText("Tax")).toBeInTheDocument();
     expect(screen.getByText("Service Fee")).toBeInTheDocument();
-    expect(screen.queryByText("Processing Fee")).not.toBeInTheDocument();
+    expect(screen.getByText("Processing Fee")).toBeInTheDocument();
+    expect(screen.getAllByText(formatCurrency(0)).length).toBeGreaterThan(0);
+  });
+
+  it("lists the promo discount in the order summary until it is removed", async () => {
+    const cart = demoCheckoutCart();
+    const discount = 5;
+    mockedGetCart.mockResolvedValue({ data: cart } as never);
+    mockedRedeemPromo.mockResolvedValue({
+      data: {
+        promoPricingDetails: {
+          code: "TESTDIS",
+          originalPrice: cart.total,
+          discountedPrice: cart.total - discount,
+          amountDiscounted: discount,
+        },
+      },
+    } as never);
+    const user = userEvent.setup();
+    render(<CheckoutPageRoute />);
+
+    await user.type(
+      await screen.findByPlaceholderText(/enter promo code/i),
+      "TESTDIS",
+    );
+    await user.click(screen.getByRole("button", { name: /apply/i }));
+
+    expect(await screen.findByText("Promo (TESTDIS)")).toBeInTheDocument();
+    expect(
+      screen.getByText(`-${formatCurrency(discount)}`),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", {
+        name: `Pay ${formatCurrency(cart.total - discount)}`,
+      }),
+    ).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: /remove/i }));
+
+    await waitFor(() => {
+      expect(screen.queryByText("Promo (TESTDIS)")).not.toBeInTheDocument();
+    });
+    expect(
+      screen.queryByText(`-${formatCurrency(discount)}`),
+    ).not.toBeInTheDocument();
+  });
+
+  it("keeps the discount line off the summary when the promo code is rejected", async () => {
+    const cart = demoCheckoutCart();
+    mockedGetCart.mockResolvedValue({ data: cart } as never);
+    mockedRedeemPromo.mockRejectedValue({
+      response: { data: { error: { message: "Promo code not found" } } },
+    });
+    const user = userEvent.setup();
+    render(<CheckoutPageRoute />);
+
+    await user.type(
+      await screen.findByPlaceholderText(/enter promo code/i),
+      "TESTDIS",
+    );
+    await user.click(screen.getByRole("button", { name: /apply/i }));
+
+    expect(
+      await screen.findByText(/promo code not found\. please try again\./i),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/^Promo \(/)).not.toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: `Pay ${formatCurrency(cart.total)}` }),
+    ).toBeInTheDocument();
   });
 
   it("opens checkout success after a flex pack payment", async () => {
@@ -823,15 +1005,16 @@ describe("Checkout page", () => {
         eventUUID: cart.event.uuid,
         cartId: cart.id,
       });
-      expect(routerMocks.push).toHaveBeenCalledWith(
+      expect(routerMocks.replace).toHaveBeenCalledWith(
         eventPurchasePath(raptorsEvent),
       );
     });
+    expect(routerMocks.push).not.toHaveBeenCalled();
 
     vi.useRealTimers();
   });
 
-  it("drops the cart and returns to the season package page when a package order is cancelled", async () => {
+  it("drops the cart and returns to the team page when a package order is cancelled", async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
     const cart = demoPackageCheckoutCart({ remainingTime: 3 });
     mockedGetCart.mockResolvedValue({ data: cart } as never);
@@ -851,18 +1034,56 @@ describe("Checkout page", () => {
         cartId: cart.id,
         packageUUID: String(cart.package.uuid),
       });
-      expect(routerMocks.push).toHaveBeenCalledWith(
+      expect(routerMocks.replace).toHaveBeenCalledWith(
         packagePurchasePath(cart.package),
       );
     });
-    expect(routerMocks.push).not.toHaveBeenCalledWith(
+    expect(routerMocks.replace).not.toHaveBeenCalledWith(
       eventPurchasePath(raptorsEvent),
     );
 
     vi.useRealTimers();
   });
 
-  it("returns to the page the shopper came from and drops package tickets", async () => {
+  it("keeps checkout on screen while the cancel is still releasing the cart", async () => {
+    const cart = demoPackageCheckoutCart();
+    cacheOrgBranding(cart.package.organization);
+    mockedGetCart.mockResolvedValue({ data: cart } as never);
+    let finishDrop!: () => void;
+    mockedDropUserCart.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          finishDrop = () => resolve({} as never);
+        }) as never,
+    );
+    const user = userEvent.setup();
+    render(
+      <>
+        <GlobalRouteTransitionLoader />
+        <CheckoutPageRoute />
+      </>,
+    );
+    expect(await screen.findByText("Secure checkout")).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: /back/i }));
+    await screen.findByRole("dialog", { name: /are you sure/i });
+    await user.click(screen.getByRole("button", { name: /cancel order/i }));
+
+    expect(await screen.findByText(/cancelling/i)).toBeInTheDocument();
+    expect(screen.getByText(cart.package.name)).toBeInTheDocument();
+    expect(screen.queryByText(/loading tickets/i)).not.toBeInTheDocument();
+    expect(routerMocks.replace).not.toHaveBeenCalled();
+
+    finishDrop();
+    await waitFor(() => {
+      expect(routerMocks.replace).toHaveBeenCalledWith(
+        packagePurchasePath(cart.package),
+      );
+    });
+    expect(screen.getByText(/loading tickets/i)).toBeInTheDocument();
+  });
+
+  it("pops checkout off the history when cancelling back to the page the shopper came from", async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
     const cart = demoPackageCheckoutCart({ remainingTime: 3 });
     const from = `/${cart.package.organization.slug}/`;
@@ -881,11 +1102,11 @@ describe("Checkout page", () => {
         cartId: cart.id,
         packageUUID: String(cart.package.uuid),
       });
-      expect(routerMocks.push).toHaveBeenCalledWith(from);
+      expect(routerMocks.back).toHaveBeenCalled();
     });
-    expect(routerMocks.push).not.toHaveBeenCalledWith(
-      packagePurchasePath(cart.package),
-    );
+    // A new entry would leave the dead checkout one step behind Back.
+    expect(routerMocks.push).not.toHaveBeenCalled();
+    expect(routerMocks.replace).not.toHaveBeenCalled();
 
     vi.useRealTimers();
   });
@@ -911,17 +1132,17 @@ describe("Checkout page", () => {
         eventUUID: raptorsEvent.uuid,
         cartId: demoCheckoutCart().id,
       });
-      expect(routerMocks.push).toHaveBeenCalledWith(
+      expect(routerMocks.replace).toHaveBeenCalledWith(
         eventPurchasePath(raptorsEvent),
       );
     });
-    expect(routerMocks.push).not.toHaveBeenCalledWith(`/${raptorsOrg.slug}/`);
+    expect(routerMocks.replace).not.toHaveBeenCalledWith(
+      `/${raptorsOrg.slug}/`,
+    );
   });
 
-  it("drops package tickets and returns to seat selection when the hold runs out", async () => {
+  it("drops package tickets and returns to the package page when the hold runs out", async () => {
     const cart = demoPackageCheckoutCart({ remainingTime: 0 });
-    const from = `/${cart.package.organization.slug}/`;
-    setCheckoutReturnPath(from);
     mockedGetCart.mockResolvedValue({ data: cart } as never);
     const user = userEvent.setup();
     render(<CheckoutPageRoute />);
@@ -936,10 +1157,103 @@ describe("Checkout page", () => {
         cartId: cart.id,
         packageUUID: String(cart.package.uuid),
       });
-      expect(routerMocks.push).toHaveBeenCalledWith(
+      expect(routerMocks.replace).toHaveBeenCalledWith(
         packagePurchasePath(cart.package),
       );
     });
-    expect(routerMocks.push).not.toHaveBeenCalledWith(from);
+    expect(routerMocks.replace).not.toHaveBeenCalledWith(
+      `/${cart.package.organization.slug}/`,
+    );
+  });
+
+  it("returns to the team package page named by the page the shopper came from", async () => {
+    const org = demoPackageCheckoutCart().package.organization;
+    const cart = demoPackageCheckoutCart({
+      remainingTime: 0,
+      package: { organization: { name: org.name } },
+      organization: null,
+    });
+    setCheckoutReturnPath(`/${org.slug}/`);
+    mockedGetCart.mockResolvedValue({ data: cart } as never);
+    const user = userEvent.setup();
+    render(<CheckoutPageRoute />);
+
+    expect(
+      await screen.findByRole("dialog", { name: /cart expired/i }),
+    ).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: /start over/i }));
+    await waitFor(() => {
+      expect(routerMocks.replace).toHaveBeenCalledWith(
+        `/${org.slug}/package/${cart.package.uuid}/`,
+      );
+    });
+    expect(routerMocks.replace).not.toHaveBeenCalledWith(
+      `/venue/${cart.package.venue.slug}/package/${cart.package.uuid}/`,
+    );
+  });
+
+  it("returns to the team package page from cached branding when nothing was stored", async () => {
+    const org = demoPackageCheckoutCart().package.organization;
+    const cart = demoPackageCheckoutCart({
+      remainingTime: 0,
+      package: { organization: { name: org.name } },
+      organization: null,
+    });
+    cacheOrgBranding(org);
+    mockedGetCart.mockResolvedValue({ data: cart } as never);
+    const user = userEvent.setup();
+    render(<CheckoutPageRoute />);
+
+    expect(
+      await screen.findByRole("dialog", { name: /cart expired/i }),
+    ).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: /start over/i }));
+    await waitFor(() => {
+      expect(routerMocks.replace).toHaveBeenCalledWith(
+        `/${org.slug}/package/${cart.package.uuid}/`,
+      );
+    });
+    expect(routerMocks.replace).not.toHaveBeenCalledWith(
+      `/venue/${cart.package.venue.slug}/package/${cart.package.uuid}/`,
+    );
+  });
+
+  it("returns to the flex pack page when the hold runs out", async () => {
+    const cart = demoFlexPackCheckoutCart({ remainingTime: 0 });
+    const from = `/${cart.flex_pack.organization.slug}/`;
+    setCheckoutReturnPath(from);
+    cacheOrgBranding(cart.flex_pack.organization);
+    mockedGetCart.mockResolvedValue({ data: cart } as never);
+    const user = userEvent.setup();
+    render(
+      <>
+        <GlobalRouteTransitionLoader />
+        <CheckoutPageRoute />
+      </>,
+    );
+
+    expect(
+      await screen.findByRole("dialog", { name: /cart expired/i }),
+    ).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: /start over/i }));
+    await waitFor(() => {
+      expect(mockedDropUserCart).toHaveBeenCalledWith({
+        cartId: cart.id,
+        flexPackUUID: String(cart.flex_pack.uuid),
+      });
+      expect(routerMocks.replace).toHaveBeenCalledWith(
+        flexPackPurchasePath(cart.flex_pack),
+      );
+    });
+    expect(routerMocks.replace).not.toHaveBeenCalledWith(from);
+    // The flex pack loader covers the trip back — never the checkout form.
+    expect(screen.getByText(/loading tickets/i)).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: /^pay /i }),
+    ).not.toBeInTheDocument();
+    expect(screen.queryByTestId("payment-element")).not.toBeInTheDocument();
   });
 });

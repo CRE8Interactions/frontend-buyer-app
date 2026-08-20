@@ -103,6 +103,22 @@ describe("org switch loader branding", () => {
       name: raptors.name,
     });
   });
+
+  it("uses the Blocktickets loader on login when there is nowhere to return to", () => {
+    cacheOrgBranding(raptors);
+
+    expect(isPlatformLoaderPath("/login/")).toBe(true);
+    expect(getLoaderBranding("/login/")).toBeNull();
+  });
+
+  it("does not borrow the last team on login that returns to checkout", () => {
+    cacheOrgBranding(raptors);
+
+    expect(
+      isPlatformLoaderPath("/login/", "?from=%2Fcheckout%2F%3FcartId%3Dc1"),
+    ).toBe(false);
+    expect(getLoaderBranding("/login/")).toBeNull();
+  });
 });
 
 describe("hydrate-safe loader branding", () => {

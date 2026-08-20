@@ -7,8 +7,11 @@ import {
   demoSeasonPackage,
 } from "@/lib/demo/fixtures";
 import {
+  completedOrderPromoCode,
   packageOrderSummary,
   packageSeatLines,
+  promoSummaryLabel,
+  resolveCompletedOrderFees,
   resolveFlexPackCheckoutTotals,
   resolvePackageCheckoutTotals,
   selectionOfferName,
@@ -224,6 +227,82 @@ describe("resolveFlexPackCheckoutTotals", () => {
         Number(cart.flex_pack.gameTickets) +
         Number(cart.processingFee),
     );
+  });
+});
+
+describe("resolveCompletedOrderFees", () => {
+  it("matches Blocktickets by preferring the price-object processing estimate", () => {
+    const fees = resolveCompletedOrderFees({
+      total: 452.2,
+      serviceFee: 40,
+      processingFee: 12.2,
+      estimatedProcessingFee: 12.3,
+      salesTax: 0,
+      priceObject: [{ estimatedPaymentProcessingFee: 12.38 }],
+    });
+
+    expect(fees).toEqual({
+      subtotal: 399.82,
+      tax: 0,
+      processingFee: 12.38,
+      serviceFee: 40,
+      additionalFee: 0,
+      discount: 0,
+      total: 452.2,
+    });
+  });
+
+  it("keeps a promo out of the subtotal so the breakdown foots to the amount paid", () => {
+    const fees = resolveCompletedOrderFees({
+      total: 5.5,
+      serviceFee: 2.5,
+      processingFee: 0.5,
+      estimatedProcessingFee: 0.5,
+      salesTax: 0,
+      discountApplied: 2,
+    });
+
+    expect(fees.subtotal).toBe(4.5);
+    expect(fees.discount).toBe(2);
+    expect(
+      fees.subtotal +
+        fees.tax +
+        fees.processingFee +
+        fees.serviceFee -
+        fees.discount,
+    ).toBe(fees.total);
+  });
+
+  it("uses completed-order fallbacks for flex packs without price-object fees", () => {
+    const cart = demoFlexPackCheckoutCart();
+    const fees = resolveCompletedOrderFees({
+      ...cart,
+      estimatedProcessingFee: 4.25,
+    });
+
+    expect(fees.processingFee).toBe(4.25);
+    expect(fees.serviceFee).toBe(cart.serviceFee);
+    expect(fees.subtotal).toBe(
+      cart.total - cart.serviceFee - 4.25,
+    );
+  });
+});
+
+describe("completedOrderPromoCode", () => {
+  it("labels the summary row with the redeemed code", () => {
+    expect(
+      completedOrderPromoCode({ discountBreakdown: { code: "TESTDIS" } }),
+    ).toBe("TESTDIS");
+    expect(completedOrderPromoCode({ promoCode: [{ code: "5OFFFEB7" }] })).toBe(
+      "5OFFFEB7",
+    );
+    expect(promoSummaryLabel("TESTDIS")).toBe("Promo (TESTDIS)");
+  });
+
+  it("falls back to a plain Promo label when the order has no code", () => {
+    expect(completedOrderPromoCode({})).toBe("");
+    expect(completedOrderPromoCode(null)).toBe("");
+    expect(promoSummaryLabel("")).toBe("Promo");
   });
 });
 

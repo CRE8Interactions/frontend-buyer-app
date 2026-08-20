@@ -3,13 +3,19 @@ import {
   checkoutLeavePath,
   dropUserCartPayload,
   resolveCheckoutReturnPath,
+  shouldPopCheckoutHistory,
 } from "@/lib/checkoutLeave";
 import {
   DEMO_EVENTS,
   demoCheckoutCart,
+  demoFlexPackCheckoutCart,
   demoPackageCheckoutCart,
 } from "@/lib/demo/fixtures";
-import { eventPurchasePath, packagePurchasePath } from "@/lib/helpers";
+import {
+  eventPurchasePath,
+  flexPackPurchasePath,
+  packagePurchasePath,
+} from "@/lib/helpers";
 import { clearCheckoutReturnPath, setCheckoutReturnPath } from "@/lib/cart";
 
 const raptorsEvent =
@@ -31,6 +37,41 @@ describe("checkoutLeavePath", () => {
     const cart = demoPackageCheckoutCart();
     expect(checkoutLeavePath(cart)).toBe(packagePurchasePath(cart.package));
   });
+
+  it("keeps a package on its team route when the cart omits the org slug", () => {
+    const org = demoPackageCheckoutCart().package.organization;
+    const cart = demoPackageCheckoutCart({
+      package: { organization: { name: org.name } },
+      organization: null,
+    });
+    expect(checkoutLeavePath(cart, undefined, org.slug)).toBe(
+      `/${org.slug}/package/${cart.package.uuid}/`,
+    );
+  });
+
+  it("falls back to the venue package route with no org slug anywhere", () => {
+    const cart = demoPackageCheckoutCart({
+      package: { organization: null },
+      organization: null,
+    });
+    expect(checkoutLeavePath(cart)).toBe(
+      `/venue/${cart.package.venue.slug}/package/${cart.package.uuid}/`,
+    );
+  });
+
+  it("returns the flex pack page for a flex pack cart", () => {
+    const cart = demoFlexPackCheckoutCart();
+    expect(checkoutLeavePath(cart)).toBe(
+      flexPackPurchasePath(cart.flex_pack),
+    );
+  });
+
+  it("falls back to browse when the cart has no product or event route", () => {
+    expect(checkoutLeavePath(null)).toBe("/browse/");
+    expect(checkoutLeavePath({ id: "cart-1" }, { uuid: "evt-1" })).toBe(
+      "/browse/",
+    );
+  });
 });
 
 describe("dropUserCartPayload", () => {
@@ -47,6 +88,14 @@ describe("dropUserCartPayload", () => {
     expect(dropUserCartPayload(cart)).toEqual({
       cartId: cart.id,
       packageUUID: String(cart.package.uuid),
+    });
+  });
+
+  it("includes the flex pack id when dropping a flex pack cart", () => {
+    const cart = demoFlexPackCheckoutCart();
+    expect(dropUserCartPayload(cart)).toEqual({
+      cartId: cart.id,
+      flexPackUUID: String(cart.flex_pack.uuid),
     });
   });
 
@@ -78,5 +127,22 @@ describe("resolveCheckoutReturnPath", () => {
     expect(resolveCheckoutReturnPath(cart)).toBe(
       packagePurchasePath(cart.package),
     );
+  });
+});
+
+describe("shouldPopCheckoutHistory", () => {
+  it("pops when the shopper came straight from the destination", () => {
+    const cart = demoFlexPackCheckoutCart();
+    const dest = flexPackPurchasePath(cart.flex_pack) as string;
+    expect(shouldPopCheckoutHistory(dest, dest.replace(/\/$/, ""))).toBe(true);
+  });
+
+  it("keeps a swap when the destination is not the previous page", () => {
+    const cart = demoFlexPackCheckoutCart();
+    const dest = flexPackPurchasePath(cart.flex_pack) as string;
+    expect(
+      shouldPopCheckoutHistory(dest, `/${cart.flex_pack.organization.slug}/`),
+    ).toBe(false);
+    expect(shouldPopCheckoutHistory(dest, null)).toBe(false);
   });
 });

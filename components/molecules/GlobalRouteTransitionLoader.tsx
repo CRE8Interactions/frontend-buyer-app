@@ -9,7 +9,7 @@ import {
   type CachedBranding,
 } from "@/lib/orgBrandingCache";
 import { loaderMessageForPath } from "@/lib/loaderMessages";
-import { ROUTE_TRANSITION_EVENT } from "@/lib/routeTransition";
+import { ROUTE_TRANSITION_EVENT, isWalletShellNavigation } from "@/lib/routeTransition";
 
 const MIN_VISIBLE_MS = 450;
 const MAX_VISIBLE_MS = 15000;
@@ -49,6 +49,9 @@ export default function GlobalRouteTransitionLoader() {
       ) {
         return;
       }
+      if (isWalletShellNavigation(window.location.pathname, destination.pathname)) {
+        return;
+      }
 
       const startedAt = Date.now();
       const startingUrl = `${window.location.pathname}${window.location.search}`;
@@ -57,7 +60,9 @@ export default function GlobalRouteTransitionLoader() {
       clearTimers();
       setBranding(destinationBranding);
       setFallback(
-        isPlatformLoaderPath(destination.pathname) ? "blocktickets" : "none",
+        isPlatformLoaderPath(destination.pathname, destination.search)
+          ? "blocktickets"
+          : "none",
       );
       setMessage(loaderMessageForPath(destination.pathname));
       setVisible(true);

@@ -98,11 +98,13 @@ export default function RouteLoader({
 }) {
   const pathname = usePathname();
   const params = useParams<{ slug?: string }>();
-  const platform = isPlatformLoaderPath(pathname || "");
   const [allowClientCache, setAllowClientCache] = useState(false);
+  const [search, setSearch] = useState("");
+  const platform = isPlatformLoaderPath(pathname || "", search);
 
   useLayoutEffect(() => {
     setAllowClientCache(true);
+    setSearch(window.location.search);
   }, []);
 
   const resolved = resolveLoaderBrandingForRender(pathname || "", {

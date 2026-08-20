@@ -10,8 +10,9 @@ import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import InAppBackLink from "@/components/molecules/InAppBackLink";
+import NavAuthActions from "@/components/molecules/NavAuthActions";
 import RouteLoader from "@/components/molecules/RouteLoader";
-import { getOrganizationStorefront } from "@/lib/api";
+import { getOrganizationStorefront, getVenueUpcomingEvents } from "@/lib/api";
 import {
   monthEventCountLabel,
   packageFromPriceLabel,
@@ -32,6 +33,11 @@ import {
   getCachedOrgBranding,
 } from "@/lib/orgBrandingCache";
 import { flexPackCardTone, flexPackEachPrice } from "@/lib/flexPackDisplay";
+import {
+  firstVenueWebsiteHref,
+  venueWebsiteFromUpcomingEvents,
+  venueWebsiteLookupSlug,
+} from "@/lib/venueWebsite";
 import {
   dateChip,
   eventPurchasePath,
@@ -124,6 +130,8 @@ type VenueItem = {
   name?: string;
   slug?: string;
   timezone?: string;
+  website?: string;
+  url?: string;
   address?: VenueAddress;
 };
 
@@ -165,7 +173,12 @@ export type StorefrontInitialData = {
   events?: StoreEvent[];
   packages?: PackageItem[];
   flexPacks?: FlexPackItem[];
+  venueWebsite?: string | null;
 } | null;
+
+function teamVenues(org?: Org | null, venues: VenueItem[] = []) {
+  return [org?.homeVenue, ...(org?.venues || []), ...venues];
+}
 
 const tagFor = (st: string) =>
   st === "Few left"
@@ -262,6 +275,13 @@ export default function ClientProfile({
   );
   const [loading, setLoading] = useState(() => !initialData?.organization);
   const [missing, setMissing] = useState(false);
+  const [venueWebsite, setVenueWebsite] = useState<string | null>(
+    () =>
+      initialData?.venueWebsite ||
+      firstVenueWebsiteHref(
+        teamVenues(initialData?.organization, initialData?.venues),
+      ),
+  );
 
   useEffect(() => {
     const onR = () => setVw(window.innerWidth);
@@ -290,7 +310,7 @@ export default function ClientProfile({
 
     setLoading(true);
     getOrganizationStorefront(slug)
-      .then((res) => {
+      .then(async (res) => {
         if (cancelled) return;
         const data = res.data as {
           organization?: Org | null;
@@ -298,21 +318,38 @@ export default function ClientProfile({
           events?: StoreEvent[];
           packages?: PackageItem[];
           flexPacks?: FlexPackItem[];
+          venueWebsite?: string | null;
         };
         if (!data?.organization) {
           setMissing(true);
           return;
         }
         const incoming = data.events || [];
+        // Branding can paint the loader immediately; shopper content remains
+        // gated until the venue website lookup below has completed.
         setOrganization(data.organization);
         initializeTracking(data.organization);
         cacheOrgBranding(data.organization);
         cacheOrgEventBranding(incoming, data.organization);
+        const candidates = teamVenues(data.organization, data.venues);
+        let website =
+          data.venueWebsite || firstVenueWebsiteHref(candidates);
+        const venueSlug =
+          candidates.find((venue) => venue?.slug)?.slug || "";
+        if (!website && venueSlug) {
+          try {
+            const upcoming = await getVenueUpcomingEvents(venueSlug);
+            website = venueWebsiteFromUpcomingEvents(upcoming?.data);
+          } catch {
+            /* website is optional, but its lookup is now complete */
+          }
+        }
+        if (cancelled) return;
         setVenues(data.venues || []);
         setEvents(sortByDate(incoming));
         setPackages(data.packages || []);
         setFlexPacks(data.flexPacks || []);
-        setLoading(false);
+        setVenueWebsite(website);
       })
       .catch(() => {
         if (!cancelled) setMissing(true);
@@ -353,8 +390,6 @@ export default function ClientProfile({
     ...(organization?.venues || []),
     ...venues,
   ]);
-  const website = organization?.website || organization?.url;
-
   const rows = useMemo(
     () =>
       events
@@ -479,9 +514,10 @@ export default function ClientProfile({
         minHeight: "100vh",
         fontFamily: "'Geist', system-ui, -apple-system, sans-serif",
         WebkitFontSmoothing: "antialiased",
-      }}
+        ["--cp-accent"]: ACC,
+      } as React.CSSProperties}
     >
-      <style>{`.cp-a{transition:background 140ms}.cp-row{transition:box-shadow 150ms ease}.cp-row:hover{box-shadow:0 8px 30px rgba(5,27,53,0.09)}`}</style>
+      <style>{`.cp-a{transition:background 140ms}.cp-row{transition:box-shadow 150ms ease}.cp-row:hover{box-shadow:0 8px 30px rgba(5,27,53,0.09)}.cp-action{outline:2px solid transparent;outline-offset:2px;transition:outline-color 140ms ease}.cp-action:hover,.cp-action:focus-visible{outline-color:var(--cp-accent)}`}</style>
 
       <header style={{ background: ACC, position: "sticky", top: 0, zIndex: 20 }}>
         <div
@@ -514,27 +550,46 @@ export default function ClientProfile({
               <polyline points="15 18 9 12 15 6" />
             </svg>
           </InAppBackLink>
-          <Link
-            href="/my-tickets/?login=1"
+          <div
             style={{
-              fontFamily: "inherit",
               marginLeft: "auto",
-              fontSize: 14,
-              fontWeight: 600,
-              color: ACC,
-              background: "#fff",
-              border: "none",
-              borderRadius: 999,
-              padding: "11px 22px",
-              cursor: "pointer",
-              whiteSpace: "nowrap",
-              textDecoration: "none",
-              display: "inline-flex",
+              display: "flex",
               alignItems: "center",
+              gap: 16,
+              flexShrink: 0,
             }}
           >
-            Log in
-          </Link>
+            <NavAuthActions
+              buttonStyle={{
+                fontFamily: "inherit",
+                fontSize: 14,
+                fontWeight: 600,
+                color: ACC,
+                background: "#fff",
+                border: "none",
+                borderRadius: 999,
+                padding: "11px 22px",
+                cursor: "pointer",
+                whiteSpace: "nowrap",
+                textDecoration: "none",
+                display: "inline-flex",
+                alignItems: "center",
+              }}
+              logoutStyle={{
+                fontFamily: "inherit",
+                fontSize: 14,
+                fontWeight: 600,
+                color: "#fff",
+                background: "transparent",
+                border: "none",
+                padding: 0,
+                cursor: "pointer",
+                whiteSpace: "nowrap",
+                textDecoration: "underline",
+                textUnderlineOffset: 3,
+              }}
+            />
+          </div>
         </div>
       </header>
 
@@ -671,12 +726,13 @@ export default function ClientProfile({
             </p>
 
             <div style={{ display: "flex", alignItems: "center", gap: 8, justifyContent: "center" }}>
-              {website && (
+              {venueWebsite && (
                 <a
-                  href={website}
+                  className="cp-action"
+                  href={venueWebsite}
                   target="_blank"
                   rel="noopener noreferrer"
-                  aria-label="Visit website"
+                  aria-label="Visit venue website"
                   style={{
                     width: 44,
                     height: 44,
@@ -698,6 +754,8 @@ export default function ClientProfile({
                 </a>
               )}
               <button
+                type="button"
+                className="cp-action"
                 aria-label="Share"
                 onClick={() => {
                   if (typeof navigator !== "undefined" && navigator.share) {
@@ -852,8 +910,9 @@ export default function ClientProfile({
                     const soon = e.status === "Presale";
                     const tag = tagFor(e.status);
                     return (
-                      <article
+                      <Link
                         key={e.key}
+                        href={e.href}
                         className="cp-row"
                         style={{
                           ...card,
@@ -863,6 +922,8 @@ export default function ClientProfile({
                           gap: mobile ? 14 : 20,
                           alignItems: "center",
                           cursor: "pointer",
+                          color: NAVY,
+                          textDecoration: "none",
                         }}
                       >
                         <div
@@ -931,51 +992,29 @@ export default function ClientProfile({
                             borderTop: mobile || narrow ? "1px solid rgba(5,27,53,0.08)" : "none",
                           }}
                         >
-                          {soon ? (
-                            <button
-                              style={{
-                                fontFamily: "inherit",
-                                fontSize: 14,
-                                fontWeight: 600,
-                                color: NAVY,
-                                background: "#fff",
-                                border: "1px solid rgba(5,27,53,0.14)",
-                                borderRadius: 999,
-                                padding: "12px 22px",
-                                minHeight: 44,
-                                cursor: "pointer",
-                                whiteSpace: "nowrap",
-                              }}
-                            >
-                              Remind me
-                            </button>
-                          ) : (
-                            <Link
-                              href={e.href}
-                              style={{
-                                fontFamily: "inherit",
-                                fontSize: 14,
-                                fontWeight: 600,
-                                color: "#fff",
-                                background: BTN,
-                                border: `1px solid ${BTN}`,
-                                borderRadius: 999,
-                                padding: "12px 22px",
-                                minHeight: 44,
-                                cursor: "pointer",
-                                whiteSpace: "nowrap",
-                                textDecoration: "none",
-                                display: "inline-flex",
-                                alignItems: "center",
-                                justifyContent: "center",
-                                boxSizing: "border-box",
-                              }}
-                            >
-                              Get tickets
-                            </Link>
-                          )}
+                          <span
+                            style={{
+                              fontFamily: "inherit",
+                              fontSize: 14,
+                              fontWeight: 600,
+                              color: soon ? NAVY : "#fff",
+                              background: soon ? "#fff" : BTN,
+                              border: `1px solid ${soon ? "rgba(5,27,53,0.14)" : BTN}`,
+                              borderRadius: 999,
+                              padding: "12px 22px",
+                              minHeight: 44,
+                              cursor: "pointer",
+                              whiteSpace: "nowrap",
+                              display: "inline-flex",
+                              alignItems: "center",
+                              justifyContent: "center",
+                              boxSizing: "border-box",
+                            }}
+                          >
+                            {soon ? "Remind me" : "Get tickets"}
+                          </span>
                         </div>
-                      </article>
+                      </Link>
                     );
                   })}
                 </div>
@@ -1028,8 +1067,10 @@ export default function ClientProfile({
                     : "";
                 const price = packageFromPriceLabel(p);
                 return (
-                  <article
+                  <Link
                     key={String(p.uuid || p.id)}
+                    href={p.uuid ? `/${slug}/package/${p.uuid}/` : "#"}
+                    className="cp-row"
                     style={{
                       ...card,
                       padding: mobile ? 14 : "16px 20px",
@@ -1037,6 +1078,9 @@ export default function ClientProfile({
                       gridTemplateColumns: mobile ? "1fr" : "minmax(0, 1fr) auto",
                       gap: mobile ? 14 : 20,
                       alignItems: "center",
+                      cursor: "pointer",
+                      color: NAVY,
+                      textDecoration: "none",
                     }}
                   >
                     <div style={{ display: "flex", flexDirection: "column", gap: 6, minWidth: 0 }}>
@@ -1056,8 +1100,7 @@ export default function ClientProfile({
                           {price || "—"}
                         </span>
                       </div>
-                      <Link
-                        href={p.uuid ? `/${slug}/package/${p.uuid}/` : "#"}
+                      <span
                         style={{
                           fontFamily: "inherit",
                           fontSize: 14,
@@ -1069,15 +1112,14 @@ export default function ClientProfile({
                           padding: "12px 22px",
                           cursor: "pointer",
                           whiteSpace: "nowrap",
-                          textDecoration: "none",
                           display: "inline-flex",
                           alignItems: "center",
                         }}
                       >
                         Select
-                      </Link>
+                      </span>
                     </div>
-                  </article>
+                  </Link>
                 );
               })}
             </div>

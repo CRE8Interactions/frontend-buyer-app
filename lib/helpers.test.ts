@@ -1,8 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { DEMO_EVENTS, demoSeasonPackage } from "@/lib/demo/fixtures";
+import { DEMO_EVENTS, demoFlexPack, demoSeasonPackage } from "@/lib/demo/fixtures";
 import {
   eventDoorsIso,
   eventWhenWithDoors,
+  flexPackPurchasePath,
   formatDoorsTime,
   formatEventWhen,
   isRequestCanceled,
@@ -60,5 +61,29 @@ describe("packagePurchasePath", () => {
   it("returns null when the package has no org or venue slug", () => {
     expect(packagePurchasePath({ uuid: "pkg-1" })).toBeNull();
     expect(packagePurchasePath(null)).toBeNull();
+  });
+});
+
+describe("flexPackPurchasePath", () => {
+  it("builds the org flex pack page from the fixture", () => {
+    const pack = demoFlexPack();
+    expect(flexPackPurchasePath(pack)).toBe(
+      `/${pack.organization.slug}/flex-pack/${pack.uuid}/`,
+    );
+  });
+
+  it("builds the venue flex pack page when there is no org slug", () => {
+    const pack = demoFlexPack();
+    expect(
+      flexPackPurchasePath({
+        uuid: pack.uuid,
+        venue: { slug: pack.venue.slug },
+      }),
+    ).toBe(`/venue/${pack.venue.slug}/flex-pack/${pack.uuid}/`);
+  });
+
+  it("returns null when the flex pack has no org or venue slug", () => {
+    expect(flexPackPurchasePath({ uuid: "flex-1" })).toBeNull();
+    expect(flexPackPurchasePath(null)).toBeNull();
   });
 });

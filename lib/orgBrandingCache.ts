@@ -378,10 +378,26 @@ export function getCachedBrandingForPath(
   return lastBranding();
 }
 
-/** Home, browse, and Our Story use the Blocktickets spinner — never a team. */
-export function isPlatformLoaderPath(pathname = "") {
+/** Login has no tenant of its own — its shell is Blocktickets. */
+export function isLoginLoaderPath(pathname = "") {
+  return (pathname.replace(/\/+$/, "") || "/") === "/login";
+}
+
+/** A `from` target means login is sending the shopper back into a tenant flow. */
+export function hasLoginRedirect(search = "") {
+  const query = search.startsWith("?") ? search.slice(1) : search;
+  if (!query) return false;
+  return Boolean(new URLSearchParams(query).get("from")?.trim());
+}
+
+/**
+ * Home, browse, and Our Story use the Blocktickets spinner — never a team.
+ * Login joins them unless it is returning the shopper to a tenant route.
+ */
+export function isPlatformLoaderPath(pathname = "", search = "") {
   const path = pathname.replace(/\/+$/, "") || "/";
-  return path === "/" || path === "/browse" || path === "/our-story";
+  if (path === "/" || path === "/browse" || path === "/our-story") return true;
+  return isLoginLoaderPath(path) && !hasLoginRedirect(search);
 }
 
 /**
@@ -394,6 +410,7 @@ export function lastBrandingIfCompatible(
 ): CachedBranding | null {
   if (!last?.primaryColor) return null;
   if (isPlatformLoaderPath(pathname)) return null;
+  if (isLoginLoaderPath(pathname)) return null;
   const orgSlug = orgSlugFromPathname(pathname);
   if (orgSlug) {
     return last.slug && last.slug.toLowerCase() === orgSlug.toLowerCase()
@@ -413,7 +430,7 @@ export function getLoaderBranding(
   params: { slug?: string } = {},
   lastCookie?: CachedBranding | null,
 ): CachedBranding | null {
-  if (isPlatformLoaderPath(pathname)) return null;
+  if (isPlatformLoaderPath(pathname) || isLoginLoaderPath(pathname)) return null;
   const exact = getCachedBrandingForPath(pathname, params);
   if (exact) return exact;
   return lastBrandingIfCompatible(lastBranding() || lastCookie || null, pathname);
@@ -447,7 +464,7 @@ export function resolveLoaderBrandingForRender(
     allowClientCache?: boolean;
   } = {},
 ): RouteLoaderBranding | CachedBranding | null {
-  if (isPlatformLoaderPath(pathname)) return null;
+  if (isPlatformLoaderPath(pathname) || isLoginLoaderPath(pathname)) return null;
   if (hasTenantBranding(options.branding)) return options.branding;
   if (options.allowClientCache) {
     return getLoaderBranding(pathname, options.params, options.lastCookie);

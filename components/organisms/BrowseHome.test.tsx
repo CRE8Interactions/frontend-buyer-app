@@ -115,7 +115,10 @@ describe("Browse page", () => {
     ).toBeGreaterThan(0);
     expect(screen.getAllByText(/6 events/i).length).toBeGreaterThan(0);
     expect(screen.getAllByText(/get tickets/i).length).toBeGreaterThan(0);
-    expect(screen.getByText(/log in/i)).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /log in/i })).toHaveAttribute(
+      "href",
+      "/login/",
+    );
     expect(screen.getByText(/build bigger/i)).toBeInTheDocument();
     expect(screen.getByText(/block by block/i)).toBeInTheDocument();
   });

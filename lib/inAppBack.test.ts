@@ -4,6 +4,7 @@ import {
   canGoBackInApp,
   goBack,
   handleInAppBackClick,
+  inAppBackAnchorProps,
   isInAppBackAnchor,
   markInAppNavigation,
 } from "./inAppBack";
@@ -35,6 +36,20 @@ describe("inAppBack", () => {
     expect(event.preventDefault).toHaveBeenCalled();
     expect(router.push).toHaveBeenCalledWith("/browse/");
     expect(router.back).not.toHaveBeenCalled();
+  });
+
+  it("sends Back to browse instead of the marketing home", () => {
+    const router = { back: vi.fn(), push: vi.fn() };
+    Object.defineProperty(window, "history", {
+      configurable: true,
+      value: { ...window.history, state: { idx: 0 } },
+    });
+
+    goBack("/", router);
+    expect(router.push).toHaveBeenCalledWith("/browse/");
+
+    expect(inAppBackAnchorProps("/", router).href).toBe("/browse/");
+    expect(inAppBackAnchorProps("/nm-state/", router).href).toBe("/nm-state/");
   });
 
   it("marks in-app back anchors so the route loader can skip them", () => {

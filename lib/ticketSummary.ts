@@ -213,6 +213,109 @@ export function resolveFlexPackCheckoutTotals(
   };
 }
 
+export type CompletedOrderFeeSource = {
+  total?: number;
+  serviceFee?: number;
+  processingFee?: number;
+  estimatedProcessingFee?: number;
+  salesTax?: number;
+  totalTax?: number;
+  totalFeeAmount?: number;
+  discountApplied?: number;
+  priceObject?:
+    | Record<string, unknown>
+    | Array<Record<string, unknown> | null | undefined>
+    | null;
+};
+
+function finiteMoney(value: unknown): number | undefined {
+  const amount = Number(value);
+  return Number.isFinite(amount) ? amount : undefined;
+}
+
+type PromoCodeLike = { code?: string } | null | undefined;
+
+export type CompletedOrderPromoSource = {
+  discountBreakdown?: PromoCodeLike;
+  promoPricingDetails?: PromoCodeLike;
+  promoCode?: Array<PromoCodeLike> | { code?: string } | null;
+  promo_code?: PromoCodeLike;
+};
+
+/**
+ * The redeemed code lives on the discount breakdown json Blocktickets copies
+ * from the cart, or on the order's promo-code relation.
+ */
+export function completedOrderPromoCode(
+  order?: CompletedOrderPromoSource | null,
+): string {
+  const relation = Array.isArray(order?.promoCode)
+    ? order.promoCode.find(Boolean)
+    : order?.promoCode;
+  return String(
+    order?.discountBreakdown?.code ||
+      order?.promoPricingDetails?.code ||
+      relation?.code ||
+      order?.promo_code?.code ||
+      "",
+  ).trim();
+}
+
+/** "Promo (CODE)" when the order carries the redeemed code, else "Promo". */
+export function promoSummaryLabel(code?: string): string {
+  return code ? `Promo (${code})` : "Promo";
+}
+
+/**
+ * Match Blocktickets' completed-order breakdown. The customer-facing
+ * processing estimate stored on the price object wins over order fallbacks,
+ * and subtotal is reconciled from the amount actually paid.
+ */
+export function resolveCompletedOrderFees(
+  order: CompletedOrderFeeSource | null | undefined,
+) {
+  const priceObjects = Array.isArray(order?.priceObject)
+    ? order.priceObject
+    : order?.priceObject
+      ? [order.priceObject]
+      : [];
+  let priceObjectProcessingFee: number | undefined;
+  for (const entry of priceObjects) {
+    if (!entry || typeof entry !== "object") continue;
+    priceObjectProcessingFee =
+      finiteMoney(entry.estimatedPaymentProcessingFee) ??
+      finiteMoney(entry.paymentProcessingFee);
+    if (priceObjectProcessingFee !== undefined) break;
+  }
+
+  const processingFee =
+    priceObjectProcessingFee ??
+    finiteMoney(order?.estimatedProcessingFee) ??
+    finiteMoney(order?.processingFee) ??
+    0;
+  const serviceFee = finiteMoney(order?.serviceFee) ?? 0;
+  const tax =
+    finiteMoney(order?.salesTax) ?? finiteMoney(order?.totalTax) ?? 0;
+  const additionalFee = finiteMoney(order?.totalFeeAmount) ?? 0;
+  const discount = finiteMoney(order?.discountApplied) ?? 0;
+  const total = finiteMoney(order?.total) ?? 0;
+  // `total` is what the customer paid, already net of any promo, so the
+  // discount is added back to recover the pre-discount subtotal. Summaries
+  // then foot: subtotal + tax + fees - promo = total.
+  const subtotal =
+    total - processingFee - serviceFee - tax - additionalFee + discount;
+
+  return {
+    subtotal,
+    tax,
+    processingFee,
+    serviceFee,
+    additionalFee,
+    discount,
+    total,
+  };
+}
+
 /** When season tickets have no unit price, show the inferred checkout subtotal on the seat lines. */
 export function withPackageCheckoutSeatPrices(
   seats: PackageSeatLine[],

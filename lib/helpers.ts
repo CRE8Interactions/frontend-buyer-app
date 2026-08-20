@@ -321,21 +321,32 @@ export const eventPurchasePath = (event: {
   return getUrl(base, Boolean(gaOnly));
 };
 
-export function packagePurchasePath(
-  pkg?: {
-    uuid?: string | number;
-    id?: string | number;
-    organization?: { slug?: string } | null;
-    venue?: { slug?: string } | null;
-  } | null,
+type OrgOrVenueProduct = {
+  uuid?: string | number;
+  id?: string | number;
+  organization?: { slug?: string } | null;
+  venue?: { slug?: string } | null;
+} | null;
+
+function orgOrVenueProductPath(
+  kind: "package" | "flex-pack",
+  product?: OrgOrVenueProduct,
 ): string | null {
-  const id = pkg?.uuid ?? pkg?.id;
+  const id = product?.uuid ?? product?.id;
   if (id == null || String(id).trim() === "") return null;
-  const orgSlug = String(pkg?.organization?.slug || "").trim();
-  if (orgSlug) return `/${orgSlug}/package/${id}/`;
-  const venueSlug = String(pkg?.venue?.slug || "").trim();
-  if (venueSlug) return `/venue/${venueSlug}/package/${id}/`;
+  const orgSlug = String(product?.organization?.slug || "").trim();
+  if (orgSlug) return `/${orgSlug}/${kind}/${id}/`;
+  const venueSlug = String(product?.venue?.slug || "").trim();
+  if (venueSlug) return `/venue/${venueSlug}/${kind}/${id}/`;
   return null;
+}
+
+export function packagePurchasePath(pkg?: OrgOrVenueProduct) {
+  return orgOrVenueProductPath("package", pkg);
+}
+
+export function flexPackPurchasePath(pack?: OrgOrVenueProduct) {
+  return orgOrVenueProductPath("flex-pack", pack);
 }
 
 export type ApiImage =

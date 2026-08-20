@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { act, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { ReactNode } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -9,8 +9,9 @@ import {
   demoFlexPack,
   demoSeasonPackage,
   demoVenueEvents,
+  demoVenueUpcomingEvents,
 } from "@/lib/demo/fixtures";
-import { formatCurrency, imageUrl } from "@/lib/helpers";
+import { eventPurchasePath, formatCurrency, imageUrl } from "@/lib/helpers";
 import {
   eventFromPriceLabel,
   monthEventCountLabel,
@@ -22,10 +23,18 @@ import {
   __resetInAppBackForTests,
   markInAppNavigation,
 } from "@/lib/inAppBack";
+import {
+  cacheOrgBranding,
+  cacheVenueBranding,
+} from "@/lib/orgBrandingCache";
 
 const routerMocks = vi.hoisted(() => ({
   back: vi.fn(),
   push: vi.fn(),
+}));
+const authMocks = vi.hoisted(() => ({
+  isAuthenticated: false,
+  logout: vi.fn(),
 }));
 
 vi.mock("next/link", () => ({
@@ -48,6 +57,18 @@ vi.mock("next/navigation", () => ({
   useParams: () => ({ slug: "aggie-memorial-stadium" }),
   usePathname: () => "/venue/aggie-memorial-stadium/",
   useRouter: () => routerMocks,
+}));
+
+vi.mock("@/lib/auth", () => ({
+  useAuth: () => ({
+    isAuthenticated: authMocks.isAuthenticated,
+    logout: authMocks.logout,
+    ready: true,
+    user: null,
+    session: null,
+    login: vi.fn(),
+    refresh: vi.fn(),
+  }),
 }));
 
 vi.mock("@/lib/api", () => ({
@@ -86,12 +107,27 @@ const raptorsEvents = DEMO_EVENTS.filter(
   (event) => event.organization?.slug === "ogden-raptors",
 );
 
+/** The venue page hides past events, so keep test schedules ahead of today. */
+function upcomingStart(index: number) {
+  return new Date(Date.now() + (index + 1) * 24 * 60 * 60 * 1000).toISOString();
+}
+
+function withoutWebsite<T extends { website?: string }>(venue: T) {
+  const { website: _website, ...rest } = venue;
+  return rest;
+}
+
 function withoutSellablePrices(event: (typeof DEMO_EVENTS)[number]) {
   const { pricingLevels: _levels, ticketGroups: _groups, ...rest } = event as typeof event & {
     ticketGroups?: unknown;
   };
   return rest;
 }
+
+beforeEach(() => {
+  authMocks.isAuthenticated = false;
+  authMocks.logout.mockReset();
+});
 
 describe("team and venue back buttons", () => {
   beforeEach(() => {
@@ -105,6 +141,8 @@ describe("team and venue back buttons", () => {
     mockedNotFound.mockReset();
     routerMocks.back.mockReset();
     routerMocks.push.mockReset();
+    authMocks.isAuthenticated = false;
+    authMocks.logout.mockReset();
     __resetInAppBackForTests();
     writeText.mockReset();
     Object.assign(navigator, { clipboard: { writeText } });
@@ -132,9 +170,7 @@ describe("team and venue back buttons", () => {
       "/browse/",
     );
     expect(screen.getByText(nmState.name)).toBeInTheDocument();
-    expect(
-      screen.getAllByRole("link", { name: /^get tickets$/i }).length,
-    ).toBeGreaterThan(0);
+    expect(screen.getAllByText(/^get tickets$/i).length).toBeGreaterThan(0);
     expect(screen.queryByText(/^from$/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/see tickets/i)).not.toBeInTheDocument();
     expect(
@@ -148,6 +184,73 @@ describe("team and venue back buttons", () => {
         teamStorefrontDescription(nmState.name, nmState.venues),
       ),
     ).toBeInTheDocument();
+    expect(
+      screen.getByRole("link", { name: /visit venue website/i }),
+    ).toHaveAttribute("href", nmState.homeVenue.website);
+  });
+
+  it("keeps the org loader visible until team venue data is ready", async () => {
+    const venue = nmState.homeVenue;
+    let finishUpcoming!: (value: unknown) => void;
+    mockedGetStorefront.mockResolvedValue({
+      data: {
+        organization: {
+          ...nmState,
+          homeVenue: withoutWebsite(venue),
+          venues: nmState.venues.map(withoutWebsite),
+        },
+        events: nmStateEvents,
+        venues: nmState.venues.map(withoutWebsite),
+      },
+    } as never);
+    mockedGetUpcoming.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          finishUpcoming = resolve;
+        }) as never,
+    );
+
+    render(<ClientProfile slug={nmState.slug} />);
+
+    await waitFor(() => {
+      expect(mockedGetUpcoming).toHaveBeenCalledWith(venue.slug);
+    });
+    expect(screen.getByText(/loading tickets/i)).toBeInTheDocument();
+    expect(screen.queryByText(nmStateEvents[0].name)).not.toBeInTheDocument();
+
+    await act(async () => {
+      finishUpcoming({ data: demoVenueUpcomingEvents(venue.slug) });
+    });
+
+    expect(await screen.findByText(nmStateEvents[0].name)).toBeInTheDocument();
+    expect(
+      screen.getByRole("link", { name: /visit venue website/i }),
+    ).toHaveAttribute("href", venue.website);
+  });
+
+  it("shows no team page website icon when the venue has none", async () => {
+    const venue = raptors.homeVenue;
+    mockedGetUpcoming.mockResolvedValue({
+      data: demoVenueUpcomingEvents(venue.slug),
+    } as never);
+
+    render(
+      <ClientProfile
+        slug={raptors.slug}
+        initialData={{
+          organization: raptors,
+          events: raptorsEvents,
+          venues: raptors.venues,
+        }}
+      />,
+    );
+
+    await screen.findByText(raptors.name);
+    await waitFor(() => {
+      expect(
+        screen.queryByRole("link", { name: /visit venue website/i }),
+      ).not.toBeInTheDocument();
+    });
   });
 
   it("restores the previous page from the circular back control after in-app navigation", async () => {
@@ -200,9 +303,7 @@ describe("team and venue back buttons", () => {
       />,
     );
 
-    expect(
-      screen.getAllByRole("link", { name: /^get tickets$/i }).length,
-    ).toBe(unpriced.length);
+    expect(screen.getAllByText(/^get tickets$/i).length).toBe(unpriced.length);
     expect(screen.queryByText(/^from$/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/see tickets/i)).not.toBeInTheDocument();
     expect(screen.queryByText("—")).not.toBeInTheDocument();
@@ -258,7 +359,7 @@ describe("venue page actions", () => {
     });
   });
 
-  it("links to the team site and venue directions, and copies the page url", async () => {
+  it("links to the venue website and directions, and copies the page url", async () => {
     const venue = nmState.homeVenue;
     mockedGetVenue.mockResolvedValue({ data: [venue] } as never);
     mockedGetVenues.mockResolvedValue({ data: [venue] } as never);
@@ -269,8 +370,8 @@ describe("venue page actions", () => {
     render(<VenueProfile slug={venue.slug} />);
 
     expect(
-      await screen.findByRole("link", { name: /follow venue/i }),
-    ).toHaveAttribute("href", nmState.website);
+      await screen.findByRole("link", { name: /visit venue website/i }),
+    ).toHaveAttribute("href", venue.website);
     expect(screen.getByRole("link", { name: /directions/i })).toHaveAttribute(
       "href",
       googleMapsDirectionsUrl(nmState.homeVenue.address),
@@ -280,7 +381,26 @@ describe("venue page actions", () => {
     expect(writeText).toHaveBeenCalledWith(window.location.href);
   });
 
-  it("hides follow and directions when the team has no website and the venue has no address", async () => {
+  it("takes the venue website from upcoming-events when the venue record omits it", async () => {
+    const venue = nmState.homeVenue;
+    mockedGetVenue.mockResolvedValue({
+      data: [withoutWebsite(venue)],
+    } as never);
+    mockedGetVenues.mockResolvedValue({
+      data: [withoutWebsite(venue)],
+    } as never);
+    mockedGetUpcoming.mockResolvedValue({
+      data: demoVenueUpcomingEvents(venue.slug),
+    } as never);
+
+    render(<VenueProfile slug={venue.slug} />);
+
+    expect(
+      await screen.findByRole("link", { name: /visit venue website/i }),
+    ).toHaveAttribute("href", venue.website);
+  });
+
+  it("hides website and directions when the venue has neither", async () => {
     const venue = {
       name: raptors.homeVenue.name,
       slug: raptors.homeVenue.slug,
@@ -292,7 +412,7 @@ describe("venue page actions", () => {
 
     await screen.findByText(venue.name);
     expect(
-      screen.queryByRole("link", { name: /follow venue/i }),
+      screen.queryByRole("link", { name: /visit venue website/i }),
     ).not.toBeInTheDocument();
     expect(
       screen.queryByRole("link", { name: /directions/i }),
@@ -321,7 +441,7 @@ describe("venue page events", () => {
     const venue = raptors.homeVenue;
     const schedule = demoVenueEvents(venue.slug).map((event, index) => ({
       ...event,
-      start: `2026-08-${String(20 + index).padStart(2, "0")}T01:35:00.000Z`,
+      start: upcomingStart(index),
     }));
     const preview = schedule.slice(0, 1);
 
@@ -356,13 +476,65 @@ describe("venue page events", () => {
     ).not.toBeInTheDocument();
   });
 
+  it("keeps the org loader visible until venue events are ready", async () => {
+    const venue = nmState.homeVenue;
+    const schedule = nmStateEvents.map((event, index) => ({
+      ...event,
+      start: upcomingStart(index),
+    }));
+    let finishUpcoming!: (value: unknown) => void;
+    let finishStorefront!: (value: unknown) => void;
+    mockedGetVenue.mockResolvedValue({ data: [venue] } as never);
+    mockedGetVenues.mockResolvedValue({ data: [venue] } as never);
+    mockedGetUpcoming.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          finishUpcoming = resolve;
+        }) as never,
+    );
+    mockedGetStorefront.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          finishStorefront = resolve;
+        }) as never,
+    );
+    cacheOrgBranding(nmState);
+    cacheVenueBranding([venue], nmState);
+
+    render(<VenueProfile slug={venue.slug} />);
+
+    await waitFor(() => {
+      expect(mockedGetUpcoming).toHaveBeenCalledWith(venue.slug);
+    });
+    expect(screen.getByText(/loading tickets/i)).toBeInTheDocument();
+    expect(screen.queryByText(schedule[0].name)).not.toBeInTheDocument();
+
+    await act(async () => {
+      finishUpcoming({
+        data: { ...demoVenueUpcomingEvents(venue.slug), allEvents: schedule },
+      });
+    });
+
+    await waitFor(() => {
+      expect(mockedGetStorefront).toHaveBeenCalledWith(nmState.slug);
+    });
+    expect(screen.getByText(/loading tickets/i)).toBeInTheDocument();
+    expect(screen.queryByText(schedule[0].name)).not.toBeInTheDocument();
+
+    await act(async () => {
+      finishStorefront({ data: { organization: nmState } });
+    });
+
+    expect(await screen.findByText(schedule[0].name)).toBeInTheDocument();
+  });
+
   it("does not show a from price or placeholder on venue event rows", async () => {
     const venue = raptors.homeVenue;
     const schedule = demoVenueEvents(venue.slug).map((event, index) => {
       const rest = withoutSellablePrices(event);
       return {
         ...rest,
-        start: `2026-08-${String(20 + index).padStart(2, "0")}T01:35:00.000Z`,
+        start: upcomingStart(index),
       };
     });
     mockedGetVenue.mockResolvedValue({ data: [venue] } as never);
@@ -435,6 +607,34 @@ describe("storefront categories", () => {
     expect(mockedGetStorefront).toHaveBeenCalled();
     expect(await screen.findByText(raptors.name)).toBeInTheDocument();
     expect(mockedGetStorefront).toHaveBeenCalledTimes(1);
+    expect(screen.getByRole("link", { name: /^log in$/i })).toHaveAttribute(
+      "href",
+      "/login/",
+    );
+  });
+
+  it("shows My wallet and Log out on the team page when signed in", async () => {
+    authMocks.isAuthenticated = true;
+    mockedGetStorefront.mockResolvedValue({
+      data: {
+        organization: raptors,
+        events: raptorsEvents,
+        venues: raptors.venues,
+      },
+    } as never);
+
+    const user = userEvent.setup();
+    render(<ClientProfile slug={raptors.slug} />);
+
+    expect(
+      await screen.findByRole("link", { name: /^my wallet$/i }),
+    ).toHaveAttribute("href", "/my-tickets/");
+    expect(
+      screen.queryByRole("link", { name: /^log in$/i }),
+    ).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: /^log out$/i }));
+    expect(authMocks.logout).toHaveBeenCalled();
   });
 
   it("labels org event rows and sport filters with the org category, not Events", () => {
@@ -490,7 +690,7 @@ describe("storefront categories", () => {
     const venue = raptors.homeVenue;
     const schedule = raptorsEvents.map((event, index) => ({
       ...event,
-      start: `2026-08-${String(20 + index).padStart(2, "0")}T01:35:00.000Z`,
+      start: upcomingStart(index),
     }));
     const category = eventTypeLabel(schedule[0], [raptors]);
     mockedGetVenue.mockResolvedValue({ data: [venue] } as never);
@@ -580,6 +780,47 @@ describe("storefront categories", () => {
     expect(screen.getByText(pkg.name)).toBeInTheDocument();
     expect(screen.getByText(/^Season$/)).toBeInTheDocument();
     expect(screen.queryByText(/^Category$/)).not.toBeInTheDocument();
+  });
+});
+
+describe("team page clickable rows", () => {
+  it("makes the whole event row a link to the event tickets page", () => {
+    const event = nmStateEvents[0];
+    render(
+      <ClientProfile
+        slug={nmState.slug}
+        initialData={{
+          organization: nmState,
+          events: [event],
+          venues: nmState.venues,
+        }}
+      />,
+    );
+
+    const row = screen.getByRole("link", { name: new RegExp(event.name, "i") });
+    expect(row).toHaveAttribute("href", eventPurchasePath(event));
+    expect(row).toHaveTextContent(/get tickets/i);
+  });
+
+  it("makes the whole season package card a link to the package page", async () => {
+    const pkg = demoSeasonPackage();
+    render(
+      <ClientProfile
+        slug={nmState.slug}
+        initialData={{
+          organization: nmState,
+          events: nmStateEvents,
+          venues: nmState.venues,
+          packages: [pkg],
+        }}
+      />,
+    );
+
+    await userEvent.click(screen.getByRole("button", { name: /season tickets/i }));
+
+    const card = screen.getByRole("link", { name: new RegExp(pkg.name, "i") });
+    expect(card).toHaveAttribute("href", `/${nmState.slug}/package/${pkg.uuid}/`);
+    expect(card).toHaveTextContent(/select/i);
   });
 });
 

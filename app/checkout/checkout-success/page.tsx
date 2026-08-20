@@ -26,7 +26,9 @@ import { clearStoredCart, getStoredCart } from "@/lib/cart";
 import { hideIntercomLauncher } from "@/lib/intercom";
 import { cacheOrgBranding } from "@/lib/orgBrandingCache";
 import {
-  resolveFlexPackCheckoutTotals,
+  completedOrderPromoCode,
+  promoSummaryLabel,
+  resolveCompletedOrderFees,
   ticketSelectionSummary,
 } from "@/lib/ticketSummary";
 import {
@@ -97,6 +99,10 @@ type OrderData = {
   salesTax?: number;
   totalTax?: number;
   discountApplied?: number;
+  discountBreakdown?: { code?: string } | null;
+  promoPricingDetails?: { code?: string } | null;
+  promoCode?: Array<{ code?: string } | null> | { code?: string } | null;
+  promo_code?: { code?: string } | null;
   last4?: string | number;
   paymentProcessor?: string;
   paymentMethodType?: string;
@@ -125,7 +131,10 @@ type OrderData = {
     events?: Array<Record<string, unknown>>;
   } | null;
   access_pass?: { uuid?: string } | null;
-  priceObject?: Record<string, unknown>;
+  priceObject?:
+    | Record<string, unknown>
+    | Array<Record<string, unknown> | null | undefined>
+    | null;
   [key: string]: unknown;
 };
 
@@ -327,31 +336,7 @@ function CheckoutSuccessPage() {
   );
   const accent = branding.theme.accent || BLOCKTICKETS_NAVY;
 
-  const processingFee =
-    Number(
-      order?.estimatedProcessingFee ??
-        order?.processingFee ??
-        (order?.priceObject as { estimatedProcessingFee?: number } | undefined)
-          ?.estimatedProcessingFee ??
-        0,
-    ) || 0;
-
-  const serviceFee = Number(order?.serviceFee || 0);
-  const tax = Number(order?.salesTax ?? order?.totalTax ?? 0);
-
-  const subtotal =
-    Number(order?.total || 0) -
-    processingFee -
-    serviceFee -
-    tax -
-    Number(order?.discountApplied || 0);
-
-  const flexTotals = order?.flex_pack
-    ? resolveFlexPackCheckoutTotals({
-        ...order,
-        flex_pack: order.flex_pack,
-      })
-    : null;
+  const orderFees = resolveCompletedOrderFees(order);
   const flexVoucherCount = flexPackVoucherCount(
     order?.flex_pack?.gameTickets ?? order?.vouchers?.length,
   );
@@ -508,60 +493,43 @@ function CheckoutSuccessPage() {
                 Order summary
               </div>
               <div className="flex flex-col gap-2.5">
-                {flexTotals ? (
-                  <>
-                    {flexVoucherCount > 0 ? (
-                      <SummaryRow
-                        label={`${flexVoucherCount} flex ${
-                          flexVoucherCount === 1 ? "voucher" : "vouchers"
-                        }`}
-                        value={formatCurrency(flexTotals.subtotal)}
-                      />
-                    ) : null}
-                    <SummaryRow
-                      label="Subtotal"
-                      value={formatCurrency(flexTotals.subtotal)}
-                    />
-                    {flexTotals.serviceFee > 0 ? (
-                      <div className="flex items-start justify-between gap-3 text-[14px] text-[#4a5567]">
-                        <span>
-                          Service Fee
-                          {flexVoucherCount > 0 ? (
-                            <span className="mt-0.5 block text-[12px] text-[#6e7180]">
-                              {formatCurrency(FLEX_PACK_VOUCHER_FEE_USD)} ×{" "}
-                              {flexVoucherCount}
-                            </span>
-                          ) : null}
-                        </span>
-                        <span className="tabular-nums text-[#051b35]">
-                          {formatCurrency(flexTotals.serviceFee)}
-                        </span>
-                      </div>
-                    ) : null}
-                    {flexTotals.processingFee > 0 ? (
-                      <SummaryRow
-                        label="Processing Fee"
-                        value={formatCurrency(flexTotals.processingFee)}
-                      />
-                    ) : null}
-                  </>
+                <SummaryRow
+                  label="Subtotal"
+                  value={formatCurrency(orderFees.subtotal)}
+                />
+                <SummaryRow label="Tax" value={formatCurrency(orderFees.tax)} />
+                <SummaryRow
+                  label="Processing Fee"
+                  value={formatCurrency(orderFees.processingFee)}
+                />
+                {order.flex_pack && flexVoucherCount > 0 ? (
+                  <div className="flex items-start justify-between gap-3 text-[14px] text-[#4a5567]">
+                    <span>
+                      Service Fee
+                      <span className="mt-0.5 block text-[12px] text-[#6e7180]">
+                        {formatCurrency(FLEX_PACK_VOUCHER_FEE_USD)} ×{" "}
+                        {flexVoucherCount}
+                      </span>
+                    </span>
+                    <span className="tabular-nums text-[#051b35]">
+                      {formatCurrency(orderFees.serviceFee)}
+                    </span>
+                  </div>
                 ) : (
-                  <>
-                    <SummaryRow label="Subtotal" value={formatCurrency(subtotal)} />
-                    <SummaryRow label="Tax" value={formatCurrency(tax)} />
-                    <SummaryRow
-                      label="Processing Fee"
-                      value={formatCurrency(processingFee)}
-                    />
-                    <SummaryRow
-                      label="Service Fee"
-                      value={formatCurrency(serviceFee)}
-                    />
-                  </>
+                  <SummaryRow
+                    label="Service Fee"
+                    value={formatCurrency(orderFees.serviceFee)}
+                  />
                 )}
+                {orderFees.additionalFee > 0 ? (
+                  <SummaryRow
+                    label="Additional Fee"
+                    value={formatCurrency(orderFees.additionalFee)}
+                  />
+                ) : null}
                 {order.discountApplied ? (
                   <SummaryRow
-                    label="Promo"
+                    label={promoSummaryLabel(completedOrderPromoCode(order))}
                     value={`-${formatCurrency(order.discountApplied)}`}
                   />
                 ) : null}
@@ -570,7 +538,7 @@ function CheckoutSuccessPage() {
               <div className="flex items-baseline justify-between gap-3">
                 <span className="text-[15px] font-semibold">Total paid</span>
                 <span className="text-[26px] font-semibold tracking-[-0.03em] tabular-nums">
-                  {formatCurrency(flexTotals?.total ?? order.total)}
+                  {formatCurrency(orderFees.total)}
                 </span>
               </div>
               <div className="h-px bg-[rgba(5,27,53,0.08)]" />

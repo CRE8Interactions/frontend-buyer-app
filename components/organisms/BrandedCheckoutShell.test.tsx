@@ -1,7 +1,10 @@
 import { act, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import BrandedCheckoutShell from "@/components/organisms/BrandedCheckoutShell";
-import { formatHoldClock } from "@/lib/checkoutBranding";
+import {
+  CHECKOUT_HOLD_SECONDS,
+  formatHoldClock,
+} from "@/lib/checkoutBranding";
 import { DEMO_ORGS, demoCheckoutCart } from "@/lib/demo/fixtures";
 
 vi.mock("next/navigation", () => ({
@@ -92,10 +95,11 @@ describe("BrandedCheckoutShell", () => {
   it("pauses the hold clock without expiring when holdPaused is true", () => {
     vi.useFakeTimers();
     const onExpire = vi.fn();
+    const held = `Seats held ${formatHoldClock(CHECKOUT_HOLD_SECONDS)}`;
     const { rerender } = render(
       <BrandedCheckoutShell
         accent={raptors.branding.primaryColor}
-        remainingSeconds={5}
+        remainingSeconds={CHECKOUT_HOLD_SECONDS}
         holdPaused={false}
         onBack={() => undefined}
         onExpire={onExpire}
@@ -104,12 +108,12 @@ describe("BrandedCheckoutShell", () => {
       </BrandedCheckoutShell>,
     );
 
-    expect(screen.getByText("Seats held 0:05")).toBeInTheDocument();
+    expect(screen.getByText(held)).toBeInTheDocument();
 
     rerender(
       <BrandedCheckoutShell
         accent={raptors.branding.primaryColor}
-        remainingSeconds={5}
+        remainingSeconds={CHECKOUT_HOLD_SECONDS}
         holdPaused
         onBack={() => undefined}
         onExpire={onExpire}
@@ -119,10 +123,10 @@ describe("BrandedCheckoutShell", () => {
     );
 
     act(() => {
-      vi.advanceTimersByTime(6000);
+      vi.advanceTimersByTime((CHECKOUT_HOLD_SECONDS + 1) * 1000);
     });
 
     expect(onExpire).not.toHaveBeenCalled();
-    expect(screen.getByText("Seats held 0:05")).toBeInTheDocument();
+    expect(screen.getByText(held)).toBeInTheDocument();
   });
 });

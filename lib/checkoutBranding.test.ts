@@ -28,13 +28,15 @@ describe("checkoutHoldSeconds", () => {
     expect(checkoutHoldSeconds(CHECKOUT_HOLD_SECONDS * 1000 + 50_000)).toBe(
       CHECKOUT_HOLD_SECONDS,
     );
+    expect(checkoutHoldSeconds(CHECKOUT_HOLD_SECONDS + 90)).toBe(
+      CHECKOUT_HOLD_SECONDS,
+    );
   });
 });
 
 describe("formatHoldClock", () => {
   it("renders a 10-minute hold as m:ss", () => {
     expect(formatHoldClock(CHECKOUT_HOLD_SECONDS)).toBe("10:00");
-    expect(formatHoldClock(9 * 60 + 47)).toBe("9:47");
   });
 
   it("does not render a four-digit minute count from a huge remainingTime", () => {

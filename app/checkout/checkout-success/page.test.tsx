@@ -13,7 +13,7 @@ import {
 } from "@/lib/demo/fixtures";
 import { FLEX_PACK_VOUCHER_FEE_USD } from "@/lib/flexPackDisplay";
 import { formatCurrency } from "@/lib/helpers";
-import { resolveFlexPackCheckoutTotals } from "@/lib/ticketSummary";
+import { resolveCompletedOrderFees } from "@/lib/ticketSummary";
 import { cacheOrgBranding } from "@/lib/orgBrandingCache";
 
 vi.mock("next/link", () => ({
@@ -177,6 +177,47 @@ describe("Checkout success receipt", () => {
     ).not.toBeInTheDocument();
   });
 
+  it("shows Blocktickets completed-order fee lines for a package", async () => {
+    const order = demoCompletedPackageOrder({
+      total: 452.2,
+      serviceFee: 40,
+      processingFee: 12.2,
+      estimatedProcessingFee: 12.3,
+      priceObject: [{ estimatedPaymentProcessingFee: 12.38 }],
+      salesTax: 0,
+    });
+    mockedGetOrderByPi.mockResolvedValue({ data: order } as never);
+    render(<CheckoutSuccessPageRoute />);
+
+    expect(await screen.findByText("$399.82")).toBeInTheDocument();
+    expect(screen.getByText("Tax")).toBeInTheDocument();
+    expect(screen.getByText("$0.00")).toBeInTheDocument();
+    expect(screen.getByText("Processing Fee")).toBeInTheDocument();
+    expect(screen.getByText("$12.38")).toBeInTheDocument();
+    expect(screen.getByText("Service Fee")).toBeInTheDocument();
+    expect(screen.getByText("$40.00")).toBeInTheDocument();
+  });
+
+  it("lists the promo code and a pre-discount subtotal on a discounted order", async () => {
+    const order = demoCompletedTicketOrder({
+      total: 5.5,
+      serviceFee: 2.5,
+      processingFee: 0.5,
+      estimatedProcessingFee: 0.5,
+      salesTax: 0,
+      discountApplied: 2,
+      discountBreakdown: { code: "TESTDIS" },
+    });
+    mockedGetOrderByPi.mockResolvedValue({ data: order } as never);
+    render(<CheckoutSuccessPageRoute />);
+
+    expect(await screen.findByText("Promo (TESTDIS)")).toBeInTheDocument();
+    expect(screen.getByText(`-${formatCurrency(2)}`)).toBeInTheDocument();
+    expect(screen.getByText("Subtotal")).toBeInTheDocument();
+    expect(screen.getByText(formatCurrency(4.5))).toBeInTheDocument();
+    expect(screen.getAllByText(formatCurrency(5.5)).length).toBeGreaterThan(0);
+  });
+
   it("downloads a receipt PDF from the completed order", async () => {
     const order = demoCompletedTicketOrder();
     render(<CheckoutSuccessPageRoute />);
@@ -251,17 +292,19 @@ describe("Checkout success receipt", () => {
     expect(screen.queryByText(/order not found/i)).not.toBeInTheDocument();
   });
 
-  it("summarizes a flex pack with the same fee lines as checkout", async () => {
-    const order = demoCompletedFlexPackOrder();
+  it("summarizes a flex pack with Blocktickets completed-order fee lines", async () => {
+    const order = demoCompletedFlexPackOrder({
+      estimatedProcessingFee: 4.25,
+    });
     const pack = demoFlexPack();
-    const totals = resolveFlexPackCheckoutTotals(order);
+    const totals = resolveCompletedOrderFees(order);
     mockedGetOrderByPi.mockResolvedValue({ data: order } as never);
     render(<CheckoutSuccessPageRoute />);
 
     expect((await screen.findAllByText(pack.name)).length).toBeGreaterThan(0);
     expect(
-      screen.getAllByText(`${pack.gameTickets} flex vouchers`).length,
-    ).toBeGreaterThan(0);
+      screen.queryByText(`${pack.gameTickets} flex vouchers`),
+    ).not.toBeInTheDocument();
     expect(screen.getByText("Subtotal")).toBeInTheDocument();
     expect(screen.getAllByText(formatCurrency(totals.subtotal)).length).toBeGreaterThan(
       0,
@@ -277,10 +320,11 @@ describe("Checkout success receipt", () => {
     expect(
       screen.getByText(formatCurrency(totals.processingFee)),
     ).toBeInTheDocument();
-    expect(screen.queryByText("Tax")).not.toBeInTheDocument();
+    expect(screen.getByText("Tax")).toBeInTheDocument();
+    expect(screen.getByText(formatCurrency(totals.tax))).toBeInTheDocument();
   });
 
-  it("does not list a flex pack processing fee when it is zero", async () => {
+  it("shows zero-valued Blocktickets fee lines for a flex pack", async () => {
     const order = demoCompletedFlexPackOrder({
       processingFee: 0,
       estimatedProcessingFee: 0,
@@ -292,8 +336,9 @@ describe("Checkout success receipt", () => {
       (await screen.findAllByText(demoFlexPack().name)).length,
     ).toBeGreaterThan(0);
     expect(screen.getByText("Service Fee")).toBeInTheDocument();
-    expect(screen.queryByText("Processing Fee")).not.toBeInTheDocument();
-    expect(screen.queryByText("Tax")).not.toBeInTheDocument();
+    expect(screen.getByText("Processing Fee")).toBeInTheDocument();
+    expect(screen.getByText("Tax")).toBeInTheDocument();
+    expect(screen.getAllByText("$0.00")).toHaveLength(2);
   });
 
   it("does not look up the order by orderId when last4 is missing", async () => {

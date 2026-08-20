@@ -76,6 +76,7 @@ export type CartEventSummary = {
   today: boolean;
   doorsTime: string;
   startTime: string;
+  eventUUID?: string;
 };
 
 export type SeasonPackageSummary = {
@@ -116,6 +117,7 @@ export type CartEventDetail = {
   cartTotal?: number;
   orderId?: string;
   purchasedAt?: string;
+  eventUUID?: string;
   attractions: AttractionCard[];
   teams: {
     name: string;
@@ -316,6 +318,7 @@ function detailFromEvent(
     tickets: mapEventTickets(tickets, holderEmail),
     cartId,
     cartTotal,
+    eventUUID: String(ev.uuid || "").trim() || undefined,
     attractions,
     teams:
       attractions.length >= 2
@@ -484,7 +487,44 @@ export function summarizeEventDetails(
     today: d.today,
     doorsTime: d.doors,
     startTime: d.startTime,
+    eventUUID: d.eventUUID,
   }));
+}
+
+function firstRouteParam(value?: string | string[] | null) {
+  const raw = Array.isArray(value) ? value[0] : value;
+  const uuid = String(raw || "").trim();
+  return uuid || undefined;
+}
+
+/** Wallet ticket detail for a purchased event. */
+export function walletEventTicketsPath(eventUUID?: string | null) {
+  const uuid = String(eventUUID || "").trim();
+  return uuid ? `/my-tickets/event/${uuid}/` : "";
+}
+
+/** Wallet flex-pack detail for a purchased pack. */
+export function walletFlexPackPath(flexPackUUID?: string | null) {
+  const uuid = String(flexPackUUID || "").trim();
+  return uuid ? `/my-tickets/flex-pack/${uuid}/` : "";
+}
+
+/** Event or flex-pack UUID from a wallet detail URL. */
+export function walletRouteFromPath(
+  pathname = "",
+  params?: { eventUUID?: string | string[]; flexPackUUID?: string | string[] },
+): { eventUUID?: string; flexPackUUID?: string } {
+  const path = (pathname.split("?")[0] || "").replace(/\/+$/, "") || "/";
+  const eventUUID =
+    path.match(/^\/my-tickets\/event\/([^/]+)$/)?.[1] ||
+    firstRouteParam(params?.eventUUID);
+  const flexPackUUID =
+    path.match(/^\/my-tickets\/flex-pack\/([^/]+)$/)?.[1] ||
+    firstRouteParam(params?.flexPackUUID);
+  return {
+    ...(eventUUID ? { eventUUID } : {}),
+    ...(flexPackUUID ? { flexPackUUID } : {}),
+  };
 }
 
 /** Top-of-card schedule line for wallet event rows. */
@@ -535,6 +575,7 @@ function attachOrderEventDetail(
     ),
     orderId,
     purchasedAt,
+    eventUUID: String(ev.uuid || "").trim() || undefined,
   };
 }
 
@@ -663,6 +704,7 @@ export type FlexPackSummary = {
   remainingCount: number;
   thumb?: string;
   codes: FlexPackVoucherSummary[];
+  flexPackUUID?: string;
 };
 
 type FlexPackLike = NonNullable<
@@ -721,15 +763,21 @@ export function buildFlexPackSummaries(orders: OrderLike[]): FlexPackSummary[] {
   }
 
   return [...groups.values()]
-    .map(({ pack, codes, orderKey }) => ({
-      key: pack ? String(pack.uuid ?? pack.id ?? orderKey) : orderKey,
-      name: pack?.name || "Flex pack",
-      venueLine: formatCartVenueLine(pack?.venue, pack?.organization?.name),
-      voucherCount: codes.length,
-      remainingCount: codes.filter((voucher) => voucher.status === "Active").length,
-      thumb: pack?.image ? imageUrl(pack.image, "") : undefined,
-      codes,
-    }))
+    .map(({ pack, codes, orderKey }) => {
+      const flexPackUUID = pack
+        ? String(pack.uuid ?? pack.id ?? "").trim() || undefined
+        : undefined;
+      return {
+        key: flexPackUUID || orderKey,
+        name: pack?.name || "Flex pack",
+        venueLine: formatCartVenueLine(pack?.venue, pack?.organization?.name),
+        voucherCount: codes.length,
+        remainingCount: codes.filter((voucher) => voucher.status === "Active").length,
+        thumb: pack?.image ? imageUrl(pack.image, "") : undefined,
+        codes,
+        flexPackUUID,
+      };
+    })
     .filter((row) => row.voucherCount > 0);
 }
 

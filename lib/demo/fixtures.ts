@@ -28,6 +28,7 @@ export type DemoVenue = {
   state: string;
   slug: string;
   timezone?: string;
+  website?: string;
   address: Array<{ address_1?: string; city: string; state: string }>;
 };
 
@@ -94,6 +95,7 @@ function demoVenue(
   state: string,
   timezone = "America/Denver",
   address_1?: string,
+  website?: string,
 ): DemoVenue {
   return {
     name,
@@ -101,6 +103,7 @@ function demoVenue(
     state,
     slug: slugify(name),
     timezone,
+    website,
     address: [{ ...(address_1 ? { address_1 } : {}), city, state }],
   };
 }
@@ -112,7 +115,11 @@ export const DEMO_EVENT_PRICING_LEVELS = {
 };
 
 const DEMO_ORG_WEBSITES: Record<string, string> = {
-  "nm-state":
+  "nm-state": "https://nmstatesports.com",
+};
+
+const DEMO_VENUE_WEBSITES: Record<string, string> = {
+  "aggie-memorial-stadium":
     "https://nmstatesports.com/facilities/aggie-memorial-stadium/5",
 };
 
@@ -141,6 +148,7 @@ const VENUE_AGGIE = demoVenue(
   "NM",
   "America/Denver",
   "1810 E University Ave",
+  DEMO_VENUE_WEBSITES["aggie-memorial-stadium"],
 );
 const VENUE_PAN_AM = demoVenue(
   "Pan American Center",
@@ -774,6 +782,25 @@ export function demoVenueEvents(slug: string) {
   return DEMO_EVENTS.filter((event) => event.venue?.slug === slug);
 }
 
+export function demoVenueBySlug(slug: string): DemoVenue | null {
+  for (const org of DEMO_ORGS) {
+    const match = [org.homeVenue, ...(org.venues || [])].find(
+      (venue) => venue?.slug === slug,
+    );
+    if (match) return match;
+  }
+  return null;
+}
+
+/** `/venues/:slug/upcoming-events` — the venue record around its event list. */
+export function demoVenueUpcomingEvents(slug: string) {
+  const venue = demoVenueBySlug(slug);
+  return {
+    ...(venue || { slug }),
+    allEvents: demoVenueEvents(slug),
+  };
+}
+
 /** Browse-page venue list derived from org home venues. */
 export function demoBrowseVenues() {
   const seen = new Set<string>();
@@ -949,9 +976,11 @@ export function demoPackageCheckoutCart(
     processingFee?: number;
     remainingTime?: number | null;
     total?: number;
+    package?: Record<string, unknown>;
+    organization?: Record<string, unknown> | null;
   } = {},
 ) {
-  const pkg = demoSeasonPackage();
+  const pkg = demoSeasonPackage(overrides.package);
   const listing = DEMO_SEATED_TICKET_GROUPS[0];
   const unit = Number(pkg.pricingTiers[0].price);
   const tickets =
@@ -980,7 +1009,10 @@ export function demoPackageCheckoutCart(
         ? CHECKOUT_HOLD_SECONDS
         : overrides.remainingTime ?? undefined,
     package: pkg,
-    organization: pkg.organization,
+    organization:
+      overrides.organization === undefined
+        ? pkg.organization
+        : overrides.organization,
     tickets,
     total: overrides.total ?? subtotal + serviceFee + processingFee,
     serviceFee,
@@ -1156,6 +1188,50 @@ export function demoFlexPackCheckoutCart(
     total: overrides.total ?? subtotal + serviceFee + processingFee,
     serviceFee,
     processingFee,
+    totalTax: 0,
+  };
+}
+
+/** Access pass template for GET cart payloads with `access_pass_template`. */
+export function demoAccessPassTemplate(
+  overrides: Record<string, unknown> = {},
+) {
+  const org = DEMO_ICEDOGS_ORG;
+  const venue = org.homeVenue || org.venue;
+  return {
+    id: "apt-icedogs-club",
+    uuid: "apt-icedogs-club",
+    name: "IceDogs Club Access Pass",
+    price: 75,
+    venue: {
+      name: venue.name,
+      slug: venue.slug,
+      timezone: venue.timezone,
+    },
+    organization: org,
+    events: [],
+    ...overrides,
+  };
+}
+
+/** Checkout cart for an access-pass hold. */
+export function demoAccessPassCheckoutCart(
+  overrides: {
+    access_pass_template?: Record<string, unknown>;
+    remainingTime?: number | null;
+    total?: number;
+  } = {},
+) {
+  const template = demoAccessPassTemplate(overrides.access_pass_template);
+  return {
+    id: "cart-access-pass-1",
+    remainingTime:
+      overrides.remainingTime === undefined
+        ? CHECKOUT_HOLD_SECONDS
+        : overrides.remainingTime ?? undefined,
+    access_pass_template: template,
+    organization: template.organization,
+    total: overrides.total ?? Number(template.price || 0),
     totalTax: 0,
   };
 }

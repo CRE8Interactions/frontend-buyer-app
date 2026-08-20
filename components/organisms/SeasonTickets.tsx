@@ -12,6 +12,8 @@
  */
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import Link from "next/link";
+import { useParams, usePathname, useSearchParams } from "next/navigation";
 import Spinner from "@/components/atoms/Spinner";
 import { getMyEvents } from "@/lib/api";
 import { getSession } from "@/lib/auth";
@@ -23,6 +25,9 @@ import {
   summarizeEventDetails,
   formatCartOrderTotal,
   walletEventScheduleLine,
+  walletEventTicketsPath,
+  walletFlexPackPath,
+  walletRouteFromPath,
   type AttractionCard,
   type CartEventDetail,
   type CartEventSummary,
@@ -556,9 +561,32 @@ function qr(seed: string): string {
 type Screen = "login" | "code" | "events" | "event" | "seasonPackage" | "package" | "listings" | "giving" | "profile";
 type Sent = { id: string; to?: string; from?: string; title: string; seat: string; on: string; status: string };
 
-export default function SeasonTickets({ initialScreen = "events" }: { initialScreen?: Screen }) {
+export default function SeasonTickets({
+  initialScreen = "events",
+  eventUUID,
+  flexPackUUID,
+}: {
+  initialScreen?: Screen;
+  eventUUID?: string;
+  flexPackUUID?: string;
+}) {
+  const params = useParams<{
+    eventUUID?: string | string[];
+    flexPackUUID?: string | string[];
+  }>();
+  const pathname = usePathname() || "";
+  const searchParams = useSearchParams();
+  const route = walletRouteFromPath(pathname, params);
+  const routedEventUUID = eventUUID || route.eventUUID;
+  const routedFlexPackUUID = flexPackUUID || route.flexPackUUID;
+  const resolvedInitialScreen =
+    initialScreen !== "events"
+      ? initialScreen
+      : searchParams?.has("login")
+        ? "login"
+        : "events";
   const [vw, setVw] = useState(1440);
-  const [screen, setScreen] = useState<Screen>(initialScreen);
+  const [screen, setScreen] = useState<Screen>(resolvedInitialScreen);
   const [tab, setTab] = useState<"upcoming" | "season" | "flex">("upcoming");
   const [email, setEmail] = useState("harrison.cogan@gmail.com");
   const [code, setCode] = useState("");
@@ -652,7 +680,45 @@ export default function SeasonTickets({ initialScreen = "events" }: { initialScr
   const mobile = vw < 900;
   const isHolder = email.trim().toLowerCase() === "harrison.cogan@gmail.com";
   const events = useMemo(buildEvents, []);
-  const orderEventKey = evId.startsWith("order:") ? evId.slice(6) : null;
+  const showRoutedWallet = Boolean(routedEventUUID || routedFlexPackUUID);
+  const routedDetail = useMemo(
+    () =>
+      routedEventUUID
+        ? Object.values(eventDetails).find((d) => d.eventUUID === routedEventUUID) || null
+        : null,
+    [routedEventUUID, eventDetails],
+  );
+  const routedFlexPack = useMemo(
+    () =>
+      routedFlexPackUUID
+        ? flexPacks.find(
+            (row) =>
+              row.flexPackUUID === routedFlexPackUUID || row.key === routedFlexPackUUID,
+          ) || null
+        : null,
+    [routedFlexPackUUID, flexPacks],
+  );
+  const routedWalletPending =
+    showRoutedWallet &&
+    !routedDetail &&
+    !routedFlexPack &&
+    (eventsLoading || !eventsChecked);
+  const routedWalletMissing =
+    showRoutedWallet && !routedDetail && !routedFlexPack && !routedWalletPending;
+  const showingEventDetail =
+    showRoutedWallet
+      ? Boolean(routedDetail && !routedWalletPending && !routedWalletMissing)
+      : screen === "event";
+  const showingPackage =
+    showRoutedWallet
+      ? Boolean(routedFlexPack && !routedDetail && !routedWalletPending && !routedWalletMissing)
+      : screen === "package";
+  const orderEventKey = routedDetail
+    ? routedDetail.key
+    : evId.startsWith("order:")
+      ? evId.slice(6)
+      : null;
+  const activeEvId = orderEventKey ? `order:${orderEventKey}` : evId;
   const ev =
     (orderEventKey && eventDetails[orderEventKey]
       ? detailToEventT(eventDetails[orderEventKey])
@@ -729,13 +795,13 @@ export default function SeasonTickets({ initialScreen = "events" }: { initialScr
 
   /* ---------- header ---------- */
   const navDefs = [
-    { id: "events" as Screen, label: "Tickets", on: screen === "events" || screen === "event" || screen === "package" },
+    { id: "events" as Screen, label: "Tickets", on: screen === "events" || screen === "event" || screen === "package" || showRoutedWallet },
     { id: "listings" as Screen, label: "Transfers", on: screen === "listings" },
     { id: "giving" as Screen, label: "Giving", on: screen === "giving" },
     { id: "profile" as Screen, label: "Profile", on: screen === "profile" },
   ];
   const authed = screen !== "login" && screen !== "code";
-  const showHeader = !(mobile && screen === "event");
+  const showHeader = !(mobile && showingEventDetail);
 
   const Header = () => (
     <header style={{ background: `linear-gradient(180deg, ${CRIMSON_HI} 0%, ${CRIMSON} 100%)`, position: "sticky", top: 0, zIndex: 20, boxShadow: "0 1px 0 rgba(255,255,255,0.06) inset, 0 12px 30px -12px rgba(5,27,53,0.55)" }}>
@@ -880,6 +946,29 @@ export default function SeasonTickets({ initialScreen = "events" }: { initialScr
     </div>
   );
 
+  const RoutedEventShell = (children: React.ReactNode) => (
+    <div style={{ maxWidth: 1100, margin: "0 auto", boxSizing: "border-box", padding: mobile ? "24px 16px 128px" : "40px 32px 96px", display: "flex", flexDirection: "column", gap: 18 }}>
+      <Link href="/my-tickets/" style={{ ...backBtn, textDecoration: "none" }}><BackArrow />All tickets</Link>
+      {children}
+    </div>
+  );
+
+  const RoutedEventMissing = () =>
+    RoutedEventShell(
+      <div style={{ ...card, borderRadius: 20, padding: mobile ? "28px 20px" : "40px 32px", display: "flex", flexDirection: "column", gap: 8 }}>
+        <div style={{ fontSize: mobile ? 20 : 24, fontWeight: 600, letterSpacing: "-0.02em" }}>
+          {flexPackUUID && !eventUUID
+            ? "We couldn't find that flex pack"
+            : "We couldn't find those tickets"}
+        </div>
+        <div style={{ fontSize: 14, color: SUB }}>
+          {flexPackUUID && !eventUUID
+            ? "This flex pack isn't in your wallet, or your session expired. Head back to see everything you own."
+            : "This event isn't in your wallet, or your session expired. Head back to see everything you own."}
+        </div>
+      </div>,
+    );
+
   const openSeasonPackage = (key: string) => {
     setSeasonPackageKey(key);
     setScreen("seasonPackage");
@@ -969,32 +1058,26 @@ export default function SeasonTickets({ initialScreen = "events" }: { initialScr
     </div>
   );
 
-  const FlexPackRow = ({ row }: { row: FlexPackSummary }) => (
-    <div
-      role="button"
-      tabIndex={0}
-      onClick={() => openFlexPack(row.key)}
-      onKeyDown={(e) => {
-        if (e.key === "Enter" || e.key === " ") {
-          e.preventDefault();
-          openFlexPack(row.key);
-        }
-      }}
-      style={{
-        ...card,
-        borderRadius: 20,
-        position: "relative",
-        overflow: "hidden",
-        minHeight: mobile ? 124 : undefined,
-        boxSizing: "border-box",
-        padding: cardPad,
-        paddingRight: mobile ? 112 : 240,
-        display: "flex",
-        alignItems: "center",
-        gap: mobile ? 14 : 18,
-        cursor: "pointer",
-      }}
-    >
+  const FlexPackRow = ({ row }: { row: FlexPackSummary }) => {
+    const href = walletFlexPackPath(row.flexPackUUID);
+    const rowStyle = {
+      ...card,
+      borderRadius: 20,
+      position: "relative" as const,
+      overflow: "hidden" as const,
+      minHeight: mobile ? 124 : undefined,
+      boxSizing: "border-box" as const,
+      padding: cardPad,
+      paddingRight: mobile ? 112 : 240,
+      display: "flex",
+      alignItems: "center",
+      gap: mobile ? 14 : 18,
+      cursor: "pointer" as const,
+      color: "inherit",
+      textDecoration: "none",
+    };
+    const body = (
+      <>
       <div style={{ minWidth: 0, display: "flex", flexDirection: "column", gap: 5, flex: 1 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12, fontWeight: 600, color: SUB }}>
           {row.remainingCount} of {row.voucherCount} {row.voucherCount === 1 ? "voucher" : "vouchers"} left
@@ -1038,8 +1121,32 @@ export default function SeasonTickets({ initialScreen = "events" }: { initialScr
           </span>
         ) : null}
       </div>
-    </div>
-  );
+      </>
+    );
+    if (href) {
+      return (
+        <Link href={href} style={rowStyle}>
+          {body}
+        </Link>
+      );
+    }
+    return (
+      <div
+        role="button"
+        tabIndex={0}
+        onClick={() => openFlexPack(row.key)}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" || e.key === " ") {
+            e.preventDefault();
+            openFlexPack(row.key);
+          }
+        }}
+        style={rowStyle}
+      >
+        {body}
+      </div>
+    );
+  };
 
   const DemoSeasonPackageRow = () => (
     <div
@@ -1076,33 +1183,26 @@ export default function SeasonTickets({ initialScreen = "events" }: { initialScr
     setScreen("event");
   };
 
-  const UpcomingEventRow = ({ row }: { row: CartEventSummary }) => (
-    <div
-      key={row.key}
-      role="button"
-      tabIndex={0}
-      onClick={() => openOrderEvent(row.key)}
-      onKeyDown={(e) => {
-        if (e.key === "Enter" || e.key === " ") {
-          e.preventDefault();
-          openOrderEvent(row.key);
-        }
-      }}
-      style={{
-        ...card,
-        borderRadius: 20,
-        position: "relative",
-        overflow: "hidden",
-        minHeight: mobile ? 124 : undefined,
-        boxSizing: "border-box",
-        padding: cardPad,
-        paddingRight: mobile ? 112 : 240,
-        display: "flex",
-        alignItems: "center",
-        gap: mobile ? 14 : 18,
-        cursor: "pointer",
-      }}
-    >
+  const UpcomingEventRow = ({ row }: { row: CartEventSummary }) => {
+    const href = walletEventTicketsPath(row.eventUUID);
+    const rowStyle = {
+      ...card,
+      borderRadius: 20,
+      position: "relative" as const,
+      overflow: "hidden" as const,
+      minHeight: mobile ? 124 : undefined,
+      boxSizing: "border-box" as const,
+      padding: cardPad,
+      paddingRight: mobile ? 112 : 240,
+      display: "flex",
+      alignItems: "center",
+      gap: mobile ? 14 : 18,
+      cursor: "pointer" as const,
+      color: "inherit",
+      textDecoration: "none",
+    };
+    const body = (
+      <>
       <div style={{ minWidth: 0, display: "flex", flexDirection: "column", gap: 5, flex: 1 }}>
         <EventScheduleMeta
           today={row.today}
@@ -1148,8 +1248,32 @@ export default function SeasonTickets({ initialScreen = "events" }: { initialScr
           </span>
         ) : null}
       </div>
-    </div>
-  );
+      </>
+    );
+    if (href) {
+      return (
+        <Link href={href} style={rowStyle}>
+          {body}
+        </Link>
+      );
+    }
+    return (
+      <div
+        role="button"
+        tabIndex={0}
+        onClick={() => openOrderEvent(row.key)}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" || e.key === " ") {
+            e.preventDefault();
+            openOrderEvent(row.key);
+          }
+        }}
+        style={rowStyle}
+      >
+        {body}
+      </div>
+    );
+  };
 
   const Events = () => (
     <div style={{ maxWidth: 1100, margin: "0 auto", padding: bodyPad, display: "flex", flexDirection: "column", gap: 18 }}>
@@ -1268,7 +1392,28 @@ export default function SeasonTickets({ initialScreen = "events" }: { initialScr
         { k: "Total paid", v: formatCartOrderTotal(ev.cartTotal) },
         { k: "Delivery", v: "Mobile entry" },
       ];
-  const openTransfer = () => { setTf({ step: 1, sel: [], email: "", evId }); setModal(null); };
+  const openTransfer = () => { setTf({ step: 1, sel: [], email: "", evId: activeEvId }); setModal(null); };
+
+  /* When the event screen owns the URL, leaving it has to pop back to /my-tickets/. */
+  const EventBackControl = (
+    style: React.CSSProperties,
+    children: React.ReactNode,
+    label?: string,
+    preferSeasonPackage = true,
+  ) =>
+    eventUUID || flexPackUUID || routedEventUUID || routedFlexPackUUID ? (
+      <Link href="/my-tickets/" aria-label={label} style={{ textDecoration: "none", ...style }}>
+        {children}
+      </Link>
+    ) : (
+      <button
+        onClick={() => setScreen(preferSeasonPackage && seasonPackageKey ? "seasonPackage" : "events")}
+        aria-label={label}
+        style={style}
+      >
+        {children}
+      </button>
+    );
 
   const renderEventHero = ({
     radius,
@@ -1395,9 +1540,11 @@ export default function SeasonTickets({ initialScreen = "events" }: { initialScr
     <div style={{ boxSizing: "border-box", padding: "calc(env(safe-area-inset-top) + 74px) 12px 28px", display: "flex", flexDirection: "column", gap: 16 }}>
       {/* dark top bar */}
       <div style={{ position: "fixed", left: 0, right: 0, top: 0, zIndex: 45, boxSizing: "border-box", background: "#14161c", padding: "calc(env(safe-area-inset-top) + 12px) 16px 12px", display: "flex", alignItems: "center", gap: 12 }}>
-        <button onClick={() => setScreen(seasonPackageKey ? "seasonPackage" : "events")} aria-label="Close" style={{ fontFamily: "inherit", flexShrink: 0, width: 36, height: 36, borderRadius: 999, background: "transparent", border: "none", color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}>
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" style={{ width: 20, height: 20 }}><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
-        </button>
+        {EventBackControl(
+          { fontFamily: "inherit", flexShrink: 0, width: 36, height: 36, borderRadius: 999, background: "transparent", border: "none", color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" },
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" style={{ width: 20, height: 20 }}><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>,
+          "Close",
+        )}
         <div style={{ minWidth: 0, display: "flex", flexDirection: "column", gap: 2 }}>
           <div style={{ fontSize: 16, fontWeight: 600, color: "#fff", letterSpacing: "-0.015em", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{ev.title}</div>
           <div style={{ fontSize: 12, color: "rgba(255,255,255,0.66)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{ev.when} · {ev.venue}</div>
@@ -1476,7 +1623,7 @@ export default function SeasonTickets({ initialScreen = "events" }: { initialScr
 
   const DesktopEvent = () => (
     <div style={{ maxWidth: 1100, margin: "0 auto", boxSizing: "border-box", padding: mobile ? "24px 16px 128px" : "40px 32px 96px", display: "flex", flexDirection: "column", gap: 18 }}>
-      <button onClick={() => setScreen(seasonPackageKey ? "seasonPackage" : "events")} style={backBtn}><BackArrow />All tickets</button>
+      {EventBackControl(backBtn, <><BackArrow />All tickets</>)}
       <div style={{ overflow: "hidden", borderRadius: 20, ...card, boxShadow: "0 1px 2px rgba(5,27,53,0.05), 0 14px 30px -18px rgba(5,27,53,0.40)" }}>
         <EventHeroBanner />
       </div>
@@ -1646,7 +1793,9 @@ export default function SeasonTickets({ initialScreen = "events" }: { initialScr
 
   /* ---------- flex package ---------- */
   const selectedFlexPack =
-    flexPacks.find((row) => row.key === flexPackKey) ?? null;
+    routedFlexPack ??
+    flexPacks.find((row) => row.key === flexPackKey) ??
+    null;
   const demoVoucherCodes = ["765148", "482913", "239487", "579623", "864205", "302478", "918204", "156839", "473526", "324589"];
   const vouchers = (selectedFlexPack?.codes.length
     ? selectedFlexPack.codes
@@ -1661,7 +1810,7 @@ export default function SeasonTickets({ initialScreen = "events" }: { initialScr
   const flexRemaining = vouchers.filter((v) => v.status === "Active").length;
   const Package = () => (
     <div style={{ maxWidth: 1100, margin: "0 auto", padding: bodyPad, display: "flex", flexDirection: "column", gap: 16 }}>
-      <button onClick={() => setScreen("events")} style={backBtn}><BackArrow />All tickets</button>
+      {EventBackControl(backBtn, <><BackArrow />All tickets</>, undefined, false)}
       <div style={{ ...card, borderRadius: 24, boxShadow: "0 1px 2px rgba(5,27,53,0.05), 0 20px 46px -22px rgba(5,27,53,0.45)", padding: cardPad, display: "flex", flexDirection: "column", gap: 14 }}>
         <div style={{ display: "flex", flexDirection: "column", gap: 7 }}>
           <div style={eyebrow}>FLEX PACKAGE</div>
@@ -2080,17 +2229,29 @@ export default function SeasonTickets({ initialScreen = "events" }: { initialScr
       <style>{`.st-noscroll::-webkit-scrollbar{width:0;height:0;display:none}.st-noscroll{-ms-overflow-style:none;scrollbar-width:none}.st-sheet-up{animation:stUp .3s cubic-bezier(.22,.61,.36,1)}@keyframes stUp{from{transform:translateY(100%)}to{transform:translateY(0)}}`}</style>
       {showHeader && Header()}
 
-      {screen === "login" && Login()}
-      {screen === "code" && CodeScreen()}
-      {screen === "events" && Events()}
-      {screen === "event" && EventDetail()}
-      {screen === "seasonPackage" && SeasonPackage()}
-      {screen === "package" && Package()}
-      {screen === "listings" && Listings()}
-      {screen === "giving" && Giving()}
-      {screen === "profile" && Profile()}
+      {showRoutedWallet ? (
+        routedWalletPending
+          ? RoutedEventShell(TicketsLoader())
+          : routedWalletMissing
+            ? RoutedEventMissing()
+            : showingPackage
+              ? Package()
+              : EventDetail()
+      ) : (
+        <>
+          {screen === "login" && Login()}
+          {screen === "code" && CodeScreen()}
+          {screen === "events" && Events()}
+          {screen === "event" && EventDetail()}
+          {screen === "seasonPackage" && SeasonPackage()}
+          {screen === "package" && Package()}
+          {screen === "listings" && Listings()}
+          {screen === "giving" && Giving()}
+          {screen === "profile" && Profile()}
+        </>
+      )}
 
-      {mobile && authed && screen !== "event" && screen !== "seasonPackage" && TabBar()}
+      {mobile && authed && !showingEventDetail && screen !== "seasonPackage" && TabBar()}
 
       {modal === "details" && DetailsModal()}
       {modal === "field" && FieldModal()}

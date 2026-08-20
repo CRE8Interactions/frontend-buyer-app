@@ -120,12 +120,15 @@ export function checkoutBrandingFromCart(
 /** Seat holds are 10 minutes; some carts send remainingTime in milliseconds. */
 export const CHECKOUT_HOLD_SECONDS = 10 * 60;
 
+/** Values this large are remainingTime in milliseconds, not seconds. */
+const HOLD_MILLISECONDS_THRESHOLD = 1000;
+
 export function checkoutHoldSeconds(remainingTime?: number | null): number {
   if (remainingTime == null || !Number.isFinite(Number(remainingTime))) {
     return CHECKOUT_HOLD_SECONDS;
   }
   let seconds = Number(remainingTime);
-  if (seconds > CHECKOUT_HOLD_SECONDS) {
+  if (seconds >= HOLD_MILLISECONDS_THRESHOLD) {
     seconds = seconds / 1000;
   }
   return Math.min(

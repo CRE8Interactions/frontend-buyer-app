@@ -40,7 +40,14 @@ export const LOADER_BOOT_SCRIPT = `(function(){
     }
     var path = location.pathname || "";
     var norm = path.replace(/\\/+$/, "") || "/";
-    if (norm === "/" || norm === "/browse" || norm === "/our-story") {
+    var loginReturnsToTenant =
+      norm === "/login" && /[?&]from=[^&]/.test(location.search || "");
+    if (
+      norm === "/" ||
+      norm === "/browse" ||
+      norm === "/our-story" ||
+      (norm === "/login" && !loginReturnsToTenant)
+    ) {
       var plat = document.createElement("div");
       plat.id = "bt-boot-loader";
       plat.setAttribute("role", "status");
@@ -54,6 +61,7 @@ export const LOADER_BOOT_SCRIPT = `(function(){
       document.documentElement.appendChild(plat);
       return;
     }
+    if (norm === "/login") return;
     var b = null;
     var ev = path.match(/^\\/e\\/([^/]+)\\/([^/]+)/);
     var vn = path.match(/^\\/venue\\/([^/]+)/i);

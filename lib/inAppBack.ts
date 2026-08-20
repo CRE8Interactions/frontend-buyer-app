@@ -1,6 +1,17 @@
 const IN_APP_BACK_ATTR = "data-in-app-back";
 
+/** Browse is the shopper's home — Back never lands on the marketing page. */
+export const BACK_FALLBACK_HREF = "/browse/";
+
 let inAppNavigations = 0;
+
+/** Treat a missing or root href as browse so Back always has somewhere real. */
+export function backFallbackHref(href?: string | null) {
+  const trimmed = (href || "").trim();
+  if (!trimmed) return BACK_FALLBACK_HREF;
+  const path = trimmed.split(/[?#]/)[0].replace(/\/+$/, "");
+  return path === "" ? BACK_FALLBACK_HREF : trimmed;
+}
 
 type AppRouterLike = {
   back: () => void;
@@ -30,11 +41,12 @@ export function goBack(fallbackHref: string, router?: AppRouterLike) {
     else window.history.back();
     return;
   }
+  const dest = backFallbackHref(fallbackHref);
   if (router) {
-    router.push(fallbackHref);
+    router.push(dest);
     return;
   }
-  window.location.assign(fallbackHref);
+  window.location.assign(dest);
 }
 
 export function handleInAppBackClick(
@@ -52,7 +64,7 @@ export function inAppBackAnchorProps(
   onClick?: (event: { preventDefault: () => void }) => void,
 ) {
   return {
-    href,
+    href: backFallbackHref(href),
     [IN_APP_BACK_ATTR]: "true",
     onClick: (event: { preventDefault: () => void }) => {
       onClick?.(event);

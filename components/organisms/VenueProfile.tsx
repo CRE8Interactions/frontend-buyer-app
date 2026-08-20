@@ -44,6 +44,10 @@ import {
   type EventPriceSource,
 } from "@/lib/eventFromPrice";
 import { googleMapsDirectionsUrl } from "@/lib/venueLocation";
+import {
+  venueWebsiteFromUpcomingEvents,
+  venueWebsiteHref,
+} from "@/lib/venueWebsite";
 import { categoryLabel, eventTypeLabel } from "@/lib/eventType";
 
 const NAVY = "#051b35";
@@ -99,6 +103,8 @@ type VenueRecord = {
   uuid?: string;
   name?: string;
   slug?: string;
+  website?: string;
+  url?: string;
   description?: string;
   capacity?: number | string | null;
   timezone?: string;
@@ -324,12 +330,22 @@ export default function VenueProfile({ slug }: { slug: string }) {
         }
 
         setVenue(merged);
-        setLoading(false);
 
         let stubs: VenueEvent[] = [];
         try {
           const up = await getVenueUpcomingEvents(merged.slug || slug);
-          if (!cancelled) stubs = unwrapEventList(up?.data);
+          if (!cancelled) {
+            stubs = unwrapEventList(up?.data);
+            // This record carries the website even when /venues omits it.
+            const site = venueWebsiteFromUpcomingEvents(up?.data);
+            if (site) {
+              setVenue((current) =>
+                current && !venueWebsiteHref(current)
+                  ? { ...current, website: site }
+                  : current,
+              );
+            }
+          }
         } catch {
           /* endpoint may 404 on some Strapi builds */
         }
@@ -346,8 +362,8 @@ export default function VenueProfile({ slug }: { slug: string }) {
         setEvents(sortByDate(upcoming));
 
         // Venue records carry no branding, so take it from the team that plays
-        // here and remember it for the next visit's loader. Not awaited: the
-        // page must not wait on the palette.
+        // here and remember it for the next visit's loader. Keep the loader up
+        // until the complete organization record has also arrived.
         const orgFromEvents = upcoming.find(
           (e) =>
             e.organization?.slug ||
@@ -359,25 +375,27 @@ export default function VenueProfile({ slug }: { slug: string }) {
         }
 
         const orgSlug = orgFromEvents?.slug;
-        if (!orgSlug) return;
-        getOrganizationStorefront(orgSlug)
-          .then((res) => {
+        if (orgSlug) {
+          try {
+            const res = await getOrganizationStorefront(orgSlug);
             if (cancelled) return;
             const org = (
               res.data as { organization?: BrandingOrganization | null }
             )?.organization;
-            if (!org) return;
-            setOrganization((current) => ({
-              ...current,
-              ...org,
-              website: org.website || org.url || current?.website || current?.url,
-            }));
-            cacheOrgBranding(org);
-            cacheVenueBranding([{ slug }], org);
-          })
-          .catch(() => {
+            if (org) {
+              setOrganization((current) => ({
+                ...current,
+                ...org,
+                website:
+                  org.website || org.url || current?.website || current?.url,
+              }));
+              cacheOrgBranding(org);
+              cacheVenueBranding([{ slug }], org);
+            }
+          } catch {
             /* branding is optional — the page keeps the default palette */
-          });
+          }
+        }
       } catch {
         if (!cancelled) setMissing(true);
       } finally {
@@ -404,7 +422,7 @@ export default function VenueProfile({ slug }: { slug: string }) {
     venue?.description?.trim() ||
     `Find upcoming events and buy tickets at ${venueName}.`;
   const photoSrc = venuePhoto(venue?.image);
-  const website = organization?.website || organization?.url;
+  const website = venueWebsiteHref(venue);
   const directionsHref = googleMapsDirectionsUrl(venue?.address);
 
   // Only take over the palette when the team actually has branding, so plain
@@ -489,10 +507,14 @@ export default function VenueProfile({ slug }: { slug: string }) {
           href={website}
           target="_blank"
           rel="noopener noreferrer"
-          aria-label="Follow venue"
-          style={{ fontFamily: "inherit", fontSize: 14, fontWeight: 600, color: BTN_INK, background: BTN, border: "none", borderRadius: 999, padding: "13px 22px", cursor: "pointer", whiteSpace: "nowrap", textDecoration: "none", display: "inline-flex", alignItems: "center", justifyContent: "center" }}
+          aria-label="Visit venue website"
+          style={iconBtn}
         >
-          Follow venue
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" style={{ width: 18, height: 18 }}>
+            <circle cx="12" cy="12" r="10" />
+            <line x1="2" y1="12" x2="22" y2="12" />
+            <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z" />
+          </svg>
         </a>
       ) : null}
       {directionsHref ? (

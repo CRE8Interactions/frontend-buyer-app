@@ -3,9 +3,9 @@
 /**
  * Nav — the shared site nav (app-style), matching the Claude Design browse
  * header: solid navy bar, logo, page links (Home / Our Story / Browse), and —
- * on the "app" variant — a search field + green Log in button.
+ * on the "app" variant — a search field + Log in, or My wallet and Log out.
  *
- * variant="app" (default, browse/app pages): logo + centered search + Log in.
+ * variant="app" (default, browse/app pages): logo + centered search + auth actions.
  * variant="marketing" (home, Our Story): logo + page links only.
  *
  * Pass `search` to wire the field to page state. Provide `search.groups` to turn
@@ -18,6 +18,7 @@
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import NavAuthActions from "@/components/molecules/NavAuthActions";
 
 const NAVY = "#051b35";
 const GREEN = "#a6e773";
@@ -196,7 +197,10 @@ export default function Nav({ search, variant = "app" }: Props) {
 
         <div className="snav-right">
           {showLogin && (
-            <Link href="/wallet?login=1" style={{ fontFamily: "inherit", fontSize: 14, fontWeight: 600, color: NAVY, background: GREEN, border: "none", borderRadius: 999, padding: "11px 22px", cursor: "pointer", whiteSpace: "nowrap", textDecoration: "none", display: "inline-flex", alignItems: "center", flexShrink: 0 }}>Log in</Link>
+            <NavAuthActions
+              buttonStyle={{ fontFamily: "inherit", fontSize: 14, fontWeight: 600, color: NAVY, background: GREEN, border: "none", borderRadius: 999, padding: "11px 22px", cursor: "pointer", whiteSpace: "nowrap", textDecoration: "none", display: "inline-flex", alignItems: "center", flexShrink: 0 }}
+              logoutStyle={{ fontFamily: "inherit", fontSize: 14, fontWeight: 600, color: "#fff", background: "transparent", border: "none", padding: 0, cursor: "pointer", whiteSpace: "nowrap", textDecoration: "underline", textUnderlineOffset: 3 }}
+            />
           )}
           {showLinks && (
             <button className="snav-ham" onClick={() => setOpen((v) => !v)} aria-label="Toggle menu" style={{ fontFamily: "inherit", width: 40, height: 40, borderRadius: 10, background: "rgba(255,255,255,0.10)", border: "none", color: "#fff", alignItems: "center", justifyContent: "center", cursor: "pointer", flexShrink: 0 }}>

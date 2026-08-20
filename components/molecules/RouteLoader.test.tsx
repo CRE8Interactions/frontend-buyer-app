@@ -88,6 +88,15 @@ describe("RouteLoader", () => {
     expect(screen.queryByText(/loading tickets/i)).not.toBeInTheDocument();
   });
 
+  it("shows the Blocktickets spinner on login instead of the last team", () => {
+    cacheOrgBranding(raptors);
+    mockPathname = "/login/";
+    render(<RouteLoader />);
+
+    expect(screen.getByAltText(/blocktickets/i)).toBeInTheDocument();
+    expect(screen.queryByText(raptors.name)).not.toBeInTheDocument();
+  });
+
   it("shows the Blocktickets spinner on home, browse, and Our Story", () => {
     cacheOrgBranding(raptors);
     mockPathname = "/browse/";

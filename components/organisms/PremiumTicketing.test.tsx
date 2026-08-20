@@ -239,7 +239,7 @@ describe("Select tickets page (PremiumTicketing)", () => {
     await renderReady();
 
     const login = screen.getByRole("link", { name: /^login$/i });
-    expect(login).toHaveAttribute("href", "/wallet?login=1");
+    expect(login).toHaveAttribute("href", "/login/");
     expect(
       screen.queryByRole("link", { name: /^my wallet$/i }),
     ).not.toBeInTheDocument();

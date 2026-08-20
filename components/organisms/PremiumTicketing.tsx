@@ -977,7 +977,7 @@ export default function PremiumTicketing({
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" style={{ width: 18, height: 18 }}><circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" /></svg>
             </div>
             <div style={{ display: "flex", alignItems: "center", gap: 16, flexShrink: 0 }}>
-              <Link href={isAuthenticated ? "/my-tickets/" : "/wallet?login=1"} className="nmt-primary" style={{ fontFamily: "inherit", fontSize: 15, fontWeight: 600, color: navBtnInk, background: navBtnBg, border: "none", borderRadius: 999, padding: "13px 30px", whiteSpace: "nowrap", cursor: "pointer", textDecoration: "none", display: "inline-flex", alignItems: "center" }}>{isAuthenticated ? "My wallet" : "Login"}</Link>
+              <Link href={isAuthenticated ? "/my-tickets/" : "/login/"} className="nmt-primary" style={{ fontFamily: "inherit", fontSize: 15, fontWeight: 600, color: navBtnInk, background: navBtnBg, border: "none", borderRadius: 999, padding: "13px 30px", whiteSpace: "nowrap", cursor: "pointer", textDecoration: "none", display: "inline-flex", alignItems: "center" }}>{isAuthenticated ? "My wallet" : "Login"}</Link>
               {isAuthenticated ? (
                 <button
                   type="button"
