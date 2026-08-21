@@ -128,6 +128,24 @@ describe("resolveCheckoutReturnPath", () => {
       packagePurchasePath(cart.package),
     );
   });
+
+  it("ignores a login bounce and returns to the tickets page", () => {
+    const cart = demoCheckoutCart();
+    setCheckoutReturnPath(
+      `/login/?from=${encodeURIComponent(`/checkout/?cartId=${cart.id}`)}`,
+    );
+    expect(resolveCheckoutReturnPath(cart, cart.event)).toBe(
+      eventPurchasePath(raptorsEvent),
+    );
+  });
+
+  it("ignores a login bounce and returns to the flex pack page", () => {
+    const cart = demoFlexPackCheckoutCart();
+    setCheckoutReturnPath("/login/");
+    expect(resolveCheckoutReturnPath(cart)).toBe(
+      flexPackPurchasePath(cart.flex_pack),
+    );
+  });
 });
 
 describe("shouldPopCheckoutHistory", () => {
@@ -144,5 +162,11 @@ describe("shouldPopCheckoutHistory", () => {
       shouldPopCheckoutHistory(dest, `/${cart.flex_pack.organization.slug}/`),
     ).toBe(false);
     expect(shouldPopCheckoutHistory(dest, null)).toBe(false);
+  });
+
+  it("keeps a swap when checkout bounced through login", () => {
+    const cart = demoFlexPackCheckoutCart();
+    const dest = flexPackPurchasePath(cart.flex_pack) as string;
+    expect(shouldPopCheckoutHistory(dest, dest, true)).toBe(false);
   });
 });

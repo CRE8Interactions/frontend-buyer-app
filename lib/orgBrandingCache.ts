@@ -363,7 +363,22 @@ export function getCachedBrandingForPath(
     const orgSlug = readMap(EVENTS_MAP_KEY)[
       eventMapKey(eventMatch[1], eventMatch[2])
     ];
-    return brandingForOrgSlug(orgSlug);
+    const exact = brandingForOrgSlug(orgSlug);
+    if (exact) return exact;
+
+    // A missing/expired event may fail before it can seed the exact event map.
+    // Reuse the last tenant only when the event slug identifies that same org;
+    // never paint an unrelated team's branding on an unknown event route.
+    const last = lastBranding();
+    const eventSlug = eventMatch[1].toLowerCase();
+    const lastSlug = last?.slug?.toLowerCase();
+    if (
+      lastSlug &&
+      (eventSlug === lastSlug || eventSlug.startsWith(`${lastSlug}-`))
+    ) {
+      return last;
+    }
+    return null;
   }
 
   const venueMatch = pathname.match(VENUE_PATH);

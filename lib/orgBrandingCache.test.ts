@@ -4,6 +4,7 @@ import {
   cacheEventBranding,
   cacheOrgBranding,
   cacheOrgsBranding,
+  getCachedBrandingForPath,
   getCachedOrgBranding,
   getLoaderBranding,
   getLoaderBrandingFromCookieValue,
@@ -88,6 +89,24 @@ describe("org switch loader branding", () => {
     expect(getLoaderBranding(`/${icedogs.slug}/`, {}, lastCookie)).toBeNull();
     expect(getCachedOrgBranding(icedogs.slug)).toBeNull();
     expect(getCachedOrgBranding(raptors.slug)?.name).toBe(raptors.name);
+  });
+
+  it("uses matching last-org branding when a missing event has no exact cache entry", () => {
+    cacheOrgBranding(raptors);
+
+    expect(
+      getCachedBrandingForPath(
+        `/e/${raptors.slug}-vs-yuba-sutter-freebirds/AFG/tickets/`,
+      ),
+    ).toMatchObject({
+      slug: raptors.slug,
+      name: raptors.name,
+      primaryColor: raptors.branding.primaryColor,
+      logoSrc: raptors.branding.logo.url,
+    });
+    expect(
+      getCachedBrandingForPath("/e/unrelated-event/AFG/tickets/"),
+    ).toBeNull();
   });
 
   it("does not reuse last-used branding on home, browse, or Our Story", () => {

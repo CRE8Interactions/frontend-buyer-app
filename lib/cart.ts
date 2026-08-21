@@ -8,6 +8,7 @@ import { isCartGoneResponse } from "@/lib/helpers";
 export const CART_KEY = "cart";
 export const CART_EVENT = "blocktickets:cart";
 export const CHECKOUT_RETURN_KEY = "checkoutReturnPath";
+export const CHECKOUT_LOGIN_DETOUR_KEY = "checkoutLoginDetour";
 
 export function checkoutHref(cartId: string | number) {
   return `/checkout/?cartId=${encodeURIComponent(String(cartId))}`;
@@ -81,11 +82,25 @@ export function isCheckoutPath(path: string) {
   return pathname === "/checkout" || pathname.startsWith("/checkout/");
 }
 
+export function isLoginPath(path: string) {
+  const pathname = path.split("?")[0].replace(/\/+$/, "") || "/";
+  return pathname === "/login";
+}
+
+/**
+ * Checkout sends signed-out shoppers to /login, so the referrer coming back is
+ * the login page. Returning there on cancel would bounce them into checkout
+ * again instead of the tickets / package / flex pack page.
+ */
+function isReturnablePath(path: string) {
+  return Boolean(path) && !isCheckoutPath(path) && !isLoginPath(path);
+}
+
 export function getCheckoutReturnPath(): string | null {
   if (typeof window === "undefined") return null;
   try {
     const raw = sessionStorage.getItem(CHECKOUT_RETURN_KEY);
-    if (!raw || isCheckoutPath(raw)) return null;
+    if (!raw || !isReturnablePath(raw)) return null;
     return raw;
   } catch {
     return null;
@@ -95,7 +110,7 @@ export function getCheckoutReturnPath(): string | null {
 export function setCheckoutReturnPath(path: string) {
   if (typeof window === "undefined") return;
   try {
-    if (!path || isCheckoutPath(path)) {
+    if (!isReturnablePath(path)) {
       sessionStorage.removeItem(CHECKOUT_RETURN_KEY);
       return;
     }
@@ -109,14 +124,44 @@ export function clearCheckoutReturnPath() {
   if (typeof window === "undefined") return;
   try {
     sessionStorage.removeItem(CHECKOUT_RETURN_KEY);
+    sessionStorage.removeItem(CHECKOUT_LOGIN_DETOUR_KEY);
   } catch {
     /* ignore */
+  }
+}
+
+/**
+ * Checkout sent a signed-out shopper to /login, so the login page now sits
+ * between checkout and the page they came from. Back would land there.
+ */
+export function markCheckoutLoginDetour() {
+  if (typeof window === "undefined") return;
+  try {
+    sessionStorage.setItem(CHECKOUT_LOGIN_DETOUR_KEY, "1");
+  } catch {
+    /* ignore quota / private mode */
+  }
+}
+
+export function hadCheckoutLoginDetour() {
+  if (typeof window === "undefined") return false;
+  try {
+    return sessionStorage.getItem(CHECKOUT_LOGIN_DETOUR_KEY) === "1";
+  } catch {
+    return false;
   }
 }
 
 /** Remember the current page so checkout cancel can send the shopper back. */
 export function rememberCheckoutReturnPath() {
   if (typeof window === "undefined") return;
+  // A fresh trip into checkout from this page — any earlier login bounce is
+  // no longer in front of it.
+  try {
+    sessionStorage.removeItem(CHECKOUT_LOGIN_DETOUR_KEY);
+  } catch {
+    /* ignore */
+  }
   setCheckoutReturnPath(`${window.location.pathname}${window.location.search}`);
 }
 

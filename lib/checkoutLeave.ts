@@ -109,12 +109,16 @@ function normalizePath(path: string) {
  * Leaving checkout must never stack another entry on top of it, or Back lands
  * on a dead cart. Pop it when the shopper came straight from where we're
  * sending them; otherwise swap checkout out of the history.
+ *
+ * A /login bounce leaves the login page between checkout and that page, so
+ * popping would land on login instead of the tickets / package / flex pack.
  */
 export function shouldPopCheckoutHistory(
   dest: string,
   returnPath?: string | null,
+  loginDetour = false,
 ) {
-  if (!dest || !returnPath) return false;
+  if (!dest || !returnPath || loginDetour) return false;
   return normalizePath(returnPath) === normalizePath(dest);
 }
 
