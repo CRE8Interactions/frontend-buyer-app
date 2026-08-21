@@ -1,12 +1,15 @@
 import { describe, expect, it } from "vitest";
-import { DEMO_EVENTS, demoFlexPack, demoSeasonPackage } from "@/lib/demo/fixtures";
+import { DEMO_EVENTS, DEMO_USER, demoFlexPack, demoSeasonPackage } from "@/lib/demo/fixtures";
 import {
+  emailPatternMatch,
   eventDoorsIso,
   eventWhenWithDoors,
   flexPackPurchasePath,
   formatDoorsTime,
   formatEventWhen,
+  isBlockedEmail,
   isRequestCanceled,
+  normalizeEmail,
   packagePurchasePath,
 } from "@/lib/helpers";
 
@@ -85,5 +88,34 @@ describe("flexPackPurchasePath", () => {
   it("returns null when the flex pack has no org or venue slug", () => {
     expect(flexPackPurchasePath({ uuid: "flex-1" })).toBeNull();
     expect(flexPackPurchasePath(null)).toBeNull();
+  });
+});
+
+describe("normalizeEmail", () => {
+  it("trims and lowercases the address", () => {
+    expect(normalizeEmail("  Fan@Blocktickets.XYZ  ")).toBe(
+      "fan@blocktickets.xyz",
+    );
+  });
+});
+
+describe("emailPatternMatch", () => {
+  it("accepts a well-formed address and rejects malformed ones", () => {
+    expect(emailPatternMatch(DEMO_USER.email)).toBe(true);
+    expect(emailPatternMatch("not-an-email")).toBe(false);
+    expect(emailPatternMatch("")).toBe(true);
+  });
+});
+
+describe("isBlockedEmail", () => {
+  it("blocks disposable and reference domains without throwing on malformed input", () => {
+    expect(isBlockedEmail("user@mailinator.com")).toBe(true);
+    expect(isBlockedEmail("user@protonbox.pro")).toBe(true);
+    expect(isBlockedEmail("user@team.ru")).toBe(true);
+    expect(isBlockedEmail("user@team.ua")).toBe(true);
+    expect(isBlockedEmail(DEMO_USER.email)).toBe(false);
+    expect(isBlockedEmail("not-an-email")).toBe(false);
+    expect(isBlockedEmail("user@")).toBe(false);
+    expect(isBlockedEmail()).toBe(false);
   });
 });

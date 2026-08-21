@@ -8,18 +8,26 @@ import {
   useElements,
   useStripe,
 } from "@stripe/react-stripe-js";
-import AppShell from "@/components/templates/AppShell";
 import Button from "@/components/atoms/Button";
 import Spinner from "@/components/atoms/Spinner";
 import PageLoader from "@/components/molecules/PageLoader";
 import { cardCls } from "@/components/molecules/Card";
 import { Input, Label } from "@/components/atoms/form";
+import EmailField from "@/components/molecules/EmailField";
+import NameField from "@/components/molecules/NameField";
 import {
   confirmLandingPageDonation,
   createLandingPageDonationIntent,
   getPublicFundraisingCampaign,
 } from "@/lib/api";
 import { formatCurrency, imageUrl } from "@/lib/helpers";
+import {
+  FIELD_COPY,
+  emailLooksInvalid,
+  isBlockedEmail,
+  nameAllows,
+  normalizeEmail,
+} from "@/lib/fieldValidation";
 
 type Campaign = {
   slug: string;
@@ -185,9 +193,16 @@ export function FundraisingCampaignClient({
       setError("Select or enter a donation amount.");
       return;
     }
-    if (!anonymous && !donorEmail.trim()) {
-      setError("Email is required unless donating anonymously.");
-      return;
+    if (!anonymous) {
+      const address = normalizeEmail(donorEmail);
+      if (!address || isBlockedEmail(address) || emailLooksInvalid(address)) {
+        setError(FIELD_COPY.invalidEmail);
+        return;
+      }
+      if (!nameAllows(donorName)) {
+        setError(FIELD_COPY.namePattern);
+        return;
+      }
     }
     setError("");
     setLoadingIntent(true);
@@ -202,7 +217,7 @@ export function FundraisingCampaignClient({
         anonymous,
         donorMessage,
         donorName: anonymous ? "" : donorName,
-        donorEmail: anonymous ? "" : donorEmail,
+        donorEmail: anonymous ? "" : normalizeEmail(donorEmail),
       });
       const data = response?.data || {};
       if (!data.clientSecret) throw new Error("Missing payment session");
@@ -344,25 +359,21 @@ export function FundraisingCampaignClient({
 
               {!anonymous ? (
                 <>
-                  <div>
-                    <Label htmlFor="donor-name">Name</Label>
-                    <Input
-                      id="donor-name"
-                      className="mt-2"
-                      value={donorName}
-                      onChange={(e) => setDonorName(e.target.value)}
-                    />
-                  </div>
-                  <div>
-                    <Label htmlFor="donor-email">Email</Label>
-                    <Input
-                      id="donor-email"
-                      type="email"
-                      className="mt-2"
-                      value={donorEmail}
-                      onChange={(e) => setDonorEmail(e.target.value)}
-                    />
-                  </div>
+                  <NameField
+                    id="donor-name"
+                    label="Name"
+                    variant="dark"
+                    required={false}
+                    value={donorName}
+                    onChange={setDonorName}
+                  />
+                  <EmailField
+                    id="donor-email"
+                    label="Email"
+                    variant="dark"
+                    value={donorEmail}
+                    onChange={setDonorEmail}
+                  />
                 </>
               ) : null}
 

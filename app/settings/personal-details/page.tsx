@@ -3,13 +3,20 @@
 import { useEffect, useState } from "react";
 import WalletShell from "@/components/templates/WalletShell";
 import BackChip from "@/components/molecules/BackChip";
+import EmailField from "@/components/molecules/EmailField";
+import NameField from "@/components/molecules/NameField";
 import PageLoader from "@/components/molecules/PageLoader";
 import { cardCls } from "@/components/molecules/Card";
-import { Input, Label } from "@/components/atoms/form";
 import Button from "@/components/atoms/Button";
 import { updatePersonalDetails } from "@/lib/api";
 import { displayName, getSession, setSession, useAuth } from "@/lib/auth";
-import { emailPatternMatch, namePatternMatch } from "@/lib/helpers";
+import {
+  FIELD_COPY,
+  emailLooksInvalid,
+  isBlockedEmail,
+  nameFieldError,
+  normalizeEmail,
+} from "@/lib/fieldValidation";
 
 export default function PersonalDetailsPage() {
   const { user, ready, refresh } = useAuth();
@@ -19,6 +26,7 @@ export default function PersonalDetailsPage() {
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [emailOk, setEmailOk] = useState(true);
+  const [networkError, setNetworkError] = useState(false);
 
   useEffect(() => {
     if (!user) return;
@@ -27,21 +35,33 @@ export default function PersonalDetailsPage() {
     setEmail(user.email || "");
   }, [user]);
 
+  const nextEmail = normalizeEmail(email);
   const dirty =
     firstName !== (user?.firstName || "") ||
     lastName !== (user?.lastName || "") ||
-    email !== (user?.email || "");
+    nextEmail !== (user?.email || "");
   const valid =
-    Boolean(firstName && lastName && email) && emailPatternMatch(email);
+    !nameFieldError(firstName) &&
+    !nameFieldError(lastName) &&
+    Boolean(nextEmail) &&
+    !isBlockedEmail(nextEmail) &&
+    !emailLooksInvalid(nextEmail);
 
   const onSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!valid || !dirty) return;
+    const address = normalizeEmail(email);
+    setEmail(address);
+    if (isBlockedEmail(address) || emailLooksInvalid(address)) {
+      setEmailOk(false);
+      return;
+    }
+    if (nameFieldError(firstName) || nameFieldError(lastName) || !dirty) return;
     setSaving(true);
     setSaved(false);
+    setNetworkError(false);
     try {
       const res = await updatePersonalDetails({
-        data: { firstName, lastName, email },
+        data: { firstName, lastName, email: address },
       });
       const session = getSession();
       if (session && res.data) {
@@ -55,8 +75,8 @@ export default function PersonalDetailsPage() {
         refresh();
       }
       setSaved(true);
-    } catch (err) {
-      console.error(err);
+    } catch {
+      setNetworkError(true);
     } finally {
       setSaving(false);
     }
@@ -83,43 +103,50 @@ export default function PersonalDetailsPage() {
           Your personal details have been updated.
         </div>
       )}
+      {networkError ? (
+        <div className="mt-4 rounded-xl border border-[#ff7a72]/30 bg-[#ff7a72]/10 px-4 py-3 text-[14px] text-[#ff9a93]">
+          {FIELD_COPY.network}
+        </div>
+      ) : null}
 
-      <form className={`${cardCls} mt-6 grid gap-5 p-6 sm:grid-cols-2 sm:p-7`} onSubmit={onSubmit}>
-        <div className="sm:col-span-2">
-          <Label htmlFor="email">Email</Label>
-          <Input
-            id="email"
-            type="email"
-            className={`mt-2.5 ${!emailOk ? "border-[#ff7a72]" : ""}`}
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            onBlur={(e) => setEmailOk(emailPatternMatch(e.target.value))}
-          />
-        </div>
-        <div>
-          <Label htmlFor="first">First name</Label>
-          <Input
-            id="first"
-            className="mt-2.5"
-            pattern={namePatternMatch}
-            value={firstName}
-            onChange={(e) => {
-              if (e.target.validity.valid || e.target.value === "") setFirstName(e.target.value);
-            }}
-          />
-        </div>
-        <div>
-          <Label htmlFor="last">Last name</Label>
-          <Input
-            id="last"
-            className="mt-2.5"
-            pattern={namePatternMatch}
-            value={lastName}
-            onChange={(e) => {
-              if (e.target.validity.valid || e.target.value === "") setLastName(e.target.value);
-            }}
-          />
-        </div>
+      <form
+        className={`${cardCls} mt-6 grid gap-5 p-6 sm:grid-cols-2 sm:p-7`}
+        noValidate
+        onSubmit={onSubmit}
+      >
+        <EmailField
+          id="email"
+          label="Email"
+          className="sm:col-span-2"
+          variant="dark"
+          value={email}
+          invalid={!emailOk}
+          onChange={(value) => {
+            setEmail(value);
+            setEmailOk(true);
+            setNetworkError(false);
+          }}
+          onBlur={() => {
+            const next = normalizeEmail(email);
+            setEmailOk(!next || !emailLooksInvalid(next));
+          }}
+        />
+        <NameField
+          id="first"
+          label="First name"
+          variant="dark"
+          autoComplete="given-name"
+          value={firstName}
+          onChange={setFirstName}
+        />
+        <NameField
+          id="last"
+          label="Last name"
+          variant="dark"
+          autoComplete="family-name"
+          value={lastName}
+          onChange={setLastName}
+        />
         <div className="sm:col-span-2">
           <Button type="submit" disabled={!valid || !dirty || saving}>
             {saving ? "Saving…" : saved ? "Saved ✓" : "Update"}

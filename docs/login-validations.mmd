@@ -1,0 +1,32 @@
+%% Step 0: login (email)
+%% Source: app/login/page.tsx and lib/fieldValidation.ts
+%% Email: Email is invalid. Please try again.
+%% Network: We're experiencing technical difficulties. Please try again later.
+
+flowchart TD
+  start[Shopper opens /login] --> emailStep[Step 0: email]
+
+  emailStep --> typeEmail[Type email]
+  typeEmail --> blurEmail{Blur with a value?}
+  blurEmail -->|yes| localEmail{Blocked or bad syntax?}
+  localEmail -->|yes| emailInvalid["Email is invalid. Please try again."]
+  localEmail -->|no| readySend[Ready to send]
+  blurEmail -->|empty / no| readySend
+
+  readySend --> sendClick[Send my code]
+  sendClick --> normalize[normalizeEmail: trim + lowercase]
+
+  normalize --> blocked{isBlockedEmail?}
+  blocked -->|yes| emailInvalid
+  blocked -->|no| syntax{emailPatternMatch?}
+  syntax -->|no| emailInvalid
+  syntax -->|yes| sendgrid[POST validateEmail]
+
+  sendgrid --> sgFail{Network error?}
+  sgFail -->|yes| network["We're experiencing technical difficulties. Please try again later."]
+  sgFail -->|no| sgVerdict{Invalid or Risky with suggestion?}
+  sgVerdict -->|yes| emailInvalid
+  sgVerdict -->|no| verifyUser[verifyUser send OTP]
+  verifyUser --> verifyFail{Network error?}
+  verifyFail -->|yes| network
+  verifyFail -->|no| nextStep[Continue to Step 1: 6-digit code]

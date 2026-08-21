@@ -1,12 +1,14 @@
 "use client";
 
 import { useState } from "react";
-import PhoneInput, { isValidPhoneNumber } from "react-phone-number-input";
-import "react-phone-number-input/style.css";
 import WalletShell from "@/components/templates/WalletShell";
 import BackChip from "@/components/molecules/BackChip";
+import CodeField, { type CodeError } from "@/components/molecules/CodeField";
+import PhoneNumberInput, {
+  phoneNumberError,
+} from "@/components/molecules/PhoneNumberInput";
 import { cardCls } from "@/components/molecules/Card";
-import { Input, Label } from "@/components/atoms/form";
+import { Label } from "@/components/atoms/form";
 import Button from "@/components/atoms/Button";
 import {
   phoneUnique,
@@ -14,6 +16,7 @@ import {
   updateNumber,
 } from "@/lib/api";
 import { getSession, setSession, useAuth } from "@/lib/auth";
+import { FIELD_COPY } from "@/lib/fieldValidation";
 
 export default function LoginSecurityPage() {
   const { user, refresh } = useAuth();
@@ -23,13 +26,17 @@ export default function LoginSecurityPage() {
   const [verifying, setVerifying] = useState(false);
   const [updated, setUpdated] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [codeError, setCodeError] = useState(false);
+  const [codeError, setCodeError] = useState<CodeError>(null);
+  const [phoneTouched, setPhoneTouched] = useState(false);
+  const [networkError, setNetworkError] = useState(false);
   const [currentPhone, setCurrentPhone] = useState(user?.phoneNumber || "");
 
-  const validNumber = Boolean(phoneNumber && isValidPhoneNumber(phoneNumber) && uniqueOk);
+  const formatError = phoneNumberError(phoneNumber);
+  const validNumber = !formatError && uniqueOk;
 
   const checkUnique = async () => {
-    if (!phoneNumber) return;
+    setPhoneTouched(true);
+    if (!phoneNumber || formatError) return;
     try {
       const res = await phoneUnique({ data: { phoneNumber } });
       setUniqueOk(res.data === 200);
@@ -41,6 +48,7 @@ export default function LoginSecurityPage() {
   const requestCode = async () => {
     if (!validNumber || !user?.phoneNumber) return;
     setSaving(true);
+    setNetworkError(false);
     try {
       const unique = await phoneUnique({ data: { phoneNumber } });
       if (unique.data !== 200) {
@@ -51,8 +59,8 @@ export default function LoginSecurityPage() {
         data: { toNumber: phoneNumber, fromNumber: user.phoneNumber },
       });
       setVerifying(true);
-    } catch (err) {
-      console.error(err);
+    } catch {
+      setNetworkError(true);
     } finally {
       setSaving(false);
     }
@@ -60,7 +68,7 @@ export default function LoginSecurityPage() {
 
   const confirmCode = async (value: string) => {
     setCode(value);
-    setCodeError(false);
+    setCodeError(null);
     if (value.length !== 6) return;
     try {
       const res = await updateNumber({ data: { code: value } });
@@ -78,9 +86,8 @@ export default function LoginSecurityPage() {
       setCurrentPhone(phoneNumber || "");
       setUpdated(true);
       setVerifying(false);
-    } catch (err) {
-      console.error(err);
-      setCodeError(true);
+    } catch {
+      setCodeError("code");
     }
   };
 
@@ -107,42 +114,45 @@ export default function LoginSecurityPage() {
           Your phone number has been updated successfully.
         </div>
       )}
-      {codeError && (
+      {networkError ? (
         <div className="mt-4 rounded-xl border border-[#ff7a72]/30 bg-[#ff7a72]/10 px-4 py-3 text-[14px] text-[#ff9a93]">
-          Please check the verification code and try again.
+          {FIELD_COPY.network}
         </div>
-      )}
+      ) : null}
 
       <div className={`${cardCls} mt-6 p-6 sm:p-7`}>
         <div>
           <Label>New phone number</Label>
-          <div className="mt-2.5 rounded-xl border border-white/15 bg-[#051B35] px-4 py-2 focus-within:border-[#A6E773]">
-            <PhoneInput
-              international
-              defaultCountry="US"
-              value={phoneNumber}
-              onChange={setPhoneNumber}
-              onBlur={() => void checkUnique()}
-              disabled={updated}
-              className="phone-input-dark text-white"
-            />
-          </div>
-          {!uniqueOk && (
-            <p className="mt-2 text-[13px] text-[#ff7a72]">This phone number is already in use.</p>
-          )}
+          <PhoneNumberInput
+            variant="dark"
+            value={phoneNumber}
+            error={
+              !uniqueOk
+                ? "exists"
+                : phoneTouched
+                  ? formatError
+                  : null
+            }
+            onChange={(value) => {
+              setPhoneNumber(value);
+              setUniqueOk(true);
+              setPhoneTouched(false);
+            }}
+            onBlur={() => void checkUnique()}
+            disabled={updated}
+          />
         </div>
 
         {!updated && (
           <div className="mt-5">
-            <Label htmlFor="code">Verify code</Label>
-            <Input
+            <CodeField
               id="code"
-              className={`mt-2.5 ${codeError ? "border-[#ff7a72]" : ""}`}
-              inputMode="numeric"
-              maxLength={6}
+              label="Verify code"
+              layout="input"
+              variant="dark"
               value={code}
-              onChange={(e) => void confirmCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
-              placeholder="6 digit code"
+              error={codeError}
+              onChange={(value) => void confirmCode(value)}
             />
             <p className="mt-2 text-[13px] text-[#9DA2B3]">
               A 6-digit code is sent to the new number after you request an update.

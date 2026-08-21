@@ -555,7 +555,7 @@ export default function VenueProfile({ slug }: { slug: string }) {
             <img src={LOCKUP} alt="blocktickets" style={{ height: 19, width: "auto" }} />
           </Link>
           {!mobile && searchPill}
-          <Link href="/my-tickets/" style={{ fontFamily: "inherit", marginLeft: "auto", fontSize: 14, fontWeight: 600, color: BTN_INK, background: BTN, border: "none", borderRadius: 999, padding: "11px 22px", cursor: "pointer", whiteSpace: "nowrap", textDecoration: "none", display: "inline-flex", alignItems: "center" }}>My wallet</Link>
+          <Link href="/my-tickets/" style={{ fontFamily: "inherit", marginLeft: "auto", fontSize: 14, fontWeight: 600, color: ACC, background: "#fff", border: "none", borderRadius: 999, padding: "11px 22px", cursor: "pointer", whiteSpace: "nowrap", textDecoration: "none", display: "inline-flex", alignItems: "center" }}>My wallet</Link>
         </div>
       </header>
 

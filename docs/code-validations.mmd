@@ -1,0 +1,21 @@
+%% Step 1: code (OTP)
+%% Source: app/login/page.tsx and lib/fieldValidation.ts
+%% Code: Code is incorrect. Please try again
+%% Network: We're experiencing technical difficulties. Please try again later.
+
+flowchart TD
+  codeStep[Step 1: 6-digit code] --> typeCode[CodeField: digits only, max 6]
+  typeCode --> len6{Length is 6?}
+  len6 -->|no| waitCode[Wait]
+  waitCode --> typeCode
+  len6 -->|yes| verifyCode[verifyCode]
+
+  verifyCode --> codeNet{Network error?}
+  codeNet -->|yes| codeNetwork[Show network copy and clear code]
+  codeNetwork --> codeStep
+  codeNet -->|no| codeStatus{HTTP status}
+
+  codeStatus -->|200 existing user| sessionOk[setSession and redirect]
+  codeStatus -->|203 new user| nextStep[Continue to Step 2: create account]
+  codeStatus -->|other| badCode["Code is incorrect. Please try again"]
+  badCode --> codeStep

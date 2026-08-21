@@ -16,7 +16,14 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { validateEmail, verifyCode, verifyUser } from "@/lib/api";
 import { setLastKnown, setSession, type AuthSession } from "@/lib/auth";
-import { emailPatternMatch, isBlockedEmail } from "@/lib/helpers";
+import {
+  FIELD_COPY,
+  emailLooksInvalid,
+  isBlockedEmail,
+  normalizeEmail,
+} from "@/lib/fieldValidation";
+import EmailField from "@/components/molecules/EmailField";
+import CodeField from "@/components/molecules/CodeField";
 
 const NAVY = "#051b35";
 const GREEN = "#a6e773";
@@ -137,7 +144,6 @@ export default function Wallet({
   const [confirmCancel, setConfirmCancel] = useState<Sent | null>(null);
   const [sent, setSent] = useState<Sent[] | null>(null);
   const [toast, setToast] = useState<string | null>(null);
-  const codeRef = useRef<HTMLInputElement | null>(null);
   const toastT = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
@@ -165,30 +171,31 @@ export default function Wallet({
   };
 
   const sendLoginCode = async () => {
-    const trimmed = email.trim();
-    if (!emailPatternMatch(trimmed) || isBlockedEmail(trimmed)) {
-      setAuthError("Enter a valid email address.");
+    const nextEmail = normalizeEmail(email);
+    setEmail(nextEmail);
+    if (isBlockedEmail(nextEmail) || !nextEmail || emailLooksInvalid(nextEmail)) {
+      setAuthError(FIELD_COPY.invalidEmail);
       return;
     }
     setAuthBusy(true);
     setAuthError("");
     try {
-      const res = await validateEmail({ email: trimmed });
+      const res = await validateEmail({ email: nextEmail });
       const data = res.data as { verdict?: string; suggestion?: string };
       if (
         (data.verdict === "Risky" && data.suggestion) ||
         data.verdict === "Invalid"
       ) {
-        setAuthError("That email looks invalid. Check it and try again.");
+        setAuthError(FIELD_COPY.invalidEmail);
         return;
       }
       await verifyUser({
-        data: { phoneNumber: "", email: trimmed },
+        data: { phoneNumber: "", email: nextEmail },
       });
       setCode("");
       setScreen("code");
     } catch {
-      setAuthError("Couldn’t send a code. Check your connection and try again.");
+      setAuthError(FIELD_COPY.network);
     } finally {
       setAuthBusy(false);
     }
@@ -220,11 +227,11 @@ export default function Wallet({
           `/login/?from=${encodeURIComponent(signupFrom)}`,
         );
       } else {
-        setAuthError("That code looks incorrect. Try again.");
+        setAuthError(FIELD_COPY.codeIncorrect);
         setCode("");
       }
     } catch {
-      setAuthError("That code looks incorrect. Try again.");
+      setAuthError(FIELD_COPY.network);
       setCode("");
     } finally {
       setAuthBusy(false);
@@ -306,16 +313,18 @@ export default function Wallet({
           </p>
         </div>
         <div style={{ ...card, borderRadius: 24, boxShadow: "0 1px 2px rgba(5,27,53,0.05), 0 20px 46px -22px rgba(5,27,53,0.35)", padding: 22, display: "flex", flexDirection: "column", gap: 14 }}>
-          <label style={{ fontSize: 12, fontWeight: 600, color: FAINT }}>Email address</label>
-          <input
-            value={email}
-            onChange={(e) => { setEmail(e.target.value); setAuthError(""); }}
+          <EmailField
+            id="wallet-email"
             placeholder="you@email.com"
-            autoComplete="email"
+            value={email}
             disabled={authBusy}
-            style={{ fontFamily: "inherit", width: "100%", boxSizing: "border-box", fontSize: 16, color: NAVY, background: FIELD, border: "1px solid rgba(5,27,53,0.12)", borderRadius: 14, padding: "15px 16px", outline: "none" }}
+            invalid={authError === FIELD_COPY.invalidEmail}
+            networkError={authError === FIELD_COPY.network}
+            onChange={(value) => {
+              setEmail(value);
+              setAuthError("");
+            }}
           />
-          {authError && <div style={{ fontSize: 13, color: DANGER }}>{authError}</div>}
           <button
             type="button"
             disabled={authBusy}
@@ -346,29 +355,22 @@ export default function Wallet({
           <p style={{ margin: 0, fontSize: 15, lineHeight: 1.6, color: SUB }}>Sent to <strong style={{ fontWeight: 600, color: NAVY }}>{email}</strong></p>
         </div>
         <div style={{ ...card, borderRadius: 24, padding: 22, display: "flex", flexDirection: "column", gap: 18 }}>
-          <div onClick={() => codeRef.current?.focus()} style={{ position: "relative", cursor: "text" }}>
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(6, 1fr)", gap: 8 }}>
-              {[0, 1, 2, 3, 4, 5].map((i) => (
-                <div key={i} style={{ height: mobile ? 54 : 60, border: `1px solid ${code.length === i ? NAVY : "rgba(5,27,53,0.12)"}`, background: code.length === i ? "#fff" : FIELD, borderRadius: 14, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 22, fontWeight: 600, fontVariantNumeric: "tabular-nums", color: NAVY }}>{code[i] || ""}</div>
-              ))}
-            </div>
-            <input
-              ref={codeRef}
-              value={code}
-              inputMode="numeric"
-              autoComplete="one-time-code"
-              aria-label="Six-digit code"
-              disabled={authBusy}
-              onChange={(e) => {
-                const v = e.target.value.replace(/\D/g, "").slice(0, 6);
-                setCode(v);
-                setAuthError("");
-                if (v.length === 6) void submitLoginCode(v);
-              }}
-              style={{ position: "absolute", inset: 0, width: "100%", height: "100%", opacity: 0, border: "none", background: "transparent", fontSize: 16, cursor: "text", outline: "none" }}
-            />
-          </div>
-          {authError && <div style={{ fontSize: 13, color: DANGER, textAlign: "center" }}>{authError}</div>}
+          <CodeField
+            value={code}
+            error={
+              authError === FIELD_COPY.codeIncorrect
+                ? "code"
+                : authError === FIELD_COPY.network
+                  ? "network"
+                  : null
+            }
+            disabled={authBusy}
+            onChange={(v) => {
+              setCode(v);
+              setAuthError("");
+            }}
+            onComplete={(v) => void submitLoginCode(v)}
+          />
           <div style={{ fontSize: 13, color: MUTE, textAlign: "center" }}>
             Didn&apos;t get it?{" "}
             <button
@@ -724,7 +726,9 @@ export default function Wallet({
   const tfSeatNos = (tfEv?.tickets || []).map((t) => t.no);
   const tfStep = tf?.step || 1;
   const tfSel = tf?.sel || [];
-  const tfValid = /.+@.+\..+/.test(tf?.email || "");
+  const tfValid =
+    Boolean(normalizeEmail(tf?.email)) &&
+    !emailLooksInvalid(normalizeEmail(tf?.email || ""));
   const tfCanNext = tfStep === 1 ? tfSel.length > 0 : tfStep === 2 ? tfValid : true;
   const doTfPrimary = () => {
     if (!tf || !tfCanNext) return;
@@ -733,6 +737,10 @@ export default function Wallet({
       const entry: Sent = { id: "t" + Date.now(), to: tf.email, title: tfEv?.title || "", seat: (tfEv?.row || "") + " · Seat " + tfSel.join(", "), on: new Date().toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }), status: "pending" };
       setSent([entry, ...sentList]);
       setTf({ ...tf, step: 4 });
+      return;
+    }
+    if (tfStep === 2) {
+      setTf({ ...tf, email: normalizeEmail(tf.email), step: 3 });
       return;
     }
     setTf({ ...tf, step: tfStep + 1 });
@@ -768,10 +776,12 @@ export default function Wallet({
           <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
             <div style={{ fontSize: 17, fontWeight: 600, letterSpacing: "-0.015em" }}>Enter the recipient&apos;s email address</div>
             <p style={{ margin: 0, fontSize: 14, lineHeight: 1.55, color: SUB }}>They&apos;ll get an email saying you sent them a ticket. It stays in your account until they claim it.</p>
-            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-              <label style={{ ...eyebrow, letterSpacing: "0.1em" }}>Email address</label>
-              <input value={tf?.email || ""} onChange={(e) => setTf({ ...tf!, email: e.target.value })} placeholder="name@email.com" style={{ fontFamily: "inherit", width: "100%", boxSizing: "border-box", fontSize: 16, color: NAVY, background: FIELD, border: "1px solid rgba(5,27,53,0.12)", borderRadius: 14, padding: "14px 16px", outline: "none" }} />
-            </div>
+            <EmailField
+              id="wallet-xfer-email"
+              placeholder="name@email.com"
+              value={tf?.email || ""}
+              onChange={(value) => setTf({ ...tf!, email: value })}
+            />
           </div>
         )}
         {tfStep === 3 && (

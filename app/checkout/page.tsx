@@ -75,6 +75,8 @@ import {
   countCartItems,
   getCheckoutReturnPath,
   getStoredCart,
+  hadCheckoutLoginDetour,
+  markCheckoutLoginDetour,
   setStoredCart,
 } from "@/lib/cart";
 import {
@@ -643,6 +645,7 @@ function CheckoutPage() {
     if (!authReady || isAuthenticated) return;
     const returnTo = `${window.location.pathname}${window.location.search}`;
     setLastKnown(returnTo);
+    markCheckoutLoginDetour();
     window.location.href = `/login/?from=${encodeURIComponent(returnTo)}`;
   }, [authReady, isAuthenticated]);
 
@@ -679,6 +682,7 @@ function CheckoutPage() {
       checkoutLeavePath(cartRef.current, eventData, leaveOrgSlug()) ||
       BACK_FALLBACK_HREF;
     const returnPath = getCheckoutReturnPath();
+    const loginDetour = hadCheckoutLoginDetour();
     try {
       await dropUserCart(
         dropUserCartPayload(cartRef.current, eventData, getStoredCart()),
@@ -690,7 +694,7 @@ function CheckoutPage() {
     // Swap to the loader only once the release is done — the dialog keeps its
     // in-flight state until then.
     setLeaving(true);
-    if (shouldPopCheckoutHistory(dest, returnPath)) router.back();
+    if (shouldPopCheckoutHistory(dest, returnPath, loginDetour)) router.back();
     else router.replace(dest);
   }, [leaveOrgSlug, restarting, router]);
 
@@ -723,6 +727,7 @@ function CheckoutPage() {
       leaveOrgSlug(),
     );
     const returnPath = getCheckoutReturnPath();
+    const loginDetour = hadCheckoutLoginDetour();
     try {
       await dropUserCart(
         dropUserCartPayload(cartRef.current, eventData, getStoredCart()),
@@ -732,7 +737,7 @@ function CheckoutPage() {
     }
     clearStoredCart();
     setLeaving(true);
-    if (shouldPopCheckoutHistory(dest, returnPath)) router.back();
+    if (shouldPopCheckoutHistory(dest, returnPath, loginDetour)) router.back();
     else router.replace(dest);
   }, [cancelling, leaveOrgSlug, router]);
 

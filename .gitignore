@@ -39,3 +39,7 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# Cursor plan files — keep local; do not commit or push
+.cursor/plans/
+**/*.plan.md

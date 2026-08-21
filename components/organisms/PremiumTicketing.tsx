@@ -13,6 +13,7 @@ import { createPortal } from "react-dom";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import BrandedActionButton from "@/components/atoms/BrandedActionButton";
+import EmailField from "@/components/molecules/EmailField";
 import Modal from "@/components/molecules/Modal";
 import SectionLocatorThumb from "@/components/molecules/SectionLocatorThumb";
 import SeatMapSelectionOverlay from "@/components/organisms/SeatMapSelectionOverlay";
@@ -20,6 +21,11 @@ import { placeGATicketsIntoCart, placeTicketsIntoCart } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { goBack } from "@/lib/inAppBack";
 import { checkoutHref, rememberCheckoutReturnPath, setStoredCart } from "@/lib/cart";
+import {
+  emailLooksInvalid,
+  isBlockedEmail,
+  normalizeEmail,
+} from "@/lib/fieldValidation";
 import { beginRouteTransition } from "@/lib/routeTransition";
 import type { SeatmapBackground, SeatmapMapping } from "@/lib/seatmapLookups";
 import { getSeatViewImageCandidates } from "@/lib/seatView";
@@ -255,6 +261,7 @@ export default function PremiumTicketing({
   const [gaQty, setGaQty] = useState(1);
   const [notifyIdx, setNotifyIdx] = useState<number | null>(null);
   const [notifyEmail, setNotifyEmail] = useState("");
+  const [notifyEmailInvalid, setNotifyEmailInvalid] = useState(false);
   const [notifySms, setNotifySms] = useState(false);
   const [notifySent, setNotifySent] = useState(false);
   const [notified, setNotified] = useState<Record<number, boolean>>({});
@@ -1201,16 +1208,16 @@ export default function PremiumTicketing({
             <p className="mt-4 text-[14px] text-[#4a5567]">{body}</p>
             {!notifySent ? (
               <div className="mt-5 flex flex-col gap-3.5">
-                <label className="flex flex-col gap-1.5 text-[13px] font-semibold text-[#4a5567]">
-                  Email address
-                  <input
-                    type="email"
-                    value={notifyEmail}
-                    onChange={(e) => setNotifyEmail(e.target.value)}
-                    placeholder="you@example.com"
-                    className="rounded-xl border border-[#d3d6e0] bg-white px-4 py-3.5 text-[15px] font-normal text-[#051b35] outline-none"
-                  />
-                </label>
+                <EmailField
+                  id="notify-email"
+                  placeholder="you@example.com"
+                  value={notifyEmail}
+                  invalid={notifyEmailInvalid}
+                  onChange={(value) => {
+                    setNotifyEmail(value);
+                    setNotifyEmailInvalid(false);
+                  }}
+                />
                 <label className="flex cursor-pointer items-start gap-2.5 text-[14px] font-normal text-[#4a5567]">
                   <input
                     type="checkbox"
@@ -1233,6 +1240,16 @@ export default function PremiumTicketing({
                     primaryColor={ACC}
                     textColor={BTN_INK}
                     onClick={() => {
+                      const next = normalizeEmail(notifyEmail);
+                      if (
+                        isBlockedEmail(next) ||
+                        !next ||
+                        emailLooksInvalid(next)
+                      ) {
+                        setNotifyEmailInvalid(true);
+                        return;
+                      }
+                      setNotifyEmail(next);
                       setNotifySent(true);
                       setNotified((m) => ({ ...m, [notifyIdx]: true }));
                     }}

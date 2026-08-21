@@ -1,11 +1,15 @@
 "use client";
 
-import { Suspense, useRef, useState } from "react";
+import { Suspense, useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
-import { isValidPhoneNumber } from "react-phone-number-input";
-import PhoneInput from "react-phone-number-input";
-import "react-phone-number-input/style.css";
+import CodeField, { type CodeError } from "@/components/molecules/CodeField";
+import EmailField from "@/components/molecules/EmailField";
+import NameField from "@/components/molecules/NameField";
+import PhoneNumberInput, {
+  phoneNumberError,
+  type PhoneErrorType,
+} from "@/components/molecules/PhoneNumberInput";
 import {
   verifyUser,
   verifyCode,
@@ -14,16 +18,23 @@ import {
 } from "@/lib/api";
 import { setSession, getLastKnown, type AuthSession } from "@/lib/auth";
 import {
+  FIELD_COPY,
+  emailLooksInvalid,
   emailPatternMatch,
   isBlockedEmail,
-  namePatternMatch,
-} from "@/lib/helpers";
+  lightFieldClass,
+  nameFieldError,
+  normalizeEmail,
+  type NameFieldError,
+} from "@/lib/fieldValidation";
 
 type Choice = "email" | "phone-number";
 
 const NAVY = "#051b35";
-const fieldCls =
-  "h-[52px] w-full rounded-[14px] border border-[rgba(5,27,53,0.12)] bg-[#f7f8fc] px-4 text-[16px] text-[#051b35] outline-none placeholder:text-[#8a93a3]";
+const DOB_REQUIRED_MESSAGE = "Date of birth is required.";
+const DOB_INVALID_MESSAGE =
+  "Date of birth is incorrect. Make sure it is in the correct format: MM/DD/YYYY";
+
 const greenBtnCls =
   "w-full rounded-full bg-[#a6e773] px-5 py-4 text-[15px] font-semibold text-[#051b35] disabled:opacity-70";
 const cardCls =
@@ -33,14 +44,17 @@ const backBtnCls =
 
 function redirectAfterAuth(fromParam: string | null) {
   const lastKnown = getLastKnown();
+  const requested = fromParam?.trim() || "";
+  // Bare /login has no return URL — go to browse. Do not use lastKnown as a
+  // stand-in for `?from=` (that sent shoppers to a leftover checkout path).
+  let from = requested || "/browse/";
   // Prefer lastKnown when it keeps query params (e.g. cartId) that `from` dropped.
-  let from = fromParam || lastKnown || "/browse/";
   if (
-    fromParam &&
+    requested &&
     lastKnown &&
-    !fromParam.includes("?") &&
+    !requested.includes("?") &&
     lastKnown.includes("?") &&
-    lastKnown.startsWith(fromParam.split("?")[0])
+    lastKnown.startsWith(requested.split("?")[0])
   ) {
     from = lastKnown;
   }
@@ -58,11 +72,16 @@ function isValidDob(dob: string) {
     Number(digits.slice(4, 8)),
   ];
   const dateObj = new Date(year, month - 1, day);
-  return (
-    dateObj.getFullYear() === year &&
-    dateObj.getMonth() === month - 1 &&
-    dateObj.getDate() === day
-  );
+  if (
+    dateObj.getFullYear() !== year ||
+    dateObj.getMonth() !== month - 1 ||
+    dateObj.getDate() !== day
+  ) {
+    return false;
+  }
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  return dateObj <= today;
 }
 
 function formatDobInput(raw: string) {
@@ -111,38 +130,59 @@ function LoginForm() {
   const [dob, setDob] = useState("");
   const [hasError, setHasError] = useState(false);
   const [isEmailValid, setIsEmailValid] = useState(true);
-  const [isPhoneValid, setIsPhoneValid] = useState(true);
-  const [isDobValid, setIsDobValid] = useState(true);
-  const [userExists, setUserExists] = useState(false);
+  const [phoneError, setPhoneError] = useState<PhoneErrorType | null>(null);
+  const [firstNameError, setFirstNameError] = useState<NameFieldError>(null);
+  const [lastNameError, setLastNameError] = useState<NameFieldError>(null);
+  const [dobError, setDobError] = useState<"required" | "invalid" | null>(null);
+  const [codeError, setCodeError] = useState<CodeError>(null);
   const [isSaving, setIsSaving] = useState(false);
   const [resent, setResent] = useState(false);
   const [done, setDone] = useState(false);
   const [statusMessage, setStatusMessage] = useState("");
-  const codeRef = useRef<HTMLInputElement | null>(null);
 
-  const clearFeedback = () => {
+  const clearNetworkFeedback = () => {
     setHasError(false);
     setStatusMessage("");
     setResent(false);
+    setCodeError(null);
   };
-
-  const formValid = Boolean(
-    firstName && lastName && email && phoneNumber && dob,
-  );
 
   const destinationLabel = choice === "email" ? email : phoneNumber;
 
-  const sendCode = async () => {
+  const sendCode = async (address: string) => {
+    await verifyUser({
+      data: {
+        phoneNumber: choice === "email" ? "" : phoneNumber || "",
+        email: choice === "email" ? address : "",
+      },
+    });
+    setStep(1);
+  };
+
+  const submitEmailStep = async () => {
+    const nextEmail = normalizeEmail(email);
+    setEmail(nextEmail);
+    if (isBlockedEmail(nextEmail)) {
+      setIsEmailValid(false);
+      return;
+    }
+    if (!emailPatternMatch(nextEmail)) {
+      setIsEmailValid(false);
+      return;
+    }
     setIsSaving(true);
     setHasError(false);
     try {
-      await verifyUser({
-        data: {
-          phoneNumber: choice === "email" ? "" : phoneNumber || "",
-          email: choice === "email" ? email : "",
-        },
-      });
-      setStep(1);
+      const res = await validateEmail({ email: nextEmail });
+      const data = res.data as { verdict?: string; suggestion?: string };
+      if (
+        (data.verdict === "Risky" && data.suggestion) ||
+        data.verdict === "Invalid"
+      ) {
+        setIsEmailValid(false);
+        return;
+      }
+      await sendCode(nextEmail);
     } catch {
       setHasError(true);
     } finally {
@@ -150,31 +190,8 @@ function LoginForm() {
     }
   };
 
-  const submitEmailStep = async () => {
-    if (!emailPatternMatch(email) || isBlockedEmail(email)) {
-      setIsEmailValid(false);
-      return;
-    }
-    setIsSaving(true);
-    try {
-      const res = await validateEmail({ email });
-      const data = res.data as { verdict?: string; suggestion?: string };
-      if (
-        (data.verdict === "Risky" && data.suggestion) ||
-        data.verdict === "Invalid"
-      ) {
-        setIsEmailValid(false);
-        setIsSaving(false);
-        return;
-      }
-      await sendCode();
-    } catch {
-      setHasError(true);
-      setIsSaving(false);
-    }
-  };
-
   const verifyUserCode = async (fullCode: string) => {
+    setCodeError(null);
     setHasError(false);
     try {
       const res = await verifyCode({ data: { code: fullCode } });
@@ -185,43 +202,73 @@ function LoginForm() {
       } else if (res.status === 203) {
         setStep(2);
       } else {
-        setHasError(true);
+        setCodeError("code");
         setCode("");
       }
     } catch {
-      setHasError(true);
+      setCodeError("network");
       setCode("");
     }
   };
 
   const resend = async () => {
-    await sendCode();
-    setResent(true);
-    setStatusMessage("Verification code has been resent.");
+    setIsSaving(true);
+    setHasError(false);
+    setCodeError(null);
+    setResent(false);
+    try {
+      await sendCode(normalizeEmail(email));
+      setResent(true);
+      setStatusMessage("Verification code has been resent.");
+    } catch {
+      setHasError(true);
+      setCodeError("network");
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   const submitRegistration = async () => {
-    if (!phoneNumber || !isValidPhoneNumber(phoneNumber)) {
-      setIsPhoneValid(false);
-      return;
+    const nextEmail = normalizeEmail(email);
+    const first = firstName.trim();
+    const last = lastName.trim();
+    let invalid = false;
+
+    const firstErr = nameFieldError(firstName);
+    const lastErr = nameFieldError(lastName);
+    setFirstNameError(firstErr);
+    setLastNameError(lastErr);
+    if (firstErr || lastErr) invalid = true;
+
+    const nextPhoneError = phoneNumberError(phoneNumber);
+    setPhoneError(nextPhoneError);
+    if (nextPhoneError) invalid = true;
+
+    if (!dob) {
+      setDobError("required");
+      invalid = true;
+    } else if (!isValidDob(dob)) {
+      setDobError("invalid");
+      invalid = true;
+    } else {
+      setDobError(null);
     }
-    if (!isValidDob(dob)) {
-      setIsDobValid(false);
-      return;
-    }
-    if (!emailPatternMatch(email) || isBlockedEmail(email)) {
+
+    if (emailLooksInvalid(nextEmail)) {
       setIsEmailValid(false);
-      return;
+      invalid = true;
     }
+
+    if (invalid) return;
 
     setIsSaving(true);
     setHasError(false);
     try {
       const res = await createNewUser({
         data: {
-          email,
-          firstName,
-          lastName,
+          email: nextEmail,
+          firstName: first,
+          lastName: last,
           phoneNumber,
           dob,
         },
@@ -233,7 +280,9 @@ function LoginForm() {
         return;
       }
       if (res.status === 226) {
-        setUserExists(true);
+        setPhoneError("exists");
+      } else {
+        setHasError(true);
       }
     } catch {
       setHasError(true);
@@ -241,12 +290,6 @@ function LoginForm() {
       setIsSaving(false);
     }
   };
-
-  const nameOk = (value: string) =>
-    !value || new RegExp(namePatternMatch).test(value);
-
-  const invalidEmailMessage =
-    "That email looks invalid. Check it and try again.";
 
   return (
     <div className="mx-auto flex max-w-[1100px] justify-center px-[18px] py-8 md:px-8 md:py-16">
@@ -258,6 +301,7 @@ function LoginForm() {
               setStep((s) => s - 1);
               setCode("");
               setHasError(false);
+              setCodeError(null);
               setDone(false);
             }}
             className={backBtnCls}
@@ -307,69 +351,50 @@ function LoginForm() {
             </div>
 
             <form
-                className={`${cardCls} flex flex-col gap-3.5`}
-                onSubmit={(e) => {
-                  e.preventDefault();
-                  void submitEmailStep();
+              className={`${cardCls} flex flex-col gap-3.5`}
+              noValidate
+              onSubmit={(e) => {
+                e.preventDefault();
+                void submitEmailStep();
+              }}
+            >
+              <EmailField
+                id="email"
+                autoFocus
+                placeholder="you@email.com"
+                value={email}
+                disabled={isSaving}
+                invalid={!isEmailValid}
+                networkError={hasError}
+                onChange={(value) => {
+                  setEmail(value);
+                  setIsEmailValid(true);
+                  clearNetworkFeedback();
                 }}
+                onBlur={() => {
+                  const next = normalizeEmail(email);
+                  setIsEmailValid(!next || !emailLooksInvalid(next));
+                }}
+              />
+              <button
+                type="submit"
+                disabled={!email.trim() || isSaving}
+                className={greenBtnCls}
               >
-                <label
-                  htmlFor="email"
-                  className="text-[12px] font-semibold text-[#4a5567]"
-                >
-                  Email address
-                </label>
-                <input
-                  id="email"
-                  type="email"
-                  autoFocus
-                  autoComplete="email"
-                  value={email}
-                  onChange={(e) => {
-                    setEmail(e.target.value);
-                    setIsEmailValid(true);
-                    clearFeedback();
-                  }}
-                  onBlur={() =>
-                    setIsEmailValid(!email || emailPatternMatch(email))
-                  }
-                  placeholder="you@email.com"
-                  disabled={isSaving}
-                  className={`${fieldCls} ${
-                    !isEmailValid || (email && hasError)
-                      ? "border-[#c2394a]"
-                      : ""
-                  }`}
-                />
-                {!isEmailValid ? (
-                  <p className="text-[13px] text-[#c2394a]">
-                    {invalidEmailMessage}
-                  </p>
-                ) : hasError ? (
-                  <p className="text-[13px] text-[#c2394a]">
-                    Couldn&apos;t send a code. Check your connection and try
-                    again.
-                  </p>
-                ) : null}
-                <button
-                  type="submit"
-                  disabled={!email || !isEmailValid || isSaving}
-                  className={greenBtnCls}
-                >
-                  {isSaving ? "Sending…" : "Send my code"}
-                </button>
-                <p className="text-center text-[12px] leading-relaxed text-[#8a93a3]">
-                  By continuing you agree to the Blocktickets{" "}
-                  <Link href="/terms-conditions/" className="underline">
-                    terms
-                  </Link>{" "}
-                  and{" "}
-                  <Link href="/privacy-policy/" className="underline">
-                    privacy policy
-                  </Link>
-                  .
-                </p>
-              </form>
+                {isSaving ? "Sending…" : "Send my code"}
+              </button>
+              <p className="text-center text-[12px] leading-relaxed text-[#8a93a3]">
+                By continuing you agree to the Blocktickets{" "}
+                <Link href="/terms-conditions/" className="underline">
+                  terms
+                </Link>{" "}
+                and{" "}
+                <Link href="/privacy-policy/" className="underline">
+                  privacy policy
+                </Link>
+                .
+              </p>
+            </form>
           </>
         )}
 
@@ -387,46 +412,16 @@ function LoginForm() {
               </p>
             </div>
             <div className={`${cardCls} flex flex-col gap-[18px]`}>
-              <div
-                className="relative cursor-text"
-                onClick={() => codeRef.current?.focus()}
-              >
-                <div className="grid grid-cols-6 gap-2">
-                  {[0, 1, 2, 3, 4, 5].map((i) => (
-                    <div
-                      key={i}
-                      className={`flex h-[54px] items-center justify-center rounded-[14px] border text-[22px] font-semibold tabular-nums md:h-[60px] ${
-                        code.length === i
-                          ? "border-[#051b35] bg-white"
-                          : "border-[rgba(5,27,53,0.12)] bg-[#f7f8fc]"
-                      } ${hasError ? "border-[#c2394a]" : ""}`}
-                    >
-                      {code[i] || ""}
-                    </div>
-                  ))}
-                </div>
-                <input
-                  ref={codeRef}
-                  value={code}
-                  inputMode="numeric"
-                  autoComplete="one-time-code"
-                  autoFocus
-                  aria-label="Six-digit code"
-                  disabled={isSaving || done}
-                  onChange={(e) => {
-                    const next = e.target.value.replace(/\D/g, "").slice(0, 6);
-                    setCode(next);
-                    clearFeedback();
-                    if (next.length === 6) void verifyUserCode(next);
-                  }}
-                  className="absolute inset-0 h-full w-full cursor-text border-none bg-transparent text-[16px] opacity-0 outline-none"
-                />
-              </div>
-              {hasError ? (
-                <p className="text-center text-[13px] text-[#c2394a]">
-                  That code looks incorrect. Try again.
-                </p>
-              ) : null}
+              <CodeField
+                value={code}
+                error={codeError || (hasError ? "network" : null)}
+                disabled={isSaving || done}
+                onChange={(next) => {
+                  setCode(next);
+                  clearNetworkFeedback();
+                }}
+                onComplete={(next) => void verifyUserCode(next)}
+              />
               <p className="text-center text-[13px] text-[#8a93a3]">
                 {done ? (
                   <span className="font-semibold text-[#2f8f4e]">
@@ -463,31 +458,20 @@ function LoginForm() {
             </div>
             <form
               className={`${cardCls} flex flex-col gap-4`}
+              noValidate
               onSubmit={(e) => {
                 e.preventDefault();
                 void submitRegistration();
               }}
             >
-              <div>
-                <label
-                  htmlFor="reg-email"
-                  className="text-[12px] font-semibold text-[#4a5567]"
-                >
-                  Email address
-                </label>
-                <input
-                  id="reg-email"
-                  type="email"
-                  value={email}
-                  disabled={choice === "email"}
-                  onChange={(e) => {
-                    setEmail(e.target.value);
-                    setIsEmailValid(true);
-                    clearFeedback();
-                  }}
-                  className={`mt-2 ${fieldCls} ${!isEmailValid ? "border-[#c2394a]" : ""}`}
-                />
-              </div>
+              <EmailField
+                id="reg-email"
+                value={email}
+                disabled
+                readOnly
+                invalid={!isEmailValid}
+                onChange={() => {}}
+              />
               <div>
                 <label
                   htmlFor="reg-phone"
@@ -495,76 +479,46 @@ function LoginForm() {
                 >
                   Mobile number
                 </label>
-                <div
-                  className={`phone-field mt-2 rounded-[14px] border bg-[#f7f8fc] px-3 ${
-                    !isPhoneValid || userExists
-                      ? "border-[#c2394a]"
-                      : "border-[rgba(5,27,53,0.12)]"
-                  }`}
-                >
-                  <PhoneInput
-                    id="reg-phone"
-                    international
-                    defaultCountry="US"
-                    value={phoneNumber}
-                    onChange={(value) => {
-                      setPhoneNumber(value);
-                      setIsPhoneValid(true);
-                      setUserExists(false);
-                      clearFeedback();
-                    }}
-                    disabled={choice === "phone-number"}
-                    className="phone-input flex h-[52px] items-center text-[16px] text-[#051b35]"
-                  />
-                </div>
-                {userExists ? (
-                  <p className="mt-2 text-[13px] text-[#c2394a]">
-                    An account with this phone number already exists.
-                  </p>
-                ) : null}
-              </div>
-              <div>
-                <label
-                  htmlFor="firstName"
-                  className="text-[12px] font-semibold text-[#4a5567]"
-                >
-                  First name
-                </label>
-                <input
-                  id="firstName"
-                  value={firstName}
-                  onChange={(e) => {
-                    const v = e.target.value;
-                    if (nameOk(v)) {
-                      setFirstName(v);
-                      clearFeedback();
-                    }
+                <PhoneNumberInput
+                  id="reg-phone"
+                  value={phoneNumber}
+                  error={phoneError}
+                  onChange={(value) => {
+                    setPhoneNumber(value);
+                    setPhoneError(null);
+                    setHasError(false);
                   }}
-                  placeholder="Enter your first name"
-                  className={`mt-2 ${fieldCls}`}
+                  onBlur={() => setPhoneError(phoneNumberError(phoneNumber))}
                 />
               </div>
-              <div>
-                <label
-                  htmlFor="lastName"
-                  className="text-[12px] font-semibold text-[#4a5567]"
-                >
-                  Last name
-                </label>
-                <input
-                  id="lastName"
-                  value={lastName}
-                  onChange={(e) => {
-                    const v = e.target.value;
-                    if (nameOk(v)) {
-                      setLastName(v);
-                      clearFeedback();
-                    }
-                  }}
-                  placeholder="Enter your last name"
-                  className={`mt-2 ${fieldCls}`}
-                />
-              </div>
+              <NameField
+                id="firstName"
+                label="First name"
+                autoComplete="given-name"
+                placeholder="Enter your first name"
+                value={firstName}
+                error={firstNameError}
+                onChange={(value) => {
+                  setFirstName(value);
+                  setFirstNameError(null);
+                  setHasError(false);
+                }}
+                onBlur={() => setFirstNameError(nameFieldError(firstName))}
+              />
+              <NameField
+                id="lastName"
+                label="Last name"
+                autoComplete="family-name"
+                placeholder="Enter your last name"
+                value={lastName}
+                error={lastNameError}
+                onChange={(value) => {
+                  setLastName(value);
+                  setLastNameError(null);
+                  setHasError(false);
+                }}
+                onBlur={() => setLastNameError(nameFieldError(lastName))}
+              />
               <div>
                 <label
                   htmlFor="dob"
@@ -575,34 +529,41 @@ function LoginForm() {
                 <input
                   id="dob"
                   value={dob}
+                  required
+                  aria-invalid={Boolean(dobError)}
                   onChange={(e) => {
                     setDob(formatDobInput(e.target.value));
-                    setIsDobValid(true);
-                    clearFeedback();
+                    setDobError(null);
+                    setHasError(false);
                   }}
-                  onBlur={() => setIsDobValid(!dob || isValidDob(dob))}
+                  onBlur={() => {
+                    if (!dob) setDobError("required");
+                    else setDobError(isValidDob(dob) ? null : "invalid");
+                  }}
                   placeholder="MM/DD/YYYY"
                   inputMode="numeric"
-                  className={`mt-2 ${fieldCls} ${dob && !isDobValid ? "border-[#c2394a]" : ""}`}
+                  className={`mt-2 ${lightFieldClass(Boolean(dobError))}`}
                 />
-                <p className="mt-1.5 text-[12px] text-[#8a93a3]">
-                  Format: MM/DD/YYYY
-                </p>
+                {dobError === "required" ? (
+                  <p className="mt-2 text-[13px] text-[#c2394a]">
+                    {DOB_REQUIRED_MESSAGE}
+                  </p>
+                ) : dobError === "invalid" ? (
+                  <p className="mt-2 text-[13px] text-[#c2394a]">
+                    {DOB_INVALID_MESSAGE}
+                  </p>
+                ) : (
+                  <p className="mt-1.5 text-[12px] text-[#8a93a3]">
+                    Format: MM/DD/YYYY
+                  </p>
+                )}
               </div>
               {hasError ? (
-                <p className="text-[13px] text-[#c2394a]">
-                  Something went wrong. Please check your details and try again.
-                </p>
+                <p className="text-[13px] text-[#c2394a]">{FIELD_COPY.network}</p>
               ) : null}
               <button
                 type="submit"
-                disabled={
-                  !formValid ||
-                  !isEmailValid ||
-                  !isDobValid ||
-                  !isPhoneValid ||
-                  isSaving
-                }
+                disabled={isSaving || done}
                 className={greenBtnCls}
               >
                 {isSaving ? "Signing up…" : done ? "Signed up…" : "Sign up"}

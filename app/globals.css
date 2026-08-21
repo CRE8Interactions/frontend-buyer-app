@@ -9,7 +9,7 @@
   --accent: #a6e773;
 }
 
-/* react-phone-number-input on navy surfaces */
+/* react-phone-number-input — layout only; color is theme-scoped below */
 .PhoneInput {
   display: flex;
   align-items: center;
@@ -20,16 +20,28 @@
   background: transparent;
   border: 0;
   outline: none;
-  color: #fff;
   font-size: 15px;
   height: 40px;
+  width: 100%;
 }
 .PhoneInputCountryIcon {
   border-radius: 2px;
+  overflow: hidden;
 }
 .PhoneInputCountrySelect {
   background: transparent;
+}
+.phone-input-dark .PhoneInputInput,
+.phone-input-dark .PhoneInputCountrySelect {
   color: #fff;
+}
+.phone-input-light .PhoneInputInput,
+.phone-input-light .PhoneInputCountrySelect {
+  color: #051b35;
+}
+.phone-input-light .PhoneInputCountrySelectArrow {
+  color: #9da2b3;
+  opacity: 1;
 }
 
 * {
@@ -308,20 +320,8 @@ body {
 }
 
 /* ---------- phone input (login) ---------- */
-.phone-input .PhoneInputInput {
-  background: transparent;
-  border: 0;
-  outline: none;
-  color: white;
-  width: 100%;
-  font-size: 15px;
-}
 .phone-input .PhoneInputCountryIcon {
   border-radius: 2px;
-}
-.phone-input .PhoneInputCountrySelectArrow {
-  color: #9da2b3;
-  opacity: 1;
 }
 
 /* ---------- misc ---------- */

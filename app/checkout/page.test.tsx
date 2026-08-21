@@ -140,7 +140,7 @@ import {
 import { eventPurchasePath, flexPackPurchasePath, formatCurrency, imageUrl, packagePurchasePath } from "@/lib/helpers";
 import { cacheOrgBranding } from "@/lib/orgBrandingCache";
 import { getSeatViewImageCandidates } from "@/lib/seatView";
-import { setCheckoutReturnPath } from "@/lib/cart";
+import { markCheckoutLoginDetour, setCheckoutReturnPath } from "@/lib/cart";
 import { msUntilStripePaymentSyncReady } from "@/lib/stripePaymentSync";
 
 const mockedGetCart = vi.mocked(getCart);
@@ -1109,6 +1109,53 @@ describe("Checkout page", () => {
     expect(routerMocks.replace).not.toHaveBeenCalled();
 
     vi.useRealTimers();
+  });
+
+  it("returns to the package page instead of the login page when cancelling after a login bounce", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    const cart = demoPackageCheckoutCart({ remainingTime: 3 });
+    setCheckoutReturnPath(`/${cart.package.organization.slug}/`);
+    markCheckoutLoginDetour();
+    mockedGetCart.mockResolvedValue({ data: cart } as never);
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+    render(<CheckoutPageRoute />);
+    expect(await screen.findByText("Secure checkout")).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: /back/i }));
+    await screen.findByRole("dialog", { name: /are you sure/i });
+    await user.click(screen.getByRole("button", { name: /cancel order/i }));
+
+    await waitFor(() => {
+      expect(routerMocks.replace).toHaveBeenCalledWith(
+        `/${cart.package.organization.slug}/`,
+      );
+    });
+    // Back would land on /login/?from=/checkout/, which bounces into checkout.
+    expect(routerMocks.back).not.toHaveBeenCalled();
+
+    vi.useRealTimers();
+  });
+
+  it("returns to the package page instead of the login page when the hold runs out after a login bounce", async () => {
+    const cart = demoPackageCheckoutCart({ remainingTime: 0 });
+    setCheckoutReturnPath(packagePurchasePath(cart.package) as string);
+    markCheckoutLoginDetour();
+    mockedGetCart.mockResolvedValue({ data: cart } as never);
+    const user = userEvent.setup();
+    render(<CheckoutPageRoute />);
+
+    expect(
+      await screen.findByRole("dialog", { name: /cart expired/i }),
+    ).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: /start over/i }));
+
+    await waitFor(() => {
+      expect(routerMocks.replace).toHaveBeenCalledWith(
+        packagePurchasePath(cart.package),
+      );
+    });
+    expect(routerMocks.back).not.toHaveBeenCalled();
   });
 
   it("shows cart expired and returns to tickets when the hold runs out", async () => {

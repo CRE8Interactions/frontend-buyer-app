@@ -1,0 +1,31 @@
+%% Step 2: create account
+%% Source: app/login/page.tsx and lib/fieldValidation.ts
+%% Email is shown disabled (from Step 0) and is not validated on this form
+%% Network: We're experiencing technical difficulties. Please try again later.
+
+flowchart TD
+  profileStep[Step 2: create account] --> liveNames[NameField onChange]
+  liveNames --> nameFilter{Matches letters, space, apostrophe, hyphen?}
+  nameFilter -->|no| ignoreKey[Do not update state]
+  nameFilter -->|yes| namesOk[Update first / last name]
+
+  profileStep --> submit[Submit profile]
+  submit --> checkNames{nameFieldError?}
+  checkNames -->|required| nameReq[This field is required.]
+  checkNames -->|pattern| namePat[Letters only — no digits.]
+  checkNames -->|ok| checkPhone{phoneNumberError?}
+
+  checkPhone -->|required| phoneReq[Phone number is required.]
+  checkPhone -->|invalid| phoneBad[Phone number is not valid. Please try again]
+  checkPhone -->|ok| checkDob{DOB complete and not in the future?}
+
+  checkDob -->|empty| dobReq[Date of birth is required.]
+  checkDob -->|bad / future| dobBad[DOB format MM/DD/YYYY]
+  checkDob -->|ok| createUser[createNewUser]
+
+  createUser --> createNet{Network error?}
+  createNet -->|yes| network["We're experiencing technical difficulties. Please try again later."]
+  createNet -->|no| createStatus{HTTP status}
+  createStatus -->|200| sessionOk[setSession and redirect]
+  createStatus -->|226| phoneExists[An account with this phone number already exists.]
+  createStatus -->|other| network

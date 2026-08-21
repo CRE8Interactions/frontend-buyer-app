@@ -11,6 +11,7 @@ import { cardCls, chipBtnSmCls } from "@/components/molecules/Card";
 import { Input, Label } from "@/components/atoms/form";
 import Button from "@/components/atoms/Button";
 import Pill from "@/components/atoms/Pill";
+import EmailField from "@/components/molecules/EmailField";
 import {
   createListing,
   createTicketTransfer,
@@ -21,7 +22,12 @@ import {
   getMyEvents,
 } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
-import { emailPatternMatch, getSingularOrPluralWord } from "@/lib/helpers";
+import {
+  emailLooksInvalid,
+  isBlockedEmail,
+  normalizeEmail,
+} from "@/lib/fieldValidation";
+import { getSingularOrPluralWord } from "@/lib/helpers";
 import {
   type EventLike,
   type OrderLike,
@@ -59,6 +65,7 @@ export default function EventTicketsClient({
   const [xferStep, setXferStep] = useState<null | "select" | "email" | "confirm" | "done">(null);
   const [xferIds, setXferIds] = useState<(string | number)[]>([]);
   const [xferEmail, setXferEmail] = useState("");
+  const [xferEmailInvalid, setXferEmailInvalid] = useState(false);
   const [xferSaving, setXferSaving] = useState(false);
   const [sellStep, setSellStep] = useState<null | "select" | "price" | "done">(null);
   const [sellIds, setSellIds] = useState<(string | number)[]>([]);
@@ -128,7 +135,10 @@ export default function EventTicketsClient({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ready, isAuthenticated, orderId, eventUUID]);
 
-  const validXferEmail = emailPatternMatch(xferEmail) && Boolean(xferEmail);
+  const validXferEmail =
+    Boolean(normalizeEmail(xferEmail)) &&
+    !isBlockedEmail(normalizeEmail(xferEmail)) &&
+    !emailLooksInvalid(normalizeEmail(xferEmail));
   const xferSelected = useMemo(
     () => tickets.filter((t) => t.id != null && xferIds.includes(t.id)),
     [tickets, xferIds],
@@ -146,10 +156,15 @@ export default function EventTicketsClient({
 
   const submitTransfer = async () => {
     if (!order?.id || !event) return;
+    const address = normalizeEmail(xferEmail);
+    if (isBlockedEmail(address) || emailLooksInvalid(address)) {
+      setXferEmailInvalid(true);
+      return;
+    }
     setXferSaving(true);
     try {
       await createTicketTransfer({
-        email: xferEmail,
+        email: address,
         orderId: order.id,
         event,
         ticketIds: xferIds,
@@ -431,23 +446,38 @@ export default function EventTicketsClient({
                 {getSingularOrPluralWord(xferSelected.length).toLowerCase()}.
               </p>
               <div className="mt-5">
-                <Label htmlFor="xfer-email">Recipient email</Label>
-                <Input
+                <EmailField
                   id="xfer-email"
-                  type="email"
-                  className="mt-2.5"
+                  label="Recipient email"
+                  variant="dark"
                   value={xferEmail}
-                  onChange={(e) => setXferEmail(e.target.value)}
+                  invalid={xferEmailInvalid}
                   placeholder="friend@email.com"
+                  onChange={(value) => {
+                    setXferEmail(value);
+                    setXferEmailInvalid(false);
+                  }}
+                  onBlur={() => {
+                    const next = normalizeEmail(xferEmail);
+                    setXferEmailInvalid(Boolean(next) && emailLooksInvalid(next));
+                  }}
                 />
               </div>
               <Button
                 className="mt-6 w-full"
                 disabled={
                   !validXferEmail ||
-                  xferEmail.toLowerCase() === user?.email?.toLowerCase()
+                  normalizeEmail(xferEmail) === user?.email?.toLowerCase()
                 }
-                onClick={() => setXferStep("confirm")}
+                onClick={() => {
+                  const next = normalizeEmail(xferEmail);
+                  if (isBlockedEmail(next) || emailLooksInvalid(next)) {
+                    setXferEmailInvalid(true);
+                    return;
+                  }
+                  setXferEmail(next);
+                  setXferStep("confirm");
+                }}
               >
                 Continue
               </Button>

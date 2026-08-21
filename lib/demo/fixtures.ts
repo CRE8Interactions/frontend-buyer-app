@@ -38,7 +38,7 @@ export const DEMO_USER = {
   email: "fan@blocktickets.xyz",
   firstName: "Demo",
   lastName: "Fan",
-  phoneNumber: "+15555550123",
+  phoneNumber: "+14155552671",
   dob: "01/01/1995",
   role: { name: "Authenticated" },
 };

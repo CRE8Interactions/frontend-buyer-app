@@ -147,8 +147,6 @@ export const stateOpt = [
   { value: "WY", name: "Wyoming" },
 ];
 
-export const namePatternMatch = "^[A-Za-z'\\- ]+$";
-
 export const isPlural = (amount: number) => amount === 0 || amount > 1;
 
 export const getSingularOrPluralWord = (amount: number, text = "Ticket") => {
@@ -172,17 +170,12 @@ export const formatOfferListPrice = (
 export const formatNumber = (num?: number | string | null) =>
   parseFloat(String(num ?? 0)).toLocaleString("en-US");
 
-export const emailPatternMatch = (val?: string | null) => {
-  const emailPattern = /^\w+([\.-]?\w+)*@\w+([\.-]?\w+)*(\.\w{2,})+$/g;
-  return val ? new RegExp(emailPattern).test(val) : true;
-};
-
-export const isBlockedEmail = (email?: string) => {
-  if (!email) return false;
-  const blocked = ["mailinator.com", "guerrillamail.com", "tempmail.com"];
-  const domain = email.split("@")[1]?.toLowerCase();
-  return Boolean(domain && blocked.includes(domain));
-};
+export {
+  emailPatternMatch,
+  isBlockedEmail,
+  namePatternMatch,
+  normalizeEmail,
+} from "@/lib/fieldValidation";
 
 // trailingSlash is enabled, so canonical hrefs end in "/" to avoid a 308 on
 // prefetch and client navigation.

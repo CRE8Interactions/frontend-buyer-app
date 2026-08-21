@@ -2,6 +2,7 @@
 
 import { Suspense, useEffect, useMemo, useState } from "react";
 import { useParams, useSearchParams } from "next/navigation";
+import BrandedNotice from "@/components/molecules/BrandedNotice";
 import RouteLoader from "@/components/molecules/RouteLoader";
 import PremiumTicketing, {
   type GATier,
@@ -241,8 +242,15 @@ function GAEvent() {
     [ev, groups],
   );
 
+  const theme = ev ? brandingToTicketingTheme(ev, ev.organization) : null;
+  const noticeBranding = theme && {
+    primaryColor: theme.accent,
+    logoSrc: theme.brandLogoSrc,
+    name: ev?.organization?.name,
+    slug: ev?.organization?.slug,
+  };
+
   if (loading) {
-    const theme = ev ? brandingToTicketingTheme(ev, ev.organization) : null;
     return (
       <RouteLoader
         branding={
@@ -257,26 +265,20 @@ function GAEvent() {
   }
   if (error || !data) {
     return (
-      <div style={{ minHeight: "60vh", display: "flex", alignItems: "center", justifyContent: "center", color: "#9DA2B3" }}>
-        {error || "Event not found."}
-      </div>
+      <BrandedNotice
+        title="Event unavailable"
+        message={error || "Event not found."}
+        branding={noticeBranding}
+      />
     );
   }
   if (!groups.length) {
     return (
-      <div
-        style={{
-          minHeight: "60vh",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          color: "#9DA2B3",
-          padding: 24,
-          textAlign: "center",
-        }}
-      >
-        No ticket inventory is currently on sale for this event.
-      </div>
+      <BrandedNotice
+        title="No tickets on sale"
+        message="No ticket inventory is currently on sale for this event."
+        branding={noticeBranding}
+      />
     );
   }
   return <PremiumTicketing data={data} />;
