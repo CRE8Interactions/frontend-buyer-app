@@ -119,10 +119,3 @@ export const checkoutPaymentElementOptions = {
   fields: paymentElementBillingFields,
   paymentMethodOrder: checkoutPaymentMethodOrder,
 };
-
-export const ticketsPaymentElementOptions = {
-  layout: { type: "tabs" as const },
-  wallets: paymentElementWallets,
-  fields: paymentElementBillingFields,
-  paymentMethodOrder: checkoutPaymentMethodOrder,
-};

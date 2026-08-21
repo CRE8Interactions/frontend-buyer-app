@@ -69,10 +69,6 @@ vi.mock("@/components/organisms/InteractiveSeatmap", async () => {
   };
 });
 
-vi.mock("@/components/organisms/StripePaymentPanel", () => ({
-  default: () => <div data-testid="stripe-panel">Stripe panel</div>,
-}));
-
 vi.mock("@/components/molecules/SectionLocatorThumb", () => ({
   default: ({ sectionNumber }: { sectionNumber?: string | number }) => (
     <div data-testid="section-thumb">Thumb {String(sectionNumber || "")}</div>
@@ -82,8 +78,6 @@ vi.mock("@/components/molecules/SectionLocatorThumb", () => ({
 vi.mock("@/lib/api", () => ({
   placeTicketsIntoCart: vi.fn(),
   placeGATicketsIntoCart: vi.fn(),
-  redeemPromoCode: vi.fn(),
-  removePromoCode: vi.fn(),
 }));
 
 vi.mock("@/lib/auth", () => ({

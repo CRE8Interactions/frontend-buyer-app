@@ -4,7 +4,7 @@
  * PremiumTicketing — data-driven port of the Claude Design canvas
  * "NM State Ticketing.dc.html". Light theme, configurable accent. Renders the
  * full ticketing experience (filterable listings, seat-map modal, selection +
- * detail panel, checkout, success, event-info modal) from a `TicketingData`
+ * detail panel, event-info modal) from a `TicketingData`
  * prop, so any event can use it. See NM_STATE_DATA for the reference content.
  */
 
@@ -16,10 +16,7 @@ import BrandedActionButton from "@/components/atoms/BrandedActionButton";
 import Modal from "@/components/molecules/Modal";
 import SectionLocatorThumb from "@/components/molecules/SectionLocatorThumb";
 import SeatMapSelectionOverlay from "@/components/organisms/SeatMapSelectionOverlay";
-import StripePaymentPanel, {
-  type StripePaymentPanelHandle,
-} from "@/components/organisms/StripePaymentPanel";
-import { placeGATicketsIntoCart, placeTicketsIntoCart, redeemPromoCode, removePromoCode } from "@/lib/api";
+import { placeGATicketsIntoCart, placeTicketsIntoCart } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { goBack } from "@/lib/inAppBack";
 import { checkoutHref, rememberCheckoutReturnPath, setStoredCart } from "@/lib/cart";
@@ -251,7 +248,6 @@ export default function PremiumTicketing({
   const [picks, setPicks] = useState<Pick[]>([]);
   const [detail, setDetail] = useState<number | null>(null);
   const [media, setMedia] = useState(0);
-  const [screen, setScreen] = useState<"checkout" | "success" | null>(null);
   const [info, setInfo] = useState(false);
   const [sel, setSel] = useState<number | null>(null);
   const [panelQty, setPanelQty] = useState(2);
@@ -328,16 +324,16 @@ export default function PremiumTicketing({
     };
   }, []);
 
-  // Lock background scroll while any overlay (map / drawer / checkout / success / info) is open.
+  // Lock background scroll while any overlay (map / drawer / info) is open.
   useEffect(() => {
-    const overlayOpen = map || info || screen !== null || sel !== null;
+    const overlayOpen = map || info || sel !== null;
     if (!overlayOpen) return;
     const prev = document.body.style.overflow;
     document.body.style.overflow = "hidden";
     return () => {
       document.body.style.overflow = prev;
     };
-  }, [map, info, screen, sel]);
+  }, [map, info, sel]);
 
   const mobile = vw < 900;
   const narrow = mobile || vw < 1120;
@@ -440,39 +436,9 @@ export default function PremiumTicketing({
   const gaLiveUnit = (GA_TIERS.find((t) => t.state === "live") || GA_TIERS[0])?.unit ?? 10.08;
   const gaAvail = GA_TIERS.filter((t) => t.state !== "soldout");
   const gaFromNum = gaAvail.length ? Math.min(...gaAvail.map((t) => t.unit)) : gaLiveUnit;
-  const coFirst: Partial<Pick> = picks[0] || (selRow as Partial<Pick> | undefined) || {};
-  const coQty = isGa ? gaQty : picks.length > 0 ? picks.length : panelQty;
-  const coTotalNum = isGa ? gaLiveUnit * gaQty : picks.length > 0 ? pickTotal : unit * panelQty;
-  const coSubtotal = money(coTotalNum / 1.27);
-  const coFee = money(coTotalNum * 0.16);
-  const coProc = money(coTotalNum - coTotalNum / 1.27 - coTotalNum * 0.16);
-  const coTotal = money(coTotalNum);
-  const coUnit = money(coTotalNum / 1.27 / Math.max(1, coQty));
-  const coOrderId = "04571";
-  const coHold = "9:47";
-  const coQtyLabel = coQty === 1 ? "1 ticket" : `${coQty} tickets`;
-  const coSeatLine = isGa ? "Standard admission" : `Sec ${coFirst.sec || ""} · Row ${coFirst.row || ""}`;
-  const coSeatSub = isGa ? "General admission · unreserved seating" : `${coQtyLabel} · seats are together`;
-  const coTierLabel = isGa ? "Standard admission" : coFirst.tier || coFirst.zone || "";
 
   const [holding, setHolding] = useState(false);
-  const [paying, setPaying] = useState(false);
-  const [paymentReady, setPaymentReady] = useState(false);
-  const [payError, setPayError] = useState("");
   const [holdError, setHoldError] = useState("");
-  const [stripeCartId, setStripeCartId] = useState<string | null>(null);
-  const [paymentContext, setPaymentContext] = useState<{
-    intentId: string;
-    cart: Record<string, unknown>;
-  } | null>(null);
-  const [promoCode, setPromoCode] = useState("");
-  const [promoApplied, setPromoApplied] = useState(false);
-  const [promoDetails, setPromoDetails] = useState<Record<string, unknown> | null>(null);
-  const [promoError, setPromoError] = useState("");
-  const [submittingPromo, setSubmittingPromo] = useState(false);
-  const [removingPromo, setRemovingPromo] = useState(false);
-  const [discountedTotal, setDiscountedTotal] = useState<number | null>(null);
-  const paymentRef = useRef<StripePaymentPanelHandle | null>(null);
 
   const addPick = (z: (typeof ZONES)[number]) => setPicks((list) => [...list, { sec: z.sec, row: z.row, seat: String(21 + list.length), zone: z.zone, tier: z.tier, unit: z.unit, price: "$" + z.unit.toFixed(2) }]);
   const flip = () => setMedia((m) => (m === 0 ? 1 : 0));
@@ -495,66 +461,6 @@ export default function PremiumTicketing({
     resetMapState();
     setPicks([]);
   };
-
-  const resetPromo = () => {
-    setPromoCode("");
-    setPromoApplied(false);
-    setPromoDetails(null);
-    setPromoError("");
-    setDiscountedTotal(null);
-  };
-
-  const submitPromo = async (e?: React.FormEvent) => {
-    e?.preventDefault();
-    if (!promoCode.trim() || !paymentContext) return;
-    setSubmittingPromo(true);
-    setPromoError("");
-    try {
-      const res = await redeemPromoCode({
-        code: promoCode.trim(),
-        paymentIntentId: paymentContext.intentId,
-        cart: paymentContext.cart,
-      });
-      setPromoApplied(true);
-      setDiscountedTotal(
-        Number(res.data?.promoPricingDetails?.discountedPrice ?? null) || null,
-      );
-      setPromoDetails(res.data as Record<string, unknown>);
-    } catch (err: unknown) {
-      const msg =
-        (err as { response?: { data?: { error?: { message?: string } } } })
-          ?.response?.data?.error?.message || "Promo code could not be applied.";
-      setPromoError(`${msg}${/[.!?]$/.test(msg.trim()) ? " " : ". "}Please try again.`);
-    } finally {
-      setSubmittingPromo(false);
-    }
-  };
-
-  const handleRemovePromo = async () => {
-    if (!paymentContext) return;
-    setRemovingPromo(true);
-    setPromoError("");
-    try {
-      await removePromoCode({
-        paymentIntentId: paymentContext.intentId,
-        cart: paymentContext.cart,
-      });
-      resetPromo();
-    } catch {
-      setPromoError("Unable to remove promo code. Please try again.");
-    } finally {
-      setRemovingPromo(false);
-    }
-  };
-
-  const checkoutTotalNum =
-    promoApplied && discountedTotal != null ? discountedTotal : coTotalNum;
-  const checkoutTotal = money(checkoutTotalNum);
-
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    setStripeCartId(new URLSearchParams(window.location.search).get("cartId"));
-  }, []);
 
   const goToCheckout = (cartId: string) => {
     rememberCheckoutReturnPath();
@@ -589,7 +495,6 @@ export default function PremiumTicketing({
     }
     const qty = groups.reduce((sum, g) => sum + Number(g.quantity || 0), 0);
     setStoredCart(cartId, qty || 1);
-    setStripeCartId(String(cartId));
     return String(cartId);
   };
 
@@ -648,20 +553,6 @@ export default function PremiumTicketing({
       return;
     }
     await runCheckoutWithGroup(group, panelQty);
-  };
-
-  const startPay = async () => {
-    if (paying) return;
-    setPaying(true);
-    setPayError("");
-    try {
-      await paymentRef.current?.confirm();
-      setScreen("success");
-    } catch (err: unknown) {
-      setPayError((err as Error)?.message || "Payment failed. Please try again.");
-    } finally {
-      setPaying(false);
-    }
   };
 
   // GA tier sheet → place inventory, then the checkout page (which gates login).
@@ -943,8 +834,6 @@ export default function PremiumTicketing({
         .nmt-filter-scroll::-webkit-scrollbar-thumb { background: ${ACC}; border-radius: 999px; }
       `}</style>
 
-      {!screen && (
-        <>
       {/* HEADER (desktop) */}
       {!mobile && (
         <header ref={headerRef} style={{ background: navBg, borderBottom: `1px solid ${navLine}`, color: navInk, position: "sticky", top: 0, zIndex: 12 }}>
@@ -1738,290 +1627,6 @@ export default function PremiumTicketing({
             </div>
           </div>
         </>
-      )}
-        </>
-      )}
-
-      {/* CHECKOUT */}
-      {mounted && screen === "checkout" && createPortal(
-        <div style={{ position: "fixed", inset: 0, zIndex: 2147483000, background: "#f7f8fc", overflowY: "auto", overscrollBehavior: "contain", fontFamily: "'Geist', system-ui, -apple-system, sans-serif", color: NAVY }}>
-          <header style={{ background: ACC, color: "#fff", padding: "14px 24px", display: "flex", alignItems: "center", gap: 16, position: "sticky", top: 0, zIndex: 2 }}>
-            <button onClick={() => setScreen(null)} style={{ fontFamily: "inherit", display: "inline-flex", alignItems: "center", gap: 8, fontSize: 14, fontWeight: 500, color: "#fff", background: "rgba(255,255,255,0.12)", border: "1px solid rgba(255,255,255,0.22)", borderRadius: 999, padding: "10px 18px", cursor: "pointer" }}>
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" style={{ width: 16, height: 16 }}><line x1="19" y1="12" x2="5" y2="12" /><polyline points="12 19 5 12 12 5" /></svg>
-              Back
-            </button>
-            <div style={{ flex: 1 }} />
-            <span style={{ display: "inline-flex", alignItems: "center", gap: 7, background: "rgba(255,255,255,0.14)", border: "1px solid rgba(255,255,255,0.22)", color: "#fff", fontSize: 13, fontWeight: 500, padding: "8px 14px", borderRadius: 999, fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap" }}>
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" style={{ width: 14, height: 14 }}><circle cx="12" cy="12" r="9" /><polyline points="12 7 12 12 16 14" /></svg>
-              Seats held {coHold}
-            </span>
-            {!mobile && (
-              <div style={{ display: "flex", alignItems: "center", gap: 9, fontSize: 13, color: "rgba(255,255,255,0.82)" }}>
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" style={{ width: 15, height: 15 }}><rect x="3" y="11" width="18" height="11" rx="2" /><path d="M7 11V7a5 5 0 0 1 10 0v4" /></svg>
-                Secure checkout
-              </div>
-            )}
-          </header>
-
-          <div style={{ maxWidth: 1140, margin: "0 auto", padding: mobile ? "14px 14px 24px" : "24px 20px 28px", display: "grid", gridTemplateColumns: narrow ? "minmax(0, 1fr)" : "minmax(0, 1fr) 372px", gap: 20, alignItems: "start", boxSizing: "border-box" }}>
-            {/* Order summary */}
-            <div style={{ gridColumn: narrow ? "1" : "2", gridRow: "1", position: narrow ? "static" : "sticky", top: 84, display: "flex", flexDirection: "column", gap: 12, minWidth: 0 }}>
-              <div style={{ ...card, borderRadius: 18, padding: 18, display: "flex", flexDirection: "column", gap: 16 }}>
-                <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
-                  <div style={{ width: 52, height: 52, borderRadius: 12, background: "#f1f3f8", border: "1px solid rgba(5,27,53,0.08)", flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", padding: 8, boxSizing: "border-box" }}>
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img src={LOGO} alt="" style={{ maxWidth: "100%", maxHeight: "100%", objectFit: "contain" }} />
-                  </div>
-                  <div style={{ display: "flex", flexDirection: "column", gap: 3, minWidth: 0 }}>
-                    <div style={{ fontSize: 16, fontWeight: 600, letterSpacing: "-0.02em" }}>{d.eventName}</div>
-                    <div style={{ fontSize: 13, color: "#6e7180" }}>{d.whenPlain}</div>
-                    <div style={{ fontSize: 13, color: "#6e7180" }}>{d.venueLine}</div>
-                  </div>
-                </div>
-                <div style={{ height: 1, background: "rgba(5,27,53,0.08)" }} />
-                <div style={{ display: "flex", alignItems: "flex-start", gap: 14 }}>
-                  <div style={{ width: 84, height: 84, borderRadius: 12, overflow: "hidden", background: "#f1f3f8", border: "1px solid rgba(5,27,53,0.10)", flexShrink: 0 }}>
-                    {selRow ? listingThumb(selRow) : (
-                      // eslint-disable-next-line @next/next/no-img-element
-                      <img src={MAP_SRC} alt="Seat location" style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
-                    )}
-                  </div>
-                  <div style={{ display: "flex", flexDirection: "column", gap: 6, minWidth: 0, flex: 1 }}>
-                    <span style={{ alignSelf: "flex-start", ...pill(ACC_SOFT, ACC) }}><Star s={12} /> {coTierLabel}</span>
-                    <div style={{ fontSize: 16, fontWeight: 600, letterSpacing: "-0.015em" }}>{coSeatLine}</div>
-                    <div style={{ fontSize: 13, color: "#6e7180" }}>{coSeatSub}</div>
-                  </div>
-                </div>
-                <div style={{ height: 1, background: "rgba(5,27,53,0.08)" }} />
-                <div style={{ display: "flex", flexDirection: "column", gap: 9 }}>
-                  <div style={{ display: "flex", justifyContent: "space-between", fontSize: 14, color: "#4a5567" }}><span>{coQtyLabel} at {coUnit}</span><span style={{ fontVariantNumeric: "tabular-nums", color: NAVY }}>{coSubtotal}</span></div>
-                  <div style={{ display: "flex", justifyContent: "space-between", fontSize: 14, color: "#4a5567" }}><span>Service fee</span><span style={{ fontVariantNumeric: "tabular-nums", color: NAVY }}>{coFee}</span></div>
-                  <div style={{ display: "flex", justifyContent: "space-between", fontSize: 14, color: "#4a5567" }}><span>Processing fee</span><span style={{ fontVariantNumeric: "tabular-nums", color: NAVY }}>{coProc}</span></div>
-                </div>
-                <div style={{ height: 1, background: "rgba(5,27,53,0.08)" }} />
-                <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 12 }}>
-                  <span style={{ fontSize: 15, fontWeight: 600 }}>Total due</span>
-                  <span style={{ fontSize: 26, fontWeight: 600, letterSpacing: "-0.03em", fontVariantNumeric: "tabular-nums" }}>{checkoutTotal}</span>
-                </div>
-              </div>
-            </div>
-
-            {/* Payment */}
-            <div style={{ gridColumn: "1", gridRow: narrow ? "2" : "1", display: "flex", flexDirection: "column", gap: 14, minWidth: 0 }}>
-              <div style={{ ...card, borderRadius: 18, padding: 22, display: "flex", flexDirection: "column", gap: 20 }}>
-                <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-                  <div style={{ fontSize: 24, fontWeight: 600, letterSpacing: "-0.03em" }}>Payment</div>
-                  <div style={{ fontSize: 14, color: "#6e7180" }}>Complete your purchase to lock in these seats.</div>
-                </div>
-                <StripePaymentPanel
-                    key={stripeCartId || "no-cart"}
-                    ref={paymentRef}
-                    cartId={stripeCartId}
-                    accent={ACC}
-                    onPrimary={BTN_INK}
-                    onReadyChange={setPaymentReady}
-                    onPaymentContextChange={setPaymentContext}
-                  />
-                <div style={{ height: 1, background: "rgba(5,27,53,0.08)" }} />
-                <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-                  <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                    <label htmlFor="nmt-promo" style={{ fontSize: 12, fontWeight: 600, letterSpacing: "0.1em", textTransform: "uppercase", color: "#8a93a3" }}>Promo code</label>
-                    {promoApplied ? (
-                      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, border: "1px solid rgba(5,27,53,0.10)", borderRadius: 14, padding: "12px 16px", background: "#f7f8fc" }}>
-                        <div style={{ display: "flex", flexDirection: "column", gap: 2, minWidth: 0 }}>
-                          <div style={{ fontSize: 15, fontWeight: 600, color: NAVY }}>
-                            {(promoDetails?.promoPricingDetails as { code?: string } | undefined)?.code || promoCode || "Promo"}
-                          </div>
-                          <div style={{ fontSize: 13, color: "#6e7180" }}>Promo code applied</div>
-                        </div>
-                        <BrandedActionButton
-                          type="button"
-                          tone="secondary"
-                          loading={removingPromo}
-                          loadingLabel="Removing…"
-                          onClick={() => void handleRemovePromo()}
-                          className="px-[18px] py-2.5 text-[14px]"
-                        >
-                          Remove
-                        </BrandedActionButton>
-                      </div>
-                    ) : (
-                      <form onSubmit={(e) => void submitPromo(e)} style={{ display: "flex", gap: 10, alignItems: "center" }}>
-                        <input
-                          id="nmt-promo"
-                          type="text"
-                          value={promoCode}
-                          onChange={(e) => setPromoCode(e.target.value)}
-                          placeholder="Enter promo code"
-                          autoComplete="off"
-                          disabled={!paymentContext || submittingPromo}
-                          style={{
-                            flex: 1,
-                            border: "1px solid rgba(5,27,53,0.16)",
-                            boxShadow: "0 1px 2px rgba(5,27,53,0.06)",
-                            borderRadius: 999,
-                            padding: "13px 18px",
-                            fontSize: 15,
-                            color: NAVY,
-                            background: "#fff",
-                            fontFamily: "inherit",
-                            outline: "none",
-                            opacity: !paymentContext ? 0.65 : 1,
-                          }}
-                        />
-                        <BrandedActionButton
-                          type="submit"
-                          tone="secondary"
-                          loading={submittingPromo}
-                          loadingLabel="Applying…"
-                          disabled={!promoCode.trim() || !paymentContext}
-                          className="px-6 py-[13px] text-[15px]"
-                        >
-                          Apply
-                        </BrandedActionButton>
-                      </form>
-                    )}
-                    {promoError ? (
-                      <div style={{ fontSize: 13, color: "#b91c1c", lineHeight: 1.45 }}>{promoError}</div>
-                    ) : null}
-                  </div>
-                  <div style={{ display: "flex", gap: 11, alignItems: "flex-start" }}>
-                    <span style={{ width: 19, height: 19, borderRadius: 5, border: `1.5px solid ${ACC}`, background: ACC, color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, marginTop: 1 }}>
-                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={3} strokeLinecap="round" strokeLinejoin="round" style={{ width: 12, height: 12 }}><polyline points="20 6 9 17 4 12" /></svg>
-                    </span>
-                    <div style={{ fontSize: 13, color: "#4a5567" }}>Save my info for one-click checkout with Link at {d.homeLabel} venues.</div>
-                  </div>
-                </div>
-                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 14, flexWrap: "wrap" }}>
-                  <div style={{ fontSize: 12, color: "#8a93a3", maxWidth: 380 }}>By paying you agree to the Blocktickets Purchase Policy and Terms &amp; Conditions. All prices are all-in.</div>
-                  <div style={{ display: "flex", alignItems: "center", gap: 7, fontSize: 12, color: "#8a93a3", whiteSpace: "nowrap" }}>
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" style={{ width: 13, height: 13 }}><rect x="3" y="11" width="18" height="11" rx="2" /><path d="M7 11V7a5 5 0 0 1 10 0v4" /></svg>
-                    Payments secured by Stripe
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <div style={{ position: "sticky", left: 0, right: 0, bottom: 0, zIndex: 3, background: "rgba(255,255,255,0.94)", backdropFilter: "blur(10px)", borderTop: "1px solid rgba(5,27,53,0.10)", boxShadow: "0 -12px 30px -24px rgba(5,27,53,0.6)" }}>
-            <div style={{ maxWidth: 1140, margin: "0 auto", padding: mobile ? "12px 14px 16px" : "14px 20px", display: "flex", flexDirection: mobile ? "column" : "row", alignItems: mobile ? "stretch" : "center", justifyContent: "flex-end", gap: 12, boxSizing: "border-box" }}>
-              {payError ? (
-                <div style={{ flex: 1, fontSize: 13, color: "#b91c1c", minWidth: 0 }}>{payError}</div>
-              ) : null}
-              <BrandedActionButton
-                primaryColor={BTN}
-                textColor={BTN_INK}
-                loading={paying}
-                loadingLabel="Processing…"
-                disabled={!paymentReady}
-                onClick={() => void startPay()}
-                className="w-full text-[17px] md:w-[340px]"
-                style={{
-                  width: mobile ? "100%" : 340,
-                  padding: "16px 34px",
-                  opacity: paying || !paymentReady ? 0.55 : 1,
-                }}
-              >
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" style={{ width: 17, height: 17 }}><rect x="3" y="11" width="18" height="11" rx="2" /><path d="M7 11V7a5 5 0 0 1 10 0v4" /></svg>
-                Pay {checkoutTotal}
-              </BrandedActionButton>
-            </div>
-          </div>
-        </div>,
-        document.body,
-      )}
-
-      {/* SUCCESS / ORDER CONFIRMATION */}
-      {mounted && screen === "success" && createPortal(
-        <div style={{ position: "fixed", inset: 0, zIndex: 2147483001, background: "#f7f8fc", overflowY: "auto", overscrollBehavior: "contain", fontFamily: "'Geist', system-ui, -apple-system, sans-serif", color: NAVY }}>
-          <header style={{ background: ACC, color: "#fff", padding: "12px 20px", display: "flex", alignItems: "center", gap: 14, position: "sticky", top: 0, zIndex: 2 }}>
-            <div style={{ width: 46, height: 46, borderRadius: 12, background: "#fff", flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", padding: 7, boxSizing: "border-box" }}>
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src={LOGO} alt="" style={{ maxWidth: "100%", maxHeight: "100%", objectFit: "contain" }} />
-            </div>
-            <div style={{ display: "flex", flexDirection: "column", gap: 2, minWidth: 0, flex: 1 }}>
-              <div style={{ fontSize: 16, fontWeight: 600, letterSpacing: "-0.015em", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{d.orgLabel}</div>
-              <div style={{ fontSize: 12, color: "rgba(255,255,255,0.78)", fontVariantNumeric: "tabular-nums" }}>Order NMSU-{coOrderId} · confirmed</div>
-            </div>
-          </header>
-
-          <div style={{ maxWidth: 1140, margin: "0 auto", padding: mobile ? "14px 14px 40px" : "24px 20px 40px", display: "grid", gridTemplateColumns: narrow ? "minmax(0, 1fr)" : "minmax(0, 1fr) 372px", gap: 20, alignItems: "start", boxSizing: "border-box" }}>
-            <div style={{ gridColumn: "1 / -1", display: "flex", alignItems: "center", gap: 14 }}>
-              <span style={{ width: 38, height: 38, borderRadius: 999, background: "#a6e773", color: NAVY, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round" style={{ width: 20, height: 20 }}><polyline points="20 6 9 17 4 12" /></svg>
-              </span>
-              <div style={{ fontSize: mobile ? 26 : 30, fontWeight: 600, letterSpacing: "-0.03em" }}>Order confirmation</div>
-            </div>
-
-            <div style={{ gridColumn: narrow ? "1" : "2", gridRow: "2", position: narrow ? "static" : "sticky", top: 88, display: "flex", flexDirection: "column", gap: 12, minWidth: 0 }}>
-              <div style={{ ...card, borderRadius: 18, padding: 18, display: "flex", flexDirection: "column", gap: 14 }}>
-                <div style={{ fontSize: 16, fontWeight: 600, letterSpacing: "-0.015em" }}>Order summary</div>
-                <div style={{ display: "flex", flexDirection: "column", gap: 9 }}>
-                  <div style={{ display: "flex", justifyContent: "space-between", gap: 16, fontSize: 14, color: "#4a5567" }}><span>{coQtyLabel} at {coUnit}</span><span style={{ fontVariantNumeric: "tabular-nums", color: NAVY }}>{coSubtotal}</span></div>
-                  <div style={{ display: "flex", justifyContent: "space-between", gap: 16, fontSize: 14, color: "#4a5567" }}><span>Service fee</span><span style={{ fontVariantNumeric: "tabular-nums", color: NAVY }}>{coFee}</span></div>
-                  <div style={{ display: "flex", justifyContent: "space-between", gap: 16, fontSize: 14, color: "#4a5567" }}><span>Processing fee</span><span style={{ fontVariantNumeric: "tabular-nums", color: NAVY }}>{coProc}</span></div>
-                </div>
-                <div style={{ height: 1, background: "rgba(5,27,53,0.08)" }} />
-                <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 12 }}>
-                  <span style={{ fontSize: 15, fontWeight: 600 }}>Total paid</span>
-                  <span style={{ fontSize: 26, fontWeight: 600, letterSpacing: "-0.03em", fontVariantNumeric: "tabular-nums" }}>{coTotal}</span>
-                </div>
-                <div style={{ height: 1, background: "rgba(5,27,53,0.08)" }} />
-                <div style={{ display: "flex", flexDirection: "column", gap: 9 }}>
-                  <div style={{ display: "flex", justifyContent: "space-between", gap: 16, fontSize: 14, color: "#4a5567" }}><span>Payment method</span><span style={{ color: NAVY, fontVariantNumeric: "tabular-nums" }}>Card ···· 4471</span></div>
-                  <div style={{ display: "flex", justifyContent: "space-between", gap: 16, fontSize: 14, color: "#4a5567" }}><span>Order</span><span style={{ color: NAVY, fontVariantNumeric: "tabular-nums" }}>NMSU-{coOrderId}</span></div>
-                </div>
-                <button className="nmt-chip" style={{ fontFamily: "inherit", width: "100%", display: "flex", alignItems: "center", justifyContent: "center", gap: 9, fontSize: 15, fontWeight: 600, color: NAVY, background: "#fff", border: "1px solid #d3d6e0", borderRadius: 999, padding: 14, cursor: "pointer" }}>
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" style={{ width: 16, height: 16 }}><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line x1="12" y1="15" x2="12" y2="3" /></svg>
-                  Download receipt
-                </button>
-              </div>
-            </div>
-
-            <div style={{ gridColumn: "1", gridRow: narrow ? "3" : "2", display: "flex", flexDirection: "column", gap: 12, minWidth: 0 }}>
-              <div style={{ ...card, borderRadius: 18, padding: 20, display: "flex", flexDirection: "column", gap: 18 }}>
-                <div style={{ display: "flex", alignItems: "flex-start", gap: 16 }}>
-                  <div style={{ width: 92, height: 92, borderRadius: 14, overflow: "hidden", background: "#f1f3f8", border: "1px solid rgba(5,27,53,0.10)", flexShrink: 0 }}>
-                    {selRow ? listingThumb(selRow) : (
-                      // eslint-disable-next-line @next/next/no-img-element
-                      <img src={MAP_SRC} alt="Seat location" style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
-                    )}
-                  </div>
-                  <div style={{ display: "flex", flexDirection: "column", gap: 7, minWidth: 0, flex: 1 }}>
-                    <span style={{ alignSelf: "flex-start", ...pill(ACC_SOFT, ACC) }}><Star s={13} /> {coTierLabel}</span>
-                    <div style={{ fontSize: 22, fontWeight: 600, letterSpacing: "-0.025em" }}>{coSeatLine}</div>
-                    <div style={{ fontSize: 14, color: "#6e7180" }}>{coSeatSub}</div>
-                  </div>
-                </div>
-                <div style={{ height: 1, background: "rgba(5,27,53,0.08)" }} />
-                <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                  <div style={{ fontSize: 19, fontWeight: 600, letterSpacing: "-0.02em" }}>{d.eventName}</div>
-                  <div style={{ fontSize: 14, color: "#6e7180" }}>{d.doorsLine}</div>
-                  <div style={{ fontSize: 14, color: "#6e7180" }}>{d.venueLine}</div>
-                </div>
-                <Link href="/my-tickets/" className="nmt-primary" style={{ ...primaryBtn, width: "100%", display: "flex", alignItems: "center", justifyContent: "center", gap: 9, fontSize: 16, padding: "16px 26px", textDecoration: "none", boxSizing: "border-box" }}>
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" style={{ width: 17, height: 17 }}><path d="M20 12V8H6a2 2 0 0 1 0-4h12v4" /><path d="M4 6v12a2 2 0 0 0 2 2h14v-4" /><path d="M18 12a2 2 0 0 0 0 4h4v-4z" /></svg>
-                  Go to my wallet
-                </Link>
-              </div>
-
-              <div style={{ ...card, borderRadius: 18, padding: 20, display: "flex", flexDirection: "column", gap: 16 }}>
-                <div style={{ fontSize: 12, fontWeight: 600, letterSpacing: "0.12em", textTransform: "uppercase", color: "#8a93a3" }}>Know before you go</div>
-                {[
-                  { icon: <><circle cx="12" cy="12" r="9" /><polyline points="12 7 12 12 16 14" /></>, t: "Gates open 5:00 PM.", d: " Kickoff is 6:00 PM MT at gate 4, north plaza." },
-                  { icon: <><rect x="1" y="3" width="15" height="13" rx="2" /><path d="M16 8h4l3 3v5h-7z" /><circle cx="5.5" cy="19" r="2" /><circle cx="18.5" cy="19" r="2" /></>, t: "Parking.", d: " Lot 100 opens three hours before kickoff, $15 at the gate." },
-                  { icon: <><polyline points="3 6 5 6 21 6" /><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" /><path d="M10 11v6M14 11v6" /></>, t: "Clear bag policy.", d: " Bags larger than 12 by 6 by 12 inches are not permitted." },
-                ].map((r) => (
-                  <div key={r.t} style={{ display: "flex", gap: 13 }}>
-                    <svg viewBox="0 0 24 24" fill="none" stroke={ACC} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" style={{ width: 18, height: 18, flexShrink: 0, marginTop: 2 }}>{r.icon}</svg>
-                    <div style={{ fontSize: 14, color: "#4a5567" }}><span style={{ fontWeight: 600, color: NAVY }}>{r.t}</span>{r.d}</div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          </div>
-        </div>,
-        document.body,
       )}
 
       {unlockZone !== null && (
