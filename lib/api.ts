@@ -3,6 +3,13 @@ import moment from "moment";
 import { getToken, isLoggedIn } from "@/lib/auth";
 import { demoAdapter } from "@/lib/demo/adapter";
 import { createInflightCache } from "@/lib/inflightCache";
+import {
+  clearWaitingRoomToken,
+  getCurrentWaitingRoomEventUuid,
+  getQueueSessionId,
+  getWaitingRoomToken,
+  setWaitingRoomReturnPath,
+} from "@/lib/waitingRoom";
 
 /** Demo mode: serve local dummy data, never hit a backend. */
 const DEMO = process.env.NEXT_PUBLIC_DEMO === "true";
@@ -14,15 +21,84 @@ const instance = axios.create({
   ...(DEMO ? { adapter: demoAdapter } : {}),
 });
 
+const WAITING_ROOM_GATED_URLS = [
+  /\/events\/seatmap\//,
+  /\/tickets\/available/,
+  /\/events\/place-tickets-into-cart/,
+  /\/events\/place-ga-tickets-into-cart/,
+  /\/events\/place-package-into-cart/,
+  /\/access-pass-templates\/add-to-cart/,
+  /\/flex-pack\/add-to-cart/,
+];
+
 instance.interceptors.request.use(
   (config) => {
     if (isLoggedIn()) {
       const token = getToken();
       if (token) config.headers.Authorization = `Bearer ${token}`;
     }
+    const url = config.url || "";
+    const waitingRoomRequest = url.includes("/waiting-room/");
+    const gated = WAITING_ROOM_GATED_URLS.some((pattern) => pattern.test(url));
+    if (waitingRoomRequest || gated) {
+      const sessionId = getQueueSessionId();
+      if (sessionId) config.headers["X-Queue-Session-Id"] = sessionId;
+    }
+    if (gated) {
+      const body = config.data as
+        | {
+            eventUUID?: string;
+            eventUuid?: string;
+            data?: { eventUUID?: string; eventUuid?: string };
+          }
+        | undefined;
+      const params = config.params as
+        | { eventUUID?: string; eventUuid?: string }
+        | undefined;
+      const eventUuid =
+        params?.eventUUID ||
+        params?.eventUuid ||
+        body?.eventUUID ||
+        body?.eventUuid ||
+        body?.data?.eventUUID ||
+        body?.data?.eventUuid ||
+        getCurrentWaitingRoomEventUuid();
+      const waitingRoomToken = getWaitingRoomToken(eventUuid);
+      if (waitingRoomToken) {
+        config.headers["X-Waiting-Room-Token"] = waitingRoomToken;
+      }
+    }
     return config;
   },
   (error) => Promise.reject(error),
+);
+
+instance.interceptors.response.use(
+  (response) => response,
+  (error) => {
+    const data = error?.response?.data as
+      | { code?: string; eventUuid?: string; joinUrl?: string }
+      | undefined;
+    if (
+      data?.code === "WAITING_ROOM_REQUIRED" &&
+      typeof window !== "undefined"
+    ) {
+      if (data.eventUuid) {
+        clearWaitingRoomToken(data.eventUuid);
+        const returnPath = `${window.location.pathname}${window.location.search}`;
+        if (returnPath && !returnPath.includes("/waiting-room")) {
+          setWaitingRoomReturnPath(data.eventUuid, returnPath);
+        }
+      }
+      if (
+        data.joinUrl &&
+        !window.location.pathname.includes("/waiting-room")
+      ) {
+        window.location.assign(data.joinUrl);
+      }
+    }
+    return Promise.reject(error);
+  },
 );
 
 export const verifyUser = (data: unknown) => instance.post("/verifies", data);
@@ -332,6 +408,76 @@ export const placePackageIntoCart = (data: unknown) =>
 
 export const getTicketGroups = (data: unknown) =>
   instance.post(`/ticket-group/get-ticket-groups`, data);
+
+export const joinWaitingRoom = (eventUuid: string) =>
+  instance.post("/waiting-room/join", { data: { eventUuid } });
+
+export const getWaitingRoomStatus = (eventUuid: string) =>
+  instance.get("/waiting-room/status", { params: { eventUuid } });
+
+export const heartbeatWaitingRoom = (eventUuid: string, token: string) =>
+  instance.post("/waiting-room/heartbeat", {
+    data: { eventUuid, token },
+  });
+
+export const leaveWaitingRoom = (
+  eventUuid: string,
+  token?: string | null,
+  soft = false,
+) =>
+  instance.post("/waiting-room/leave", {
+    data: {
+      eventUuid,
+      ...(token ? { token } : {}),
+      ...(soft ? { soft: true } : {}),
+    },
+  });
+
+/**
+ * Best-effort queue release for page close/refresh. `fetch` with keepalive is
+ * used because sendBeacon cannot carry the queue-session header.
+ */
+export function beaconLeaveWaitingRoom(
+  eventUuid: string,
+  token?: string | null,
+  { soft = false }: { soft?: boolean } = {},
+) {
+  if (!eventUuid || typeof window === "undefined" || typeof fetch === "undefined") {
+    return;
+  }
+  const base = process.env.NEXT_PUBLIC_API?.replace(/\/$/, "");
+  if (!base) return;
+  const sessionId = getQueueSessionId();
+  if (!sessionId) return;
+
+  try {
+    void fetch(`${base}/waiting-room/leave`, {
+      method: "POST",
+      keepalive: true,
+      headers: {
+        "Content-Type": "application/json",
+        "X-Queue-Session-Id": sessionId,
+        ...(token ? { "X-Waiting-Room-Token": token } : {}),
+      },
+      body: JSON.stringify({
+        data: {
+          eventUuid,
+          ...(token ? { token } : {}),
+          ...(soft ? { soft: true } : {}),
+        },
+      }),
+    }).catch(() => {});
+  } catch {
+    // Admission TTL still reclaims the slot if unload networking is unavailable.
+  }
+}
+
+export function isWaitingRoomRequiredError(error: unknown) {
+  return (
+    (error as { response?: { data?: { code?: string } } })?.response?.data
+      ?.code === "WAITING_ROOM_REQUIRED"
+  );
+}
 
 export const getCart = (cartId: string) =>
   instance.get(`/cart/myCart?cartId=${cartId}`);
