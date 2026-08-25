@@ -11,7 +11,6 @@ import {
   demoCompletedTicketOrder,
   demoFlexPack,
 } from "@/lib/demo/fixtures";
-import { FLEX_PACK_VOUCHER_FEE_USD } from "@/lib/flexPackDisplay";
 import { formatCurrency } from "@/lib/helpers";
 import { resolveCompletedOrderFees } from "@/lib/ticketSummary";
 import { cacheOrgBranding } from "@/lib/orgBrandingCache";
@@ -45,7 +44,6 @@ vi.mock("@/lib/api", () => ({
 
 vi.mock("@/lib/auth", () => ({
   useAuth: vi.fn(),
-  setLastKnown: vi.fn(),
 }));
 
 vi.mock("@/lib/intercom", () => ({
@@ -311,10 +309,10 @@ describe("Checkout success receipt", () => {
     );
     expect(screen.getByText("Service Fee")).toBeInTheDocument();
     expect(
-      screen.getByText(
-        `${formatCurrency(FLEX_PACK_VOUCHER_FEE_USD)} × ${pack.gameTickets}`,
+      screen.queryByText(
+        `${formatCurrency(1)} × ${pack.gameTickets}`,
       ),
-    ).toBeInTheDocument();
+    ).not.toBeInTheDocument();
     expect(screen.getByText(formatCurrency(totals.serviceFee))).toBeInTheDocument();
     expect(screen.getByText("Processing Fee")).toBeInTheDocument();
     expect(
@@ -425,6 +423,34 @@ describe("Checkout success receipt", () => {
     expect(screen.getByText("Card")).toBeInTheDocument();
     expect(mockedGetOrderByPi).toHaveBeenCalledTimes(5);
     expect(mockedGetOrder).not.toHaveBeenCalled();
+  });
+
+  it("loads a completed order for a logged-out guest", async () => {
+    mockedUseAuth.mockReturnValue({
+      isAuthenticated: false,
+      ready: true,
+      user: null,
+      session: null,
+      login: vi.fn(),
+      logout: vi.fn(),
+      refresh: vi.fn(),
+    });
+    render(<CheckoutSuccessPageRoute />);
+
+    expect(
+      await screen.findByText(DEMO_SEATED_TICKET_GROUPS[0].offer!.name),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("link", { name: /go to my wallet/i }),
+    ).toHaveAttribute("href", "/my-tickets/");
+    expect(
+      screen.queryByRole("link", {
+        name: /create an account to manage your tickets/i,
+      }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.getByText(new RegExp(`We've emailed it to ${DEMO_USER.email}`)),
+    ).toBeInTheDocument();
   });
 
   it("shows an error when the completed order cannot be loaded", async () => {

@@ -609,7 +609,7 @@ describe("storefront categories", () => {
     expect(mockedGetStorefront).toHaveBeenCalledTimes(1);
     expect(screen.getByRole("link", { name: /^log in$/i })).toHaveAttribute(
       "href",
-      "/login/",
+      "/login/?from=%2Fvenue%2Faggie-memorial-stadium%2F",
     );
   });
 

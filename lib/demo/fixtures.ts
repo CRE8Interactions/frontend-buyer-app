@@ -428,6 +428,9 @@ export function demoEventDetail(shortcode: string) {
       summary:
         "Dummy event for UI/UX review — all data here is local demo content, not real inventory.",
       status: base.status || "on_sale",
+      waitingRoomEnabled: false,
+      waitingRoomMaxConcurrent: 75,
+      waitingRoomAdmissionTtlMinutes: 15,
       venue: {
         ...base.venue,
         timezone: base.venue.timezone || "America/Denver",
@@ -491,6 +494,37 @@ export function demoTicketGroups() {
           unlocked: false,
           description: "Locked — enter your presale code.",
         },
+      },
+      // A sold-out GA offer arrives like this: the offer is still on sale, its
+      // inventory is drained. Offers flagged sold out are dropped server-side,
+      // catalog and groups alike, so they never reach the page at all.
+      {
+        id: "grp-student",
+        price: 12,
+        availableCount: 0,
+        sectionName: "Student Rush",
+        sectionNumber: "STU",
+        GA: true,
+        offer: {
+          id: "off-student",
+          name: "Student Rush",
+          description: "Valid student ID required at the gate.",
+        },
+      },
+    ],
+    // Offer catalog as the real response carries it: every offer still on sale.
+    offers: [
+      { id: "off-vip", name: "VIP Club", am_pricing_objects: [{ totalDue: 75 }] },
+      {
+        id: "off-presale",
+        name: "STH Presale",
+        accessCode: "GO2026",
+        am_pricing_objects: [{ totalDue: 30 }],
+      },
+      {
+        id: "off-student",
+        name: "Student Rush",
+        am_pricing_objects: [{ totalDue: 12 }],
       },
     ],
   };
@@ -569,6 +603,7 @@ export const DEMO_SEATED_TICKET_GROUPS: RawTicketGroup[] = [
     maxContiguous: 0,
     seatIds: [],
     GA: false,
+    // Every seat is gone, so this row is not sellable inventory.
     offer: { id: 13, name: "Sold Out Row" },
   },
   // Duplicate of group 2 — groupsToListings should keep only one.

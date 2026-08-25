@@ -1,7 +1,7 @@
 "use client";
 
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useParams, useSearchParams } from "next/navigation";
+import { useParams, useRouter, useSearchParams } from "next/navigation";
 import BrandedNotice from "@/components/molecules/BrandedNotice";
 import RouteLoader from "@/components/molecules/RouteLoader";
 import PremiumTicketing, {
@@ -10,7 +10,6 @@ import PremiumTicketing, {
 } from "@/components/organisms/PremiumTicketing";
 import {
   getEventByShortCode,
-  getOffers,
   getSeatmapByShortCode,
   getTicketGroups,
 } from "@/lib/api";
@@ -39,10 +38,21 @@ import {
 } from "@/lib/seatmapLookups";
 import {
   groupsToListings,
+  lockedZonesFromGroups,
+  normalizeGlobalTicketLimit,
+  offerChipNames,
+  type OfferSummary,
   type RawTicketGroup as RawGroup,
 } from "@/lib/ticketListings";
 import useFiltersStore from "@/stores/filtersStore";
 import useSeatmapStore from "@/stores/seatmapStore";
+import useWaitingRoomHeartbeat from "@/hooks/useWaitingRoomHeartbeat";
+import {
+  getWaitingRoomPath,
+  hasValidWaitingRoomToken,
+  isWaitingRoomRequired,
+  rememberWaitingRoomEntry,
+} from "@/lib/waitingRoom";
 
 type EventData = {
   id?: string | number;
@@ -56,6 +66,8 @@ type EventData = {
   shortCode?: string;
   seoUrl?: string;
   slug?: string;
+  globalTicketLimit?: number | string | null;
+  waitingRoomEnabled?: boolean | null;
   attractions?: Array<{
     name?: string;
     primary?: boolean;
@@ -100,7 +112,10 @@ function toTicketingData(
     background: SeatmapBackground | null;
     mapping: SeatmapMapping | null;
   },
-  offerNames: string[],
+  offers: OfferSummary[],
+  soldOut: boolean,
+  scheduled: boolean,
+  scheduledTime?: string | null,
 ): TicketingData {
   const tz = ev.venue?.timezone;
   const doorsIso = eventDoorsIso(ev);
@@ -118,7 +133,12 @@ function toTicketingData(
   const home = ev.attractions?.find((a) => a.primary) || ev.attractions?.[0];
   const away = ev.attractions?.find((a) => a !== home);
   const orgLabel = ev.organization?.name || "Blocktickets";
-  const listings = groupsToListings(groups);
+  const lockedZones = lockedZonesFromGroups(groups);
+  const globalMax = normalizeGlobalTicketLimit(ev.globalTicketLimit);
+  const listings = groupsToListings(groups, {
+    includeLocked: true,
+    globalMax,
+  });
   const theme = brandingToTicketingTheme(ev, ev.organization, imageOf(ev.image));
 
   return {
@@ -145,10 +165,15 @@ function toTicketingData(
     awayLabel: away?.name || "Visitor",
     awayShort: (away?.name || "AWAY").slice(0, 3).toUpperCase(),
     listings,
-    lockedZones: [],
+    lockedZones,
     mapBackground: seatmap.background,
     seatmapMapping: seatmap.mapping,
-    offerNames,
+    offerNames: offerChipNames(offers, lockedZones),
+    soldOut,
+    scheduled,
+    scheduledAt: scheduledTime
+      ? formatEventWhen(scheduledTime, tz) || scheduledTime
+      : undefined,
   };
 }
 
@@ -201,7 +226,7 @@ function hydrateSeatmapStores(
   });
   setTicketGroups(groups);
   setLoadingTicketGroups(false);
-  setEventTicketLimit(null);
+  setEventTicketLimit(normalizeGlobalTicketLimit(event.globalTicketLimit));
 
   const mapping = (seatmapRaw?.mapping || null) as SeatmapMapping | null;
   setData(mapping);
@@ -244,12 +269,13 @@ function fetchInventory(event: EventData, filters: TicketingFilters) {
 
 function SeatedTickets() {
   const params = useParams<{ slug: string; shortcode: string }>();
+  const router = useRouter();
   const searchParams = useSearchParams();
   const code = searchParams.get("code") || "0";
 
   const [ev, setEv] = useState<EventData | null>(null);
   const [groups, setGroups] = useState<RawGroup[]>([]);
-  const [offerNames, setOfferNames] = useState<string[]>([]);
+  const [offers, setOffers] = useState<OfferSummary[]>([]);
   const [seatmap, setSeatmap] = useState<{
     background: SeatmapBackground | null;
     mapping: SeatmapMapping | null;
@@ -257,11 +283,20 @@ function SeatedTickets() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [hasInventory, setHasInventory] = useState(true);
+  const [soldOut, setSoldOut] = useState(false);
+  const [scheduled, setScheduled] = useState(false);
+  const [scheduledTime, setScheduledTime] = useState<string | null>(null);
+  const [leavingForWaitingRoom, setLeavingForWaitingRoom] = useState(false);
   const [error, setError] = useState("");
   const eventRef = useRef<EventData | null>(null);
   const refetchId = useRef(0);
   /** Unfiltered inventory — what the seatmap is painted from. */
   const baselineGroups = useRef<RawGroup[]>([]);
+
+  useWaitingRoomHeartbeat(
+    ev?.uuid,
+    isWaitingRoomRequired(ev) && hasValidWaitingRoomToken(ev?.uuid),
+  );
 
   useEffect(() => {
     let cancelled = false;
@@ -276,18 +311,32 @@ function SeatedTickets() {
           return;
         }
         const event = res.data.event as EventData;
+        cacheEventBranding(event, event.organization);
+        if (
+          event.uuid &&
+          isWaitingRoomRequired(event) &&
+          !hasValidWaitingRoomToken(event.uuid)
+        ) {
+          const returnPath = `${window.location.pathname}${window.location.search}`;
+          rememberWaitingRoomEntry({
+            eventUuid: event.uuid,
+            destination: "seated",
+            returnPath,
+          });
+          setLeavingForWaitingRoom(true);
+          router.replace(
+            getWaitingRoomPath(params.slug, params.shortcode),
+          );
+          return;
+        }
         setEv(event);
         eventRef.current = event;
-        cacheEventBranding(event, event.organization);
 
-        const [groupsRes, seatmapRes, offersRes] = await Promise.all([
+        const [groupsRes, seatmapRes] = await Promise.all([
           fetchInventory(event, BASELINE_FILTERS),
           getSeatmapByShortCode(params.shortcode, params.slug).catch(
             () => null,
           ),
-          event.uuid
-            ? getOffers(event.uuid).catch(() => null)
-            : Promise.resolve(null),
         ]);
         if (cancelled) return;
 
@@ -300,17 +349,17 @@ function SeatedTickets() {
           max_scale?: number;
         } | null;
 
+        // The ticket-group endpoint already returns only active offers. Using
+        // the broader offers endpoint here leaks future offers into the chips.
+        const nextOffers = (groupsRes?.data?.offers || []) as OfferSummary[];
+
         setGroups(nextGroups);
         baselineGroups.current = nextGroups;
+        setSoldOut(Boolean(groupsRes?.data?.soldout));
+        setScheduled(Boolean(groupsRes?.data?.isScheduled));
+        setScheduledTime(groupsRes?.data?.scheduledTime || null);
         setHasInventory(nextGroups.length > 0);
-        setOfferNames(
-          ((offersRes?.data?.offers || []) as Array<{
-            name?: string;
-            isLocked?: boolean;
-          }>)
-            .filter((o) => o.name && !o.isLocked)
-            .map((o) => o.name as string),
-        );
+        setOffers(nextOffers);
         setSeatmap({
           background: normalizeSeatmapBackground(seatmapRaw?.background),
           mapping: (seatmapRaw?.mapping || null) as SeatmapMapping | null,
@@ -330,7 +379,7 @@ function SeatedTickets() {
     return () => {
       cancelled = true;
     };
-  }, [params.shortcode, params.slug, code]);
+  }, [params.shortcode, params.slug, code, router]);
 
   /**
    * Refetch the listing rows for the shopper's filters. Only the list changes:
@@ -348,14 +397,32 @@ function SeatedTickets() {
     if (refetchId.current !== requestId) return;
 
     const nextGroups = (res?.data?.ticketGroups || []) as RawGroup[];
-    const usable = groupsToListings(nextGroups).length > 0;
+    const usable =
+      groupsToListings(
+        nextGroups,
+        {
+          includeLocked: true,
+          globalMax: normalizeGlobalTicketLimit(event.globalTicketLimit),
+        },
+      ).length > 0;
     setGroups(usable ? nextGroups : baselineGroups.current);
     setRefreshing(false);
   }, []);
 
   const data = useMemo(
-    () => (ev ? toTicketingData(ev, groups, seatmap, offerNames) : null),
-    [ev, groups, seatmap, offerNames],
+    () =>
+      ev
+        ? toTicketingData(
+            ev,
+            groups,
+            seatmap,
+            offers,
+            soldOut,
+            scheduled,
+            scheduledTime,
+          )
+        : null,
+    [ev, groups, seatmap, offers, soldOut, scheduled, scheduledTime],
   );
 
   const theme = ev ? brandingToTicketingTheme(ev, ev.organization) : null;
@@ -366,7 +433,7 @@ function SeatedTickets() {
     slug: ev?.organization?.slug,
   };
 
-  if (loading) {
+  if (loading || leavingForWaitingRoom) {
     return (
       <RouteLoader
         branding={
@@ -388,7 +455,9 @@ function SeatedTickets() {
       />
     );
   }
-  if (!hasInventory) {
+  // A sold-out event still renders the page: the shopper gets the sold-out
+  // screen and its waitlist instead of a dead end.
+  if (!hasInventory && !soldOut && !scheduled) {
     return (
       <BrandedNotice
         title="No tickets on sale"

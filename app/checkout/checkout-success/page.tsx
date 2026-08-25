@@ -6,7 +6,7 @@ import { useSearchParams } from "next/navigation";
 import BrandedActionButton from "@/components/atoms/BrandedActionButton";
 import RouteLoader from "@/components/molecules/RouteLoader";
 import { getOrderByPaymentIntentId } from "@/lib/api";
-import { setLastKnown, useAuth } from "@/lib/auth";
+import { useAuth } from "@/lib/auth";
 import { BLOCKTICKETS_NAVY, type BrandingOrganization } from "@/lib/branding";
 import {
   checkoutBrandingFromCart,
@@ -23,6 +23,7 @@ import {
   type TimezoneLike,
 } from "@/lib/helpers";
 import { clearStoredCart, getStoredCart } from "@/lib/cart";
+import { getGuestCheckoutEmail } from "@/lib/guestCheckout";
 import { hideIntercomLauncher } from "@/lib/intercom";
 import { cacheOrgBranding } from "@/lib/orgBrandingCache";
 import {
@@ -32,7 +33,6 @@ import {
   ticketSelectionSummary,
 } from "@/lib/ticketSummary";
 import {
-  FLEX_PACK_VOUCHER_FEE_USD,
   flexPackSeasonLine,
   flexPackVoucherCount,
 } from "@/lib/flexPackDisplay";
@@ -228,14 +228,6 @@ function CheckoutSuccessPage() {
   }, []);
 
   useEffect(() => {
-    if (!authReady || isAuthenticated) return;
-    if (typeof window === "undefined") return;
-    const returnTo = window.location.pathname + window.location.search;
-    setLastKnown(returnTo);
-    window.location.href = `/login/?from=${encodeURIComponent(returnTo)}`;
-  }, [authReady, isAuthenticated]);
-
-  useEffect(() => {
     if (!intentId) {
       setError("Missing payment reference.");
       setLoading(false);
@@ -352,9 +344,12 @@ function CheckoutSuccessPage() {
       await downloadOrderReceipt({
         order,
         purchaser: {
-          firstName: user?.firstName,
-          lastName: user?.lastName,
-          email: user?.email,
+          firstName: user?.firstName || String(order.firstName || ""),
+          lastName: user?.lastName || String(order.lastName || ""),
+          email:
+            user?.email ||
+            (typeof order.email === "string" ? order.email : "") ||
+            getGuestCheckoutEmail(),
         },
         sellerLogoUrl: branding.theme.brandLogoSrc,
       });
@@ -365,7 +360,7 @@ function CheckoutSuccessPage() {
     }
   };
 
-  const awaitingAuth = !authReady || !isAuthenticated;
+  const awaitingAuth = !authReady;
   const shellLoading = awaitingAuth || loading;
   const loaderBranding = branding.organization
     ? {
@@ -416,10 +411,16 @@ function CheckoutSuccessPage() {
   const ticketEmail =
     user?.email ||
     (typeof order?.email === "string" ? order.email : "") ||
-    (typeof order?.purchaserEmail === "string" ? order.purchaserEmail : "");
+    (typeof order?.purchaserEmail === "string" ? order.purchaserEmail : "") ||
+    getGuestCheckoutEmail();
   const mobileTicketMessage = ticketEmail
     ? `We've emailed it to ${ticketEmail} — add it to your wallet now.`
-    : "You will instantly receive your ticket and store it in your account.";
+    : isAuthenticated
+      ? "You will instantly receive your ticket and store it in your account."
+      : "We've emailed your tickets. Create an account to manage them in your wallet.";
+  const walletHref = isAuthenticated ? accessPassHref : "/my-tickets/";
+  const walletLabel =
+    isAuthenticated && isAccessPass ? "View access pass" : "Go to my wallet";
 
   if (shellLoading) {
     return <RouteLoader branding={loaderBranding} />;
@@ -458,11 +459,11 @@ function CheckoutSuccessPage() {
             {error}
           </p>
           <Link
-            href="/my-tickets/"
+            href={walletHref}
             className="mt-6 inline-flex w-full items-center justify-center rounded-full px-5 py-3 text-[15px] font-semibold no-underline"
             style={{ background: accent, color: branding.theme.buttonTextColor }}
           >
-            Go to my wallet
+            {walletLabel}
           </Link>
         </div>
       ) : (
@@ -502,25 +503,10 @@ function CheckoutSuccessPage() {
                   label="Processing Fee"
                   value={formatCurrency(orderFees.processingFee)}
                 />
-                {order.flex_pack && flexVoucherCount > 0 ? (
-                  <div className="flex items-start justify-between gap-3 text-[14px] text-[#4a5567]">
-                    <span>
-                      Service Fee
-                      <span className="mt-0.5 block text-[12px] text-[#6e7180]">
-                        {formatCurrency(FLEX_PACK_VOUCHER_FEE_USD)} ×{" "}
-                        {flexVoucherCount}
-                      </span>
-                    </span>
-                    <span className="tabular-nums text-[#051b35]">
-                      {formatCurrency(orderFees.serviceFee)}
-                    </span>
-                  </div>
-                ) : (
-                  <SummaryRow
-                    label="Service Fee"
-                    value={formatCurrency(orderFees.serviceFee)}
-                  />
-                )}
+                <SummaryRow
+                  label="Service Fee"
+                  value={formatCurrency(orderFees.serviceFee)}
+                />
                 {orderFees.additionalFee > 0 ? (
                   <SummaryRow
                     label="Additional Fee"
@@ -615,12 +601,16 @@ function CheckoutSuccessPage() {
                     {ticketSummary.count
                       ? ticketSummary.subtitle
                       : isAccessPass
-                        ? "Your access pass is in your wallet"
+                        ? isAuthenticated
+                          ? "Your access pass is in your wallet"
+                          : "Your access pass is on the way"
                         : order?.flex_pack
                           ? `${flexVoucherCount} flex ${
                               flexVoucherCount === 1 ? "voucher" : "vouchers"
-                            } in your wallet`
-                          : "Your tickets are in your wallet"}
+                            }${isAuthenticated ? " in your wallet" : " emailed to you"}`
+                          : isAuthenticated
+                            ? "Your tickets are in your wallet"
+                            : "Your tickets have been emailed"}
                   </div>
                 </div>
               </div>
@@ -641,7 +631,7 @@ function CheckoutSuccessPage() {
                 ) : null}
               </div>
               <Link
-                href={accessPassHref}
+                href={walletHref}
                 className="flex w-full items-center justify-center gap-2.5 rounded-full px-[26px] py-4 text-[16px] font-semibold no-underline"
                 style={{ background: accent, color: branding.theme.buttonTextColor }}
               >
@@ -659,7 +649,7 @@ function CheckoutSuccessPage() {
                   <path d="M4 6v12a2 2 0 0 0 2 2h14v-4" />
                   <path d="M18 12a2 2 0 0 0 0 4h4v-4z" />
                 </svg>
-                {isAccessPass ? "View access pass" : "Go to my wallet"}
+                {walletLabel}
               </Link>
             </div>
 

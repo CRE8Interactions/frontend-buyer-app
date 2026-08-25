@@ -49,6 +49,10 @@ describe("inAppBack", () => {
     expect(router.push).toHaveBeenCalledWith("/browse/");
 
     expect(inAppBackAnchorProps("/", router).href).toBe("/browse/");
+    expect(inAppBackAnchorProps("/login/", router).href).toBe("/browse/");
+    expect(inAppBackAnchorProps("/login/?from=%2Fcheckout", router).href).toBe(
+      "/browse/",
+    );
     expect(inAppBackAnchorProps("/nm-state/", router).href).toBe("/nm-state/");
   });
 

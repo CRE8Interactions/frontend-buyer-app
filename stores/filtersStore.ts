@@ -68,6 +68,7 @@ export type TicketGroup = {
     connected_offers?: unknown[];
     minQuantity?: number | null;
     maxQuantity?: number | null;
+    multipleOf?: number | null;
   };
   package?: {
     id?: string | number;

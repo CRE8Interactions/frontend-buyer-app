@@ -2,10 +2,10 @@
 
 import type { CSSProperties } from "react";
 import Link from "next/link";
+import LoginLink from "@/components/molecules/LoginLink";
 import { useAuth } from "@/lib/auth";
 
 const WALLET_HREF = "/my-tickets/";
-const LOGIN_HREF = "/login/";
 
 export default function NavAuthActions({
   loginLabel = "Log in",
@@ -20,12 +20,13 @@ export default function NavAuthActions({
 
   return (
     <>
-      <Link
-        href={isAuthenticated ? WALLET_HREF : LOGIN_HREF}
-        style={buttonStyle}
-      >
-        {isAuthenticated ? "My wallet" : loginLabel}
-      </Link>
+      {isAuthenticated ? (
+        <Link href={WALLET_HREF} style={buttonStyle}>
+          My wallet
+        </Link>
+      ) : (
+        <LoginLink style={buttonStyle}>{loginLabel}</LoginLink>
+      )}
       {isAuthenticated ? (
         <button type="button" onClick={() => logout()} style={logoutStyle}>
           Log out

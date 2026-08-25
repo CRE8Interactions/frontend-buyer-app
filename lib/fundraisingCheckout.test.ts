@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  DEMO_USER,
   demoCheckoutCart,
   demoFlexPackCheckoutCart,
 } from "@/lib/demo/fixtures";
@@ -41,6 +42,19 @@ describe("buildPaymentIntentRequest", () => {
     expect(request.event).toEqual(paymentEventFromCart(cart, null));
     expect(request.totalFromCart).toBe(resolveFlexPackCheckoutTotals(cart).total);
     expect(request.totalFromCart).toBeGreaterThan(Number(cart.total));
+    expect(request).not.toHaveProperty("guest");
+  });
+
+  it("includes a guest buyer on the payment intent", () => {
+    const cart = demoCheckoutCart();
+    const guest = {
+      email: DEMO_USER.email,
+      firstName: DEMO_USER.firstName,
+      lastName: DEMO_USER.lastName,
+    };
+    const request = buildPaymentIntentRequest(cart, cart.event, null, guest);
+
+    expect(request.guest).toEqual(guest);
   });
 
   it("keeps the provided event and cart total for ticket checkout", () => {

@@ -149,4 +149,34 @@ describe("Flex pack detail (FlexPackDetailClient)", () => {
       expect(routerMocks.push).toHaveBeenCalledWith(checkoutHref("cart-flex-1"));
     });
   });
+
+  it("takes a logged-out shopper to checkout instead of login", async () => {
+    authMocks.isAuthenticated = false;
+    const hrefSetter = vi.fn();
+    vi.stubGlobal("location", {
+      pathname: "/niagara-icedogs/flex-pack/cfa9c3cb-e81c-4141-ac56-c8edcd0f0303/",
+      search: "",
+      origin: "http://localhost",
+      get href() {
+        return "http://localhost/";
+      },
+      set href(value: string) {
+        hrefSetter(value);
+      },
+    });
+    const pack = demoFlexPack();
+    mockedPlaceFlex.mockResolvedValue({ data: { cartId: "cart-flex-2" } } as never);
+    const user = await renderFlex(pack);
+
+    await screen.findByRole("heading", { name: pack.name });
+    await user.click(
+      screen.getByRole("button", { name: `Get ${pack.gameTickets} vouchers` }),
+    );
+
+    await waitFor(() => {
+      expect(routerMocks.push).toHaveBeenCalledWith(checkoutHref("cart-flex-2"));
+    });
+    expect(hrefSetter).not.toHaveBeenCalled();
+    vi.unstubAllGlobals();
+  });
 });

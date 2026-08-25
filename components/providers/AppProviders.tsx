@@ -101,8 +101,17 @@ export default function AppProviders({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     const id = window.requestAnimationFrame(() => {
-      // The boot splash used to set data-bt-platform-loader on itself, so a
-      // "React loader is up" check matched the splash and never removed it.
+      // A painting BrandedLoader dismisses the splash itself, in the same
+      // commit, so removing it here too would blink the loader. An older splash
+      // marked itself as the platform loader, so exclude it by id or it would
+      // match itself and never be removed.
+      if (
+        document.querySelector(
+          "[data-bt-tenant-loader]:not(#bt-boot-loader),[data-bt-platform-loader]:not(#bt-boot-loader)",
+        )
+      ) {
+        return;
+      }
       document.getElementById("bt-boot-loader")?.remove();
     });
     return () => window.cancelAnimationFrame(id);

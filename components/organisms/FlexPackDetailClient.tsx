@@ -6,7 +6,6 @@ import BrandedActionButton from "@/components/atoms/BrandedActionButton";
 import InAppBackLink from "@/components/molecules/InAppBackLink";
 import RouteLoader from "@/components/molecules/RouteLoader";
 import { getFlexPack, placeFlexPackIntoCart } from "@/lib/api";
-import { useAuth, setLastKnown } from "@/lib/auth";
 import {
   brandingToTicketingTheme,
   type BrandingOrganization,
@@ -81,7 +80,6 @@ export default function FlexPackDetailClient({
   uuid: string;
   backHref: string;
 }) {
-  const { isAuthenticated, ready } = useAuth();
   const router = useRouter();
   const [flexPack, setFlexPack] = useState<FlexPack | null>(null);
   const [loading, setLoading] = useState(true);
@@ -129,19 +127,10 @@ export default function FlexPackDetailClient({
     };
   }, [uuid]);
 
-  const goLogin = () => {
-    const from = window.location.pathname + window.location.search;
-    setLastKnown(from);
-    window.location.href = `/login/?from=${encodeURIComponent(from)}`;
-  };
-
+  // Guests are not gated here: checkout owns the login redirect so the shopper
+  // comes back to their cart instead of this page.
   const buy = async () => {
     if (!flexPack) return;
-    if (!ready) return;
-    if (!isAuthenticated) {
-      goLogin();
-      return;
-    }
     if (flexPack.isSoldOut) return;
 
     setBuying(true);
@@ -179,9 +168,7 @@ export default function FlexPackDetailClient({
     ? "Sold out"
     : buying
       ? "Adding…"
-      : !isAuthenticated
-        ? "Log in to buy"
-        : `Get ${voucherCount} ${getSingularOrPluralWord(voucherCount, "voucher").toLowerCase()}`;
+      : `Get ${voucherCount} ${getSingularOrPluralWord(voucherCount, "voucher").toLowerCase()}`;
   const pills = [
     flexPack?.organization?.name || flexPack?.venue?.name,
     "Any home game",

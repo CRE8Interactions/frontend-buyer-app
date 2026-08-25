@@ -14,6 +14,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
+import LoginLink from "@/components/molecules/LoginLink";
 import { validateEmail, verifyCode, verifyUser } from "@/lib/api";
 import { setLastKnown, setSession, type AuthSession } from "@/lib/auth";
 import {
@@ -437,7 +438,7 @@ export default function Wallet({
           <p style={{ margin: 0, maxWidth: 420, fontSize: 15, lineHeight: 1.6, color: SUB }}>We couldn&apos;t find any tickets for <strong style={{ fontWeight: 600, color: NAVY }}>{email}</strong>. If you bought with a different address, sign in with that one.</p>
           <div style={{ display: "flex", flexWrap: "wrap", justifyContent: "center", gap: 8, paddingTop: 4 }}>
             <Link href="/browse" style={{ ...greenBtn, padding: "14px 22px", minHeight: 48, fontSize: 15, textDecoration: "none", display: "inline-flex", alignItems: "center" }}>Browse events</Link>
-            <Link href="/login" style={{ ...ghostBtn, padding: "14px 22px", minHeight: 48, fontSize: 15, textDecoration: "none", display: "inline-flex", alignItems: "center" }}>Try a different email</Link>
+            <LoginLink style={{ ...ghostBtn, padding: "14px 22px", minHeight: 48, fontSize: 15, textDecoration: "none", display: "inline-flex", alignItems: "center" }}>Try a different email</LoginLink>
           </div>
         </div>
       )}

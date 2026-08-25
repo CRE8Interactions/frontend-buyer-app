@@ -52,10 +52,14 @@ export function BrandedLoader({
 }) {
   const showPlatform = fallback === "blocktickets" && !hasTenantBranding(branding);
   const caption = message || LOADER_MESSAGE;
+  const painting = hasTenantBranding(branding) || showPlatform;
 
+  // Only trade places with the boot splash when this loader actually paints,
+  // so resolving branding never blanks the screen mid-load. AppProviders
+  // clears the splash when no loader takes over.
   useLayoutEffect(() => {
-    dismissBootLoader();
-  }, [branding, showPlatform]);
+    if (painting) dismissBootLoader();
+  }, [painting]);
 
   if (hasTenantBranding(branding)) {
     return (

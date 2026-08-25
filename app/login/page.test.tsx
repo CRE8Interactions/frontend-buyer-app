@@ -66,6 +66,7 @@ function stubLocation() {
     pathname: "/login/",
     search: "?from=%2Fcheckout%2F%3FcartId%3Dcart-raptors-1",
     assign: vi.fn(),
+    replace: hrefSetter,
   });
   return hrefSetter;
 }
@@ -172,6 +173,9 @@ describe("Login page", () => {
     await waitFor(
       () => {
         expect(hrefSetter).toHaveBeenCalledWith(
+          "/checkout/?cartId=cart-raptors-1",
+        );
+        expect(location.replace).toHaveBeenCalledWith(
           "/checkout/?cartId=cart-raptors-1",
         );
       },
@@ -479,7 +483,7 @@ describe("Login page create account", () => {
     );
   });
 
-  it("redirects to browse after signup when login has no from param", async () => {
+  it("returns to the last page after signup when login has no from param", async () => {
     const user = userEvent.setup();
     navState.from = "";
     mockedGetLastKnown.mockReturnValue("/checkout/?cartId=cart-raptors-1");
@@ -497,7 +501,9 @@ describe("Login page create account", () => {
     });
     await waitFor(
       () => {
-        expect(hrefSetter).toHaveBeenCalledWith("/browse/");
+        expect(hrefSetter).toHaveBeenCalledWith(
+          "/checkout/?cartId=cart-raptors-1",
+        );
       },
       { timeout: 1500 },
     );

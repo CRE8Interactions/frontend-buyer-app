@@ -14,12 +14,19 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import BrandedActionButton from "@/components/atoms/BrandedActionButton";
 import EmailField from "@/components/molecules/EmailField";
+import LoginLink from "@/components/molecules/LoginLink";
 import Modal from "@/components/molecules/Modal";
 import SectionLocatorThumb from "@/components/molecules/SectionLocatorThumb";
 import SeatMapSelectionOverlay from "@/components/organisms/SeatMapSelectionOverlay";
 import { placeGATicketsIntoCart, placeTicketsIntoCart } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { goBack } from "@/lib/inAppBack";
+import { verifyOfferAccessCode } from "@/lib/offerUnlock";
+import {
+  clampQuantity,
+  quantityIsAllowed,
+  type QuantityLimits,
+} from "@/lib/ticketListings";
 import { checkoutHref, rememberCheckoutReturnPath, setStoredCart } from "@/lib/cart";
 import {
   emailLooksInvalid,
@@ -47,6 +54,7 @@ export type TicketingListing = {
   row: string;
   min: number;
   max: number;
+  multipleOf?: number;
   price: string;
   /** Seatmap section id — used to pin the listing on the venue map. */
   sectionId?: string;
@@ -98,6 +106,12 @@ export type TicketingData = {
   seatmapMapping?: SeatmapMapping | null;
   /** Offer catalog from the ticket-groups response — drives the filter chips. */
   offerNames?: string[];
+  /** Whole event is sold out: no listings, waitlist only. */
+  soldOut?: boolean;
+  /** No offer is active yet; scheduled offers stay hidden until their window. */
+  scheduled?: boolean;
+  /** Shopper-facing on-sale date/time formatted in the venue timezone. */
+  scheduledAt?: string;
 };
 
 export type TicketingFilters = {
@@ -113,9 +127,38 @@ export type GATier = {
   unit: number; // numeric price for totals
   note: string;
   state: "live" | "scheduled" | "soldout";
+  min?: number;
+  max?: number;
+  multipleOf?: number;
   onSaleAt?: string;
   cartGroup?: Record<string, unknown>;
 };
+
+/**
+ * What the notify modal is collecting an address for: a sold-out offer or event
+ * takes a waitlist signup, anything else takes an on-sale reminder.
+ */
+type NotifySubject = { name: string; soldout: boolean; onSaleAt?: string };
+
+function listingLimits(l: TicketingListing): QuantityLimits {
+  return {
+    min: l.min,
+    max: l.max,
+    step: Math.max(1, l.multipleOf || 1),
+    valid: l.min <= l.max,
+  };
+}
+
+function initialListingQuantity(listings: TicketingListing[]) {
+  if (listings.some((listing) => quantityIsAllowed(2, listingLimits(listing)))) {
+    return 2;
+  }
+  const minimums = listings
+    .map((listing) => listingLimits(listing))
+    .filter((limits) => limits.valid)
+    .map((limits) => limits.min);
+  return minimums.length ? Math.min(...minimums) : 1;
+}
 
 const LEGEND = [
   { label: "Unavailable", color: "#dfe3ee" },
@@ -125,10 +168,11 @@ const LEGEND = [
 ];
 const money = (n: number) => "$" + n.toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ",");
 const SEATMAP = "/nmstate/seatmap-dummy.svg";
+/** How long the listing placeholders stay up after a filter change. */
+const LIST_SHIMMER_MS = 420;
 
 const DEFAULT_GA_TIERS: GATier[] = [
   { name: "Standard admission", sub: "General admission · unreserved seating", price: "$10.08", unit: 10.08, note: "Ticket limit: 100 per order", state: "live" },
-  { name: "Sideline reserved", sub: "Chairback seating, west sideline · rows A–F", price: "$18.00", unit: 18, note: "On sale Fri, Aug 1 at 10:00 AM MT", state: "scheduled", onSaleAt: "Friday, Aug 1 at 10:00 AM MT" },
   { name: "Aggie student", sub: "Valid NMSU student ID required at the gate", price: "Free", unit: 0, note: "All 800 student tickets claimed", state: "soldout" },
 ];
 
@@ -206,7 +250,18 @@ export default function PremiumTicketing({
   const LOGO = d.logoSrc;
   const isGa = d.eventType === "ga";
   const POSTER = d.posterSrc || LOGO;
-  const GA_TIERS: GATier[] = d.gaTiers && d.gaTiers.length ? d.gaTiers : DEFAULT_GA_TIERS;
+  // Future offers never render as cards. The inventory response exposes their
+  // schedule at event level until at least one offer becomes active.
+  const activeGaTiers = d.gaTiers?.filter((tier) => tier.state !== "scheduled");
+  const gaSoldOut = isGa && !!d.soldOut && !activeGaTiers?.length;
+  const gaScheduled = isGa && !!d.scheduled && !activeGaTiers?.length;
+  const seatedScheduled = !isGa && !!d.scheduled && d.listings.length === 0;
+  const GA_TIERS: GATier[] =
+    activeGaTiers && activeGaTiers.length
+      ? activeGaTiers
+      : gaSoldOut || gaScheduled || d.gaTiers
+        ? []
+        : DEFAULT_GA_TIERS;
   // Nav is crimson for reserved, white for GA.
   const navBg = isGa ? "#ffffff" : ACC;
   const navInk = isGa ? NAVY : "#fff";
@@ -216,6 +271,7 @@ export default function PremiumTicketing({
   const navFieldInk = isGa ? "#6e7180" : "rgba(255,255,255,0.75)";
   const navBtnBg = isGa ? ACC : "#fff";
   const navBtnInk = isGa ? "#fff" : ACC;
+  const navBtnStyle = { fontFamily: "inherit", fontSize: 15, fontWeight: 600, color: navBtnInk, background: navBtnBg, border: "none", borderRadius: 999, padding: "13px 30px", whiteSpace: "nowrap", cursor: "pointer", textDecoration: "none", display: "inline-flex", alignItems: "center" } as const;
 
   const selectedFromMap = useSeatmapStore((s) => s.selectedFromMap);
   const resetMapState = useSeatmapStore((s) => s.resetMapState);
@@ -236,12 +292,13 @@ export default function PremiumTicketing({
 
   const [mounted, setMounted] = useState(false);
   const [vw, setVw] = useState(1440);
-  const [want, setWant] = useState(2);
+  const [want, setWant] = useState(() => initialListingQuantity(d.listings));
   const [zoneFilter, setZoneFilter] = useState<string[]>([]);
   const [unlocked, setUnlocked] = useState<string[]>([]);
   const [unlockZone, setUnlockZone] = useState<string | null>(null);
   const [unlockInput, setUnlockInput] = useState("");
   const [unlockError, setUnlockError] = useState(false);
+  const [unlocking, setUnlocking] = useState(false);
   const [qtyMenu, setQtyMenu] = useState(false);
   const [ada, setAda] = useState(false);
   const [sortDir, setSortDir] = useState<"price" | "-price">("price");
@@ -258,13 +315,13 @@ export default function PremiumTicketing({
   const [sel, setSel] = useState<number | null>(null);
   const [panelQty, setPanelQty] = useState(2);
   // GA mode state
-  const [gaQty, setGaQty] = useState(1);
-  const [notifyIdx, setNotifyIdx] = useState<number | null>(null);
+  const [gaQuantities, setGaQuantities] = useState<Record<number, number>>({});
+  const [notifySubject, setNotifySubject] = useState<NotifySubject | null>(null);
   const [notifyEmail, setNotifyEmail] = useState("");
   const [notifyEmailInvalid, setNotifyEmailInvalid] = useState(false);
   const [notifySms, setNotifySms] = useState(false);
   const [notifySent, setNotifySent] = useState(false);
-  const [notified, setNotified] = useState<Record<number, boolean>>({});
+  const [notified, setNotified] = useState<Record<string, boolean>>({});
   const [gaSheet, setGaSheet] = useState(false);
   const headerRef = useRef<HTMLElement | null>(null);
   const sticky = useRef<HTMLDivElement | null>(null);
@@ -299,6 +356,7 @@ export default function PremiumTicketing({
     return () => {
       window.removeEventListener("resize", onResize);
       clearTimeout(t);
+      if (loadTimer.current) clearTimeout(loadTimer.current);
     };
   }, []);
 
@@ -381,14 +439,21 @@ export default function PremiumTicketing({
     onFiltersChange?.(filters);
   };
 
-  const reload = (nextWant: number) => {
+  /**
+   * Shimmer the rows for a beat so every filter change reads as a new list,
+   * whether the page refetches inventory or the change is filtered client-side.
+   */
+  const shimmerListings = () => {
     if (loadTimer.current) clearTimeout(loadTimer.current);
+    setLoading(true);
+    loadTimer.current = setTimeout(() => setLoading(false), LIST_SHIMMER_MS);
+  };
+
+  const reload = (nextWant: number) => {
     setWant(nextWant);
     setSel(null);
     requestInventory({ quantity: nextWant });
-    if (onFiltersChange) return;
-    setLoading(true);
-    loadTimer.current = setTimeout(() => setLoading(false), 650);
+    shimmerListings();
   };
 
   const toggleAda = () => {
@@ -396,12 +461,25 @@ export default function PremiumTicketing({
     setAda(nextAda);
     setSel(null);
     requestInventory({ accessible: nextAda });
+    shimmerListings();
   };
 
   const toggleSort = () => {
     const nextSort = sortDir === "price" ? "-price" : "price";
     setSortDir(nextSort);
     requestInventory({ sort: nextSort });
+    shimmerListings();
+  };
+
+  const filterByZones = (next: (current: string[]) => string[]) => {
+    setZoneFilter(next);
+    setSel(null);
+    shimmerListings();
+  };
+
+  const openNotify = (subject: NotifySubject) => {
+    setNotifySubject(subject);
+    setNotifySent(false);
   };
 
   const lockedMap = useMemo(() => {
@@ -414,18 +492,35 @@ export default function PremiumTicketing({
   const priceOf = (l: TicketingListing) =>
     parseFloat(l.price.replace(/[^0-9.]/g, "")) || 0;
   const rows = useMemo(() => {
-    const filtered = d.listings.filter((l) => want >= l.min && want <= l.max && (!zoneFilter.length || zoneFilter.includes(l.zone)) && !(!!lockedMap[l.zone] && !unlocked.includes(l.zone)) && (!ada || Boolean(l.cartGroup?.accessible)));
+    const filtered = d.listings.filter((l) => quantityIsAllowed(want, listingLimits(l)) && (!zoneFilter.length || zoneFilter.includes(l.zone)) && !(!!lockedMap[l.zone] && !unlocked.includes(l.zone)) && (!ada || Boolean(l.cartGroup?.accessible)));
     const sorted = [...filtered].sort((a, b) =>
       sortDir === "price" ? priceOf(a) - priceOf(b) : priceOf(b) - priceOf(a),
     );
     return sorted.map((l) => ({ ...l, range: `${l.min} – ${l.max} Tickets` }));
   }, [want, d.listings, zoneFilter, lockedMap, unlocked, ada, sortDir]);
+  // Placeholder rows roughly match the list being replaced, so the column keeps
+  // its height while new inventory settles.
+  const skeletonRows = Math.min(Math.max(rows.length || 3, 3), 5);
   // Offer catalog first — it includes offers with no inventory right now.
   const zoneChips = useMemo(() => {
     const seen: string[] = [...(d.offerNames || [])];
     d.listings.forEach((l) => { if (!seen.includes(l.zone)) seen.push(l.zone); });
     return seen;
   }, [d.listings, d.offerNames]);
+  const quantityOptions = useMemo(() => {
+    const options = new Set<number>();
+    d.listings.forEach((listing) => {
+      const limits = listingLimits(listing);
+      for (
+        let quantity = limits.min;
+        limits.valid && quantity <= limits.max;
+        quantity += limits.step
+      ) {
+        options.add(quantity);
+      }
+    });
+    return [...options].sort((a, b) => a - b);
+  }, [d.listings]);
   const ZONES = useMemo(() => {
     // derive 4 map zones from the distinct listing zones (fallback to listings)
     const seen = new Map<string, TicketingListing>();
@@ -435,7 +530,10 @@ export default function PremiumTicketing({
     return arr.map((l, i) => ({ label: l.zone.replace(/Sections?\s*/i, ""), price: l.price, ...pos[i % 4], sec: l.sec, row: l.row, zone: l.zone, tier: l.tier, unit: parseFloat(l.price.replace(/[^0-9.]/g, "")) || 0 }));
   }, [d.listings, ACC]);
 
-  const selRow = (sel === null ? rows[0] : rows[sel]) || rows[0] || d.listings[0];
+  const selRow =
+    (sel === null ? rows[0] : rows[sel]) ||
+    rows[0] ||
+    d.listings.find((l) => !isLocked(l.zone));
   const unit = selRow ? parseFloat(selRow.price.replace(/[^0-9.]/g, "")) : 0;
   const panelOpen = sel !== null && !map;
 
@@ -445,6 +543,9 @@ export default function PremiumTicketing({
   const gaFromNum = gaAvail.length ? Math.min(...gaAvail.map((t) => t.unit)) : gaLiveUnit;
 
   const [holding, setHolding] = useState(false);
+  // GA lists every offer at once, so the tier being held has to be tracked or
+  // all of their checkout buttons spin together.
+  const [holdingTier, setHoldingTier] = useState<number | null>(null);
   const [holdError, setHoldError] = useState("");
 
   const addPick = (z: (typeof ZONES)[number]) => setPicks((list) => [...list, { sec: z.sec, row: z.row, seat: String(21 + list.length), zone: z.zone, tier: z.tier, unit: z.unit, price: "$" + z.unit.toFixed(2) }]);
@@ -467,6 +568,25 @@ export default function PremiumTicketing({
     setMap(false);
     resetMapState();
     setPicks([]);
+  };
+
+  const submitUnlockCode = async () => {
+    const zone = unlockZone;
+    if (!zone || unlocking) return;
+    setUnlocking(true);
+    const opened = await verifyOfferAccessCode({
+      eventId: d.eventId,
+      code: unlockInput,
+      expected: lockedMap[zone],
+    });
+    setUnlocking(false);
+    if (!opened) {
+      setUnlockError(true);
+      return;
+    }
+    setUnlocked((u) => (u.includes(zone) ? u : [...u, zone]));
+    filterByZones((prev) => (prev.includes(zone) ? prev : [...prev, zone]));
+    setUnlockZone(null);
   };
 
   const goToCheckout = (cartId: string) => {
@@ -508,9 +628,10 @@ export default function PremiumTicketing({
   const runCheckoutWithGroup = async (
     group: Record<string, unknown>,
     quantity: number,
-    opts?: { closeGaSheet?: boolean },
+    opts?: { closeGaSheet?: boolean; tierIndex?: number },
   ) => {
     setHolding(true);
+    setHoldingTier(opts?.tierIndex ?? null);
     setHoldError("");
     try {
       const cartId = await placeSelectedTickets([{ ...group, quantity }]);
@@ -524,6 +645,7 @@ export default function PremiumTicketing({
         "Unable to hold tickets.";
       setHoldError(msg);
       setHolding(false);
+      setHoldingTier(null);
     }
   };
 
@@ -563,7 +685,11 @@ export default function PremiumTicketing({
   };
 
   // GA tier sheet → place inventory, then the checkout page (which gates login).
-  const startGaCheckout = async (tier?: GATier) => {
+  const startGaCheckout = async (
+    tier?: GATier,
+    quantity?: number,
+    tierIndex?: number,
+  ) => {
     if (holding) return;
     const chosen = tier || GA_TIERS.find((t) => t.state === "live");
     const group = chosen?.cartGroup;
@@ -573,7 +699,11 @@ export default function PremiumTicketing({
       );
       return;
     }
-    await runCheckoutWithGroup(group, gaQty, { closeGaSheet: true });
+    await runCheckoutWithGroup(
+      group,
+      quantity ?? Math.max(1, chosen?.min || 1),
+      { closeGaSheet: true, tierIndex },
+    );
   };
 
   const checkoutBtnRow: React.CSSProperties = {
@@ -673,13 +803,168 @@ export default function PremiumTicketing({
     </div>
   );
 
+  /** Event-level schedule shown only when no offer is currently active. */
+  const scheduledPanel = (fill: boolean) => (
+    <div
+      data-testid="ticketing-scheduled"
+      style={{
+        display: "flex",
+        ...(fill ? { flex: 1 } : {}),
+        flexDirection: "column",
+        alignItems: "center",
+        justifyContent: "center",
+        textAlign: "center",
+        gap: 12,
+        padding: fill ? "72px 24px" : "36px 16px",
+      }}
+    >
+      {d.scheduledAt ? (
+        <>
+          <div style={{ fontSize: 15, color: "#6e7180" }}>
+            Tickets will be on sale
+          </div>
+          <div style={{ fontSize: 22, fontWeight: 600, letterSpacing: "-0.02em" }}>
+            {d.scheduledAt}
+          </div>
+        </>
+      ) : (
+        <>
+          <div style={{ fontSize: 22, fontWeight: 600, letterSpacing: "-0.02em" }}>
+            Tickets are not on sale yet
+          </div>
+          <div style={{ fontSize: 15, color: "#6e7180", maxWidth: 420 }}>
+            Please check back later for on-sale availability.
+          </div>
+        </>
+      )}
+    </div>
+  );
+
+  /** Whole-event sold-out treatment used by both seated and GA-only events. */
+  const soldOutPanel = (fill: boolean) => (
+    <div
+      data-testid="ticketing-soldout"
+      style={{
+        display: "flex",
+        ...(fill ? { flex: 1 } : {}),
+        flexDirection: "column",
+        alignItems: "center",
+        justifyContent: "center",
+        textAlign: "center",
+        gap: 14,
+        padding: fill ? "72px 24px" : "28px 16px",
+      }}
+    >
+      <svg
+        viewBox="0 0 94 68"
+        role="img"
+        aria-label="Sold out"
+        style={{ width: 94, height: 68 }}
+      >
+        <path
+          d="M4 5h66v49H4c0-4-3-7-3-11s3-7 3-11-3-7-3-11 3-7 3-11V5Z"
+          fill={ACC}
+          opacity=".25"
+        />
+        <rect x="11" y="14" width="45" height="30" rx="3" fill={ACC} />
+        <path d="M64 8v44" stroke={ACC} strokeWidth="3" strokeDasharray="5 5" />
+        <g transform="rotate(-15 67 54)">
+          <rect x="39" y="45" width="52" height="17" rx="5" fill="#ffd166" stroke={NAVY} />
+          <text x="65" y="57" textAnchor="middle" fontSize="9" fontWeight="700" fill={NAVY}>
+            SOLD OUT
+          </text>
+        </g>
+      </svg>
+      <div style={{ fontSize: 22, fontWeight: 600, letterSpacing: "-0.02em" }}>
+        We&rsquo;re sorry, the event is sold out. 😔
+      </div>
+      <div style={{ fontSize: 15, color: "#6e7180", maxWidth: 420 }}>
+        Enter your email below to get notified in case a ticket becomes available
+      </div>
+      {!notified[d.eventName] ? (
+        <form
+          noValidate
+          onSubmit={(event) => {
+            event.preventDefault();
+            const next = normalizeEmail(notifyEmail);
+            if (isBlockedEmail(next) || !next || emailLooksInvalid(next)) {
+              setNotifyEmailInvalid(true);
+              return;
+            }
+            setNotifyEmail(next);
+            setNotifyEmailInvalid(false);
+            setNotified((current) => ({ ...current, [d.eventName]: true }));
+          }}
+          style={{
+            width: "100%",
+            maxWidth: 460,
+            display: "flex",
+            flexDirection: mobile ? "column" : "row",
+            alignItems: "stretch",
+            gap: 10,
+            marginTop: 4,
+          }}
+        >
+          <div style={{ flex: 1, minWidth: 0, textAlign: "left" }}>
+            <EmailField
+              id="soldout-email"
+              placeholder="Enter your email"
+              value={notifyEmail}
+              invalid={notifyEmailInvalid}
+              onChange={(value) => {
+                setNotifyEmail(value);
+                setNotifyEmailInvalid(false);
+              }}
+            />
+          </div>
+          <BrandedActionButton
+            type="submit"
+            primaryColor={ACC}
+            textColor={BTN_INK}
+            disabled={!normalizeEmail(notifyEmail)}
+            style={{ minHeight: 48, padding: "13px 24px" }}
+          >
+            Get Notified
+          </BrandedActionButton>
+        </form>
+      ) : (
+        <div
+          role="status"
+          style={{
+            width: "100%",
+            maxWidth: 460,
+            borderRadius: 14,
+            background: "rgba(166,231,115,0.16)",
+            color: "#3f6b1f",
+            padding: "14px 18px",
+            fontSize: 14,
+          }}
+        >
+          You&rsquo;re on the waiting list. We&rsquo;ll email {notifyEmail} if a ticket becomes available.
+        </div>
+      )}
+    </div>
+  );
+
   // GA tier cards — rendered inline on desktop, inside the mobile bottom sheet.
   const gaTierCards = (
     <>
       {GA_TIERS.map((t, i) => {
         const live = t.state === "live";
         const soldout = t.state === "soldout";
-        const done = !!notified[i];
+        const limits: QuantityLimits = {
+          min: Math.max(1, t.min || 1),
+          max: Math.max(1, t.max || 100),
+          step: Math.max(1, t.multipleOf || 1),
+          valid: (t.min || 1) <= (t.max || 100),
+        };
+        const gaQty = clampQuantity(gaQuantities[i] ?? limits.min, limits);
+        const setTierQuantity = (next: number) =>
+          setGaQuantities((current) => ({
+            ...current,
+            [i]: clampQuantity(next, limits),
+          }));
+        const done = !!notified[t.name];
         const s = t.state === "live"
           ? { label: "On sale", dot: "#7fbe4d", pillBg: "rgba(166,231,115,0.22)", pillInk: "#3f6b1f" }
           : t.state === "scheduled"
@@ -709,20 +994,21 @@ export default function PremiumTicketing({
               {live ? (
                 <div style={{ display: "flex", alignItems: "center", gap: 14, ...(mobile ? { width: "100%" } : {}) }}>
                   <div style={{ display: "flex", alignItems: "center", gap: 6, border: "1px solid #d3d6e0", borderRadius: 999, padding: 5, flexShrink: 0 }}>
-                    <button onClick={() => setGaQty((q) => Math.max(1, q - 1))} aria-label="Remove a ticket" style={stepBtn}>
+                    <button onClick={() => setTierQuantity(gaQty - limits.step)} aria-label="Remove a ticket" disabled={gaQty <= limits.min} style={{ ...stepBtn, opacity: gaQty <= limits.min ? 0.4 : 1 }}>
                       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" style={{ width: 18, height: 18 }}><line x1="5" y1="12" x2="19" y2="12" /></svg>
                     </button>
                     <span style={{ minWidth: 30, textAlign: "center", fontSize: 17, fontWeight: 600, fontVariantNumeric: "tabular-nums" }}>{gaQty}</span>
-                    <button onClick={() => setGaQty((q) => Math.min(100, q + 1))} aria-label="Add a ticket" style={stepBtn}>
+                    <button onClick={() => setTierQuantity(gaQty + limits.step)} aria-label="Add a ticket" disabled={gaQty >= limits.max} style={{ ...stepBtn, opacity: gaQty >= limits.max ? 0.4 : 1 }}>
                       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" style={{ width: 18, height: 18 }}><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></svg>
                     </button>
                   </div>
                   <BrandedActionButton
                     primaryColor={BTN}
                     textColor={BTN_INK}
-                    loading={holding}
+                    loading={holding && holdingTier === i}
                     loadingLabel="Holding seats…"
-                    onClick={() => void startGaCheckout(t)}
+                    disabled={holding && holdingTier !== i}
+                    onClick={() => void startGaCheckout(t, gaQty, i)}
                     className="text-[16px]"
                     style={{
                       ...checkoutBtnRow,
@@ -734,7 +1020,7 @@ export default function PremiumTicketing({
                   </BrandedActionButton>
                 </div>
               ) : (
-                <button onClick={() => { setNotifyIdx(i); setNotifySent(false); }} style={{ fontFamily: "inherit", display: "inline-flex", alignItems: "center", gap: 9, fontSize: 15, fontWeight: 600, color: done ? "#3f6b1f" : NAVY, background: done ? "rgba(166,231,115,0.16)" : "#fff", border: `1px solid ${done ? "rgba(127,190,77,0.45)" : "#d3d6e0"}`, borderRadius: 999, padding: "13px 22px", cursor: "pointer" }}>
+                <button onClick={() => openNotify({ name: t.name, soldout, onSaleAt: t.onSaleAt })} style={{ fontFamily: "inherit", display: "inline-flex", alignItems: "center", gap: 9, fontSize: 15, fontWeight: 600, color: done ? "#3f6b1f" : NAVY, background: done ? "rgba(166,231,115,0.16)" : "#fff", border: `1px solid ${done ? "rgba(127,190,77,0.45)" : "#d3d6e0"}`, borderRadius: 999, padding: "13px 22px", cursor: "pointer" }}>
                   {done && <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round" style={{ width: 16, height: 16 }}><polyline points="20 6 9 17 4 12" /></svg>}
                   {done ? (soldout ? "On the waitlist" : "Reminder set") : soldout ? "Join waitlist" : "Remind me"}
                 </button>
@@ -757,7 +1043,7 @@ export default function PremiumTicketing({
           <>
             <div onClick={() => setQtyMenu(false)} style={{ position: "fixed", inset: 0, zIndex: 29 }} />
             <div role="listbox" aria-label="Ticket quantity" style={{ position: "fixed", top: qtyBtn.current.getBoundingClientRect().bottom + 8, left: qtyBtn.current.getBoundingClientRect().left, zIndex: 30, minWidth: 150, background: "#fff", border: "1px solid rgba(5,27,53,0.10)", borderRadius: 14, boxShadow: "0 20px 44px -18px rgba(5,27,53,0.45)", padding: 6, display: "flex", flexDirection: "column" }}>
-              {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((n) => (
+              {quantityOptions.map((n) => (
                 <button key={n} onClick={() => { setQtyMenu(false); reload(n); }} style={{ fontFamily: "inherit", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, width: "100%", textAlign: "left", fontSize: 15, fontWeight: n === want ? 600 : 500, color: n === want ? ACC : NAVY, background: n === want ? ACC_SOFT : "transparent", border: "none", borderRadius: 10, padding: "11px 14px", cursor: "pointer", whiteSpace: "nowrap" }}>
                   {n === 1 ? "1 ticket" : `${n} tickets`}
                 </button>
@@ -781,10 +1067,10 @@ export default function PremiumTicketing({
                     return;
                   }
                   if (z === null) {
-                    setZoneFilter([]);
+                    filterByZones(() => []);
                     return;
                   }
-                  setZoneFilter((prev) =>
+                  filterByZones((prev) =>
                     prev.includes(z) ? prev.filter((name) => name !== z) : [...prev, z],
                   );
                 }}
@@ -873,7 +1159,11 @@ export default function PremiumTicketing({
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" style={{ width: 18, height: 18 }}><circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" /></svg>
             </div>
             <div style={{ display: "flex", alignItems: "center", gap: 16, flexShrink: 0 }}>
-              <Link href={isAuthenticated ? "/my-tickets/" : "/login/"} className="nmt-primary" style={{ fontFamily: "inherit", fontSize: 15, fontWeight: 600, color: navBtnInk, background: navBtnBg, border: "none", borderRadius: 999, padding: "13px 30px", whiteSpace: "nowrap", cursor: "pointer", textDecoration: "none", display: "inline-flex", alignItems: "center" }}>{isAuthenticated ? "My wallet" : "Login"}</Link>
+              {isAuthenticated ? (
+                <Link href="/my-tickets/" className="nmt-primary" style={navBtnStyle}>My wallet</Link>
+              ) : (
+                <LoginLink className="nmt-primary" style={navBtnStyle}>Login</LoginLink>
+              )}
               {isAuthenticated ? (
                 <button
                   type="button"
@@ -966,6 +1256,12 @@ export default function PremiumTicketing({
               : {}),
           }}
         >
+          {d.soldOut ? (
+            soldOutPanel(true)
+          ) : seatedScheduled ? (
+            scheduledPanel(true)
+          ) : (
+          <>
           {wide && (
             <div style={{ flexShrink: 0, background: "#fff", margin: "0 -32px", padding: "16px 32px 12px", borderRadius: "20px 20px 0 0", boxShadow: pinned ? "0 12px 24px -18px rgba(5,27,53,0.55)" : "none", transition: "box-shadow 180ms ease" }}>
               {filterToolbar}
@@ -986,18 +1282,21 @@ export default function PremiumTicketing({
               overscrollBehavior: "contain",
             }}
           >
-            {busy &&
-              [1, 2, 3, 4].map((s) => (
-                <div key={s} style={{ display: "flex", alignItems: "center", gap: 18, border: "1px solid rgba(5,27,53,0.08)", borderRadius: 16, padding: "16px 20px" }}>
-                  <div style={{ width: thumbSize, height: thumbSize, borderRadius: 12, flexShrink: 0, ...shimmer }} />
-                  <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 10, minWidth: 0 }}>
-                    <div style={{ height: 20, width: 130, borderRadius: 999, ...shimmer }} />
-                    <div style={{ height: 18, width: 180, borderRadius: 6, ...shimmer }} />
-                    <div style={{ height: 14, width: 110, borderRadius: 6, ...shimmer }} />
+            {busy && (
+              <div role="status" aria-label="Loading listings" style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+                {Array.from({ length: skeletonRows }, (_, i) => (
+                  <div key={i} aria-hidden style={{ display: "flex", alignItems: "center", gap: 18, background: "#fff", border: "1px solid rgba(5,27,53,0.10)", borderRadius: 16, padding: "16px 20px" }}>
+                    <div style={{ width: thumbSize, height: thumbSize, borderRadius: 12, flexShrink: 0, ...shimmer }} />
+                    <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 9, minWidth: 0 }}>
+                      <div style={{ height: 24, width: 120, borderRadius: 999, ...shimmer }} />
+                      <div style={{ height: 20, width: "58%", borderRadius: 8, ...shimmer }} />
+                      <div style={{ height: 16, width: 128, borderRadius: 8, ...shimmer }} />
+                    </div>
+                    {!mobile && <div style={{ height: 22, width: 92, borderRadius: 8, flexShrink: 0, ...shimmer }} />}
                   </div>
-                  <div style={{ height: 22, width: 96, borderRadius: 6, flexShrink: 0, ...shimmer }} />
-                </div>
-              ))}
+                ))}
+              </div>
+            )}
 
             {!busy && rows.length === 0 && (() => {
               const noOfferInventory =
@@ -1023,7 +1322,7 @@ export default function PremiumTicketing({
                   <div style={{ fontSize: 19, fontWeight: 600, letterSpacing: "-0.015em" }}>{title}</div>
                   <div style={{ fontSize: 15, color: "#6e7180", maxWidth: 380 }}>{body}</div>
                   {!noOfferInventory && want > 1 ? (
-                    <button className="nmt-primary" onClick={() => reload(1)} style={{ ...primaryBtn, marginTop: 6, fontSize: 15, padding: "13px 26px" }}>Reset to 1 ticket</button>
+                    <button className="nmt-primary" onClick={() => reload(quantityOptions[0] || 1)} style={{ ...primaryBtn, marginTop: 6, fontSize: 15, padding: "13px 26px" }}>Reset quantity</button>
                   ) : null}
                 </div>
               );
@@ -1031,7 +1330,7 @@ export default function PremiumTicketing({
 
             {!busy &&
               rows.map((l, idx) => (
-                <div key={`${l.sec}-${l.row}-${idx}`} className="nmt-listing" onClick={() => { setSel(idx); setPanelQty(Math.min(l.max, Math.max(l.min, want))); setMedia(0); }} style={{ display: "flex", alignItems: "center", gap: 18, background: "#fff", border: "1px solid rgba(5,27,53,0.10)", borderRadius: 16, padding: "16px 20px", cursor: "pointer" }}>
+                <div key={`${l.sec}-${l.row}-${idx}`} className="nmt-listing" onClick={() => { setSel(idx); setPanelQty(clampQuantity(want, listingLimits(l))); setMedia(0); }} style={{ display: "flex", alignItems: "center", gap: 18, background: "#fff", border: "1px solid rgba(5,27,53,0.10)", borderRadius: 16, padding: "16px 20px", cursor: "pointer" }}>
                   <div style={{ width: thumbSize, height: thumbSize, borderRadius: 12, background: "#f1f3f8", border: "1px solid rgba(5,27,53,0.08)", flexShrink: 0, overflow: "hidden" }}>
                     {listingThumb(l)}
                   </div>
@@ -1058,6 +1357,8 @@ export default function PremiumTicketing({
                 </div>
               ))}
           </div>
+          </>
+          )}
         </section>
 
         {wide && (
@@ -1105,10 +1406,15 @@ export default function PremiumTicketing({
               <div style={{ fontSize: 16, color: "#4a5567" }}>{d.whenLong}</div>
             </div>
 
-            {!mobile && (
-              <div style={{ ...card, borderRadius: 20, padding: 24, display: "flex", flexDirection: "column", gap: 16 }}>
+            {/* Empty event states have no bottom sheet, so mobile shows inline. */}
+            {(!mobile || gaSoldOut || gaScheduled) && (
+              <div style={{ ...card, borderRadius: 20, padding: mobile ? 18 : 24, display: "flex", flexDirection: "column", gap: 16 }}>
                 <div style={{ fontSize: 22, fontWeight: 600, letterSpacing: "-0.025em" }}>Get tickets</div>
-                {gaTierCards}
+                {gaSoldOut
+                  ? soldOutPanel(false)
+                  : gaScheduled
+                    ? scheduledPanel(false)
+                    : gaTierCards}
                 {holdError ? (
                   <div style={{ fontSize: 13, color: "#b91c1c", lineHeight: 1.4 }}>{holdError}</div>
                 ) : null}
@@ -1159,7 +1465,7 @@ export default function PremiumTicketing({
       )}
 
       {/* STICKY BUY BAR (GA, mobile) */}
-      {isGa && mobile && (
+      {isGa && mobile && !gaSoldOut && !gaScheduled && (
         <div style={{ position: "fixed", left: 0, right: 0, bottom: 0, zIndex: 40, background: "#fff", borderTop: "1px solid rgba(5,27,53,0.10)", boxShadow: "0 -8px 24px -12px rgba(5,27,53,0.25)", padding: "12px 16px calc(12px + env(safe-area-inset-bottom))", display: "flex", alignItems: "center", gap: 14 }}>
           <div style={{ display: "flex", flexDirection: "column", gap: 1, minWidth: 0, flexShrink: 0 }}>
             <div style={{ fontSize: 12, color: "#6e7180" }}>From</div>
@@ -1170,7 +1476,7 @@ export default function PremiumTicketing({
       )}
 
       {/* GA TIER SHEET (mobile) */}
-      {isGa && gaSheet && (
+      {isGa && gaSheet && !gaSoldOut && !gaScheduled && (
         <div onClick={() => setGaSheet(false)} style={{ position: "fixed", inset: 0, zIndex: 55, background: "rgba(5,27,53,0.55)", backdropFilter: "blur(6px)", display: "flex", alignItems: "flex-end", justifyContent: "center" }}>
           <div onClick={(e) => e.stopPropagation()} style={{ width: "100%", maxWidth: 560, maxHeight: "88vh", background: "#fff", borderTopLeftRadius: 24, borderTopRightRadius: 24, boxShadow: "0 -20px 60px -20px rgba(5,27,53,0.5)", display: "flex", flexDirection: "column", overflow: "hidden" }}>
             <div style={{ display: "flex", justifyContent: "center", paddingTop: 10, flexShrink: 0 }}>
@@ -1192,10 +1498,10 @@ export default function PremiumTicketing({
         </div>
       )}
 
-      {/* NOTIFY / WAITLIST MODAL (GA) */}
-      {isGa && notifyIdx !== null && GA_TIERS[notifyIdx] && (() => {
-        const t = GA_TIERS[notifyIdx];
-        const soldout = t.state === "soldout";
+      {/* NOTIFY / WAITLIST MODAL */}
+      {notifySubject && (() => {
+        const t = notifySubject;
+        const soldout = t.soldout;
         const title = soldout ? "Join the waitlist" : "Get notified when tickets go on sale";
         const body = soldout
           ? `${t.name} is sold out. If tickets are released back to inventory, waitlist members are contacted in order — one purchase window each, 30 minutes to complete.`
@@ -1204,7 +1510,7 @@ export default function PremiumTicketing({
           ? `You are on the waitlist for ${t.name}. We will email ${notifyEmail || "your account address"} if tickets are released.`
           : `Reminder set. We will email ${notifyEmail || "your account address"} before ${t.name} goes on sale.`;
         return (
-          <Modal variant="light" title={title} onClose={() => setNotifyIdx(null)}>
+          <Modal variant="light" title={title} onClose={() => setNotifySubject(null)}>
             <p className="mt-4 text-[14px] text-[#4a5567]">{body}</p>
             {!notifySent ? (
               <div className="mt-5 flex flex-col gap-3.5">
@@ -1231,7 +1537,7 @@ export default function PremiumTicketing({
                 <div className="flex flex-col gap-3 sm:flex-row sm:justify-end">
                   <BrandedActionButton
                     tone="secondary"
-                    onClick={() => setNotifyIdx(null)}
+                    onClick={() => setNotifySubject(null)}
                     className="w-full sm:w-auto"
                   >
                     Cancel
@@ -1251,7 +1557,7 @@ export default function PremiumTicketing({
                       }
                       setNotifyEmail(next);
                       setNotifySent(true);
-                      setNotified((m) => ({ ...m, [notifyIdx]: true }));
+                      setNotified((m) => ({ ...m, [t.name]: true }));
                     }}
                     className="w-full sm:w-auto"
                   >
@@ -1270,7 +1576,7 @@ export default function PremiumTicketing({
                 <BrandedActionButton
                   primaryColor={ACC}
                   textColor={BTN_INK}
-                  onClick={() => setNotifyIdx(null)}
+                  onClick={() => setNotifySubject(null)}
                   className="w-full sm:ml-auto sm:w-auto"
                 >
                   Done
@@ -1599,14 +1905,14 @@ export default function PremiumTicketing({
                 </div>
                 <div style={{ display: "flex", alignItems: "center", gap: 6, border: "1px solid #d3d6e0", borderRadius: 999, padding: "5px 8px" }}>
                   <button
-                    onClick={() => setPanelQty((q) => Math.max(selRow.min, q - 1))}
+                    onClick={() => setPanelQty((q) => clampQuantity(q - Math.max(1, selRow.multipleOf || 1), listingLimits(selRow)))}
                     aria-label="Fewer tickets"
                     disabled={panelQty <= selRow.min}
                     style={{ fontFamily: "inherit", width: 36, height: 36, borderRadius: 999, border: "none", background: "#f1f3f8", color: NAVY, fontSize: 20, lineHeight: 1, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", opacity: panelQty <= selRow.min ? 0.4 : 1 }}
                   >−</button>
                   <span style={{ minWidth: 74, textAlign: "center", fontSize: 15, fontWeight: 600, fontVariantNumeric: "tabular-nums" }}>{panelQty === 1 ? "1 Ticket" : `${panelQty} Tickets`}</span>
                   <button
-                    onClick={() => setPanelQty((q) => Math.min(selRow.max, q + 1))}
+                    onClick={() => setPanelQty((q) => clampQuantity(q + Math.max(1, selRow.multipleOf || 1), listingLimits(selRow)))}
                     aria-label="More tickets"
                     disabled={panelQty >= selRow.max}
                     style={{ fontFamily: "inherit", width: 36, height: 36, borderRadius: 999, border: "none", background: "#f1f3f8", color: NAVY, fontSize: 20, lineHeight: 1, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", opacity: panelQty >= selRow.max ? 0.4 : 1 }}
@@ -1669,14 +1975,7 @@ export default function PremiumTicketing({
                 setUnlockError(false);
               }}
               onKeyDown={(e) => {
-                if (e.key === "Enter") {
-                  const z = unlockZone;
-                  if (z && unlockInput.trim().toUpperCase() === lockedMap[z]) {
-                    setUnlocked((u) => [...u, z]);
-                    setZoneFilter((prev) => (prev.includes(z) ? prev : [...prev, z]));
-                    setUnlockZone(null);
-                  } else setUnlockError(true);
-                }
+                if (e.key === "Enter") void submitUnlockCode();
               }}
               autoFocus
               placeholder="Access code"
@@ -1691,14 +1990,9 @@ export default function PremiumTicketing({
             <BrandedActionButton
               primaryColor={ACC}
               textColor={BTN_INK}
-              onClick={() => {
-                const z = unlockZone;
-                if (z && unlockInput.trim().toUpperCase() === lockedMap[z]) {
-                  setUnlocked((u) => [...u, z]);
-                  setZoneFilter((prev) => (prev.includes(z) ? prev : [...prev, z]));
-                  setUnlockZone(null);
-                } else setUnlockError(true);
-              }}
+              loading={unlocking}
+              loadingLabel="Checking…"
+              onClick={() => void submitUnlockCode()}
               className="w-full text-[16px]"
             >
               <LockIcon s={16} /> Unlock seats

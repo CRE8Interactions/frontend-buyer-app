@@ -55,4 +55,21 @@ describe("AppProviders", () => {
       expect(document.getElementById("bt-boot-loader")).toBeNull();
     });
   });
+
+  it("keeps the splash while a React loader is still painting", async () => {
+    const splash = document.createElement("div");
+    splash.id = "bt-boot-loader";
+    document.documentElement.appendChild(splash);
+
+    render(
+      <AppProviders>
+        <div data-bt-tenant-loader="">loading tickets</div>
+      </AppProviders>,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText("loading tickets")).toBeInTheDocument();
+    });
+    expect(document.getElementById("bt-boot-loader")).not.toBeNull();
+  });
 });

@@ -54,15 +54,33 @@ describe("BrandedLoader", () => {
     expect(screen.queryByAltText(/blocktickets/i)).not.toBeInTheDocument();
   });
 
-  it("clears the pre-hydrate splash when no branded loader is shown", () => {
+  it("replaces the pre-hydrate splash when it paints the tenant loader", () => {
     const splash = document.createElement("div");
     splash.id = "bt-boot-loader";
-    splash.setAttribute("data-bt-platform-loader", "");
+    document.documentElement.appendChild(splash);
+
+    render(
+      <BrandedLoader
+        branding={{
+          primaryColor: raptors.branding.primaryColor,
+          logoSrc: raptors.branding.logo.url,
+          name: raptors.name,
+        }}
+      />,
+    );
+
+    expect(document.getElementById("bt-boot-loader")).toBeNull();
+    expect(screen.getByText(raptors.name)).toBeInTheDocument();
+  });
+
+  it("leaves the pre-hydrate splash up when it has no loader to paint", () => {
+    const splash = document.createElement("div");
+    splash.id = "bt-boot-loader";
     document.documentElement.appendChild(splash);
 
     render(<BrandedLoader />);
 
-    expect(document.getElementById("bt-boot-loader")).toBeNull();
+    expect(document.getElementById("bt-boot-loader")).not.toBeNull();
   });
 });
 

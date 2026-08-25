@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import CartButton from "@/components/organisms/CartButton";
 import WalletMenu from "@/components/organisms/WalletMenu";
+import LoginLink from "@/components/molecules/LoginLink";
 import PageLoader from "@/components/molecules/PageLoader";
 import { displayName, useAuth, setLastKnown } from "@/lib/auth";
 
@@ -92,9 +93,9 @@ export default function AppShell({
                     }}
                   />
                 ) : (
-                  <Link href="/login/" className="btn btn-primary btn-sm shrink-0">
+                  <LoginLink className="btn btn-primary btn-sm shrink-0">
                     Log in
-                  </Link>
+                  </LoginLink>
                 ))}
             </div>
           </div>

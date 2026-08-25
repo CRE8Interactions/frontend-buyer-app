@@ -1,6 +1,27 @@
 import { describe, expect, it } from "vitest";
-import { groupsToListings, sellableCount } from "@/lib/ticketListings";
+import {
+  groupsToListings,
+  lockedZonesFromGroups,
+  normalizeGlobalTicketLimit,
+  offerChipNames,
+  clampQuantity,
+  quantityIsAllowed,
+  quantityLimits,
+  quantityRestrictionLabel,
+  sellableCount,
+} from "@/lib/ticketListings";
 import { DEMO_SEATED_TICKET_GROUPS } from "@/lib/demo/fixtures";
+
+const CODED_GROUP = DEMO_SEATED_TICKET_GROUPS.find(
+  (g) => g.offer?.accessCode,
+);
+if (!CODED_GROUP?.offer?.name || !CODED_GROUP.offer.accessCode) {
+  throw new Error("demo fixtures need an access-coded ticket group");
+}
+const CODED_OFFER = {
+  name: CODED_GROUP.offer.name,
+  code: CODED_GROUP.offer.accessCode,
+};
 
 describe("sellableCount", () => {
   it("takes the maximum of seat ids, availableCount, and maxContiguous", () => {
@@ -18,6 +39,45 @@ describe("sellableCount", () => {
         maxContiguous: 3,
       }),
     ).toBe(4);
+  });
+});
+
+describe("offer quantity restrictions", () => {
+  const offer = DEMO_SEATED_TICKET_GROUPS[1].offer;
+
+  it("combines minimum, maximum, multiple, and available inventory", () => {
+    const limits = quantityLimits(
+      { ...offer, minQuantity: 3, maxQuantity: 10, multipleOf: 2 },
+      { available: 9, defaultMax: 20 },
+    );
+
+    expect(limits).toEqual({ min: 4, max: 8, step: 2, valid: true });
+    expect(quantityIsAllowed(4, limits)).toBe(true);
+    expect(quantityIsAllowed(5, limits)).toBe(false);
+    expect(clampQuantity(7, limits)).toBe(6);
+    expect(quantityRestrictionLabel(limits)).toBe(
+      "4–8 per order · multiples of 2",
+    );
+  });
+
+  it("applies the event's global limit before aligning to the offer multiple", () => {
+    const limits = quantityLimits(
+      { ...offer, maxQuantity: 10, multipleOf: 2 },
+      { available: 20, defaultMax: 20, globalMax: 5 },
+    );
+
+    expect(limits).toEqual({ min: 2, max: 4, step: 2, valid: true });
+    expect(normalizeGlobalTicketLimit("19")).toBe(19);
+    expect(normalizeGlobalTicketLimit(0)).toBeNull();
+  });
+
+  it("marks an offer unavailable when no permitted multiple fits", () => {
+    expect(
+      quantityLimits(
+        { ...offer, minQuantity: 5, maxQuantity: 5, multipleOf: 2 },
+        { available: 10, defaultMax: 20 },
+      ).valid,
+    ).toBe(false);
   });
 });
 
@@ -52,9 +112,77 @@ describe("groupsToListings", () => {
 
   it("skips access-coded offers, empty inventory, and duplicate groups", () => {
     const listings = groupsToListings(DEMO_SEATED_TICKET_GROUPS);
-    expect(listings.some((l) => l.zone === "VIP Coded")).toBe(false);
+    expect(listings.some((l) => l.zone === CODED_OFFER.name)).toBe(false);
     expect(listings.some((l) => l.zone === "Sold Out Row")).toBe(false);
     expect(listings.filter((l) => l.zone === "Section A-B")).toHaveLength(1);
+  });
+
+  it("keeps access-coded offers when the caller gates them behind a code", () => {
+    const listings = groupsToListings(DEMO_SEATED_TICKET_GROUPS, {
+      includeLocked: true,
+    });
+    expect(listings.some((l) => l.zone === CODED_OFFER.name)).toBe(true);
+    expect(listings.some((l) => l.zone === "Sold Out Row")).toBe(false);
+  });
+
+  it("maps offer multiples into seated listing limits", () => {
+    const source = DEMO_SEATED_TICKET_GROUPS[1];
+    const listings = groupsToListings([
+      {
+        ...source,
+        offer: {
+          ...source.offer,
+          minQuantity: 3,
+          maxQuantity: 10,
+          multipleOf: 2,
+        },
+      },
+    ]);
+
+    expect(listings[0]).toMatchObject({
+      min: 4,
+      max: 6,
+      multipleOf: 2,
+    });
+  });
+
+  it("caps every seated offer at the event's global ticket limit", () => {
+    const listings = groupsToListings(DEMO_SEATED_TICKET_GROUPS, {
+      globalMax: 3,
+    });
+
+    expect(listings.every((listing) => listing.max <= 3)).toBe(true);
+  });
+});
+
+describe("lockedZonesFromGroups", () => {
+  it("pairs each coded offer with the code that opens it", () => {
+    expect(lockedZonesFromGroups(DEMO_SEATED_TICKET_GROUPS)).toEqual([
+      { zone: CODED_OFFER.name, code: CODED_OFFER.code },
+    ]);
+  });
+});
+
+describe("offerChipNames", () => {
+  it("lists locked offers that have inventory to unlock", () => {
+    const offers = [
+      { name: "Standard Admission", isLocked: false },
+      { name: CODED_OFFER.name, isLocked: true },
+    ];
+
+    expect(
+      offerChipNames(offers, lockedZonesFromGroups(DEMO_SEATED_TICKET_GROUPS)),
+    ).toEqual(["Standard Admission", CODED_OFFER.name]);
+  });
+
+  it("drops locked offers with no inventory and unnamed offers", () => {
+    const offers = [
+      { name: "Standard Admission", isLocked: false },
+      { name: "Free Offer", isLocked: true },
+      { isLocked: false },
+    ];
+
+    expect(offerChipNames(offers, [])).toEqual(["Standard Admission"]);
   });
 
   it("caps max at 20 and falls back to section labels when no offer name", () => {

@@ -149,10 +149,17 @@ export const buildFundraisingPayload = (
   };
 };
 
+export type PaymentIntentGuest = {
+  email: string;
+  firstName: string;
+  lastName: string;
+};
+
 export const buildPaymentIntentRequest = (
   cart: CartLike,
   event: unknown,
   fundraisingPayload: ReturnType<typeof buildFundraisingPayload>,
+  guest?: PaymentIntentGuest | null,
 ) => ({
   ip: cart.ipAddress,
   cartId: cart.id,
@@ -164,6 +171,7 @@ export const buildPaymentIntentRequest = (
   access_pass_template: cart?.access_pass_template,
   cart,
   ...(fundraisingPayload ? { fundraising: fundraisingPayload } : {}),
+  ...(guest ? { guest } : {}),
 });
 
 export const createInitialFundraisingSelection = (

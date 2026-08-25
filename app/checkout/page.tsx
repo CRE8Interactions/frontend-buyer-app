@@ -11,6 +11,7 @@ import {
   useStripe,
 } from "@stripe/react-stripe-js";
 import BrandedCheckoutShell from "@/components/organisms/BrandedCheckoutShell";
+import GuestContact from "@/components/organisms/GuestContact";
 import BrandedActionButton from "@/components/atoms/BrandedActionButton";
 import Button from "@/components/atoms/Button";
 import Spinner from "@/components/atoms/Spinner";
@@ -27,7 +28,6 @@ import {
 } from "@/lib/checkoutBranding";
 import { cacheOrgBranding, orgSlugFromPathname } from "@/lib/orgBrandingCache";
 import {
-  FLEX_PACK_VOUCHER_FEE_USD,
   flexPackSeasonLine,
   flexPackVoucherCount,
 } from "@/lib/flexPackDisplay";
@@ -66,8 +66,13 @@ import {
   isCartExpiredResponse,
   isCartGoneResponse,
   isRequestCanceled,
-  isZeroFeeCompFlexPackCart,
 } from "@/lib/helpers";
+import {
+  isComplimentaryWebsiteCart,
+  isGuestEligibleCart,
+  setGuestCheckoutEmail,
+  type GuestBuyer,
+} from "@/lib/guestCheckout";
 import { setLastKnown, useAuth } from "@/lib/auth";
 import {
   captureCheckoutReferrer,
@@ -185,19 +190,6 @@ type CartData = {
   ipAddress?: string;
   [key: string]: unknown;
 };
-
-function isComplimentaryWebsiteCart(cart: CartData | null) {
-  if (!cart) return false;
-  if (cart.flex_pack && isZeroFeeCompFlexPackCart(cart.flex_pack)) return true;
-  if (cart.flex_pack || cart.package || cart.access_pass_template) return false;
-  const tickets = cart.tickets || [];
-  if (!tickets.length) return false;
-  return tickets.every((t) => {
-    if (t.free === true) return true;
-    const o = t.offer as { freeOffer?: boolean } | undefined;
-    return Boolean(o && typeof o === "object" && o.freeOffer === true);
-  });
-}
 
 const lightCard =
   "rounded-[18px] border border-[rgba(5,27,53,0.08)] bg-white shadow-[0_10px_30px_-20px_rgba(5,27,53,0.35)]";
@@ -618,13 +610,18 @@ function CheckoutPage() {
     useState<CheckoutPromoDiscount | null>(null);
   const [loadError, setLoadError] = useState("");
   const [allowCachedBranding, setAllowCachedBranding] = useState(false);
+  const [guestBuyer, setGuestBuyer] = useState<GuestBuyer | null>(null);
+
+  const [leavingForLogin, setLeavingForLogin] = useState(false);
 
   const cartRef = useRef<CartData | null>(null);
   const eventRef = useRef<CartData["event"]>(null);
   const leavingForSuccessRef = useRef(false);
+  const leavingForLoginRef = useRef(false);
   const paymentContextRef = useRef<{
     connectedAccountId?: string | null;
   } | null>(null);
+  const guestBuyerRef = useRef<GuestBuyer | null>(null);
 
   const goToSuccess = useCallback((id: string) => {
     if (leavingForSuccessRef.current) return;
@@ -641,13 +638,17 @@ function CheckoutPage() {
     setAllowCachedBranding(true);
   }, []);
 
-  useEffect(() => {
-    if (!authReady || isAuthenticated) return;
+  // Hold the loader until the browser commits to /login/ so checkout never
+  // paints behind the redirect.
+  const sendToLogin = useCallback(() => {
+    if (leavingForLoginRef.current) return;
+    leavingForLoginRef.current = true;
+    setLeavingForLogin(true);
     const returnTo = `${window.location.pathname}${window.location.search}`;
     setLastKnown(returnTo);
     markCheckoutLoginDetour();
     window.location.href = `/login/?from=${encodeURIComponent(returnTo)}`;
-  }, [authReady, isAuthenticated]);
+  }, []);
 
   const expiredRef = useRef(false);
   const [restarting, setRestarting] = useState(false);
@@ -755,11 +756,13 @@ function CheckoutPage() {
       cartData: CartData,
       eventData: CartData["event"],
       fundraisingPayload: ReturnType<typeof buildFundraisingPayload>,
+      guest?: GuestBuyer | null,
     ) => {
       const request = buildPaymentIntentRequest(
         cartData,
         eventData,
         fundraisingPayload,
+        guest,
       );
       const response = await getPaymentIntent(request);
       const isDestinationCharge = Boolean(
@@ -779,9 +782,7 @@ function CheckoutPage() {
   );
 
   useEffect(() => {
-    // Wait for login so we don't race the redirect and wipe sessionStorage.cart
-    // on aborted/failed requests.
-    if (!authReady || !isAuthenticated) return;
+    if (!authReady) return;
 
     if (leavingForSuccessRef.current) return;
 
@@ -822,7 +823,16 @@ function CheckoutPage() {
           clearStoredCart();
         }
 
+        if (!isAuthenticated && !isGuestEligibleCart(cartData)) {
+          sendToLogin();
+          return;
+        }
+
         if (isComplimentaryWebsiteCart(cartData)) {
+          if (!isAuthenticated) {
+            sendToLogin();
+            return;
+          }
           const processRes = await processFreeOrder({ cartId: cartData.id });
           sessionStorage.setItem(
             "order",
@@ -910,6 +920,10 @@ function CheckoutPage() {
           return;
         }
 
+        if (!isAuthenticated) {
+          return;
+        }
+
         await loadPaymentIntent(
           cartData,
           eventData ?? null,
@@ -925,7 +939,13 @@ function CheckoutPage() {
           setLoadError("Unable to load checkout. Please try again.");
         }
       } finally {
-        if (!cancelled) setLoading(false);
+        if (
+          !cancelled &&
+          !leavingForSuccessRef.current &&
+          !leavingForLoginRef.current
+        ) {
+          setLoading(false);
+        }
       }
     };
     run();
@@ -940,6 +960,7 @@ function CheckoutPage() {
     abandonGoneCart,
     loadPaymentIntent,
     goToSuccess,
+    sendToLogin,
     router,
   ]);
 
@@ -985,15 +1006,47 @@ function CheckoutPage() {
     const next = { ...fundraisingSelection, donationAmount: amount };
     setFundraisingSelection(next);
     if (!cartRef.current) return;
+    if (!isAuthenticated && !guestBuyerRef.current) return;
     setIsRefreshingIntent(true);
     try {
       await loadPaymentIntent(
         cartRef.current,
         eventRef.current,
         buildFundraisingPayload(fundraisingCampaign as never, next),
+        guestBuyerRef.current,
       );
     } catch (err) {
       if (isCartGoneResponse(err)) abandonGoneCart();
+    } finally {
+      setIsRefreshingIntent(false);
+    }
+  };
+
+  const checkoutLoginHref = `/login/?from=${encodeURIComponent(
+    `${typeof window !== "undefined" ? window.location.pathname : "/checkout/"}${
+      typeof window !== "undefined" ? window.location.search : ""
+    }`,
+  )}`;
+
+  const confirmGuestBuyer = async (buyer: GuestBuyer) => {
+    guestBuyerRef.current = buyer;
+    setGuestBuyer(buyer);
+    setGuestCheckoutEmail(buyer.email);
+    if (!cartRef.current) return;
+    setIsRefreshingIntent(true);
+    try {
+      await loadPaymentIntent(
+        cartRef.current,
+        eventRef.current,
+        buildFundraisingPayload(
+          fundraisingCampaign as never,
+          fundraisingSelection,
+        ),
+        buyer,
+      );
+    } catch (err) {
+      if (isCartGoneResponse(err)) abandonGoneCart();
+      else setLoadError("Unable to load checkout. Please try again.");
     } finally {
       setIsRefreshingIntent(false);
     }
@@ -1093,7 +1146,12 @@ function CheckoutPage() {
     [clientSecret, branding],
   );
 
-  const awaitingAuth = !authReady || !isAuthenticated;
+  const needsGuestContact =
+    Boolean(cart) &&
+    !isAuthenticated &&
+    !guestBuyer &&
+    isGuestEligibleCart(cart);
+  const awaitingAuth = !authReady;
   const shellLoading = awaitingAuth || (loading && !expiredOpen);
   const loaderBranding = branding.organization
     ? {
@@ -1105,7 +1163,9 @@ function CheckoutPage() {
 
   // Hold the tenant loader here until the destination route commits, so leaving
   // checkout never flashes an empty page.
-  if (leaving) return <BrandedLoader branding={loaderBranding} />;
+  if (leaving || leavingForLogin) {
+    return <BrandedLoader branding={loaderBranding} />;
+  }
 
   return (
     <BrandedCheckoutShell
@@ -1142,6 +1202,7 @@ function CheckoutPage() {
         <div className="mx-auto grid max-w-[1140px] grid-cols-1 gap-5 px-3.5 pb-28 pt-3.5 md:grid-cols-[minmax(0,1fr)_372px] md:px-5 md:pt-6">
           <div className="order-2 flex min-w-0 flex-col gap-3.5 md:order-1 md:col-start-1 md:row-start-1">
             <div className={`${lightCard} flex flex-col gap-5 p-[22px]`}>
+              {needsGuestContact ? null : (
               <div>
                 <h1 className="text-[24px] font-semibold tracking-[-0.03em]">
                   Payment
@@ -1150,7 +1211,8 @@ function CheckoutPage() {
                   Complete your purchase to lock in these seats.
                 </p>
               </div>
-              {fundraisingCampaign ? (
+              )}
+              {fundraisingCampaign && !needsGuestContact ? (
                 <div className="rounded-[14px] border border-[rgba(5,27,53,0.08)] bg-[#f7f8fc] p-4">
                   <p className="text-[14px] font-semibold">
                     {(fundraisingCampaign.title as string) ||
@@ -1178,7 +1240,20 @@ function CheckoutPage() {
                 </div>
               ) : null}
               <div>
-                {clientSecret && stripe && elementsOptions && checkoutCart ? (
+                {needsGuestContact ? (
+                  <GuestContact
+                    loginHref={checkoutLoginHref}
+                    onSignIn={() => {
+                      setLastKnown(
+                        `${window.location.pathname}${window.location.search}`,
+                      );
+                      markCheckoutLoginDetour();
+                    }}
+                    onContinue={(buyer) => void confirmGuestBuyer(buyer)}
+                    buttonColor={branding.theme.buttonColor}
+                    buttonTextColor={branding.theme.buttonTextColor}
+                  />
+                ) : clientSecret && stripe && elementsOptions && checkoutCart ? (
                   <Elements
                     key={clientSecret}
                     stripe={stripe}
@@ -1358,15 +1433,7 @@ function CheckoutPage() {
                       </span>
                     </div>
                     <div className="flex items-start justify-between gap-3">
-                      <span>
-                        Service Fee
-                        {flexVoucherCount > 0 ? (
-                          <span className={`mt-0.5 block text-[12px] ${muted}`}>
-                            {formatCurrency(FLEX_PACK_VOUCHER_FEE_USD)} ×{" "}
-                            {flexVoucherCount}
-                          </span>
-                        ) : null}
-                      </span>
+                      <span>Service Fee</span>
                       <span className="tabular-nums text-[#051b35]">
                         {formatCurrency(flexTotals?.serviceFee || 0)}
                       </span>

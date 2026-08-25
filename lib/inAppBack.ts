@@ -9,8 +9,8 @@ let inAppNavigations = 0;
 export function backFallbackHref(href?: string | null) {
   const trimmed = (href || "").trim();
   if (!trimmed) return BACK_FALLBACK_HREF;
-  const path = trimmed.split(/[?#]/)[0].replace(/\/+$/, "");
-  return path === "" ? BACK_FALLBACK_HREF : trimmed;
+  const path = trimmed.split(/[?#]/)[0].replace(/\/+$/, "").toLowerCase();
+  return path === "" || path === "/login" ? BACK_FALLBACK_HREF : trimmed;
 }
 
 type AppRouterLike = {

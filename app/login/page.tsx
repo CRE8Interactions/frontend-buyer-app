@@ -45,9 +45,15 @@ const backBtnCls =
 function redirectAfterAuth(fromParam: string | null) {
   const lastKnown = getLastKnown();
   const requested = fromParam?.trim() || "";
-  // Bare /login has no return URL — go to browse. Do not use lastKnown as a
-  // stand-in for `?from=` (that sent shoppers to a leftover checkout path).
-  let from = requested || "/browse/";
+  // Login buttons record the page where they were clicked. Keep this fallback
+  // for bare /login URLs so authentication still returns there instead of
+  // dropping the shopper on Browse.
+  const remembered =
+    lastKnown?.startsWith("/") &&
+    !/^\/login(?:\/|$|\?)/i.test(lastKnown)
+      ? lastKnown
+      : "";
+  let from = requested || remembered || "/browse/";
   // Prefer lastKnown when it keeps query params (e.g. cartId) that `from` dropped.
   if (
     requested &&
@@ -59,7 +65,9 @@ function redirectAfterAuth(fromParam: string | null) {
     from = lastKnown;
   }
   setTimeout(() => {
-    window.location.href = from.startsWith("/") ? from : `/${from}`;
+    // Replace /login so neither browser Back nor any in-app Back control can
+    // return the shopper to the authentication screen.
+    window.location.replace(from.startsWith("/") ? from : `/${from}`);
   }, 500);
 }
 

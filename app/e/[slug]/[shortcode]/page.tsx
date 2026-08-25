@@ -1,7 +1,7 @@
 "use client";
 
 import { Suspense, useEffect, useMemo, useState } from "react";
-import { useParams, useSearchParams } from "next/navigation";
+import { useParams, useRouter, useSearchParams } from "next/navigation";
 import BrandedNotice from "@/components/molecules/BrandedNotice";
 import RouteLoader from "@/components/molecules/RouteLoader";
 import PremiumTicketing, {
@@ -23,6 +23,18 @@ import {
   formatVenueCityState,
   formatVenueLocationLine,
 } from "@/lib/venueLocation";
+import {
+  normalizeGlobalTicketLimit,
+  quantityLimits,
+  quantityRestrictionLabel,
+} from "@/lib/ticketListings";
+import useWaitingRoomHeartbeat from "@/hooks/useWaitingRoomHeartbeat";
+import {
+  getWaitingRoomPath,
+  hasValidWaitingRoomToken,
+  isWaitingRoomRequired,
+  rememberWaitingRoomEntry,
+} from "@/lib/waitingRoom";
 
 type RawGroup = {
   id?: string | number;
@@ -36,9 +48,9 @@ type RawGroup = {
     id?: string | number;
     name?: string;
     isDefaultOffer?: boolean;
-    isSoldOut?: boolean;
     minQuantity?: number | null;
     maxQuantity?: number | null;
+    multipleOf?: number | null;
     accessCode?: string | null;
     freeOffer?: boolean | null;
   };
@@ -52,6 +64,8 @@ type EventData = {
   slug?: string;
   seoUrl?: string;
   shortCode?: string;
+  globalTicketLimit?: number | string | null;
+  waitingRoomEnabled?: boolean | null;
   start?: string;
   doorsOpen?: string;
   realDoorsOpen?: string;
@@ -93,7 +107,10 @@ function money(n: number) {
 }
 
 /** Map Strapi GA ticket groups into checkout-ready tier cards. */
-function groupsToGaTiers(groups: RawGroup[]): GATier[] {
+function groupsToGaTiers(
+  groups: RawGroup[],
+  globalMax?: number | null,
+): GATier[] {
   const seen = new Set<string>();
 
   return groups
@@ -108,10 +125,14 @@ function groupsToGaTiers(groups: RawGroup[]): GATier[] {
       const available = Number(g.availableCount || 0);
       const unit = Number(g.price || 0);
       const offerName = g.offer?.name || g.sectionName || "Standard admission";
-      const maxQty = Number(g.offer?.maxQuantity || 0);
-      const note =
-        maxQty > 0 ? `Ticket limit: ${maxQty} per order` : "Ticket limit: 100 per order";
-      const soldout = available <= 0 || Boolean(g.offer?.isSoldOut);
+      const limits = quantityLimits(g.offer, {
+        available,
+        defaultMax: 100,
+        globalMax,
+      });
+      // Drained inventory is what sells a tier out. An offer flagged sold out
+      // never reaches the page, so there is nothing else to read here.
+      const soldout = available <= 0;
       const section = g.sectionName || "General admission";
 
       return {
@@ -119,18 +140,28 @@ function groupsToGaTiers(groups: RawGroup[]): GATier[] {
         sub: `${section} · unreserved seating`,
         price: unit === 0 || g.offer?.freeOffer ? "Free" : money(unit),
         unit,
-        note,
+        note: `Ticket limit: ${quantityRestrictionLabel(limits)}`,
         state: soldout ? "soldout" : "live",
+        min: limits.min,
+        max: limits.max,
+        multipleOf: limits.step,
         cartGroup: g as Record<string, unknown>,
       } satisfies GATier;
     })
+    .filter((tier) => tier.state === "soldout" || tier.min <= tier.max)
     .sort((a, b) => {
       const rank = { live: 0, scheduled: 1, soldout: 2 };
       return rank[a.state] - rank[b.state];
     });
 }
 
-function toGaData(ev: EventData, groups: RawGroup[]): TicketingData {
+function toGaData(
+  ev: EventData,
+  groups: RawGroup[],
+  soldOut: boolean,
+  scheduled: boolean,
+  scheduledTime?: string | null,
+): TicketingData {
   const tz = ev.venue?.timezone;
   const doorsIso = eventDoorsIso(ev);
   const when = formatEventWhen(ev.start, tz) || "";
@@ -146,7 +177,10 @@ function toGaData(ev: EventData, groups: RawGroup[]): TicketingData {
   const away = ev.attractions?.find((a) => a !== home);
   const orgLabel = ev.organization?.name || "Blocktickets";
   const poster = imageOf(ev.image);
-  const gaTiers = groupsToGaTiers(groups);
+  const gaTiers = groupsToGaTiers(
+    groups,
+    normalizeGlobalTicketLimit(ev.globalTicketLimit),
+  );
   const theme = brandingToTicketingTheme(ev, ev.organization, poster);
 
   return {
@@ -155,6 +189,11 @@ function toGaData(ev: EventData, groups: RawGroup[]): TicketingData {
     eventType: "ga",
     listings: [],
     gaTiers: gaTiers.length ? gaTiers : undefined,
+    soldOut,
+    scheduled,
+    scheduledAt: scheduledTime
+      ? formatEventWhen(scheduledTime, tz) || scheduledTime
+      : undefined,
     eventName: ev.name || "Event",
     whenLong: whenLong || when,
     whenShort: eventWhenShortWithDoors(ev.start, doorsIso, tz),
@@ -181,13 +220,23 @@ function toGaData(ev: EventData, groups: RawGroup[]): TicketingData {
 
 function GAEvent() {
   const params = useParams<{ slug: string; shortcode: string }>();
+  const router = useRouter();
   const searchParams = useSearchParams();
   const code = searchParams.get("code") || "0";
 
   const [ev, setEv] = useState<EventData | null>(null);
   const [groups, setGroups] = useState<RawGroup[]>([]);
+  const [soldOut, setSoldOut] = useState(false);
+  const [scheduled, setScheduled] = useState(false);
+  const [scheduledTime, setScheduledTime] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [leavingForWaitingRoom, setLeavingForWaitingRoom] = useState(false);
   const [error, setError] = useState("");
+
+  useWaitingRoomHeartbeat(
+    ev?.uuid,
+    isWaitingRoomRequired(ev) && hasValidWaitingRoomToken(ev?.uuid),
+  );
 
   useEffect(() => {
     let cancelled = false;
@@ -202,8 +251,25 @@ function GAEvent() {
           return;
         }
         const event = res.data.event as EventData;
-        setEv(event);
         cacheEventBranding(event, event.organization);
+        if (
+          event.uuid &&
+          isWaitingRoomRequired(event) &&
+          !hasValidWaitingRoomToken(event.uuid)
+        ) {
+          const returnPath = `${window.location.pathname}${window.location.search}`;
+          rememberWaitingRoomEntry({
+            eventUuid: event.uuid,
+            destination: "ga",
+            returnPath,
+          });
+          setLeavingForWaitingRoom(true);
+          router.replace(
+            getWaitingRoomPath(params.slug, params.shortcode),
+          );
+          return;
+        }
+        setEv(event);
         try {
           const gr = await getTicketGroups({
             event,
@@ -217,6 +283,9 @@ function GAEvent() {
           });
           if (!cancelled) {
             setGroups((gr.data?.ticketGroups || []) as RawGroup[]);
+            setSoldOut(Boolean(gr.data?.soldout));
+            setScheduled(Boolean(gr.data?.isScheduled));
+            setScheduledTime(gr.data?.scheduledTime || null);
           }
         } catch {
           if (!cancelled) setGroups([]);
@@ -235,11 +304,14 @@ function GAEvent() {
     return () => {
       cancelled = true;
     };
-  }, [params.shortcode, params.slug, code]);
+  }, [params.shortcode, params.slug, code, router]);
 
   const data = useMemo(
-    () => (ev ? toGaData(ev, groups) : null),
-    [ev, groups],
+    () =>
+      ev
+        ? toGaData(ev, groups, soldOut, scheduled, scheduledTime)
+        : null,
+    [ev, groups, soldOut, scheduled, scheduledTime],
   );
 
   const theme = ev ? brandingToTicketingTheme(ev, ev.organization) : null;
@@ -250,7 +322,7 @@ function GAEvent() {
     slug: ev?.organization?.slug,
   };
 
-  if (loading) {
+  if (loading || leavingForWaitingRoom) {
     return (
       <RouteLoader
         branding={
@@ -272,7 +344,9 @@ function GAEvent() {
       />
     );
   }
-  if (!groups.length) {
+  // A sold-out event keeps its page and swaps the ticket card for the waitlist.
+  // Anything else with no tiers has nothing to say, so the notice takes over.
+  if (!data.gaTiers?.length && !soldOut && !scheduled) {
     return (
       <BrandedNotice
         title="No tickets on sale"

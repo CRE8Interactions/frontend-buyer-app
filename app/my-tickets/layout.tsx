@@ -1,5 +1,6 @@
 import { Suspense } from "react";
 import SeasonTickets from "@/components/organisms/SeasonTickets";
+import MyTicketsAuthGuard from "@/components/templates/MyTicketsAuthGuard";
 
 export const metadata = {
   title: "My Tickets — NM State Season Tickets | Blocktickets",
@@ -15,11 +16,11 @@ export default function MyTicketsLayout({
   children: React.ReactNode;
 }) {
   return (
-    <>
+    <MyTicketsAuthGuard>
       <Suspense>
         <SeasonTickets />
       </Suspense>
       {children}
-    </>
+    </MyTicketsAuthGuard>
   );
 }

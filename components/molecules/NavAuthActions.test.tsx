@@ -1,29 +1,44 @@
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { ReactNode } from "react";
+import type { MouseEventHandler, ReactNode } from "react";
 
-const authState = {
+const authState = vi.hoisted(() => ({
   isAuthenticated: false,
   logout: vi.fn(),
-};
+  setLastKnown: vi.fn(),
+}));
+
+vi.mock("next/navigation", () => ({
+  usePathname: () => "/browse/",
+}));
 
 vi.mock("next/link", () => ({
   default: ({
     href,
     children,
+    onClick,
     ...rest
   }: {
     href: string;
     children: ReactNode;
+    onClick?: MouseEventHandler<HTMLAnchorElement>;
   }) => (
-    <a href={typeof href === "string" ? href : "#"} {...rest}>
+    <a
+      href={typeof href === "string" ? href : "#"}
+      onClick={(event) => {
+        event.preventDefault();
+        onClick?.(event);
+      }}
+      {...rest}
+    >
       {children}
     </a>
   ),
 }));
 
 vi.mock("@/lib/auth", () => ({
+  setLastKnown: authState.setLastKnown,
   useAuth: () => ({
     isAuthenticated: authState.isAuthenticated,
     logout: authState.logout,
@@ -41,16 +56,19 @@ describe("NavAuthActions", () => {
   beforeEach(() => {
     authState.isAuthenticated = false;
     authState.logout.mockReset();
+    authState.setLastKnown.mockReset();
+    window.history.pushState({}, "", "/browse/?city=ogden");
   });
 
-  it("shows Log in when the shopper is signed out", () => {
+  it("returns a signed-out shopper to the current page after login", async () => {
+    const user = userEvent.setup();
     render(
       <NavAuthActions buttonStyle={{}} logoutStyle={{}} />,
     );
 
     expect(screen.getByRole("link", { name: /^log in$/i })).toHaveAttribute(
       "href",
-      "/login/",
+      "/login/?from=%2Fbrowse%2F",
     );
     expect(
       screen.queryByRole("link", { name: /^my wallet$/i }),
@@ -58,6 +76,11 @@ describe("NavAuthActions", () => {
     expect(
       screen.queryByRole("button", { name: /^log out$/i }),
     ).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole("link", { name: /^log in$/i }));
+    expect(authState.setLastKnown).toHaveBeenCalledWith(
+      "/browse/?city=ogden",
+    );
   });
 
   it("shows My wallet and Log out when the shopper is signed in", async () => {

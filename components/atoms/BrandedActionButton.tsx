@@ -38,7 +38,7 @@ export default function BrandedActionButton({
   const isDisabled = Boolean(disabled || busy);
 
   const base =
-    "inline-flex items-center justify-center gap-2.5 whitespace-nowrap rounded-full px-5 py-3 text-[15px] font-semibold transition-opacity disabled:cursor-not-allowed disabled:opacity-55";
+    "inline-flex items-center justify-center gap-2.5 whitespace-nowrap rounded-full px-5 py-3 text-[15px] font-semibold transition-opacity disabled:cursor-default disabled:opacity-55";
 
   const secondaryCls =
     "border border-[rgba(5,27,53,0.16)] bg-white text-[#051b35] hover:bg-[rgba(5,27,53,0.04)]";

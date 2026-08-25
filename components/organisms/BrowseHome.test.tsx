@@ -117,7 +117,7 @@ describe("Browse page", () => {
     expect(screen.getAllByText(/get tickets/i).length).toBeGreaterThan(0);
     expect(screen.getByRole("link", { name: /log in/i })).toHaveAttribute(
       "href",
-      "/login/",
+      "/login/?from=%2Fbrowse%2F",
     );
     expect(screen.getByText(/build bigger/i)).toBeInTheDocument();
     expect(screen.getByText(/block by block/i)).toBeInTheDocument();

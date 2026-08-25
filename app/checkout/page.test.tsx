@@ -6,12 +6,12 @@ import {
   DEMO_EVENTS,
   DEMO_ORGS,
   DEMO_SEATED_TICKET_GROUPS,
+  DEMO_USER,
   demoAccessPassCheckoutCart,
   demoCheckoutCart,
   demoFlexPackCheckoutCart,
   demoPackageCheckoutCart,
 } from "@/lib/demo/fixtures";
-import { FLEX_PACK_VOUCHER_FEE_USD } from "@/lib/flexPackDisplay";
 import { packageOrderSummary, ticketSelectionSummary } from "@/lib/ticketSummary";
 import { formatVenueLocationFromVenue } from "@/lib/venueLocation";
 
@@ -128,6 +128,7 @@ import {
   dropUserCart,
   getCart,
   getPaymentIntent,
+  processFreeOrder,
   processOrder,
   redeemPromoCode,
   removePromoCode,
@@ -138,6 +139,7 @@ import {
   formatHoldClock,
 } from "@/lib/checkoutBranding";
 import { eventPurchasePath, flexPackPurchasePath, formatCurrency, imageUrl, packagePurchasePath } from "@/lib/helpers";
+import { FIELD_COPY } from "@/lib/fieldValidation";
 import { cacheOrgBranding } from "@/lib/orgBrandingCache";
 import { getSeatViewImageCandidates } from "@/lib/seatView";
 import { markCheckoutLoginDetour, setCheckoutReturnPath } from "@/lib/cart";
@@ -145,6 +147,7 @@ import { msUntilStripePaymentSyncReady } from "@/lib/stripePaymentSync";
 
 const mockedGetCart = vi.mocked(getCart);
 const mockedGetPaymentIntent = vi.mocked(getPaymentIntent);
+const mockedProcessFreeOrder = vi.mocked(processFreeOrder);
 const mockedDropUserCart = vi.mocked(dropUserCart);
 const mockedProcessOrder = vi.mocked(processOrder);
 const mockedRedeemPromo = vi.mocked(redeemPromoCode);
@@ -200,6 +203,9 @@ describe("Checkout page", () => {
     } as never);
     mockedGetPaymentIntent.mockResolvedValue({
       data: { client_secret: "cs_test", id: "pi_test" },
+    } as never);
+    mockedProcessFreeOrder.mockResolvedValue({
+      data: { id: "order-free-1", paymentIntentId: "pi_free" },
     } as never);
     mockedDropUserCart.mockResolvedValue({} as never);
     mockedProcessOrder.mockResolvedValue({} as never);
@@ -774,10 +780,10 @@ describe("Checkout page", () => {
     ).toBeInTheDocument();
     expect(screen.getByText("Service Fee")).toBeInTheDocument();
     expect(
-      screen.getByText(
-        `${formatCurrency(FLEX_PACK_VOUCHER_FEE_USD)} × ${cart.flex_pack.gameTickets}`,
+      screen.queryByText(
+        `${formatCurrency(1)} × ${cart.flex_pack.gameTickets}`,
       ),
-    ).toBeInTheDocument();
+    ).not.toBeInTheDocument();
     expect(
       screen.getByText(formatCurrency(cart.serviceFee)),
     ).toBeInTheDocument();
@@ -931,21 +937,129 @@ describe("Checkout page", () => {
     });
   });
 
-  it("sends logged-out shoppers to login with checkout as the return path", async () => {
+  it("lets logged-out shoppers enter guest details instead of sending them to login", async () => {
     mockedUseAuth.mockReturnValue(authState(false));
     const hrefSetter = stubLocation();
 
     render(<CheckoutPageRoute />);
 
+    expect(
+      await screen.findByRole("heading", {
+        name: /where should we send your tickets/i,
+      }),
+    ).toBeInTheDocument();
+    expect(mockedGetCart).toHaveBeenCalled();
+    expect(mockedGetPaymentIntent).not.toHaveBeenCalled();
+    expect(hrefSetter).not.toHaveBeenCalled();
+    expect(
+      screen.getByRole("link", { name: /sign in/i }),
+    ).toHaveAttribute(
+      "href",
+      "/login/?from=%2Fcheckout%2F%3FcartId%3Dcart-raptors-1",
+    );
+  });
+
+  it("creates a payment intent with the guest buyer after valid details", async () => {
+    mockedUseAuth.mockReturnValue(authState(false));
+    stubLocation();
+    const user = userEvent.setup();
+    render(<CheckoutPageRoute />);
+
+    await user.type(
+      await screen.findByLabelText(/^email$/i),
+      `  ${DEMO_USER.email.toUpperCase()}  `,
+    );
+    await user.type(screen.getByLabelText(/first name/i), DEMO_USER.firstName);
+    await user.type(screen.getByLabelText(/last name/i), DEMO_USER.lastName);
+    await user.click(
+      screen.getByRole("button", { name: /continue to payment/i }),
+    );
+
     await waitFor(() => {
-      expect(mockedSetLastKnown).toHaveBeenCalledWith(
-        "/checkout/?cartId=cart-raptors-1",
-      );
-      expect(hrefSetter).toHaveBeenCalledWith(
-        "/login/?from=%2Fcheckout%2F%3FcartId%3Dcart-raptors-1",
+      expect(mockedGetPaymentIntent).toHaveBeenCalledWith(
+        expect.objectContaining({
+          guest: {
+            email: DEMO_USER.email,
+            firstName: DEMO_USER.firstName,
+            lastName: DEMO_USER.lastName,
+          },
+        }),
       );
     });
-    expect(mockedGetCart).not.toHaveBeenCalled();
+    expect(await screen.findByTestId("payment-element")).toBeInTheDocument();
+  });
+
+  it("does not create a payment intent for an invalid guest email", async () => {
+    mockedUseAuth.mockReturnValue(authState(false));
+    stubLocation();
+    const user = userEvent.setup();
+    render(<CheckoutPageRoute />);
+
+    await user.type(
+      await screen.findByLabelText(/^email$/i),
+      "bot@mailinator.com",
+    );
+    await user.type(screen.getByLabelText(/first name/i), DEMO_USER.firstName);
+    await user.type(screen.getByLabelText(/last name/i), DEMO_USER.lastName);
+    await user.click(
+      screen.getByRole("button", { name: /continue to payment/i }),
+    );
+
+    expect(await screen.findByText(FIELD_COPY.invalidEmail)).toBeInTheDocument();
+    expect(mockedGetPaymentIntent).not.toHaveBeenCalled();
+  });
+
+  it("skips guest contact when the shopper is already logged in", async () => {
+    render(<CheckoutPageRoute />);
+
+    expect(await screen.findByTestId("payment-element")).toBeInTheDocument();
+    expect(
+      screen.queryByRole("heading", {
+        name: /where should we send your tickets/i,
+      }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("sends logged-out package shoppers to login without flashing checkout", async () => {
+    mockedUseAuth.mockReturnValue(authState(false));
+    const cart = demoPackageCheckoutCart();
+    navState.cartId = String(cart.id);
+    const hrefSetter = stubLocation("/checkout/", `?cartId=${cart.id}`);
+    mockedGetCart.mockResolvedValue({ data: cart } as never);
+
+    render(<CheckoutPageRoute />);
+
+    await waitFor(() => {
+      expect(mockedSetLastKnown).toHaveBeenCalledWith(
+        `/checkout/?cartId=${cart.id}`,
+      );
+      expect(hrefSetter).toHaveBeenCalledWith(
+        `/login/?from=${encodeURIComponent(`/checkout/?cartId=${cart.id}`)}`,
+      );
+    });
+    expect(mockedGetPaymentIntent).not.toHaveBeenCalled();
+    expect(
+      screen.queryByRole("heading", { name: "Payment" }),
+    ).not.toBeInTheDocument();
+    expect(screen.queryByText(cart.package.name)).not.toBeInTheDocument();
+  });
+
+  it("sends a $0 flex pack to checkout success without a payment intent", async () => {
+    const cart = demoFlexPackCheckoutCart({ flex_pack: { price: 0 } });
+    navState.cartId = String(cart.id);
+    stubLocation("/checkout/", `?cartId=${cart.id}`);
+    mockedGetCart.mockResolvedValue({ data: cart } as never);
+
+    render(<CheckoutPageRoute />);
+
+    await waitFor(() => {
+      expect(mockedProcessFreeOrder).toHaveBeenCalledWith({ cartId: cart.id });
+      expect(locationMocks.replace).toHaveBeenCalledWith(
+        "http://localhost/checkout/checkout-success/?intentId=pi_free",
+      );
+    });
+    expect(mockedGetPaymentIntent).not.toHaveBeenCalled();
+    expect(screen.queryByTestId("payment-element")).not.toBeInTheDocument();
   });
 
   it("shows checkout unavailable when there is no cart", async () => {

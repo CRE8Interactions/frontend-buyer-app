@@ -63,8 +63,8 @@ export default function Modal({
               disabled={busy}
               className={
                 light
-                  ? "flex h-9 w-9 items-center justify-center rounded-full border border-[rgba(5,27,53,0.16)] text-[#051b35] transition-colors hover:bg-[rgba(5,27,53,0.06)] disabled:cursor-not-allowed disabled:opacity-40"
-                  : "flex h-9 w-9 items-center justify-center rounded-full border border-white/15 text-white transition-colors hover:bg-white/[0.1] disabled:cursor-not-allowed disabled:opacity-40"
+                  ? "flex h-9 w-9 items-center justify-center rounded-full border border-[rgba(5,27,53,0.16)] text-[#051b35] transition-colors hover:bg-[rgba(5,27,53,0.06)] disabled:cursor-default disabled:opacity-40"
+                  : "flex h-9 w-9 items-center justify-center rounded-full border border-white/15 text-white transition-colors hover:bg-white/[0.1] disabled:cursor-default disabled:opacity-40"
               }
             >
               <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden>

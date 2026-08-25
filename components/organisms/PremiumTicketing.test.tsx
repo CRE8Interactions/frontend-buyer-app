@@ -11,6 +11,7 @@ import {
   DEMO_ORGS,
   DEMO_SEATED_TICKET_GROUPS,
   demoSeatmapMapping,
+  demoTicketGroups,
 } from "@/lib/demo/fixtures";
 import { MIXED_MAP_SELECTION_ERROR } from "@/lib/mapSelection";
 import type { TicketingData } from "@/components/organisms/PremiumTicketing";
@@ -78,6 +79,7 @@ vi.mock("@/components/molecules/SectionLocatorThumb", () => ({
 vi.mock("@/lib/api", () => ({
   placeTicketsIntoCart: vi.fn(),
   placeGATicketsIntoCart: vi.fn(),
+  checkAccessCode: vi.fn(),
 }));
 
 vi.mock("@/lib/auth", () => ({
@@ -90,6 +92,7 @@ vi.mock("@/lib/auth", () => ({
     logout: vi.fn(),
     refresh: vi.fn(),
   })),
+  setLastKnown: vi.fn(),
 }));
 
 vi.mock("@/lib/cart", async (importOriginal) => {
@@ -101,10 +104,16 @@ vi.mock("@/lib/cart", async (importOriginal) => {
 });
 
 import PremiumTicketing from "@/components/organisms/PremiumTicketing";
-import { placeTicketsIntoCart } from "@/lib/api";
+import {
+  checkAccessCode,
+  placeGATicketsIntoCart,
+  placeTicketsIntoCart,
+} from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { checkoutHref } from "@/lib/cart";
 
+const mockedCheckAccessCode = vi.mocked(checkAccessCode);
+const mockedPlaceGaTickets = vi.mocked(placeGATicketsIntoCart);
 const mockedPlaceTickets = vi.mocked(placeTicketsIntoCart);
 const mockedUseAuth = vi.mocked(useAuth);
 
@@ -171,9 +180,15 @@ async function openLiveMap() {
 describe("Select tickets page (PremiumTicketing)", () => {
   beforeEach(() => {
     routerMocks.push.mockReset();
+    mockedCheckAccessCode.mockReset();
+    mockedCheckAccessCode.mockResolvedValue({ data: "" } as never);
     mockedUseAuth.mockReturnValue(authState(false));
     mockedPlaceTickets.mockResolvedValue({
       data: { cartId: "cart-1" },
+    } as never);
+    mockedPlaceGaTickets.mockReset();
+    mockedPlaceGaTickets.mockResolvedValue({
+      data: { cartId: "cart-ga-1" },
     } as never);
     useFiltersStore.setState({ loadingTicketGroups: false });
     useSeatmapStore.setState({
@@ -229,11 +244,14 @@ describe("Select tickets page (PremiumTicketing)", () => {
     expect(auth.logout).toHaveBeenCalled();
   });
 
-  it("keeps the header Login link when logged out", async () => {
+  it("returns a logged-out shopper to the event after header login", async () => {
     await renderReady();
 
     const login = screen.getByRole("link", { name: /^login$/i });
-    expect(login).toHaveAttribute("href", "/login/");
+    expect(login).toHaveAttribute(
+      "href",
+      "/login/?from=%2Fe%2Fevent%2Fcode%2Ftickets%2F",
+    );
     expect(
       screen.queryByRole("link", { name: /^my wallet$/i }),
     ).not.toBeInTheDocument();
@@ -256,10 +274,10 @@ describe("Select tickets page (PremiumTicketing)", () => {
       ),
     ).toBeInTheDocument();
     expect(
-      screen.getByText(/doesn't have any inventory on sale right now/i),
+      await screen.findByText(/doesn't have any inventory on sale right now/i),
     ).toBeInTheDocument();
     expect(
-      screen.queryByRole("button", { name: /reset to 1 ticket/i }),
+      screen.queryByRole("button", { name: /reset quantity/i }),
     ).not.toBeInTheDocument();
   });
 
@@ -267,15 +285,15 @@ describe("Select tickets page (PremiumTicketing)", () => {
     const user = await renderReady();
 
     await user.click(screen.getByRole("button", { name: /field club/i }));
-    expect(screen.getByText(/sec m · row m3/i)).toBeInTheDocument();
+    expect(await screen.findByText(/sec m · row m3/i)).toBeInTheDocument();
     expect(screen.queryByText(/sec n · row i/i)).not.toBeInTheDocument();
 
     await user.click(screen.getByRole("button", { name: /section m-n & ga/i }));
+    expect(await screen.findByText(/sec n · row i/i)).toBeInTheDocument();
     expect(screen.getByText(/sec m · row m3/i)).toBeInTheDocument();
-    expect(screen.getByText(/sec n · row i/i)).toBeInTheDocument();
 
     await user.click(screen.getByRole("button", { name: /^all$/i }));
-    expect(screen.getByText(/sec a · row 12/i)).toBeInTheDocument();
+    expect(await screen.findByText(/sec a · row 12/i)).toBeInTheDocument();
   });
 
   it("calls onFiltersChange when quantity, ADA, and sort change", async () => {
@@ -305,7 +323,88 @@ describe("Select tickets page (PremiumTicketing)", () => {
     );
   });
 
-  it("shows qty empty state with reset when no listing fits the group size", async () => {
+  it("shows placeholder rows over the listings while new filters are refetched", async () => {
+    render(<PremiumTicketing data={seatedTicketingFixture} refreshing />);
+
+    expect(
+      await screen.findByRole("status", { name: /loading listings/i }),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/sec m · row m3/i)).not.toBeInTheDocument();
+  });
+
+  it("shows placeholder rows when an offer chip filters the list", async () => {
+    const user = await renderReady();
+
+    await user.click(screen.getByRole("button", { name: /field club/i }));
+
+    expect(
+      screen.getByRole("status", { name: /loading listings/i }),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/sec m · row m3/i)).not.toBeInTheDocument();
+    expect(await screen.findByText(/sec m · row m3/i)).toBeInTheDocument();
+    expect(
+      screen.queryByRole("status", { name: /loading listings/i }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("replaces the listings with a waitlist when the event is sold out", async () => {
+    const user = userEvent.setup();
+    render(
+      <PremiumTicketing data={{ ...seatedTicketingFixture, soldOut: true }} />,
+    );
+
+    expect(
+      await screen.findByText(/we’re sorry, the event is sold out/i),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/sec m · row m3/i)).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: /^all$/i }),
+    ).not.toBeInTheDocument();
+
+    const email = screen.getByLabelText(/email address/i);
+    await user.type(email, "not-an-email");
+    await user.click(
+      screen.getByRole("button", { name: /get notified/i }),
+    );
+    expect(screen.getByText(/email is invalid/i)).toBeInTheDocument();
+
+    await user.clear(email);
+    await user.type(email, "fan@example.com");
+    await user.click(screen.getByRole("button", { name: /get notified/i }));
+
+    expect(
+      await screen.findByText(/you’re on the waiting list/i),
+    ).toBeInTheDocument();
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  });
+
+  it("hides scheduled seated offers and shows the event on-sale time", async () => {
+    const scheduledOffer = demoTicketGroups().offers[0].name;
+    render(
+      <PremiumTicketing
+        data={{
+          ...seatedTicketingFixture,
+          listings: [],
+          offerNames: [scheduledOffer],
+          scheduled: true,
+          scheduledAt: "Friday, August 28, 2026 at 10:00 AM",
+        }}
+      />,
+    );
+
+    expect(
+      await screen.findByText(/tickets will be on sale/i),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(/friday, august 28, 2026 at 10:00 am/i),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(scheduledOffer)).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: /^all$/i }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("does not offer quantities above a seated listing's maximum", async () => {
     const user = await renderReady({
       ...seatedTicketingFixture,
       listings: [
@@ -323,14 +422,9 @@ describe("Select tickets page (PremiumTicketing)", () => {
     });
 
     await user.click(screen.getByRole("button", { name: /2 tickets/i }));
-    await user.click(screen.getByRole("button", { name: /^4 tickets$/i }));
-
     expect(
-      await screen.findByText(/no listings for 4 tickets/i),
-    ).toBeInTheDocument();
-    expect(
-      screen.getByRole("button", { name: /reset to 1 ticket/i }),
-    ).toBeInTheDocument();
+      screen.queryByRole("button", { name: /^4 tickets$/i }),
+    ).not.toBeInTheDocument();
   });
 
   it("opens the ticket details drawer with location and seat-view slides", async () => {
@@ -373,6 +467,215 @@ describe("Select tickets page (PremiumTicketing)", () => {
     expect(more).toBeDisabled();
     expect(screen.getAllByText(/4 tickets/i).length).toBeGreaterThan(0);
     expect(screen.getByText(/\$134\.36/)).toBeInTheDocument(); // 4 × 33.59
+  });
+
+  it("steps seated quantities by the offer multiple within min and max", async () => {
+    const restricted = {
+      ...seatedTicketingFixture,
+      listings: [
+        {
+          ...seatedTicketingFixture.listings[0],
+          min: 2,
+          max: 6,
+          multipleOf: 2,
+        },
+      ],
+    };
+    const user = await renderReady(restricted);
+
+    await user.click(screen.getByText(/sec m · row m3/i));
+    await screen.findByText("Ticket details");
+    await user.click(screen.getByRole("button", { name: /more tickets/i }));
+
+    expect(screen.getAllByText(/4 tickets/i).length).toBeGreaterThan(0);
+    expect(screen.queryByText(/^3 tickets$/i)).not.toBeInTheDocument();
+  });
+
+  it("badges a sold-out GA offer and offers its waitlist instead of checkout", async () => {
+    const user = userEvent.setup();
+    render(
+      <PremiumTicketing
+        data={{
+          ...seatedTicketingFixture,
+          eventType: "ga",
+          gaTiers: [
+            {
+              name: "Student Rush",
+              sub: "General admission · unreserved seating",
+              price: "Free",
+              unit: 0,
+              note: "All tickets claimed",
+              state: "soldout",
+            },
+          ],
+        }}
+      />,
+    );
+
+    await screen.findByText("Student Rush");
+    expect(screen.getByText(/^sold out$/i)).toBeInTheDocument();
+    expect(screen.getByText(/all tickets claimed/i)).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: /checkout/i }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: /add a ticket/i }),
+    ).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: /join waitlist/i }));
+    expect(
+      await screen.findByRole("dialog", { name: /join the waitlist/i }),
+    ).toBeInTheDocument();
+  });
+
+  it("offers only the waitlist when a GA event is sold out with no inventory", async () => {
+    render(
+      <PremiumTicketing
+        data={{
+          ...seatedTicketingFixture,
+          eventType: "ga",
+          gaTiers: undefined,
+          soldOut: true,
+        }}
+      />,
+    );
+
+    expect(
+      await screen.findByText(/we’re sorry, the event is sold out/i),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: /get notified/i }),
+    ).toBeInTheDocument();
+    // Never the placeholder tiers that stand in for an unwired GA page.
+    expect(screen.queryByText(/standard admission/i)).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: /checkout/i }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("hides scheduled GA offers until their on-sale time", async () => {
+    const scheduledOffer = demoTicketGroups().offers[0].name;
+    render(
+      <PremiumTicketing
+        data={{
+          ...seatedTicketingFixture,
+          eventType: "ga",
+          gaTiers: [
+            {
+              name: scheduledOffer,
+              sub: "General admission",
+              price: "$25.00",
+              unit: 25,
+              note: "Coming soon",
+              state: "scheduled",
+            },
+          ],
+          scheduled: true,
+          scheduledAt: "Friday, August 28, 2026 at 10:00 AM",
+        }}
+      />,
+    );
+
+    expect(
+      await screen.findByText(/tickets will be on sale/i),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(scheduledOffer)).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: /buy tickets|checkout/i }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("uses each GA offer's min, max, and multiple for checkout quantity", async () => {
+    const gaGroup = demoTicketGroups().ticketGroups[0];
+    const user = userEvent.setup();
+    render(
+      <PremiumTicketing
+        data={{
+          ...seatedTicketingFixture,
+          eventType: "ga",
+          gaTiers: [
+            {
+              name: gaGroup.sectionName,
+              sub: "General admission",
+              price: "$25.00",
+              unit: 25,
+              note: "Ticket limit: 2–6 per order · multiples of 2",
+              state: "live",
+              min: 2,
+              max: 6,
+              multipleOf: 2,
+              cartGroup: gaGroup,
+            },
+          ],
+        }}
+      />,
+    );
+
+    await screen.findByText(gaGroup.sectionName);
+    expect(screen.getByText("2")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: /add a ticket/i }));
+    expect(screen.getByText("4")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: /add a ticket/i }));
+    expect(screen.getByText("6")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /add a ticket/i })).toBeDisabled();
+
+    await user.click(screen.getByRole("button", { name: /checkout \$150/i }));
+    await waitFor(() => {
+      expect(mockedPlaceGaTickets).toHaveBeenCalledWith({
+        eventId: seatedTicketingFixture.eventId,
+        ticketGroup: expect.objectContaining({ quantity: 6 }),
+      });
+    });
+  });
+
+  it("holds only the GA offer the shopper checked out", async () => {
+    const [gaGroup, vipGroup] = demoTicketGroups().ticketGroups;
+    mockedPlaceGaTickets.mockImplementation(() => new Promise(() => {}));
+    const gaTier = (group: (typeof gaGroup) | (typeof vipGroup)) => ({
+      name: group.sectionName,
+      sub: "General admission",
+      price: `$${group.price}.00`,
+      unit: group.price,
+      note: "Ticket limit: 1–10 per order",
+      state: "live" as const,
+      min: 1,
+      max: 10,
+      multipleOf: 1,
+      cartGroup: group as Record<string, unknown>,
+    });
+    const user = userEvent.setup();
+    render(
+      <PremiumTicketing
+        data={{
+          ...seatedTicketingFixture,
+          eventType: "ga",
+          gaTiers: [gaTier(gaGroup), gaTier(vipGroup)],
+        }}
+      />,
+    );
+    await screen.findByText(vipGroup.sectionName);
+
+    await user.click(
+      screen.getByRole("button", {
+        name: new RegExp(`checkout \\$${vipGroup.price}`, "i"),
+      }),
+    );
+
+    const holdingBtns = await screen.findAllByRole("button", {
+      name: /holding seats/i,
+    });
+    expect(holdingBtns).toHaveLength(1);
+    const otherBtn = screen.getByRole("button", {
+      name: new RegExp(`checkout \\$${gaGroup.price}`, "i"),
+    });
+    expect(otherBtn).toBeDisabled();
+    expect(
+      within(otherBtn).queryByRole("status", { name: /loading/i }),
+    ).not.toBeInTheDocument();
+    expect(mockedPlaceGaTickets).toHaveBeenCalledWith({
+      eventId: seatedTicketingFixture.eventId,
+      ticketGroup: expect.objectContaining({ id: vipGroup.id, quantity: 1 }),
+    });
   });
 
   it("keeps checkout loading until the cart is placed, then shows the org loader", async () => {
@@ -698,6 +1001,21 @@ describe("Select tickets page (PremiumTicketing)", () => {
     await user.click(screen.getByRole("button", { name: /unlock seats/i }));
 
     expect(await screen.findByText(/sec m · row m3/i)).toBeInTheDocument();
+  });
+
+  it("keeps a locked offer hidden when the code is rejected", async () => {
+    const user = await renderReady(lockedTicketingFixture, {
+      waitForListing: /sec a · row 12/i,
+    });
+
+    await user.click(screen.getByRole("button", { name: /field club/i }));
+    await user.type(screen.getByPlaceholderText(/access code/i), "WRONG26");
+    await user.click(screen.getByRole("button", { name: /unlock seats/i }));
+
+    expect(
+      await screen.findByText(/that code didn.t match/i),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/sec m · row m3/i)).not.toBeInTheDocument();
   });
 
   it("filters to accessible listings when ADA is toggled without a server callback", async () => {

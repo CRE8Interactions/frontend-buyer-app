@@ -18,6 +18,27 @@ const LOCKUP = "/blocktickets-logo.svg";
 const DEFAULT_ACCENT = "#051b35";
 const DEFAULT_LOGO = "/blocktickets-emblem-navy.svg";
 
+/**
+ * A load can hand off between the boot splash, the route loader, and a page's
+ * own loader. Each is a separate element, so anchoring every animation to the
+ * document clock keeps the motion running instead of restarting on each swap.
+ * Entrances (`loop: false`) land already finished so they never replay.
+ */
+function motionPhase<T extends { style: CSSStyleDeclaration }>(
+  durationMs: number,
+  options: { loop?: boolean; staggerMs?: number } = {},
+) {
+  return (el: T | null) => {
+    if (!el || typeof performance === "undefined") return;
+    const elapsed = performance.now();
+    const offset =
+      options.loop === false
+        ? -Math.min(elapsed, durationMs)
+        : (options.staggerMs || 0) - (elapsed % durationMs);
+    el.style.animationDelay = `${Math.round(offset)}ms`;
+  };
+}
+
 type Props = {
   variant?: "blocktickets" | "tenant";
   /** Tenant background/accent colour (tenant variant). */
@@ -75,17 +96,17 @@ export default function BrandLoader({
       {tenant ? (
         <>
           <div style={{ position: "relative", width: 132, height: 132, display: "flex", alignItems: "center", justifyContent: "center" }}>
-            <svg viewBox="0 0 120 120" style={{ position: "absolute", inset: 0, width: "100%", height: "100%", animation: "bt-spin 1.5s linear infinite" }}>
+            <svg ref={motionPhase(1500)} viewBox="0 0 120 120" style={{ position: "absolute", inset: 0, width: "100%", height: "100%", animation: "bt-spin 1.5s linear infinite" }}>
               <circle cx="60" cy="60" r="55" fill="none" stroke={ringTrack} strokeWidth="3" />
               <circle cx="60" cy="60" r="55" fill="none" stroke={ring} strokeWidth="3" strokeLinecap="round" strokeDasharray="86 260" />
             </svg>
             <div style={{ width: 96, height: 96, borderRadius: 999, background: "#fff", display: "flex", alignItems: "center", justifyContent: "center", padding: 16, boxSizing: "border-box", boxShadow: "0 8px 30px rgba(0,0,0,0.18)" }}>
               {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src={logoSrc} alt={name || ""} style={{ maxWidth: "100%", maxHeight: "100%", animation: "bt-breathe 1.8s ease-in-out infinite" }} />
+              <img ref={motionPhase(1800)} src={logoSrc} alt={name || ""} style={{ maxWidth: "100%", maxHeight: "100%", animation: "bt-breathe 1.8s ease-in-out infinite" }} />
             </div>
           </div>
           <div style={{ position: "relative", display: "flex", flexDirection: "column", alignItems: "center", gap: 6 }}>
-            {name && <div style={{ fontSize: 17, fontWeight: 600, letterSpacing: "-0.02em", color: titleColor, animation: "bt-rise 500ms ease-out both" }}>{name}</div>}
+            {name && <div ref={motionPhase(500, { loop: false })} style={{ fontSize: 17, fontWeight: 600, letterSpacing: "-0.02em", color: titleColor, animation: "bt-rise 500ms ease-out both" }}>{name}</div>}
             <div style={{ fontSize: 12, fontWeight: 500, color: msgColor }}>{message}</div>
           </div>
           {poweredBy && (
@@ -98,16 +119,16 @@ export default function BrandLoader({
       ) : (
         <>
           {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src={LOCKUP} alt="Blocktickets" style={{ position: "relative", width: 196, animation: "bt-rise 500ms ease-out both" }} />
+          <img ref={motionPhase(500, { loop: false })} src={LOCKUP} alt="Blocktickets" style={{ position: "relative", width: 196, animation: "bt-rise 500ms ease-out both" }} />
           <div style={{ position: "relative", display: "flex", alignItems: "flex-end", gap: 7, height: 34 }}>
             {[GREEN, GREEN, GREEN, GREEN_D, GREEN_D].map((c, i) => (
-              <span key={i} style={{ width: 12, height: 12, borderRadius: 3, background: c, animation: "bt-stack 1.5s ease-in-out infinite", animationDelay: `${i * 120}ms` }} />
+              <span key={i} ref={motionPhase(1500, { staggerMs: i * 120 })} style={{ width: 12, height: 12, borderRadius: 3, background: c, animation: "bt-stack 1.5s ease-in-out infinite", animationDelay: `${i * 120}ms` }} />
             ))}
           </div>
           <div style={{ position: "absolute", bottom: 28, left: 0, right: 0, display: "flex", flexDirection: "column", alignItems: "center", gap: 14 }}>
             <div style={{ fontSize: 12, fontWeight: 500, letterSpacing: "0.02em", color: "rgba(255,255,255,0.55)" }}>{message}</div>
             <div style={{ width: 148, height: 3, borderRadius: 999, background: "rgba(255,255,255,0.12)", overflow: "hidden" }}>
-              <div style={{ width: "100%", height: "100%", background: barGrad, animation: "bt-bar 1.35s linear infinite" }} />
+              <div ref={motionPhase(1350)} style={{ width: "100%", height: "100%", background: barGrad, animation: "bt-bar 1.35s linear infinite" }} />
             </div>
           </div>
         </>

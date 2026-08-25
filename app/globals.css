@@ -53,6 +53,15 @@ button,
 [type="reset"] {
   cursor: pointer;
 }
+/* Many buttons set cursor: pointer inline, which would otherwise keep the hand
+   cursor once they are greyed out or spinning. */
+button:disabled,
+[type="button"]:disabled,
+[type="submit"]:disabled,
+[type="reset"]:disabled,
+button[aria-busy="true"] {
+  cursor: default !important;
+}
 html {
   -webkit-text-size-adjust: 100%;
 }
