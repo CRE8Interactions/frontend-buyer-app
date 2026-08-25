@@ -723,17 +723,10 @@ export default function PremiumTicketing({
   const findOnMapBtn = (h: number, radius: number) => (
     <button className="nmt-map-btn" onClick={() => setMap(true)} style={{ fontFamily: "inherit", position: "relative", width: "100%", height: h, borderRadius: radius, border: "1px solid rgba(5,27,53,0.10)", background: "#edeff7", cursor: "pointer", overflow: "hidden", display: "flex", alignItems: "center", justifyContent: "center", padding: 0, ...card }}>
       <div style={{ position: "absolute", inset: 0 }}>
-        {mapBackground ? (
-          <SectionLocatorThumb
-            background={mapBackground}
-            mapping={mapMapping}
-            decorativePreview
-          />
-        ) : (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img src={MAP_SRC} alt="Seat map" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
-        )}
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img src={MAP_SRC} alt="Seat map" style={{ width: "100%", height: "100%", objectFit: "cover", objectPosition: "center", display: "block" }} />
       </div>
+      <span aria-hidden style={{ position: "absolute", inset: 0, background: "linear-gradient(180deg, rgba(5,27,53,0.05), rgba(5,27,53,0.18))" }} />
       <span style={{ position: "relative", display: "inline-flex", alignItems: "center", gap: 10, background: "#fff", borderRadius: 999, padding: "12px 22px", fontSize: 15, fontWeight: 600, color: ACC, boxShadow: "0 6px 20px -6px rgba(5,27,53,0.35)", whiteSpace: "nowrap" }}>
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" style={{ width: 17, height: 17 }}><circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" /></svg>
         Find on map

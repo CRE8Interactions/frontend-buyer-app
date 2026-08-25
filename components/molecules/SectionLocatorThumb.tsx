@@ -89,7 +89,6 @@ export default function SectionLocatorThumb({
   pinColor = "#2563eb",
   thumbnailSrc,
   thumbnailCandidates,
-  decorativePreview = false,
   className = "",
 }: {
   background?: SeatmapBackground | null;
@@ -103,8 +102,6 @@ export default function SectionLocatorThumb({
   thumbnailSrc?: string | null;
   /** CDN image candidates (highlights/thumbnail) — tried before the live map. */
   thumbnailCandidates?: string[];
-  /** Decorative full-venue preview (e.g. Find on map) — zooms in so the map is readable. */
-  decorativePreview?: boolean;
   className?: string;
 }) {
   const [cdnExhausted, setCdnExhausted] = useState(false);
@@ -148,7 +145,7 @@ export default function SectionLocatorThumb({
   const h = background.height || 1000;
   const pinLeft = pin ? `${(pin.cx / w) * 100}%` : "50%";
   const pinTop = pin ? `${(pin.cy / h) * 100}%` : "50%";
-  const mapZoom = decorativePreview ? 1.55 : pin ? 2.4 : sectionNumber || section ? 1.75 : 1;
+  const mapZoom = pin ? 2.4 : sectionNumber || section ? 1.75 : 1;
 
   return (
     <div
