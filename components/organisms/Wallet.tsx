@@ -19,15 +19,18 @@ import { validateEmail, verifyCode, verifyUser } from "@/lib/api";
 import { setLastKnown, setSession, type AuthSession } from "@/lib/auth";
 import {
   FIELD_COPY,
-  emailLooksInvalid,
-  isBlockedEmail,
+  emailBlurInvalid,
+  emailSubmitInvalid,
   normalizeEmail,
+  submittedEmail,
 } from "@/lib/fieldValidation";
 import EmailField from "@/components/molecules/EmailField";
 import CodeField from "@/components/molecules/CodeField";
+import WalletChrome from "@/components/organisms/WalletChrome";
+import { BLOCKTICKETS_GREEN, BLOCKTICKETS_NAVY } from "@/lib/branding";
 
-const NAVY = "#051b35";
-const GREEN = "#a6e773";
+const NAVY = BLOCKTICKETS_NAVY;
+const GREEN = BLOCKTICKETS_GREEN;
 const GREEN_HI = "#bced95";
 const SUB = "#6e7180";
 const MUTE = "#8a93a3";
@@ -38,7 +41,6 @@ const GREEN_INK = "#7fbe4d";
 const GREEN_SOFT = "#ecf8dd";
 const OKGREEN = "#2f8f4e";
 const DANGER = "#c2394a";
-const LOCKUP = "/nmstate/blocktickets-lockup-white.svg";
 const SEATMAP_THUMB = "/nmstate/seatmap-thumb.svg";
 
 const card: React.CSSProperties = {
@@ -142,6 +144,7 @@ export default function Wallet({
   const [pvals, setPvals] = useState<Record<string, string>>({});
   const [toggles, setToggles] = useState<Record<string, boolean>>({});
   const [tf, setTf] = useState<null | { step: number; sel: string[]; email: string; evId: string }>(null);
+  const [tfEmailErr, setTfEmailErr] = useState(false);
   const [confirmCancel, setConfirmCancel] = useState<Sent | null>(null);
   const [sent, setSent] = useState<Sent[] | null>(null);
   const [toast, setToast] = useState<string | null>(null);
@@ -171,17 +174,17 @@ export default function Wallet({
     toastT.current = setTimeout(() => setToast(null), 2400);
   };
 
-  const sendLoginCode = async () => {
-    const nextEmail = normalizeEmail(email);
-    setEmail(nextEmail);
-    if (isBlockedEmail(nextEmail) || !nextEmail || emailLooksInvalid(nextEmail)) {
+  const sendLoginCode = async (rawEmail?: string) => {
+    const address = (rawEmail ?? email).trim().toLowerCase();
+    setEmail(address);
+    if (emailSubmitInvalid(address)) {
       setAuthError(FIELD_COPY.invalidEmail);
       return;
     }
     setAuthBusy(true);
     setAuthError("");
     try {
-      const res = await validateEmail({ email: nextEmail });
+      const res = await validateEmail({ email: address });
       const data = res.data as { verdict?: string; suggestion?: string };
       if (
         (data.verdict === "Risky" && data.suggestion) ||
@@ -191,7 +194,7 @@ export default function Wallet({
         return;
       }
       await verifyUser({
-        data: { phoneNumber: "", email: nextEmail },
+        data: { phoneNumber: "", email: address },
       });
       setCode("");
       setScreen("code");
@@ -278,27 +281,18 @@ export default function Wallet({
   const showTabBar = mobile && authed && screen !== "event";
 
   const Header = () => (
-    <header style={{ background: NAVY, position: "sticky", top: 0, zIndex: 20, boxShadow: "0 12px 30px -18px rgba(3,16,31,0.9)" }}>
-      <div style={{ maxWidth: 1100, margin: "0 auto", padding: mobile ? "42px 16px 12px" : "18px 32px", display: "flex", alignItems: "center", gap: 16 }}>
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img src={LOCKUP} alt="Blocktickets" style={{ height: 22, display: "block", flexShrink: 0 }} />
-        {authed && !mobile && (
-          <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 2 }}>
-            {navDefs.map((n) => (
-              <button key={n.id} onClick={() => setScreen(n.id)} style={{ fontFamily: "inherit", fontSize: 14, fontWeight: 600, color: n.on ? NAVY : "rgba(255,255,255,0.78)", background: n.on ? GREEN : "transparent", border: "none", borderRadius: 999, padding: "9px 16px", cursor: "pointer", whiteSpace: "nowrap" }}>{n.label}</button>
-            ))}
-          </div>
-        )}
-      </div>
-    </header>
-  );
-
-  const TabBar = () => (
-    <div style={{ position: "fixed", left: 0, right: 0, bottom: 0, zIndex: 40, background: "rgba(255,255,255,0.94)", backdropFilter: "blur(12px)", borderTop: "1px solid rgba(5,27,53,0.08)", padding: "8px 10px calc(14px + env(safe-area-inset-bottom))", display: "flex", gap: 4 }}>
-      {navDefs.map((n) => (
-        <button key={n.id} onClick={() => setScreen(n.id)} style={{ fontFamily: "inherit", flex: 1, minHeight: 48, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 13, fontWeight: 600, color: n.on ? NAVY : MUTE, background: n.on ? GREEN : "transparent", border: "none", borderRadius: 999, cursor: "pointer" }}>{n.label}</button>
-      ))}
-    </div>
+    <WalletChrome
+      items={navDefs.map((n) => ({
+        id: n.id,
+        label: n.label,
+        on: n.on,
+        onClick: () => setScreen(n.id),
+      }))}
+      showNav={authed}
+      showHeader
+      showTabBar={showTabBar}
+      compact={mobile}
+    />
   );
 
   /* ---- login ---- */
@@ -313,9 +307,17 @@ export default function Wallet({
             Enter the email you bought with and we&apos;ll send a six-digit code. No password to remember.
           </p>
         </div>
-        <div style={{ ...card, borderRadius: 24, boxShadow: "0 1px 2px rgba(5,27,53,0.05), 0 20px 46px -22px rgba(5,27,53,0.35)", padding: 22, display: "flex", flexDirection: "column", gap: 14 }}>
+        <form
+          noValidate
+          style={{ ...card, borderRadius: 24, boxShadow: "0 1px 2px rgba(5,27,53,0.05), 0 20px 46px -22px rgba(5,27,53,0.35)", padding: 22, display: "flex", flexDirection: "column", gap: 14 }}
+          onSubmit={(e) => {
+            e.preventDefault();
+            void sendLoginCode(submittedEmail(new FormData(e.currentTarget)));
+          }}
+        >
           <EmailField
             id="wallet-email"
+            name="email"
             placeholder="you@email.com"
             value={email}
             disabled={authBusy}
@@ -325,17 +327,19 @@ export default function Wallet({
               setEmail(value);
               setAuthError("");
             }}
+            onBlur={(value) => {
+              if (emailBlurInvalid(value)) setAuthError(FIELD_COPY.invalidEmail);
+            }}
           />
           <button
-            type="button"
+            type="submit"
             disabled={authBusy}
-            onClick={() => void sendLoginCode()}
             style={{ ...greenBtn, width: "100%", fontSize: 15, padding: 16, opacity: authBusy ? 0.7 : 1 }}
           >
             {authBusy ? "Sending…" : "Send my code"}
           </button>
           <div style={{ fontSize: 12, color: MUTE, textAlign: "center", lineHeight: 1.5 }}>By continuing you agree to the Blocktickets terms and privacy policy.</div>
-        </div>
+        </form>
       </div>
     </div>
   );
@@ -709,15 +713,30 @@ export default function Wallet({
           </div>
           {closeX(() => setModal(null))}
         </div>
+        <form
+          noValidate
+          style={{ display: "flex", flexDirection: "column", gap: 18 }}
+          onSubmit={(e) => {
+            e.preventDefault();
+            const next = String(new FormData(e.currentTarget).get("fieldValue") || fieldValue);
+            setFieldValue(next);
+            if (field) {
+              setPvals((p) => ({ ...p, [field.key]: next }));
+              flashToast((field.key || "Profile") + " updated");
+            }
+            setModal(null);
+          }}
+        >
         <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
           <label style={{ fontSize: 12, fontWeight: 600, color: FAINT }}>{field?.label}</label>
-          <input value={fieldValue} onChange={(e) => setFieldValue(e.target.value)} style={{ fontFamily: "inherit", width: "100%", boxSizing: "border-box", fontSize: 16, color: NAVY, background: FIELD, border: "1px solid rgba(5,27,53,0.12)", borderRadius: 14, padding: "14px 16px", outline: "none" }} />
+          <input name="fieldValue" value={fieldValue} onChange={(e) => setFieldValue(e.target.value)} style={{ fontFamily: "inherit", width: "100%", boxSizing: "border-box", fontSize: 16, color: NAVY, background: FIELD, border: "1px solid rgba(5,27,53,0.12)", borderRadius: 14, padding: "14px 16px", outline: "none" }} />
           <div style={{ fontSize: 12, lineHeight: 1.5, color: MUTE }}>{field?.help}</div>
         </div>
         <div style={{ display: "flex", gap: 8 }}>
-          <button onClick={() => setModal(null)} style={{ fontFamily: "inherit", flex: 1, fontSize: 15, fontWeight: 600, color: NAVY, background: "#f1f3f8", border: "none", borderRadius: 999, padding: 14, minHeight: 48, cursor: "pointer" }}>Cancel</button>
-          <button onClick={() => { if (field) { setPvals((p) => ({ ...p, [field.key]: fieldValue })); flashToast((field.key || "Profile") + " updated"); } setModal(null); }} style={{ ...greenBtn, flex: 1, fontSize: 15, padding: 14, minHeight: 48 }}>Save</button>
+          <button type="button" onClick={() => setModal(null)} style={{ fontFamily: "inherit", flex: 1, fontSize: 15, fontWeight: 600, color: NAVY, background: "#f1f3f8", border: "none", borderRadius: 999, padding: 14, minHeight: 48, cursor: "pointer" }}>Cancel</button>
+          <button type="submit" style={{ ...greenBtn, flex: 1, fontSize: 15, padding: 14, minHeight: 48 }}>Save</button>
         </div>
+        </form>
       </div>
     </div>
   );
@@ -727,12 +746,10 @@ export default function Wallet({
   const tfSeatNos = (tfEv?.tickets || []).map((t) => t.no);
   const tfStep = tf?.step || 1;
   const tfSel = tf?.sel || [];
-  const tfValid =
-    Boolean(normalizeEmail(tf?.email)) &&
-    !emailLooksInvalid(normalizeEmail(tf?.email || ""));
-  const tfCanNext = tfStep === 1 ? tfSel.length > 0 : tfStep === 2 ? tfValid : true;
-  const doTfPrimary = () => {
-    if (!tf || !tfCanNext) return;
+  const tfCanNext = tfStep === 1 ? tfSel.length > 0 : true;
+  const doTfPrimary = (rawEmail?: string) => {
+    if (!tf) return;
+    if (tfStep === 1 && tfSel.length === 0) return;
     if (tfStep === 4) { setTf(null); return; }
     if (tfStep === 3) {
       const entry: Sent = { id: "t" + Date.now(), to: tf.email, title: tfEv?.title || "", seat: (tfEv?.row || "") + " · Seat " + tfSel.join(", "), on: new Date().toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }), status: "pending" };
@@ -741,7 +758,13 @@ export default function Wallet({
       return;
     }
     if (tfStep === 2) {
-      setTf({ ...tf, email: normalizeEmail(tf.email), step: 3 });
+      const next = normalizeEmail(rawEmail ?? tf.email);
+      if (emailSubmitInvalid(next)) {
+        setTfEmailErr(true);
+        return;
+      }
+      setTfEmailErr(false);
+      setTf({ ...tf, email: next, step: 3 });
       return;
     }
     setTf({ ...tf, step: tfStep + 1 });
@@ -774,16 +797,30 @@ export default function Wallet({
           </div>
         )}
         {tfStep === 2 && (
-          <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+          <form
+            id="wallet-xfer"
+            noValidate
+            style={{ display: "flex", flexDirection: "column", gap: 14 }}
+            onSubmit={(e) => {
+              e.preventDefault();
+              doTfPrimary(submittedEmail(new FormData(e.currentTarget)));
+            }}
+          >
             <div style={{ fontSize: 17, fontWeight: 600, letterSpacing: "-0.015em" }}>Enter the recipient&apos;s email address</div>
             <p style={{ margin: 0, fontSize: 14, lineHeight: 1.55, color: SUB }}>They&apos;ll get an email saying you sent them a ticket. It stays in your account until they claim it.</p>
             <EmailField
               id="wallet-xfer-email"
+              name="email"
               placeholder="name@email.com"
               value={tf?.email || ""}
-              onChange={(value) => setTf({ ...tf!, email: value })}
+              invalid={tfEmailErr}
+              onChange={(value) => {
+                setTf({ ...tf!, email: value });
+                setTfEmailErr(false);
+              }}
+              onBlur={(value) => setTfEmailErr(emailBlurInvalid(value))}
             />
-          </div>
+          </form>
         )}
         {tfStep === 3 && (
           <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
@@ -813,12 +850,20 @@ export default function Wallet({
         )}
         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
           {(tfStep === 2 || tfStep === 3) && (
-            <button onClick={() => setTf({ ...tf!, step: tfStep - 1 })} style={{ fontFamily: "inherit", flexShrink: 0, display: "flex", alignItems: "center", gap: 8, fontSize: 15, fontWeight: 600, color: NAVY, background: "#fff", border: "none", padding: "14px 12px", minHeight: 48, cursor: "pointer" }}><BackArrow />Back</button>
+            <button type="button" onClick={() => setTf({ ...tf!, step: tfStep - 1 })} style={{ fontFamily: "inherit", flexShrink: 0, display: "flex", alignItems: "center", gap: 8, fontSize: 15, fontWeight: 600, color: NAVY, background: "#fff", border: "none", padding: "14px 12px", minHeight: 48, cursor: "pointer" }}><BackArrow />Back</button>
           )}
           {tfStep === 4 && (
-            <button onClick={() => { setTf(null); setScreen("listings"); setListTab("sent"); }} style={{ fontFamily: "inherit", flex: 1, fontSize: 15, fontWeight: 600, color: NAVY, background: "#f1f3f8", border: "none", borderRadius: 999, padding: 14, minHeight: 48, cursor: "pointer" }}>My transfers</button>
+            <button type="button" onClick={() => { setTf(null); setScreen("listings"); setListTab("sent"); }} style={{ fontFamily: "inherit", flex: 1, fontSize: 15, fontWeight: 600, color: NAVY, background: "#f1f3f8", border: "none", borderRadius: 999, padding: 14, minHeight: 48, cursor: "pointer" }}>My transfers</button>
           )}
-          <button onClick={doTfPrimary} disabled={!tfCanNext} style={{ fontFamily: "inherit", flex: 1, fontSize: 15, fontWeight: 600, color: tfCanNext ? NAVY : MUTE, background: tfCanNext ? GREEN : "#d3d6e0", border: "none", borderRadius: 999, padding: 14, minHeight: 48, cursor: "pointer" }}>{tfStep === 3 ? "Transfer" : tfStep === 4 ? "Close" : "Next"}</button>
+          <button
+            type={tfStep === 2 ? "submit" : "button"}
+            form={tfStep === 2 ? "wallet-xfer" : undefined}
+            onClick={tfStep === 2 ? undefined : () => doTfPrimary()}
+            disabled={!tfCanNext}
+            style={{ fontFamily: "inherit", flex: 1, fontSize: 15, fontWeight: 600, color: tfCanNext ? NAVY : MUTE, background: tfCanNext ? GREEN : "#d3d6e0", border: "none", borderRadius: 999, padding: 14, minHeight: 48, cursor: "pointer" }}
+          >
+            {tfStep === 3 ? "Transfer" : tfStep === 4 ? "Close" : "Next"}
+          </button>
         </div>
       </div>
     </div>
@@ -852,8 +897,6 @@ export default function Wallet({
       {screen === "event" && EventDetail()}
       {screen === "listings" && Listings()}
       {screen === "profile" && Profile()}
-
-      {showTabBar && TabBar()}
 
       {scan && ScanView()}
       {modal === "field" && FieldModal()}

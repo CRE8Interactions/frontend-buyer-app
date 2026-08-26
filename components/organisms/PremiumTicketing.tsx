@@ -29,9 +29,10 @@ import {
 } from "@/lib/ticketListings";
 import { checkoutHref, rememberCheckoutReturnPath, setStoredCart } from "@/lib/cart";
 import {
-  emailLooksInvalid,
-  isBlockedEmail,
-  normalizeEmail,
+  emailBlurInvalid,
+  emailSubmitInvalid,
+  formString,
+  submittedEmail,
 } from "@/lib/fieldValidation";
 import { beginRouteTransition } from "@/lib/routeTransition";
 import type { SeatmapBackground, SeatmapMapping } from "@/lib/seatmapLookups";
@@ -570,13 +571,18 @@ export default function PremiumTicketing({
     setPicks([]);
   };
 
-  const submitUnlockCode = async () => {
+  const submitUnlockCode = async (code = unlockInput) => {
     const zone = unlockZone;
     if (!zone || unlocking) return;
+    const nextCode = code.trim();
+    if (!nextCode) {
+      setUnlockError(true);
+      return;
+    }
     setUnlocking(true);
     const opened = await verifyOfferAccessCode({
       eventId: d.eventId,
-      code: unlockInput,
+      code: nextCode,
       expected: lockedMap[zone],
     });
     setUnlocking(false);
@@ -879,8 +885,8 @@ export default function PremiumTicketing({
           noValidate
           onSubmit={(event) => {
             event.preventDefault();
-            const next = normalizeEmail(notifyEmail);
-            if (isBlockedEmail(next) || !next || emailLooksInvalid(next)) {
+            const next = submittedEmail(new FormData(event.currentTarget));
+            if (emailSubmitInvalid(next)) {
               setNotifyEmailInvalid(true);
               return;
             }
@@ -901,6 +907,7 @@ export default function PremiumTicketing({
           <div style={{ flex: 1, minWidth: 0, textAlign: "left" }}>
             <EmailField
               id="soldout-email"
+              name="email"
               placeholder="Enter your email"
               value={notifyEmail}
               invalid={notifyEmailInvalid}
@@ -908,13 +915,13 @@ export default function PremiumTicketing({
                 setNotifyEmail(value);
                 setNotifyEmailInvalid(false);
               }}
+              onBlur={(value) => setNotifyEmailInvalid(emailBlurInvalid(value))}
             />
           </div>
           <BrandedActionButton
             type="submit"
             primaryColor={ACC}
             textColor={BTN_INK}
-            disabled={!normalizeEmail(notifyEmail)}
             style={{ minHeight: 48, padding: "13px 24px" }}
           >
             Get Notified
@@ -1012,10 +1019,24 @@ export default function PremiumTicketing({
                     Checkout {money(t.unit * gaQty)}
                   </BrandedActionButton>
                 </div>
+              ) : done && soldout ? (
+                <div
+                  role="status"
+                  style={{
+                    fontSize: 14,
+                    fontWeight: 600,
+                    color: "#3f6b1f",
+                    background: "rgba(166,231,115,0.16)",
+                    borderRadius: 14,
+                    padding: "13px 18px",
+                  }}
+                >
+                  You&rsquo;re on the waiting list
+                </div>
               ) : (
                 <button onClick={() => openNotify({ name: t.name, soldout, onSaleAt: t.onSaleAt })} style={{ fontFamily: "inherit", display: "inline-flex", alignItems: "center", gap: 9, fontSize: 15, fontWeight: 600, color: done ? "#3f6b1f" : NAVY, background: done ? "rgba(166,231,115,0.16)" : "#fff", border: `1px solid ${done ? "rgba(127,190,77,0.45)" : "#d3d6e0"}`, borderRadius: 999, padding: "13px 22px", cursor: "pointer" }}>
                   {done && <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round" style={{ width: 16, height: 16 }}><polyline points="20 6 9 17 4 12" /></svg>}
-                  {done ? (soldout ? "On the waitlist" : "Reminder set") : soldout ? "Join waitlist" : "Remind me"}
+                  {done ? "Reminder set" : soldout ? "Join waitlist" : "Remind me"}
                 </button>
               )}
             </div>
@@ -1506,9 +1527,24 @@ export default function PremiumTicketing({
           <Modal variant="light" title={title} onClose={() => setNotifySubject(null)}>
             <p className="mt-4 text-[14px] text-[#4a5567]">{body}</p>
             {!notifySent ? (
-              <div className="mt-5 flex flex-col gap-3.5">
+              <form
+                noValidate
+                className="mt-5 flex flex-col gap-3.5"
+                onSubmit={(event) => {
+                  event.preventDefault();
+                  const next = submittedEmail(new FormData(event.currentTarget));
+                  if (emailSubmitInvalid(next)) {
+                    setNotifyEmailInvalid(true);
+                    return;
+                  }
+                  setNotifyEmail(next);
+                  setNotifySent(true);
+                  setNotified((m) => ({ ...m, [t.name]: true }));
+                }}
+              >
                 <EmailField
                   id="notify-email"
+                  name="email"
                   placeholder="you@example.com"
                   value={notifyEmail}
                   invalid={notifyEmailInvalid}
@@ -1516,10 +1552,12 @@ export default function PremiumTicketing({
                     setNotifyEmail(value);
                     setNotifyEmailInvalid(false);
                   }}
+                  onBlur={(value) => setNotifyEmailInvalid(emailBlurInvalid(value))}
                 />
                 <label className="flex cursor-pointer items-start gap-2.5 text-[14px] font-normal text-[#4a5567]">
                   <input
                     type="checkbox"
+                    name="notifySms"
                     checked={notifySms}
                     onChange={() => setNotifySms((v) => !v)}
                     className="mt-0.5 h-[18px] w-[18px]"
@@ -1529,6 +1567,7 @@ export default function PremiumTicketing({
                 </label>
                 <div className="flex flex-col gap-3 sm:flex-row sm:justify-end">
                   <BrandedActionButton
+                    type="button"
                     tone="secondary"
                     onClick={() => setNotifySubject(null)}
                     className="w-full sm:w-auto"
@@ -1536,28 +1575,15 @@ export default function PremiumTicketing({
                     Cancel
                   </BrandedActionButton>
                   <BrandedActionButton
+                    type="submit"
                     primaryColor={ACC}
                     textColor={BTN_INK}
-                    onClick={() => {
-                      const next = normalizeEmail(notifyEmail);
-                      if (
-                        isBlockedEmail(next) ||
-                        !next ||
-                        emailLooksInvalid(next)
-                      ) {
-                        setNotifyEmailInvalid(true);
-                        return;
-                      }
-                      setNotifyEmail(next);
-                      setNotifySent(true);
-                      setNotified((m) => ({ ...m, [t.name]: true }));
-                    }}
                     className="w-full sm:w-auto"
                   >
                     {soldout ? "Join waitlist" : "Set reminder"}
                   </BrandedActionButton>
                 </div>
-              </div>
+              </form>
             ) : (
               <div className="mt-5 flex flex-col gap-4">
                 <div className="flex items-center gap-3 rounded-[14px] border border-[rgba(127,190,77,0.35)] bg-[rgba(166,231,115,0.16)] px-4 py-3.5">
@@ -1951,7 +1977,14 @@ export default function PremiumTicketing({
           title={`${unlockZone} is locked`}
           onClose={() => setUnlockZone(null)}
         >
-          <div className="mt-4 flex flex-col gap-4">
+          <form
+            noValidate
+            className="mt-4 flex flex-col gap-4"
+            onSubmit={(e) => {
+              e.preventDefault();
+              void submitUnlockCode(formString(new FormData(e.currentTarget), "accessCode"));
+            }}
+          >
             <div
               className="flex h-[46px] w-[46px] items-center justify-center rounded-xl"
               style={{ background: ACC_SOFT, color: ACC }}
@@ -1962,13 +1995,11 @@ export default function PremiumTicketing({
               Enter your access code to unlock these seats.
             </p>
             <input
+              name="accessCode"
               value={unlockInput}
               onChange={(e) => {
                 setUnlockInput(e.target.value);
                 setUnlockError(false);
-              }}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") void submitUnlockCode();
               }}
               autoFocus
               placeholder="Access code"
@@ -1981,16 +2012,16 @@ export default function PremiumTicketing({
               </p>
             ) : null}
             <BrandedActionButton
+              type="submit"
               primaryColor={ACC}
               textColor={BTN_INK}
               loading={unlocking}
               loadingLabel="Checking…"
-              onClick={() => void submitUnlockCode()}
               className="w-full text-[16px]"
             >
               <LockIcon s={16} /> Unlock seats
             </BrandedActionButton>
-          </div>
+          </form>
         </Modal>
       )}
 

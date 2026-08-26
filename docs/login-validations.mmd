@@ -7,20 +7,19 @@ flowchart TD
   start[Shopper opens /login] --> emailStep[Step 0: email]
 
   emailStep --> typeEmail[Type email]
-  typeEmail --> blurEmail{Blur with a value?}
+  typeEmail --> blurEmail{Leave a non-empty field?}
   blurEmail -->|yes| localEmail{Blocked or bad syntax?}
   localEmail -->|yes| emailInvalid["Email is invalid. Please try again."]
-  localEmail -->|no| readySend[Ready to send]
-  blurEmail -->|empty / no| readySend
+  localEmail -->|no| readySend[Send my code stays clickable]
+  blurEmail -->|empty or still focused| readySend
 
-  readySend --> sendClick[Send my code]
-  sendClick --> normalize[normalizeEmail: trim + lowercase]
+  readySend --> sendClick[Click Send my code or press Enter]
+  sendClick --> readDom[Read the value currently in the field]
+  readDom --> normalize[Trim and lowercase]
 
-  normalize --> blocked{isBlockedEmail?}
-  blocked -->|yes| emailInvalid
-  blocked -->|no| syntax{emailPatternMatch?}
-  syntax -->|no| emailInvalid
-  syntax -->|yes| sendgrid[POST validateEmail]
+  normalize --> emptyOrBad{Empty, blocked, or bad syntax?}
+  emptyOrBad -->|yes| emailInvalid
+  emptyOrBad -->|no| sendgrid[POST validateEmail]
 
   sendgrid --> sgFail{Network error?}
   sgFail -->|yes| network["We're experiencing technical difficulties. Please try again later."]

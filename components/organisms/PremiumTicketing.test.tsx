@@ -10,6 +10,7 @@ import {
   DEMO_EVENTS,
   DEMO_ORGS,
   DEMO_SEATED_TICKET_GROUPS,
+  DEMO_USER,
   demoSeatmapMapping,
   demoTicketGroups,
 } from "@/lib/demo/fixtures";
@@ -523,9 +524,29 @@ describe("Select tickets page (PremiumTicketing)", () => {
     ).not.toBeInTheDocument();
 
     await user.click(screen.getByRole("button", { name: /join waitlist/i }));
+    const dialog = await screen.findByRole("dialog", {
+      name: /join the waitlist/i,
+    });
+    const join = within(dialog).getByRole("button", {
+      name: /join waitlist/i,
+    });
+    expect(join).toBeEnabled();
+    await user.click(join);
+    expect(await within(dialog).findByText(/email is invalid/i)).toBeInTheDocument();
+
+    await user.type(
+      within(dialog).getByLabelText(/email address/i),
+      DEMO_USER.email,
+    );
+    await user.click(join);
+    await user.click(within(dialog).getByRole("button", { name: /done/i }));
+
     expect(
-      await screen.findByRole("dialog", { name: /join the waitlist/i }),
+      screen.getByText(/you’re on the waiting list/i),
     ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: /join waitlist/i }),
+    ).not.toBeInTheDocument();
   });
 
   it("offers only the waitlist when a GA event is sold out with no inventory", async () => {

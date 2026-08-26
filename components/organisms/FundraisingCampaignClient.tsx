@@ -23,10 +23,12 @@ import {
 import { formatCurrency, imageUrl } from "@/lib/helpers";
 import {
   FIELD_COPY,
-  emailLooksInvalid,
-  isBlockedEmail,
+  emailBlurInvalid,
+  emailSubmitInvalid,
+  formString,
   nameAllows,
   normalizeEmail,
+  submittedEmail,
 } from "@/lib/fieldValidation";
 
 type Campaign = {
@@ -186,20 +188,34 @@ export function FundraisingCampaignClient({
     [campaign],
   );
 
-  const startDonation = async () => {
+  const startDonation = async (data?: FormData) => {
     if (!campaign) return;
-    const donationAmount = parseAmount(amount);
+    const donationAmount = parseAmount(
+      data ? formString(data, "amount") || amount : amount,
+    );
+    const nextName = data ? formString(data, "donorName") || donorName : donorName;
+    const nextEmail = data
+      ? submittedEmail(data, "email") || normalizeEmail(donorEmail)
+      : normalizeEmail(donorEmail);
+    const nextMessage = data
+      ? formString(data, "donorMessage") || donorMessage
+      : donorMessage;
+    if (data) {
+      setAmount(String(donationAmount || formString(data, "amount") || amount));
+      setDonorName(nextName);
+      setDonorEmail(nextEmail);
+      setDonorMessage(nextMessage);
+    }
     if (donationAmount <= 0) {
       setError("Select or enter a donation amount.");
       return;
     }
     if (!anonymous) {
-      const address = normalizeEmail(donorEmail);
-      if (!address || isBlockedEmail(address) || emailLooksInvalid(address)) {
+      if (emailSubmitInvalid(nextEmail)) {
         setError(FIELD_COPY.invalidEmail);
         return;
       }
-      if (!nameAllows(donorName)) {
+      if (!nameAllows(nextName)) {
         setError(FIELD_COPY.namePattern);
         return;
       }
@@ -215,9 +231,9 @@ export function FundraisingCampaignClient({
         donationAmount,
         participantUuid,
         anonymous,
-        donorMessage,
-        donorName: anonymous ? "" : donorName,
-        donorEmail: anonymous ? "" : normalizeEmail(donorEmail),
+        donorMessage: nextMessage,
+        donorName: anonymous ? "" : nextName,
+        donorEmail: anonymous ? "" : nextEmail,
       });
       const data = response?.data || {};
       if (!data.clientSecret) throw new Error("Missing payment session");
@@ -298,7 +314,14 @@ export function FundraisingCampaignClient({
           ) : null}
 
           {!clientSecret ? (
-            <div className="mt-4 space-y-4">
+            <form
+              noValidate
+              className="mt-4 space-y-4"
+              onSubmit={(e) => {
+                e.preventDefault();
+                void startDonation(new FormData(e.currentTarget));
+              }}
+            >
               {campaign.participants?.length ? (
                 <div>
                   <Label htmlFor="participant">Support</Label>
@@ -341,6 +364,7 @@ export function FundraisingCampaignClient({
                 <Label htmlFor="amount">Amount</Label>
                 <Input
                   id="amount"
+                  name="amount"
                   className="mt-2"
                   value={amount}
                   onChange={(e) => setAmount(e.target.value)}
@@ -361,6 +385,7 @@ export function FundraisingCampaignClient({
                 <>
                   <NameField
                     id="donor-name"
+                    name="donorName"
                     label="Name"
                     variant="dark"
                     required={false}
@@ -369,10 +394,15 @@ export function FundraisingCampaignClient({
                   />
                   <EmailField
                     id="donor-email"
+                    name="email"
                     label="Email"
                     variant="dark"
                     value={donorEmail}
                     onChange={setDonorEmail}
+                    onBlur={(value) => {
+                      if (emailBlurInvalid(value)) setError(FIELD_COPY.invalidEmail);
+                      else if (error === FIELD_COPY.invalidEmail) setError("");
+                    }}
                   />
                 </>
               ) : null}
@@ -383,18 +413,19 @@ export function FundraisingCampaignClient({
                   id="donor-msg"
                   className="mt-2"
                   value={donorMessage}
+                  name="donorMessage"
                   onChange={(e) => setDonorMessage(e.target.value)}
                 />
               </div>
 
               <Button
+                type="submit"
                 className="w-full disabled:opacity-50"
                 disabled={loadingIntent}
-                onClick={startDonation}
               >
                 {loadingIntent ? <Spinner size={18} /> : "Continue to payment"}
               </Button>
-            </div>
+            </form>
           ) : stripePromise ? (
             <Elements
               stripe={stripePromise}

@@ -23,9 +23,10 @@ import {
 } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import {
-  emailLooksInvalid,
-  isBlockedEmail,
+  emailBlurInvalid,
+  emailSubmitInvalid,
   normalizeEmail,
+  submittedEmail,
 } from "@/lib/fieldValidation";
 import { getSingularOrPluralWord } from "@/lib/helpers";
 import {
@@ -70,6 +71,7 @@ export default function EventTicketsClient({
   const [sellStep, setSellStep] = useState<null | "select" | "price" | "done">(null);
   const [sellIds, setSellIds] = useState<(string | number)[]>([]);
   const [sellPrice, setSellPrice] = useState("");
+  const [sellPriceError, setSellPriceError] = useState("");
   const [sellSaving, setSellSaving] = useState(false);
   const [walletError, setWalletError] = useState<string | null>(null);
 
@@ -135,10 +137,6 @@ export default function EventTicketsClient({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ready, isAuthenticated, orderId, eventUUID]);
 
-  const validXferEmail =
-    Boolean(normalizeEmail(xferEmail)) &&
-    !isBlockedEmail(normalizeEmail(xferEmail)) &&
-    !emailLooksInvalid(normalizeEmail(xferEmail));
   const xferSelected = useMemo(
     () => tickets.filter((t) => t.id != null && xferIds.includes(t.id)),
     [tickets, xferIds],
@@ -157,7 +155,7 @@ export default function EventTicketsClient({
   const submitTransfer = async () => {
     if (!order?.id || !event) return;
     const address = normalizeEmail(xferEmail);
-    if (isBlockedEmail(address) || emailLooksInvalid(address)) {
+    if (emailSubmitInvalid(address)) {
       setXferEmailInvalid(true);
       return;
     }
@@ -179,10 +177,14 @@ export default function EventTicketsClient({
     }
   };
 
-  const submitSell = async () => {
+  const submitSell = async (rawPrice?: string) => {
     if (!order || !event) return;
-    const price = parseFloat(sellPrice);
-    if (!price || price <= 0) return;
+    const price = parseFloat(rawPrice ?? sellPrice);
+    if (!price || price <= 0) {
+      setSellPriceError("Enter a price greater than 0.");
+      return;
+    }
+    setSellPriceError("");
     setSellSaving(true);
     try {
       const selected = tickets.filter((t) => t.id != null && sellIds.includes(t.id));
@@ -440,14 +442,32 @@ export default function EventTicketsClient({
             </>
           )}
           {xferStep === "email" && (
-            <>
-              <p className="mt-4 text-[14px] text-[#9DA2B3]">
+            <form
+              noValidate
+              className="mt-4"
+              onSubmit={(e) => {
+                e.preventDefault();
+                const next = submittedEmail(new FormData(e.currentTarget));
+                if (emailSubmitInvalid(next)) {
+                  setXferEmailInvalid(true);
+                  return;
+                }
+                if (next === user?.email?.toLowerCase()) {
+                  setXferEmailInvalid(true);
+                  return;
+                }
+                setXferEmail(next);
+                setXferStep("confirm");
+              }}
+            >
+              <p className="text-[14px] text-[#9DA2B3]">
                 Sending {xferSelected.length}{" "}
                 {getSingularOrPluralWord(xferSelected.length).toLowerCase()}.
               </p>
               <div className="mt-5">
                 <EmailField
                   id="xfer-email"
+                  name="email"
                   label="Recipient email"
                   variant="dark"
                   value={xferEmail}
@@ -457,31 +477,13 @@ export default function EventTicketsClient({
                     setXferEmail(value);
                     setXferEmailInvalid(false);
                   }}
-                  onBlur={() => {
-                    const next = normalizeEmail(xferEmail);
-                    setXferEmailInvalid(Boolean(next) && emailLooksInvalid(next));
-                  }}
+                  onBlur={(value) => setXferEmailInvalid(emailBlurInvalid(value))}
                 />
               </div>
-              <Button
-                className="mt-6 w-full"
-                disabled={
-                  !validXferEmail ||
-                  normalizeEmail(xferEmail) === user?.email?.toLowerCase()
-                }
-                onClick={() => {
-                  const next = normalizeEmail(xferEmail);
-                  if (isBlockedEmail(next) || emailLooksInvalid(next)) {
-                    setXferEmailInvalid(true);
-                    return;
-                  }
-                  setXferEmail(next);
-                  setXferStep("confirm");
-                }}
-              >
+              <Button type="submit" className="mt-6 w-full">
                 Continue
               </Button>
-            </>
+            </form>
           )}
           {xferStep === "confirm" && (
             <>
@@ -542,8 +544,17 @@ export default function EventTicketsClient({
             </>
           )}
           {sellStep === "price" && (
-            <>
-              <p className="mt-4 text-[14px] text-[#9DA2B3]">
+            <form
+              noValidate
+              className="mt-4"
+              onSubmit={(e) => {
+                e.preventDefault();
+                const raw = String(new FormData(e.currentTarget).get("price") || sellPrice);
+                setSellPrice(raw);
+                void submitSell(raw);
+              }}
+            >
+              <p className="text-[14px] text-[#9DA2B3]">
                 Asking price per ticket for {sellSelected.length}{" "}
                 {getSingularOrPluralWord(sellSelected.length).toLowerCase()}.
               </p>
@@ -551,23 +562,26 @@ export default function EventTicketsClient({
                 <Label htmlFor="sell-price">Price (USD)</Label>
                 <Input
                   id="sell-price"
+                  name="price"
                   type="number"
                   min="1"
                   step="0.01"
                   className="mt-2.5"
                   value={sellPrice}
-                  onChange={(e) => setSellPrice(e.target.value)}
+                  onChange={(e) => {
+                    setSellPrice(e.target.value);
+                    setSellPriceError("");
+                  }}
                   placeholder="0.00"
                 />
+                {sellPriceError ? (
+                  <p className="mt-2 text-[13px] text-[#ff7a72]">{sellPriceError}</p>
+                ) : null}
               </div>
-              <Button
-                className="mt-6 w-full"
-                disabled={sellSaving || !(parseFloat(sellPrice) > 0)}
-                onClick={() => void submitSell()}
-              >
+              <Button type="submit" className="mt-6 w-full" disabled={sellSaving}>
                 {sellSaving ? "Listing…" : "List tickets"}
               </Button>
-            </>
+            </form>
           )}
           {sellStep === "done" && (
             <>

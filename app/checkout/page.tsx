@@ -27,6 +27,7 @@ import {
   type CheckoutCartBrandingSource,
 } from "@/lib/checkoutBranding";
 import { cacheOrgBranding, orgSlugFromPathname } from "@/lib/orgBrandingCache";
+import { formString } from "@/lib/fieldValidation";
 import {
   flexPackSeasonLine,
   flexPackVoucherCount,
@@ -337,14 +338,20 @@ function CheckoutPaymentForm({
     );
   }, [onPromoChange, promoDiscountAmount, promoDiscountCode]);
 
-  const submitPromo = async (e: React.FormEvent) => {
+  const submitPromo = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
-    if (!promoCode.trim()) return;
+    const code =
+      formString(new FormData(e.currentTarget), "promo") || promoCode.trim();
+    setPromoCode(code);
+    if (!code) {
+      setCodeError("Enter a promo code.");
+      return;
+    }
     setSubmittingPromo(true);
     setCodeError("");
     try {
       const res = await redeemPromoCode({
-        code: promoCode.trim(),
+        code,
         paymentIntentId: intentId,
         cart,
       });
@@ -468,12 +475,16 @@ function CheckoutPaymentForm({
               <p className="mb-2 text-[12px] font-semibold uppercase tracking-[0.1em] text-[#8a93a3]">
                 Promo code
               </p>
-              <form onSubmit={submitPromo} className="flex gap-2.5">
+              <form noValidate onSubmit={submitPromo} className="flex gap-2.5">
                 <input
                   id="promo"
+                  name="promo"
                   className="h-12 min-w-0 flex-1 rounded-[10px] border border-[rgba(5,27,53,0.16)] bg-white px-[18px] text-[15px] text-[#051b35] outline-none placeholder:text-[#8a93a3]"
                   value={promoCode}
-                  onChange={(e) => setPromoCode(e.target.value)}
+                  onChange={(e) => {
+                    setPromoCode(e.target.value);
+                    setCodeError("");
+                  }}
                   placeholder="Enter promo code"
                   autoComplete="off"
                 />
@@ -482,7 +493,6 @@ function CheckoutPaymentForm({
                   tone="secondary"
                   loading={submittingPromo}
                   loadingLabel="Applying…"
-                  disabled={!promoCode.trim()}
                   className="!rounded-[10px] px-6"
                 >
                   Apply

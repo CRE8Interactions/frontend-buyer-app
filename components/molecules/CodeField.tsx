@@ -13,6 +13,7 @@ export type CodeError = "code" | "network" | null;
 
 export default function CodeField({
   id,
+  name = "code",
   value,
   onChange,
   onComplete,
@@ -23,6 +24,7 @@ export default function CodeField({
   label,
 }: {
   id?: string;
+  name?: string;
   value: string;
   onChange: (value: string) => void;
   onComplete?: (value: string) => void;
@@ -57,6 +59,7 @@ export default function CodeField({
         ) : null}
         <input
           id={id}
+          name={name}
           value={value}
           inputMode="numeric"
           autoComplete="one-time-code"
@@ -65,6 +68,7 @@ export default function CodeField({
           aria-invalid={invalid}
           aria-label={label || "Six-digit code"}
           onChange={(e) => setValue(e.target.value)}
+          onInput={(e) => setValue(e.currentTarget.value)}
           placeholder="6 digit code"
           className={`${label ? "mt-2.5" : ""} ${fieldClass(variant, invalid)}`}
         />
@@ -101,6 +105,7 @@ export default function CodeField({
         </div>
         <input
           id={id}
+          name={name}
           ref={hiddenRef}
           value={value}
           inputMode="numeric"
@@ -108,6 +113,7 @@ export default function CodeField({
           aria-label="Six-digit code"
           disabled={disabled}
           onChange={(e) => setValue(e.target.value)}
+          onInput={(e) => setValue(e.currentTarget.value)}
           className="absolute inset-0 h-full w-full cursor-text border-none bg-transparent text-[16px] opacity-0 outline-none"
         />
       </div>

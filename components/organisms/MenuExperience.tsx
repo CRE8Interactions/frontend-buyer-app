@@ -135,6 +135,7 @@ export default function MenuExperience({
   );
   const [gateRow, setGateRow] = useState(rowFromQuery);
   const [gateSeat, setGateSeat] = useState(seatFromQuery);
+  const [gateError, setGateError] = useState("");
   const [rememberSeat, setRememberSeat] = useState(true);
 
   const [menuLoading, setMenuLoading] = useState(false);
@@ -347,10 +348,14 @@ export default function MenuExperience({
     (a, b) => (a.displayOrder ?? 0) - (b.displayOrder ?? 0),
   );
 
-  const continueGate = () => {
-    const row = gateRow.trim();
-    const seat = gateSeat.trim();
-    if (!row || !seat) return;
+  const continueGate = (rowValue = gateRow, seatValue = gateSeat) => {
+    const row = rowValue.trim();
+    const seat = seatValue.trim();
+    if (!row || !seat) {
+      setGateError("Enter your row and seat.");
+      return;
+    }
+    setGateError("");
     if (rememberSeat) {
       sessionStorage.setItem(
         visitKey(organizationUuid, menuKey, venueUuid, eventUuid),
@@ -434,23 +439,43 @@ export default function MenuExperience({
           {locationName ? ` at ${locationName}` : ""} so we can deliver your
           order.
         </p>
-        <div className={`${cardCls} mt-8 space-y-4 p-5`}>
+        <form
+          noValidate
+          className={`${cardCls} mt-8 space-y-4 p-5`}
+          onSubmit={(e) => {
+            e.preventDefault();
+            const data = new FormData(e.currentTarget);
+            const row = String(data.get("row") || "");
+            const seat = String(data.get("seat") || "");
+            setGateRow(row);
+            setGateSeat(seat);
+            continueGate(row, seat);
+          }}
+        >
           <div>
             <Label htmlFor="row">Row</Label>
             <Input
               id="row"
+              name="row"
               className="mt-2"
               value={gateRow}
-              onChange={(e) => setGateRow(e.target.value)}
+              onChange={(e) => {
+                setGateRow(e.target.value);
+                setGateError("");
+              }}
             />
           </div>
           <div>
             <Label htmlFor="seat">Seat</Label>
             <Input
               id="seat"
+              name="seat"
               className="mt-2"
               value={gateSeat}
-              onChange={(e) => setGateSeat(e.target.value)}
+              onChange={(e) => {
+                setGateSeat(e.target.value);
+                setGateError("");
+              }}
             />
           </div>
           <label className="flex items-center gap-2 text-[14px] text-[#9DA2B3]">
@@ -461,14 +486,13 @@ export default function MenuExperience({
             />
             Remember this seat
           </label>
-          <Button
-            className="w-full disabled:opacity-50"
-            disabled={!gateRow.trim() || !gateSeat.trim()}
-            onClick={continueGate}
-          >
+          {gateError ? (
+            <p className="text-[13px] text-[#ff7a72]">{gateError}</p>
+          ) : null}
+          <Button type="submit" className="w-full">
             Continue
           </Button>
-        </div>
+        </form>
       </div>
     );
   }

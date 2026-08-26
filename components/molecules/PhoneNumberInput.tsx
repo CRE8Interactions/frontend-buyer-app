@@ -22,6 +22,7 @@ function isCountry(value: unknown): value is Country {
 
 export default function PhoneNumberInput({
   id,
+  name = "phoneNumber",
   value,
   onChange,
   onBlur,
@@ -30,9 +31,10 @@ export default function PhoneNumberInput({
   variant = "light",
 }: {
   id?: string;
+  name?: string;
   value?: string;
   onChange: (value?: string) => void;
-  onBlur?: () => void;
+  onBlur?: (value?: string) => void;
   error?: PhoneErrorType | null;
   disabled?: boolean;
   variant?: FieldVariant;
@@ -81,11 +83,14 @@ export default function PhoneNumberInput({
           defaultCountry={defaultCountry}
           value={value}
           onChange={(next) => onChange(next || undefined)}
-          onBlur={onBlur}
+          onBlur={() => onBlur?.(value)}
           disabled={disabled}
           required
           autoComplete="tel"
           aria-invalid={invalid}
+          numberInputProps={{
+            name,
+          }}
           className={`phone-input flex h-[52px] items-center text-[16px] ${
             dark
               ? "phone-input-dark text-white"

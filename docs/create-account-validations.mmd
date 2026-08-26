@@ -9,8 +9,13 @@ flowchart TD
   nameFilter -->|no| ignoreKey[Do not update state]
   nameFilter -->|yes| namesOk[Update first / last name]
 
-  profileStep --> submit[Submit profile]
-  submit --> checkNames{nameFieldError?}
+  profileStep --> blurHint[Leave a filled name, phone, or DOB]
+  blurHint --> blurCheck{Value is non-empty and invalid?}
+  blurCheck -->|yes| showHint[Show field copy]
+  blurCheck -->|empty| stayQuiet[No error yet]
+
+  profileStep --> submit[Click Sign up or press Enter]
+  submit --> checkNames{nameFieldError on submitted values?}
   checkNames -->|required| nameReq[This field is required.]
   checkNames -->|pattern| namePat[Letters only — no digits.]
   checkNames -->|ok| checkPhone{phoneNumberError?}

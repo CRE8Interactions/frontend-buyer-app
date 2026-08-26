@@ -32,21 +32,12 @@ export default function LoginSecurityPage() {
   const [currentPhone, setCurrentPhone] = useState(user?.phoneNumber || "");
 
   const formatError = phoneNumberError(phoneNumber);
-  const validNumber = !formatError && uniqueOk;
-
-  const checkUnique = async () => {
-    setPhoneTouched(true);
-    if (!phoneNumber || formatError) return;
-    try {
-      const res = await phoneUnique({ data: { phoneNumber } });
-      setUniqueOk(res.data === 200);
-    } catch {
-      setUniqueOk(false);
-    }
-  };
 
   const requestCode = async () => {
-    if (!validNumber || !user?.phoneNumber) return;
+    setPhoneTouched(true);
+    const format = phoneNumberError(phoneNumber);
+    if (format) return;
+    if (!user?.phoneNumber) return;
     setSaving(true);
     setNetworkError(false);
     try {
@@ -120,7 +111,14 @@ export default function LoginSecurityPage() {
         </div>
       ) : null}
 
-      <div className={`${cardCls} mt-6 p-6 sm:p-7`}>
+      <form
+        className={`${cardCls} mt-6 p-6 sm:p-7`}
+        noValidate
+        onSubmit={(e) => {
+          e.preventDefault();
+          void requestCode();
+        }}
+      >
         <div>
           <Label>New phone number</Label>
           <PhoneNumberInput
@@ -138,7 +136,10 @@ export default function LoginSecurityPage() {
               setUniqueOk(true);
               setPhoneTouched(false);
             }}
-            onBlur={() => void checkUnique()}
+            onBlur={(value) => {
+              if (!value) return;
+              setPhoneTouched(true);
+            }}
             disabled={updated}
           />
         </div>
@@ -147,6 +148,7 @@ export default function LoginSecurityPage() {
           <div className="mt-5">
             <CodeField
               id="code"
+              name="code"
               label="Verify code"
               layout="input"
               variant="dark"
@@ -161,11 +163,11 @@ export default function LoginSecurityPage() {
         )}
 
         {!verifying && !updated && (
-          <Button className="mt-6" disabled={!validNumber || saving} onClick={() => void requestCode()}>
+          <Button type="submit" className="mt-6" disabled={saving}>
             {saving ? "Sending…" : "Update phone number"}
           </Button>
         )}
-      </div>
+      </form>
     </WalletShell>
   );
 }

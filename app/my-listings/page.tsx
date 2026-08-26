@@ -48,6 +48,7 @@ export default function MyListingsPage() {
   const [busyId, setBusyId] = useState<string | number | null>(null);
   const [editListing, setEditListing] = useState<Listing | null>(null);
   const [editPrice, setEditPrice] = useState("");
+  const [editPriceError, setEditPriceError] = useState("");
 
   const load = async () => {
     setLoading(true);
@@ -85,10 +86,14 @@ export default function MyListingsPage() {
     }
   };
 
-  const saveEdit = async () => {
+  const saveEdit = async (rawPrice?: string) => {
     if (!editListing) return;
-    const price = parseFloat(editPrice);
-    if (!(price > 0)) return;
+    const price = parseFloat(rawPrice ?? editPrice);
+    if (!(price > 0)) {
+      setEditPriceError("Enter a price greater than 0.");
+      return;
+    }
+    setEditPriceError("");
     setBusyId(editListing.id);
     try {
       await updateMyListings(editListing.id, { askingPrice: price });
@@ -186,6 +191,7 @@ export default function MyListingsPage() {
                     onClick={() => {
                       setEditListing(listing);
                       setEditPrice(String(listing.askingPrice ?? ""));
+                      setEditPriceError("");
                     }}
                   >
                     Edit
@@ -208,25 +214,42 @@ export default function MyListingsPage() {
 
       {editListing && (
         <Modal title="Update listing" onClose={() => setEditListing(null)}>
-          <div className="mt-5">
+          <form
+            noValidate
+            className="mt-5"
+            onSubmit={(e) => {
+              e.preventDefault();
+              const data = new FormData(e.currentTarget);
+              const next = String(data.get("askingPrice") || editPrice);
+              setEditPrice(next);
+              void saveEdit(next);
+            }}
+          >
             <Label htmlFor="listing-price">Asking price per ticket</Label>
             <Input
               id="listing-price"
+              name="askingPrice"
               type="number"
               min="1"
               step="0.01"
               className="mt-2.5"
               value={editPrice}
-              onChange={(e) => setEditPrice(e.target.value)}
+              onChange={(e) => {
+                setEditPrice(e.target.value);
+                setEditPriceError("");
+              }}
             />
-          </div>
-          <Button
-            className="mt-6 w-full"
-            disabled={busyId === editListing.id || !(parseFloat(editPrice) > 0)}
-            onClick={() => void saveEdit()}
-          >
-            {busyId === editListing.id ? "Saving…" : "Save"}
-          </Button>
+            {editPriceError ? (
+              <p className="mt-2 text-[13px] text-[#ff7a72]">{editPriceError}</p>
+            ) : null}
+            <Button
+              type="submit"
+              className="mt-6 w-full"
+              disabled={busyId === editListing.id}
+            >
+              {busyId === editListing.id ? "Saving…" : "Save"}
+            </Button>
+          </form>
         </Modal>
       )}
     </WalletShell>

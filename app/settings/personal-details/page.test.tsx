@@ -87,6 +87,8 @@ describe("Personal details fields", () => {
     await user.type(email, "shopper@mailinator.com");
     await user.tab();
     expect(await screen.findByText(FIELD_COPY.invalidEmail)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /update/i })).toBeEnabled();
+    await user.click(screen.getByRole("button", { name: /update/i }));
     expect(mockedUpdate).not.toHaveBeenCalled();
   });
 });

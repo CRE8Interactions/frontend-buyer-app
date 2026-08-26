@@ -12,10 +12,12 @@ import { updatePersonalDetails } from "@/lib/api";
 import { displayName, getSession, setSession, useAuth } from "@/lib/auth";
 import {
   FIELD_COPY,
-  emailLooksInvalid,
-  isBlockedEmail,
+  emailBlurInvalid,
+  emailSubmitInvalid,
+  formString,
   nameFieldError,
   normalizeEmail,
+  submittedEmail,
 } from "@/lib/fieldValidation";
 
 export default function PersonalDetailsPage() {
@@ -40,28 +42,32 @@ export default function PersonalDetailsPage() {
     firstName !== (user?.firstName || "") ||
     lastName !== (user?.lastName || "") ||
     nextEmail !== (user?.email || "");
-  const valid =
-    !nameFieldError(firstName) &&
-    !nameFieldError(lastName) &&
-    Boolean(nextEmail) &&
-    !isBlockedEmail(nextEmail) &&
-    !emailLooksInvalid(nextEmail);
 
-  const onSubmit = async (e: React.FormEvent) => {
+  const onSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
-    const address = normalizeEmail(email);
+    const data = new FormData(e.currentTarget);
+    const address = submittedEmail(data);
+    const first = formString(data, "firstName") || firstName;
+    const last = formString(data, "lastName") || lastName;
     setEmail(address);
-    if (isBlockedEmail(address) || emailLooksInvalid(address)) {
+    setFirstName(first);
+    setLastName(last);
+    if (emailSubmitInvalid(address)) {
       setEmailOk(false);
       return;
     }
-    if (nameFieldError(firstName) || nameFieldError(lastName) || !dirty) return;
+    if (nameFieldError(first) || nameFieldError(last)) return;
+    const stillDirty =
+      first !== (user?.firstName || "") ||
+      last !== (user?.lastName || "") ||
+      address !== (user?.email || "");
+    if (!stillDirty) return;
     setSaving(true);
     setSaved(false);
     setNetworkError(false);
     try {
       const res = await updatePersonalDetails({
-        data: { firstName, lastName, email: address },
+        data: { firstName: first, lastName: last, email: address },
       });
       const session = getSession();
       if (session && res.data) {
@@ -116,6 +122,7 @@ export default function PersonalDetailsPage() {
       >
         <EmailField
           id="email"
+          name="email"
           label="Email"
           className="sm:col-span-2"
           variant="dark"
@@ -126,13 +133,11 @@ export default function PersonalDetailsPage() {
             setEmailOk(true);
             setNetworkError(false);
           }}
-          onBlur={() => {
-            const next = normalizeEmail(email);
-            setEmailOk(!next || !emailLooksInvalid(next));
-          }}
+          onBlur={(value) => setEmailOk(!emailBlurInvalid(value))}
         />
         <NameField
           id="first"
+          name="firstName"
           label="First name"
           variant="dark"
           autoComplete="given-name"
@@ -141,6 +146,7 @@ export default function PersonalDetailsPage() {
         />
         <NameField
           id="last"
+          name="lastName"
           label="Last name"
           variant="dark"
           autoComplete="family-name"
@@ -148,7 +154,7 @@ export default function PersonalDetailsPage() {
           onChange={setLastName}
         />
         <div className="sm:col-span-2">
-          <Button type="submit" disabled={!valid || !dirty || saving}>
+          <Button type="submit" disabled={!dirty || saving}>
             {saving ? "Saving…" : saved ? "Saved ✓" : "Update"}
           </Button>
         </div>

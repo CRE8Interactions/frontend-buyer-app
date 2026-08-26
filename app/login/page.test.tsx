@@ -130,6 +130,48 @@ describe("Login page", () => {
     expect(
       screen.getByRole("link", { name: /blocktickets home/i }),
     ).toHaveAttribute("href", "/browse/");
+    expect(screen.getByRole("button", { name: /send my code/i })).toBeEnabled();
+  });
+
+  it("keeps Send my code enabled when the email is empty and shows copy on submit", async () => {
+    const user = userEvent.setup();
+    render(<LoginPage />);
+
+    await user.click(screen.getByRole("button", { name: /send my code/i }));
+
+    expect(await screen.findByText(FIELD_COPY.invalidEmail)).toBeInTheDocument();
+    expect(mockedValidateEmail).not.toHaveBeenCalled();
+  });
+
+  it("shows invalid copy on blur of a non-empty bad email without calling the API", async () => {
+    const user = userEvent.setup();
+    render(<LoginPage />);
+
+    await user.type(screen.getByLabelText(/email address/i), "not-an-email");
+    await user.tab();
+
+    expect(await screen.findByText(FIELD_COPY.invalidEmail)).toBeInTheDocument();
+    expect(mockedValidateEmail).not.toHaveBeenCalled();
+    expect(screen.getByRole("button", { name: /send my code/i })).toBeEnabled();
+  });
+
+  it("submits with Enter and reads a DOM value that never fired React change", async () => {
+    render(<LoginPage />);
+
+    const field = screen.getByLabelText(/email address/i);
+    const setter = Object.getOwnPropertyDescriptor(
+      window.HTMLInputElement.prototype,
+      "value",
+    )?.set;
+    setter?.call(field, `  ${DEMO_USER.email.toUpperCase()}  `);
+
+    fireEvent.submit(field.closest("form")!);
+
+    await waitFor(() => {
+      expect(mockedValidateEmail).toHaveBeenCalledWith({
+        email: DEMO_USER.email,
+      });
+    });
   });
 
   it("sends a code for a valid email and asks for the six-digit code", async () => {

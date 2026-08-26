@@ -12,6 +12,7 @@ import {
 
 export default function NameField({
   id,
+  name,
   label,
   value,
   onChange,
@@ -23,16 +24,20 @@ export default function NameField({
   required = true,
 }: {
   id: string;
+  name?: string;
   label: string;
   value: string;
   onChange: (value: string) => void;
-  onBlur?: () => void;
+  onBlur?: (value: string) => void;
   error?: NameFieldError;
   autoComplete?: string;
   variant?: FieldVariant;
   placeholder?: string;
   required?: boolean;
 }) {
+  const sync = (next: string) => {
+    if (nameAllows(next)) onChange(next);
+  };
   return (
     <div>
       <label
@@ -47,6 +52,7 @@ export default function NameField({
       </label>
       <input
         id={id}
+        name={name}
         value={value}
         required={required}
         pattern={namePatternMatch}
@@ -54,11 +60,9 @@ export default function NameField({
         autoComplete={autoComplete}
         aria-invalid={Boolean(error)}
         placeholder={placeholder}
-        onChange={(e) => {
-          const next = e.target.value;
-          if (nameAllows(next)) onChange(next);
-        }}
-        onBlur={onBlur}
+        onChange={(e) => sync(e.target.value)}
+        onInput={(e) => sync(e.currentTarget.value)}
+        onBlur={(e) => onBlur?.(e.currentTarget.value)}
         className={`mt-2 ${fieldClass(variant, Boolean(error))}`}
       />
       {error === "required" ? (

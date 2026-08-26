@@ -873,6 +873,19 @@ describe("Checkout page", () => {
     ).toBeInTheDocument();
   });
 
+  it("keeps Apply enabled when the promo field is empty and shows an error on submit", async () => {
+    mockedGetCart.mockResolvedValue({ data: demoCheckoutCart() } as never);
+    const user = userEvent.setup();
+    render(<CheckoutPageRoute />);
+
+    const apply = await screen.findByRole("button", { name: /apply/i });
+    expect(apply).toBeEnabled();
+    await user.click(apply);
+
+    expect(await screen.findByText(/enter a promo code/i)).toBeInTheDocument();
+    expect(mockedRedeemPromo).not.toHaveBeenCalled();
+  });
+
   it("opens checkout success after a flex pack payment", async () => {
     const cart = demoFlexPackCheckoutCart();
     navState.cartId = String(cart.id);

@@ -6,9 +6,9 @@
 flowchart TD
   codeStep[Step 1: 6-digit code] --> typeCode[CodeField: digits only, max 6]
   typeCode --> len6{Length is 6?}
-  len6 -->|no| waitCode[Wait]
+  len6 -->|no| waitCode[Wait — no submit button]
   waitCode --> typeCode
-  len6 -->|yes| verifyCode[verifyCode]
+  len6 -->|yes| verifyCode[verifyCode automatically]
 
   verifyCode --> codeNet{Network error?}
   codeNet -->|yes| codeNetwork[Show network copy and clear code]

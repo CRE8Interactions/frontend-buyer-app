@@ -19,12 +19,13 @@ import {
 import { setSession, getLastKnown, type AuthSession } from "@/lib/auth";
 import {
   FIELD_COPY,
-  emailLooksInvalid,
-  emailPatternMatch,
-  isBlockedEmail,
+  emailBlurInvalid,
+  emailSubmitInvalid,
+  formString,
   lightFieldClass,
   nameFieldError,
   normalizeEmail,
+  submittedEmail,
   type NameFieldError,
 } from "@/lib/fieldValidation";
 
@@ -167,14 +168,10 @@ function LoginForm() {
     setStep(1);
   };
 
-  const submitEmailStep = async () => {
-    const nextEmail = normalizeEmail(email);
+  const submitEmailStep = async (rawEmail?: string) => {
+    const nextEmail = normalizeEmail(rawEmail ?? email);
     setEmail(nextEmail);
-    if (isBlockedEmail(nextEmail)) {
-      setIsEmailValid(false);
-      return;
-    }
-    if (!emailPatternMatch(nextEmail)) {
+    if (emailSubmitInvalid(nextEmail)) {
       setIsEmailValid(false);
       return;
     }
@@ -236,33 +233,40 @@ function LoginForm() {
     }
   };
 
-  const submitRegistration = async () => {
-    const nextEmail = normalizeEmail(email);
-    const first = firstName.trim();
-    const last = lastName.trim();
+  const submitRegistration = async (data: FormData) => {
+    const nextEmail = submittedEmail(data, "email") || normalizeEmail(email);
+    const first = formString(data, "firstName") || firstName;
+    const last = formString(data, "lastName") || lastName;
+    const nextDob = formString(data, "dob") || dob;
+    const nextPhone = phoneNumber;
+    setEmail(nextEmail);
+    setFirstName(first);
+    setLastName(last);
+    if (nextDob) setDob(formatDobInput(nextDob));
     let invalid = false;
 
-    const firstErr = nameFieldError(firstName);
-    const lastErr = nameFieldError(lastName);
+    const firstErr = nameFieldError(first);
+    const lastErr = nameFieldError(last);
     setFirstNameError(firstErr);
     setLastNameError(lastErr);
     if (firstErr || lastErr) invalid = true;
 
-    const nextPhoneError = phoneNumberError(phoneNumber);
+    const nextPhoneError = phoneNumberError(nextPhone);
     setPhoneError(nextPhoneError);
     if (nextPhoneError) invalid = true;
 
-    if (!dob) {
+    const dobValue = nextDob ? formatDobInput(nextDob) : dob;
+    if (!dobValue) {
       setDobError("required");
       invalid = true;
-    } else if (!isValidDob(dob)) {
+    } else if (!isValidDob(dobValue)) {
       setDobError("invalid");
       invalid = true;
     } else {
       setDobError(null);
     }
 
-    if (emailLooksInvalid(nextEmail)) {
+    if (emailSubmitInvalid(nextEmail)) {
       setIsEmailValid(false);
       invalid = true;
     }
@@ -275,10 +279,10 @@ function LoginForm() {
       const res = await createNewUser({
         data: {
           email: nextEmail,
-          firstName: first,
-          lastName: last,
-          phoneNumber,
-          dob,
+          firstName: first.trim(),
+          lastName: last.trim(),
+          phoneNumber: nextPhone,
+          dob: dobValue,
         },
       });
       if (res.status === 200) {
@@ -363,11 +367,12 @@ function LoginForm() {
               noValidate
               onSubmit={(e) => {
                 e.preventDefault();
-                void submitEmailStep();
+                void submitEmailStep(submittedEmail(new FormData(e.currentTarget)));
               }}
             >
               <EmailField
                 id="email"
+                name="email"
                 autoFocus
                 placeholder="you@email.com"
                 value={email}
@@ -379,14 +384,13 @@ function LoginForm() {
                   setIsEmailValid(true);
                   clearNetworkFeedback();
                 }}
-                onBlur={() => {
-                  const next = normalizeEmail(email);
-                  setIsEmailValid(!next || !emailLooksInvalid(next));
+                onBlur={(value) => {
+                  setIsEmailValid(!emailBlurInvalid(value));
                 }}
               />
               <button
                 type="submit"
-                disabled={!email.trim() || isSaving}
+                disabled={isSaving}
                 className={greenBtnCls}
               >
                 {isSaving ? "Sending…" : "Send my code"}
@@ -469,11 +473,12 @@ function LoginForm() {
               noValidate
               onSubmit={(e) => {
                 e.preventDefault();
-                void submitRegistration();
+                void submitRegistration(new FormData(e.currentTarget));
               }}
             >
               <EmailField
                 id="reg-email"
+                name="email"
                 value={email}
                 disabled
                 readOnly
@@ -489,6 +494,7 @@ function LoginForm() {
                 </label>
                 <PhoneNumberInput
                   id="reg-phone"
+                  name="phoneNumber"
                   value={phoneNumber}
                   error={phoneError}
                   onChange={(value) => {
@@ -496,11 +502,12 @@ function LoginForm() {
                     setPhoneError(null);
                     setHasError(false);
                   }}
-                  onBlur={() => setPhoneError(phoneNumberError(phoneNumber))}
+                  onBlur={(value) => setPhoneError(phoneNumberError(value))}
                 />
               </div>
               <NameField
                 id="firstName"
+                name="firstName"
                 label="First name"
                 autoComplete="given-name"
                 placeholder="Enter your first name"
@@ -511,10 +518,13 @@ function LoginForm() {
                   setFirstNameError(null);
                   setHasError(false);
                 }}
-                onBlur={() => setFirstNameError(nameFieldError(firstName))}
+                onBlur={(value) =>
+                  setFirstNameError(value.trim() ? nameFieldError(value) : null)
+                }
               />
               <NameField
                 id="lastName"
+                name="lastName"
                 label="Last name"
                 autoComplete="family-name"
                 placeholder="Enter your last name"
@@ -525,7 +535,9 @@ function LoginForm() {
                   setLastNameError(null);
                   setHasError(false);
                 }}
-                onBlur={() => setLastNameError(nameFieldError(lastName))}
+                onBlur={(value) =>
+                  setLastNameError(value.trim() ? nameFieldError(value) : null)
+                }
               />
               <div>
                 <label
@@ -536,17 +548,24 @@ function LoginForm() {
                 </label>
                 <input
                   id="dob"
+                  name="dob"
                   value={dob}
                   required
+                  autoComplete="bday"
                   aria-invalid={Boolean(dobError)}
                   onChange={(e) => {
                     setDob(formatDobInput(e.target.value));
                     setDobError(null);
                     setHasError(false);
                   }}
-                  onBlur={() => {
-                    if (!dob) setDobError("required");
-                    else setDobError(isValidDob(dob) ? null : "invalid");
+                  onInput={(e) => {
+                    setDob(formatDobInput(e.currentTarget.value));
+                    setDobError(null);
+                  }}
+                  onBlur={(e) => {
+                    const next = formatDobInput(e.currentTarget.value);
+                    if (!next) return;
+                    setDobError(isValidDob(next) ? null : "invalid");
                   }}
                   placeholder="MM/DD/YYYY"
                   inputMode="numeric"

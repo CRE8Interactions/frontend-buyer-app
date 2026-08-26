@@ -10,6 +10,7 @@ import {
 
 export default function EmailField({
   id,
+  name = "email",
   label = "Email address",
   value,
   onChange,
@@ -23,10 +24,11 @@ export default function EmailField({
   ...rest
 }: {
   id: string;
+  name?: string;
   label?: string;
   value: string;
   onChange: (value: string) => void;
-  onBlur?: () => void;
+  onBlur?: (value: string) => void;
   invalid?: boolean;
   networkError?: boolean;
   disabled?: boolean;
@@ -35,10 +37,11 @@ export default function EmailField({
   className?: string;
 } & Omit<
   InputHTMLAttributes<HTMLInputElement>,
-  "id" | "value" | "onChange" | "onBlur"
+  "id" | "name" | "value" | "onChange" | "onBlur" | "onInput"
 >) {
   const showInvalid = invalid;
   const showNetwork = !invalid && networkError;
+  const sync = (next: string) => onChange(next);
   return (
     <div className={className}>
       {label ? (
@@ -55,18 +58,20 @@ export default function EmailField({
       ) : null}
       <input
         id={id}
+        name={name}
         type="email"
         autoComplete="email"
         value={value}
         disabled={disabled}
         readOnly={readOnly}
         aria-invalid={showInvalid || showNetwork}
-        onChange={(e) => onChange(e.target.value)}
-        onBlur={onBlur}
         className={`${label ? "mt-2" : ""} ${fieldClass(variant, showInvalid || showNetwork)} ${
-          disabled || readOnly ? "cursor-not-allowed opacity-70" : ""
+          disabled || readOnly ? "cursor-default disabled:cursor-default opacity-70" : ""
         }`}
         {...rest}
+        onChange={(e) => sync(e.target.value)}
+        onInput={(e) => sync(e.currentTarget.value)}
+        onBlur={(e) => onBlur?.(e.currentTarget.value)}
       />
       {showInvalid ? (
         <p className={fieldErrorTextClass(variant)}>{FIELD_COPY.invalidEmail}</p>

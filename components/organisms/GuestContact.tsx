@@ -6,9 +6,11 @@ import BrandedActionButton from "@/components/atoms/BrandedActionButton";
 import EmailField from "@/components/molecules/EmailField";
 import NameField from "@/components/molecules/NameField";
 import {
-  emailLooksInvalid,
+  emailBlurInvalid,
+  emailSubmitInvalid,
+  formString,
   nameFieldError,
-  normalizeEmail,
+  submittedEmail,
   type NameFieldError,
 } from "@/lib/fieldValidation";
 import {
@@ -36,20 +38,25 @@ export default function GuestContact({
   const [firstError, setFirstError] = useState<NameFieldError>(null);
   const [lastError, setLastError] = useState<NameFieldError>(null);
 
-  const onSubmit = (event: FormEvent) => {
+  const onSubmit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    const nextEmail = normalizeEmail(email);
+    const data = new FormData(event.currentTarget);
+    const nextEmail = submittedEmail(data);
+    const first = formString(data, "firstName") || firstName;
+    const last = formString(data, "lastName") || lastName;
     setEmail(nextEmail);
-    const emailBad = !nextEmail || emailLooksInvalid(nextEmail);
-    const firstBad = nameFieldError(firstName);
-    const lastBad = nameFieldError(lastName);
+    setFirstName(first);
+    setLastName(last);
+    const emailBad = emailSubmitInvalid(nextEmail);
+    const firstBad = nameFieldError(first);
+    const lastBad = nameFieldError(last);
     setEmailInvalid(emailBad);
     setFirstError(firstBad);
     setLastError(lastBad);
     const buyer = parseGuestBuyer({
       email: nextEmail,
-      firstName,
-      lastName,
+      firstName: first,
+      lastName: last,
     });
     if (!buyer) return;
     onContinue(buyer);
@@ -67,6 +74,7 @@ export default function GuestContact({
       </div>
       <EmailField
         id="guest-email"
+        name="email"
         label="Email"
         placeholder="Enter your email"
         value={email}
@@ -75,14 +83,12 @@ export default function GuestContact({
           setEmail(value);
           setEmailInvalid(false);
         }}
-        onBlur={() => {
-          const next = normalizeEmail(email);
-          setEmailInvalid(Boolean(next) && emailLooksInvalid(next));
-        }}
+        onBlur={(value) => setEmailInvalid(emailBlurInvalid(value))}
       />
       <div className="grid grid-cols-1 gap-5 sm:grid-cols-2">
         <NameField
           id="guest-first"
+          name="firstName"
           label="First name"
           autoComplete="given-name"
           placeholder="Enter your first name"
@@ -92,9 +98,13 @@ export default function GuestContact({
             setFirstName(value);
             setFirstError(null);
           }}
+          onBlur={(value) =>
+            setFirstError(value.trim() ? nameFieldError(value) : null)
+          }
         />
         <NameField
           id="guest-last"
+          name="lastName"
           label="Last name"
           autoComplete="family-name"
           placeholder="Enter your last name"
@@ -104,6 +114,9 @@ export default function GuestContact({
             setLastName(value);
             setLastError(null);
           }}
+          onBlur={(value) =>
+            setLastError(value.trim() ? nameFieldError(value) : null)
+          }
         />
       </div>
       <BrandedActionButton

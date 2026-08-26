@@ -1,12 +1,16 @@
 import { describe, expect, it } from "vitest";
 import { DEMO_USER } from "@/lib/demo/fixtures";
 import {
+  emailBlurInvalid,
   emailLooksInvalid,
+  emailSubmitInvalid,
+  formString,
   isBlockedEmail,
   nameAllows,
   nameFieldError,
   normalizeEmail,
   phoneNumberError,
+  submittedEmail,
 } from "@/lib/fieldValidation";
 
 describe("email order", () => {
@@ -26,6 +30,21 @@ describe("email order", () => {
   it("does not treat malformed addresses as blocked", () => {
     expect(isBlockedEmail("user@")).toBe(false);
     expect(isBlockedEmail("not-an-email")).toBe(false);
+  });
+
+  it("treats empty as valid on blur and invalid on submit", () => {
+    expect(emailBlurInvalid("")).toBe(false);
+    expect(emailSubmitInvalid("")).toBe(true);
+    expect(emailBlurInvalid("not-an-email")).toBe(true);
+    expect(emailSubmitInvalid(DEMO_USER.email)).toBe(false);
+  });
+
+  it("reads a submitted email from FormData even when state would be empty", () => {
+    const data = new FormData();
+    data.set("email", `  ${DEMO_USER.email.toUpperCase()}  `);
+    expect(formString(data, "email")).toBe(`  ${DEMO_USER.email.toUpperCase()}  `);
+    expect(submittedEmail(data)).toBe(DEMO_USER.email);
+    expect(formString(data, "missing")).toBe("");
   });
 });
 

@@ -123,3 +123,24 @@ export function fieldErrorTextClass(variant: FieldVariant) {
     ? "mt-2 text-[13px] text-[#ff7a72]"
     : "mt-2 text-[13px] text-[#c2394a]";
 }
+
+/** Read a named text field from a submitted form (Safari autofill lives here). */
+export function formString(data: FormData, name: string) {
+  const value = data.get(name);
+  return typeof value === "string" ? value : "";
+}
+
+export function submittedEmail(data: FormData, name = "email") {
+  return normalizeEmail(formString(data, name));
+}
+
+/** Empty is valid on idle blur; submit still rejects empty with emailLooksInvalid + !next. */
+export function emailBlurInvalid(value: string) {
+  const next = normalizeEmail(value);
+  return Boolean(next) && emailLooksInvalid(next);
+}
+
+export function emailSubmitInvalid(value: string) {
+  const next = normalizeEmail(value);
+  return !next || emailLooksInvalid(next);
+}

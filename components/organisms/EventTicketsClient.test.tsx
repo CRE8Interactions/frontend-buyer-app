@@ -109,7 +109,18 @@ describe("ticket transfer email", () => {
     );
     await user.tab();
     expect(await screen.findByText(FIELD_COPY.invalidEmail)).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /continue/i })).toBeDisabled();
+    expect(screen.getByRole("button", { name: /continue/i })).toBeEnabled();
+    await user.click(screen.getByRole("button", { name: /continue/i }));
+    expect(mockedTransfer).not.toHaveBeenCalled();
+    expect(screen.getByLabelText(/recipient email/i)).toBeInTheDocument();
+  });
+
+  it("keeps Continue enabled when the email is empty and blocks submit", async () => {
+    const user = await openTransferEmail();
+    const continueBtn = screen.getByRole("button", { name: /continue/i });
+    expect(continueBtn).toBeEnabled();
+    await user.click(continueBtn);
+    expect(await screen.findByText(FIELD_COPY.invalidEmail)).toBeInTheDocument();
     expect(mockedTransfer).not.toHaveBeenCalled();
   });
 });

@@ -114,5 +114,8 @@ describe("FundraisingCampaignClient donor fields", () => {
 
     expect(await screen.findByText(FIELD_COPY.invalidEmail)).toBeInTheDocument();
     expect(mockedIntent).not.toHaveBeenCalled();
+    expect(
+      screen.getByRole("button", { name: /continue to payment/i }),
+    ).toBeEnabled();
   });
 });

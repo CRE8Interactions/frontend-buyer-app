@@ -69,9 +69,28 @@ describe("GuestContact", () => {
     expect(onContinue).not.toHaveBeenCalled();
     expect(screen.getByText(FIELD_COPY.invalidEmail)).toBeInTheDocument();
     expect(screen.getByLabelText(/first name/i)).toHaveValue(DEMO_USER.firstName);
+    expect(
+      screen.getByRole("button", { name: /continue to payment/i }),
+    ).toBeEnabled();
     expect(screen.getByRole("link", { name: /sign in/i })).toHaveAttribute(
       "href",
       "/login/",
     );
+  });
+
+  it("keeps Continue enabled when empty and validates on Enter", async () => {
+    const user = userEvent.setup();
+    const onContinue = vi.fn();
+    render(<GuestContact loginHref="/login/" onContinue={onContinue} />);
+
+    expect(
+      screen.getByRole("button", { name: /continue to payment/i }),
+    ).toBeEnabled();
+    await user.click(screen.getByLabelText(/^email$/i));
+    await user.keyboard("{Enter}");
+
+    expect(onContinue).not.toHaveBeenCalled();
+    expect(screen.getByText(FIELD_COPY.invalidEmail)).toBeInTheDocument();
+    expect(screen.getAllByText(/this field is required/i).length).toBe(2);
   });
 });

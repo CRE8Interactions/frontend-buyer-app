@@ -5,7 +5,7 @@
  * Claude Design "My Tickets.dc.html" handoff. A self-contained, dummy-data
  * flow (no backend): login → code → My Tickets → event detail → flex package
  * → transfers → giving → profile, plus transfer wizard / details / field-edit
- * / vouchers / cancel modals. Crimson NM State brand, Geist type.
+ * / vouchers / cancel modals. Blocktickets chrome; event copy stays as-is.
  *
  * Team-specific wedge/banner art isn't in the repo, so rows fall back to the
  * designed initials-on-brand-color wedge (exactly the design's own fallback).
@@ -15,6 +15,15 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useParams, usePathname, useSearchParams } from "next/navigation";
 import Spinner from "@/components/atoms/Spinner";
+import WalletChrome from "@/components/organisms/WalletChrome";
+import { BLOCKTICKETS_GREEN, BLOCKTICKETS_NAVY } from "@/lib/branding";
+import EmailField from "@/components/molecules/EmailField";
+import {
+  emailBlurInvalid,
+  emailSubmitInvalid,
+  normalizeEmail,
+  submittedEmail,
+} from "@/lib/fieldValidation";
 import { getMyEvents } from "@/lib/api";
 import { getSession } from "@/lib/auth";
 import {
@@ -38,8 +47,8 @@ import { unwrapList, type OrderLike } from "@/lib/wallet";
 
 /* ---- brand tokens ---- */
 const CRIMSON = "#8c0b42";
-const CRIMSON_HI = "#a3134f";
-const INK = "#051b35";
+const ACCENT = BLOCKTICKETS_GREEN;
+const INK = BLOCKTICKETS_NAVY;
 const SUB = "#6e7180";
 const MUTE = "#8a93a3";
 const FAINT = "#4a5567";
@@ -48,7 +57,7 @@ const LINE = "rgba(5,27,53,0.10)";
 const GREEN = "#2f8f4e";
 const GREEN_BG = "#e7f5ec";
 const DANGER = "#c2394a";
-const SOFT = "#f7e9ef";
+const SOFT = "#ecf8dd";
 const LOGO = "/nmstate/nmstate-logo-nowordmark.png";
 const SEATMAP_THUMB = "/nmstate/seatmap-thumb.svg";
 
@@ -77,7 +86,7 @@ function EventScheduleMeta({
         gap: 8,
         fontSize: 12,
         fontWeight: 600,
-        color: today ? CRIMSON : SUB,
+        color: today ? INK : SUB,
       }}
     >
       {today ? (
@@ -87,8 +96,8 @@ function EventScheduleMeta({
             fontWeight: 600,
             textTransform: "uppercase",
             letterSpacing: "0.10em",
-            color: "#fff",
-            background: CRIMSON,
+            color: INK,
+            background: ACCENT,
             borderRadius: 999,
             padding: "4px 10px",
           }}
@@ -599,6 +608,7 @@ export default function SeasonTickets({
   const [pvals, setPvals] = useState<Record<string, string>>({});
   const [toggles, setToggles] = useState<Record<string, boolean>>({});
   const [tf, setTf] = useState<null | { step: number; sel: string[]; email: string; evId: string }>(null);
+  const [tfEmailErr, setTfEmailErr] = useState(false);
   const [confirmCancel, setConfirmCancel] = useState<Sent | null>(null);
   const [sent, setSent] = useState<Sent[] | null>(null);
   const [toast, setToast] = useState<string | null>(null);
@@ -776,18 +786,13 @@ export default function SeasonTickets({
   const h1Size = mobile ? 32 : 42;
 
   /* ---------- small building blocks ---------- */
-  const pill = (label: string, onClick: () => void, on: boolean): React.CSSProperties => ({
-    fontFamily: "inherit", fontSize: 14, fontWeight: 600, color: on ? "#fff" : "#b8c6dc",
-    background: on ? "rgba(255,255,255,0.12)" : "transparent", border: "none", borderRadius: 999,
-    padding: "9px 14px", cursor: "pointer", whiteSpace: "nowrap",
-  });
   const chip = (on: boolean): React.CSSProperties => ({
     fontFamily: "inherit", flexShrink: 0, display: "flex", alignItems: "center", gap: 8, fontSize: 14, fontWeight: 600,
-    whiteSpace: "nowrap", background: on ? CRIMSON : "#fff", color: on ? "#fff" : INK,
-    border: `1px solid ${on ? CRIMSON : "rgba(5,27,53,0.12)"}`, borderRadius: 999,
+    whiteSpace: "nowrap", background: on ? ACCENT : "#fff", color: INK,
+    border: `1px solid ${on ? ACCENT : "rgba(5,27,53,0.12)"}`, borderRadius: 999,
     padding: mobile ? "13px 16px" : "10px 16px", minHeight: mobile ? 46 : undefined, cursor: "pointer",
   });
-  const crimsonBtn: React.CSSProperties = { fontFamily: "inherit", fontSize: 14, fontWeight: 600, color: "#fff", background: CRIMSON, border: "none", borderRadius: 999, padding: "13px 20px", cursor: "pointer" };
+  const accentBtn: React.CSSProperties = { fontFamily: "inherit", fontSize: 14, fontWeight: 600, color: INK, background: ACCENT, border: "none", borderRadius: 999, padding: "13px 20px", cursor: "pointer" };
   const ghostBtn: React.CSSProperties = { fontFamily: "inherit", fontSize: 14, fontWeight: 600, color: INK, background: "#fff", border: "1px solid rgba(5,27,53,0.14)", borderRadius: 999, padding: "13px 20px", cursor: "pointer" };
   const backBtn: React.CSSProperties = { fontFamily: "inherit", alignSelf: "flex-start", display: "flex", alignItems: "center", gap: 8, fontSize: 14, fontWeight: 600, color: INK, background: "#fff", border: "1px solid rgba(5,27,53,0.12)", borderRadius: 999, padding: "9px 16px 9px 12px", cursor: "pointer" };
   const BackArrow = () => (<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" style={{ width: 16, height: 16 }}><line x1="19" y1="12" x2="5" y2="12" /><polyline points="12 19 5 12 12 5" /></svg>);
@@ -802,41 +807,21 @@ export default function SeasonTickets({
   ];
   const authed = screen !== "login" && screen !== "code";
   const showHeader = !(mobile && showingEventDetail);
+  const showTabBar = mobile && authed && !showingEventDetail && screen !== "seasonPackage";
 
   const Header = () => (
-    <header style={{ background: `linear-gradient(180deg, ${CRIMSON_HI} 0%, ${CRIMSON} 100%)`, position: "sticky", top: 0, zIndex: 20, boxShadow: "0 1px 0 rgba(255,255,255,0.06) inset, 0 12px 30px -12px rgba(5,27,53,0.55)" }}>
-      <div style={{ maxWidth: 1100, margin: "0 auto", padding: mobile ? "42px 16px 12px" : "18px 32px", display: "flex", alignItems: "center", gap: 16 }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 11, flexShrink: 0 }}>
-          <div style={{ width: 38, height: 38, borderRadius: 999, background: "#fff", display: "flex", alignItems: "center", justifyContent: "center", padding: 7, boxSizing: "border-box", boxShadow: "0 6px 16px -8px rgba(0,0,0,0.6)" }}>
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src={LOGO} alt="New Mexico State" style={{ maxWidth: "100%", maxHeight: "100%" }} />
-          </div>
-          <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
-            <div style={{ fontSize: 15, fontWeight: 600, letterSpacing: "-0.01em", color: "#fff", whiteSpace: "nowrap" }}>NM State Athletics</div>
-            {!mobile && (
-              <div style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 9, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.12em", color: "rgba(255,255,255,0.62)", whiteSpace: "nowrap" }}>
-                Season tickets<span style={{ width: 3, height: 3, borderRadius: 999, background: "rgba(255,255,255,0.5)" }} />Blocktickets
-              </div>
-            )}
-          </div>
-        </div>
-        {authed && !mobile && (
-          <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 2 }}>
-            {navDefs.map((n) => (
-              <button key={n.id} onClick={() => setScreen(n.id)} style={pill(n.label, () => {}, n.on)}>{n.label}</button>
-            ))}
-          </div>
-        )}
-      </div>
-    </header>
-  );
-
-  const TabBar = () => (
-    <div style={{ position: "fixed", left: 0, right: 0, bottom: 0, zIndex: 40, background: "rgba(255,255,255,0.94)", backdropFilter: "blur(12px)", borderTop: "1px solid rgba(5,27,53,0.08)", boxShadow: "0 -12px 30px -18px rgba(5,27,53,0.55)", padding: "8px 10px 14px", display: "flex", gap: 4 }}>
-      {navDefs.map((n) => (
-        <button key={n.id} onClick={() => setScreen(n.id)} style={{ fontFamily: "inherit", flex: 1, minHeight: 48, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 13, fontWeight: 600, color: n.on ? "#fff" : SUB, background: n.on ? CRIMSON : "transparent", border: "none", borderRadius: 999, cursor: "pointer" }}>{n.label}</button>
-      ))}
-    </div>
+    <WalletChrome
+      items={navDefs.map((n) => ({
+        id: n.id,
+        label: n.label,
+        on: n.on,
+        onClick: () => setScreen(n.id),
+      }))}
+      showNav={authed}
+      showHeader
+      showTabBar={showTabBar}
+      compact={mobile}
+    />
   );
 
   /* ---------- login ---------- */
@@ -852,12 +837,20 @@ export default function SeasonTickets({
           <h1 style={{ margin: 0, fontSize: h1Size, fontWeight: 600, letterSpacing: "-0.03em", lineHeight: 1.05 }}>Welcome Aggie Nation!</h1>
           <p style={{ margin: 0, fontSize: 15, lineHeight: 1.6, color: SUB }}>Sign in to the email on your NM State season ticket account and we&apos;ll send a six-digit code. No password to remember.</p>
         </div>
-        <div style={{ ...card, borderRadius: 24, boxShadow: "0 1px 2px rgba(5,27,53,0.05), 0 20px 46px -22px rgba(5,27,53,0.45)", padding: 22, display: "flex", flexDirection: "column", gap: 14 }}>
+        <form
+          noValidate
+          style={{ ...card, borderRadius: 24, boxShadow: "0 1px 2px rgba(5,27,53,0.05), 0 20px 46px -22px rgba(5,27,53,0.45)", padding: 22, display: "flex", flexDirection: "column", gap: 14 }}
+          onSubmit={(e) => {
+            e.preventDefault();
+            setScreen("code");
+            setCode("");
+          }}
+        >
           <label style={{ fontSize: 12, fontWeight: 600, color: FAINT }}>Email address</label>
-          <input value={email} onChange={(e) => setEmail(e.target.value)} placeholder="you@email.com" style={{ fontFamily: "inherit", width: "100%", boxSizing: "border-box", fontSize: 16, color: INK, background: FIELD, border: "1px solid rgba(5,27,53,0.12)", borderRadius: 14, padding: "15px 16px", outline: "none" }} />
-          <button onClick={() => { setScreen("code"); setCode(""); }} style={{ fontFamily: "inherit", width: "100%", fontSize: 15, fontWeight: 600, color: "#fff", background: CRIMSON, border: "none", borderRadius: 999, padding: 16, cursor: "pointer", boxShadow: "0 12px 26px -12px rgba(5,27,53,0.85)" }}>Send my code</button>
+          <input name="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="you@email.com" style={{ fontFamily: "inherit", width: "100%", boxSizing: "border-box", fontSize: 16, color: INK, background: FIELD, border: "1px solid rgba(5,27,53,0.12)", borderRadius: 14, padding: "15px 16px", outline: "none" }} />
+          <button type="submit" style={{ fontFamily: "inherit", width: "100%", fontSize: 15, fontWeight: 600, color: INK, background: ACCENT, border: "none", borderRadius: 999, padding: 16, cursor: "pointer" }}>Send my code</button>
           <div style={{ fontSize: 12, lineHeight: 1.5, color: MUTE, textAlign: "center" }}>By continuing you agree to the Blocktickets terms and privacy policy.</div>
-        </div>
+        </form>
       </div>
     </div>
   );
@@ -1351,14 +1344,14 @@ export default function SeasonTickets({
         </>
       ) : (
         <div style={{ ...card, borderRadius: 24, padding: mobile ? "34px 20px" : "48px 32px", display: "flex", flexDirection: "column", alignItems: "center", gap: 14, textAlign: "center" }}>
-          <div style={{ width: 64, height: 64, borderRadius: 999, background: CRIMSON, display: "flex", alignItems: "center", justifyContent: "center", padding: 11, boxSizing: "border-box" }}>
+          <div style={{ width: 64, height: 64, borderRadius: 999, background: INK, display: "flex", alignItems: "center", justifyContent: "center", padding: 11, boxSizing: "border-box" }}>
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img src={LOGO} alt="" style={{ maxWidth: "100%", maxHeight: "100%", display: "block" }} />
           </div>
           <h2 style={{ margin: 0, fontSize: 21, fontWeight: 600, letterSpacing: "-0.02em", lineHeight: 1.2 }}>No NM State tickets on this email</h2>
           <p style={{ margin: 0, maxWidth: 420, fontSize: 15, lineHeight: 1.6, color: SUB }}>We couldn&apos;t find season tickets, single-game tickets, or vouchers for <strong style={{ fontWeight: 600, color: INK }}>{email}</strong>. If you bought with a different address, sign in with that one.</p>
           <div style={{ display: "flex", flexWrap: "wrap", justifyContent: "center", gap: 8, paddingTop: 4 }}>
-            <button style={{ ...crimsonBtn, padding: "14px 22px", minHeight: 48, fontSize: 15 }}>Browse NM State tickets</button>
+            <button style={{ ...accentBtn, padding: "14px 22px", minHeight: 48, fontSize: 15 }}>Browse NM State tickets</button>
             <button onClick={() => setScreen("login")} style={{ ...ghostBtn, padding: "14px 22px", minHeight: 48, fontSize: 15 }}>Try a different email</button>
           </div>
         </div>
@@ -1568,7 +1561,7 @@ export default function SeasonTickets({
 
             {/* seat strip */}
             <div style={{ display: "flex", alignItems: "stretch", borderBottom: "1px solid rgba(5,27,53,0.08)" }}>
-              <div style={{ width: 5, background: CRIMSON }} />
+              <div style={{ width: 5, background: ACCENT }} />
               <div style={{ flex: 1, minWidth: 0, padding: "16px 18px", display: "flex", flexDirection: "column", gap: 10 }}>
                 <div style={{ display: "flex", alignItems: "baseline", gap: 14 }}>
                   {[["Sec", t.sec], ["Row", t.row], ["Seat", t.seatNo]].map(([k, v]) => (
@@ -1589,7 +1582,7 @@ export default function SeasonTickets({
                 Add to Apple Wallet
               </button>
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
-                <button onClick={() => { setDetail(t); setModal("details"); }} style={{ fontFamily: "inherit", minHeight: 44, fontSize: 14, fontWeight: 600, color: CRIMSON, background: "#fff", border: "1px solid rgba(140,11,66,0.28)", borderRadius: 12, cursor: "pointer" }}>View QR-Code</button>
+                <button onClick={() => { setDetail(t); setModal("details"); }} style={{ fontFamily: "inherit", minHeight: 44, fontSize: 14, fontWeight: 600, color: INK, background: "#fff", border: `1px solid ${ACCENT}`, borderRadius: 12, cursor: "pointer" }}>View QR-Code</button>
                 <button onClick={() => { setDetail(t); setModal("details"); }} style={{ fontFamily: "inherit", minHeight: 44, fontSize: 14, fontWeight: 600, color: INK, background: "#fff", border: "1px solid rgba(5,27,53,0.14)", borderRadius: 12, cursor: "pointer" }}>Ticket details</button>
               </div>
             </div>
@@ -1597,8 +1590,8 @@ export default function SeasonTickets({
             {/* verified footer */}
             <div style={{ borderTop: "1px dashed rgba(5,27,53,0.16)", padding: "11px 18px", display: "flex", alignItems: "center", justifyContent: "center" }}>
               <div style={{ display: "flex", alignItems: "center", gap: 7 }}>
-                <svg viewBox="0 0 24 24" fill="none" stroke={CRIMSON} strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" style={{ width: 14, height: 14 }}><path d="M12 3l7 3v5c0 4.4-2.9 8.3-7 10-4.1-1.7-7-5.6-7-10V6l7-3z" /><path d="M9 12l2 2 4-4" /></svg>
-                <span style={{ fontSize: 11, fontWeight: 600, letterSpacing: "0.12em", textTransform: "uppercase", color: CRIMSON }}>Verified Ticket</span>
+                <svg viewBox="0 0 24 24" fill="none" stroke={INK} strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" style={{ width: 14, height: 14 }}><path d="M12 3l7 3v5c0 4.4-2.9 8.3-7 10-4.1-1.7-7-5.6-7-10V6l7-3z" /><path d="M9 12l2 2 4-4" /></svg>
+                <span style={{ fontSize: 11, fontWeight: 600, letterSpacing: "0.12em", textTransform: "uppercase", color: INK }}>Verified Ticket</span>
               </div>
             </div>
           </div>
@@ -1608,7 +1601,7 @@ export default function SeasonTickets({
       {/* dots */}
       <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 7 }}>
         {ticketRows.map((_, i) => (
-          <div key={i} style={{ width: 7, height: 7, borderRadius: 999, background: i === 0 ? CRIMSON : "rgba(5,27,53,0.22)" }} />
+          <div key={i} style={{ width: 7, height: 7, borderRadius: 999, background: i === 0 ? ACCENT : "rgba(5,27,53,0.22)" }} />
         ))}
       </div>
 
@@ -1655,7 +1648,7 @@ export default function SeasonTickets({
                   <img src={SEATMAP_THUMB} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
                 </div>
                 <div style={{ flex: 1, minWidth: 150, display: "flex", flexDirection: "column", gap: 5 }}>
-                  <span style={{ alignSelf: "flex-start", fontSize: 11, fontWeight: 600, color: CRIMSON, background: SOFT, borderRadius: 999, padding: "4px 10px" }}>{ticketBadge}</span>
+                  <span style={{ alignSelf: "flex-start", fontSize: 11, fontWeight: 600, color: INK, background: SOFT, borderRadius: 999, padding: "4px 10px" }}>{ticketBadge}</span>
                   <div style={{ fontSize: 17, fontWeight: 600, letterSpacing: "-0.015em" }}>{t.seat}</div>
                 </div>
                 <div style={{ display: "flex", gap: 8, flexShrink: 0 }}>
@@ -1665,7 +1658,7 @@ export default function SeasonTickets({
               </div>
             ))}
             <div style={{ padding: `14px ${padX}px`, background: "#fbfcfe", display: "flex", alignItems: "center", gap: 12 }}>
-              <svg viewBox="0 0 24 24" fill="none" stroke={CRIMSON} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" style={{ width: 18, height: 18, flexShrink: 0 }}><rect x="3" y="3" width="7" height="7" /><rect x="14" y="3" width="7" height="7" /><rect x="3" y="14" width="7" height="7" /><line x1="14" y1="14" x2="21" y2="14" /><line x1="14" y1="18" x2="18" y2="18" /><line x1="18" y1="21" x2="21" y2="21" /></svg>
+              <svg viewBox="0 0 24 24" fill="none" stroke={INK} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" style={{ width: 18, height: 18, flexShrink: 0 }}><rect x="3" y="3" width="7" height="7" /><rect x="14" y="3" width="7" height="7" /><rect x="3" y="14" width="7" height="7" /><line x1="14" y1="14" x2="21" y2="14" /><line x1="14" y1="18" x2="18" y2="18" /><line x1="18" y1="21" x2="21" y2="21" /></svg>
               <div style={{ fontSize: 13, lineHeight: 1.5, color: FAINT }}><strong style={{ fontWeight: 600, color: INK }}>Your phone is your ticket.</strong> QR codes open on your phone only. Add each seat to Apple/Google Wallet on game day.</div>
             </div>
           </div>
@@ -1681,7 +1674,7 @@ export default function SeasonTickets({
             <div style={eyebrow}>Getting there</div>
             <div style={{ fontSize: 15, fontWeight: 600 }}>{ev.venue}</div>
             <div style={{ fontSize: 13, lineHeight: 1.5, color: SUB }}>{ev.address}</div>
-            <button style={{ ...crimsonBtn, alignSelf: "flex-start", marginTop: 6, display: "flex", alignItems: "center", gap: 7, fontSize: 13, padding: "11px 18px" }}>
+            <button style={{ ...accentBtn, alignSelf: "flex-start", marginTop: 6, display: "flex", alignItems: "center", gap: 7, fontSize: 13, padding: "11px 18px" }}>
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" style={{ width: 14, height: 14 }}><polygon points="3 11 22 2 13 21 11 13 3 11" /></svg>Get directions
             </button>
           </div>
@@ -1826,8 +1819,8 @@ export default function SeasonTickets({
         </div>
       </div>
       <div style={{ display: "flex", gap: 10, background: SOFT, borderRadius: 16, padding: "14px 16px" }}>
-        <svg viewBox="0 0 24 24" fill="none" stroke={CRIMSON} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" style={{ width: 17, height: 17, flexShrink: 0, marginTop: 1 }}><circle cx="12" cy="12" r="10" /><line x1="12" y1="16" x2="12" y2="12" /><line x1="12" y1="8" x2="12.01" y2="8" /></svg>
-        <div style={{ fontSize: 13, lineHeight: 1.5, color: CRIMSON }}>Redeem a voucher for a ticket at the Box Office for any available game.</div>
+        <svg viewBox="0 0 24 24" fill="none" stroke={INK} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" style={{ width: 17, height: 17, flexShrink: 0, marginTop: 1 }}><circle cx="12" cy="12" r="10" /><line x1="12" y1="16" x2="12" y2="12" /><line x1="12" y1="8" x2="12.01" y2="8" /></svg>
+        <div style={{ fontSize: 13, lineHeight: 1.5, color: INK }}>Redeem a voucher for a ticket at the Box Office for any available game.</div>
       </div>
       <div style={{ ...card, borderRadius: 20, overflow: "hidden" }}>
         <div style={{ padding: `15px ${padX}px`, display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 12, borderBottom: "1px solid rgba(5,27,53,0.08)" }}>
@@ -1912,11 +1905,11 @@ export default function SeasonTickets({
               <div style={{ fontSize: 13, fontWeight: 600 }}>$1,400 to Crimson level</div>
               <div style={{ fontSize: 12, color: MUTE }}>unlocks earlier seat selection</div>
             </div>
-            <div style={{ height: 8, borderRadius: 999, background: "#edeff7", overflow: "hidden" }}><div style={{ width: "64%", height: "100%", background: CRIMSON }} /></div>
+            <div style={{ height: 8, borderRadius: 999, background: "#edeff7", overflow: "hidden" }}><div style={{ width: "64%", height: "100%", background: ACCENT }} /></div>
           </div>
         )}
         <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
-          <button style={crimsonBtn}>Make a gift</button>
+          <button style={accentBtn}>Make a gift</button>
           <button style={ghostBtn}>Export tax receipts</button>
         </div>
       </div>
@@ -1966,7 +1959,7 @@ export default function SeasonTickets({
     <div style={{ maxWidth: 1100, margin: "0 auto", padding: bodyPad, display: "flex", flexDirection: "column", gap: 18 }}>
       <h1 style={{ margin: 0, fontSize: h1Size, fontWeight: 600, letterSpacing: "-0.03em", lineHeight: 1 }}>Profile</h1>
       <div style={{ ...card, borderRadius: 24, boxShadow: "0 1px 2px rgba(5,27,53,0.05), 0 20px 46px -22px rgba(5,27,53,0.45)", padding: cardPad, display: "flex", alignItems: "center", gap: 16 }}>
-        <div style={{ width: 56, height: 56, borderRadius: 999, background: CRIMSON, color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 19, fontWeight: 600, flexShrink: 0 }}>{isHolder ? "HC" : (email[0] || "?").toUpperCase()}</div>
+        <div style={{ width: 56, height: 56, borderRadius: 999, background: ACCENT, color: INK, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 19, fontWeight: 600, flexShrink: 0 }}>{isHolder ? "HC" : (email[0] || "?").toUpperCase()}</div>
         <div style={{ minWidth: 0, display: "flex", flexDirection: "column", gap: 3 }}>
           <div style={{ fontSize: 18, fontWeight: 600, letterSpacing: "-0.015em" }}>{isHolder ? "Harrison Cogan" : email}</div>
           <div style={{ fontSize: 13, color: SUB }}>{isHolder ? "Account 4407086 · member since 2024" : "No season ticket account linked to this email"}</div>
@@ -2009,7 +2002,7 @@ export default function SeasonTickets({
                   <div style={{ fontSize: 14, fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis" }}>{isToggle ? r.v : val}</div>
                 </div>
                 {isToggle ? (
-                  <button onClick={() => setToggles((p) => ({ ...p, [r.k]: !on }))} aria-label={r.k} style={{ flexShrink: 0, width: 50, height: 30, borderRadius: 999, border: "none", padding: 3, boxSizing: "border-box", cursor: "pointer", background: on ? CRIMSON : "#d7dbe6", display: "flex", justifyContent: on ? "flex-end" : "flex-start" }}>
+                  <button onClick={() => setToggles((p) => ({ ...p, [r.k]: !on }))} aria-label={r.k} style={{ flexShrink: 0, width: 50, height: 30, borderRadius: 999, border: "none", padding: 3, boxSizing: "border-box", cursor: "pointer", background: on ? ACCENT : "#d7dbe6", display: "flex", justifyContent: on ? "flex-end" : "flex-start" }}>
                     <span style={{ width: 24, height: 24, borderRadius: 999, background: "#fff", boxShadow: "0 2px 5px rgba(5,27,53,0.28)", display: "block" }} />
                   </button>
                 ) : (
@@ -2077,15 +2070,30 @@ export default function SeasonTickets({
           </div>
           {closeX(() => setModal(null))}
         </div>
+        <form
+          noValidate
+          style={{ display: "flex", flexDirection: "column", gap: 18 }}
+          onSubmit={(e) => {
+            e.preventDefault();
+            const next = String(new FormData(e.currentTarget).get("fieldValue") || fieldValue);
+            setFieldValue(next);
+            if (field) {
+              setPvals((p) => ({ ...p, [field.key]: next }));
+              flashToast(field.key + " updated");
+            }
+            setModal(null);
+          }}
+        >
         <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
           <label style={{ fontSize: 12, fontWeight: 600, color: FAINT }}>{field?.label}</label>
-          <input value={fieldValue} onChange={(e) => setFieldValue(e.target.value)} style={{ fontFamily: "inherit", width: "100%", boxSizing: "border-box", fontSize: 16, color: INK, background: FIELD, border: "1px solid rgba(5,27,53,0.12)", borderRadius: 14, padding: "14px 16px", outline: "none" }} />
+          <input name="fieldValue" value={fieldValue} onChange={(e) => setFieldValue(e.target.value)} style={{ fontFamily: "inherit", width: "100%", boxSizing: "border-box", fontSize: 16, color: INK, background: FIELD, border: "1px solid rgba(5,27,53,0.12)", borderRadius: 14, padding: "14px 16px", outline: "none" }} />
           <div style={{ fontSize: 12, lineHeight: 1.5, color: MUTE }}>{field?.help}</div>
         </div>
         <div style={{ display: "flex", gap: 8 }}>
-          <button onClick={() => setModal(null)} style={{ fontFamily: "inherit", flex: 1, fontSize: 15, fontWeight: 600, color: INK, background: "#f1f3f8", border: "none", borderRadius: 999, padding: 14, minHeight: 48, cursor: "pointer" }}>Cancel</button>
-          <button onClick={() => { if (field) { setPvals((p) => ({ ...p, [field.key]: fieldValue })); flashToast(field.key + " updated"); } setModal(null); }} style={{ fontFamily: "inherit", flex: 1, fontSize: 15, fontWeight: 600, color: "#fff", background: CRIMSON, border: "none", borderRadius: 999, padding: 14, minHeight: 48, cursor: "pointer" }}>Save</button>
+          <button type="button" onClick={() => setModal(null)} style={{ fontFamily: "inherit", flex: 1, fontSize: 15, fontWeight: 600, color: INK, background: "#f1f3f8", border: "none", borderRadius: 999, padding: 14, minHeight: 48, cursor: "pointer" }}>Cancel</button>
+          <button type="submit" style={{ fontFamily: "inherit", flex: 1, fontSize: 15, fontWeight: 600, color: INK, background: ACCENT, border: "none", borderRadius: 999, padding: 14, minHeight: 48, cursor: "pointer" }}>Save</button>
         </div>
+        </form>
       </div>
     </div>
   );
@@ -2096,15 +2104,25 @@ export default function SeasonTickets({
   const tfRowLabel = tfEv?.tickets?.[0] ? tfEv.tickets[0].seat.split(" · ").slice(0, 2).join(" · ") : "";
   const tfStep = tf?.step || 1;
   const tfSel = tf?.sel || [];
-  const tfValidEmail = /.+@.+\..+/.test(tf?.email || "");
-  const tfCanNext = tfStep === 1 ? tfSel.length > 0 : tfStep === 2 ? tfValidEmail : true;
-  const doTfPrimary = () => {
-    if (!tf || !tfCanNext) return;
+  const tfCanNext = tfStep === 1 ? tfSel.length > 0 : true;
+  const doTfPrimary = (rawEmail?: string) => {
+    if (!tf) return;
+    if (tfStep === 1 && tfSel.length === 0) return;
     if (tfStep === 4) { setTf(null); return; }
     if (tfStep === 3) {
       const entry: Sent = { id: "t" + Date.now(), to: tf.email, title: tfEv?.title || "", seat: tfRowLabel + " · Seat " + tfSel.join(", "), on: new Date().toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }), status: "pending" };
       setSent([entry, ...sentList]);
       setTf({ ...tf, step: 4 });
+      return;
+    }
+    if (tfStep === 2) {
+      const next = normalizeEmail(rawEmail ?? tf.email);
+      if (emailSubmitInvalid(next)) {
+        setTfEmailErr(true);
+        return;
+      }
+      setTfEmailErr(false);
+      setTf({ ...tf, email: next, step: 3 });
       return;
     }
     setTf({ ...tf, step: tfStep + 1 });
@@ -2128,7 +2146,7 @@ export default function SeasonTickets({
               {tfSeatNos.map((no) => {
                 const picked = tfSel.includes(no);
                 return (
-                  <button key={no} onClick={() => setTf({ ...tf!, sel: picked ? tfSel.filter((x) => x !== no) : [...tfSel, no] })} style={{ fontFamily: "inherit", width: 92, display: "flex", flexDirection: "column", alignItems: "center", gap: 2, background: picked ? CRIMSON : FIELD, color: picked ? "#fff" : INK, border: `1px solid ${picked ? CRIMSON : "rgba(5,27,53,0.10)"}`, borderRadius: 16, padding: "16px 10px", cursor: "pointer" }}>
+                  <button key={no} onClick={() => setTf({ ...tf!, sel: picked ? tfSel.filter((x) => x !== no) : [...tfSel, no] })} style={{ fontFamily: "inherit", width: 92, display: "flex", flexDirection: "column", alignItems: "center", gap: 2, background: picked ? ACCENT : FIELD, color: INK, border: `1px solid ${picked ? ACCENT : "rgba(5,27,53,0.10)"}`, borderRadius: 16, padding: "16px 10px", cursor: "pointer" }}>
                     <span style={{ fontSize: 12, fontWeight: 500, color: picked ? "rgba(255,255,255,0.72)" : MUTE }}>Seat</span>
                     <span style={{ fontSize: 22, fontWeight: 600, letterSpacing: "-0.02em" }}>{no}</span>
                   </button>
@@ -2138,21 +2156,37 @@ export default function SeasonTickets({
           </div>
         )}
         {tfStep === 2 && (
-          <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+          <form
+            id="season-xfer"
+            noValidate
+            style={{ display: "flex", flexDirection: "column", gap: 14 }}
+            onSubmit={(e) => {
+              e.preventDefault();
+              doTfPrimary(submittedEmail(new FormData(e.currentTarget)));
+            }}
+          >
             <div style={{ fontSize: 17, fontWeight: 600, letterSpacing: "-0.015em" }}>Enter the recipient&apos;s email address</div>
             <p style={{ margin: 0, fontSize: 14, lineHeight: 1.55, color: SUB }}>They&apos;ll get an email saying you sent them a ticket. It stays in your account until they claim it.</p>
-            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-              <label style={{ ...eyebrow, letterSpacing: "0.1em" }}>Email address</label>
-              <input value={tf?.email || ""} onChange={(e) => setTf({ ...tf!, email: e.target.value })} placeholder="name@email.com" style={{ fontFamily: "inherit", width: "100%", boxSizing: "border-box", fontSize: 16, color: INK, background: FIELD, border: "1px solid rgba(5,27,53,0.12)", borderRadius: 14, padding: "14px 16px", outline: "none" }} />
-            </div>
-          </div>
+            <EmailField
+              id="season-xfer-email"
+              name="email"
+              placeholder="name@email.com"
+              value={tf?.email || ""}
+              invalid={tfEmailErr}
+              onChange={(value) => {
+                setTf({ ...tf!, email: value });
+                setTfEmailErr(false);
+              }}
+              onBlur={(value) => setTfEmailErr(emailBlurInvalid(value))}
+            />
+          </form>
         )}
         {tfStep === 3 && (
           <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
             <div style={{ fontSize: 17, fontWeight: 600, letterSpacing: "-0.015em" }}>You are about to transfer {tfSel.length} {tfSel.length === 1 ? "ticket" : "tickets"}</div>
             <div style={{ display: "flex", flexWrap: "wrap", gap: 10 }}>
               {tfSel.map((no) => (
-                <div key={no} style={{ width: 92, display: "flex", flexDirection: "column", alignItems: "center", gap: 2, background: CRIMSON, color: "#fff", borderRadius: 16, padding: "16px 10px" }}>
+                <div key={no} style={{ width: 92, display: "flex", flexDirection: "column", alignItems: "center", gap: 2, background: ACCENT, color: INK, borderRadius: 16, padding: "16px 10px" }}>
                   <span style={{ fontSize: 12, fontWeight: 500, color: "rgba(255,255,255,0.72)" }}>Seat</span>
                   <span style={{ fontSize: 22, fontWeight: 600, letterSpacing: "-0.02em" }}>{no}</span>
                 </div>
@@ -2176,12 +2210,20 @@ export default function SeasonTickets({
 
         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
           {(tfStep === 2 || tfStep === 3) && (
-            <button onClick={() => setTf({ ...tf!, step: tfStep - 1 })} style={{ fontFamily: "inherit", flexShrink: 0, display: "flex", alignItems: "center", gap: 8, fontSize: 15, fontWeight: 600, color: INK, background: "#fff", border: "none", padding: "14px 12px", minHeight: 48, cursor: "pointer" }}><BackArrow />Back</button>
+            <button type="button" onClick={() => setTf({ ...tf!, step: tfStep - 1 })} style={{ fontFamily: "inherit", flexShrink: 0, display: "flex", alignItems: "center", gap: 8, fontSize: 15, fontWeight: 600, color: INK, background: "#fff", border: "none", padding: "14px 12px", minHeight: 48, cursor: "pointer" }}><BackArrow />Back</button>
           )}
           {tfStep === 4 && (
-            <button onClick={() => { setTf(null); setScreen("listings"); setListTab("active"); }} style={{ fontFamily: "inherit", flex: 1, fontSize: 15, fontWeight: 600, color: INK, background: "#f1f3f8", border: "none", borderRadius: 999, padding: 14, minHeight: 48, cursor: "pointer" }}>My transfers</button>
+            <button type="button" onClick={() => { setTf(null); setScreen("listings"); setListTab("active"); }} style={{ fontFamily: "inherit", flex: 1, fontSize: 15, fontWeight: 600, color: INK, background: "#f1f3f8", border: "none", borderRadius: 999, padding: 14, minHeight: 48, cursor: "pointer" }}>My transfers</button>
           )}
-          <button onClick={doTfPrimary} disabled={!tfCanNext} style={{ fontFamily: "inherit", flex: 1, fontSize: 15, fontWeight: 600, color: "#fff", background: tfCanNext ? CRIMSON : "#d7dbe6", border: "none", borderRadius: 999, padding: 14, minHeight: 48, cursor: "pointer" }}>{tfStep === 3 ? "Transfer" : tfStep === 4 ? "Close" : "Next"}</button>
+          <button
+            type={tfStep === 2 ? "submit" : "button"}
+            form={tfStep === 2 ? "season-xfer" : undefined}
+            onClick={tfStep === 2 ? undefined : () => doTfPrimary()}
+            disabled={!tfCanNext}
+            style={{ fontFamily: "inherit", flex: 1, fontSize: 15, fontWeight: 600, color: tfCanNext ? INK : MUTE, background: tfCanNext ? ACCENT : "#d7dbe6", border: "none", borderRadius: 999, padding: 14, minHeight: 48, cursor: "pointer" }}
+          >
+            {tfStep === 3 ? "Transfer" : tfStep === 4 ? "Close" : "Next"}
+          </button>
         </div>
       </div>
     </div>
@@ -2202,7 +2244,7 @@ export default function SeasonTickets({
             </div>
           ))}
         </div>
-        <button onClick={() => setModal(null)} style={{ fontFamily: "inherit", width: "100%", fontSize: 15, fontWeight: 600, color: "#fff", background: CRIMSON, border: "none", borderRadius: 999, padding: 14, minHeight: 48, cursor: "pointer" }}>Close</button>
+        <button onClick={() => setModal(null)} style={{ fontFamily: "inherit", width: "100%", fontSize: 15, fontWeight: 600, color: INK, background: ACCENT, border: "none", borderRadius: 999, padding: 14, minHeight: 48, cursor: "pointer" }}>Close</button>
       </div>
     </div>
   );
@@ -2250,8 +2292,6 @@ export default function SeasonTickets({
           {screen === "profile" && Profile()}
         </>
       )}
-
-      {mobile && authed && !showingEventDetail && screen !== "seasonPackage" && TabBar()}
 
       {modal === "details" && DetailsModal()}
       {modal === "field" && FieldModal()}

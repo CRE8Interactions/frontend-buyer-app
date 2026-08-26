@@ -15,7 +15,7 @@ shared helpers and field components.
 
 | Need | Import |
 |------|--------|
-| Rules and copy | `lib/fieldValidation.ts` (`normalizeEmail`, `isBlockedEmail`, `emailPatternMatch`, `emailLooksInvalid`, `nameAllows`, `nameFieldError`, `namePatternMatch`, `phoneNumberError`, `normalizeOtp`, `FIELD_COPY`) |
+| Rules and copy | `lib/fieldValidation.ts` (`normalizeEmail`, `isBlockedEmail`, `emailPatternMatch`, `emailLooksInvalid`, `emailBlurInvalid`, `emailSubmitInvalid`, `formString`, `submittedEmail`, `nameAllows`, `nameFieldError`, `namePatternMatch`, `phoneNumberError`, `normalizeOtp`, `FIELD_COPY`) |
 | Email input | `components/molecules/EmailField.tsx` |
 | Name input | `components/molecules/NameField.tsx` |
 | OTP / verify code | `components/molecules/CodeField.tsx` |
@@ -24,9 +24,26 @@ shared helpers and field components.
 `lib/helpers.ts` re-exports the email/name helpers for existing imports. New
 code should import from `lib/fieldValidation.ts`.
 
+## Submit, blur, Enter, and autofill
+
+1. Wrap shopper text actions in `<form noValidate onSubmit>`. Primary CTA is
+   `type="submit"`. Cancel / Back are `type="button"`.
+2. Field completeness never disables submit. Disable only for busy, succeeded,
+   missing Stripe, sold out, no tickets selected, or unchanged settings.
+3. Enter and click must run the **same** submit handler. Do not add per-input
+   `onKeyDown` Enter handlers.
+4. On submit, read `FormData` with `formString` / `submittedEmail` (Safari
+   autofill may never update React state). Re-run full local validation on
+   those values. Do not trust blur flags. Do not call the API if local checks
+   fail.
+5. Blur is a hint for a **non-empty** field (`emailBlurInvalid`). Empty is
+   valid on idle blur and invalid on submit (`emailSubmitInvalid`).
+6. Shared fields mirror native `onInput` into `onChange` so Safari `input`
+   events update state. `FormData` is still the submit-time source of truth.
+
 ## Email order
 
-1. Trim and lowercase with `normalizeEmail` before any API call.
+1. Read the submitted/DOM value, then trim and lowercase with `normalizeEmail`.
 2. `isBlockedEmail` first (disposable domains and `.ru` / `.ua`).
 3. Then syntax via `emailPatternMatch` / `emailLooksInvalid`.
 4. Then SendGrid `validateEmail` **only** on send-code paths (login / wallet).
