@@ -8,7 +8,10 @@ import Link from "next/link";
  * page and the dark marketing pages (Our Story, etc.).
  */
 
-const FOOT_COLS: { title: string; links: { label: string; href: string }[] }[] = [
+const FOOT_COLS: {
+  title: string;
+  links: { label: string; href: string; newTab?: boolean }[];
+}[] = [
   { title: "Company", links: [
     { label: "Home", href: "/" },
     { label: "Our Story", href: "/our-story" },
@@ -16,14 +19,14 @@ const FOOT_COLS: { title: string; links: { label: string; href: string }[] }[] =
     { label: "Sell with us", href: "/sell" },
   ] },
   { title: "Legal", links: [
-    { label: "Purchase Policy", href: "/purchase-policy" },
-    { label: "Terms & Conditions", href: "/terms-conditions" },
-    { label: "Privacy Policy", href: "/privacy-policy" },
-    { label: "Disclaimer", href: "/disclaimer" },
-    { label: "Cookies Policy", href: "/cookies-policy" },
+    { label: "Purchase Policy", href: "/purchase-policy", newTab: true },
+    { label: "Terms & Conditions", href: "/terms-conditions", newTab: true },
+    { label: "Privacy Policy", href: "/privacy-policy", newTab: true },
+    { label: "Disclaimer", href: "/disclaimer", newTab: true },
+    { label: "Cookies Policy", href: "/cookies-policy", newTab: true },
   ] },
   { title: "Support", links: [
-    { label: "Help Center", href: "#" },
+    { label: "Help Center", href: "https://help.blocktickets.xyz/en/" },
   ] },
 ];
 
@@ -50,13 +53,23 @@ export default function SiteFooter() {
           {FOOT_COLS.map((col) => (
             <div key={col.title} style={{ display: "flex", flexDirection: "column", gap: 12, minWidth: 130 }}>
               <div style={{ fontSize: 10, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.12em", color: "#7e8fa8" }}>{col.title}</div>
-              {col.links.map((l) => (
-                l.label === "Help Center" ? (
-                  <a key={l.label} href={l.href} style={{ color: "#b8c6dc", textDecoration: "none" }}>{l.label}</a>
+              {col.links.map((l) => {
+                const offSite = /^https?:\/\//.test(l.href);
+                const newTab = offSite || l.newTab;
+                const tabProps = newTab
+                  ? { target: "_blank" as const, rel: "noopener noreferrer" }
+                  : {};
+                const style = { color: "#b8c6dc", textDecoration: "none" };
+                return offSite ? (
+                  <a key={l.label} href={l.href} style={style} {...tabProps}>
+                    {l.label}
+                  </a>
                 ) : (
-                  <Link key={l.label} href={l.href} style={{ color: "#b8c6dc", textDecoration: "none" }}>{l.label}</Link>
-                )
-              ))}
+                  <Link key={l.label} href={l.href} style={style} {...tabProps}>
+                    {l.label}
+                  </Link>
+                );
+              })}
             </div>
           ))}
         </div>

@@ -440,13 +440,13 @@ export function isWalletAccountPath(pathname = "") {
 }
 
 /**
- * Team/event/venue/checkout origins. Not browse/home/Our Story, not wallet.
+ * Team/event/venue/checkout origins. Not browse/home/legal/Our Story, not wallet.
  */
 export function isTenantOriginPath(pathname = "") {
   if (isWalletAccountPath(pathname)) return false;
   if (isLoginLoaderPath(pathname)) return false;
   const path = pathname.replace(/\/+$/, "") || "/";
-  if (path === "/" || path === "/browse" || path === "/our-story") return false;
+  if (isPlatformPagePath(path)) return false;
   if (path === "/checkout" || path.startsWith("/checkout/")) return true;
   if (/^\/e\//.test(pathname)) return true;
   if (/^\/venue\//i.test(pathname)) return true;
@@ -486,16 +486,34 @@ export function hasLoginRedirect(search = "") {
 }
 
 /**
- * Home, browse, and Our Story use the Blocktickets spinner — never a team.
- * Login joins them unless it is returning the shopper to a tenant route.
+ * Home, browse, Our Story, and footer legal pages use the Blocktickets spinner
+ * — never a team. Login joins them unless it is returning the shopper to a
+ * tenant route.
  */
+export const PLATFORM_PAGE_PATHS = [
+  "/",
+  "/browse",
+  "/our-story",
+  "/purchase-policy",
+  "/terms-conditions",
+  "/privacy-policy",
+  "/disclaimer",
+  "/cookies-policy",
+  "/sign-out",
+] as const;
+
+export function isPlatformPagePath(pathname = "") {
+  const path = pathname.replace(/\/+$/, "") || "/";
+  return (PLATFORM_PAGE_PATHS as readonly string[]).includes(path);
+}
+
 export function isPlatformLoaderPath(
   pathname = "",
   search = "",
   opts: { walletEntryFromTenant?: boolean } = {},
 ) {
   const path = pathname.replace(/\/+$/, "") || "/";
-  if (path === "/" || path === "/browse" || path === "/our-story") return true;
+  if (isPlatformPagePath(path)) return true;
   if (isWalletAccountPath(path)) {
     const fromTenant =
       opts.walletEntryFromTenant ?? peekWalletEntryFromTenant();
@@ -603,6 +621,7 @@ export function orgSlugFromPathname(pathname = ""): string | null {
       "browse",
       "our-story",
       "login",
+      "sign-out",
       "search",
       "checkout",
       "settings",

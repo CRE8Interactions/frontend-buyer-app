@@ -613,7 +613,7 @@ describe("storefront categories", () => {
     );
   });
 
-  it("shows My wallet and Log out on the team page when signed in", async () => {
+  it("shows My wallet on the team page when signed in", async () => {
     authMocks.isAuthenticated = true;
     mockedGetStorefront.mockResolvedValue({
       data: {
@@ -623,7 +623,6 @@ describe("storefront categories", () => {
       },
     } as never);
 
-    const user = userEvent.setup();
     render(<ClientProfile slug={raptors.slug} />);
 
     expect(
@@ -632,9 +631,9 @@ describe("storefront categories", () => {
     expect(
       screen.queryByRole("link", { name: /^log in$/i }),
     ).not.toBeInTheDocument();
-
-    await user.click(screen.getByRole("button", { name: /^log out$/i }));
-    expect(authMocks.logout).toHaveBeenCalled();
+    expect(
+      screen.queryByRole("button", { name: /^log out$/i }),
+    ).not.toBeInTheDocument();
   });
 
   it("labels org event rows and sport filters with the org category, not Events", () => {

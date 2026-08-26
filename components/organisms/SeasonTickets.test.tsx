@@ -179,6 +179,17 @@ describe("SeasonTickets section routes", () => {
     );
   });
 
+  it("sends Sign out to /sign-out", async () => {
+    navigationMocks.pathname = "/wallet/my-profile/";
+
+    render(<SeasonTickets />);
+
+    expect(await screen.findByRole("link", { name: /^sign out$/i })).toHaveAttribute(
+      "href",
+      expect.stringMatching(/^\/sign-out\/?$/),
+    );
+  });
+
   it("follows the URL when the shopper moves to another section", async () => {
     const { rerender } = render(<SeasonTickets />);
 

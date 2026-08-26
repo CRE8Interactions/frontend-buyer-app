@@ -575,19 +575,6 @@ export default function ClientProfile({
                 display: "inline-flex",
                 alignItems: "center",
               }}
-              logoutStyle={{
-                fontFamily: "inherit",
-                fontSize: 14,
-                fontWeight: 600,
-                color: "#fff",
-                background: "transparent",
-                border: "none",
-                padding: 0,
-                cursor: "pointer",
-                whiteSpace: "nowrap",
-                textDecoration: "underline",
-                textUnderlineOffset: 3,
-              }}
             />
           </div>
         </div>

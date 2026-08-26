@@ -235,14 +235,14 @@ describe("Select tickets page (PremiumTicketing)", () => {
   it("links the header to My tickets as My wallet when logged in", async () => {
     const auth = authState(true);
     mockedUseAuth.mockReturnValue(auth);
-    const user = await renderReady();
+    await renderReady();
 
     const wallet = screen.getByRole("link", { name: /^my wallet$/i });
     expect(wallet).toHaveAttribute("href", "/wallet/my-tickets/");
     expect(screen.queryByRole("link", { name: /^login$/i })).not.toBeInTheDocument();
-
-    await user.click(screen.getByRole("button", { name: /^log out$/i }));
-    expect(auth.logout).toHaveBeenCalled();
+    expect(
+      screen.queryByRole("button", { name: /^log out$/i }),
+    ).not.toBeInTheDocument();
   });
 
   it("returns a logged-out shopper to the event after header login", async () => {
@@ -361,6 +361,10 @@ describe("Select tickets page (PremiumTicketing)", () => {
     expect(
       screen.queryByRole("button", { name: /^all$/i }),
     ).not.toBeInTheDocument();
+    // The waitlist stands alone: no listings chrome, seat map, or sort controls.
+    expect(screen.queryByTestId("ticketing-map")).not.toBeInTheDocument();
+    expect(screen.queryByText(/find on map/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/sort by price/i)).not.toBeInTheDocument();
 
     const email = screen.getByLabelText(/email address/i);
     await user.type(email, "not-an-email");
@@ -567,6 +571,9 @@ describe("Select tickets page (PremiumTicketing)", () => {
     expect(
       screen.getByRole("button", { name: /get notified/i }),
     ).toBeInTheDocument();
+    expect(screen.getByLabelText(/email address/i)).toBeInTheDocument();
+    // The waitlist stands alone — no "Get tickets" heading over a sold-out event.
+    expect(screen.queryByText(/^get tickets$/i)).not.toBeInTheDocument();
     // Never the placeholder tiers that stand in for an unwired GA page.
     expect(screen.queryByText(/standard admission/i)).not.toBeInTheDocument();
     expect(

@@ -115,7 +115,7 @@ describe("RouteLoader", () => {
     expect(screen.queryByText(raptors.name)).not.toBeInTheDocument();
   });
 
-  it("shows the Blocktickets spinner on home, browse, and Our Story", () => {
+  it("shows the Blocktickets spinner on home, browse, Our Story, and legal pages", () => {
     cacheOrgBranding(raptors);
     mockPathname = "/browse/";
     const { rerender } = render(<RouteLoader />);
@@ -124,6 +124,11 @@ describe("RouteLoader", () => {
     expect(screen.queryByText(raptors.name)).not.toBeInTheDocument();
 
     mockPathname = "/our-story/";
+    rerender(<RouteLoader />);
+    expect(screen.getByAltText(/blocktickets/i)).toBeInTheDocument();
+    expect(screen.queryByText(raptors.name)).not.toBeInTheDocument();
+
+    mockPathname = "/purchase-policy/";
     rerender(<RouteLoader />);
     expect(screen.getByAltText(/blocktickets/i)).toBeInTheDocument();
     expect(screen.queryByText(raptors.name)).not.toBeInTheDocument();

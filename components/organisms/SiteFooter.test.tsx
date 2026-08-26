@@ -32,13 +32,38 @@ describe("SiteFooter", () => {
     expect(screen.getByRole("link", { name: /^browse$/i })).toHaveAttribute(
       "data-next-link",
     );
+    expect(
+      screen.getByRole("link", { name: /^purchase policy$/i }),
+    ).toHaveAttribute("data-next-link");
+    expect(screen.getByRole("link", { name: /^home$/i })).not.toHaveAttribute(
+      "target",
+    );
   });
 
-  it("keeps Help Center as a plain anchor instead of Next.js Link", () => {
+  it("opens legal pages in a new tab", () => {
+    render(<SiteFooter />);
+
+    for (const name of [
+      /^purchase policy$/i,
+      /^terms & conditions$/i,
+      /^privacy policy$/i,
+      /^disclaimer$/i,
+      /^cookies policy$/i,
+    ]) {
+      const link = screen.getByRole("link", { name });
+      expect(link).toHaveAttribute("target", "_blank");
+      expect(link).toHaveAttribute("rel", "noopener noreferrer");
+      expect(link).toHaveAttribute("data-next-link");
+    }
+  });
+
+  it("opens Help Center in a new tab instead of a Next.js Link", () => {
     render(<SiteFooter />);
 
     const help = screen.getByRole("link", { name: /help center/i });
-    expect(help).toBeInTheDocument();
+    expect(help).toHaveAttribute("href", "https://help.blocktickets.xyz/en/");
+    expect(help).toHaveAttribute("target", "_blank");
+    expect(help).toHaveAttribute("rel", "noopener noreferrer");
     expect(help).not.toHaveAttribute("data-next-link");
   });
 });

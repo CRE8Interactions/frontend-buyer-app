@@ -24,7 +24,7 @@ export default function AppShell({
   requireAuth?: boolean;
   hideHeader?: boolean;
 }) {
-  const { ready, isAuthenticated, logout } = useAuth();
+  const { ready, isAuthenticated } = useAuth();
   const router = useRouter();
   const [query, setQuery] = useState("");
 
@@ -81,21 +81,9 @@ export default function AppShell({
               <CartButton />
               {ready &&
                 (isAuthenticated ? (
-                  <>
                     <Link href={walletSectionHref("events")} className="btn btn-primary btn-sm shrink-0">
                       My wallet
                     </Link>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        logout();
-                        router.push("/");
-                      }}
-                      className="text-[14px] text-[#9DA2B3] underline decoration-transparent underline-offset-[3px] transition-colors hover:text-white hover:decoration-white"
-                    >
-                      Log out
-                    </button>
-                  </>
                 ) : (
                   <LoginLink className="btn btn-primary btn-sm shrink-0">
                     Log in

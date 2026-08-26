@@ -3,7 +3,7 @@
 /**
  * Nav — the shared site nav (app-style), matching the Claude Design browse
  * header: solid navy bar, logo, page links (Home / Our Story / Browse), and —
- * on the "app" variant — a search field + Log in, or My wallet and Log out.
+ * on the "app" variant — a search field + Log in or My wallet.
  *
  * variant="app" (default, browse/app pages): logo + centered search + auth actions.
  * variant="marketing" (home, Our Story): logo + page links only.
@@ -199,7 +199,6 @@ export default function Nav({ search, variant = "app" }: Props) {
           {showLogin && (
             <NavAuthActions
               buttonStyle={{ fontFamily: "inherit", fontSize: 14, fontWeight: 600, color: NAVY, background: GREEN, border: "none", borderRadius: 999, padding: "11px 22px", cursor: "pointer", whiteSpace: "nowrap", textDecoration: "none", display: "inline-flex", alignItems: "center", flexShrink: 0 }}
-              logoutStyle={{ fontFamily: "inherit", fontSize: 14, fontWeight: 600, color: "#fff", background: "transparent", border: "none", padding: 0, cursor: "pointer", whiteSpace: "nowrap", textDecoration: "underline", textUnderlineOffset: 3 }}
             />
           )}
           {showLinks && (

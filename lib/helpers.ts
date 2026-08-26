@@ -185,6 +185,7 @@ export const getUrl = (link: string, isGAOnlyEvent?: boolean) =>
 export const RESERVED_ORG_SLUGS = new Set([
   "browse",
   "login",
+  "sign-out",
   "search",
   "checkout",
   "settings",

@@ -242,7 +242,7 @@ export default function PremiumTicketing({
   /** True while the route is refetching after a filter change. */
   refreshing?: boolean;
 }) {
-  const { isAuthenticated, logout } = useAuth();
+  const { isAuthenticated } = useAuth();
   const router = useRouter();
   const ACC = d.accent;
   const ACC_DK = d.accentDark;
@@ -852,7 +852,7 @@ export default function PremiumTicketing({
         justifyContent: "center",
         textAlign: "center",
         gap: 14,
-        padding: fill ? "72px 24px" : "28px 16px",
+        padding: fill ? "72px 24px" : mobile ? "30px 18px" : "40px 24px",
       }}
     >
       <svg
@@ -900,7 +900,7 @@ export default function PremiumTicketing({
             maxWidth: 460,
             display: "flex",
             flexDirection: mobile ? "column" : "row",
-            alignItems: "stretch",
+            alignItems: mobile ? "stretch" : "flex-start",
             gap: 10,
             marginTop: 4,
           }}
@@ -909,6 +909,8 @@ export default function PremiumTicketing({
             <EmailField
               id="soldout-email"
               name="email"
+              label=""
+              aria-label="Email address"
               placeholder="Enter your email"
               value={notifyEmail}
               invalid={notifyEmailInvalid}
@@ -923,7 +925,14 @@ export default function PremiumTicketing({
             type="submit"
             primaryColor={ACC}
             textColor={BTN_INK}
-            style={{ minHeight: 48, padding: "13px 24px" }}
+            style={{
+              /* Same 52px box as the email input, pinned to the field's top row so
+                 a validation message under the field cannot stretch or move it. */
+              height: 52,
+              padding: "0 24px",
+              flexShrink: 0,
+              alignSelf: mobile ? "stretch" : "flex-start",
+            }}
           >
             Get Notified
           </BrandedActionButton>
@@ -1179,15 +1188,6 @@ export default function PremiumTicketing({
               ) : (
                 <LoginLink className="nmt-primary" style={navBtnStyle}>Login</LoginLink>
               )}
-              {isAuthenticated ? (
-                <button
-                  type="button"
-                  onClick={() => logout()}
-                  style={{ fontFamily: "inherit", fontSize: 14, fontWeight: 600, color: navInk, background: "transparent", border: "none", padding: 0, cursor: "pointer", whiteSpace: "nowrap", textDecoration: "underline", textUnderlineOffset: 3 }}
-                >
-                  Log out
-                </button>
-              ) : null}
             </div>
           </div>
         </header>
@@ -1218,8 +1218,9 @@ export default function PremiumTicketing({
 
       {/* MAIN (reserved / seatmap flow) */}
       {!isGa && (
-      <main style={{ flex: "1 1 auto", width: "100%", maxWidth: 1320, margin: "0 auto", padding: mobile ? 12 : `${TICKETING_MAIN_PAD_TOP_PX}px 32px ${TICKETING_MAIN_PAD_BOTTOM_PX}px`, boxSizing: "border-box", display: narrow ? "flex" : "grid", flexDirection: "column", gridTemplateColumns: narrow ? undefined : "minmax(0, 1fr) 340px", gap: 16, alignItems: "start" }}>
-        {narrow && (
+      <main style={{ flex: "1 1 auto", width: "100%", maxWidth: 1320, margin: "0 auto", padding: mobile ? 12 : `${TICKETING_MAIN_PAD_TOP_PX}px 32px ${TICKETING_MAIN_PAD_BOTTOM_PX}px`, boxSizing: "border-box", display: narrow ? "flex" : "grid", flexDirection: "column", gridTemplateColumns: narrow ? undefined : d.soldOut ? "minmax(0, 1fr)" : "minmax(0, 1fr) 340px", gap: 16, alignItems: "start" }}>
+        {/* A sold-out event has nothing to filter or map, so the waitlist card stands alone. */}
+        {narrow && !d.soldOut && (
           <div
             ref={sticky}
             data-testid="ticketing-map"
@@ -1243,9 +1244,15 @@ export default function PremiumTicketing({
           style={{
             ...card,
             borderRadius: mobile ? 16 : 20,
-            padding: mobile ? "16px 16px 20px" : narrow ? "14px 22px 26px" : "0 32px 32px",
+            padding: d.soldOut
+              ? 0
+              : mobile
+                ? "16px 16px 20px"
+                : narrow
+                  ? "14px 22px 26px"
+                  : "0 32px 32px",
             minWidth: 0,
-            ...(narrow
+            ...(narrow && !d.soldOut
               ? {
                   flex: "1 1 0",
                   minHeight: TICKETING_LISTINGS_MIN_PX,
@@ -1255,7 +1262,7 @@ export default function PremiumTicketing({
                   overflow: "hidden",
                 }
               : {}),
-            ...(wide
+            ...(wide && !d.soldOut
               ? {
                   position: "sticky",
                   top: stickTop,
@@ -1272,7 +1279,7 @@ export default function PremiumTicketing({
           }}
         >
           {d.soldOut ? (
-            soldOutPanel(true)
+            soldOutPanel(false)
           ) : seatedScheduled ? (
             scheduledPanel(true)
           ) : (
@@ -1376,7 +1383,7 @@ export default function PremiumTicketing({
           )}
         </section>
 
-        {wide && (
+        {wide && !d.soldOut && (
           <aside
             data-testid="ticketing-map"
             style={{ display: "flex", flexDirection: "column", gap: 20, position: "sticky", top: stickTop, alignSelf: "start" }}
@@ -1422,19 +1429,17 @@ export default function PremiumTicketing({
             </div>
 
             {/* Empty event states have no bottom sheet, so mobile shows inline. */}
-            {(!mobile || gaSoldOut || gaScheduled) && (
+            {gaSoldOut ? (
+              <div style={{ ...card, borderRadius: 20 }}>{soldOutPanel(false)}</div>
+            ) : !mobile || gaScheduled ? (
               <div style={{ ...card, borderRadius: 20, padding: mobile ? 18 : 24, display: "flex", flexDirection: "column", gap: 16 }}>
                 <div style={{ fontSize: 22, fontWeight: 600, letterSpacing: "-0.025em" }}>Get tickets</div>
-                {gaSoldOut
-                  ? soldOutPanel(false)
-                  : gaScheduled
-                    ? scheduledPanel(false)
-                    : gaTierCards}
+                {gaScheduled ? scheduledPanel(false) : gaTierCards}
                 {holdError ? (
                   <div style={{ fontSize: 13, color: "#b91c1c", lineHeight: 1.4 }}>{holdError}</div>
                 ) : null}
               </div>
-            )}
+            ) : null}
 
             <div style={{ ...card, borderRadius: 20, padding: mobile ? 18 : 24, display: "flex", flexDirection: "column", gap: 14 }}>
               <div style={{ fontSize: 12, fontWeight: 600, letterSpacing: "0.12em", textTransform: "uppercase", color: "#8a93a3" }}>About this event</div>

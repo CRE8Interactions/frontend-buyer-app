@@ -44,6 +44,18 @@ describe("boot splash", () => {
     );
   });
 
+  it("spins the Blocktickets mark on a legal page even when a team is cached", () => {
+    cacheOrgBranding(RAPTORS);
+
+    const splash = paintBootSplash("/purchase-policy/");
+
+    expect(splash?.querySelector("img")).toHaveAttribute(
+      "alt",
+      "Blocktickets",
+    );
+    expect(splash?.textContent).not.toContain(RAPTORS.name);
+  });
+
   it("spins the Blocktickets mark on a wallet path after Browse", () => {
     cacheOrgBranding(RAPTORS);
 

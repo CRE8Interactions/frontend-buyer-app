@@ -1984,7 +1984,7 @@ export default function SeasonTickets({
           <div style={{ fontSize: 18, fontWeight: 600, letterSpacing: "-0.015em" }}>{isHolder ? "Harrison Cogan" : email}</div>
           <div style={{ fontSize: 13, color: SUB }}>{isHolder ? "Account 4407086 · member since 2024" : "No season ticket account linked to this email"}</div>
         </div>
-        <button onClick={() => setScreen("login")} style={{ fontFamily: "inherit", marginLeft: "auto", flexShrink: 0, fontSize: 13, fontWeight: 600, color: DANGER, background: "#fff", border: "1px solid rgba(194,57,74,0.28)", borderRadius: 999, padding: "10px 16px", minHeight: 40, whiteSpace: "nowrap", cursor: "pointer" }}>Sign out</button>
+        <Link href="/sign-out/" style={{ fontFamily: "inherit", marginLeft: "auto", flexShrink: 0, fontSize: 13, fontWeight: 600, color: DANGER, background: "#fff", border: "1px solid rgba(194,57,74,0.28)", borderRadius: 999, padding: "10px 16px", minHeight: 40, whiteSpace: "nowrap", cursor: "pointer", textDecoration: "none", display: "inline-flex", alignItems: "center" }}>Sign out</Link>
       </div>
 
       <div style={{ ...card, borderRadius: 20, overflow: "hidden" }}>

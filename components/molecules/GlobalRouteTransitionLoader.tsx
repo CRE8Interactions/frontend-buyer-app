@@ -21,7 +21,7 @@ const MAX_VISIBLE_MS = 15000;
 
 /**
  * Immediate feedback for internal link transitions. Destination branding wins;
- * home / browse / Our Story use the Blocktickets spinner.
+ * home / browse / Our Story / legal pages use the Blocktickets spinner.
  */
 export default function GlobalRouteTransitionLoader() {
   const [branding, setBranding] = useState<CachedBranding | null>(null);

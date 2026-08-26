@@ -63,7 +63,7 @@ describe("NavAuthActions", () => {
   it("returns a signed-out shopper to the current page after login", async () => {
     const user = userEvent.setup();
     render(
-      <NavAuthActions buttonStyle={{}} logoutStyle={{}} />,
+      <NavAuthActions buttonStyle={{}} />,
     );
 
     expect(screen.getByRole("link", { name: /^log in$/i })).toHaveAttribute(
@@ -83,12 +83,9 @@ describe("NavAuthActions", () => {
     );
   });
 
-  it("shows My wallet and Log out when the shopper is signed in", async () => {
+  it("shows My wallet when the shopper is signed in", () => {
     authState.isAuthenticated = true;
-    const user = userEvent.setup();
-    render(
-      <NavAuthActions buttonStyle={{}} logoutStyle={{}} />,
-    );
+    render(<NavAuthActions buttonStyle={{}} />);
 
     expect(screen.getByRole("link", { name: /^my wallet$/i })).toHaveAttribute(
       "href",
@@ -97,8 +94,8 @@ describe("NavAuthActions", () => {
     expect(
       screen.queryByRole("link", { name: /^log in$/i }),
     ).not.toBeInTheDocument();
-
-    await user.click(screen.getByRole("button", { name: /^log out$/i }));
-    expect(authState.logout).toHaveBeenCalled();
+    expect(
+      screen.queryByRole("button", { name: /^log out$/i }),
+    ).not.toBeInTheDocument();
   });
 });
