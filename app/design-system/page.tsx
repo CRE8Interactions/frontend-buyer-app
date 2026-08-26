@@ -399,14 +399,13 @@ export default function DesignSystemPage() {
         <SectionHeader
           eyebrow="Tiers 3–5 · organisms, templates, pages"
           title="Organisms, templates, pages."
-          lede="Organisms are full page regions — Nav, PageHero, LogoMarquee, Testimonials, SwitchTimeline, PricingEngine, BlockStack, SiteFooter, WalletMenu. Templates wrap them into chrome; pages are the app/ routes."
+          lede="Organisms are full page regions — Nav, PageHero, LogoMarquee, Testimonials, SwitchTimeline, PricingEngine, BlockStack, SiteFooter. Templates wrap them into chrome; pages are the app/ routes."
           ledeMax="720px"
         />
         <div className="mt-10 grid gap-4 lg:grid-cols-3">
           {[
             { t: "MarketingPage", d: "Nav on top, slim SiteFooter below — this page is wrapped in it. Every marketing route composes it with PageHero + Sections." },
             { t: "AppShell", d: "Demo fan-app chrome: header with search, auth guard, ambient grid + glow orbs behind the content." },
-            { t: "WalletShell", d: "Light Blocktickets canvas with navy header, green-pill section nav (My events / Transfers / Listings / Settings), and the wallet identity heading." },
           ].map((x) => (
             <div key={x.t} className="card p-6">
               <div className="flex items-center gap-3">

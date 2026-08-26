@@ -36,6 +36,7 @@ import {
   flexPackSeasonLine,
   flexPackVoucherCount,
 } from "@/lib/flexPackDisplay";
+import { walletSectionHref } from "@/lib/walletNav";
 import {
   formatVenueLocationFromVenue,
   formatVenueStreetAddressFromVenue,
@@ -318,9 +319,10 @@ function CheckoutSuccessPage() {
       : order?.event;
 
   const isAccessPass = Boolean(order?.access_pass_template);
+  const ticketsHref = walletSectionHref("events");
   const accessPassHref = order?.access_pass?.uuid
-    ? `/my-tickets/access-passes/${order.access_pass.uuid}/`
-    : "/my-tickets/";
+    ? `${ticketsHref}access-passes/${order.access_pass.uuid}/`
+    : ticketsHref;
 
   const branding = checkoutBrandingFromCart(
     order as CheckoutCartBrandingSource | null,
@@ -418,7 +420,7 @@ function CheckoutSuccessPage() {
     : isAuthenticated
       ? "You will instantly receive your ticket and store it in your account."
       : "We've emailed your tickets. Create an account to manage them in your wallet.";
-  const walletHref = isAuthenticated ? accessPassHref : "/my-tickets/";
+  const walletHref = isAuthenticated ? accessPassHref : ticketsHref;
   const walletLabel =
     isAuthenticated && isAccessPass ? "View access pass" : "Go to my wallet";
 

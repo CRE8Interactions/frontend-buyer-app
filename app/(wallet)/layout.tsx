@@ -2,15 +2,13 @@ import { Suspense } from "react";
 import SeasonTickets from "@/components/organisms/SeasonTickets";
 import MyTicketsAuthGuard from "@/components/templates/MyTicketsAuthGuard";
 
-export const metadata = {
-  title: "My Tickets — NM State Season Tickets | Blocktickets",
-};
-
 /**
- * Keep one wallet instance across /my-tickets, /my-tickets/event/:id, and
- * /my-tickets/flex-pack/:id so Back does not remount the list or refetch orders.
+ * Keep one wallet instance across every section route under /wallet — tickets
+ * and their event / flex-pack detail pages, transfers, giving, and profile —
+ * so switching sections changes the URL without remounting the wallet or
+ * refetching orders.
  */
-export default function MyTicketsLayout({
+export default function WalletLayout({
   children,
 }: {
   children: React.ReactNode;

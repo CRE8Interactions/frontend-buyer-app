@@ -33,11 +33,11 @@ describe("MyTicketsAuthGuard", () => {
     hrefSetter.mockReset();
     mockedGetLastKnown.mockReturnValue(null);
     vi.stubGlobal("location", {
-      pathname: "/my-tickets/",
+      pathname: "/wallet/my-tickets/",
       search: "?login",
       origin: "http://localhost",
       get href() {
-        return "http://localhost/my-tickets/?login";
+        return "http://localhost/wallet/my-tickets/?login";
       },
       set href(value: string) {
         hrefSetter(value);
@@ -60,9 +60,9 @@ describe("MyTicketsAuthGuard", () => {
     expect(screen.getAllByLabelText(/redirecting/i).length).toBeGreaterThan(0);
     expect(screen.queryByText("Wallet content")).not.toBeInTheDocument();
     await waitFor(() => {
-      expect(mockedSetLastKnown).toHaveBeenCalledWith("/my-tickets/?login");
+      expect(mockedSetLastKnown).toHaveBeenCalledWith("/wallet/my-tickets/?login");
       expect(hrefSetter).toHaveBeenCalledWith(
-        "/login/?from=%2Fmy-tickets%2F%3Flogin",
+        "/login/?from=%2Fwallet%2Fmy-tickets%2F%3Flogin",
       );
     });
   });
@@ -79,9 +79,9 @@ describe("MyTicketsAuthGuard", () => {
     );
 
     await waitFor(() => {
-      expect(mockedSetLastKnown).toHaveBeenCalledWith("/my-tickets/?login");
+      expect(mockedSetLastKnown).toHaveBeenCalledWith("/wallet/my-tickets/?login");
       expect(hrefSetter).toHaveBeenCalledWith(
-        "/login/?from=%2Fmy-tickets%2F%3Flogin",
+        "/login/?from=%2Fwallet%2Fmy-tickets%2F%3Flogin",
       );
     });
   });

@@ -43,18 +43,18 @@ describe("BackChip", () => {
 
   it("calls router.back after in-app navigation instead of pushing the href", async () => {
     markInAppNavigation();
-    render(<BackChip href="/my-events/" label="My events" />);
-    await userEvent.click(screen.getByRole("link", { name: /my events/i }));
+    render(<BackChip href="/wallet/my-tickets/" label="My tickets" />);
+    await userEvent.click(screen.getByRole("link", { name: /my tickets/i }));
     expect(routerMocks.back).toHaveBeenCalledTimes(1);
     expect(routerMocks.push).not.toHaveBeenCalled();
   });
 
   it("falls back to the href when this session has no in-app history", async () => {
-    render(<BackChip href="/settings/" label="Settings" />);
-    const link = screen.getByRole("link", { name: /settings/i });
-    expect(link).toHaveAttribute("href", "/settings/");
+    render(<BackChip href="/browse/" label="Browse" />);
+    const link = screen.getByRole("link", { name: /browse/i });
+    expect(link).toHaveAttribute("href", "/browse/");
     await userEvent.click(link);
-    expect(routerMocks.push).toHaveBeenCalledWith("/settings/");
+    expect(routerMocks.push).toHaveBeenCalledWith("/browse/");
     expect(routerMocks.back).not.toHaveBeenCalled();
   });
 });

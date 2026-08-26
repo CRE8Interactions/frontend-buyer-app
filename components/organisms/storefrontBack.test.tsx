@@ -628,7 +628,7 @@ describe("storefront categories", () => {
 
     expect(
       await screen.findByRole("link", { name: /^my wallet$/i }),
-    ).toHaveAttribute("href", "/my-tickets/");
+    ).toHaveAttribute("href", "/wallet/my-tickets/");
     expect(
       screen.queryByRole("link", { name: /^log in$/i }),
     ).not.toBeInTheDocument();

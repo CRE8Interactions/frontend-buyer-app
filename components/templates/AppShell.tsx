@@ -4,33 +4,29 @@ import { useEffect, useState, type FormEvent, type ReactNode } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import CartButton from "@/components/organisms/CartButton";
-import WalletMenu from "@/components/organisms/WalletMenu";
 import LoginLink from "@/components/molecules/LoginLink";
 import PageLoader from "@/components/molecules/PageLoader";
-import { displayName, useAuth, setLastKnown } from "@/lib/auth";
+import { useAuth, setLastKnown } from "@/lib/auth";
+import { walletSectionHref } from "@/lib/walletNav";
 
 /**
- * AppShell — chrome for fan-app pages (wallet, settings, purchase, browse).
+ * AppShell — chrome for fan-app pages (search, purchase, storefront extras).
  * Brand navy with elevated surfaces, ambient glow, green accents for actives.
- * `variant="wallet"` is the light Blocktickets canvas used under WalletChrome.
  */
 export default function AppShell({
   children,
   search = true,
   requireAuth = false,
   hideHeader = false,
-  variant = "app",
 }: {
   children: ReactNode;
   search?: boolean;
   requireAuth?: boolean;
   hideHeader?: boolean;
-  variant?: "app" | "wallet";
 }) {
-  const { user, ready, isAuthenticated, logout } = useAuth();
+  const { ready, isAuthenticated, logout } = useAuth();
   const router = useRouter();
   const [query, setQuery] = useState("");
-  const wallet = variant === "wallet";
 
   useEffect(() => {
     if (!ready || !requireAuth || isAuthenticated) return;
@@ -48,26 +44,14 @@ export default function AppShell({
     router.push(`/search/?query=${encodeURIComponent(q)}`);
   };
 
-  const menuUser = user
-    ? { email: user.email || "", name: displayName(user) }
-    : null;
-
   return (
-    <div
-      className={
-        wallet
-          ? "wallet-canvas relative min-h-screen bg-[#f7f8fc] text-[#051b35]"
-          : "relative min-h-screen bg-[#051B35] text-white"
-      }
-    >
-      {!wallet && (
-        <div aria-hidden className="pointer-events-none absolute inset-x-0 top-0 h-[640px] overflow-hidden">
-          <div className="bg-grid absolute inset-0" />
-          <span className="absolute -top-36 left-[10%] h-80 w-80 rounded-full bg-[#3874E0]/[0.16] blur-3xl" />
-          <span className="absolute -top-24 right-[6%] h-96 w-96 rounded-full bg-[#60A5FA]/[0.12] blur-3xl" />
-          <span className="absolute left-1/2 top-[-180px] h-[360px] w-[640px] -translate-x-1/2 rounded-full bg-[#3B82F6]/[0.07] blur-3xl" />
-        </div>
-      )}
+    <div className="relative min-h-screen bg-[#051B35] text-white">
+      <div aria-hidden className="pointer-events-none absolute inset-x-0 top-0 h-[640px] overflow-hidden">
+        <div className="bg-grid absolute inset-0" />
+        <span className="absolute -top-36 left-[10%] h-80 w-80 rounded-full bg-[#3874E0]/[0.16] blur-3xl" />
+        <span className="absolute -top-24 right-[6%] h-96 w-96 rounded-full bg-[#60A5FA]/[0.12] blur-3xl" />
+        <span className="absolute left-1/2 top-[-180px] h-[360px] w-[640px] -translate-x-1/2 rounded-full bg-[#3B82F6]/[0.07] blur-3xl" />
+      </div>
 
       {!hideHeader && (
         <header className="relative border-b border-white/10 bg-[#071f3a]">
@@ -96,14 +80,22 @@ export default function AppShell({
             <div className="flex shrink-0 items-center gap-3">
               <CartButton />
               {ready &&
-                (menuUser ? (
-                  <WalletMenu
-                    user={menuUser}
-                    onLogout={() => {
-                      logout();
-                      router.push("/");
-                    }}
-                  />
+                (isAuthenticated ? (
+                  <>
+                    <Link href={walletSectionHref("events")} className="btn btn-primary btn-sm shrink-0">
+                      My wallet
+                    </Link>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        logout();
+                        router.push("/");
+                      }}
+                      className="text-[14px] text-[#9DA2B3] underline decoration-transparent underline-offset-[3px] transition-colors hover:text-white hover:decoration-white"
+                    >
+                      Log out
+                    </button>
+                  </>
                 ) : (
                   <LoginLink className="btn btn-primary btn-sm shrink-0">
                     Log in
@@ -113,13 +105,7 @@ export default function AppShell({
           </div>
         </header>
       )}
-      <main
-        className={`container-x relative ${
-          wallet
-            ? "pb-[calc(96px+env(safe-area-inset-bottom,0px))] pt-8 lg:pt-10"
-            : `pb-24 pt-10 lg:pt-12 ${hideHeader ? "pt-6" : ""}`
-        }`}
-      >
+      <main className={`container-x relative pb-24 pt-10 lg:pt-12 ${hideHeader ? "pt-6" : ""}`}>
         {requireAuth && (!ready || !isAuthenticated) ? (
           <PageLoader label={ready ? "Redirecting" : "Loading"} />
         ) : (

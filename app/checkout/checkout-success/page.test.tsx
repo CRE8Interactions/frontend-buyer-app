@@ -442,7 +442,7 @@ describe("Checkout success receipt", () => {
     ).toBeInTheDocument();
     expect(
       screen.getByRole("link", { name: /go to my wallet/i }),
-    ).toHaveAttribute("href", "/my-tickets/");
+    ).toHaveAttribute("href", "/wallet/my-tickets/");
     expect(
       screen.queryByRole("link", {
         name: /create an account to manage your tickets/i,

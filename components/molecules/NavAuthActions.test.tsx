@@ -92,7 +92,7 @@ describe("NavAuthActions", () => {
 
     expect(screen.getByRole("link", { name: /^my wallet$/i })).toHaveAttribute(
       "href",
-      "/my-tickets/",
+      "/wallet/my-tickets/",
     );
     expect(
       screen.queryByRole("link", { name: /^log in$/i }),

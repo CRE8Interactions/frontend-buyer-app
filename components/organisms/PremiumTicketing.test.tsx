@@ -238,7 +238,7 @@ describe("Select tickets page (PremiumTicketing)", () => {
     const user = await renderReady();
 
     const wallet = screen.getByRole("link", { name: /^my wallet$/i });
-    expect(wallet).toHaveAttribute("href", "/my-tickets/");
+    expect(wallet).toHaveAttribute("href", "/wallet/my-tickets/");
     expect(screen.queryByRole("link", { name: /^login$/i })).not.toBeInTheDocument();
 
     await user.click(screen.getByRole("button", { name: /^log out$/i }));

@@ -29,19 +29,19 @@ describe("WalletChrome", () => {
     render(
       <WalletChrome
         items={[
-          { id: "events", label: "My events", href: "/my-events", on: true },
-          { id: "transfers", label: "Transfers", href: "/my-transfers", on: false, onClick: onTickets },
+          { id: "tickets", label: "Tickets", href: "/wallet/my-tickets", on: true },
+          { id: "transfers", label: "Transfers", href: "/wallet/my-tickets/", on: false, onClick: onTickets },
         ]}
         showNav
         compact={false}
       />,
     );
 
-    expect(screen.getByRole("link", { name: /^my events$/i })).toHaveAttribute(
+    expect(screen.getByRole("link", { name: /^tickets$/i })).toHaveAttribute(
       "href",
-      "/my-events",
+      "/wallet/my-tickets",
     );
-    expect(screen.getByRole("link", { name: /^my events$/i })).toHaveAttribute(
+    expect(screen.getByRole("link", { name: /^tickets$/i })).toHaveAttribute(
       "aria-current",
       "page",
     );

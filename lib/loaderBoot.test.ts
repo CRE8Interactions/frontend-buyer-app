@@ -47,7 +47,7 @@ describe("boot splash", () => {
   it("spins the Blocktickets mark on a wallet path after Browse", () => {
     cacheOrgBranding(RAPTORS);
 
-    const splash = paintBootSplash("/my-tickets/");
+    const splash = paintBootSplash("/wallet/my-tickets/");
 
     expect(splash?.querySelector("img")).toHaveAttribute("alt", "Blocktickets");
   });
@@ -56,7 +56,7 @@ describe("boot splash", () => {
     cacheOrgBranding(RAPTORS);
     markWalletEntryFromTenant();
 
-    const splash = paintBootSplash("/my-tickets/");
+    const splash = paintBootSplash("/wallet/my-tickets/");
 
     expect(splash?.querySelector("img")).toHaveAttribute(
       "src",

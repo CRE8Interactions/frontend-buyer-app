@@ -136,7 +136,7 @@ describe("RouteLoader", () => {
 
   it("shows the Blocktickets spinner on the wallet unless this landing came from a tenant", () => {
     cacheOrgBranding(raptors);
-    mockPathname = "/my-tickets/";
+    mockPathname = "/wallet/my-tickets/";
     const { rerender } = render(<RouteLoader />);
 
     expect(screen.getByAltText(/blocktickets/i)).toBeInTheDocument();

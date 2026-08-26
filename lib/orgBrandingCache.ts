@@ -3,6 +3,7 @@ import {
   resolvePrimaryColor,
   type BrandingOrganization,
 } from "@/lib/branding";
+import { WALLET_SECTION_PREFIXES } from "@/lib/walletNav";
 
 export type CachedBranding = {
   slug: string | null;
@@ -428,17 +429,7 @@ export function consumeWalletEntryFromTenant() {
   return hit;
 }
 
-const WALLET_ACCOUNT_PREFIXES = [
-  "/my-tickets",
-  "/wallet",
-  "/my-events",
-  "/my-transfers",
-  "/my-listings",
-  "/my-collectables",
-  "/my-packages",
-  "/guest-passes",
-  "/settings",
-];
+const WALLET_ACCOUNT_PREFIXES = WALLET_SECTION_PREFIXES;
 
 /** Wallet / account routes that use Blocktickets chrome after entry. */
 export function isWalletAccountPath(pathname = "") {
@@ -632,9 +623,13 @@ export function orgSlugFromPathname(pathname = ""): string | null {
       "guest-passes",
       "event-details",
       "my-tickets",
+      "my-profile",
+      "giving",
       "wallet",
       "concert",
       "nm-state-ticketing",
+      "season-tickets",
+      "flex-pack",
       "e",
       "venue",
       "group",

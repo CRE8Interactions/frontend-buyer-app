@@ -71,7 +71,7 @@ describe("wallet season-package orders", () => {
     expect(upcoming[0].name).toBe(icedogs.name);
     expect(upcoming[0].eventUUID).toBe(icedogs.uuid);
     expect(walletEventTicketsPath(upcoming[0].eventUUID)).toBe(
-      `/my-tickets/event/${icedogs.uuid}/`,
+      `/wallet/my-tickets/event/${icedogs.uuid}/`,
     );
     expect(upcoming.some((row) => row.name === pkg.name)).toBe(false);
     expect(upcoming.some((row) => row.name === pkg.events[1].name)).toBe(false);
@@ -110,7 +110,7 @@ describe("wallet flex-pack orders", () => {
     expect(rows[0].name).toBe(pack.name);
     expect(rows[0].flexPackUUID).toBe(pack.uuid);
     expect(walletFlexPackPath(rows[0].flexPackUUID)).toBe(
-      `/my-tickets/flex-pack/${pack.uuid}/`,
+      `/wallet/my-tickets/flex-pack/${pack.uuid}/`,
     );
     expect(rows[0].voucherCount).toBe(order.vouchers.length);
     expect(rows[0].remainingCount).toBe(order.vouchers.length);
@@ -161,12 +161,12 @@ describe("wallet flex-pack orders", () => {
   it("reads event and flex-pack UUIDs from the nested wallet URLs", () => {
     const pack = demoFlexPack();
     const icedogs = DEMO_EVENTS.find((event) => event.shortCode === "ICEDOG5")!;
-    expect(walletRouteFromPath("/my-tickets/")).toEqual({});
-    expect(walletRouteFromPath(`/my-tickets/${icedogs.uuid}/`)).toEqual({});
-    expect(walletRouteFromPath(`/my-tickets/event/${icedogs.uuid}/`)).toEqual({
+    expect(walletRouteFromPath("/wallet/my-tickets/")).toEqual({});
+    expect(walletRouteFromPath(`/wallet/my-tickets/${icedogs.uuid}/`)).toEqual({});
+    expect(walletRouteFromPath(`/wallet/my-tickets/event/${icedogs.uuid}/`)).toEqual({
       eventUUID: icedogs.uuid,
     });
-    expect(walletRouteFromPath(`/my-tickets/flex-pack/${pack.uuid}/`)).toEqual({
+    expect(walletRouteFromPath(`/wallet/my-tickets/flex-pack/${pack.uuid}/`)).toEqual({
       flexPackUUID: pack.uuid,
     });
   });

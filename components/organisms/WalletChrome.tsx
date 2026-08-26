@@ -99,7 +99,7 @@ function NavItem({
 /**
  * Browse-style Blocktickets header + green-pill wallet nav.
  * `compact` matches a known viewport: true = mobile tabs only, false = desktop
- * pills only. Omit it to render both and let CSS pick (WalletShell routes).
+ * pills only. Omit it to render both and let CSS pick.
  */
 export default function WalletChrome({
   items,

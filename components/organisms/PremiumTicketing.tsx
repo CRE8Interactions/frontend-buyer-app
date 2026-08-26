@@ -35,6 +35,7 @@ import {
   submittedEmail,
 } from "@/lib/fieldValidation";
 import { beginRouteTransition } from "@/lib/routeTransition";
+import { walletSectionHref } from "@/lib/walletNav";
 import type { SeatmapBackground, SeatmapMapping } from "@/lib/seatmapLookups";
 import { getSeatViewImageCandidates } from "@/lib/seatView";
 import {
@@ -1174,7 +1175,7 @@ export default function PremiumTicketing({
             </div>
             <div style={{ display: "flex", alignItems: "center", gap: 16, flexShrink: 0 }}>
               {isAuthenticated ? (
-                <Link href="/my-tickets/" className="nmt-primary" style={navBtnStyle}>My wallet</Link>
+                <Link href={walletSectionHref("events")} className="nmt-primary" style={navBtnStyle}>My wallet</Link>
               ) : (
                 <LoginLink className="nmt-primary" style={navBtnStyle}>Login</LoginLink>
               )}

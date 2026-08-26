@@ -23,10 +23,12 @@ vi.mock("@/lib/api", () => ({
   getMyEvents: vi.fn(),
 }));
 
+const navigationMocks = vi.hoisted(() => ({ pathname: "/wallet/my-tickets/" }));
+
 vi.mock("next/navigation", () => ({
   useParams: () => ({}),
   useSearchParams: () => new URLSearchParams(),
-  usePathname: () => "/my-tickets/",
+  usePathname: () => navigationMocks.pathname,
   useRouter: () => ({ push: vi.fn(), back: vi.fn(), replace: vi.fn() }),
 }));
 
@@ -36,6 +38,10 @@ import { getMyEvents } from "@/lib/api";
 const mockedGetMyEvents = vi.mocked(getMyEvents);
 const icedogs = DEMO_EVENTS.find((event) => event.shortCode === "ICEDOG5")!;
 const pkg = demoSeasonPackage();
+
+beforeEach(() => {
+  navigationMocks.pathname = "/wallet/my-tickets/";
+});
 
 describe("SeasonTickets package tab", () => {
   beforeEach(() => {
@@ -63,7 +69,7 @@ describe("SeasonTickets package tab", () => {
       screen.getByRole("link", { name: new RegExp(icedogs.name) }),
     ).toHaveAttribute(
       "href",
-      expect.stringMatching(`/my-tickets/event/${icedogs.uuid}`),
+      expect.stringMatching(`/wallet/my-tickets/event/${icedogs.uuid}`),
     );
     expect(screen.queryByText(pkg.name)).not.toBeInTheDocument();
     expect(screen.queryByText(pkg.events[1].name)).not.toBeInTheDocument();
@@ -111,7 +117,7 @@ describe("SeasonTickets package tab", () => {
     expect(screen.queryByText(pkg.name)).not.toBeInTheDocument();
   });
 
-  it("uses Blocktickets chrome with Tickets, Transfers, Giving, and Profile", async () => {
+  it("uses Blocktickets chrome and gives each wallet section its own URL", async () => {
     mockedGetMyEvents.mockResolvedValue({
       data: [demoCompletedTicketOrder({ event: icedogs })],
     } as never);
@@ -122,13 +128,70 @@ describe("SeasonTickets package tab", () => {
     expect(
       screen.getByRole("link", { name: /blocktickets home/i }),
     ).toHaveAttribute("href", expect.stringMatching(/^\/browse\/?$/));
-    expect(screen.getByRole("button", { name: /^tickets$/i })).toHaveAttribute(
+    expect(screen.getByRole("link", { name: /^tickets$/i })).toHaveAttribute(
       "aria-current",
       "page",
     );
-    expect(screen.getByRole("button", { name: /^transfers$/i })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /^giving$/i })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /^profile$/i })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /^tickets$/i })).toHaveAttribute(
+      "href",
+      expect.stringMatching(/^\/wallet\/my-tickets\/?$/),
+    );
+    expect(screen.getByRole("link", { name: /^transfers$/i })).toHaveAttribute(
+      "href",
+      expect.stringMatching(/^\/wallet\/my-transfers\/?$/),
+    );
+    expect(screen.getByRole("link", { name: /^giving$/i })).toHaveAttribute(
+      "href",
+      expect.stringMatching(/^\/wallet\/giving\/?$/),
+    );
+    expect(screen.getByRole("link", { name: /^profile$/i })).toHaveAttribute(
+      "href",
+      expect.stringMatching(/^\/wallet\/my-profile\/?$/),
+    );
+  });
+});
+
+describe("SeasonTickets section routes", () => {
+  beforeEach(() => {
+    sessionMocks.getSession.mockReturnValue(DEMO_SESSION);
+    mockedGetMyEvents.mockReset();
+    mockedGetMyEvents.mockResolvedValue({
+      data: [demoCompletedTicketOrder({ event: icedogs })],
+    } as never);
+  });
+
+  it.each([
+    ["/wallet/my-transfers/", "Transfers"],
+    ["/wallet/giving/", "Giving"],
+    ["/wallet/my-profile/", "Profile"],
+  ])("opens %s on the %s section", async (pathname, heading) => {
+    navigationMocks.pathname = pathname;
+
+    render(<SeasonTickets />);
+
+    expect(
+      await screen.findByRole("heading", { name: heading, level: 1 }),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(icedogs.name)).not.toBeInTheDocument();
+    expect(screen.getByRole("link", { name: heading })).toHaveAttribute(
+      "aria-current",
+      "page",
+    );
+  });
+
+  it("follows the URL when the shopper moves to another section", async () => {
+    const { rerender } = render(<SeasonTickets />);
+
+    expect(await screen.findByText(icedogs.name)).toBeInTheDocument();
+
+    navigationMocks.pathname = "/wallet/giving/";
+    rerender(<SeasonTickets />);
+
+    expect(
+      screen.getByRole("heading", { name: "Giving", level: 1 }),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(icedogs.name)).not.toBeInTheDocument();
+    expect(mockedGetMyEvents).toHaveBeenCalledTimes(1);
   });
 });
 
@@ -147,7 +210,7 @@ describe("SeasonTickets routed event screen", () => {
     expect(await screen.findByRole("heading", { name: icedogs.name })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: /All tickets/i })).toHaveAttribute(
       "href",
-      expect.stringMatching(/^\/my-tickets\/?$/),
+      expect.stringMatching(/^\/wallet\/my-tickets\/?$/),
     );
   });
 
@@ -209,7 +272,7 @@ describe("SeasonTickets flex packs tab", () => {
       screen.getByRole("link", { name: new RegExp(pack.name) }),
     ).toHaveAttribute(
       "href",
-      expect.stringMatching(`/my-tickets/flex-pack/${pack.uuid}`),
+      expect.stringMatching(`/wallet/my-tickets/flex-pack/${pack.uuid}`),
     );
     expect(screen.getByText(`${order.vouchers.length} of ${order.vouchers.length} vouchers left`)).toBeInTheDocument();
     expect(screen.queryByText(icedogs.name)).not.toBeInTheDocument();
@@ -276,7 +339,7 @@ describe("SeasonTickets routed flex pack screen", () => {
     expect(screen.getByText(order.vouchers[0].code)).toBeInTheDocument();
     expect(screen.getByRole("link", { name: /All tickets/i })).toHaveAttribute(
       "href",
-      expect.stringMatching(/^\/my-tickets\/?$/),
+      expect.stringMatching(/^\/wallet\/my-tickets\/?$/),
     );
   });
 

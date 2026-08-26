@@ -189,7 +189,7 @@ describe("wallet origin loaders", () => {
 
     expect(isTenantOriginPath(eventPath)).toBe(true);
     expect(
-      walletLoaderFromOrigin(eventPath, "/my-tickets/"),
+      walletLoaderFromOrigin(eventPath, "/wallet/my-tickets/"),
     ).toMatchObject({
       fallback: "none",
       branding: { name: icedogs.name, primaryColor: icedogs.branding.primaryColor },
@@ -200,39 +200,39 @@ describe("wallet origin loaders", () => {
     cacheOrgBranding(raptors);
 
     expect(isTenantOriginPath("/browse/")).toBe(false);
-    expect(walletLoaderFromOrigin("/browse/", "/my-tickets/")).toEqual({
+    expect(walletLoaderFromOrigin("/browse/", "/wallet/my-tickets/")).toEqual({
       branding: null,
       fallback: "blocktickets",
     });
-    expect(isPlatformLoaderPath("/my-tickets/")).toBe(true);
-    expect(getLoaderBranding("/my-tickets/")).toBeNull();
+    expect(isPlatformLoaderPath("/wallet/my-tickets/")).toBe(true);
+    expect(getLoaderBranding("/wallet/my-tickets/")).toBeNull();
   });
 
   it("uses tenant branding from checkout success, then Blocktickets inside the wallet", () => {
     cacheOrgBranding(raptors);
 
     expect(
-      walletLoaderFromOrigin("/checkout/checkout-success/", "/my-tickets/"),
+      walletLoaderFromOrigin("/checkout/checkout-success/", "/wallet/my-tickets/"),
     ).toMatchObject({
       fallback: "none",
       branding: { name: raptors.name },
     });
 
     markWalletEntryFromTenant();
-    expect(isPlatformLoaderPath("/my-tickets/")).toBe(false);
-    expect(getLoaderBranding("/my-tickets/")).toMatchObject({
+    expect(isPlatformLoaderPath("/wallet/my-tickets/")).toBe(false);
+    expect(getLoaderBranding("/wallet/my-tickets/")).toMatchObject({
       name: raptors.name,
     });
 
     consumeWalletEntryFromTenant();
-    expect(isWalletAccountPath("/my-tickets/event/abc/")).toBe(true);
+    expect(isWalletAccountPath("/wallet/my-tickets/event/abc/")).toBe(true);
     expect(
-      walletLoaderFromOrigin("/my-tickets/", "/my-tickets/event/abc/"),
+      walletLoaderFromOrigin("/wallet/my-tickets/", "/wallet/my-tickets/event/abc/"),
     ).toEqual({
       branding: null,
       fallback: "blocktickets",
     });
-    expect(isPlatformLoaderPath("/my-tickets/event/abc/")).toBe(true);
-    expect(getLoaderBranding("/my-tickets/event/abc/")).toBeNull();
+    expect(isPlatformLoaderPath("/wallet/my-tickets/event/abc/")).toBe(true);
+    expect(getLoaderBranding("/wallet/my-tickets/event/abc/")).toBeNull();
   });
 });

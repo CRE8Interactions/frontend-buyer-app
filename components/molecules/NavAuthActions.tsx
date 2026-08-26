@@ -4,8 +4,9 @@ import type { CSSProperties } from "react";
 import Link from "next/link";
 import LoginLink from "@/components/molecules/LoginLink";
 import { useAuth } from "@/lib/auth";
+import { walletSectionHref } from "@/lib/walletNav";
 
-const WALLET_HREF = "/my-tickets/";
+const WALLET_HREF = walletSectionHref("events");
 
 export default function NavAuthActions({
   loginLabel = "Log in",

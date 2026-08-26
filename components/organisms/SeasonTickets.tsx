@@ -44,6 +44,11 @@ import {
   type SeasonPackageSummary,
 } from "@/lib/cartEvents";
 import { unwrapList, type OrderLike } from "@/lib/wallet";
+import {
+  WALLET_NAV,
+  walletSectionFromPath,
+  walletSectionHref,
+} from "@/lib/walletNav";
 
 /* ---- brand tokens ---- */
 const CRIMSON = "#8c0b42";
@@ -588,12 +593,13 @@ export default function SeasonTickets({
   const route = walletRouteFromPath(pathname, params);
   const routedEventUUID = eventUUID || route.eventUUID;
   const routedFlexPackUUID = flexPackUUID || route.flexPackUUID;
+  const section = walletSectionFromPath(pathname);
   const resolvedInitialScreen =
     initialScreen !== "events"
       ? initialScreen
       : searchParams?.has("login")
         ? "login"
-        : "events";
+        : section;
   const [vw, setVw] = useState(1440);
   const [screen, setScreen] = useState<Screen>(resolvedInitialScreen);
   const [tab, setTab] = useState<"upcoming" | "season" | "flex">("upcoming");
@@ -622,6 +628,7 @@ export default function SeasonTickets({
   const [eventsLoading, setEventsLoading] = useState(false);
   const codeRef = useRef<HTMLInputElement | null>(null);
   const toastT = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const lastSection = useRef(section);
 
   useEffect(() => {
     setVw(window.innerWidth);
@@ -636,6 +643,15 @@ export default function SeasonTickets({
       setEmail(String(session.user.email));
     }
   }, []);
+
+  // One wallet instance serves every section route, so a nav click only changes
+  // the URL — the screen follows it here.
+  useEffect(() => {
+    if (lastSection.current === section) return;
+    lastSection.current = section;
+    if (screen === "login" || screen === "code") return;
+    setScreen(section);
+  }, [screen, section]);
 
   useEffect(() => {
     let cancelled = false;
@@ -799,12 +815,16 @@ export default function SeasonTickets({
 
 
   /* ---------- header ---------- */
-  const navDefs = [
-    { id: "events" as Screen, label: "Tickets", on: screen === "events" || screen === "event" || screen === "package" || showRoutedWallet },
-    { id: "listings" as Screen, label: "Transfers", on: screen === "listings" },
-    { id: "giving" as Screen, label: "Giving", on: screen === "giving" },
-    { id: "profile" as Screen, label: "Profile", on: screen === "profile" },
-  ];
+  const onTickets =
+    screen === "events" ||
+    screen === "event" ||
+    screen === "package" ||
+    screen === "seasonPackage" ||
+    showRoutedWallet;
+  const navDefs = WALLET_NAV.map((item) => ({
+    ...item,
+    on: item.id === "events" ? onTickets : screen === item.id,
+  }));
   const authed = screen !== "login" && screen !== "code";
   const showHeader = !(mobile && showingEventDetail);
   const showTabBar = mobile && authed && !showingEventDetail && screen !== "seasonPackage";
@@ -814,8 +834,8 @@ export default function SeasonTickets({
       items={navDefs.map((n) => ({
         id: n.id,
         label: n.label,
+        href: n.href,
         on: n.on,
-        onClick: () => setScreen(n.id),
       }))}
       showNav={authed}
       showHeader
@@ -941,7 +961,7 @@ export default function SeasonTickets({
 
   const RoutedEventShell = (children: React.ReactNode) => (
     <div style={{ maxWidth: 1100, margin: "0 auto", boxSizing: "border-box", padding: mobile ? "24px 16px 128px" : "40px 32px 96px", display: "flex", flexDirection: "column", gap: 18 }}>
-      <Link href="/my-tickets/" style={{ ...backBtn, textDecoration: "none" }}><BackArrow />All tickets</Link>
+      <Link href={walletSectionHref("events")} style={{ ...backBtn, textDecoration: "none" }}><BackArrow />All tickets</Link>
       {children}
     </div>
   );
@@ -1387,7 +1407,7 @@ export default function SeasonTickets({
       ];
   const openTransfer = () => { setTf({ step: 1, sel: [], email: "", evId: activeEvId }); setModal(null); };
 
-  /* When the event screen owns the URL, leaving it has to pop back to /my-tickets/. */
+  /* When the event screen owns the URL, leaving it has to pop back to tickets. */
   const EventBackControl = (
     style: React.CSSProperties,
     children: React.ReactNode,
@@ -1395,7 +1415,7 @@ export default function SeasonTickets({
     preferSeasonPackage = true,
   ) =>
     eventUUID || flexPackUUID || routedEventUUID || routedFlexPackUUID ? (
-      <Link href="/my-tickets/" aria-label={label} style={{ textDecoration: "none", ...style }}>
+      <Link href={walletSectionHref("events")} aria-label={label} style={{ textDecoration: "none", ...style }}>
         {children}
       </Link>
     ) : (
@@ -2213,7 +2233,7 @@ export default function SeasonTickets({
             <button type="button" onClick={() => setTf({ ...tf!, step: tfStep - 1 })} style={{ fontFamily: "inherit", flexShrink: 0, display: "flex", alignItems: "center", gap: 8, fontSize: 15, fontWeight: 600, color: INK, background: "#fff", border: "none", padding: "14px 12px", minHeight: 48, cursor: "pointer" }}><BackArrow />Back</button>
           )}
           {tfStep === 4 && (
-            <button type="button" onClick={() => { setTf(null); setScreen("listings"); setListTab("active"); }} style={{ fontFamily: "inherit", flex: 1, fontSize: 15, fontWeight: 600, color: INK, background: "#f1f3f8", border: "none", borderRadius: 999, padding: 14, minHeight: 48, cursor: "pointer" }}>My transfers</button>
+            <Link href={walletSectionHref("listings")} onClick={() => { setTf(null); setListTab("active"); }} style={{ fontFamily: "inherit", flex: 1, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 15, fontWeight: 600, color: INK, background: "#f1f3f8", borderRadius: 999, padding: 14, minHeight: 48, textDecoration: "none", cursor: "pointer" }}>My transfers</Link>
           )}
           <button
             type={tfStep === 2 ? "submit" : "button"}

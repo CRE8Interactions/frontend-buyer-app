@@ -93,17 +93,6 @@ body {
   text-transform: uppercase;
   color: var(--muted);
 }
-
-/* Light Blocktickets canvas for wallet/account routes (white cards, navy type). */
-.wallet-canvas [class*="0a2747"] {
-  background-color: #fff !important;
-  background-image: none !important;
-  border-color: rgba(5, 27, 53, 0.1) !important;
-  box-shadow:
-    0 1px 2px rgba(5, 27, 53, 0.05),
-    0 10px 24px -14px rgba(5, 27, 53, 0.34) !important;
-  color: #051b35;
-}
 .h2 {
   font-size: clamp(30px, 4vw, 48px);
   line-height: 1.05;

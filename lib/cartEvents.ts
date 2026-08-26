@@ -16,6 +16,7 @@ import {
   type OrderLike,
   type TicketLike,
 } from "@/lib/wallet";
+import { walletSectionHref } from "@/lib/walletNav";
 
 type VenueLike = {
   name?: string;
@@ -500,13 +501,13 @@ function firstRouteParam(value?: string | string[] | null) {
 /** Wallet ticket detail for a purchased event. */
 export function walletEventTicketsPath(eventUUID?: string | null) {
   const uuid = String(eventUUID || "").trim();
-  return uuid ? `/my-tickets/event/${uuid}/` : "";
+  return uuid ? `${walletSectionHref("events")}event/${uuid}/` : "";
 }
 
 /** Wallet flex-pack detail for a purchased pack. */
 export function walletFlexPackPath(flexPackUUID?: string | null) {
   const uuid = String(flexPackUUID || "").trim();
-  return uuid ? `/my-tickets/flex-pack/${uuid}/` : "";
+  return uuid ? `${walletSectionHref("events")}flex-pack/${uuid}/` : "";
 }
 
 /** Event or flex-pack UUID from a wallet detail URL. */
@@ -516,10 +517,10 @@ export function walletRouteFromPath(
 ): { eventUUID?: string; flexPackUUID?: string } {
   const path = (pathname.split("?")[0] || "").replace(/\/+$/, "") || "/";
   const eventUUID =
-    path.match(/^\/my-tickets\/event\/([^/]+)$/)?.[1] ||
+    path.match(/^\/wallet\/my-tickets\/event\/([^/]+)$/)?.[1] ||
     firstRouteParam(params?.eventUUID);
   const flexPackUUID =
-    path.match(/^\/my-tickets\/flex-pack\/([^/]+)$/)?.[1] ||
+    path.match(/^\/wallet\/my-tickets\/flex-pack\/([^/]+)$/)?.[1] ||
     firstRouteParam(params?.flexPackUUID);
   return {
     ...(eventUUID ? { eventUUID } : {}),
