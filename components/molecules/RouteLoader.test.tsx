@@ -133,4 +133,17 @@ describe("RouteLoader", () => {
     expect(screen.getByAltText(/blocktickets/i)).toBeInTheDocument();
     expect(screen.queryByText(raptors.name)).not.toBeInTheDocument();
   });
+
+  it("shows the Blocktickets spinner on the wallet unless this landing came from a tenant", () => {
+    cacheOrgBranding(raptors);
+    mockPathname = "/my-tickets/";
+    const { rerender } = render(<RouteLoader />);
+
+    expect(screen.getByAltText(/blocktickets/i)).toBeInTheDocument();
+    expect(screen.queryByText(raptors.name)).not.toBeInTheDocument();
+
+    rerender(<RouteLoader walletEntryFromTenant />);
+    expect(screen.getByText(raptors.name)).toBeInTheDocument();
+    expect(screen.queryByAltText(/blocktickets/i)).not.toBeInTheDocument();
+  });
 });

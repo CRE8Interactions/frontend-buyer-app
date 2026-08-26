@@ -406,7 +406,7 @@ export default function DesignSystemPage() {
           {[
             { t: "MarketingPage", d: "Nav on top, slim SiteFooter below — this page is wrapped in it. Every marketing route composes it with PageHero + Sections." },
             { t: "AppShell", d: "Demo fan-app chrome: header with search, auth guard, ambient grid + glow orbs behind the content." },
-            { t: "WalletShell", d: "AppShell plus the wallet identity strip and persistent section tabs (Events / Transfers / Listings / Settings)." },
+            { t: "WalletShell", d: "Light Blocktickets canvas with navy header, green-pill section nav (My events / Transfers / Listings / Settings), and the wallet identity heading." },
           ].map((x) => (
             <div key={x.t} className="card p-6">
               <div className="flex items-center gap-3">

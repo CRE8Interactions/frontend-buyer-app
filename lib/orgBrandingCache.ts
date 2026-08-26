@@ -393,6 +393,95 @@ export function getCachedBrandingForPath(
   return lastBranding();
 }
 
+/** Cookie + session flag: this wallet landing came from a tenant page. */
+export const WALLET_ENTRY_COOKIE = "bt_wallet_entry_from_tenant";
+const WALLET_ENTRY_KEY = "bt_wallet_entry_from_tenant";
+
+function writeWalletEntryCookie(on: boolean) {
+  if (typeof document === "undefined") return;
+  try {
+    document.cookie = `${WALLET_ENTRY_COOKIE}=${on ? "1" : ""}; Path=/; SameSite=Lax; Max-Age=${on ? 120 : 0}`;
+  } catch {
+    // ignore
+  }
+}
+
+export function peekWalletEntryFromTenant() {
+  if (typeof window === "undefined") return false;
+  if (readRaw(WALLET_ENTRY_KEY) === "1") return true;
+  try {
+    return cookieValue(document.cookie, WALLET_ENTRY_COOKIE) === "1";
+  } catch {
+    return false;
+  }
+}
+
+export function markWalletEntryFromTenant() {
+  writeRaw(WALLET_ENTRY_KEY, "1");
+  writeWalletEntryCookie(true);
+}
+
+export function consumeWalletEntryFromTenant() {
+  const hit = peekWalletEntryFromTenant();
+  removeRaw(WALLET_ENTRY_KEY);
+  writeWalletEntryCookie(false);
+  return hit;
+}
+
+const WALLET_ACCOUNT_PREFIXES = [
+  "/my-tickets",
+  "/wallet",
+  "/my-events",
+  "/my-transfers",
+  "/my-listings",
+  "/my-collectables",
+  "/my-packages",
+  "/guest-passes",
+  "/settings",
+];
+
+/** Wallet / account routes that use Blocktickets chrome after entry. */
+export function isWalletAccountPath(pathname = "") {
+  const path = pathname.replace(/\/+$/, "") || "/";
+  return WALLET_ACCOUNT_PREFIXES.some(
+    (prefix) => path === prefix || path.startsWith(`${prefix}/`),
+  );
+}
+
+/**
+ * Team/event/venue/checkout origins. Not browse/home/Our Story, not wallet.
+ */
+export function isTenantOriginPath(pathname = "") {
+  if (isWalletAccountPath(pathname)) return false;
+  if (isLoginLoaderPath(pathname)) return false;
+  const path = pathname.replace(/\/+$/, "") || "/";
+  if (path === "/" || path === "/browse" || path === "/our-story") return false;
+  if (path === "/checkout" || path.startsWith("/checkout/")) return true;
+  if (/^\/e\//.test(pathname)) return true;
+  if (/^\/venue\//i.test(pathname)) return true;
+  if (orgSlugFromPathname(pathname)) return true;
+  if (isBrandedLoaderPath(pathname)) return true;
+  return false;
+}
+
+export function walletLoaderFromOrigin(
+  fromPathname = "",
+  toPathname = "",
+): { branding: CachedBranding | null; fallback: "none" | "blocktickets" } {
+  if (!isWalletAccountPath(toPathname)) {
+    return { branding: null, fallback: "none" };
+  }
+  if (isTenantOriginPath(fromPathname)) {
+    const branding =
+      getLoaderBranding(fromPathname) || lastBranding();
+    return {
+      branding: branding?.primaryColor ? branding : null,
+      fallback: "none",
+    };
+  }
+  return { branding: null, fallback: "blocktickets" };
+}
+
 /** Login has no tenant of its own — its shell is Blocktickets. */
 export function isLoginLoaderPath(pathname = "") {
   return (pathname.replace(/\/+$/, "") || "/") === "/login";
@@ -409,9 +498,18 @@ export function hasLoginRedirect(search = "") {
  * Home, browse, and Our Story use the Blocktickets spinner — never a team.
  * Login joins them unless it is returning the shopper to a tenant route.
  */
-export function isPlatformLoaderPath(pathname = "", search = "") {
+export function isPlatformLoaderPath(
+  pathname = "",
+  search = "",
+  opts: { walletEntryFromTenant?: boolean } = {},
+) {
   const path = pathname.replace(/\/+$/, "") || "/";
   if (path === "/" || path === "/browse" || path === "/our-story") return true;
+  if (isWalletAccountPath(path)) {
+    const fromTenant =
+      opts.walletEntryFromTenant ?? peekWalletEntryFromTenant();
+    return !fromTenant;
+  }
   return isLoginLoaderPath(path) && !hasLoginRedirect(search);
 }
 
@@ -422,9 +520,10 @@ export function isPlatformLoaderPath(pathname = "", search = "") {
 export function lastBrandingIfCompatible(
   last: CachedBranding | null | undefined,
   pathname = "",
+  opts: { walletEntryFromTenant?: boolean } = {},
 ): CachedBranding | null {
   if (!last?.primaryColor) return null;
-  if (isPlatformLoaderPath(pathname)) return null;
+  if (isPlatformLoaderPath(pathname, "", opts)) return null;
   if (isLoginLoaderPath(pathname)) return null;
   const orgSlug = orgSlugFromPathname(pathname);
   if (orgSlug) {
@@ -444,11 +543,17 @@ export function getLoaderBranding(
   pathname = "",
   params: { slug?: string } = {},
   lastCookie?: CachedBranding | null,
+  opts: { walletEntryFromTenant?: boolean } = {},
 ): CachedBranding | null {
-  if (isPlatformLoaderPath(pathname) || isLoginLoaderPath(pathname)) return null;
+  if (
+    isPlatformLoaderPath(pathname, "", opts) ||
+    isLoginLoaderPath(pathname)
+  ) {
+    return null;
+  }
   const exact = getCachedBrandingForPath(pathname, params);
   if (exact) return exact;
-  return lastBrandingIfCompatible(lastBranding() || lastCookie || null, pathname);
+  return lastBrandingIfCompatible(lastBranding() || lastCookie || null, pathname, opts);
 }
 
 type RouteLoaderBranding = {
@@ -477,14 +582,18 @@ export function resolveLoaderBrandingForRender(
     lastCookie?: CachedBranding | null;
     params?: { slug?: string };
     allowClientCache?: boolean;
+    walletEntryFromTenant?: boolean;
   } = {},
 ): RouteLoaderBranding | CachedBranding | null {
-  if (isPlatformLoaderPath(pathname) || isLoginLoaderPath(pathname)) return null;
+  const opts = { walletEntryFromTenant: options.walletEntryFromTenant };
+  if (isPlatformLoaderPath(pathname, "", opts) || isLoginLoaderPath(pathname)) {
+    return null;
+  }
   if (hasTenantBranding(options.branding)) return options.branding;
   if (options.allowClientCache) {
-    return getLoaderBranding(pathname, options.params, options.lastCookie);
+    return getLoaderBranding(pathname, options.params, options.lastCookie, opts);
   }
-  return lastBrandingIfCompatible(options.lastCookie || null, pathname);
+  return lastBrandingIfCompatible(options.lastCookie || null, pathname, opts);
 }
 
 /** Infer an organization slug from common branded storefront paths. */

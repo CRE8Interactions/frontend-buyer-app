@@ -40,7 +40,9 @@ export type TicketingTheme = {
 };
 
 export const BLOCKTICKETS_NAVY = "#051b35";
+export const BLOCKTICKETS_GREEN = "#a6e773";
 export const BLOCKTICKETS_LOGO = "/blocktickets-emblem-navy.svg";
+export const BLOCKTICKETS_LOCKUP = "/blocktickets-logo.svg";
 
 function mediaUrl(media?: ApiImage | null): string | null {
   if (!media) return null;

@@ -110,6 +110,26 @@ describe("SeasonTickets package tab", () => {
     expect(screen.getByText("No season tickets yet")).toBeInTheDocument();
     expect(screen.queryByText(pkg.name)).not.toBeInTheDocument();
   });
+
+  it("uses Blocktickets chrome with Tickets, Transfers, Giving, and Profile", async () => {
+    mockedGetMyEvents.mockResolvedValue({
+      data: [demoCompletedTicketOrder({ event: icedogs })],
+    } as never);
+
+    render(<SeasonTickets />);
+
+    expect(await screen.findByText(icedogs.name)).toBeInTheDocument();
+    expect(
+      screen.getByRole("link", { name: /blocktickets home/i }),
+    ).toHaveAttribute("href", expect.stringMatching(/^\/browse\/?$/));
+    expect(screen.getByRole("button", { name: /^tickets$/i })).toHaveAttribute(
+      "aria-current",
+      "page",
+    );
+    expect(screen.getByRole("button", { name: /^transfers$/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /^giving$/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /^profile$/i })).toBeInTheDocument();
+  });
 });
 
 describe("SeasonTickets routed event screen", () => {

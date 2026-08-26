@@ -12,8 +12,9 @@ export function isMyTicketsPath(pathname = "") {
 
 /**
  * Moving between /my-tickets, /my-tickets/event/:id, and
- * /my-tickets/flex-pack/:id stays in the same wallet shell — no route loader
- * and no remount of the ticket list.
+ * /my-tickets/flex-pack/:id stays in the same wallet shell — no remount of
+ * the ticket list. The route overlay still runs so in-wallet hops can show
+ * the Blocktickets spinner.
  */
 export function isWalletShellNavigation(fromPathname = "", toPathname = "") {
   return isMyTicketsPath(fromPathname) && isMyTicketsPath(toPathname);

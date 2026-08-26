@@ -5,6 +5,7 @@ import { useParams, usePathname } from "next/navigation";
 import BrandLoader from "@/components/molecules/BrandLoader";
 import {
   isPlatformLoaderPath,
+  peekWalletEntryFromTenant,
   resolveLoaderBrandingForRender,
   type CachedBranding,
 } from "@/lib/orgBrandingCache";
@@ -96,15 +97,22 @@ export function BrandedLoader({
 export default function RouteLoader({
   branding,
   lastCookie,
+  walletEntryFromTenant,
 }: {
   branding?: LoaderBranding | null;
   lastCookie?: CachedBranding | null;
+  walletEntryFromTenant?: boolean;
 }) {
   const pathname = usePathname();
   const params = useParams<{ slug?: string }>();
   const [allowClientCache, setAllowClientCache] = useState(false);
   const [search, setSearch] = useState("");
-  const platform = isPlatformLoaderPath(pathname || "", search);
+  const entryFromTenant =
+    walletEntryFromTenant ||
+    (allowClientCache && peekWalletEntryFromTenant());
+  const platform = isPlatformLoaderPath(pathname || "", search, {
+    walletEntryFromTenant: entryFromTenant,
+  });
 
   useLayoutEffect(() => {
     setAllowClientCache(true);
@@ -116,6 +124,7 @@ export default function RouteLoader({
     lastCookie,
     params: { slug: params?.slug },
     allowClientCache,
+    walletEntryFromTenant: entryFromTenant,
   });
 
   return (

@@ -4,13 +4,19 @@ import {
   cacheEventBranding,
   cacheOrgBranding,
   cacheOrgsBranding,
+  consumeWalletEntryFromTenant,
   getCachedBrandingForPath,
   getCachedOrgBranding,
   getLoaderBranding,
   getLoaderBrandingFromCookieValue,
   isPlatformLoaderPath,
+  isTenantOriginPath,
+  isWalletAccountPath,
   LOADER_BRANDING_COOKIE,
+  markWalletEntryFromTenant,
   resolveLoaderBrandingForRender,
+  WALLET_ENTRY_COOKIE,
+  walletLoaderFromOrigin,
 } from "@/lib/orgBrandingCache";
 
 const raptors = DEMO_ORGS.find((org) => org.slug === "ogden-raptors")!;
@@ -22,6 +28,7 @@ const icedogsEvent = DEMO_EVENTS.find(
 afterEach(() => {
   sessionStorage.clear();
   document.cookie = `${LOADER_BRANDING_COOKIE}=; Max-Age=0; Path=/`;
+  document.cookie = `${WALLET_ENTRY_COOKIE}=; Max-Age=0; Path=/`;
 });
 
 describe("org branding cookie", () => {
@@ -172,5 +179,60 @@ describe("hydrate-safe loader branding", () => {
       name: raptors.name,
       primaryColor: raptors.branding.primaryColor,
     });
+  });
+});
+
+describe("wallet origin loaders", () => {
+  it("uses tenant branding when My wallet is opened from an event page", () => {
+    cacheEventBranding(icedogsEvent, icedogs);
+    const eventPath = `/e/${icedogsEvent.seoUrl}/${icedogsEvent.shortCode}/`;
+
+    expect(isTenantOriginPath(eventPath)).toBe(true);
+    expect(
+      walletLoaderFromOrigin(eventPath, "/my-tickets/"),
+    ).toMatchObject({
+      fallback: "none",
+      branding: { name: icedogs.name, primaryColor: icedogs.branding.primaryColor },
+    });
+  });
+
+  it("uses Blocktickets when My wallet is opened from Browse", () => {
+    cacheOrgBranding(raptors);
+
+    expect(isTenantOriginPath("/browse/")).toBe(false);
+    expect(walletLoaderFromOrigin("/browse/", "/my-tickets/")).toEqual({
+      branding: null,
+      fallback: "blocktickets",
+    });
+    expect(isPlatformLoaderPath("/my-tickets/")).toBe(true);
+    expect(getLoaderBranding("/my-tickets/")).toBeNull();
+  });
+
+  it("uses tenant branding from checkout success, then Blocktickets inside the wallet", () => {
+    cacheOrgBranding(raptors);
+
+    expect(
+      walletLoaderFromOrigin("/checkout/checkout-success/", "/my-tickets/"),
+    ).toMatchObject({
+      fallback: "none",
+      branding: { name: raptors.name },
+    });
+
+    markWalletEntryFromTenant();
+    expect(isPlatformLoaderPath("/my-tickets/")).toBe(false);
+    expect(getLoaderBranding("/my-tickets/")).toMatchObject({
+      name: raptors.name,
+    });
+
+    consumeWalletEntryFromTenant();
+    expect(isWalletAccountPath("/my-tickets/event/abc/")).toBe(true);
+    expect(
+      walletLoaderFromOrigin("/my-tickets/", "/my-tickets/event/abc/"),
+    ).toEqual({
+      branding: null,
+      fallback: "blocktickets",
+    });
+    expect(isPlatformLoaderPath("/my-tickets/event/abc/")).toBe(true);
+    expect(getLoaderBranding("/my-tickets/event/abc/")).toBeNull();
   });
 });

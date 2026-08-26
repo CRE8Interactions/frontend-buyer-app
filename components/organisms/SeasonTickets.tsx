@@ -788,8 +788,8 @@ export default function SeasonTickets({
   /* ---------- small building blocks ---------- */
   const chip = (on: boolean): React.CSSProperties => ({
     fontFamily: "inherit", flexShrink: 0, display: "flex", alignItems: "center", gap: 8, fontSize: 14, fontWeight: 600,
-    whiteSpace: "nowrap", background: on ? ACCENT : "#fff", color: INK,
-    border: `1px solid ${on ? ACCENT : "rgba(5,27,53,0.12)"}`, borderRadius: 999,
+    whiteSpace: "nowrap", background: on ? INK : "#fff", color: on ? "#fff" : INK,
+    border: `1px solid ${on ? INK : "rgba(5,27,53,0.12)"}`, borderRadius: 999,
     padding: mobile ? "13px 16px" : "10px 16px", minHeight: mobile ? 46 : undefined, cursor: "pointer",
   });
   const accentBtn: React.CSSProperties = { fontFamily: "inherit", fontSize: 14, fontWeight: 600, color: INK, background: ACCENT, border: "none", borderRadius: 999, padding: "13px 20px", cursor: "pointer" };

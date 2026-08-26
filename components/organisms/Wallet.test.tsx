@@ -29,6 +29,13 @@ describe("Wallet login fields", () => {
     mockedVerifyUser.mockResolvedValue({} as never);
   });
 
+  it("links the Blocktickets lockup to Browse", () => {
+    render(<Wallet initialScreen="login" />);
+    expect(
+      screen.getByRole("link", { name: /blocktickets home/i }),
+    ).toHaveAttribute("href", expect.stringMatching(/^\/browse\/?$/));
+  });
+
   it("lowercases the demo email before sending a code", async () => {
     const user = userEvent.setup();
     render(<Wallet initialScreen="login" />);
@@ -62,5 +69,18 @@ describe("Wallet login fields", () => {
     expect(await screen.findByText(FIELD_COPY.invalidEmail)).toBeInTheDocument();
     expect(mockedValidateEmail).not.toHaveBeenCalled();
     expect(mockedVerifyUser).not.toHaveBeenCalled();
+  });
+
+  it("keeps Send my code enabled when empty and submits on Enter", async () => {
+    const user = userEvent.setup();
+    render(<Wallet initialScreen="login" />);
+
+    const send = screen.getByRole("button", { name: /send my code/i });
+    expect(send).toBeEnabled();
+    await user.click(screen.getByLabelText(/email address/i));
+    await user.keyboard("{Enter}");
+
+    expect(await screen.findByText(FIELD_COPY.invalidEmail)).toBeInTheDocument();
+    expect(mockedValidateEmail).not.toHaveBeenCalled();
   });
 });

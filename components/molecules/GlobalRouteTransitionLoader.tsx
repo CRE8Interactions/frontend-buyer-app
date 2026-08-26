@@ -4,12 +4,17 @@ import { useEffect, useRef, useState } from "react";
 import { BrandedLoader } from "@/components/molecules/RouteLoader";
 import { isInAppBackAnchor } from "@/lib/inAppBack";
 import {
+  consumeWalletEntryFromTenant,
   getLoaderBranding,
   isPlatformLoaderPath,
+  isTenantOriginPath,
+  isWalletAccountPath,
+  markWalletEntryFromTenant,
+  walletLoaderFromOrigin,
   type CachedBranding,
 } from "@/lib/orgBrandingCache";
 import { loaderMessageForPath } from "@/lib/loaderMessages";
-import { ROUTE_TRANSITION_EVENT, isWalletShellNavigation } from "@/lib/routeTransition";
+import { ROUTE_TRANSITION_EVENT } from "@/lib/routeTransition";
 
 const MIN_VISIBLE_MS = 450;
 const MAX_VISIBLE_MS = 15000;
@@ -49,21 +54,38 @@ export default function GlobalRouteTransitionLoader() {
       ) {
         return;
       }
-      if (isWalletShellNavigation(window.location.pathname, destination.pathname)) {
-        return;
-      }
 
       const startedAt = Date.now();
       const startingUrl = `${window.location.pathname}${window.location.search}`;
-      const destinationBranding = getLoaderBranding(destination.pathname);
+      const fromPath = window.location.pathname;
+      const toPath = destination.pathname;
+
+      let destinationBranding = getLoaderBranding(toPath);
+      let nextFallback: "none" | "blocktickets" = isPlatformLoaderPath(
+        toPath,
+        destination.search,
+      )
+        ? "blocktickets"
+        : "none";
+
+      if (isWalletAccountPath(toPath)) {
+        if (isTenantOriginPath(fromPath)) {
+          markWalletEntryFromTenant();
+          const origin = walletLoaderFromOrigin(fromPath, toPath);
+          destinationBranding = origin.branding;
+          nextFallback = origin.fallback;
+        } else {
+          consumeWalletEntryFromTenant();
+          destinationBranding = null;
+          nextFallback = "blocktickets";
+        }
+      } else if (isWalletAccountPath(fromPath)) {
+        consumeWalletEntryFromTenant();
+      }
 
       clearTimers();
       setBranding(destinationBranding);
-      setFallback(
-        isPlatformLoaderPath(destination.pathname, destination.search)
-          ? "blocktickets"
-          : "none",
-      );
+      setFallback(nextFallback);
       setMessage(loaderMessageForPath(destination.pathname));
       setVisible(true);
 

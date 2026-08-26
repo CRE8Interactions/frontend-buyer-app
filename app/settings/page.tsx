@@ -70,7 +70,7 @@ export default function SettingsPage() {
                 <h3 className="text-[17px] font-semibold">{link.title}</h3>
                 <p className="mt-1 text-[13.5px] leading-relaxed text-[#9DA2B3]">{link.desc}</p>
               </div>
-              <ArrowRight className="mt-1 h-4 w-4 shrink-0 text-[#9DA2B3] transition-transform group-hover:translate-x-0.5 group-hover:text-white" />
+              <ArrowRight className="mt-1 h-4 w-4 shrink-0 text-[#6e7180] transition-transform group-hover:translate-x-0.5 group-hover:text-[#051b35]" />
             </div>
           </Link>
         ))}
