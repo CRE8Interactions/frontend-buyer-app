@@ -10,6 +10,7 @@ import {
   getLoaderBranding,
   getLoaderBrandingFromCookieValue,
   isPlatformLoaderPath,
+  orgSlugFromPathname,
   isTenantOriginPath,
   isWalletAccountPath,
   LOADER_BRANDING_COOKIE,
@@ -137,6 +138,29 @@ describe("org switch loader branding", () => {
     });
   });
 
+  it("brands org fundraiser routes and uses Blocktickets on standalone fundraise and group", () => {
+    cacheOrgBranding(raptors);
+
+    expect(orgSlugFromPathname(`/${raptors.slug}/fundraisers/spring/`)).toBe(
+      raptors.slug,
+    );
+    expect(
+      getLoaderBranding(`/${raptors.slug}/fundraisers/spring/`),
+    ).toMatchObject({ name: raptors.name });
+    expect(isPlatformLoaderPath("/fundraise/spring/")).toBe(true);
+    expect(getLoaderBranding("/fundraise/spring/")).toBeNull();
+    expect(isPlatformLoaderPath("/group/abc123/")).toBe(true);
+    expect(getLoaderBranding("/group/abc123/")).toBeNull();
+  });
+
+  it("keeps menu paths on Blocktickets even when that org is cached", () => {
+    const menuPath = `/menu/${raptors.uuid}/section/`;
+    cacheOrgBranding(raptors);
+
+    expect(isPlatformLoaderPath(menuPath)).toBe(true);
+    expect(getLoaderBranding(menuPath)).toBeNull();
+  });
+
   it("uses the Blocktickets loader on login when there is nowhere to return to", () => {
     cacheOrgBranding(raptors);
 
@@ -233,6 +257,10 @@ describe("wallet origin loaders", () => {
 
     consumeWalletEntryFromTenant();
     expect(isWalletAccountPath("/wallet/my-tickets/event/abc/")).toBe(true);
+    expect(isWalletAccountPath("/wallet/my-tickets/package/pkg-1/event/abc/")).toBe(
+      true,
+    );
+    expect(orgSlugFromPathname("/wallet/my-tickets/package/pkg-1/")).toBeNull();
     expect(
       walletLoaderFromOrigin("/wallet/my-tickets/", "/wallet/my-tickets/event/abc/"),
     ).toEqual({

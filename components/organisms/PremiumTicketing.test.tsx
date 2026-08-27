@@ -232,6 +232,37 @@ describe("Select tickets page (PremiumTicketing)", () => {
     expect(screen.getByText(/mobile tickets/i)).toBeInTheDocument();
   });
 
+  it("keeps a branded GA header mark unlinked, and sends the Blocktickets lockup home", async () => {
+    const gaData = {
+      ...seatedTicketingFixture,
+      eventType: "ga" as const,
+      gaTiers: [
+        {
+          name: "General admission",
+          sub: "Unreserved seating",
+          price: "$10.00",
+          unit: 10,
+          note: "",
+          state: "live" as const,
+        },
+      ],
+    };
+    const { unmount } = render(<PremiumTicketing data={gaData} />);
+
+    expect(screen.getByAltText(gaData.orgLabel)).toBeInTheDocument();
+    expect(
+      screen.queryByRole("link", { name: `${gaData.orgLabel} home` }),
+    ).not.toBeInTheDocument();
+    unmount();
+
+    render(
+      <PremiumTicketing data={{ ...gaData, brandLogoSrc: undefined }} />,
+    );
+    expect(
+      screen.getByRole("link", { name: /blocktickets home/i }),
+    ).toHaveAttribute("href", "/");
+  });
+
   it("links the header to My tickets as My wallet when logged in", async () => {
     const auth = authState(true);
     mockedUseAuth.mockReturnValue(auth);
@@ -536,7 +567,9 @@ describe("Select tickets page (PremiumTicketing)", () => {
     });
     expect(join).toBeEnabled();
     await user.click(join);
-    expect(await within(dialog).findByText(/email is invalid/i)).toBeInTheDocument();
+    expect(
+      await within(dialog).findByText(/email address is required/i),
+    ).toBeInTheDocument();
 
     await user.type(
       within(dialog).getByLabelText(/email address/i),

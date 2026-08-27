@@ -1,5 +1,4 @@
 import type { Metadata } from "next";
-import AppShell from "@/components/templates/AppShell";
 import { FundraisingCampaignClient } from "@/components/organisms/FundraisingCampaignClient";
 import { fundraiserPageMetadata } from "@/lib/seo";
 
@@ -18,11 +17,9 @@ export default async function OrgFundraiserPage({ params }: Props) {
   const { slug, campaignSlug } = await params;
 
   return (
-    <AppShell search={false}>
-      <FundraisingCampaignClient
-        campaignSlug={campaignSlug}
-        organizationSlug={slug}
-      />
-    </AppShell>
+    <FundraisingCampaignClient
+      campaignSlug={campaignSlug}
+      organizationSlug={slug}
+    />
   );
 }

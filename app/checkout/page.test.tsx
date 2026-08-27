@@ -132,6 +132,7 @@ import {
   processOrder,
   redeemPromoCode,
   removePromoCode,
+  resolveFundraisingCampaign,
 } from "@/lib/api";
 import { setLastKnown, useAuth } from "@/lib/auth";
 import {
@@ -152,6 +153,7 @@ const mockedDropUserCart = vi.mocked(dropUserCart);
 const mockedProcessOrder = vi.mocked(processOrder);
 const mockedRedeemPromo = vi.mocked(redeemPromoCode);
 const mockedRemovePromo = vi.mocked(removePromoCode);
+const mockedResolveFundraising = vi.mocked(resolveFundraisingCampaign);
 const mockedUseAuth = vi.mocked(useAuth);
 const mockedSetLastKnown = vi.mocked(setLastKnown);
 
@@ -212,6 +214,8 @@ describe("Checkout page", () => {
     mockedRedeemPromo.mockReset();
     mockedRemovePromo.mockReset();
     mockedRemovePromo.mockResolvedValue({} as never);
+    mockedResolveFundraising.mockReset();
+    mockedResolveFundraising.mockResolvedValue({ data: { campaign: null } } as never);
     stripeMocks.submit.mockResolvedValue({});
     stripeMocks.confirmPayment.mockResolvedValue({});
     stripeMocks.retrievePaymentIntent.mockResolvedValue({
@@ -979,7 +983,7 @@ describe("Checkout page", () => {
     render(<CheckoutPageRoute />);
 
     await user.type(
-      await screen.findByLabelText(/^email$/i),
+      await screen.findByLabelText(/email address/i),
       `  ${DEMO_USER.email.toUpperCase()}  `,
     );
     await user.type(screen.getByLabelText(/first name/i), DEMO_USER.firstName);
@@ -1009,7 +1013,7 @@ describe("Checkout page", () => {
     render(<CheckoutPageRoute />);
 
     await user.type(
-      await screen.findByLabelText(/^email$/i),
+      await screen.findByLabelText(/email address/i),
       "bot@mailinator.com",
     );
     await user.type(screen.getByLabelText(/first name/i), DEMO_USER.firstName);
@@ -1031,6 +1035,35 @@ describe("Checkout page", () => {
         name: /where should we send your tickets/i,
       }),
     ).not.toBeInTheDocument();
+  });
+
+  it("shows a checkout donation field when a campaign resolves", async () => {
+    const cart = demoCheckoutCart();
+    mockedGetCart.mockResolvedValue({
+      data: {
+        ...cart,
+        event: {
+          ...cart.event,
+          organization: { ...cart.event.organization, uuid: raptorsOrg.uuid },
+        },
+      },
+    } as never);
+    mockedResolveFundraising.mockResolvedValue({
+      data: {
+        campaign: {
+          title: "Spring fund",
+          campaignUuid: "camp-1",
+          donationRequirements: { mandatory: false, minimumAmount: 0 },
+        },
+      },
+    } as never);
+
+    render(<CheckoutPageRoute />);
+
+    expect(await screen.findByText("Spring fund")).toBeInTheDocument();
+    expect(
+      screen.getByPlaceholderText(/donation amount/i),
+    ).toBeInTheDocument();
   });
 
   it("sends logged-out package shoppers to login without flashing checkout", async () => {

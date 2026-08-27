@@ -97,14 +97,21 @@ describe("Browse page", () => {
     });
   });
 
-  it("shows loading, then the main sections and event content from DEMO fixtures", async () => {
+  it("holds the Blocktickets loader, then shows the main sections and event content from DEMO fixtures", async () => {
     render(<BrowseHome />);
 
-    expect(screen.getByText(/loading featured events/i)).toBeInTheDocument();
+    const loader = screen.getByRole("status", { name: /loading/i });
+    expect(loader).toHaveAttribute("data-bt-platform-loader");
+    expect(
+      screen.queryByRole("heading", { name: /^events$/i }),
+    ).not.toBeInTheDocument();
 
     expect(
       await screen.findByRole("heading", { name: /teams & venues/i }),
     ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("status", { name: /loading/i }),
+    ).not.toBeInTheDocument();
     expect(screen.queryByText(/^see all$/i)).not.toBeInTheDocument();
     expect(
       screen.getByRole("heading", { name: /^events$/i }),

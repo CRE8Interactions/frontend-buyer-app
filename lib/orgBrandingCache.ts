@@ -3,10 +3,14 @@ import {
   resolvePrimaryColor,
   type BrandingOrganization,
 } from "@/lib/branding";
-import { WALLET_SECTION_PREFIXES } from "@/lib/walletNav";
+import {
+  WALLET_SECTION_PREFIXES,
+  WALLET_TICKETS_PREFIXES,
+} from "@/lib/walletNav";
 
 export type CachedBranding = {
   slug: string | null;
+  uuid?: string | null;
   name: string | null;
   primaryColor: string;
   logoSrc: string | null;
@@ -21,6 +25,9 @@ export const LOADER_BRANDING_COOKIE = "bt_org_branding_last";
 
 const slugKey = (slug: string) =>
   `bt_org_branding:${String(slug).toLowerCase()}`;
+
+const uuidKey = (uuid: string) =>
+  `bt_org_branding_uuid:${String(uuid).toLowerCase()}`;
 
 const EVENT_PATH = /^\/e\/([^/]+)\/([^/]+)/;
 const VENUE_PATH = /^\/venue\/([^/]+)/i;
@@ -77,6 +84,7 @@ export function parseLoaderBrandingCookie(
     if (!parsed?.primaryColor) return null;
     return {
       slug: parsed.slug || null,
+      uuid: parsed.uuid || null,
       name: parsed.name || null,
       primaryColor: parsed.primaryColor,
       logoSrc: parsed.logoSrc || null,
@@ -208,6 +216,7 @@ function brandingPayload(
 
   return {
     slug: organization.slug || null,
+    uuid: organization.uuid || null,
     name: organization.name || null,
     primaryColor: resolvePrimaryColor(null, organization),
     logoSrc,
@@ -246,6 +255,12 @@ function brandingForOrgSlug(orgSlug?: string | null): CachedBranding | null {
   return readJson<CachedBranding>(slugKey(orgSlug));
 }
 
+function brandingForOrgUuid(orgUuid?: string | null): CachedBranding | null {
+  if (!orgUuid) return null;
+  migrateLegacyKeys();
+  return readJson<CachedBranding>(uuidKey(orgUuid));
+}
+
 /** Persist org branding for branded page-transition loaders. */
 export function cacheOrgBranding(organization?: BrandingOrganization | null) {
   const payload = brandingPayload(organization);
@@ -254,6 +269,7 @@ export function cacheOrgBranding(organization?: BrandingOrganization | null) {
   migrateLegacyKeys();
   writeJson(LAST_KEY, payload);
   if (payload.slug) writeJson(slugKey(payload.slug), payload);
+  if (payload.uuid) writeJson(uuidKey(payload.uuid), payload);
   return payload;
 }
 
@@ -273,9 +289,10 @@ export function cacheEventBranding(
     payload = cacheOrgBranding(organization);
   } else {
     payload = brandingPayload(organization);
-    if (payload?.slug) {
+    if (payload?.slug || payload?.uuid) {
       migrateLegacyKeys();
-      writeJson(slugKey(payload.slug), payload);
+      if (payload.slug) writeJson(slugKey(payload.slug), payload);
+      if (payload.uuid) writeJson(uuidKey(payload.uuid), payload);
     }
   }
   rememberEvent(event, payload?.slug);
@@ -317,6 +334,7 @@ export function cacheOrgsBranding(
     if (!payload?.slug) return;
 
     writeJson(slugKey(payload.slug), payload);
+    if (payload.uuid) writeJson(uuidKey(payload.uuid), payload);
     (organization.upcomingEvents || []).forEach((event) =>
       rememberEvent(event, payload.slug),
     );
@@ -335,6 +353,7 @@ export function cacheVenueBranding(
   // shouldn't overwrite the shopper's last team.
   migrateLegacyKeys();
   writeJson(slugKey(payload.slug), payload);
+  if (payload.uuid) writeJson(uuidKey(payload.uuid), payload);
   (venues || []).forEach((venue) => rememberVenue(venue?.slug, payload.slug));
   return payload;
 }
@@ -351,6 +370,12 @@ export function getCachedOrgBranding(slug?: string | null) {
     return null;
   }
   return lastBranding();
+}
+
+export function getCachedOrgBrandingByUuid(uuid?: string | null) {
+  migrateLegacyKeys();
+  const keyed = brandingForOrgUuid(uuid);
+  return keyed?.primaryColor ? keyed : null;
 }
 
 export function getCachedBrandingForPath(
@@ -429,7 +454,9 @@ export function consumeWalletEntryFromTenant() {
   return hit;
 }
 
-const WALLET_ACCOUNT_PREFIXES = WALLET_SECTION_PREFIXES;
+const WALLET_ACCOUNT_PREFIXES = Array.from(
+  new Set([...WALLET_SECTION_PREFIXES, ...WALLET_TICKETS_PREFIXES]),
+);
 
 /** Wallet / account routes that use Blocktickets chrome after entry. */
 export function isWalletAccountPath(pathname = "") {
@@ -514,6 +541,7 @@ export function isPlatformLoaderPath(
 ) {
   const path = pathname.replace(/\/+$/, "") || "/";
   if (isPlatformPagePath(path)) return true;
+  if (/^\/(?:fundraise|group|menu)(\/|$)/.test(path)) return true;
   if (isWalletAccountPath(path)) {
     const fromTenant =
       opts.walletEntryFromTenant ?? peekWalletEntryFromTenant();
@@ -609,8 +637,11 @@ export function resolveLoaderBrandingForRender(
 export function orgSlugFromPathname(pathname = ""): string | null {
   if (!pathname) return null;
 
-  const packageMatch = pathname.match(/^\/([^/]+)\/(?:package|flex-pack)\//i);
-  if (packageMatch && packageMatch[1].toLowerCase() !== "venue") {
+  const packageMatch = pathname.match(/^\/([^/]+)\/(?:package|flex-pack|fundraisers)\//i);
+  if (
+    packageMatch &&
+    !["venue", "wallet"].includes(packageMatch[1].toLowerCase())
+  ) {
     return packageMatch[1];
   }
 

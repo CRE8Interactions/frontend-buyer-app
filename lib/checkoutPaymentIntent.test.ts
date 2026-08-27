@@ -5,12 +5,9 @@ import {
   demoFlexPackCheckoutCart,
 } from "@/lib/demo/fixtures";
 import {
-  buildFundraisingPayload,
   buildPaymentIntentRequest,
-  createInitialFundraisingSelection,
-  isFundraisingDonationSatisfied,
   paymentEventFromCart,
-} from "@/lib/fundraisingCheckout";
+} from "@/lib/checkoutPaymentIntent";
 import { resolveFlexPackCheckoutTotals } from "@/lib/ticketSummary";
 
 describe("paymentEventFromCart", () => {
@@ -40,7 +37,7 @@ describe("buildPaymentIntentRequest", () => {
     const cart = demoFlexPackCheckoutCart({
       total: Number(priced.flex_pack.price),
     });
-    const request = buildPaymentIntentRequest(cart, null, null);
+    const request = buildPaymentIntentRequest(cart, null);
 
     expect(request.event).toEqual(paymentEventFromCart(cart, null));
     expect(request.totalFromCart).toBe(resolveFlexPackCheckoutTotals(cart).total);
@@ -55,59 +52,16 @@ describe("buildPaymentIntentRequest", () => {
       firstName: DEMO_USER.firstName,
       lastName: DEMO_USER.lastName,
     };
-    const request = buildPaymentIntentRequest(cart, cart.event, null, guest);
+    const request = buildPaymentIntentRequest(cart, cart.event, guest);
 
     expect(request.guest).toEqual(guest);
   });
 
   it("keeps the provided event and cart total for ticket checkout", () => {
     const cart = demoCheckoutCart();
-    const request = buildPaymentIntentRequest(cart, cart.event, null);
+    const request = buildPaymentIntentRequest(cart, cart.event);
 
     expect(request.event).toBe(cart.event);
     expect(request.totalFromCart).toBe(cart.total);
-  });
-
-  it("adds a fundraising payload when the shopper donates", () => {
-    const cart = demoCheckoutCart();
-    const payload = {
-      campaignUuid: "camp-1",
-      participantUuid: "",
-      donationAmount: 25,
-      anonymous: false,
-      donorMessage: "",
-    };
-    const request = buildPaymentIntentRequest(cart, cart.event, payload);
-
-    expect(request.fundraising).toEqual(payload);
-  });
-});
-
-describe("fundraising donation rules", () => {
-  it("pre-fills a mandatory minimum and blocks checkout until it is met", () => {
-    const campaign = {
-      campaignUuid: "camp-1",
-      donationRequirements: { minimumAmount: 10, mandatory: true },
-    };
-    const initial = createInitialFundraisingSelection(campaign);
-    expect(initial.donationAmount).toBe(10);
-    expect(isFundraisingDonationSatisfied(campaign, { ...initial, donationAmount: 0 })).toBe(
-      false,
-    );
-    expect(isFundraisingDonationSatisfied(campaign, initial)).toBe(true);
-    expect(buildFundraisingPayload(campaign, initial)?.donationAmount).toBe(10);
-  });
-
-  it("allows optional campaigns with no donation", () => {
-    const campaign = {
-      campaignUuid: "camp-1",
-      donationRequirements: { minimumAmount: 5, mandatory: false },
-    };
-    expect(isFundraisingDonationSatisfied(campaign, createInitialFundraisingSelection())).toBe(
-      true,
-    );
-    expect(
-      buildFundraisingPayload(campaign, createInitialFundraisingSelection()),
-    ).toBeNull();
   });
 });

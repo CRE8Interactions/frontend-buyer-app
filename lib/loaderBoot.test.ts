@@ -56,6 +56,35 @@ describe("boot splash", () => {
     expect(splash?.textContent).not.toContain(RAPTORS.name);
   });
 
+  it("spins the Blocktickets mark on standalone fundraise, group, and menu paths", () => {
+    cacheOrgBranding(RAPTORS);
+
+    for (const [path, message] of [
+      ["/fundraise/spring/", "loading fundraiser"],
+      ["/group/abc/", "loading group"],
+      ["/menu/other-org/section/", "loading menu"],
+      [`/menu/${RAPTORS.uuid}/section/`, "loading menu"],
+    ]) {
+      document.getElementById("bt-boot-loader")?.remove();
+      const splash = paintBootSplash(path);
+      expect(splash?.querySelector("img")).toHaveAttribute("alt", "Blocktickets");
+      expect(splash?.textContent).toContain(message);
+      expect(splash?.textContent).not.toContain(RAPTORS.name);
+    }
+  });
+
+  it("spins the org logo on an org fundraiser path", () => {
+    cacheOrgBranding(RAPTORS);
+
+    const splash = paintBootSplash(`/${RAPTORS.slug}/fundraisers/spring/`);
+
+    expect(splash?.querySelector("img")).toHaveAttribute(
+      "src",
+      RAPTORS.branding.logo.url,
+    );
+    expect(splash?.textContent).toContain(RAPTORS.name);
+  });
+
   it("spins the Blocktickets mark on a wallet path after Browse", () => {
     cacheOrgBranding(RAPTORS);
 

@@ -166,7 +166,11 @@ export default function Nav({ search, variant = "app" }: Props) {
     <header style={{ background: NAVY, position: "sticky", top: 0, zIndex: 50, borderBottom: "1px solid rgba(255,255,255,0.10)" }}>
       <style>{SEARCH_CSS}</style>
       <div className={`snav-bar ${variant === "app" ? "snav-app" : "snav-mk"}`}>
-        <Link href="/" aria-label="Blocktickets home" style={{ display: "flex", alignItems: "center", flexShrink: 0 }}>
+        <Link
+          href="/"
+          aria-label="Blocktickets home"
+          style={{ display: "flex", alignItems: "center", flexShrink: 0 }}
+        >
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img src={LOCKUP} alt="Blocktickets" style={{ height: 20, width: "auto", display: "block" }} />
         </Link>

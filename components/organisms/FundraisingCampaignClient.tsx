@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { loadStripe, type Stripe } from "@stripe/stripe-js";
 import {
   Elements,
@@ -8,11 +8,7 @@ import {
   useElements,
   useStripe,
 } from "@stripe/react-stripe-js";
-import Button from "@/components/atoms/Button";
-import Spinner from "@/components/atoms/Spinner";
-import PageLoader from "@/components/molecules/PageLoader";
-import { cardCls } from "@/components/molecules/Card";
-import { Input, Label } from "@/components/atoms/form";
+import BrandedActionButton from "@/components/atoms/BrandedActionButton";
 import EmailField from "@/components/molecules/EmailField";
 import NameField from "@/components/molecules/NameField";
 import {
@@ -20,16 +16,36 @@ import {
   createLandingPageDonationIntent,
   getPublicFundraisingCampaign,
 } from "@/lib/api";
+import AppShell from "@/components/templates/AppShell";
+import { BrandedLoader } from "@/components/molecules/RouteLoader";
+import useOrgBranding from "@/hooks/useOrgBranding";
+import {
+  BLOCKTICKETS_NAVY,
+  resolveBrandLogo,
+  type BrandingOrganization,
+} from "@/lib/branding";
 import { formatCurrency, imageUrl } from "@/lib/helpers";
+import { cacheOrgBranding } from "@/lib/orgBrandingCache";
 import {
   FIELD_COPY,
   emailBlurInvalid,
-  emailSubmitInvalid,
+  emailSubmitError,
+  fieldClass,
+  fieldErrorTextClass,
   formString,
   nameAllows,
   normalizeEmail,
   submittedEmail,
 } from "@/lib/fieldValidation";
+import {
+  stripePaymentElementAppearance,
+  STRIPE_PAYMENT_ELEMENT_FONTS,
+} from "@/lib/stripePaymentElement";
+import { FUNDRAISER_LOADER_MESSAGE } from "@/lib/loaderMessages";
+
+const lightCard =
+  "rounded-[20px] border border-[rgba(5,27,53,0.08)] bg-white text-[#051b35]";
+const muted = "text-[#6e7180]";
 
 type Campaign = {
   slug: string;
@@ -39,6 +55,7 @@ type Campaign = {
   enableLandingPageDonation?: boolean;
   organizationUUID?: string;
   accentColor?: string;
+  organization?: BrandingOrganization;
   suggestedAmounts?: Array<number | string>;
   participants?: Array<{ uuid: string; name: string }>;
   [key: string]: unknown;
@@ -54,6 +71,8 @@ function DonationForm({
   platformFee,
   processingFee,
   totalCharge,
+  primaryColor,
+  textColor,
   onSuccess,
   onError,
 }: {
@@ -61,6 +80,8 @@ function DonationForm({
   platformFee: number;
   processingFee: number;
   totalCharge: number;
+  primaryColor?: string;
+  textColor?: string;
   onSuccess: () => void;
   onError: (msg: string) => void;
 }) {
@@ -96,31 +117,39 @@ function DonationForm({
   return (
     <form onSubmit={handleSubmit} className="mt-4 space-y-4">
       <PaymentElement options={{ wallets: { link: "never" } }} />
-      <div className={`${cardCls} space-y-2 p-4`}>
+      <div className={`${lightCard} space-y-2 p-4`}>
         <div className="flex justify-between text-[14px]">
-          <span className="text-[#9DA2B3]">Donation</span>
+          <span className={muted}>Donation</span>
           <span>{formatCurrency(donationAmount)}</span>
         </div>
         {platformFee > 0 ? (
           <div className="flex justify-between text-[14px]">
-            <span className="text-[#9DA2B3]">Platform fee</span>
+            <span className={muted}>Platform fee</span>
             <span>{formatCurrency(platformFee)}</span>
           </div>
         ) : null}
         {processingFee > 0 ? (
           <div className="flex justify-between text-[14px]">
-            <span className="text-[#9DA2B3]">Processing fee</span>
+            <span className={muted}>Processing fee</span>
             <span>{formatCurrency(processingFee)}</span>
           </div>
         ) : null}
-        <div className="flex justify-between border-t border-white/10 pt-2 font-semibold">
+        <div className="flex justify-between border-t border-[rgba(5,27,53,0.08)] pt-2 font-semibold">
           <span>Total</span>
           <span>{formatCurrency(totalCharge)}</span>
         </div>
       </div>
-      <Button type="submit" className="w-full disabled:opacity-50" disabled={!stripe || submitting}>
-        {submitting ? <Spinner size={18} /> : "Complete donation"}
-      </Button>
+      <BrandedActionButton
+        type="submit"
+        className="w-full"
+        primaryColor={primaryColor}
+        textColor={textColor}
+        loading={submitting}
+        loadingLabel="Processing…"
+        disabled={!stripe || submitting}
+      >
+        Complete donation
+      </BrandedActionButton>
     </form>
   );
 }
@@ -167,6 +196,10 @@ export function FundraisingCampaignClient({
         const c = res?.data?.campaign as Campaign | null;
         setCampaign(c);
         if (!c) setLoadError("This fundraiser is unavailable.");
+        const org = (c?.organization || c) as BrandingOrganization | undefined;
+        if (org && (org.slug || org.branding || org.primaryColor)) {
+          cacheOrgBranding(org);
+        }
         const presets = c?.suggestedAmounts || [];
         if (presets.length) {
           setAmount(String(presets[Math.floor(presets.length / 2)]));
@@ -211,7 +244,12 @@ export function FundraisingCampaignClient({
       return;
     }
     if (!anonymous) {
-      if (emailSubmitInvalid(nextEmail)) {
+      const emailKind = emailSubmitError(nextEmail);
+      if (emailKind === "required") {
+        setError(FIELD_COPY.emailRequired);
+        return;
+      }
+      if (emailKind === "invalid") {
         setError(FIELD_COPY.invalidEmail);
         return;
       }
@@ -257,35 +295,73 @@ export function FundraisingCampaignClient({
     }
   };
 
+  const { organization: brandedOrg, theme } = useOrgBranding({
+    slug: organizationSlug,
+    uuid: organizationUUID,
+    organization: campaign?.organization,
+  });
+
+  const shell = (body: ReactNode) => (
+    <AppShell
+      variant="light"
+      search={false}
+      accent={organizationSlug ? theme.accent : undefined}
+      brandLogoSrc={
+        organizationSlug && brandedOrg ? theme.brandLogoSrc : undefined
+      }
+      brandName={organizationSlug ? brandedOrg?.name || null : undefined}
+    >
+      {body}
+    </AppShell>
+  );
+
   if (loading) {
-    return <PageLoader label="Loading fundraiser" className="min-h-[40vh]" />;
+    // The org route holds its tenant loader (never the Blocktickets one); the
+    // platform /fundraise route holds the Blocktickets loader.
+    return (
+      <BrandedLoader
+        branding={
+          organizationSlug && brandedOrg
+            ? {
+                primaryColor: theme.accent,
+                logoSrc: resolveBrandLogo(null, brandedOrg)
+                  ? theme.brandLogoSrc
+                  : null,
+                name: brandedOrg.name || null,
+              }
+            : null
+        }
+        fallback={organizationSlug ? "none" : "blocktickets"}
+        message={FUNDRAISER_LOADER_MESSAGE}
+      />
+    );
   }
 
   if (loadError || !campaign) {
-    return (
-      <div className={`${cardCls} mx-auto max-w-lg p-8 text-center`}>
+    return shell(
+      <div className={`${lightCard} mx-auto max-w-lg p-8 text-center`}>
         <h1 className="text-[22px] font-semibold">Fundraiser not found</h1>
-        <p className="mt-2 text-[#9DA2B3]">{loadError}</p>
-      </div>
+        <p className={`mt-2 ${muted}`}>{loadError}</p>
+      </div>,
     );
   }
 
   if (success) {
-    return (
-      <div className={`${cardCls} mx-auto max-w-lg p-8 text-center`}>
+    return shell(
+      <div className={`${lightCard} mx-auto max-w-lg p-8 text-center`}>
         <h1 className="text-[28px] font-semibold">Thank you!</h1>
-        <p className="mt-2 text-[#9DA2B3]">
+        <p className={`mt-2 ${muted}`}>
           Your donation to {campaign.title} was successful.
         </p>
-      </div>
+      </div>,
     );
   }
 
-  return (
-    <div className="mx-auto max-w-xl pb-16">
-      <div className={`${cardCls} overflow-hidden`}>
+  return shell(
+    <div className="mx-auto max-w-xl pb-16 text-[#051b35]">
+      <div className={`${lightCard} overflow-hidden`}>
         {campaign.heroImage ? (
-          <div className="aspect-[21/9] bg-[#071f3a]">
+          <div className="aspect-[21/9] bg-[#f1f3f8]">
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
               src={imageUrl(campaign.heroImage as never)}
@@ -295,11 +371,11 @@ export function FundraisingCampaignClient({
           </div>
         ) : null}
         <div className="p-6">
-          <h1 className="text-[clamp(28px,4vw,36px)] font-semibold tracking-[-0.02em]">
+          <h1 className="text-[clamp(28px,4vw,36px)] font-semibold tracking-[-0.03em]">
             {campaign.title}
           </h1>
           {campaign.description ? (
-            <p className="mt-3 whitespace-pre-wrap text-[15px] leading-relaxed text-[#9DA2B3]">
+            <p className={`mt-3 whitespace-pre-wrap text-[15px] leading-relaxed ${muted}`}>
               {campaign.description}
             </p>
           ) : null}
@@ -307,10 +383,12 @@ export function FundraisingCampaignClient({
       </div>
 
       {campaign.enableLandingPageDonation ? (
-        <div className={`${cardCls} mt-6 p-6`}>
+        <div className={`${lightCard} mt-6 p-6`}>
           <h2 className="text-[16px] font-semibold">Donate</h2>
-          {error ? (
-            <p className="mt-3 text-[14px] text-red-400">{error}</p>
+          {error &&
+          error !== FIELD_COPY.emailRequired &&
+          error !== FIELD_COPY.invalidEmail ? (
+            <p className={`mt-3 text-[14px] ${fieldErrorTextClass("light")}`}>{error}</p>
           ) : null}
 
           {!clientSecret ? (
@@ -324,10 +402,15 @@ export function FundraisingCampaignClient({
             >
               {campaign.participants?.length ? (
                 <div>
-                  <Label htmlFor="participant">Support</Label>
+                  <label
+                    htmlFor="participant"
+                    className="text-[12px] font-semibold text-[#4a5567]"
+                  >
+                    Support
+                  </label>
                   <select
                     id="participant"
-                    className="mt-2 h-12 w-full rounded-xl border border-white/15 bg-[#051B35] px-4 text-[15px] text-white outline-none focus:border-[#a6e773]"
+                    className={`mt-2 ${fieldClass("light", false)}`}
                     value={participantUuid}
                     onChange={(e) => setParticipantUuid(e.target.value)}
                   >
@@ -348,11 +431,16 @@ export function FundraisingCampaignClient({
                       key={p}
                       type="button"
                       onClick={() => setAmount(String(p))}
-                      className={`rounded-full border px-4 py-2 text-[14px] font-semibold transition-colors ${
+                      className="rounded-full border px-4 py-2 text-[14px] font-semibold transition-colors"
+                      style={
                         parseAmount(amount) === p
-                          ? "border-[#A6E773] bg-[#A6E773]/15 text-white"
-                          : "border-white/15 bg-white/[0.04] text-[#9DA2B3] hover:bg-white/[0.1]"
-                      }`}
+                          ? {
+                              borderColor: theme.buttonColor || BLOCKTICKETS_NAVY,
+                              background: theme.buttonColor || BLOCKTICKETS_NAVY,
+                              color: theme.buttonTextColor,
+                            }
+                          : undefined
+                      }
                     >
                       {formatCurrency(p)}
                     </button>
@@ -361,18 +449,23 @@ export function FundraisingCampaignClient({
               ) : null}
 
               <div>
-                <Label htmlFor="amount">Amount</Label>
-                <Input
+                <label
+                  htmlFor="amount"
+                  className="text-[12px] font-semibold text-[#4a5567]"
+                >
+                  Amount
+                </label>
+                <input
                   id="amount"
                   name="amount"
-                  className="mt-2"
+                  className={`mt-2 ${fieldClass("light", false)}`}
                   value={amount}
                   onChange={(e) => setAmount(e.target.value)}
                   placeholder="25"
                 />
               </div>
 
-              <label className="flex items-center gap-2 text-[14px] text-[#9DA2B3]">
+              <label className={`flex items-center gap-2 text-[14px] ${muted}`}>
                 <input
                   type="checkbox"
                   checked={anonymous}
@@ -387,7 +480,6 @@ export function FundraisingCampaignClient({
                     id="donor-name"
                     name="donorName"
                     label="Name"
-                    variant="dark"
                     required={false}
                     value={donorName}
                     onChange={setDonorName}
@@ -395,52 +487,75 @@ export function FundraisingCampaignClient({
                   <EmailField
                     id="donor-email"
                     name="email"
-                    label="Email"
-                    variant="dark"
+                    label="Email address"
                     value={donorEmail}
-                    onChange={setDonorEmail}
+                    error={
+                      error === FIELD_COPY.emailRequired
+                        ? "required"
+                        : error === FIELD_COPY.invalidEmail
+                          ? "invalid"
+                          : null
+                    }
+                    onChange={(value) => {
+                      setDonorEmail(value);
+                      if (
+                        error === FIELD_COPY.invalidEmail ||
+                        error === FIELD_COPY.emailRequired
+                      ) {
+                        setError("");
+                      }
+                    }}
                     onBlur={(value) => {
                       if (emailBlurInvalid(value)) setError(FIELD_COPY.invalidEmail);
-                      else if (error === FIELD_COPY.invalidEmail) setError("");
+                      else if (
+                        error === FIELD_COPY.invalidEmail ||
+                        error === FIELD_COPY.emailRequired
+                      ) {
+                        setError("");
+                      }
                     }}
                   />
                 </>
               ) : null}
 
               <div>
-                <Label htmlFor="donor-msg">Message (optional)</Label>
-                <Input
+                <label
+                  htmlFor="donor-msg"
+                  className="text-[12px] font-semibold text-[#4a5567]"
+                >
+                  Message (optional)
+                </label>
+                <input
                   id="donor-msg"
-                  className="mt-2"
+                  className={`mt-2 ${fieldClass("light", false)}`}
                   value={donorMessage}
                   name="donorMessage"
                   onChange={(e) => setDonorMessage(e.target.value)}
                 />
               </div>
 
-              <Button
+              <BrandedActionButton
                 type="submit"
-                className="w-full disabled:opacity-50"
+                className="w-full"
+                primaryColor={theme.buttonColor || BLOCKTICKETS_NAVY}
+                textColor={theme.buttonTextColor}
+                loading={loadingIntent}
+                loadingLabel="Loading…"
                 disabled={loadingIntent}
               >
-                {loadingIntent ? <Spinner size={18} /> : "Continue to payment"}
-              </Button>
+                Continue to payment
+              </BrandedActionButton>
             </form>
           ) : stripePromise ? (
             <Elements
               stripe={stripePromise}
               options={{
                 clientSecret,
-                appearance: {
-                  theme: "night",
-                  variables: {
-                    colorPrimary: "#A6E773",
-                    colorBackground: "#051B35",
-                    colorText: "#ffffff",
-                    colorTextSecondary: "#9DA2B3",
-                    borderRadius: "12px",
-                  },
-                },
+                appearance: stripePaymentElementAppearance(
+                  theme.accent,
+                  theme.buttonTextColor,
+                ),
+                fonts: STRIPE_PAYMENT_ELEMENT_FONTS,
               }}
             >
               <DonationForm
@@ -448,6 +563,8 @@ export function FundraisingCampaignClient({
                 platformFee={pricing.platformFee}
                 processingFee={pricing.processingFee}
                 totalCharge={pricing.totalCharge}
+                primaryColor={theme.buttonColor || BLOCKTICKETS_NAVY}
+                textColor={theme.buttonTextColor}
                 onSuccess={() => setSuccess(true)}
                 onError={setError}
               />
@@ -455,10 +572,10 @@ export function FundraisingCampaignClient({
           ) : null}
         </div>
       ) : (
-        <p className="mt-6 text-center text-[14px] text-[#9DA2B3]">
+        <p className={`mt-6 text-center text-[14px] ${muted}`}>
           Online donations are not enabled for this campaign.
         </p>
       )}
-    </div>
+    </div>,
   );
 }

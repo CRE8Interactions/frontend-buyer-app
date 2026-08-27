@@ -10,6 +10,7 @@ import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import Nav, { type SearchGroup } from "@/components/organisms/Nav";
 import SiteFooter from "@/components/organisms/SiteFooter";
+import { BrandedLoader } from "@/components/molecules/RouteLoader";
 import {
   getEvents,
   getOrganizationsOnSale,
@@ -524,6 +525,10 @@ export default function BrowseHome() {
     return [...teamItems, ...venueItems].slice(0, 12);
   }, [orgs, venues]);
 
+  // Featured, rails, and the grid all come from the same fetch, so a partial
+  // page is only empty chrome — hold the Blocktickets loader instead.
+  if (loading) return <BrandedLoader fallback="blocktickets" />;
+
   return (
     <div
       style={{
@@ -564,7 +569,7 @@ export default function BrowseHome() {
             background: NAVY,
           }}
         >
-          {loading || !hero ? (
+          {!hero ? (
             <div
               style={{
                 position: "absolute",
@@ -577,7 +582,7 @@ export default function BrowseHome() {
                 fontSize: 15,
               }}
             >
-              {error || (loading ? "Loading featured events…" : "No featured events yet.")}
+              {error || "No featured events yet."}
             </div>
           ) : (
             <>
@@ -765,7 +770,7 @@ export default function BrowseHome() {
             padding: "8px 0 12px",
           }}
         >
-          {railItems.length === 0 && !loading && (
+          {railItems.length === 0 && (
             <div style={{ fontSize: 14, color: "#6e7180", padding: "12px 0" }}>
               No teams or venues on sale yet.
             </div>
@@ -892,9 +897,7 @@ export default function BrowseHome() {
             Events
           </h2>
           <span style={{ fontSize: 13, color: "#6e7180" }}>
-            {loading
-              ? "Loading…"
-              : `${filteredEvents.length} ${filteredEvents.length === 1 ? "event" : "events"}`}
+            {`${filteredEvents.length} ${filteredEvents.length === 1 ? "event" : "events"}`}
           </span>
         </div>
 
@@ -1048,7 +1051,7 @@ export default function BrowseHome() {
           })}
         </div>
 
-        {!loading && filteredEvents.length === 0 && (
+        {filteredEvents.length === 0 && (
           <div
             style={{
               background: "#fff",

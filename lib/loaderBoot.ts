@@ -5,7 +5,10 @@ import {
 import {
   CHECKOUT_LOADER_MESSAGE,
   CHECKOUT_SUCCESS_LOADER_MESSAGE,
+  FUNDRAISER_LOADER_MESSAGE,
+  GROUP_LOADER_MESSAGE,
   LOADER_MESSAGE,
+  MENU_LOADER_MESSAGE,
 } from "@/lib/loaderMessages";
 
 /**
@@ -52,7 +55,7 @@ export const LOADER_BOOT_SCRIPT = `(function(){
     var norm = path.replace(/\\/+$/, "") || "/";
     var loginReturnsToTenant =
       norm === "/login" && /[?&]from=[^&]/.test(location.search || "");
-    var wallet = /^\\/wallet\\/(?:my-tickets|my-transfers|giving|my-profile)(?:\\/|$)/.test(norm);
+    var wallet = /^\\/wallet\\/(?:my-tickets|my-transfers|my-listings|giving|my-profile|package)(?:\\/|$)/.test(norm);
     var fromTenant = false;
     try { fromTenant = read("bt_wallet_entry_from_tenant") === "1"; } catch (e) {}
     if (!fromTenant) {
@@ -67,6 +70,7 @@ export const LOADER_BOOT_SCRIPT = `(function(){
     var platPages = ${JSON.stringify(PLATFORM_PAGE_PATHS)};
     if (
       platPages.indexOf(norm) !== -1 ||
+      /^\\/(?:fundraise|group|menu)(\\/|$)/.test(norm) ||
       (norm === "/login" && !loginReturnsToTenant) ||
       (wallet && !walletTenant)
     ) {
@@ -92,6 +96,18 @@ export const LOADER_BOOT_SCRIPT = `(function(){
         bars.appendChild(dot);
       }
       plat.appendChild(bars);
+      var platMsg = document.createElement("div");
+      var platMsgText = ${JSON.stringify(LOADER_MESSAGE)};
+      if (norm === "/group" || norm.indexOf("/group/") === 0) {
+        platMsgText = ${JSON.stringify(GROUP_LOADER_MESSAGE)};
+      } else if (norm === "/fundraise" || norm.indexOf("/fundraise/") === 0) {
+        platMsgText = ${JSON.stringify(FUNDRAISER_LOADER_MESSAGE)};
+      } else if (norm === "/menu" || norm.indexOf("/menu/") === 0) {
+        platMsgText = ${JSON.stringify(MENU_LOADER_MESSAGE)};
+      }
+      platMsg.textContent = platMsgText;
+      platMsg.style.cssText = "font-size:12px;font-weight:500;color:rgba(255,255,255,0.62);";
+      plat.appendChild(platMsg);
       document.documentElement.appendChild(plat);
       return;
     }
@@ -111,7 +127,7 @@ export const LOADER_BOOT_SCRIPT = `(function(){
       } catch (e) {}
     } else {
       var org = null;
-      var pkg = path.match(/^\\/([^/]+)\\/(?:package|flex-pack)\\//i);
+      var pkg = path.match(/^\\/([^/]+)\\/(?:package|flex-pack|fundraisers)\\//i);
       if (pkg && pkg[1].toLowerCase() !== "venue") org = pkg[1].toLowerCase();
       else {
         var one = path.match(/^\\/([^/]+)\\/?$/);
