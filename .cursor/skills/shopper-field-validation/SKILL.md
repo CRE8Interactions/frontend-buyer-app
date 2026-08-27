@@ -15,7 +15,7 @@ shared helpers and field components.
 
 | Need | Import |
 |------|--------|
-| Rules and copy | `lib/fieldValidation.ts` (`normalizeEmail`, `isBlockedEmail`, `emailPatternMatch`, `emailLooksInvalid`, `emailBlurInvalid`, `emailSubmitInvalid`, `formString`, `submittedEmail`, `nameAllows`, `nameFieldError`, `namePatternMatch`, `phoneNumberError`, `normalizeOtp`, `FIELD_COPY`) |
+| Rules and copy | `lib/fieldValidation.ts` (`normalizeEmail`, `isBlockedEmail`, `emailPatternMatch`, `emailLooksInvalid`, `emailBlurInvalid`, `emailSubmitError`, `emailSubmitInvalid`, `formString`, `submittedEmail`, `nameAllows`, `nameFieldError`, `namePatternMatch`, `phoneNumberError`, `normalizeOtp`, `requiredCopy`, `FIELD_COPY`) |
 | Email input | `components/molecules/EmailField.tsx` |
 | Name input | `components/molecules/NameField.tsx` |
 | OTP / verify code | `components/molecules/CodeField.tsx` |
@@ -37,7 +37,9 @@ code should import from `lib/fieldValidation.ts`.
    those values. Do not trust blur flags. Do not call the API if local checks
    fail.
 5. Blur is a hint for a **non-empty** field (`emailBlurInvalid`). Empty is
-   valid on idle blur and invalid on submit (`emailSubmitInvalid`).
+   valid on idle blur. Submit uses `emailSubmitError`: empty →
+   `FIELD_COPY.emailRequired` / `{label} is required.`; typed-but-wrong →
+   invalid copy (`emailSubmitInvalid` is the boolean wrapper).
 6. Shared fields mirror native `onInput` into `onChange` so Safari `input`
    events update state. `FormData` is still the submit-time source of truth.
 
@@ -50,8 +52,9 @@ code should import from `lib/fieldValidation.ts`.
    Waitlist, transfer, donate, and personal-details stay local unless that
    flow already called SendGrid.
 
-Invalid/blocked copy is `FIELD_COPY.invalidEmail`. Network copy is
-`FIELD_COPY.network`. Do not invent new strings.
+Invalid/blocked copy is `FIELD_COPY.invalidEmail`. Empty email copy is
+`FIELD_COPY.emailRequired`. Network copy is `FIELD_COPY.network`. Do not invent
+new strings.
 
 ## Phone
 

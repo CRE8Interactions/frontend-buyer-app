@@ -12,7 +12,8 @@ Shoppers type an email and press **Send my code** or Enter.
 
 - Leave a filled, invalid email: they see “Email is invalid. Please try again.” No code is sent.
 - Leave the field empty: no error until they press the button or Enter.
-- Empty or invalid submit: same invalid-email copy. No code is sent.
+- Empty submit: “Email address is required.” No code is sent.
+- Typed but invalid submit: same invalid-email copy as blur. No code is sent.
 - Valid email: we confirm the address, then send a six-digit code.
 
 ## Six-digit code
@@ -37,7 +38,7 @@ Shoppers enter first name, last name, phone, and date of birth. The email from s
 
 Shoppers type email, first name, and last name, then **Continue to payment** or Enter.
 
-- Empty submit shows the usual required/invalid copy and stays on the form.
+- Empty submit shows “Email address is required.” and “First name is required.” / “Last name is required.” and stays on the form.
 - A disposable or malformed email uses the same invalid-email copy as sign-in.
 - Success continues into payment.
 
@@ -46,14 +47,15 @@ Shoppers type email, first name, and last name, then **Continue to payment** or 
 Shoppers type an email in the ticket modal (or the sold-out event box) and press **Join waitlist**, **Set reminder**, or **Get Notified**, or Enter.
 
 - The button is never greyed out just because the email is empty.
-- Invalid or empty email shows invalid-email copy and does not join.
+- Empty submit shows “Email address is required.” and does not join.
+- Typed invalid email shows invalid-email copy and does not join.
 - Success confirms they will be emailed if tickets return or when sales open.
 
 ## Transfer email
 
 Shoppers pick tickets first (that step stays blocked until at least one ticket is selected). Then they type a recipient email and press **Continue** / **Next** or Enter.
 
-- Empty or invalid email shows invalid-email copy. The transfer is not sent.
+- Empty or invalid email shows required copy when empty and invalid-email copy when typed. The transfer is not sent.
 - They cannot send tickets to their own address.
 - After a valid email they confirm, then the transfer is sent.
 
@@ -100,7 +102,7 @@ Shoppers type a code to unlock a seating zone and press **Unlock seats** or Ente
 
 Shoppers type row and seat, then **Continue** or Enter.
 
-- Empty row or seat shows “Enter your row and seat.”
+- Empty row or seat shows “Row is required.” / “Seat is required.”
 - Success opens the menu for that seat. Cart pay still waits on Stripe and a non-empty cart.
 
 ## Listing price

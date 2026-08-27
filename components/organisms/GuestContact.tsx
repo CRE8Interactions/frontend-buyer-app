@@ -7,10 +7,11 @@ import EmailField from "@/components/molecules/EmailField";
 import NameField from "@/components/molecules/NameField";
 import {
   emailBlurInvalid,
-  emailSubmitInvalid,
+  emailSubmitError,
   formString,
   nameFieldError,
   submittedEmail,
+  type EmailFieldError,
   type NameFieldError,
 } from "@/lib/fieldValidation";
 import {
@@ -34,7 +35,7 @@ export default function GuestContact({
   const [email, setEmail] = useState("");
   const [firstName, setFirstName] = useState("");
   const [lastName, setLastName] = useState("");
-  const [emailInvalid, setEmailInvalid] = useState(false);
+  const [emailError, setEmailError] = useState<EmailFieldError>(null);
   const [firstError, setFirstError] = useState<NameFieldError>(null);
   const [lastError, setLastError] = useState<NameFieldError>(null);
 
@@ -47,10 +48,10 @@ export default function GuestContact({
     setEmail(nextEmail);
     setFirstName(first);
     setLastName(last);
-    const emailBad = emailSubmitInvalid(nextEmail);
+    const emailKind = emailSubmitError(nextEmail);
     const firstBad = nameFieldError(first);
     const lastBad = nameFieldError(last);
-    setEmailInvalid(emailBad);
+    setEmailError(emailKind);
     setFirstError(firstBad);
     setLastError(lastBad);
     const buyer = parseGuestBuyer({
@@ -73,17 +74,20 @@ export default function GuestContact({
         </p>
       </div>
       <EmailField
+        autoFocus
         id="guest-email"
         name="email"
-        label="Email"
+        label="Email address"
         placeholder="Enter your email"
         value={email}
-        invalid={emailInvalid}
+        error={emailError}
         onChange={(value) => {
           setEmail(value);
-          setEmailInvalid(false);
+          setEmailError(null);
         }}
-        onBlur={(value) => setEmailInvalid(emailBlurInvalid(value))}
+        onBlur={(value) =>
+          setEmailError(emailBlurInvalid(value) ? "invalid" : null)
+        }
       />
       <div className="grid grid-cols-1 gap-5 sm:grid-cols-2">
         <NameField

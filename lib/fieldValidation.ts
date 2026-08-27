@@ -7,6 +7,7 @@ export const namePatternMatch = "^[A-Za-z'\\- ]+$";
 
 export const FIELD_COPY = {
   network: "We're experiencing technical difficulties. Please try again later.",
+  emailRequired: "Email address is required.",
   invalidEmail: "Email is invalid. Please try again.",
   nameRequired: "This field is required.",
   namePattern: "Letters only — no digits.",
@@ -24,7 +25,12 @@ export const PHONE_ERROR = {
 
 export type PhoneErrorType = keyof typeof PHONE_ERROR;
 export type NameFieldError = "required" | "pattern" | null;
+export type EmailFieldError = "required" | "invalid" | null;
 export type FieldVariant = "light" | "dark";
+
+export function requiredCopy(label: string) {
+  return `${label} is required.`;
+}
 
 export const emailPatternMatch = (val?: string | null) => {
   const emailPattern = /^\w+([\.-]?\w+)*@\w+([\.-]?\w+)*(\.\w{2,})+$/g;
@@ -99,7 +105,7 @@ export function lightFieldClass(invalid: boolean) {
     "h-[52px] w-full rounded-[14px] border bg-[#f7f8fc] px-4 text-[16px] text-[#051b35] outline-none placeholder:text-[#8a93a3]",
     invalid
       ? "border-[#c2394a] focus:border-[#c2394a]"
-      : "border-[rgba(5,27,53,0.12)] focus:border-[#051b35]",
+      : "border-[rgba(5,27,53,0.12)] focus:border-[#a6e773]",
   ].join(" ");
 }
 
@@ -134,13 +140,19 @@ export function submittedEmail(data: FormData, name = "email") {
   return normalizeEmail(formString(data, name));
 }
 
-/** Empty is valid on idle blur; submit still rejects empty with emailLooksInvalid + !next. */
+/** Empty is valid on idle blur; submit still rejects empty. */
 export function emailBlurInvalid(value: string) {
   const next = normalizeEmail(value);
   return Boolean(next) && emailLooksInvalid(next);
 }
 
-export function emailSubmitInvalid(value: string) {
+export function emailSubmitError(value: string): EmailFieldError {
   const next = normalizeEmail(value);
-  return !next || emailLooksInvalid(next);
+  if (!next) return "required";
+  if (emailLooksInvalid(next)) return "invalid";
+  return null;
+}
+
+export function emailSubmitInvalid(value: string) {
+  return emailSubmitError(value) !== null;
 }

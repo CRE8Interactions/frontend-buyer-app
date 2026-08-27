@@ -20,12 +20,14 @@ import { setSession, getLastKnown, type AuthSession } from "@/lib/auth";
 import {
   FIELD_COPY,
   emailBlurInvalid,
+  emailSubmitError,
   emailSubmitInvalid,
   formString,
   lightFieldClass,
   nameFieldError,
   normalizeEmail,
   submittedEmail,
+  type EmailFieldError,
   type NameFieldError,
 } from "@/lib/fieldValidation";
 
@@ -138,7 +140,7 @@ function LoginForm() {
   const [lastName, setLastName] = useState("");
   const [dob, setDob] = useState("");
   const [hasError, setHasError] = useState(false);
-  const [isEmailValid, setIsEmailValid] = useState(true);
+  const [emailError, setEmailError] = useState<EmailFieldError>(null);
   const [phoneError, setPhoneError] = useState<PhoneErrorType | null>(null);
   const [firstNameError, setFirstNameError] = useState<NameFieldError>(null);
   const [lastNameError, setLastNameError] = useState<NameFieldError>(null);
@@ -171,10 +173,12 @@ function LoginForm() {
   const submitEmailStep = async (rawEmail?: string) => {
     const nextEmail = normalizeEmail(rawEmail ?? email);
     setEmail(nextEmail);
-    if (emailSubmitInvalid(nextEmail)) {
-      setIsEmailValid(false);
+    const kind = emailSubmitError(nextEmail);
+    if (kind) {
+      setEmailError(kind);
       return;
     }
+    setEmailError(null);
     setIsSaving(true);
     setHasError(false);
     try {
@@ -184,7 +188,7 @@ function LoginForm() {
         (data.verdict === "Risky" && data.suggestion) ||
         data.verdict === "Invalid"
       ) {
-        setIsEmailValid(false);
+        setEmailError("invalid");
         return;
       }
       await sendCode(nextEmail);
@@ -267,7 +271,7 @@ function LoginForm() {
     }
 
     if (emailSubmitInvalid(nextEmail)) {
-      setIsEmailValid(false);
+      setEmailError(emailSubmitError(nextEmail));
       invalid = true;
     }
 
@@ -377,15 +381,15 @@ function LoginForm() {
                 placeholder="you@email.com"
                 value={email}
                 disabled={isSaving}
-                invalid={!isEmailValid}
+                error={emailError}
                 networkError={hasError}
                 onChange={(value) => {
                   setEmail(value);
-                  setIsEmailValid(true);
+                  setEmailError(null);
                   clearNetworkFeedback();
                 }}
                 onBlur={(value) => {
-                  setIsEmailValid(!emailBlurInvalid(value));
+                  setEmailError(emailBlurInvalid(value) ? "invalid" : null);
                 }}
               />
               <button
@@ -425,6 +429,7 @@ function LoginForm() {
             </div>
             <div className={`${cardCls} flex flex-col gap-[18px]`}>
               <CodeField
+                autoFocus
                 value={code}
                 error={codeError || (hasError ? "network" : null)}
                 disabled={isSaving || done}
@@ -482,7 +487,7 @@ function LoginForm() {
                 value={email}
                 disabled
                 readOnly
-                invalid={!isEmailValid}
+                error={emailError}
                 onChange={() => {}}
               />
               <div>
@@ -493,6 +498,7 @@ function LoginForm() {
                   Mobile number
                 </label>
                 <PhoneNumberInput
+                  autoFocus
                   id="reg-phone"
                   name="phoneNumber"
                   value={phoneNumber}
@@ -611,7 +617,7 @@ function LoginShell({ children }: { children: React.ReactNode }) {
         style={{ background: NAVY }}
       >
         <div className="mx-auto flex max-w-[1100px] items-center px-4 pb-3 pt-[42px] md:px-8 md:py-[18px]">
-          <Link href="/browse/" aria-label="Blocktickets home" className="shrink-0">
+          <Link href="/browse" aria-label="Blocktickets home" className="shrink-0">
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
               src="/nmstate/blocktickets-lockup-white.svg"

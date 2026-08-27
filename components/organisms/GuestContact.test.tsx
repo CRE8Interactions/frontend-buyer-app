@@ -33,7 +33,7 @@ describe("GuestContact", () => {
     );
 
     await user.type(
-      screen.getByLabelText(/^email$/i),
+      screen.getByLabelText(/email address/i),
       `  ${DEMO_USER.email.toUpperCase()}  `,
     );
     await user.type(
@@ -59,7 +59,7 @@ describe("GuestContact", () => {
       <GuestContact loginHref="/login/" onContinue={onContinue} />,
     );
 
-    await user.type(screen.getByLabelText(/^email$/i), "bot@mailinator.com");
+    await user.type(screen.getByLabelText(/email address/i), "bot@mailinator.com");
     await user.type(screen.getByLabelText(/first name/i), `${DEMO_USER.firstName}2`);
     await user.type(screen.getByLabelText(/last name/i), DEMO_USER.lastName);
     await user.click(
@@ -86,11 +86,12 @@ describe("GuestContact", () => {
     expect(
       screen.getByRole("button", { name: /continue to payment/i }),
     ).toBeEnabled();
-    await user.click(screen.getByLabelText(/^email$/i));
+    await user.click(screen.getByLabelText(/email address/i));
     await user.keyboard("{Enter}");
 
     expect(onContinue).not.toHaveBeenCalled();
-    expect(screen.getByText(FIELD_COPY.invalidEmail)).toBeInTheDocument();
-    expect(screen.getAllByText(/this field is required/i).length).toBe(2);
+    expect(screen.getByText(FIELD_COPY.emailRequired)).toBeInTheDocument();
+    expect(screen.getByText("First name is required.")).toBeInTheDocument();
+    expect(screen.getByText("Last name is required.")).toBeInTheDocument();
   });
 });

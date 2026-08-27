@@ -1,6 +1,7 @@
 %% Step 0: login (email)
 %% Source: app/login/page.tsx and lib/fieldValidation.ts
-%% Email: Email is invalid. Please try again.
+%% Email required: Email address is required.
+%% Email invalid: Email is invalid. Please try again.
 %% Network: We're experiencing technical difficulties. Please try again later.
 
 flowchart TD
@@ -17,9 +18,11 @@ flowchart TD
   sendClick --> readDom[Read the value currently in the field]
   readDom --> normalize[Trim and lowercase]
 
-  normalize --> emptyOrBad{Empty, blocked, or bad syntax?}
-  emptyOrBad -->|yes| emailInvalid
-  emptyOrBad -->|no| sendgrid[POST validateEmail]
+  normalize --> emptyCheck{Empty?}
+  emptyCheck -->|yes| emailRequired["Email address is required."]
+  emptyCheck -->|no| syntaxCheck{Blocked or bad syntax?}
+  syntaxCheck -->|yes| emailInvalid
+  syntaxCheck -->|no| sendgrid[POST validateEmail]
 
   sendgrid --> sgFail{Network error?}
   sgFail -->|yes| network["We're experiencing technical difficulties. Please try again later."]

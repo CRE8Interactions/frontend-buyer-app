@@ -5,6 +5,8 @@ import {
   FIELD_COPY,
   fieldClass,
   fieldErrorTextClass,
+  requiredCopy,
+  type EmailFieldError,
   type FieldVariant,
 } from "@/lib/fieldValidation";
 
@@ -15,6 +17,7 @@ export default function EmailField({
   value,
   onChange,
   onBlur,
+  error = null,
   invalid = false,
   networkError = false,
   disabled = false,
@@ -29,6 +32,7 @@ export default function EmailField({
   value: string;
   onChange: (value: string) => void;
   onBlur?: (value: string) => void;
+  error?: EmailFieldError;
   invalid?: boolean;
   networkError?: boolean;
   disabled?: boolean;
@@ -39,8 +43,9 @@ export default function EmailField({
   InputHTMLAttributes<HTMLInputElement>,
   "id" | "name" | "value" | "onChange" | "onBlur" | "onInput"
 >) {
-  const showInvalid = invalid;
-  const showNetwork = !invalid && networkError;
+  const kind: EmailFieldError = error ?? (invalid ? "invalid" : null);
+  const showInvalid = Boolean(kind);
+  const showNetwork = !showInvalid && networkError;
   const sync = (next: string) => onChange(next);
   return (
     <div className={className}>
@@ -73,7 +78,11 @@ export default function EmailField({
         onInput={(e) => sync(e.currentTarget.value)}
         onBlur={(e) => onBlur?.(e.currentTarget.value)}
       />
-      {showInvalid ? (
+      {kind === "required" ? (
+        <p className={fieldErrorTextClass(variant)}>
+          {requiredCopy(label || "Email address")}
+        </p>
+      ) : kind === "invalid" ? (
         <p className={fieldErrorTextClass(variant)}>{FIELD_COPY.invalidEmail}</p>
       ) : showNetwork ? (
         <p className={fieldErrorTextClass(variant)}>{FIELD_COPY.network}</p>

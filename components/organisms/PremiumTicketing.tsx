@@ -30,9 +30,11 @@ import {
 import { checkoutHref, rememberCheckoutReturnPath, setStoredCart } from "@/lib/cart";
 import {
   emailBlurInvalid,
+  emailSubmitError,
   emailSubmitInvalid,
   formString,
   submittedEmail,
+  type EmailFieldError,
 } from "@/lib/fieldValidation";
 import { beginRouteTransition } from "@/lib/routeTransition";
 import { walletSectionHref } from "@/lib/walletNav";
@@ -86,6 +88,8 @@ export type TicketingData = {
   logoSrc: string;
   /** Tenant mark shown top-left on branded events (GA header). Falls back to the Blocktickets lockup. */
   brandLogoSrc?: string;
+  /** Storefront the tenant mark links to. */
+  orgHref?: string;
   orgLabel: string;
   providerLabel: string;
   aboutText: string;
@@ -320,7 +324,7 @@ export default function PremiumTicketing({
   const [gaQuantities, setGaQuantities] = useState<Record<number, number>>({});
   const [notifySubject, setNotifySubject] = useState<NotifySubject | null>(null);
   const [notifyEmail, setNotifyEmail] = useState("");
-  const [notifyEmailInvalid, setNotifyEmailInvalid] = useState(false);
+  const [notifyEmailError, setNotifyEmailError] = useState<EmailFieldError>(null);
   const [notifySms, setNotifySms] = useState(false);
   const [notifySent, setNotifySent] = useState(false);
   const [notified, setNotified] = useState<Record<string, boolean>>({});
@@ -888,11 +892,11 @@ export default function PremiumTicketing({
             event.preventDefault();
             const next = submittedEmail(new FormData(event.currentTarget));
             if (emailSubmitInvalid(next)) {
-              setNotifyEmailInvalid(true);
+              setNotifyEmailError(emailSubmitError(next));
               return;
             }
             setNotifyEmail(next);
-            setNotifyEmailInvalid(false);
+            setNotifyEmailError(null);
             setNotified((current) => ({ ...current, [d.eventName]: true }));
           }}
           style={{
@@ -907,18 +911,21 @@ export default function PremiumTicketing({
         >
           <div style={{ flex: 1, minWidth: 0, textAlign: "left" }}>
             <EmailField
+              autoFocus
               id="soldout-email"
               name="email"
               label=""
               aria-label="Email address"
               placeholder="Enter your email"
               value={notifyEmail}
-              invalid={notifyEmailInvalid}
+              error={notifyEmailError}
               onChange={(value) => {
                 setNotifyEmail(value);
-                setNotifyEmailInvalid(false);
+                setNotifyEmailError(null);
               }}
-              onBlur={(value) => setNotifyEmailInvalid(emailBlurInvalid(value))}
+              onBlur={(value) =>
+                setNotifyEmailError(emailBlurInvalid(value) ? "invalid" : null)
+              }
             />
           </div>
           <BrandedActionButton
@@ -1157,10 +1164,17 @@ export default function PremiumTicketing({
           <div style={{ maxWidth: 1320, margin: "0 auto", padding: "14px 32px", display: "flex", alignItems: "center", gap: 32 }}>
             <div style={{ display: "flex", alignItems: "center", gap: 16, minWidth: 0, flex: "1 1 auto" }}>
               {isGa ? (
-                <Link href="/" aria-label={d.brandLogoSrc ? `${d.orgLabel} home` : "Blocktickets home"} style={{ display: "inline-flex", alignItems: "center", flexShrink: 0 }}>
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img src={d.brandLogoSrc || "/blocktickets-logo-navy.svg"} alt={d.brandLogoSrc ? d.orgLabel : "Blocktickets"} style={{ height: d.brandLogoSrc ? 46 : 26, width: "auto", display: "block", objectFit: "contain" }} />
-                </Link>
+                d.brandLogoSrc ? (
+                  <span style={{ display: "inline-flex", alignItems: "center", flexShrink: 0 }}>
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img src={d.brandLogoSrc} alt={d.orgLabel} style={{ height: 46, width: "auto", display: "block", objectFit: "contain" }} />
+                  </span>
+                ) : (
+                  <Link href="/browse" aria-label="Blocktickets home" style={{ display: "inline-flex", alignItems: "center", flexShrink: 0 }}>
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img src="/blocktickets-logo-navy.svg" alt="Blocktickets" style={{ height: 26, width: "auto", display: "block", objectFit: "contain" }} />
+                  </Link>
+                )
               ) : (
                 <>
                   <div style={{ width: 64, height: 64, borderRadius: 14, background: "#fff", border: "1px solid rgba(5,27,53,0.08)", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, padding: 9, boxSizing: "border-box" }}>
@@ -1200,10 +1214,17 @@ export default function PremiumTicketing({
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" style={{ width: 20, height: 20 }}><polyline points="15 18 9 12 15 6" /></svg>
           </button>
           {isGa ? (
-            <Link href="/" aria-label={d.brandLogoSrc ? `${d.orgLabel} home` : "Blocktickets home"} style={{ flex: 1, minWidth: 0, display: "flex", alignItems: "center" }}>
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src={d.brandLogoSrc || "/blocktickets-logo-navy.svg"} alt={d.brandLogoSrc ? d.orgLabel : "Blocktickets"} style={{ height: d.brandLogoSrc ? 34 : 20, width: "auto", objectFit: "contain" }} />
-            </Link>
+            d.brandLogoSrc ? (
+              <span style={{ flex: 1, minWidth: 0, display: "flex", alignItems: "center" }}>
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src={d.brandLogoSrc} alt={d.orgLabel} style={{ height: 34, width: "auto", objectFit: "contain" }} />
+              </span>
+            ) : (
+              <Link href="/browse" aria-label="Blocktickets home" style={{ flex: 1, minWidth: 0, display: "flex", alignItems: "center" }}>
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src="/blocktickets-logo-navy.svg" alt="Blocktickets" style={{ height: 20, width: "auto", objectFit: "contain" }} />
+              </Link>
+            )
           ) : (
             <div style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", gap: 2 }}>
               <div style={{ fontSize: 16, fontWeight: 600, letterSpacing: "-0.015em", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{d.eventName}</div>
@@ -1540,7 +1561,7 @@ export default function PremiumTicketing({
                   event.preventDefault();
                   const next = submittedEmail(new FormData(event.currentTarget));
                   if (emailSubmitInvalid(next)) {
-                    setNotifyEmailInvalid(true);
+                    setNotifyEmailError(emailSubmitError(next));
                     return;
                   }
                   setNotifyEmail(next);
@@ -1549,16 +1570,19 @@ export default function PremiumTicketing({
                 }}
               >
                 <EmailField
+                  autoFocus
                   id="notify-email"
                   name="email"
                   placeholder="you@example.com"
                   value={notifyEmail}
-                  invalid={notifyEmailInvalid}
+                  error={notifyEmailError}
                   onChange={(value) => {
                     setNotifyEmail(value);
-                    setNotifyEmailInvalid(false);
+                    setNotifyEmailError(null);
                   }}
-                  onBlur={(value) => setNotifyEmailInvalid(emailBlurInvalid(value))}
+                  onBlur={(value) =>
+                    setNotifyEmailError(emailBlurInvalid(value) ? "invalid" : null)
+                  }
                 />
                 <label className="flex cursor-pointer items-start gap-2.5 text-[14px] font-normal text-[#4a5567]">
                   <input

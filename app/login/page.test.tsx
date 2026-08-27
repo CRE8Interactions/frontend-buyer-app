@@ -126,10 +126,11 @@ describe("Login page", () => {
     expect(
       screen.getByRole("button", { name: /send my code/i }),
     ).toBeInTheDocument();
+    expect(screen.getByLabelText(/email address/i)).toHaveFocus();
     expect(screen.getByAltText("Blocktickets")).toBeInTheDocument();
     expect(
       screen.getByRole("link", { name: /blocktickets home/i }),
-    ).toHaveAttribute("href", "/browse/");
+    ).toHaveAttribute("href", "/browse");
     expect(screen.getByRole("button", { name: /send my code/i })).toBeEnabled();
   });
 
@@ -139,7 +140,7 @@ describe("Login page", () => {
 
     await user.click(screen.getByRole("button", { name: /send my code/i }));
 
-    expect(await screen.findByText(FIELD_COPY.invalidEmail)).toBeInTheDocument();
+    expect(await screen.findByText(FIELD_COPY.emailRequired)).toBeInTheDocument();
     expect(mockedValidateEmail).not.toHaveBeenCalled();
   });
 
@@ -183,6 +184,7 @@ describe("Login page", () => {
       data: { phoneNumber: "", email: DEMO_USER.email },
     });
     expect(screen.getByText(DEMO_USER.email)).toBeInTheDocument();
+    expect(screen.getByLabelText(/six-digit code/i)).toHaveFocus();
     expect(screen.queryByText(/localhost:1080/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/open http/i)).not.toBeInTheDocument();
   });
@@ -388,6 +390,7 @@ describe("Login page create account", () => {
     const emailField = screen.getByLabelText(/email address/i);
     expect(emailField).toBeDisabled();
     expect(emailField).toHaveValue(DEMO_USER.email);
+    expect(screen.getByLabelText(/mobile number/i)).toHaveFocus();
   });
 
   it("requires first name, last name, phone, and date of birth", async () => {
@@ -396,7 +399,8 @@ describe("Login page create account", () => {
 
     await user.click(screen.getByRole("button", { name: /sign up/i }));
 
-    expect(screen.getAllByText(/this field is required/i).length).toBe(2);
+    expect(screen.getByText("First name is required.")).toBeInTheDocument();
+    expect(screen.getByText("Last name is required.")).toBeInTheDocument();
     expect(screen.getByText(PHONE_ERROR.required)).toBeInTheDocument();
     expect(screen.getByText(/date of birth is required/i)).toBeInTheDocument();
     expect(mockedCreateNewUser).not.toHaveBeenCalled();
@@ -425,7 +429,8 @@ describe("Login page create account", () => {
     await user.type(screen.getByLabelText(/last name/i), "   ");
     await user.click(screen.getByRole("button", { name: /sign up/i }));
 
-    expect(screen.getAllByText(/this field is required/i).length).toBe(2);
+    expect(screen.getByText("First name is required.")).toBeInTheDocument();
+    expect(screen.getByText("Last name is required.")).toBeInTheDocument();
     expect(mockedCreateNewUser).not.toHaveBeenCalled();
   });
 

@@ -3,6 +3,7 @@ import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import EmailField from "@/components/molecules/EmailField";
 import { DEMO_USER } from "@/lib/demo/fixtures";
+import { FIELD_COPY } from "@/lib/fieldValidation";
 
 describe("EmailField", () => {
   it("mirrors native input events so Safari autofill updates the parent", () => {
@@ -38,5 +39,23 @@ describe("EmailField", () => {
     fireEvent.blur(field);
 
     expect(onBlur).toHaveBeenCalledWith("not-an-email");
+  });
+
+  it("shows required copy for an empty field and invalid copy when typed", () => {
+    const { rerender } = render(
+      <EmailField id="email" value="" onChange={() => {}} error="required" />,
+    );
+    expect(screen.getByText(FIELD_COPY.emailRequired)).toBeInTheDocument();
+
+    rerender(
+      <EmailField
+        id="email"
+        value="not-an-email"
+        onChange={() => {}}
+        error="invalid"
+      />,
+    );
+    expect(screen.getByText(FIELD_COPY.invalidEmail)).toBeInTheDocument();
+    expect(screen.queryByText(FIELD_COPY.emailRequired)).not.toBeInTheDocument();
   });
 });

@@ -3,6 +3,7 @@ import { DEMO_USER } from "@/lib/demo/fixtures";
 import {
   emailBlurInvalid,
   emailLooksInvalid,
+  emailSubmitError,
   emailSubmitInvalid,
   formString,
   isBlockedEmail,
@@ -32,11 +33,14 @@ describe("email order", () => {
     expect(isBlockedEmail("not-an-email")).toBe(false);
   });
 
-  it("treats empty as valid on blur and invalid on submit", () => {
+  it("treats empty as valid on blur and required on submit", () => {
     expect(emailBlurInvalid("")).toBe(false);
+    expect(emailSubmitError("")).toBe("required");
     expect(emailSubmitInvalid("")).toBe(true);
     expect(emailBlurInvalid("not-an-email")).toBe(true);
+    expect(emailSubmitError("not-an-email")).toBe("invalid");
     expect(emailSubmitInvalid(DEMO_USER.email)).toBe(false);
+    expect(emailSubmitError(DEMO_USER.email)).toBeNull();
   });
 
   it("reads a submitted email from FormData even when state would be empty", () => {
@@ -55,6 +59,7 @@ describe("name pattern", () => {
     expect(nameFieldError(DEMO_USER.firstName)).toBeNull();
     expect(nameAllows("Demo1")).toBe(false);
     expect(nameFieldError("Demo1")).toBe("pattern");
+    expect(nameFieldError("")).toBe("required");
   });
 });
 

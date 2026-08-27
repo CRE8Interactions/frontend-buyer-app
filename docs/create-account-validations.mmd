@@ -16,7 +16,7 @@ flowchart TD
 
   profileStep --> submit[Click Sign up or press Enter]
   submit --> checkNames{nameFieldError on submitted values?}
-  checkNames -->|required| nameReq[This field is required.]
+  checkNames -->|required| nameReq[First name is required. / Last name is required.]
   checkNames -->|pattern| namePat[Letters only — no digits.]
   checkNames -->|ok| checkPhone{phoneNumberError?}
 

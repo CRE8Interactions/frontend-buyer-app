@@ -6,6 +6,7 @@ import {
   fieldErrorTextClass,
   nameAllows,
   namePatternMatch,
+  requiredCopy,
   type FieldVariant,
   type NameFieldError,
 } from "@/lib/fieldValidation";
@@ -22,6 +23,7 @@ export default function NameField({
   variant = "light",
   placeholder,
   required = true,
+  autoFocus = false,
 }: {
   id: string;
   name?: string;
@@ -34,6 +36,7 @@ export default function NameField({
   variant?: FieldVariant;
   placeholder?: string;
   required?: boolean;
+  autoFocus?: boolean;
 }) {
   const sync = (next: string) => {
     if (nameAllows(next)) onChange(next);
@@ -58,6 +61,7 @@ export default function NameField({
         pattern={namePatternMatch}
         title={FIELD_COPY.namePattern}
         autoComplete={autoComplete}
+        autoFocus={autoFocus}
         aria-invalid={Boolean(error)}
         placeholder={placeholder}
         onChange={(e) => sync(e.target.value)}
@@ -66,7 +70,7 @@ export default function NameField({
         className={`mt-2 ${fieldClass(variant, Boolean(error))}`}
       />
       {error === "required" ? (
-        <p className={fieldErrorTextClass(variant)}>{FIELD_COPY.nameRequired}</p>
+        <p className={fieldErrorTextClass(variant)}>{requiredCopy(label)}</p>
       ) : error === "pattern" ? (
         <p className={fieldErrorTextClass(variant)}>{FIELD_COPY.namePattern}</p>
       ) : null}
