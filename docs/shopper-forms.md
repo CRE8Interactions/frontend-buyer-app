@@ -6,6 +6,8 @@ In every form below, **the primary button stays clickable when a field is empty 
 
 Buttons still grey out when something operational is in the way: a request already in progress, an action that already succeeded, payment not ready, sold out, no tickets selected, or personal details that have not changed.
 
+A field with an error is outlined in red only while it does not have the cursor. The moment it is focused, the outline is the brand colour (Blocktickets lime, or the org colour on an org-branded page). The error copy under the field stays.
+
 ## Sign in (email)
 
 Shoppers type an email and press **Send my code** or Enter.
@@ -18,12 +20,14 @@ Shoppers type an email and press **Send my code** or Enter.
 
 ## Six-digit code
 
-Shoppers type the code they were sent. There is no submit button. As soon as six digits are in, the code is checked.
+Shoppers type the code they were sent. There is no submit button. As soon as six digits are in, the code is checked. Each box is its own field, so the cursor a shopper sees is the browser's own, sitting in the box waiting for the next digit; typing moves it forward and backspace moves it back.
 
-- Wrong code: “Code is incorrect. Please try again.”
-- Connection problem: they see the technical-difficulties message.
+- Wrong code: “Code is incorrect. Please try again.” This is what a shopper sees whenever the API rejects the code, including the 400 it returns for a code that does not match. The digits stay in the boxes so they can correct them.
+- Connection problem: the technical-difficulties message, and only when the request never got a verdict on the code — offline, timed out, rate limited, or a server fault.
 - Existing account: they are signed in.
 - New account: they go on to create an account.
+
+Under the boxes: a reminder that codes expire after 10 minutes so the right one is the latest one, then “Haven’t received your code? Check your spam folder or Send a new code”. Resending swaps that second line for “A new code is on its way.”
 
 ## Create account
 

@@ -18,6 +18,7 @@ import LoginLink from "@/components/molecules/LoginLink";
 import Modal from "@/components/molecules/Modal";
 import SectionLocatorThumb from "@/components/molecules/SectionLocatorThumb";
 import SeatMapSelectionOverlay from "@/components/organisms/SeatMapSelectionOverlay";
+import useAutoFocus from "@/hooks/useAutoFocus";
 import { placeGATicketsIntoCart, placeTicketsIntoCart } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { goBack } from "@/lib/inAppBack";
@@ -27,6 +28,7 @@ import {
   quantityIsAllowed,
   type QuantityLimits,
 } from "@/lib/ticketListings";
+import { fieldFocusVars } from "@/lib/branding";
 import { checkoutHref, rememberCheckoutReturnPath, setStoredCart } from "@/lib/cart";
 import {
   emailBlurInvalid,
@@ -248,6 +250,7 @@ export default function PremiumTicketing({
 }) {
   const { isAuthenticated } = useAuth();
   const router = useRouter();
+  const autoFocusField = useAutoFocus<HTMLInputElement>(true);
   const ACC = d.accent;
   const ACC_DK = d.accentDark;
   const ACC_SOFT = d.accentSoft;
@@ -1135,7 +1138,7 @@ export default function PremiumTicketing({
   );
 
   return (
-    <div data-theme="light" style={{ position: "relative", display: "flex", flexDirection: "column", background: "#f7f8fc", color: NAVY, width: "100%", minHeight: "100dvh", fontFamily: "'Geist', system-ui, -apple-system, sans-serif", WebkitFontSmoothing: "antialiased", ["--acc" as string]: ACC, ...(!isGa ? { height: "100dvh", overflowY: "auto" } : { minHeight: "100vh" }) }}>
+    <div data-theme="light" style={{ position: "relative", display: "flex", flexDirection: "column", background: "#f7f8fc", color: NAVY, width: "100%", minHeight: "100dvh", fontFamily: "'Geist', system-ui, -apple-system, sans-serif", WebkitFontSmoothing: "antialiased", ["--acc" as string]: ACC, ...fieldFocusVars(ACC), ...(!isGa ? { height: "100dvh", overflowY: "auto" } : { minHeight: "100vh" }) }}>
       <style>{`
         @keyframes nmt-shimmer { 0% { background-position: -420px 0 } 100% { background-position: 420px 0 } }
         .nmt-primary { transition: transform 180ms cubic-bezier(0.2,0.8,0.2,1), background 180ms; }
@@ -2031,9 +2034,10 @@ export default function PremiumTicketing({
                 setUnlockInput(e.target.value);
                 setUnlockError(false);
               }}
-              autoFocus
+              ref={autoFocusField}
               placeholder="Access code"
               className="w-full rounded-xl border bg-white px-4 py-3.5 text-[16px] tracking-[0.06em] text-[#051b35] outline-none"
+              aria-invalid={unlockError}
               style={{ borderColor: unlockError ? "#c2394a" : "#d3d6e0" }}
             />
             {unlockError ? (

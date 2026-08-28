@@ -1,15 +1,18 @@
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   DEMO_EVENTS,
   DEMO_SESSION,
+  demoAccessPass,
   demoCompletedFlexPackOrder,
   demoCompletedPackageOrder,
   demoCompletedTicketOrder,
   demoFlexPack,
+  demoPackageAccessPass,
   demoSeasonPackage,
 } from "@/lib/demo/fixtures";
+import { seatLabel } from "@/lib/wallet";
 
 const sessionMocks = vi.hoisted(() => ({
   getSession: vi.fn(),
@@ -20,27 +23,61 @@ vi.mock("@/lib/auth", () => ({
 }));
 
 vi.mock("@/lib/api", () => ({
+  createTicketTransfer: vi.fn(),
+  downloadApplePass: vi.fn(),
+  downloadGooglePass: vi.fn(),
+  getAccessPassesByOrder: vi.fn(),
+  getMyAccessPass: vi.fn(),
+  getMyAccessPasses: vi.fn(),
   getMyEvents: vi.fn(),
 }));
 
-const navigationMocks = vi.hoisted(() => ({ pathname: "/wallet/my-tickets/" }));
+const navigationMocks = vi.hoisted(() => ({
+  pathname: "/wallet/my-tickets/",
+  search: "",
+}));
 
 vi.mock("next/navigation", () => ({
   useParams: () => ({}),
-  useSearchParams: () => new URLSearchParams(),
+  useSearchParams: () => new URLSearchParams(navigationMocks.search),
   usePathname: () => navigationMocks.pathname,
   useRouter: () => ({ push: vi.fn(), back: vi.fn(), replace: vi.fn() }),
 }));
 
 import SeasonTickets from "@/components/organisms/SeasonTickets";
-import { getMyEvents } from "@/lib/api";
+import {
+  createTicketTransfer,
+  downloadApplePass,
+  getAccessPassesByOrder,
+  getMyAccessPass,
+  getMyAccessPasses,
+  getMyEvents,
+} from "@/lib/api";
 
+const mockedDownloadApplePass = vi.mocked(downloadApplePass);
+const mockedCreateTicketTransfer = vi.mocked(createTicketTransfer);
+const mockedGetAccessPassesByOrder = vi.mocked(getAccessPassesByOrder);
+const mockedGetMyAccessPass = vi.mocked(getMyAccessPass);
+const mockedGetMyAccessPasses = vi.mocked(getMyAccessPasses);
 const mockedGetMyEvents = vi.mocked(getMyEvents);
 const icedogs = DEMO_EVENTS.find((event) => event.shortCode === "ICEDOG5")!;
 const pkg = demoSeasonPackage();
 
 beforeEach(() => {
   navigationMocks.pathname = "/wallet/my-tickets/";
+  navigationMocks.search = "";
+  mockedCreateTicketTransfer.mockReset();
+  mockedCreateTicketTransfer.mockResolvedValue({
+    data: { id: "transfer-1", status: "pending" },
+  } as never);
+  mockedGetMyAccessPasses.mockReset();
+  mockedGetMyAccessPasses.mockResolvedValue({ data: { data: [] } } as never);
+  mockedGetMyAccessPass.mockReset();
+  mockedGetMyAccessPass.mockResolvedValue({ data: { data: null } } as never);
+  mockedGetAccessPassesByOrder.mockReset();
+  mockedGetAccessPassesByOrder.mockResolvedValue({
+    data: { data: [] },
+  } as never);
 });
 
 describe("SeasonTickets package tab", () => {
@@ -49,7 +86,7 @@ describe("SeasonTickets package tab", () => {
     mockedGetMyEvents.mockReset();
   });
 
-  it("shows package orders on the Season tickets tab, not Upcoming", async () => {
+  it("shows package orders on the Packages tab, not Upcoming", async () => {
     const user = userEvent.setup();
     mockedGetMyEvents.mockResolvedValue({
       data: [
@@ -58,10 +95,10 @@ describe("SeasonTickets package tab", () => {
       ],
     } as never);
 
-    render(<SeasonTickets />);
+    const { rerender } = render(<SeasonTickets />);
 
     await waitFor(() => {
-      expect(screen.getByRole("button", { name: /Season tickets/i })).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: /Packages/i })).toBeInTheDocument();
     });
 
     expect(screen.getByText(icedogs.name)).toBeInTheDocument();
@@ -74,16 +111,468 @@ describe("SeasonTickets package tab", () => {
     expect(screen.queryByText(pkg.name)).not.toBeInTheDocument();
     expect(screen.queryByText(pkg.events[1].name)).not.toBeInTheDocument();
 
-    await user.click(screen.getByRole("button", { name: /Season tickets/i }));
+    await user.click(screen.getByRole("button", { name: /Packages/i }));
 
     expect(screen.getByText(pkg.name)).toBeInTheDocument();
+    expect(
+      screen.getByRole("link", { name: new RegExp(pkg.name) }),
+    ).toHaveAttribute(
+      "href",
+      expect.stringMatching(`/wallet/my-tickets/package/${pkg.uuid}`),
+    );
     expect(screen.queryByText(icedogs.name)).not.toBeInTheDocument();
     expect(screen.queryByText(pkg.events[1].name)).not.toBeInTheDocument();
 
-    await user.click(screen.getByText(pkg.name));
+    navigationMocks.pathname = `/wallet/my-tickets/package/${pkg.uuid}/`;
+    rerender(<SeasonTickets />);
 
-    expect(screen.getByRole("heading", { name: pkg.name })).toBeInTheDocument();
+    expect(
+      await screen.findByRole("heading", { name: pkg.name }),
+    ).toBeInTheDocument();
     expect(screen.getByText(pkg.events[1].name)).toBeInTheDocument();
+    expect(
+      screen.getByRole("link", { name: new RegExp(pkg.events[1].name) }),
+    ).toHaveAttribute(
+      "href",
+      expect.stringMatching(
+        `/wallet/my-tickets/package/${pkg.uuid}/event/${pkg.events[1].uuid}`,
+      ),
+    );
+
+    navigationMocks.pathname = `/wallet/my-tickets/package/${pkg.uuid}/event/${pkg.events[1].uuid}/`;
+    rerender(<SeasonTickets />);
+
+    expect(
+      screen.getByRole("heading", { name: pkg.events[1].name }),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /All tickets/i })).toHaveAttribute(
+      "href",
+      expect.stringMatching(`/wallet/my-tickets/package/${pkg.uuid}`),
+    );
+  });
+
+  it("shows an associated season pass before the package game tickets", async () => {
+    const user = userEvent.setup();
+    const order = demoCompletedPackageOrder();
+    const pass = demoPackageAccessPass();
+    navigationMocks.pathname = `/wallet/my-tickets/package/${pkg.uuid}/`;
+    mockedGetMyEvents.mockResolvedValue({ data: [order] } as never);
+    mockedGetAccessPassesByOrder.mockResolvedValue({
+      data: { data: [pass] },
+    } as never);
+
+    render(<SeasonTickets />);
+
+    expect(
+      await screen.findByRole("img", {
+        name: `QR code for ${pass.name}`,
+      }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("tab", { name: "Season pass" }),
+    ).toHaveAttribute("aria-selected", "true");
+    expect(screen.getByText("Active")).toBeInTheDocument();
+    expect(screen.getByText("2026")).toBeInTheDocument();
+    expect(
+      screen.getByRole("link", { name: `View ${pass.name}` }),
+    ).toHaveAttribute(
+      "href",
+      expect.stringMatching(
+        `^/wallet/my-tickets/access-pass/${pass.uuid}/?$`,
+      ),
+    );
+    expect(screen.queryByText(pkg.events[1].name)).not.toBeInTheDocument();
+    expect(mockedGetAccessPassesByOrder).toHaveBeenCalledWith(order.orderId);
+
+    await user.click(
+      screen.getByRole("button", { name: `Show QR code for ${pass.name}` }),
+    );
+
+    const seatLine = seatLabel({
+      sectionNumber: String(pass.sectionNumber),
+      rowNumber: String(pass.rowNumber),
+      seatNumber: String(pass.seatNumber),
+    });
+    expect(
+      screen.getByRole("dialog", { name: `${pass.name} · ${seatLine}` }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("img", { name: `Enlarged QR code for ${pass.name}` }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText("Show this code at entry for any included event."),
+    ).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Close QR code" }));
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole("tab", { name: /Game tickets/i }));
+
+    expect(screen.getByText(pkg.events[1].name)).toBeInTheDocument();
+  });
+
+  it("does not link past or fully transferred package events", async () => {
+    const order = demoCompletedPackageOrder();
+    const [pastEvent, activeEvent, transferredEvent] = pkg.events;
+    const events = [
+      { ...pastEvent, start: "2020-08-15T23:00:00.000Z", status: "complete" },
+      { ...activeEvent, start: "2099-09-12T23:00:00.000Z" },
+      { ...transferredEvent, start: "2099-09-19T23:00:00.000Z" },
+    ];
+    const tickets = events.flatMap((event) =>
+      order.tickets.map((ticket) => ({
+        ...ticket,
+        id: `${ticket.id}-${event.uuid}`,
+        eventUUID: event.uuid,
+        ...(event.uuid === transferredEvent.uuid
+          ? { transferStatus: "transferred" }
+          : {}),
+      })),
+    );
+    navigationMocks.pathname = `/wallet/my-tickets/package/${pkg.uuid}/`;
+    mockedGetMyEvents.mockResolvedValue({
+      data: [
+        demoCompletedPackageOrder({
+          package: { ...order.package, events },
+          tickets,
+        }),
+      ],
+    } as never);
+
+    render(<SeasonTickets />);
+
+    expect(await screen.findByText(pastEvent.name)).toBeInTheDocument();
+    expect(screen.getByText(activeEvent.name)).toBeInTheDocument();
+    expect(screen.getByText(transferredEvent.name)).toBeInTheDocument();
+    expect(
+      screen.queryByRole("link", { name: `View ${pastEvent.name}` }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.getByRole("link", { name: `View ${activeEvent.name}` }),
+    ).toHaveAttribute(
+      "href",
+      expect.stringMatching(`/package/${pkg.uuid}/event/${activeEvent.uuid}`),
+    );
+    expect(
+      screen.queryByRole("link", { name: `View ${transferredEvent.name}` }),
+    ).not.toBeInTheDocument();
+    expect(screen.getByText("Past")).toBeInTheDocument();
+    expect(screen.getByText("Transferred")).toBeInTheDocument();
+  });
+
+  it("transfers the season pass associated with a package", async () => {
+    const user = userEvent.setup();
+    const order = demoCompletedPackageOrder();
+    const pass = demoPackageAccessPass();
+    navigationMocks.pathname = `/wallet/my-tickets/package/${pkg.uuid}/`;
+    mockedGetMyEvents.mockResolvedValue({ data: [order] } as never);
+    mockedGetAccessPassesByOrder.mockResolvedValue({
+      data: { data: [pass] },
+    } as never);
+
+    render(<SeasonTickets />);
+
+    await user.click(
+      await screen.findByRole("button", { name: "Transfer season pass" }),
+    );
+    expect(screen.getByRole("textbox", { name: "Email address" })).toHaveFocus();
+    await user.type(
+      screen.getByRole("textbox", { name: "Email address" }),
+      "recipient@example.com",
+    );
+    await user.click(screen.getByRole("button", { name: "Next" }));
+    expect(screen.getByText("recipient@example.com")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Transfer" }));
+
+    expect(
+      await screen.findByText("Season pass transfer pending"),
+    ).toBeInTheDocument();
+    expect(mockedCreateTicketTransfer).toHaveBeenCalledWith({
+      accessPassId: pass.uuid,
+      email: "recipient@example.com",
+    });
+    expect(screen.getByRole("link", { name: "My transfers" })).toHaveAttribute(
+      "href",
+      expect.stringMatching(/^\/wallet\/my-transfers\/?$/),
+    );
+  });
+
+  it("does not transfer a season pass back to its owner", async () => {
+    const user = userEvent.setup();
+    const order = demoCompletedPackageOrder();
+    const pass = demoPackageAccessPass();
+    navigationMocks.pathname = `/wallet/my-tickets/package/${pkg.uuid}/`;
+    mockedGetMyEvents.mockResolvedValue({ data: [order] } as never);
+    mockedGetAccessPassesByOrder.mockResolvedValue({
+      data: { data: [pass] },
+    } as never);
+
+    render(<SeasonTickets />);
+
+    await user.click(
+      await screen.findByRole("button", { name: "Transfer season pass" }),
+    );
+    await user.type(
+      screen.getByRole("textbox", { name: "Email address" }),
+      DEMO_SESSION.user.email,
+    );
+    await user.click(screen.getByRole("button", { name: "Next" }));
+
+    expect(screen.getByRole("alert")).toHaveTextContent(
+      "This season pass is already assigned to your email.",
+    );
+    expect(mockedCreateTicketTransfer).not.toHaveBeenCalled();
+  });
+
+  it("shows website, box office, and ticket-assignment event orders", async () => {
+    const orders = ["website", "box_office", "ticket_assignment"].map(
+      (source, index) =>
+        demoCompletedTicketOrder({
+          id: 5000 + index,
+          orderId: `wallet-source-${index}`,
+          source,
+          event: {
+            ...DEMO_EVENTS[index],
+            start: `2099-09-0${index + 1}T23:00:00.000Z`,
+          },
+        }),
+    );
+    mockedGetMyEvents.mockResolvedValue({ data: orders } as never);
+
+    render(<SeasonTickets />);
+
+    for (const event of DEMO_EVENTS.slice(0, 3)) {
+      expect(await screen.findByText(event.name)).toBeInTheDocument();
+    }
+  });
+
+  it("loads active access passes into their own tab", async () => {
+    const user = userEvent.setup();
+    const pass = demoAccessPass();
+    mockedGetMyEvents.mockResolvedValue({ data: [] } as never);
+    mockedGetMyAccessPasses.mockResolvedValue({
+      data: { data: [pass] },
+    } as never);
+    mockedGetMyAccessPass.mockResolvedValue({
+      data: { data: pass },
+    } as never);
+
+    const { rerender } = render(<SeasonTickets />);
+
+    await user.click(
+      await screen.findByRole("button", { name: /Access passes.*1/i }),
+    );
+    expect(screen.getByText(pass.name)).toBeInTheDocument();
+    expect(
+      screen.getByRole("link", { name: new RegExp(pass.name) }),
+    ).toHaveAttribute(
+      "href",
+      expect.stringMatching(
+        `^/wallet/my-tickets/access-pass/${pass.uuid}/?$`,
+      ),
+    );
+    expect(screen.getByText(`Pass #${pass.checkInCode}`)).toBeInTheDocument();
+    expect(
+      screen.getByRole("img", { name: `QR code for ${pass.name}` }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getAllByText(pass.events.at(-1)!.name).length,
+    ).toBeGreaterThan(0);
+
+    navigationMocks.pathname = `/wallet/my-tickets/access-pass/${pass.uuid}/`;
+    rerender(<SeasonTickets />);
+
+    expect(
+      await screen.findByRole("heading", { name: pass.name }),
+    ).toBeInTheDocument();
+    expect(screen.getByText("Next up")).toBeInTheDocument();
+    expect(screen.getByText("All events")).toBeInTheDocument();
+    expect(screen.getByText("Valid through")).toBeInTheDocument();
+    expect(
+      screen.getAllByText(pass.events.at(-1)!.name).length,
+    ).toBeGreaterThan(0);
+    expect(mockedGetMyAccessPass).toHaveBeenCalledWith(pass.uuid);
+
+    await user.click(
+      screen.getByRole("button", {
+        name: `Show QR code for ${pass.name}`,
+      }),
+    );
+
+    const qrDialog = screen.getByRole("dialog", { name: pass.name });
+    expect(qrDialog).toBeInTheDocument();
+    expect(
+      screen.getByRole("img", {
+        name: `Enlarged QR code for ${pass.name}`,
+      }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText("Show this code at entry for any included event."),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: /Add to (Apple|Google) Wallet/i }),
+    ).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Close" }));
+    expect(screen.queryByRole("dialog", { name: pass.name })).not.toBeInTheDocument();
+  });
+
+  it("only links eligible events from a season-pass detail", async () => {
+    const order = demoCompletedPackageOrder();
+    const [pastEvent, activeEvent, transferredEvent] = pkg.events;
+    const events = [
+      { ...pastEvent, start: "2020-08-15T23:00:00.000Z", status: "complete" },
+      { ...activeEvent, start: "2099-09-12T23:00:00.000Z" },
+      { ...transferredEvent, start: "2099-09-19T23:00:00.000Z" },
+    ];
+    const tickets = events.flatMap((event) =>
+      order.tickets.map((ticket) => ({
+        ...ticket,
+        id: `${ticket.id}-${event.uuid}`,
+        eventUUID: event.uuid,
+        ...(event.uuid === transferredEvent.uuid
+          ? { transferStatus: "transferred" }
+          : {}),
+      })),
+    );
+    const packageOrder = demoCompletedPackageOrder({
+      package: { ...order.package, events },
+      tickets,
+    });
+    const pass = demoPackageAccessPass({ events });
+    navigationMocks.pathname = `/wallet/my-tickets/access-pass/${pass.uuid}/`;
+    mockedGetMyEvents.mockResolvedValue({ data: [packageOrder] } as never);
+    mockedGetMyAccessPass.mockResolvedValue({
+      data: { data: pass },
+    } as never);
+
+    render(<SeasonTickets />);
+
+    expect(
+      await screen.findByRole("heading", { name: pass.name }),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("link", { name: `View ${pastEvent.name}` }),
+    ).not.toBeInTheDocument();
+    for (const link of screen.getAllByRole("link", {
+      name: `View ${activeEvent.name}`,
+    })) {
+      expect(link).toHaveAttribute(
+        "href",
+        expect.stringMatching(`/wallet/my-tickets/event/${activeEvent.uuid}`),
+      );
+    }
+    expect(
+      screen.queryByRole("link", { name: `View ${transferredEvent.name}` }),
+    ).not.toBeInTheDocument();
+    expect(screen.getByText("Transferred")).toBeInTheDocument();
+  });
+
+  it("explains when an access-pass URL is not in the wallet", async () => {
+    navigationMocks.pathname =
+      "/wallet/my-tickets/access-pass/missing-access-pass/";
+    mockedGetMyEvents.mockResolvedValue({ data: [] } as never);
+    mockedGetMyAccessPasses.mockResolvedValue({
+      data: { data: [demoAccessPass()] },
+    } as never);
+
+    render(<SeasonTickets />);
+
+    expect(
+      await screen.findByText(/couldn't find that access pass/i),
+    ).toBeInTheDocument();
+  });
+
+  it("loads an access-pass detail URL directly", async () => {
+    const pass = demoPackageAccessPass();
+    navigationMocks.pathname =
+      `/wallet/my-tickets/access-pass/${pass.uuid}/`;
+    mockedGetMyEvents.mockResolvedValue({ data: [] } as never);
+    mockedGetMyAccessPass.mockResolvedValue({
+      data: { data: pass },
+    } as never);
+
+    render(<SeasonTickets />);
+
+    expect(
+      await screen.findByRole("heading", { name: pass.name }),
+    ).toBeInTheDocument();
+    expect(mockedGetMyAccessPass).toHaveBeenCalledWith(pass.uuid);
+    expect(screen.getByText("All events")).toBeInTheDocument();
+  });
+
+  it("transfers an access pass from its wallet detail", async () => {
+    const user = userEvent.setup();
+    const pass = demoAccessPass();
+    navigationMocks.pathname =
+      `/wallet/my-tickets/access-pass/${pass.uuid}/`;
+    mockedGetMyEvents.mockResolvedValue({ data: [] } as never);
+    mockedGetMyAccessPass.mockResolvedValue({
+      data: { data: pass },
+    } as never);
+
+    render(<SeasonTickets />);
+
+    await user.click(
+      await screen.findByRole("button", { name: "Transfer access pass" }),
+    );
+    await user.type(
+      screen.getByRole("textbox", { name: "Email address" }),
+      "recipient@example.com",
+    );
+    await user.click(screen.getByRole("button", { name: "Next" }));
+    await user.click(screen.getByRole("button", { name: "Transfer" }));
+
+    expect(
+      await screen.findByText("Access pass transfer pending"),
+    ).toBeInTheDocument();
+    expect(mockedCreateTicketTransfer).toHaveBeenCalledWith({
+      accessPassId: pass.uuid,
+      email: "recipient@example.com",
+    });
+  });
+
+  it("shows an error when an access pass cannot be transferred", async () => {
+    const user = userEvent.setup();
+    const pass = demoAccessPass();
+    navigationMocks.pathname =
+      `/wallet/my-tickets/access-pass/${pass.uuid}/`;
+    mockedGetMyEvents.mockResolvedValue({ data: [] } as never);
+    mockedGetMyAccessPass.mockResolvedValue({
+      data: { data: pass },
+    } as never);
+    mockedCreateTicketTransfer.mockRejectedValue(new Error("offline"));
+
+    render(<SeasonTickets />);
+
+    await user.click(
+      await screen.findByRole("button", { name: "Transfer access pass" }),
+    );
+    await user.type(
+      screen.getByRole("textbox", { name: "Email address" }),
+      "recipient@example.com",
+    );
+    await user.click(screen.getByRole("button", { name: "Next" }));
+    await user.click(screen.getByRole("button", { name: "Transfer" }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "Unable to transfer this access pass. Please try again.",
+    );
+    expect(
+      screen.queryByText("Access pass transfer pending"),
+    ).not.toBeInTheDocument();
+  });
+
+  it("still shows ticket orders when access passes cannot be loaded", async () => {
+    mockedGetMyEvents.mockResolvedValue({
+      data: [demoCompletedTicketOrder({ event: icedogs })],
+    } as never);
+    mockedGetMyAccessPasses.mockRejectedValue(new Error("access passes unavailable"));
+
+    render(<SeasonTickets />);
+
+    expect(await screen.findByText(icedogs.name)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Access passes.*0/i })).toBeInTheDocument();
   });
 
   it("does not link a wallet event that has no UUID", async () => {
@@ -99,7 +588,41 @@ describe("SeasonTickets package tab", () => {
     ).not.toBeInTheDocument();
   });
 
-  it("shows an empty Season tickets tab when the wallet has no package orders", async () => {
+  it("does not link a wallet package that has no UUID", async () => {
+    const user = userEvent.setup();
+    mockedGetMyEvents.mockResolvedValue({
+      data: [
+        demoCompletedPackageOrder({
+          package: { ...pkg, uuid: "" },
+        }),
+      ],
+    } as never);
+
+    render(<SeasonTickets />);
+
+    await user.click(await screen.findByRole("button", { name: /Packages/i }));
+
+    expect(screen.getByText(pkg.name)).toBeInTheDocument();
+    expect(
+      screen.queryByRole("link", { name: new RegExp(pkg.name) }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("explains when the routed package is not in the wallet", async () => {
+    navigationMocks.pathname = "/wallet/my-tickets/package/missing-package-uuid/";
+    mockedGetMyEvents.mockResolvedValue({
+      data: [demoCompletedPackageOrder()],
+    } as never);
+
+    render(<SeasonTickets />);
+
+    expect(
+      await screen.findByText(/couldn't find that package/i),
+    ).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: pkg.name })).not.toBeInTheDocument();
+  });
+
+  it("shows an empty Packages tab when the wallet has no package orders", async () => {
     const user = userEvent.setup();
     mockedGetMyEvents.mockResolvedValue({
       data: [demoCompletedTicketOrder({ event: icedogs })],
@@ -108,12 +631,12 @@ describe("SeasonTickets package tab", () => {
     render(<SeasonTickets />);
 
     await waitFor(() => {
-      expect(screen.getByRole("button", { name: /Season tickets/i })).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: /Packages/i })).toBeInTheDocument();
     });
 
-    await user.click(screen.getByRole("button", { name: /Season tickets/i }));
+    await user.click(screen.getByRole("button", { name: /Packages/i }));
 
-    expect(screen.getByText("No season tickets yet")).toBeInTheDocument();
+    expect(screen.getByText("No packages yet")).toBeInTheDocument();
     expect(screen.queryByText(pkg.name)).not.toBeInTheDocument();
   });
 
@@ -127,7 +650,7 @@ describe("SeasonTickets package tab", () => {
     expect(await screen.findByText(icedogs.name)).toBeInTheDocument();
     expect(
       screen.getByRole("link", { name: /blocktickets home/i }),
-    ).toHaveAttribute("href", expect.stringMatching(/^\/browse\/?$/));
+    ).toHaveAttribute("href", "/browse");
     expect(screen.getByRole("link", { name: /^tickets$/i })).toHaveAttribute(
       "aria-current",
       "page",
@@ -139,6 +662,10 @@ describe("SeasonTickets package tab", () => {
     expect(screen.getByRole("link", { name: /^transfers$/i })).toHaveAttribute(
       "href",
       expect.stringMatching(/^\/wallet\/my-transfers\/?$/),
+    );
+    expect(screen.getByRole("link", { name: /^listings$/i })).toHaveAttribute(
+      "href",
+      expect.stringMatching(/^\/wallet\/my-listings\/?$/),
     );
     expect(screen.getByRole("link", { name: /^giving$/i })).toHaveAttribute(
       "href",
@@ -162,6 +689,7 @@ describe("SeasonTickets section routes", () => {
 
   it.each([
     ["/wallet/my-transfers/", "Transfers"],
+    ["/wallet/my-listings/", "Listings"],
     ["/wallet/giving/", "Giving"],
     ["/wallet/my-profile/", "Profile"],
   ])("opens %s on the %s section", async (pathname, heading) => {
@@ -177,6 +705,44 @@ describe("SeasonTickets section routes", () => {
       "aria-current",
       "page",
     );
+  });
+
+  it("focuses the email field on the wallet sign-in screen", async () => {
+    navigationMocks.search = "login=1";
+
+    render(<SeasonTickets />);
+
+    expect(screen.getByPlaceholderText("you@email.com")).toHaveFocus();
+  });
+
+  it("does not steal focus into a field on the wallet ticket list", async () => {
+    render(<SeasonTickets />);
+
+    expect(await screen.findByText(icedogs.name)).toBeInTheDocument();
+    expect(document.activeElement).toBe(document.body);
+  });
+
+  it("filters listings by Active, Sold, and Expired", async () => {
+    navigationMocks.pathname = "/wallet/my-listings/";
+    const user = userEvent.setup();
+
+    render(<SeasonTickets />);
+
+    expect(
+      await screen.findByRole("heading", { name: "Listings", level: 1 }),
+    ).toBeInTheDocument();
+    expect(screen.getByText("No active listings")).toBeInTheDocument();
+    expect(
+      screen.getByText(/when you list tickets for resale/i),
+    ).toBeInTheDocument();
+
+    await user.click(screen.getByRole("tab", { name: /^sold$/i }));
+    expect(screen.getByText("Nothing sold yet")).toBeInTheDocument();
+    expect(screen.queryByText("No active listings")).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole("tab", { name: /^expired$/i }));
+    expect(screen.getByText("No expired listings")).toBeInTheDocument();
+    expect(screen.queryByText("Nothing sold yet")).not.toBeInTheDocument();
   });
 
   it("sends Sign out to /sign-out", async () => {
@@ -223,6 +789,99 @@ describe("SeasonTickets routed event screen", () => {
       "href",
       expect.stringMatching(/^\/wallet\/my-tickets\/?$/),
     );
+  });
+
+  it("transfers the selected single ticket with the legacy API payload", async () => {
+    const user = userEvent.setup();
+    const order = demoCompletedTicketOrder({ event: icedogs });
+    const ticket = order.tickets[0];
+    mockedGetMyEvents.mockResolvedValue({ data: [order] } as never);
+
+    render(<SeasonTickets initialScreen="event" eventUUID={icedogs.uuid} />);
+
+    await user.click(await screen.findByRole("button", { name: "Transfer" }));
+    await user.click(
+      screen.getByRole("button", { name: `Seat ${ticket.seatNumber}` }),
+    );
+    await user.click(screen.getByRole("button", { name: "Next" }));
+    await user.type(
+      screen.getByRole("textbox", { name: "Email address" }),
+      "recipient@example.com",
+    );
+    await user.click(screen.getByRole("button", { name: "Next" }));
+    await user.click(
+      screen.getAllByRole("button", { name: "Transfer" }).at(-1)!,
+    );
+
+    expect(
+      await screen.findByText("Your ticket has been transferred"),
+    ).toBeInTheDocument();
+    expect(mockedCreateTicketTransfer).toHaveBeenCalledWith({
+      email: "recipient@example.com",
+      orderId: order.id,
+      event: order.event,
+      ticketIds: [ticket.id],
+      eventUUID: icedogs.uuid,
+    });
+  });
+
+  it("does not transfer a single ticket back to its owner", async () => {
+    const user = userEvent.setup();
+    const order = demoCompletedTicketOrder({ event: icedogs });
+    const ticket = order.tickets[0];
+    mockedGetMyEvents.mockResolvedValue({ data: [order] } as never);
+
+    render(<SeasonTickets initialScreen="event" eventUUID={icedogs.uuid} />);
+
+    await user.click(await screen.findByRole("button", { name: "Transfer" }));
+    await user.click(
+      screen.getByRole("button", { name: `Seat ${ticket.seatNumber}` }),
+    );
+    await user.click(screen.getByRole("button", { name: "Next" }));
+    await user.type(
+      screen.getByRole("textbox", { name: "Email address" }),
+      DEMO_SESSION.user.email,
+    );
+    await user.click(screen.getByRole("button", { name: "Next" }));
+
+    expect(
+      screen.getByRole("alert"),
+    ).toHaveTextContent("You cannot transfer tickets to yourself.");
+    expect(mockedCreateTicketTransfer).not.toHaveBeenCalled();
+  });
+
+  it("does not show or retain an email error when entering the recipient step", async () => {
+    const user = userEvent.setup();
+    const order = demoCompletedTicketOrder({ event: icedogs });
+    const ticket = order.tickets[0];
+    mockedGetMyEvents.mockResolvedValue({ data: [order] } as never);
+
+    render(<SeasonTickets initialScreen="event" eventUUID={icedogs.uuid} />);
+
+    await user.click(await screen.findByRole("button", { name: "Transfer" }));
+    await user.click(
+      screen.getByRole("button", { name: `Seat ${ticket.seatNumber}` }),
+    );
+    await user.click(screen.getByRole("button", { name: "Next" }));
+
+    expect(
+      screen.queryByText("Email address is required."),
+    ).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Next" })).toBeDisabled();
+
+    await user.type(
+      screen.getByRole("textbox", { name: "Email address" }),
+      "invalid@",
+    );
+    await user.click(screen.getByRole("button", { name: "Next" }));
+    expect(screen.getByText("Email is invalid. Please try again.")).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Back" }));
+    await user.click(screen.getByRole("button", { name: "Next" }));
+
+    expect(
+      screen.queryByText("Email is invalid. Please try again."),
+    ).not.toBeInTheDocument();
   });
 
   it("explains when the routed event is not in the wallet", async () => {
@@ -364,5 +1023,131 @@ describe("SeasonTickets routed flex pack screen", () => {
 
     expect(await screen.findByText(/couldn't find that flex pack/i)).toBeInTheDocument();
     expect(screen.queryByRole("heading", { name: pack.name })).not.toBeInTheDocument();
+  });
+});
+
+describe("SeasonTickets pass wallet", () => {
+  const pass = demoAccessPass();
+
+  beforeEach(() => {
+    sessionMocks.getSession.mockReturnValue(DEMO_SESSION);
+    mockedGetMyEvents.mockReset();
+    mockedGetMyEvents.mockResolvedValue({ data: [] } as never);
+    mockedGetMyAccessPasses.mockResolvedValue({
+      data: { data: [pass] },
+    } as never);
+    mockedGetMyAccessPass.mockResolvedValue({ data: { data: pass } } as never);
+    mockedDownloadApplePass.mockReset();
+    navigationMocks.pathname = `/wallet/my-tickets/access-pass/${pass.uuid}/`;
+    Object.defineProperty(navigator, "userAgent", {
+      configurable: true,
+      writable: true,
+      value: "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X)",
+    });
+    Object.defineProperty(window.URL, "createObjectURL", {
+      configurable: true,
+      writable: true,
+      value: vi.fn(() => "blob:pass"),
+    });
+    Object.defineProperty(window.URL, "revokeObjectURL", {
+      configurable: true,
+      writable: true,
+      value: vi.fn(),
+    });
+  });
+
+  afterEach(() => {
+    Reflect.deleteProperty(navigator, "userAgent");
+  });
+
+  async function openQrPopup() {
+    const user = userEvent.setup();
+    render(<SeasonTickets />);
+    await user.click(
+      await screen.findByRole("button", { name: `Show QR code for ${pass.name}` }),
+    );
+    return user;
+  }
+
+  it("adds the pass to the phone wallet from the QR popup", async () => {
+    mockedDownloadApplePass.mockResolvedValue({
+      data: new Blob(["pkpass"], { type: "application/vnd.apple.pkpass" }),
+    } as never);
+
+    const user = await openQrPopup();
+    await user.click(screen.getByRole("button", { name: "Add to Apple Wallet" }));
+
+    expect(mockedDownloadApplePass).toHaveBeenCalledWith({
+      event: expect.objectContaining({ uuid: pass.events[0].uuid }),
+      obj: expect.objectContaining({
+        checkInCode: pass.checkInCode,
+        accessPass: true,
+      }),
+    });
+  });
+
+  it("explains when the pass cannot be added to the phone wallet", async () => {
+    mockedDownloadApplePass.mockRejectedValue(new Error("500"));
+
+    const user = await openQrPopup();
+    await user.click(screen.getByRole("button", { name: "Add to Apple Wallet" }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      /Apple Wallet/i,
+    );
+  });
+});
+
+describe("SeasonTickets ticket screen responsive layout", () => {
+  function setWidth(width: number) {
+    Object.defineProperty(window, "innerWidth", {
+      configurable: true,
+      writable: true,
+      value: width,
+    });
+  }
+
+  beforeEach(() => {
+    sessionMocks.getSession.mockReturnValue(DEMO_SESSION);
+    mockedGetMyEvents.mockReset();
+    mockedGetMyEvents.mockResolvedValue({
+      data: [demoCompletedTicketOrder({ event: icedogs })],
+    } as never);
+    navigationMocks.pathname = `/wallet/my-tickets/event/${icedogs.uuid}/`;
+    setWidth(390);
+  });
+
+  afterEach(() => {
+    Reflect.deleteProperty(window, "matchMedia");
+    setWidth(1440);
+  });
+
+  it("keeps the desktop ticket screen in a narrow desktop window", async () => {
+    render(<SeasonTickets />);
+
+    expect(
+      await screen.findByRole("link", { name: /All tickets/i }),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "View QR-Code" }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("shows the swipeable ticket cards on a phone", async () => {
+    Object.defineProperty(window, "matchMedia", {
+      configurable: true,
+      writable: true,
+      value: (query: string) =>
+        ({ matches: query === "(pointer: coarse)" }) as MediaQueryList,
+    });
+
+    render(<SeasonTickets />);
+
+    expect(
+      (await screen.findAllByRole("button", { name: "View QR-Code" })).length,
+    ).toBeGreaterThan(0);
+    expect(
+      screen.queryByRole("link", { name: /All tickets/i }),
+    ).not.toBeInTheDocument();
   });
 });

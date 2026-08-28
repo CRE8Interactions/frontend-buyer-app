@@ -871,6 +871,10 @@ describe("Checkout page", () => {
     expect(
       await screen.findByText(/promo code not found\. please try again\./i),
     ).toBeInTheDocument();
+    expect(screen.getByPlaceholderText(/enter promo code/i)).toHaveAttribute(
+      "aria-invalid",
+      "true",
+    );
     expect(screen.queryByText(/^Promo \(/)).not.toBeInTheDocument();
     expect(
       screen.getByRole("button", { name: `Pay ${formatCurrency(cart.total)}` }),
@@ -887,6 +891,10 @@ describe("Checkout page", () => {
     await user.click(apply);
 
     expect(await screen.findByText(/enter a promo code/i)).toBeInTheDocument();
+    expect(screen.getByPlaceholderText(/enter promo code/i)).toHaveAttribute(
+      "aria-invalid",
+      "true",
+    );
     expect(mockedRedeemPromo).not.toHaveBeenCalled();
   });
 

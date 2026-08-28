@@ -11,21 +11,32 @@
  * designed initials-on-brand-color wedge (exactly the design's own fallback).
  */
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from "react";
 import Link from "next/link";
 import { useParams, usePathname, useSearchParams } from "next/navigation";
+import { QRCodeSVG } from "qrcode.react";
 import Spinner from "@/components/atoms/Spinner";
 import WalletChrome from "@/components/organisms/WalletChrome";
 import { BLOCKTICKETS_GREEN, BLOCKTICKETS_NAVY } from "@/lib/branding";
 import EmailField from "@/components/molecules/EmailField";
+import useAutoFocus from "@/hooks/useAutoFocus";
 import {
   emailBlurInvalid,
+  emailSubmitError,
   emailSubmitInvalid,
   normalizeEmail,
   submittedEmail,
+  type EmailFieldError,
 } from "@/lib/fieldValidation";
-import { getMyEvents } from "@/lib/api";
+import {
+  createTicketTransfer,
+  getAccessPassesByOrder,
+  getMyAccessPass,
+  getMyAccessPasses,
+  getMyEvents,
+} from "@/lib/api";
 import { getSession } from "@/lib/auth";
+import { imageUrl } from "@/lib/helpers";
 import {
   buildOrderEventDetails,
   buildFlexPackSummaries,
@@ -33,9 +44,12 @@ import {
   buildSeasonPackageSummaries,
   summarizeEventDetails,
   formatCartOrderTotal,
+  walletAccessPassPath,
   walletEventScheduleLine,
   walletEventTicketsPath,
   walletFlexPackPath,
+  walletPackageEventPath,
+  walletPackagePath,
   walletRouteFromPath,
   type AttractionCard,
   type CartEventDetail,
@@ -43,7 +57,22 @@ import {
   type FlexPackSummary,
   type SeasonPackageSummary,
 } from "@/lib/cartEvents";
-import { unwrapList, type OrderLike } from "@/lib/wallet";
+import {
+  buildAccessPassSummaries,
+  eventWhenLabel,
+  isMobileDevice,
+  isUpcomingEvent,
+  unwrapList,
+  type AccessPassLike,
+  type AccessPassSummary,
+  type OrderLike,
+} from "@/lib/wallet";
+import {
+  addAccessPassToPhoneWallet,
+  phoneWalletKind,
+  phoneWalletLabel,
+  type PhoneWalletKind,
+} from "@/lib/phoneWallet";
 import {
   WALLET_NAV,
   walletSectionFromPath,
@@ -64,6 +93,7 @@ const GREEN_BG = "#e7f5ec";
 const DANGER = "#c2394a";
 const SOFT = "#ecf8dd";
 const LOGO = "/nmstate/nmstate-logo-nowordmark.png";
+const CODE_BOXES = [0, 1, 2, 3, 4, 5];
 const SEATMAP_THUMB = "/nmstate/seatmap-thumb.svg";
 
 const card: React.CSSProperties = {
@@ -481,7 +511,7 @@ type EventT = {
   title: string; when: string; doors: string; venue: string; city: string; address: string;
   id: string; brand: string; initials: string; blurb: string; rec: string; opp: string;
   teams: { name: string; role: string; rec: string; initials: string; brand: string; logo?: string }[];
-  tickets: { seat: string; holder: string; code: string }[];
+  tickets: { id?: number | string; seat: string; holder: string; code: string }[];
   attractions?: AttractionCard[];
   heroImage?: string;
   posterSrc?: string;
@@ -491,6 +521,10 @@ type EventT = {
   purchasedAt?: string;
   cartId?: string;
   cartTotal?: number;
+  orderRecordId?: number | string;
+  eventUUID?: string;
+  event?: CartEventDetail["event"];
+  transfersEnabled?: boolean;
 };
 
 function detailToEventT(d: CartEventDetail, isCart = false): EventT {
@@ -518,6 +552,10 @@ function detailToEventT(d: CartEventDetail, isCart = false): EventT {
     purchasedAt: d.purchasedAt,
     cartId: d.cartId,
     cartTotal: d.cartTotal,
+    orderRecordId: d.orderRecordId,
+    eventUUID: d.eventUUID,
+    event: d.event,
+    transfersEnabled: d.transfersEnabled,
   };
 }
 
@@ -572,8 +610,44 @@ function qr(seed: string): string {
   return "data:image/svg+xml;utf8," + encodeURIComponent(svg);
 }
 
-type Screen = "login" | "code" | "events" | "event" | "seasonPackage" | "package" | "listings" | "giving" | "profile";
+/**
+ * The event screen reflows from the real viewport rather than a measured width,
+ * so a narrow desktop window stacks to one column even before (or without) a
+ * width measurement — the sidebar cards drop under the tickets instead of
+ * squeezing the event beside them.
+ */
+const EVENT_CSS = `
+.st-ev{padding:40px 32px 96px}
+.st-ev-hero{aspect-ratio:3.4 / 1}
+.st-ev-grid{display:grid;grid-template-columns:minmax(0,1fr) 320px;gap:40px;align-items:start}
+.st-ev-aside{position:sticky;top:96px}
+.st-ev-title{font-size:30px}
+.st-ev-teams{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:10px}
+.st-ev-seat{display:flex;align-items:center;gap:16px;flex-wrap:wrap}
+.st-ev-seat-actions{display:flex;gap:8px;flex-shrink:0}
+@media (max-width:900px){
+  .st-ev{padding:24px 16px 128px}
+  .st-ev-hero{aspect-ratio:2.1 / 1}
+  .st-ev-grid{grid-template-columns:minmax(0,1fr);gap:16px}
+  .st-ev-aside{position:static;top:auto}
+  .st-ev-title{font-size:22px}
+}
+@media (max-width:560px){
+  .st-ev-seat-actions{width:100%}
+  .st-ev-seat-actions>button{flex:1}
+}
+`;
+
+type Screen = "login" | "code" | "events" | "event" | "seasonPackage" | "package" | "listings" | "resale" | "giving" | "profile";
 type Sent = { id: string; to?: string; from?: string; title: string; seat: string; on: string; status: string };
+type PassTransfer = {
+  pass: AccessPassSummary;
+  kind: "season pass" | "access pass";
+  step: "email" | "confirm" | "success";
+  email: string;
+  error: string;
+  saving: boolean;
+};
 
 export default function SeasonTickets({
   initialScreen = "events",
@@ -587,12 +661,16 @@ export default function SeasonTickets({
   const params = useParams<{
     eventUUID?: string | string[];
     flexPackUUID?: string | string[];
+    packageUUID?: string | string[];
+    accessPassUUID?: string | string[];
   }>();
   const pathname = usePathname() || "";
   const searchParams = useSearchParams();
   const route = walletRouteFromPath(pathname, params);
   const routedEventUUID = eventUUID || route.eventUUID;
   const routedFlexPackUUID = flexPackUUID || route.flexPackUUID;
+  const routedPackageUUID = route.packageUUID;
+  const routedAccessPassUUID = route.accessPassUUID;
   const section = walletSectionFromPath(pathname);
   const resolvedInitialScreen =
     initialScreen !== "events"
@@ -602,11 +680,12 @@ export default function SeasonTickets({
         : section;
   const [vw, setVw] = useState(1440);
   const [screen, setScreen] = useState<Screen>(resolvedInitialScreen);
-  const [tab, setTab] = useState<"upcoming" | "season" | "flex">("upcoming");
+  const [tab, setTab] = useState<"upcoming" | "season" | "flex" | "access">("upcoming");
   const [email, setEmail] = useState("harrison.cogan@gmail.com");
   const [code, setCode] = useState("");
   const [evId, setEvId] = useState("lobos");
   const [listTab, setListTab] = useState<"active" | "received">("active");
+  const [saleTab, setSaleTab] = useState<"active" | "sold" | "expired">("active");
   const [modal, setModal] = useState<null | "details" | "field" | "vouchers">(null);
   const [detail, setDetail] = useState<{ seat?: string; holder?: string; code?: string } | null>(null);
   const [field, setField] = useState<{ group: string; heading: string; label: string; help: string; key: string } | null>(null);
@@ -614,24 +693,88 @@ export default function SeasonTickets({
   const [pvals, setPvals] = useState<Record<string, string>>({});
   const [toggles, setToggles] = useState<Record<string, boolean>>({});
   const [tf, setTf] = useState<null | { step: number; sel: string[]; email: string; evId: string }>(null);
-  const [tfEmailErr, setTfEmailErr] = useState(false);
+  const [tfEmailErr, setTfEmailErr] = useState<EmailFieldError>(null);
+  const [tfError, setTfError] = useState("");
+  const [tfSaving, setTfSaving] = useState(false);
+  const [passTransfer, setPassTransfer] = useState<PassTransfer | null>(null);
+  const [qrPass, setQrPass] = useState<{
+    pass: AccessPassSummary;
+    kind: "season pass" | "access pass";
+  } | null>(null);
+  const [passWallet, setPassWallet] = useState<PhoneWalletKind | null>(null);
+  const [passWalletSaving, setPassWalletSaving] = useState(false);
+  const [passWalletError, setPassWalletError] = useState("");
   const [confirmCancel, setConfirmCancel] = useState<Sent | null>(null);
   const [sent, setSent] = useState<Sent[] | null>(null);
   const [toast, setToast] = useState<string | null>(null);
   const [upcomingEvents, setUpcomingEvents] = useState<CartEventSummary[]>([]);
   const [seasonPackages, setSeasonPackages] = useState<SeasonPackageSummary[]>([]);
   const [seasonPackageKey, setSeasonPackageKey] = useState<string | null>(null);
+  const [packageAccessPasses, setPackageAccessPasses] = useState<
+    Record<string, AccessPassSummary[]>
+  >({});
+  const [packagePassChecked, setPackagePassChecked] = useState<
+    Record<string, boolean>
+  >({});
+  const [packageView, setPackageView] = useState<"pass" | "events">("pass");
   const [flexPacks, setFlexPacks] = useState<FlexPackSummary[]>([]);
+  const [accessPasses, setAccessPasses] = useState<AccessPassSummary[]>([]);
+  const [accessPassDetails, setAccessPassDetails] = useState<
+    Record<string, AccessPassSummary>
+  >({});
+  const [accessPassDetailChecked, setAccessPassDetailChecked] = useState<
+    Record<string, boolean>
+  >({});
   const [flexPackKey, setFlexPackKey] = useState<string | null>(null);
   const [eventDetails, setEventDetails] = useState<Record<string, CartEventDetail>>({});
   const [eventsChecked, setEventsChecked] = useState(false);
   const [eventsLoading, setEventsLoading] = useState(false);
-  const codeRef = useRef<HTMLInputElement | null>(null);
+  const [mobileDevice, setMobileDevice] = useState(false);
+  const codeBoxes = useRef<(HTMLInputElement | null)[]>([]);
+  const autoFocusField = useAutoFocus<HTMLInputElement>(true);
+  const setCodeRef = useMemo(
+    () =>
+      CODE_BOXES.map((index) => (field: HTMLInputElement | null) => {
+        codeBoxes.current[index] = field;
+        if (index === 0) autoFocusField(field);
+      }),
+    [autoFocusField],
+  );
   const toastT = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastSection = useRef(section);
 
+  const setCodeValue = (raw: string) => {
+    const next = raw.replace(/\D/g, "").slice(0, 6);
+    setCode(next);
+    if (next.length === 6) setTimeout(() => { setScreen("events"); setCode(""); }, 260);
+    return next;
+  };
+  const focusCodeBox = (index: number) => codeBoxes.current[Math.min(Math.max(index, 0), CODE_BOXES.length - 1)]?.focus();
+  /** Digits land in the box they were typed in; a whole code fills from there. */
+  const typeCodeBox = (index: number, raw: string) => {
+    const digits = raw.replace(/\D/g, "");
+    if (!digits) { setCodeValue(code.slice(0, index) + code.slice(index + 1)); return; }
+    const next = setCodeValue(digits.length > 1 ? code.slice(0, index) + digits : code.slice(0, index) + digits + code.slice(index + 1));
+    focusCodeBox(Math.min(index + digits.length, next.length));
+  };
+  const moveCodeBox = (index: number, e: ReactKeyboardEvent<HTMLInputElement>) => {
+    if (e.key === "Backspace" && !code[index] && index > 0) {
+      e.preventDefault();
+      setCodeValue(code.slice(0, index - 1) + code.slice(index));
+      focusCodeBox(index - 1);
+    } else if (e.key === "ArrowLeft" && index > 0) {
+      e.preventDefault();
+      focusCodeBox(index - 1);
+    } else if (e.key === "ArrowRight" && index < CODE_BOXES.length - 1) {
+      e.preventDefault();
+      focusCodeBox(index + 1);
+    }
+  };
+
   useEffect(() => {
     setVw(window.innerWidth);
+    setMobileDevice(isMobileDevice());
+    setPassWallet(phoneWalletKind());
     const onR = () => setVw(window.innerWidth);
     window.addEventListener("resize", onR);
     return () => window.removeEventListener("resize", onR);
@@ -662,7 +805,12 @@ export default function SeasonTickets({
         if (!cancelled) {
           setUpcomingEvents([]);
           setSeasonPackages([]);
+          setPackageAccessPasses({});
+          setPackagePassChecked({});
           setFlexPacks([]);
+          setAccessPasses([]);
+          setAccessPassDetails({});
+          setAccessPassDetailChecked({});
           setEventDetails({});
           setEventsLoading(false);
           setEventsChecked(true);
@@ -672,9 +820,15 @@ export default function SeasonTickets({
 
       setEventsLoading(true);
       try {
-        const res = await getMyEvents();
+        const [res, accessPassRes] = await Promise.all([
+          getMyEvents(),
+          getMyAccessPasses("organizer").catch(() => null),
+        ]);
         if (cancelled) return;
         const orders = unwrapList<OrderLike>(res.data);
+        const passes = accessPassRes
+          ? unwrapList<AccessPassLike>(accessPassRes.data)
+          : [];
         const holderEmail = String(session.user?.email || email);
         const details = buildOrderEventDetails(orders, holderEmail);
         const packageDetails = buildSeasonPackageEventDetails(orders, holderEmail);
@@ -682,11 +836,17 @@ export default function SeasonTickets({
         setUpcomingEvents(summarizeEventDetails(details));
         setSeasonPackages(buildSeasonPackageSummaries(orders));
         setFlexPacks(buildFlexPackSummaries(orders));
+        setAccessPasses(buildAccessPassSummaries(passes));
       } catch {
         if (!cancelled) {
           setUpcomingEvents([]);
           setSeasonPackages([]);
+          setPackageAccessPasses({});
+          setPackagePassChecked({});
           setFlexPacks([]);
+          setAccessPasses([]);
+          setAccessPassDetails({});
+          setAccessPassDetailChecked({});
           setEventDetails({});
         }
       } finally {
@@ -703,17 +863,99 @@ export default function SeasonTickets({
     };
   }, []);
 
+  useEffect(() => {
+    const uuid = routedAccessPassUUID;
+    if (
+      !uuid ||
+      accessPassDetails[uuid] ||
+      accessPassDetailChecked[uuid]
+    ) {
+      return;
+    }
+
+    let cancelled = false;
+    getMyAccessPass(uuid)
+      .then((res) => {
+        if (cancelled) return;
+        const payload = res.data;
+        const pass =
+          payload && typeof payload === "object" && "data" in payload
+            ? (payload as { data?: AccessPassLike }).data
+            : (payload as AccessPassLike);
+        const [summary] = pass ? buildAccessPassSummaries([pass]) : [];
+        if (summary) {
+          setAccessPassDetails((current) => ({
+            ...current,
+            [uuid]: summary,
+          }));
+        }
+      })
+      .catch(() => undefined)
+      .finally(() => {
+        if (!cancelled) {
+          setAccessPassDetailChecked((current) => ({
+            ...current,
+            [uuid]: true,
+          }));
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    accessPassDetailChecked,
+    accessPassDetails,
+    routedAccessPassUUID,
+  ]);
+
   const mobile = vw < 900;
+  // Keep the wallet's original width-based responsive layout everywhere else.
+  // Only the swipeable ticket presentation is exclusive to a real mobile device.
+  const mobileTicketView = mobile && mobileDevice;
   const isHolder = email.trim().toLowerCase() === "harrison.cogan@gmail.com";
   const events = useMemo(buildEvents, []);
-  const showRoutedWallet = Boolean(routedEventUUID || routedFlexPackUUID);
-  const routedDetail = useMemo(
-    () =>
-      routedEventUUID
-        ? Object.values(eventDetails).find((d) => d.eventUUID === routedEventUUID) || null
-        : null,
-    [routedEventUUID, eventDetails],
+  const showRoutedWallet = Boolean(
+    routedEventUUID ||
+      routedFlexPackUUID ||
+      routedPackageUUID ||
+      routedAccessPassUUID,
   );
+  const routedSeasonPackage = useMemo(
+    () =>
+      routedPackageUUID
+        ? seasonPackages.find(
+            (row) =>
+              row.packageUUID === routedPackageUUID || row.key === routedPackageUUID,
+          ) || null
+        : null,
+    [routedPackageUUID, seasonPackages],
+  );
+  const routedPackagePassPending = Boolean(
+    routedSeasonPackage?.orderId &&
+      !routedEventUUID &&
+      !packagePassChecked[routedSeasonPackage.key],
+  );
+  const routedDetail = useMemo(() => {
+    if (!routedEventUUID) return null;
+    const list = Object.values(eventDetails);
+    if (routedPackageUUID) {
+      return (
+        list.find(
+          (d) =>
+            d.eventUUID === routedEventUUID &&
+            d.key.startsWith(`${routedPackageUUID}:`),
+        ) || null
+      );
+    }
+    return (
+      list.find(
+        (d) => d.eventUUID === routedEventUUID && !d.key.includes(":"),
+      ) ||
+      list.find((d) => d.eventUUID === routedEventUUID) ||
+      null
+    );
+  }, [routedEventUUID, routedPackageUUID, eventDetails]);
   const routedFlexPack = useMemo(
     () =>
       routedFlexPackUUID
@@ -724,21 +966,57 @@ export default function SeasonTickets({
         : null,
     [routedFlexPackUUID, flexPacks],
   );
+  const routedAccessPass = useMemo(
+    () =>
+      routedAccessPassUUID
+        ? accessPassDetails[routedAccessPassUUID] ||
+          accessPasses.find((row) => row.key === routedAccessPassUUID) ||
+          null
+        : null,
+    [routedAccessPassUUID, accessPassDetails, accessPasses],
+  );
+  const routedAccessPassPending = Boolean(
+    routedAccessPassUUID &&
+      !routedAccessPass &&
+      !accessPassDetailChecked[routedAccessPassUUID],
+  );
+  const routedTargetFound = Boolean(
+    routedFlexPack ||
+      routedAccessPass ||
+      (routedEventUUID && routedDetail) ||
+      (routedPackageUUID && !routedEventUUID && routedSeasonPackage),
+  );
   const routedWalletPending =
-    showRoutedWallet &&
-    !routedDetail &&
-    !routedFlexPack &&
-    (eventsLoading || !eventsChecked);
+    routedPackagePassPending ||
+    routedAccessPassPending ||
+    (showRoutedWallet &&
+      !routedTargetFound &&
+      (eventsLoading || !eventsChecked));
   const routedWalletMissing =
-    showRoutedWallet && !routedDetail && !routedFlexPack && !routedWalletPending;
+    showRoutedWallet && !routedTargetFound && !routedWalletPending;
   const showingEventDetail =
     showRoutedWallet
       ? Boolean(routedDetail && !routedWalletPending && !routedWalletMissing)
       : screen === "event";
+  const showingSeasonPackage =
+    showRoutedWallet
+      ? Boolean(
+          routedSeasonPackage &&
+            !routedEventUUID &&
+            !routedWalletPending &&
+            !routedWalletMissing,
+        )
+      : screen === "seasonPackage";
   const showingPackage =
     showRoutedWallet
       ? Boolean(routedFlexPack && !routedDetail && !routedWalletPending && !routedWalletMissing)
       : screen === "package";
+  const showingAccessPass = Boolean(
+    showRoutedWallet &&
+      routedAccessPass &&
+      !routedWalletPending &&
+      !routedWalletMissing,
+  );
   const orderEventKey = routedDetail
     ? routedDetail.key
     : evId.startsWith("order:")
@@ -776,7 +1054,7 @@ export default function SeasonTickets({
         initials: ev.teams[1]?.initials || ev.initials,
       };
 
-  const anyModal = !!modal || !!tf || !!confirmCancel;
+  const anyModal = !!modal || !!tf || !!passTransfer || !!confirmCancel;
   useEffect(() => {
     document.body.style.overflow = anyModal ? "hidden" : "";
     return () => { document.body.style.overflow = ""; };
@@ -826,8 +1104,9 @@ export default function SeasonTickets({
     on: item.id === "events" ? onTickets : screen === item.id,
   }));
   const authed = screen !== "login" && screen !== "code";
-  const showHeader = !(mobile && showingEventDetail);
-  const showTabBar = mobile && authed && !showingEventDetail && screen !== "seasonPackage";
+  const showHeader = !(mobileTicketView && showingEventDetail);
+  const showTabBar =
+    mobile && authed && !showingEventDetail && !showingSeasonPackage;
 
   const Header = () => (
     <WalletChrome
@@ -867,7 +1146,7 @@ export default function SeasonTickets({
           }}
         >
           <label style={{ fontSize: 12, fontWeight: 600, color: FAINT }}>Email address</label>
-          <input name="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="you@email.com" style={{ fontFamily: "inherit", width: "100%", boxSizing: "border-box", fontSize: 16, color: INK, background: FIELD, border: "1px solid rgba(5,27,53,0.12)", borderRadius: 14, padding: "15px 16px", outline: "none" }} />
+          <input ref={autoFocusField} name="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="you@email.com" style={{ fontFamily: "inherit", width: "100%", boxSizing: "border-box", fontSize: 16, color: INK, background: FIELD, border: "1px solid rgba(5,27,53,0.12)", borderRadius: 14, padding: "15px 16px", outline: "none" }} />
           <button type="submit" style={{ fontFamily: "inherit", width: "100%", fontSize: 15, fontWeight: 600, color: INK, background: ACCENT, border: "none", borderRadius: 999, padding: 16, cursor: "pointer" }}>Send my code</button>
           <div style={{ fontSize: 12, lineHeight: 1.5, color: MUTE, textAlign: "center" }}>By continuing you agree to the Blocktickets terms and privacy policy.</div>
         </form>
@@ -885,17 +1164,20 @@ export default function SeasonTickets({
           <p style={{ margin: 0, fontSize: 15, lineHeight: 1.6, color: SUB }}>Sent to <strong style={{ fontWeight: 600, color: INK }}>{email}</strong></p>
         </div>
         <div style={{ ...card, borderRadius: 24, padding: 22, display: "flex", flexDirection: "column", gap: 18 }}>
-          <div onClick={() => codeRef.current?.focus()} style={{ position: "relative", cursor: "text" }}>
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(6, 1fr)", gap: 8 }}>
-              {[0, 1, 2, 3, 4, 5].map((i) => (
-                <div key={i} style={{ height: mobile ? 54 : 60, border: `1px solid ${code.length === i ? INK : "rgba(5,27,53,0.12)"}`, background: code.length === i ? "#fff" : FIELD, borderRadius: 14, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 22, fontWeight: 600, fontVariantNumeric: "tabular-nums", color: INK }}>{code[i] || ""}</div>
-              ))}
-            </div>
-            <input ref={codeRef} value={code} inputMode="numeric" autoComplete="one-time-code" aria-label="Six-digit code"
-              onChange={(e) => { const v = e.target.value.replace(/\D/g, "").slice(0, 6); setCode(v); if (v.length === 6) setTimeout(() => { setScreen("events"); setCode(""); }, 260); }}
-              style={{ position: "absolute", inset: 0, width: "100%", height: "100%", opacity: 0, border: "none", background: "transparent", fontSize: 16, letterSpacing: "1em", cursor: "text", outline: "none" }} />
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(6, 1fr)", gap: 8 }}>
+            {CODE_BOXES.map((i) => (
+              <input key={i} ref={setCodeRef[i]} value={code[i] || ""} inputMode="numeric" autoComplete="one-time-code"
+                aria-label={i === 0 ? "Six-digit code" : `Digit ${i + 1} of 6`}
+                onChange={(e) => typeCodeBox(i, e.target.value)}
+                onKeyDown={(e) => moveCodeBox(i, e)}
+                onFocus={(e) => e.currentTarget.select()}
+                style={{ fontFamily: "inherit", width: "100%", boxSizing: "border-box", height: mobile ? 54 : 60, border: "1px solid rgba(5,27,53,0.12)", background: code[i] ? "#fff" : FIELD, borderRadius: 14, textAlign: "center", fontSize: 22, fontWeight: 600, fontVariantNumeric: "tabular-nums", color: INK, outline: "none" }} />
+            ))}
           </div>
-          <div style={{ fontSize: 13, color: MUTE, textAlign: "center" }}>Didn&apos;t get it? <a href="#" style={{ color: INK, fontWeight: 600 }}>Send a new code</a></div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 16, fontSize: 13, color: MUTE, textAlign: "center" }}>
+            <div>Codes expire after 10 minutes, so be sure to use the right one.</div>
+            <div>Haven&apos;t received your code? Check your spam folder or <a href="#" style={{ color: INK, fontWeight: 600 }}>Send a new code</a></div>
+          </div>
         </div>
       </div>
     </div>
@@ -912,6 +1194,7 @@ export default function SeasonTickets({
     upcomingEvents.length === 0 &&
     seasonPackages.length === 0 &&
     flexPacks.length === 0 &&
+    accessPasses.length === 0 &&
     !eventsLoading;
   const upcomingCount =
     !eventsChecked || eventsLoading ? 0 : upcomingEvents.length;
@@ -921,20 +1204,72 @@ export default function SeasonTickets({
       : seasonPackages.length + (showDemoSchedule ? 1 : 0);
   const tabDefs = [
     { id: "upcoming" as const, label: "Upcoming", n: upcomingCount },
-    { id: "season" as const, label: "Season tickets", n: seasonCount },
+    { id: "season" as const, label: "Packages", n: seasonCount },
     { id: "flex" as const, label: "Flex packs", n: flexPacks.length + (showDemoSchedule ? 1 : 0) },
+    { id: "access" as const, label: "Access passes", n: accessPasses.length },
   ];
   const selectedSeasonPackage =
-    seasonPackages.find((pkg) => pkg.key === seasonPackageKey) ?? null;
-  const seasonPackageGames = seasonPackageKey
+    routedSeasonPackage ??
+    seasonPackages.find((pkg) => pkg.key === seasonPackageKey) ??
+    null;
+  const activePackageKey = selectedSeasonPackage?.key ?? seasonPackageKey;
+  const seasonPackageGames = activePackageKey
     ? summarizeEventDetails(
         Object.fromEntries(
           Object.entries(eventDetails).filter(([key]) =>
-            key.startsWith(`${seasonPackageKey}:`),
+            key.startsWith(`${activePackageKey}:`),
           ),
         ),
       )
     : [];
+  const selectedPackagePasses = activePackageKey
+    ? packageAccessPasses[activePackageKey] ?? []
+    : [];
+
+  useEffect(() => {
+    const key = selectedSeasonPackage?.key;
+    const orderId = selectedSeasonPackage?.orderId;
+    if (
+      routedEventUUID ||
+      !key ||
+      !orderId ||
+      packagePassChecked[key]
+    ) {
+      return;
+    }
+
+    let cancelled = false;
+    getAccessPassesByOrder(orderId)
+      .then((res) => {
+        if (cancelled) return;
+        const passes = buildAccessPassSummaries(
+          unwrapList<AccessPassLike>(res.data),
+        );
+        setPackageAccessPasses((current) => ({
+          ...current,
+          [key]: passes,
+        }));
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setPackageAccessPasses((current) => ({ ...current, [key]: [] }));
+        }
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setPackagePassChecked((current) => ({ ...current, [key]: true }));
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    packagePassChecked,
+    routedEventUUID,
+    selectedSeasonPackage?.key,
+    selectedSeasonPackage?.orderId,
+  ]);
 
   const TicketsLoader = () => (
     <div
@@ -970,12 +1305,20 @@ export default function SeasonTickets({
     RoutedEventShell(
       <div style={{ ...card, borderRadius: 20, padding: mobile ? "28px 20px" : "40px 32px", display: "flex", flexDirection: "column", gap: 8 }}>
         <div style={{ fontSize: mobile ? 20 : 24, fontWeight: 600, letterSpacing: "-0.02em" }}>
-          {flexPackUUID && !eventUUID
+          {routedAccessPassUUID
+            ? "We couldn't find that access pass"
+            : routedPackageUUID && !routedEventUUID
+            ? "We couldn't find that package"
+            : flexPackUUID && !eventUUID
             ? "We couldn't find that flex pack"
             : "We couldn't find those tickets"}
         </div>
         <div style={{ fontSize: 14, color: SUB }}>
-          {flexPackUUID && !eventUUID
+          {routedAccessPassUUID
+            ? "This access pass isn't in your wallet, or your session expired. Head back to see everything you own."
+            : routedPackageUUID && !routedEventUUID
+            ? "This package isn't in your wallet, or your session expired. Head back to see everything you own."
+            : flexPackUUID && !eventUUID
             ? "This flex pack isn't in your wallet, or your session expired. Head back to see everything you own."
             : "This event isn't in your wallet, or your session expired. Head back to see everything you own."}
         </div>
@@ -992,33 +1335,26 @@ export default function SeasonTickets({
     setScreen("package");
   };
 
-  const SeasonPackageRow = ({ row }: { row: SeasonPackageSummary }) => (
-    <div
-      key={row.key}
-      role="button"
-      tabIndex={0}
-      onClick={() => openSeasonPackage(row.key)}
-      onKeyDown={(e) => {
-        if (e.key === "Enter" || e.key === " ") {
-          e.preventDefault();
-          openSeasonPackage(row.key);
-        }
-      }}
-      style={{
-        ...card,
-        borderRadius: 20,
-        position: "relative",
-        overflow: "hidden",
-        minHeight: mobile ? 124 : undefined,
-        boxSizing: "border-box",
-        padding: cardPad,
-        paddingRight: mobile ? 112 : 240,
-        display: "flex",
-        alignItems: "center",
-        gap: mobile ? 14 : 18,
-        cursor: "pointer",
-      }}
-    >
+  const SeasonPackageRow = ({ row }: { row: SeasonPackageSummary }) => {
+    const href = walletPackagePath(row.packageUUID);
+    const rowStyle = {
+      ...card,
+      borderRadius: 20,
+      position: "relative" as const,
+      overflow: "hidden" as const,
+      minHeight: mobile ? 124 : undefined,
+      boxSizing: "border-box" as const,
+      padding: cardPad,
+      paddingRight: mobile ? 112 : 240,
+      display: "flex",
+      alignItems: "center",
+      gap: mobile ? 14 : 18,
+      cursor: "pointer" as const,
+      color: "inherit",
+      textDecoration: "none",
+    };
+    const body = (
+      <>
       <div style={{ minWidth: 0, display: "flex", flexDirection: "column", gap: 5, flex: 1 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12, fontWeight: 600, color: SUB }}>
           {row.eventCount} {row.eventCount === 1 ? "game" : "games"}
@@ -1068,8 +1404,32 @@ export default function SeasonTickets({
           </span>
         ) : null}
       </div>
-    </div>
-  );
+      </>
+    );
+    if (href) {
+      return (
+        <Link href={href} style={rowStyle}>
+          {body}
+        </Link>
+      );
+    }
+    return (
+      <div
+        role="button"
+        tabIndex={0}
+        onClick={() => openSeasonPackage(row.key)}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" || e.key === " ") {
+            e.preventDefault();
+            openSeasonPackage(row.key);
+          }
+        }}
+        style={rowStyle}
+      >
+        {body}
+      </div>
+    );
+  };
 
   const FlexPackRow = ({ row }: { row: FlexPackSummary }) => {
     const href = walletFlexPackPath(row.flexPackUUID);
@@ -1196,8 +1556,17 @@ export default function SeasonTickets({
     setScreen("event");
   };
 
-  const UpcomingEventRow = ({ row }: { row: CartEventSummary }) => {
-    const href = walletEventTicketsPath(row.eventUUID);
+  const UpcomingEventRow = ({
+    row,
+    packageUUID,
+  }: {
+    row: CartEventSummary;
+    packageUUID?: string;
+  }) => {
+    const available = row.availability === "available";
+    const href = packageUUID
+      ? walletPackageEventPath(packageUUID, row.eventUUID)
+      : walletEventTicketsPath(row.eventUUID);
     const rowStyle = {
       ...card,
       borderRadius: 20,
@@ -1210,7 +1579,7 @@ export default function SeasonTickets({
       display: "flex",
       alignItems: "center",
       gap: mobile ? 14 : 18,
-      cursor: "pointer" as const,
+      cursor: available ? ("pointer" as const) : ("default" as const),
       color: "inherit",
       textDecoration: "none",
     };
@@ -1230,10 +1599,16 @@ export default function SeasonTickets({
           </div>
         ) : null}
         <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 2, flexWrap: "wrap" }}>
-          <span style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, fontWeight: 600, color: INK, border: "1px solid rgba(5,27,53,0.16)", borderRadius: 8, padding: "5px 10px", whiteSpace: "nowrap" }}>
-            <SeatIcon />
-            {row.ticketCount} {row.ticketCount === 1 ? "ticket" : "tickets"}
-          </span>
+          {available ? (
+            <span style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, fontWeight: 600, color: INK, border: "1px solid rgba(5,27,53,0.16)", borderRadius: 8, padding: "5px 10px", whiteSpace: "nowrap" }}>
+              <SeatIcon />
+              {row.ticketCount} {row.ticketCount === 1 ? "ticket" : "tickets"}
+            </span>
+          ) : (
+            <span style={{ fontSize: 12, fontWeight: 600, color: MUTE, border: `1px solid ${LINE}`, borderRadius: 8, padding: "5px 10px", whiteSpace: "nowrap" }}>
+              {row.availability === "past" ? "Past" : "Transferred"}
+            </span>
+          )}
         </div>
       </div>
       <div
@@ -1263,12 +1638,15 @@ export default function SeasonTickets({
       </div>
       </>
     );
-    if (href) {
+    if (available && href) {
       return (
-        <Link href={href} style={rowStyle}>
+        <Link href={href} aria-label={`View ${row.name}`} style={rowStyle}>
           {body}
         </Link>
       );
+    }
+    if (!available) {
+      return <div style={rowStyle}>{body}</div>;
     }
     return (
       <div
@@ -1288,6 +1666,458 @@ export default function SeasonTickets({
     );
   };
 
+  const AccessPassRow = ({ row }: { row: AccessPassSummary }) => {
+    const nextEventWhen = row.nextEvent
+      ? eventWhenLabel(row.nextEvent, row.nextEvent.venue?.timezone)
+      : "";
+    const foreground = row.fontColor || "#ffffff";
+    const href = walletAccessPassPath(row.accessPassUUID);
+    const rowStyle = {
+      ...card,
+      borderRadius: 20,
+      overflow: "hidden",
+      display: "grid",
+      gridTemplateColumns: mobile ? "1fr" : "minmax(220px, 0.8fr) 1.2fr",
+      color: "inherit",
+      textDecoration: "none",
+    };
+    const body = (
+      <>
+        <div
+          style={{
+            minHeight: mobile ? 150 : 190,
+            padding: mobile ? 20 : 24,
+            color: foreground,
+            background: row.backgroundColor || INK,
+            display: "flex",
+            flexDirection: "column",
+            justifyContent: "space-between",
+            gap: 18,
+          }}
+        >
+          <div style={{ display: "flex", gap: 14, alignItems: "flex-start" }}>
+            {row.artwork ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                src={row.artwork}
+                alt=""
+                style={{ width: 58, height: 58, borderRadius: 12, objectFit: "contain", background: "#fff", padding: 6 }}
+              />
+            ) : null}
+            <div style={{ minWidth: 0 }}>
+              <div style={{ fontSize: 11, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.08em", opacity: 0.8 }}>
+                {row.typeLabel}
+              </div>
+              <div style={{ marginTop: 5, fontSize: 19, fontWeight: 600, lineHeight: 1.2 }}>
+                {row.name}
+              </div>
+            </div>
+          </div>
+          <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "flex-end" }}>
+            <div>
+              {row.checkInCode ? (
+                <div style={{ fontSize: 13, opacity: 0.82 }}>Pass #{row.checkInCode}</div>
+              ) : null}
+              {row.seat && row.seat !== "Ticket" ? (
+                <div style={{ marginTop: 4, fontSize: 13, fontWeight: 600 }}>{row.seat}</div>
+              ) : null}
+            </div>
+            {row.checkInCode ? (
+              <div
+                role="img"
+                aria-label={`QR code for ${row.name}`}
+                style={{ background: "#fff", borderRadius: 10, padding: 6, lineHeight: 0 }}
+              >
+                <QRCodeSVG value={row.checkInCode} size={54} />
+              </div>
+            ) : (
+              <div style={{ fontSize: 12, fontWeight: 600 }}>
+                {row.eventCount} {row.eventCount === 1 ? "event" : "events"}
+              </div>
+            )}
+          </div>
+        </div>
+        <div style={{ padding: mobile ? 20 : 24, display: "flex", flexDirection: "column", justifyContent: "center", gap: 7 }}>
+          <div style={{ fontSize: 11, fontWeight: 600, color: MUTE, textTransform: "uppercase", letterSpacing: "0.08em" }}>
+            Next event
+          </div>
+          {row.nextEvent ? (
+            <>
+              <div style={{ fontSize: 17, fontWeight: 600 }}>{row.nextEvent.name || "Upcoming event"}</div>
+              <div style={{ fontSize: 13, color: SUB }}>
+                {[row.nextEvent.venue?.name, nextEventWhen].filter(Boolean).join(" · ")}
+              </div>
+            </>
+          ) : (
+            <div style={{ fontSize: 14, color: SUB }}>No upcoming events on this pass.</div>
+          )}
+          <div style={{ marginTop: 5, fontSize: 12, color: MUTE }}>
+            {row.attendedCount} attended · {Math.max(0, row.eventCount - row.attendedCount)} remaining
+          </div>
+        </div>
+      </>
+    );
+    return href ? (
+      <Link href={href} style={rowStyle}>
+        {body}
+      </Link>
+    ) : (
+      <div style={rowStyle}>{body}</div>
+    );
+  };
+
+  const openPassTransfer = (
+    pass: AccessPassSummary,
+    kind: PassTransfer["kind"],
+  ) =>
+    setPassTransfer({
+      pass,
+      kind,
+      step: "email",
+      email: "",
+      error: "",
+      saving: false,
+    });
+
+  const submitPassTransfer = async (rawEmail?: string) => {
+    if (!passTransfer) return;
+    const normalizedEmail = normalizeEmail(rawEmail ?? passTransfer.email);
+    if (emailSubmitInvalid(normalizedEmail)) {
+      setPassTransfer({
+        ...passTransfer,
+        email: normalizedEmail,
+        error: "Enter a valid email address.",
+      });
+      return;
+    }
+    if (normalizedEmail === normalizeEmail(email)) {
+      setPassTransfer({
+        ...passTransfer,
+        email: normalizedEmail,
+        error: `This ${passTransfer.kind} is already assigned to your email.`,
+      });
+      return;
+    }
+    if (passTransfer.step === "email") {
+      setPassTransfer({
+        ...passTransfer,
+        email: normalizedEmail,
+        step: "confirm",
+        error: "",
+      });
+      return;
+    }
+    if (passTransfer.step !== "confirm" || !passTransfer.pass.accessPassUUID) {
+      return;
+    }
+
+    setPassTransfer({ ...passTransfer, saving: true, error: "" });
+    try {
+      await createTicketTransfer({
+        accessPassId: passTransfer.pass.accessPassUUID,
+        email: normalizedEmail,
+      });
+      const entry: Sent = {
+        id: `access-pass-transfer-${passTransfer.pass.accessPassUUID}`,
+        to: normalizedEmail,
+        title: passTransfer.pass.name,
+        seat: passTransfer.kind === "season pass" ? "1 Season pass" : "1 Access pass",
+        on: "Just now",
+        status: "pending",
+      };
+      setSent([entry, ...sentList]);
+      setPassTransfer({
+        ...passTransfer,
+        email: normalizedEmail,
+        step: "success",
+        saving: false,
+        error: "",
+      });
+    } catch {
+      setPassTransfer({
+        ...passTransfer,
+        saving: false,
+        error: `Unable to transfer this ${passTransfer.kind}. Please try again.`,
+      });
+    }
+  };
+
+  const PackageAccessPassCard = ({ row }: { row: AccessPassSummary }) => {
+    const href = walletAccessPassPath(row.accessPassUUID);
+    const summary = (
+      <>
+      <div style={{ padding: cardPad, display: "flex", alignItems: "center", justifyContent: "space-between", gap: 14, borderBottom: `1px solid ${LINE}` }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 12, minWidth: 0 }}>
+          {row.artwork ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src={row.artwork}
+              alt=""
+              style={{ width: 52, height: 52, borderRadius: 12, objectFit: "contain", background: FIELD, padding: 6, boxSizing: "border-box" }}
+            />
+          ) : null}
+          <div style={{ minWidth: 0 }}>
+            <div style={{ fontSize: 15, fontWeight: 600, lineHeight: 1.25 }}>{row.name}</div>
+            {row.seat && row.seat !== "Ticket" ? (
+              <div style={{ marginTop: 4, fontSize: 12, color: SUB }}>{row.seat}</div>
+            ) : null}
+          </div>
+        </div>
+        {row.checkInCode ? (
+          <div style={{ fontSize: 11, color: MUTE, whiteSpace: "nowrap" }}>
+            No. {row.checkInCode}
+          </div>
+        ) : null}
+      </div>
+
+      <div style={{ padding: cardPad, display: "flex", alignItems: "center", gap: 16 }}>
+        {row.checkInCode ? (
+          <button
+            type="button"
+            aria-label={`Show QR code for ${row.name}`}
+            onClick={(event) => {
+              event.preventDefault();
+              event.stopPropagation();
+              setQrPass({ pass: row, kind: "season pass" });
+            }}
+            style={{ fontFamily: "inherit", flexShrink: 0, background: "#fff", border: `1px solid ${LINE}`, borderRadius: 12, padding: 8, lineHeight: 0, cursor: "pointer" }}
+          >
+            <span role="img" aria-label={`QR code for ${row.name}`} style={{ display: "block" }}>
+              <QRCodeSVG value={row.checkInCode} size={72} />
+            </span>
+          </button>
+        ) : null}
+        <div style={{ minWidth: 0 }}>
+          <div style={{ fontSize: 15, fontWeight: 600 }}>{email.split("@")[0]}</div>
+          <div style={{ marginTop: 5, fontSize: 13, color: SUB }}>
+            Tap the QR code to scan at entry for an included event.
+          </div>
+        </div>
+      </div>
+
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", borderTop: `1px solid ${LINE}` }}>
+        {[
+          {
+            label: "Games included",
+            value: `${row.eventCount} ${row.eventCount === 1 ? "game" : "games"}`,
+          },
+          { label: "Season", value: row.season || "—" },
+          { label: "Status", value: row.status },
+        ].map((item) => (
+          <div key={item.label} style={{ padding: mobile ? "14px 12px" : "16px 18px", borderRight: item.label === "Status" ? "none" : `1px solid ${LINE}` }}>
+            <div style={{ fontSize: 10, fontWeight: 600, color: MUTE, textTransform: "uppercase", letterSpacing: "0.07em" }}>{item.label}</div>
+            <div style={{ marginTop: 5, fontSize: 14, fontWeight: 600, color: item.label === "Status" && item.value === "Active" ? GREEN : INK }}>{item.value}</div>
+          </div>
+        ))}
+      </div>
+      </>
+    );
+    return (
+      <div style={{ ...card, borderRadius: 20, overflow: "hidden" }}>
+        {href ? (
+          <Link
+            href={href}
+            aria-label={`View ${row.name}`}
+            style={{ color: "inherit", textDecoration: "none", display: "block" }}
+          >
+            {summary}
+          </Link>
+        ) : summary}
+        {row.status === "Active" && row.accessPassUUID ? (
+          <div style={{ padding: "12px 16px 16px" }}>
+            <button
+              type="button"
+              onClick={() => openPassTransfer(row, "season pass")}
+              style={{ fontFamily: "inherit", width: "100%", fontSize: 14, fontWeight: 600, color: INK, background: "#fff", border: `1px solid ${LINE}`, borderRadius: 999, padding: "12px 16px", cursor: "pointer" }}
+            >
+              Transfer season pass
+            </button>
+          </div>
+        ) : null}
+      </div>
+    );
+  };
+
+  const AccessPassDetail = () => {
+    if (!routedAccessPass) return null;
+    const pass = routedAccessPass;
+    const foreground = pass.fontColor || "#ffffff";
+    const background = pass.backgroundColor || CRIMSON;
+    const remainingCount = Math.max(
+      0,
+      pass.eventCount - pass.attendedCount,
+    );
+
+    const eventRow = (
+      event: AccessPassSummary["events"][number],
+      highlighted = false,
+    ) => {
+      const when = eventWhenLabel(event, event.venue?.timezone);
+      const eventArt = imageUrl(event.image, "/blocktickets-logo.svg");
+      const eventUUID = String(event.uuid || "").trim();
+      const matchingDetail = eventUUID
+        ? Object.values(eventDetails).find(
+            (detail) => detail.eventUUID === eventUUID,
+          )
+        : undefined;
+      const availability =
+        matchingDetail?.availability ||
+        (isUpcomingEvent(event) ? "available" : "past");
+      const status =
+        availability === "transferred"
+          ? "Transferred"
+          : availability === "past"
+            ? "Attended"
+            : "Upcoming";
+      const clickable =
+        pass.typeLabel === "Season pass" &&
+        availability === "available" &&
+        Boolean(matchingDetail && eventUUID);
+      const content = (
+        <div
+          key={`${highlighted ? "next-" : ""}${event.uuid || event.name}`}
+          style={{
+            ...card,
+            borderRadius: highlighted ? 14 : 0,
+            border: highlighted ? `1px solid ${LINE}` : "none",
+            borderBottom: highlighted ? undefined : `1px solid ${LINE}`,
+            boxShadow: highlighted ? undefined : "none",
+            padding: highlighted ? 14 : "13px 0",
+            display: "flex",
+            alignItems: "center",
+            gap: 12,
+          }}
+        >
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src={eventArt}
+            alt=""
+            style={{ width: 48, height: 48, borderRadius: 10, objectFit: "cover", background: FIELD }}
+          />
+          <div style={{ minWidth: 0, flex: 1 }}>
+            <div style={{ fontSize: 14, fontWeight: 600, lineHeight: 1.25 }}>
+              {event.name || "Event"}
+            </div>
+            <div style={{ marginTop: 4, fontSize: 12, color: SUB }}>
+              {highlighted
+                ? [event.venue?.name, when].filter(Boolean).join(" · ")
+                : when}
+            </div>
+          </div>
+          <span style={{ flexShrink: 0, borderRadius: 7, padding: "5px 8px", fontSize: 10, fontWeight: 600, color: INK, background: ACCENT }}>
+            {highlighted && pass.seat !== "Ticket" ? pass.seat : status}
+          </span>
+        </div>
+      );
+      return clickable ? (
+        <Link
+          key={`${highlighted ? "next-link-" : ""}${event.uuid || event.name}`}
+          href={walletEventTicketsPath(eventUUID)}
+          aria-label={`View ${event.name || "event"}`}
+          style={{ color: "inherit", textDecoration: "none" }}
+        >
+          {content}
+        </Link>
+      ) : content;
+    };
+
+    return (
+      <div style={{ maxWidth: 760, margin: "0 auto", padding: bodyPad, display: "flex", flexDirection: "column", gap: 16 }}>
+        <Link href={walletSectionHref("events")} style={{ ...backBtn, textDecoration: "none" }}>
+          <BackArrow />All tickets
+        </Link>
+        <div style={{ ...card, borderRadius: 22, overflow: "hidden" }}>
+          <div style={{ padding: mobile ? 18 : 24, color: foreground, background }}>
+            <div style={{ display: "flex", alignItems: "flex-start", gap: 14 }}>
+              {pass.artwork ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  src={pass.artwork}
+                  alt=""
+                  style={{ width: mobile ? 58 : 70, height: mobile ? 58 : 70, flexShrink: 0, borderRadius: 12, objectFit: "contain", background: "#fff", padding: 7, boxSizing: "border-box" }}
+                />
+              ) : null}
+              <div style={{ minWidth: 0, flex: 1 }}>
+                <div style={{ fontSize: 10, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.08em", opacity: 0.82 }}>
+                  {pass.typeLabel}
+                </div>
+                <h1 style={{ margin: "4px 0 0", fontSize: mobile ? 20 : 25, fontWeight: 600, letterSpacing: "-0.025em", lineHeight: 1.1 }}>
+                  {pass.name}
+                </h1>
+                {pass.checkInCode ? (
+                  <div style={{ marginTop: 6, fontSize: 12, opacity: 0.82 }}>
+                    Pass #{pass.checkInCode}
+                  </div>
+                ) : null}
+              </div>
+              {pass.checkInCode ? (
+                <button
+                  type="button"
+                  aria-label={`Show QR code for ${pass.name}`}
+                  onClick={() => setQrPass({ pass, kind: "access pass" })}
+                  style={{ flexShrink: 0, borderRadius: 10, padding: 6, lineHeight: 0, border: "1px solid rgba(255,255,255,0.25)", background: "transparent", cursor: "pointer" }}
+                >
+                  <span role="img" aria-label={`QR code for ${pass.name}`} style={{ display: "block" }}>
+                    <QRCodeSVG
+                      value={pass.checkInCode}
+                      size={mobile ? 48 : 58}
+                      fgColor={foreground}
+                      bgColor={background}
+                    />
+                  </span>
+                </button>
+              ) : null}
+            </div>
+            <div style={{ marginTop: 18, paddingTop: 16, borderTop: "1px solid rgba(255,255,255,0.18)", display: "flex", justifyContent: "space-between", gap: 18 }}>
+              <div>
+                <div style={{ fontSize: 10, opacity: 0.72 }}>Events included</div>
+                <div style={{ marginTop: 3, fontSize: 13, fontWeight: 600 }}>
+                  {remainingCount} of {pass.eventCount} remaining
+                </div>
+              </div>
+              {pass.validThrough ? (
+                <div style={{ textAlign: "right" }}>
+                  <div style={{ fontSize: 10, opacity: 0.72 }}>Valid through</div>
+                  <div style={{ marginTop: 3, fontSize: 13, fontWeight: 600 }}>
+                    {pass.validThrough}
+                  </div>
+                </div>
+              ) : null}
+            </div>
+          </div>
+
+          <div style={{ padding: mobile ? 18 : 24 }}>
+            {pass.nextEvent ? (
+              <section>
+                <div style={{ ...eyebrow, marginBottom: 9 }}>Next up</div>
+                {eventRow(pass.nextEvent, true)}
+              </section>
+            ) : null}
+            {pass.events.length > 0 ? (
+              <section style={{ marginTop: pass.nextEvent ? 22 : 0 }}>
+                <div style={{ ...eyebrow, marginBottom: 2 }}>All events</div>
+                {pass.events.map((event) => eventRow(event))}
+              </section>
+            ) : (
+              <div style={{ fontSize: 14, color: SUB }}>
+                No events are currently attached to this pass.
+              </div>
+            )}
+            {pass.status === "Active" && pass.accessPassUUID ? (
+              <button
+                type="button"
+                onClick={() => openPassTransfer(pass, "access pass")}
+                style={{ fontFamily: "inherit", width: "100%", marginTop: 22, fontSize: 14, fontWeight: 600, color: INK, background: "#fff", border: `1px solid ${LINE}`, borderRadius: 999, padding: "12px 16px", cursor: "pointer" }}
+              >
+                Transfer access pass
+              </button>
+            ) : null}
+          </div>
+        </div>
+      </div>
+    );
+  };
+
   const Events = () => (
     <div style={{ maxWidth: 1100, margin: "0 auto", padding: bodyPad, display: "flex", flexDirection: "column", gap: 18 }}>
       <div style={{ display: "flex", alignItems: "flex-end", justifyContent: "space-between", gap: 16 }}>
@@ -1297,7 +2127,7 @@ export default function SeasonTickets({
 
       {!eventsChecked || eventsLoading ? (
         <TicketsLoader />
-      ) : isHolder || upcomingEvents.length > 0 || seasonPackages.length > 0 || flexPacks.length > 0 ? (
+      ) : isHolder || upcomingEvents.length > 0 || seasonPackages.length > 0 || flexPacks.length > 0 || accessPasses.length > 0 ? (
         <>
           <div className="st-noscroll" style={{ display: "flex", gap: 6, overflowX: "auto", paddingBottom: 2 }}>
             {tabDefs.map((t) => (
@@ -1327,12 +2157,12 @@ export default function SeasonTickets({
                 {showDemoSchedule ? <DemoSeasonPackageRow /> : null}
                 {seasonPackages.length === 0 && !showDemoSchedule ? (
                   <div style={{ ...card, borderRadius: 20, padding: "28px 22px", textAlign: "center" }}>
-                    <div style={{ fontSize: 15, fontWeight: 600 }}>No season tickets yet</div>
-                    <div style={{ marginTop: 6, fontSize: 13, color: SUB }}>Season packages you buy will show up here.</div>
+                    <div style={{ fontSize: 15, fontWeight: 600 }}>No packages yet</div>
+                    <div style={{ marginTop: 6, fontSize: 13, color: SUB }}>Ticket packages you buy or receive will show up here.</div>
                   </div>
                 ) : null}
               </>
-            ) : (
+            ) : tab === "flex" ? (
               <>
                 {flexPacks.map((row) => (
                   <FlexPackRow key={row.key} row={row} />
@@ -1357,6 +2187,18 @@ export default function SeasonTickets({
                   <div style={{ fontSize: 15, fontWeight: 600 }}>No flex packs yet</div>
                   <div style={{ marginTop: 6, fontSize: 13, color: SUB }}>Flex pack vouchers you buy will show up here.</div>
                 </div>
+                ) : null}
+              </>
+            ) : (
+              <>
+                {accessPasses.map((row) => (
+                  <AccessPassRow key={row.key} row={row} />
+                ))}
+                {accessPasses.length === 0 ? (
+                  <div style={{ ...card, borderRadius: 20, padding: "28px 22px", textAlign: "center" }}>
+                    <div style={{ fontSize: 15, fontWeight: 600 }}>No access passes yet</div>
+                    <div style={{ marginTop: 6, fontSize: 13, color: SUB }}>Active season and all-access passes will show up here.</div>
+                  </div>
                 ) : null}
               </>
               )}
@@ -1405,7 +2247,15 @@ export default function SeasonTickets({
         { k: "Total paid", v: formatCartOrderTotal(ev.cartTotal) },
         { k: "Delivery", v: "Mobile entry" },
       ];
-  const openTransfer = () => { setTf({ step: 1, sel: [], email: "", evId: activeEvId }); setModal(null); };
+  const openTransfer = () => {
+    setTf({ step: 1, sel: [], email: "", evId: activeEvId });
+    setTfEmailErr(null);
+    setTfError("");
+    setModal(null);
+  };
+  const canTransferEvent =
+    ev.transfersEnabled !== false &&
+    ev.tickets.some((ticket) => ticket.id != null);
 
   /* When the event screen owns the URL, leaving it has to pop back to tickets. */
   const EventBackControl = (
@@ -1414,8 +2264,16 @@ export default function SeasonTickets({
     label?: string,
     preferSeasonPackage = true,
   ) =>
-    eventUUID || flexPackUUID || routedEventUUID || routedFlexPackUUID ? (
-      <Link href={walletSectionHref("events")} aria-label={label} style={{ textDecoration: "none", ...style }}>
+    eventUUID || flexPackUUID || routedEventUUID || routedFlexPackUUID || routedPackageUUID ? (
+      <Link
+        href={
+          routedPackageUUID && routedEventUUID && preferSeasonPackage
+            ? walletPackagePath(routedPackageUUID)
+            : walletSectionHref("events")
+        }
+        aria-label={label}
+        style={{ textDecoration: "none", ...style }}
+      >
         {children}
       </Link>
     ) : (
@@ -1485,21 +2343,22 @@ export default function SeasonTickets({
   };
 
   const EventHeroBanner = ({
-    aspectRatio = mobile ? "2.1 / 1" : "3.4 / 1",
+    className,
     logoSize = mobile ? 88 : 120,
     compactTextSize = mobile ? 20 : 26,
     fullTextSize = mobile ? 24 : 40,
   }: {
-    aspectRatio?: string;
+    /** Carries the banner's responsive aspect ratio. */
+    className?: string;
     logoSize?: number;
     compactTextSize?: number;
     fullTextSize?: number;
   }) => (
     <div
+      className={className}
       style={{
         position: "relative",
         width: "100%",
-        aspectRatio,
         overflow: "hidden",
         background:
           eventPosterSrc && !showMatchupCards
@@ -1513,15 +2372,8 @@ export default function SeasonTickets({
 
   const AttractionCards = () => {
     if (!attractionCards.length) return null;
-    const multi = attractionCards.length >= 2;
     return (
-      <div
-        style={{
-          display: "grid",
-          gridTemplateColumns: mobile || !multi ? "1fr" : "1fr 1fr",
-          gap: 10,
-        }}
-      >
+      <div className="st-ev-teams">
         {attractionCards.map((tm) => (
           <div
             key={`${tm.role}-${tm.name}`}
@@ -1626,26 +2478,29 @@ export default function SeasonTickets({
       </div>
 
       {/* transfer action — flows under the card, no dead space */}
-      <div style={{ display: "flex", gap: 10, padding: "0 4px" }}>
-        <button onClick={openTransfer} style={{ fontFamily: "inherit", flex: "1 1 0", minWidth: 0, minHeight: 50, fontSize: 15, fontWeight: 600, color: INK, background: "#fff", border: "1px solid rgba(5,27,53,0.14)", borderRadius: 14, padding: "12px 6px", cursor: "pointer", whiteSpace: "nowrap" }}>Transfer</button>
-      </div>
+      {canTransferEvent ? (
+        <div style={{ display: "flex", gap: 10, padding: "0 4px" }}>
+          <button onClick={openTransfer} style={{ fontFamily: "inherit", flex: "1 1 0", minWidth: 0, minHeight: 50, fontSize: 15, fontWeight: 600, color: INK, background: "#fff", border: "1px solid rgba(5,27,53,0.14)", borderRadius: 14, padding: "12px 6px", cursor: "pointer", whiteSpace: "nowrap" }}>Transfer</button>
+        </div>
+      ) : null}
     </div>
   );
 
-  const EventDetail = () => (mobile ? MobileEvent() : DesktopEvent());
+  const EventDetail = () =>
+    mobileTicketView ? MobileEvent() : DesktopEvent();
 
   const DesktopEvent = () => (
-    <div style={{ maxWidth: 1100, margin: "0 auto", boxSizing: "border-box", padding: mobile ? "24px 16px 128px" : "40px 32px 96px", display: "flex", flexDirection: "column", gap: 18 }}>
+    <div className="st-ev" style={{ maxWidth: 1100, margin: "0 auto", boxSizing: "border-box", display: "flex", flexDirection: "column", gap: 18 }}>
       {EventBackControl(backBtn, <><BackArrow />All tickets</>)}
       <div style={{ overflow: "hidden", borderRadius: 20, ...card, boxShadow: "0 1px 2px rgba(5,27,53,0.05), 0 14px 30px -18px rgba(5,27,53,0.40)" }}>
-        <EventHeroBanner />
+        <EventHeroBanner className="st-ev-hero" />
       </div>
 
-      <div style={{ display: "grid", gridTemplateColumns: mobile ? "1fr" : "1fr 320px", gap: mobile ? 16 : 40, alignItems: "start" }}>
+      <div className="st-ev-grid">
         <div style={{ minWidth: 0, display: "flex", flexDirection: "column", gap: 12 }}>
           <div style={{ ...card, borderRadius: 20, padding: cardPad, display: "flex", flexDirection: "column", gap: 12 }}>
             <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-              <h1 style={{ margin: 0, fontSize: mobile ? 22 : 30, fontWeight: 600, letterSpacing: "-0.03em", lineHeight: 1.1 }}>{ev.title}</h1>
+              <h1 className="st-ev-title" style={{ margin: 0, fontWeight: 600, letterSpacing: "-0.03em", lineHeight: 1.1 }}>{ev.title}</h1>
               <div style={{ display: "flex", flexWrap: "wrap", gap: "4px 20px", fontSize: 14, color: SUB }}>
                 <span style={{ fontWeight: 600, color: INK }}>{ev.when}</span><span>Doors {ev.doors}</span>
               </div>
@@ -1662,7 +2517,7 @@ export default function SeasonTickets({
 
           <div style={{ ...card, borderRadius: 20, overflow: "hidden" }}>
             {ticketRows.map((t, i) => (
-              <div key={i} style={{ padding: cardPad, display: "flex", alignItems: "center", gap: 16, borderBottom: "1px solid rgba(5,27,53,0.07)", flexWrap: "wrap" }}>
+              <div key={i} className="st-ev-seat" style={{ padding: cardPad, borderBottom: "1px solid rgba(5,27,53,0.07)" }}>
                 <div style={{ width: 72, height: 72, borderRadius: 14, background: FIELD, border: "1px solid rgba(5,27,53,0.08)", flexShrink: 0, overflow: "hidden" }}>
                   {/* eslint-disable-next-line @next/next/no-img-element */}
                   <img src={SEATMAP_THUMB} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
@@ -1671,7 +2526,7 @@ export default function SeasonTickets({
                   <span style={{ alignSelf: "flex-start", fontSize: 11, fontWeight: 600, color: INK, background: SOFT, borderRadius: 999, padding: "4px 10px" }}>{ticketBadge}</span>
                   <div style={{ fontSize: 17, fontWeight: 600, letterSpacing: "-0.015em" }}>{t.seat}</div>
                 </div>
-                <div style={{ display: "flex", gap: 8, flexShrink: 0 }}>
+                <div className="st-ev-seat-actions">
                   <button style={{ ...ghostBtn, fontSize: 13, padding: "11px 18px" }}>Print PDF</button>
                   <button onClick={() => { setDetail(t); setModal("details"); }} style={{ fontFamily: "inherit", fontSize: 13, fontWeight: 600, color: INK, background: "#f1f3f8", border: "none", borderRadius: 999, padding: "11px 18px", cursor: "pointer" }}>Details</button>
                 </div>
@@ -1684,10 +2539,12 @@ export default function SeasonTickets({
           </div>
         </div>
 
-        <aside style={{ minWidth: 0, display: "flex", flexDirection: "column", gap: 12, position: mobile ? "static" : "sticky", top: 96 }}>
+        <aside className="st-ev-aside" style={{ minWidth: 0, display: "flex", flexDirection: "column", gap: 12 }}>
           <div style={{ ...card, borderRadius: 20, padding: cardPad, display: "flex", flexDirection: "column", gap: 10 }}>
             <div style={{ ...eyebrow, paddingBottom: 4 }}>Manage</div>
-            <button onClick={openTransfer} style={{ fontFamily: "inherit", width: "100%", textAlign: "left", fontSize: 14, fontWeight: 600, color: INK, background: "#fff", border: "1px solid rgba(5,27,53,0.14)", borderRadius: 12, padding: "13px 16px", cursor: "pointer" }}>Transfer</button>
+            {canTransferEvent ? (
+              <button onClick={openTransfer} style={{ fontFamily: "inherit", width: "100%", textAlign: "left", fontSize: 14, fontWeight: 600, color: INK, background: "#fff", border: "1px solid rgba(5,27,53,0.14)", borderRadius: 12, padding: "13px 16px", cursor: "pointer" }}>Transfer</button>
+            ) : null}
             <button style={{ fontFamily: "inherit", width: "100%", textAlign: "left", fontSize: 14, fontWeight: 600, color: INK, background: "#fff", border: "1px solid rgba(5,27,53,0.14)", borderRadius: 12, padding: "13px 16px", cursor: "pointer" }}>Print all</button>
           </div>
           <div style={{ ...card, borderRadius: 20, padding: cardPad, display: "flex", flexDirection: "column", gap: 8 }}>
@@ -1767,17 +2624,43 @@ export default function SeasonTickets({
     const eventCount = isDemo
       ? 6
       : selectedSeasonPackage?.eventCount ?? seasonPackageGames.length;
+    const gameTicketCount = seasonPackageGames.reduce(
+      (count, row) => count + row.ticketCount,
+      0,
+    );
+    const eventsBody = isDemo ? (
+      <DemoScheduleRows />
+    ) : seasonPackageGames.length > 0 ? (
+      seasonPackageGames.map((row) => (
+        <UpcomingEventRow
+          key={row.key}
+          row={row}
+          packageUUID={selectedSeasonPackage?.packageUUID}
+        />
+      ))
+    ) : (
+      <div style={{ ...card, borderRadius: 20, padding: "28px 22px", textAlign: "center" }}>
+        <div style={{ fontSize: 15, fontWeight: 600 }}>No upcoming games</div>
+        <div style={{ marginTop: 6, fontSize: 13, color: SUB }}>Games in this package will show up here when they are available.</div>
+      </div>
+    );
     return (
       <div style={{ maxWidth: 1100, margin: "0 auto", padding: bodyPad, display: "flex", flexDirection: "column", gap: 16 }}>
-        <button
-          onClick={() => {
-            setTab("season");
-            setScreen("events");
-          }}
-          style={backBtn}
-        >
-          <BackArrow />All tickets
-        </button>
+        {routedPackageUUID ? (
+          <Link href={walletSectionHref("events")} style={{ ...backBtn, textDecoration: "none" }}>
+            <BackArrow />All tickets
+          </Link>
+        ) : (
+          <button
+            onClick={() => {
+              setTab("season");
+              setScreen("events");
+            }}
+            style={backBtn}
+          >
+            <BackArrow />All tickets
+          </button>
+        )}
         <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
           <div style={eyebrow}>Season tickets</div>
           <h1 style={{ margin: 0, fontSize: mobile ? 22 : 28, fontWeight: 600, letterSpacing: "-0.025em", lineHeight: 1.12 }}>{title}</h1>
@@ -1787,17 +2670,40 @@ export default function SeasonTickets({
           </div>
         </div>
         <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-          {isDemo ? (
-            <DemoScheduleRows />
-          ) : seasonPackageGames.length > 0 ? (
-            seasonPackageGames.map((row) => (
-              <UpcomingEventRow key={row.key} row={row} />
-            ))
+          {selectedPackagePasses.length > 0 ? (
+            <>
+              <div
+                role="tablist"
+                aria-label="Package ticket views"
+                style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6 }}
+              >
+                <button
+                  type="button"
+                  role="tab"
+                  aria-selected={packageView === "pass"}
+                  onClick={() => setPackageView("pass")}
+                  style={chip(packageView === "pass")}
+                >
+                  Season pass
+                </button>
+                <button
+                  type="button"
+                  role="tab"
+                  aria-selected={packageView === "events"}
+                  onClick={() => setPackageView("events")}
+                  style={chip(packageView === "events")}
+                >
+                  Game tickets ({gameTicketCount || eventCount})
+                </button>
+              </div>
+              {packageView === "pass"
+                ? selectedPackagePasses.map((row) => (
+                    <PackageAccessPassCard key={row.key} row={row} />
+                  ))
+                : eventsBody}
+            </>
           ) : (
-            <div style={{ ...card, borderRadius: 20, padding: "28px 22px", textAlign: "center" }}>
-              <div style={{ fontSize: 15, fontWeight: 600 }}>No upcoming games</div>
-              <div style={{ marginTop: 6, fontSize: 13, color: SUB }}>Games in this package will show up here when they are available.</div>
-            </div>
+            eventsBody
           )}
         </div>
       </div>
@@ -1894,6 +2800,77 @@ export default function SeasonTickets({
             </div>
           );
         })}
+      </div>
+    </div>
+  );
+
+  /* ---------- resale listings ---------- */
+  const saleEmpty = {
+    active: {
+      title: "No active listings",
+      body: "When you list tickets for resale, they will show up here.",
+    },
+    sold: {
+      title: "Nothing sold yet",
+      body: "Listings that sell will move here.",
+    },
+    expired: {
+      title: "No expired listings",
+      body: "Listings that end without a sale will move here.",
+    },
+  } as const;
+  const Resale = () => (
+    <div style={{ maxWidth: 1100, margin: "0 auto", padding: bodyPad, display: "flex", flexDirection: "column", gap: 18 }}>
+      <h1 style={{ margin: 0, fontSize: h1Size, fontWeight: 600, letterSpacing: "-0.03em", lineHeight: 1 }}>Listings</h1>
+      <div
+        role="tablist"
+        aria-label="Listing status"
+        style={{
+          display: "inline-flex",
+          alignSelf: "flex-start",
+          alignItems: "center",
+          background: INK,
+          border: "1px solid rgba(255,255,255,0.10)",
+          borderRadius: 999,
+          padding: 4,
+        }}
+      >
+        {([
+          { id: "active" as const, label: "Active" },
+          { id: "sold" as const, label: "Sold" },
+          { id: "expired" as const, label: "Expired" },
+        ]).map((t) => {
+          const on = saleTab === t.id;
+          return (
+            <button
+              key={t.id}
+              type="button"
+              role="tab"
+              aria-selected={on}
+              onClick={() => setSaleTab(t.id)}
+              style={{
+                fontFamily: "inherit",
+                fontSize: 14,
+                fontWeight: 600,
+                color: on ? INK : "rgba(184, 198, 220, 0.92)",
+                background: on ? ACCENT : "transparent",
+                border: "none",
+                borderRadius: 999,
+                padding: "10px 18px",
+                minWidth: 96,
+                minHeight: 40,
+                cursor: "pointer",
+                whiteSpace: "nowrap",
+              }}
+            >
+              {t.label}
+            </button>
+          );
+        })}
+      </div>
+      <div style={{ background: "#fff", border: "1px dashed rgba(5,27,53,0.16)", borderRadius: 20, padding: "34px 22px", textAlign: "center", display: "flex", flexDirection: "column", gap: 5 }}>
+        <div style={{ fontSize: 15, fontWeight: 600 }}>{saleEmpty[saleTab].title}</div>
+        <div style={{ fontSize: 13, color: SUB }}>{saleEmpty[saleTab].body}</div>
       </div>
     </div>
   );
@@ -2039,11 +3016,84 @@ export default function SeasonTickets({
   /* ---------- modals ---------- */
   const overlay: React.CSSProperties = { position: "fixed", inset: 0, zIndex: 80, background: "rgba(5,27,53,0.55)", display: "flex", alignItems: "center", justifyContent: "center", padding: mobile ? 18 : 32, boxSizing: "border-box" };
   const sheet: React.CSSProperties = { width: "100%", maxWidth: 460, background: "#fff", borderRadius: 26, padding: 22, boxSizing: "border-box", display: "flex", flexDirection: "column", gap: 18, boxShadow: "0 30px 70px -30px rgba(5,27,53,0.6)" };
-  const closeX = (onClose: () => void) => (
-    <button onClick={onClose} aria-label="Close" style={{ fontFamily: "inherit", flexShrink: 0, width: 34, height: 34, borderRadius: 999, background: "#f1f3f8", border: "none", color: FAINT, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}>
+  const closeX = (onClose: () => void, label = "Close") => (
+    <button onClick={onClose} aria-label={label} style={{ fontFamily: "inherit", flexShrink: 0, width: 34, height: 34, borderRadius: 999, background: "#f1f3f8", border: "none", color: FAINT, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}>
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" style={{ width: 16, height: 16 }}><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
     </button>
   );
+
+  const closeQrPass = () => {
+    setQrPass(null);
+    setPassWalletError("");
+  };
+
+  const addQrPassToPhoneWallet = async () => {
+    if (!qrPass || !passWallet) return;
+    setPassWalletSaving(true);
+    setPassWalletError("");
+    const error = await addAccessPassToPhoneWallet(qrPass.pass, passWallet);
+    setPassWalletSaving(false);
+    if (error) setPassWalletError(error);
+    else flashToast("Pass sent to your phone wallet");
+  };
+
+  const AccessPassQrModal = () => {
+    if (!qrPass?.pass.checkInCode) return null;
+    const { pass, kind } = qrPass;
+    const seatLine = pass.seat && pass.seat !== "Ticket" ? pass.seat : "";
+    const title =
+      kind === "season pass" && seatLine ? `${pass.name} · ${seatLine}` : pass.name;
+    return (
+      <div onClick={closeQrPass} style={overlay}>
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="access-pass-qr-title"
+          onClick={(event) => event.stopPropagation()}
+          style={{ ...sheet, maxWidth: 500, padding: 0, gap: 0, overflow: "hidden" }}
+        >
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, padding: "18px 22px", borderBottom: `1px solid ${LINE}` }}>
+            <h2 id="access-pass-qr-title" style={{ margin: 0, fontSize: 16, fontWeight: 600, color: INK, letterSpacing: "-0.01em" }}>
+              {title}
+            </h2>
+            {closeX(closeQrPass, "Close QR code")}
+          </div>
+          <div style={{ padding: mobile ? "26px 20px 30px" : "28px 28px 34px", display: "flex", flexDirection: "column", alignItems: "center", gap: 18 }}>
+            <div role="img" aria-label={`Enlarged QR code for ${pass.name}`} style={{ padding: 10, background: "#fff", lineHeight: 0 }}>
+              <QRCodeSVG value={pass.checkInCode} size={mobile ? 220 : 256} fgColor={INK} />
+            </div>
+            <p style={{ margin: 0, color: SUB, fontSize: 15, lineHeight: 1.5, textAlign: "center" }}>
+              Show this code at entry for any included event.
+            </p>
+            {passWallet ? (
+              <div style={{ width: "100%", display: "flex", flexDirection: "column", alignItems: "center", gap: 10 }}>
+                <div style={eyebrow}>Add this pass to your phone wallet</div>
+                <button
+                  type="button"
+                  onClick={addQrPassToPhoneWallet}
+                  disabled={passWalletSaving}
+                  style={{ fontFamily: "inherit", width: "100%", display: "flex", alignItems: "center", justifyContent: "center", gap: 10, minHeight: 50, fontSize: 15, fontWeight: 600, color: "#fff", background: INK, border: "none", borderRadius: 999, cursor: passWalletSaving ? "default" : "pointer", opacity: passWalletSaving ? 0.7 : 1 }}
+                >
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" style={{ width: 18, height: 18 }}><rect x="2" y="6" width="20" height="13" rx="3" /><path d="M2 11h20" /></svg>
+                  {passWalletSaving ? "Adding…" : phoneWalletLabel(passWallet)}
+                </button>
+                {passWalletError ? (
+                  <div role="alert" style={{ fontSize: 13, lineHeight: 1.5, color: DANGER, textAlign: "center" }}>
+                    {passWalletError}
+                  </div>
+                ) : null}
+              </div>
+            ) : null}
+          </div>
+          <div style={{ padding: "18px 24px 24px", borderTop: `1px solid ${LINE}`, display: "flex", justifyContent: "flex-end" }}>
+            <button type="button" onClick={closeQrPass} style={{ fontFamily: "inherit", fontSize: 15, fontWeight: 600, color: INK, background: ACCENT, border: "none", borderRadius: 999, padding: "12px 26px", minHeight: 44, cursor: "pointer" }}>
+              Close
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  };
 
   const detailRows = [
     { k: "Ticket", v: detail?.seat || "" },
@@ -2061,7 +3111,7 @@ export default function SeasonTickets({
           <h2 style={{ margin: 0, fontSize: 22, fontWeight: 600, letterSpacing: "-0.02em" }}>Ticket details</h2>
           {closeX(() => setModal(null))}
         </div>
-        {mobile && detail?.code && (
+        {mobileTicketView && detail?.code && (
           <div style={{ alignSelf: "center", width: 180, height: 180, borderRadius: 14, overflow: "hidden", border: `1px solid ${LINE}` }}>
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img src={qr(detail.code)} alt="Ticket QR" style={{ width: "100%", height: "100%", display: "block" }} />
@@ -2106,7 +3156,7 @@ export default function SeasonTickets({
         >
         <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
           <label style={{ fontSize: 12, fontWeight: 600, color: FAINT }}>{field?.label}</label>
-          <input name="fieldValue" value={fieldValue} onChange={(e) => setFieldValue(e.target.value)} style={{ fontFamily: "inherit", width: "100%", boxSizing: "border-box", fontSize: 16, color: INK, background: FIELD, border: "1px solid rgba(5,27,53,0.12)", borderRadius: 14, padding: "14px 16px", outline: "none" }} />
+          <input ref={autoFocusField} name="fieldValue" value={fieldValue} onChange={(e) => setFieldValue(e.target.value)} style={{ fontFamily: "inherit", width: "100%", boxSizing: "border-box", fontSize: 16, color: INK, background: FIELD, border: "1px solid rgba(5,27,53,0.12)", borderRadius: 14, padding: "14px 16px", outline: "none" }} />
           <div style={{ fontSize: 12, lineHeight: 1.5, color: MUTE }}>{field?.help}</div>
         </div>
         <div style={{ display: "flex", gap: 8 }}>
@@ -2120,31 +3170,93 @@ export default function SeasonTickets({
 
   /* transfer wizard */
   const tfEv = tf ? (events[tf.evId] || ev) : ev;
-  const tfSeatNos = (tfEv?.tickets || []).map((t) => (t.seat.match(/Seat (\d+)/) || [])[1] || "1");
+  const tfTickets = (tfEv?.tickets || [])
+    .map((ticket, index) => ({
+      ticket,
+      key: String(ticket.id ?? ticket.code ?? index),
+      seatNo:
+        (ticket.seat.match(/Seat\s+([^·]+)/i) || [])[1]?.trim() ||
+        ticket.seat,
+    }))
+    .filter(({ ticket }) => ticket.id != null);
   const tfRowLabel = tfEv?.tickets?.[0] ? tfEv.tickets[0].seat.split(" · ").slice(0, 2).join(" · ") : "";
   const tfStep = tf?.step || 1;
   const tfSel = tf?.sel || [];
-  const tfCanNext = tfStep === 1 ? tfSel.length > 0 : true;
-  const doTfPrimary = (rawEmail?: string) => {
+  const tfSelectedTickets = tfTickets.filter(({ key }) => tfSel.includes(key));
+  const tfCanNext =
+    !tfSaving &&
+    (tfStep === 1
+      ? tfSelectedTickets.length > 0
+      : tfStep === 2
+        ? Boolean(normalizeEmail(tf?.email))
+        : true);
+  const doTfPrimary = async (rawEmail?: string) => {
     if (!tf) return;
-    if (tfStep === 1 && tfSel.length === 0) return;
+    if (tfStep === 1 && tfSelectedTickets.length === 0) return;
     if (tfStep === 4) { setTf(null); return; }
     if (tfStep === 3) {
-      const entry: Sent = { id: "t" + Date.now(), to: tf.email, title: tfEv?.title || "", seat: tfRowLabel + " · Seat " + tfSel.join(", "), on: new Date().toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }), status: "pending" };
-      setSent([entry, ...sentList]);
-      setTf({ ...tf, step: 4 });
+      setTfSaving(true);
+      setTfError("");
+      try {
+        await createTicketTransfer({
+          email: tf.email,
+          orderId: tfEv?.orderRecordId ?? tfEv?.cartId,
+          event: tfEv?.event,
+          ticketIds: tfSelectedTickets.map(({ ticket }) => ticket.id),
+          eventUUID: tfEv?.eventUUID,
+        });
+        const entry: Sent = {
+          id: `transfer-${tfSelectedTickets.map(({ key }) => key).join("-")}`,
+          to: tf.email,
+          title: tfEv?.title || "",
+          seat: tfSelectedTickets.map(({ ticket }) => ticket.seat).join(", "),
+          on: "Just now",
+          status: "pending",
+        };
+        setSent([entry, ...sentList]);
+        setTf({ ...tf, step: 4 });
+
+        try {
+          const res = await getMyEvents();
+          const orders = unwrapList<OrderLike>(res.data);
+          const holderEmail = String(getSession()?.user?.email || email);
+          const details = buildOrderEventDetails(orders, holderEmail);
+          const packageDetails = buildSeasonPackageEventDetails(
+            orders,
+            holderEmail,
+          );
+          setEventDetails({ ...details, ...packageDetails });
+          setUpcomingEvents(summarizeEventDetails(details));
+          setSeasonPackages(buildSeasonPackageSummaries(orders));
+          setFlexPacks(buildFlexPackSummaries(orders));
+        } catch {
+          // The transfer succeeded; stale wallet data can refresh next visit.
+        }
+      } catch {
+        setTfError("We couldn't transfer those tickets. Please try again.");
+      } finally {
+        setTfSaving(false);
+      }
       return;
     }
     if (tfStep === 2) {
       const next = normalizeEmail(rawEmail ?? tf.email);
       if (emailSubmitInvalid(next)) {
-        setTfEmailErr(true);
+        setTfEmailErr(emailSubmitError(next));
         return;
       }
-      setTfEmailErr(false);
+      if (next === normalizeEmail(email)) {
+        setTfEmailErr(null);
+        setTfError("You cannot transfer tickets to yourself.");
+        return;
+      }
+      setTfEmailErr(null);
+      setTfError("");
       setTf({ ...tf, email: next, step: 3 });
       return;
     }
+    setTfError("");
+    setTfEmailErr(null);
     setTf({ ...tf, step: tfStep + 1 });
   };
   const TransferModal = () => (
@@ -2160,15 +3272,15 @@ export default function SeasonTickets({
             <div style={{ fontSize: 17, fontWeight: 600, letterSpacing: "-0.015em" }}>Select tickets to transfer</div>
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
               <div style={{ fontSize: 14, fontWeight: 600, color: FAINT }}>{tfRowLabel}</div>
-              <div style={{ fontSize: 13, fontWeight: 600, color: MUTE }}>{tfSeatNos.length} {tfSeatNos.length === 1 ? "ticket" : "tickets"}</div>
+              <div style={{ fontSize: 13, fontWeight: 600, color: MUTE }}>{tfTickets.length} {tfTickets.length === 1 ? "ticket" : "tickets"}</div>
             </div>
             <div style={{ display: "flex", flexWrap: "wrap", gap: 10 }}>
-              {tfSeatNos.map((no) => {
-                const picked = tfSel.includes(no);
+              {tfTickets.map(({ key, seatNo }) => {
+                const picked = tfSel.includes(key);
                 return (
-                  <button key={no} onClick={() => setTf({ ...tf!, sel: picked ? tfSel.filter((x) => x !== no) : [...tfSel, no] })} style={{ fontFamily: "inherit", width: 92, display: "flex", flexDirection: "column", alignItems: "center", gap: 2, background: picked ? ACCENT : FIELD, color: INK, border: `1px solid ${picked ? ACCENT : "rgba(5,27,53,0.10)"}`, borderRadius: 16, padding: "16px 10px", cursor: "pointer" }}>
+                  <button key={key} type="button" aria-pressed={picked} aria-label={`Seat ${seatNo}`} onClick={() => setTf({ ...tf!, sel: picked ? tfSel.filter((x) => x !== key) : [...tfSel, key] })} style={{ fontFamily: "inherit", width: 92, display: "flex", flexDirection: "column", alignItems: "center", gap: 2, background: picked ? ACCENT : FIELD, color: INK, border: `1px solid ${picked ? ACCENT : "rgba(5,27,53,0.10)"}`, borderRadius: 16, padding: "16px 10px", cursor: "pointer" }}>
                     <span style={{ fontSize: 12, fontWeight: 500, color: picked ? "rgba(255,255,255,0.72)" : MUTE }}>Seat</span>
-                    <span style={{ fontSize: 22, fontWeight: 600, letterSpacing: "-0.02em" }}>{no}</span>
+                    <span style={{ fontSize: 22, fontWeight: 600, letterSpacing: "-0.02em" }}>{seatNo}</span>
                   </button>
                 );
               })}
@@ -2188,27 +3300,31 @@ export default function SeasonTickets({
             <div style={{ fontSize: 17, fontWeight: 600, letterSpacing: "-0.015em" }}>Enter the recipient&apos;s email address</div>
             <p style={{ margin: 0, fontSize: 14, lineHeight: 1.55, color: SUB }}>They&apos;ll get an email saying you sent them a ticket. It stays in your account until they claim it.</p>
             <EmailField
+              autoFocus
               id="season-xfer-email"
               name="email"
               placeholder="name@email.com"
               value={tf?.email || ""}
-              invalid={tfEmailErr}
+              error={tfEmailErr}
               onChange={(value) => {
                 setTf({ ...tf!, email: value });
-                setTfEmailErr(false);
+                setTfEmailErr(null);
+                setTfError("");
               }}
-              onBlur={(value) => setTfEmailErr(emailBlurInvalid(value))}
+              onBlur={(value) =>
+                setTfEmailErr(emailBlurInvalid(value) ? "invalid" : null)
+              }
             />
           </form>
         )}
         {tfStep === 3 && (
           <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-            <div style={{ fontSize: 17, fontWeight: 600, letterSpacing: "-0.015em" }}>You are about to transfer {tfSel.length} {tfSel.length === 1 ? "ticket" : "tickets"}</div>
+            <div style={{ fontSize: 17, fontWeight: 600, letterSpacing: "-0.015em" }}>You are about to transfer {tfSelectedTickets.length} {tfSelectedTickets.length === 1 ? "ticket" : "tickets"}</div>
             <div style={{ display: "flex", flexWrap: "wrap", gap: 10 }}>
-              {tfSel.map((no) => (
-                <div key={no} style={{ width: 92, display: "flex", flexDirection: "column", alignItems: "center", gap: 2, background: ACCENT, color: INK, borderRadius: 16, padding: "16px 10px" }}>
+              {tfSelectedTickets.map(({ key, seatNo }) => (
+                <div key={key} style={{ width: 92, display: "flex", flexDirection: "column", alignItems: "center", gap: 2, background: ACCENT, color: INK, borderRadius: 16, padding: "16px 10px" }}>
                   <span style={{ fontSize: 12, fontWeight: 500, color: "rgba(255,255,255,0.72)" }}>Seat</span>
-                  <span style={{ fontSize: 22, fontWeight: 600, letterSpacing: "-0.02em" }}>{no}</span>
+                  <span style={{ fontSize: 22, fontWeight: 600, letterSpacing: "-0.02em" }}>{seatNo}</span>
                 </div>
               ))}
             </div>
@@ -2218,6 +3334,11 @@ export default function SeasonTickets({
             </div>
           </div>
         )}
+        {tfError ? (
+          <div role="alert" style={{ fontSize: 13, color: DANGER }}>
+            {tfError}
+          </div>
+        ) : null}
         {tfStep === 4 && (
           <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 14, padding: "6px 0 2px" }}>
             <div style={{ width: 78, height: 78, borderRadius: 999, background: GREEN, display: "flex", alignItems: "center", justifyContent: "center" }}>
@@ -2230,7 +3351,7 @@ export default function SeasonTickets({
 
         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
           {(tfStep === 2 || tfStep === 3) && (
-            <button type="button" onClick={() => setTf({ ...tf!, step: tfStep - 1 })} style={{ fontFamily: "inherit", flexShrink: 0, display: "flex", alignItems: "center", gap: 8, fontSize: 15, fontWeight: 600, color: INK, background: "#fff", border: "none", padding: "14px 12px", minHeight: 48, cursor: "pointer" }}><BackArrow />Back</button>
+            <button type="button" onClick={() => { setTfEmailErr(null); setTfError(""); setTf({ ...tf!, step: tfStep - 1 }); }} style={{ fontFamily: "inherit", flexShrink: 0, display: "flex", alignItems: "center", gap: 8, fontSize: 15, fontWeight: 600, color: INK, background: "#fff", border: "none", padding: "14px 12px", minHeight: 48, cursor: "pointer" }}><BackArrow />Back</button>
           )}
           {tfStep === 4 && (
             <Link href={walletSectionHref("listings")} onClick={() => { setTf(null); setListTab("active"); }} style={{ fontFamily: "inherit", flex: 1, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 15, fontWeight: 600, color: INK, background: "#f1f3f8", borderRadius: 999, padding: 14, minHeight: 48, textDecoration: "none", cursor: "pointer" }}>My transfers</Link>
@@ -2242,12 +3363,111 @@ export default function SeasonTickets({
             disabled={!tfCanNext}
             style={{ fontFamily: "inherit", flex: 1, fontSize: 15, fontWeight: 600, color: tfCanNext ? INK : MUTE, background: tfCanNext ? ACCENT : "#d7dbe6", border: "none", borderRadius: 999, padding: 14, minHeight: 48, cursor: "pointer" }}
           >
-            {tfStep === 3 ? "Transfer" : tfStep === 4 ? "Close" : "Next"}
+            {tfSaving ? "Transferring…" : tfStep === 3 ? "Transfer" : tfStep === 4 ? "Close" : "Next"}
           </button>
         </div>
       </div>
     </div>
   );
+
+  const PassTransferModal = () => {
+    if (!passTransfer) return null;
+    const { pass, kind, step, saving, error } = passTransfer;
+    const transferTitle =
+      kind === "season pass" ? "Transfer season pass" : "Transfer access pass";
+    const pendingTitle =
+      kind === "season pass"
+        ? "Season pass transfer pending"
+        : "Access pass transfer pending";
+    return (
+      <div onClick={() => !saving && setPassTransfer(null)} style={{ ...overlay, zIndex: 86, alignItems: mobile ? "flex-end" : "center", padding: mobile ? 0 : 32 }}>
+        <div className={mobile ? "st-sheet-up" : undefined} onClick={(event) => event.stopPropagation()} style={{ ...sheet, maxWidth: mobile ? "100%" : 460, width: "100%", borderRadius: mobile ? "26px 26px 0 0" : 26, paddingBottom: mobile ? "calc(22px + env(safe-area-inset-bottom))" : 22 }}>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, paddingBottom: 16, borderBottom: `1px solid ${LINE}` }}>
+            <h2 style={{ margin: 0, fontSize: 22, fontWeight: 600, letterSpacing: "-0.02em" }}>{transferTitle}</h2>
+            {step !== "success" && !saving
+              ? closeX(() => setPassTransfer(null))
+              : null}
+          </div>
+
+          {step === "email" ? (
+            <form
+              id="season-pass-transfer"
+              noValidate
+              onSubmit={(event) => {
+                event.preventDefault();
+                void submitPassTransfer(
+                  submittedEmail(new FormData(event.currentTarget)),
+                );
+              }}
+              style={{ display: "flex", flexDirection: "column", gap: 14 }}
+            >
+              <p style={{ margin: 0, fontSize: 14, lineHeight: 1.55, color: SUB }}>
+                Enter the email address of the person receiving <strong style={{ color: INK }}>{pass.name}</strong>.
+              </p>
+              <EmailField
+                autoFocus
+                id={`season-pass-transfer-${pass.accessPassUUID}`}
+                name="email"
+                value={passTransfer.email}
+                placeholder="mail@example.com"
+                disabled={saving}
+                onChange={(value) =>
+                  setPassTransfer({ ...passTransfer, email: value, error: "" })
+                }
+              />
+            </form>
+          ) : null}
+
+          {step === "confirm" ? (
+            <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+              <p style={{ margin: 0, fontSize: 15, lineHeight: 1.55 }}>
+                Transfer <strong>{pass.name}</strong> to <strong>{passTransfer.email}</strong>?
+              </p>
+              <p style={{ margin: 0, fontSize: 13, lineHeight: 1.55, color: SUB }}>
+                The pass will be unavailable until the recipient accepts or you cancel the transfer.
+              </p>
+            </div>
+          ) : null}
+
+          {step === "success" ? (
+            <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+              <div style={{ fontSize: 18, fontWeight: 600 }}>{pendingTitle}</div>
+              <p style={{ margin: 0, fontSize: 14, lineHeight: 1.55, color: SUB }}>
+                You can manage it from My transfers until the recipient accepts it.
+              </p>
+            </div>
+          ) : null}
+
+          {error ? (
+            <div role="alert" style={{ fontSize: 13, color: DANGER }}>
+              {error}
+            </div>
+          ) : null}
+
+          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            {step === "email" ? (
+              <>
+                <button type="button" onClick={() => setPassTransfer(null)} style={{ fontFamily: "inherit", flex: 1, fontSize: 15, fontWeight: 600, color: INK, background: "#f1f3f8", border: "none", borderRadius: 999, padding: 14, minHeight: 48, cursor: "pointer" }}>Cancel</button>
+                <button type="submit" form="season-pass-transfer" disabled={saving || !normalizeEmail(passTransfer.email)} style={{ fontFamily: "inherit", flex: 1, fontSize: 15, fontWeight: 600, color: INK, background: ACCENT, border: "none", borderRadius: 999, padding: 14, minHeight: 48, cursor: "pointer" }}>Next</button>
+              </>
+            ) : null}
+            {step === "confirm" ? (
+              <>
+                <button type="button" disabled={saving} onClick={() => setPassTransfer({ ...passTransfer, step: "email", error: "" })} style={{ fontFamily: "inherit", flex: 1, fontSize: 15, fontWeight: 600, color: INK, background: "#f1f3f8", border: "none", borderRadius: 999, padding: 14, minHeight: 48, cursor: "pointer" }}>Back</button>
+                <button type="button" disabled={saving} onClick={() => void submitPassTransfer()} style={{ fontFamily: "inherit", flex: 1, fontSize: 15, fontWeight: 600, color: INK, background: ACCENT, border: "none", borderRadius: 999, padding: 14, minHeight: 48, cursor: "pointer" }}>{saving ? "Transferring…" : "Transfer"}</button>
+              </>
+            ) : null}
+            {step === "success" ? (
+              <>
+                <Link href={walletSectionHref("listings")} onClick={() => setPassTransfer(null)} style={{ fontFamily: "inherit", flex: 1, textAlign: "center", fontSize: 15, fontWeight: 600, color: INK, background: "#f1f3f8", borderRadius: 999, padding: 14, minHeight: 48, boxSizing: "border-box", textDecoration: "none" }}>My transfers</Link>
+                <button type="button" onClick={() => setPassTransfer(null)} style={{ fontFamily: "inherit", flex: 1, fontSize: 15, fontWeight: 600, color: INK, background: ACCENT, border: "none", borderRadius: 999, padding: 14, minHeight: 48, cursor: "pointer" }}>Close</button>
+              </>
+            ) : null}
+          </div>
+        </div>
+      </div>
+    );
+  };
 
   const VouchersModal = () => (
     <div onClick={() => setModal(null)} style={overlay}>
@@ -2288,7 +3508,7 @@ export default function SeasonTickets({
 
   return (
     <div style={{ width: "100%", maxWidth: "100%", overflowX: "clip", minHeight: "100vh", color: INK, background: "#eef1f8", backgroundImage: "radial-gradient(120% 80% at 50% -10%, #ffffff 0%, #f5f7fc 42%, #e9edf6 100%)", backgroundAttachment: "fixed", fontFamily: "'Geist', system-ui, -apple-system, sans-serif", WebkitFontSmoothing: "antialiased" }}>
-      <style>{`.st-noscroll::-webkit-scrollbar{width:0;height:0;display:none}.st-noscroll{-ms-overflow-style:none;scrollbar-width:none}.st-sheet-up{animation:stUp .3s cubic-bezier(.22,.61,.36,1)}@keyframes stUp{from{transform:translateY(100%)}to{transform:translateY(0)}}`}</style>
+      <style>{`.st-noscroll::-webkit-scrollbar{width:0;height:0;display:none}.st-noscroll{-ms-overflow-style:none;scrollbar-width:none}.st-sheet-up{animation:stUp .3s cubic-bezier(.22,.61,.36,1)}@keyframes stUp{from{transform:translateY(100%)}to{transform:translateY(0)}}${EVENT_CSS}`}</style>
       {showHeader && Header()}
 
       {showRoutedWallet ? (
@@ -2296,7 +3516,11 @@ export default function SeasonTickets({
           ? RoutedEventShell(TicketsLoader())
           : routedWalletMissing
             ? RoutedEventMissing()
-            : showingPackage
+            : showingAccessPass
+              ? AccessPassDetail()
+              : showingSeasonPackage
+              ? SeasonPackage()
+              : showingPackage
               ? Package()
               : EventDetail()
       ) : (
@@ -2308,6 +3532,7 @@ export default function SeasonTickets({
           {screen === "seasonPackage" && SeasonPackage()}
           {screen === "package" && Package()}
           {screen === "listings" && Listings()}
+          {screen === "resale" && Resale()}
           {screen === "giving" && Giving()}
           {screen === "profile" && Profile()}
         </>
@@ -2317,6 +3542,8 @@ export default function SeasonTickets({
       {modal === "field" && FieldModal()}
       {modal === "vouchers" && VouchersModal()}
       {tf && TransferModal()}
+      {passTransfer && PassTransferModal()}
+      {qrPass && AccessPassQrModal()}
       {confirmCancel && ConfirmCancel()}
 
       {toast && (

@@ -15,7 +15,7 @@ shared helpers and field components.
 
 | Need | Import |
 |------|--------|
-| Rules and copy | `lib/fieldValidation.ts` (`normalizeEmail`, `isBlockedEmail`, `emailPatternMatch`, `emailLooksInvalid`, `emailBlurInvalid`, `emailSubmitError`, `emailSubmitInvalid`, `formString`, `submittedEmail`, `nameAllows`, `nameFieldError`, `namePatternMatch`, `phoneNumberError`, `normalizeOtp`, `requiredCopy`, `FIELD_COPY`) |
+| Rules and copy | `lib/fieldValidation.ts` (`normalizeEmail`, `isBlockedEmail`, `emailPatternMatch`, `emailLooksInvalid`, `emailBlurInvalid`, `emailSubmitError`, `emailSubmitInvalid`, `formString`, `submittedEmail`, `nameAllows`, `nameFieldError`, `namePatternMatch`, `phoneNumberError`, `normalizeOtp`, `codeSubmitError`, `requiredCopy`, `FIELD_COPY`) |
 | Email input | `components/molecules/EmailField.tsx` |
 | Name input | `components/molecules/NameField.tsx` |
 | OTP / verify code | `components/molecules/CodeField.tsx` |
@@ -80,6 +80,18 @@ blur DOM sync.
 Use `CodeField`. Digits only, length 6. Wrong code vs network are different
 messages (`FIELD_COPY.codeIncorrect` vs `FIELD_COPY.network`). Use
 `layout="boxes"` for login-style OTP and `layout="input"` for settings.
+
+Pick between those two with `codeSubmitError(cause)` in the `catch` — the API
+throws on the 4xx it uses for a rejected code, so a bare `catch` that assumes
+network shows the wrong message. Network copy is only for a request that never
+got a verdict (offline, 408, 429, 5xx).
+
+## Focus
+
+Do not paint a focused field red. Invalid fields are red only while idle
+(`aria-invalid` at rest). Focus always uses the brand colour (`--bt-field-focus`
+on an org surface, otherwise Blocktickets lime). Phone wrappers use
+`.bt-focus-edge` so `focus-within` does the same.
 
 ## Tests
 

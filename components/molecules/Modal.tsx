@@ -1,6 +1,7 @@
 "use client";
 
-import { useId, type ReactNode } from "react";
+import { useEffect, useId, useRef, type ReactNode } from "react";
+import { focusFirstField } from "@/lib/autoFocus";
 
 /** Modal — app-surface dialog with title bar and backdrop-close. */
 export default function Modal({
@@ -19,6 +20,11 @@ export default function Modal({
 }) {
   const titleId = useId();
   const light = variant === "light";
+  const dialogRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    focusFirstField(dialogRef.current);
+  }, []);
 
   const requestClose = () => {
     if (busy) return;
@@ -32,6 +38,7 @@ export default function Modal({
     >
       <div className="flex min-h-full justify-center p-4 sm:p-6">
         <div
+          ref={dialogRef}
           role="dialog"
           aria-modal="true"
           aria-labelledby={titleId}

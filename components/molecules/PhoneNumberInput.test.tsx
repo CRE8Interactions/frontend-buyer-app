@@ -65,6 +65,14 @@ describe("PhoneNumberInput", () => {
     expect(countrySelect().value).toBe("GB");
   });
 
+  it("autofocuses the number, not the country picker", () => {
+    render(
+      <PhoneNumberInput value={undefined} onChange={() => {}} autoFocus />,
+    );
+
+    expect(document.activeElement).toBe(screen.getByRole("textbox"));
+  });
+
   it("shows the existing-phone message from the fixture flow", () => {
     render(
       <PhoneNumberInput

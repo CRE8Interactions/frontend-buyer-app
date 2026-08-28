@@ -479,7 +479,13 @@ function CheckoutPaymentForm({
                 <input
                   id="promo"
                   name="promo"
-                  className="h-12 min-w-0 flex-1 rounded-[10px] border border-[rgba(5,27,53,0.16)] bg-white px-[18px] text-[15px] text-[#051b35] outline-none placeholder:text-[#8a93a3]"
+                  aria-invalid={Boolean(codeError)}
+                  aria-describedby={codeError ? "promo-error" : undefined}
+                  className={`h-12 min-w-0 flex-1 rounded-[10px] border bg-white px-[18px] text-[15px] text-[#051b35] outline-none placeholder:text-[#8a93a3] ${
+                    codeError
+                      ? "border-[#c2394a]"
+                      : "border-[rgba(5,27,53,0.16)]"
+                  }`}
                   value={promoCode}
                   onChange={(e) => {
                     setPromoCode(e.target.value);
@@ -501,7 +507,9 @@ function CheckoutPaymentForm({
             </div>
           )}
           {codeError ? (
-            <p className="mt-2 text-[13px] text-[#b91c1c]">{codeError}</p>
+            <p id="promo-error" className="mt-2 text-[13px] text-[#c2394a]">
+              {codeError}
+            </p>
           ) : null}
         </div>
       ) : null}

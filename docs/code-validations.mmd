@@ -10,12 +10,12 @@ flowchart TD
   waitCode --> typeCode
   len6 -->|yes| verifyCode[verifyCode automatically]
 
-  verifyCode --> codeNet{Network error?}
-  codeNet -->|yes| codeNetwork[Show network copy and clear code]
+  verifyCode --> answered{Did the API answer on the code?}
+  answered -->|"no: offline, timeout 408, rate limit 429, 5xx"| codeNetwork[Show network copy]
   codeNetwork --> codeStep
-  codeNet -->|no| codeStatus{HTTP status}
+  answered -->|yes| codeStatus{HTTP status}
 
   codeStatus -->|200 existing user| sessionOk[setSession and redirect]
   codeStatus -->|203 new user| nextStep[Continue to Step 2: create account]
-  codeStatus -->|other| badCode["Code is incorrect. Please try again"]
+  codeStatus -->|"any other 4xx, e.g. 400 Code provided is incorrect"| badCode["Code is incorrect. Please try again"]
   badCode --> codeStep

@@ -26,6 +26,7 @@ export const PHONE_ERROR = {
 export type PhoneErrorType = keyof typeof PHONE_ERROR;
 export type NameFieldError = "required" | "pattern" | null;
 export type EmailFieldError = "required" | "invalid" | null;
+export type CodeFieldError = "code" | "network" | null;
 export type FieldVariant = "light" | "dark";
 
 export function requiredCopy(label: string) {
@@ -100,12 +101,36 @@ export function normalizeOtp(value: string) {
   return value.replace(/\D/g, "").slice(0, 6);
 }
 
+/** Statuses that mean the request never reached a verdict on the code itself. */
+const CODE_UNANSWERED_STATUSES = new Set([408, 429]);
+
+function rejectionStatus(cause: unknown): number | undefined {
+  if (!cause || typeof cause !== "object") return undefined;
+  const rejection = cause as { status?: number; response?: { status?: number } };
+  return rejection.response?.status ?? rejection.status;
+}
+
+/**
+ * A rejected code is a wrong code, whatever 4xx the API answers with. Only a
+ * request that never got a verdict — offline, timed out, rate limited, or a
+ * server fault — is a connection problem.
+ */
+export function codeSubmitError(cause: unknown): Exclude<CodeFieldError, null> {
+  const status = rejectionStatus(cause);
+  const rejected =
+    status !== undefined &&
+    status >= 400 &&
+    status < 500 &&
+    !CODE_UNANSWERED_STATUSES.has(status);
+  return rejected ? "code" : "network";
+}
+
 export function lightFieldClass(invalid: boolean) {
   return [
     "h-[52px] w-full rounded-[14px] border bg-[#f7f8fc] px-4 text-[16px] text-[#051b35] outline-none placeholder:text-[#8a93a3]",
     invalid
-      ? "border-[#c2394a] focus:border-[#c2394a]"
-      : "border-[rgba(5,27,53,0.12)] focus:border-[#a6e773]",
+      ? "border-[#c2394a]"
+      : "border-[rgba(5,27,53,0.12)]",
   ].join(" ");
 }
 
@@ -113,8 +138,8 @@ export function darkFieldClass(invalid: boolean) {
   return [
     "h-12 w-full rounded-xl border bg-[#051B35] px-4 text-[15px] text-white placeholder-[#7c88a3] outline-none transition-colors",
     invalid
-      ? "border-[#c2394a] focus:border-[#c2394a]"
-      : "border-white/15 focus:border-[#a6e773]",
+      ? "border-[#c2394a]"
+      : "border-white/15",
   ].join(" ");
 }
 

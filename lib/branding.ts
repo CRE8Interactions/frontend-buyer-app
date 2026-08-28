@@ -1,3 +1,4 @@
+import type { CSSProperties } from "react";
 import { imageUrl, type ApiImage } from "@/lib/helpers";
 
 export type OrgBranding = {
@@ -12,6 +13,7 @@ export type OrgBranding = {
 export type BrandingOrganization = {
   name?: string;
   slug?: string;
+  uuid?: string;
   website?: string;
   url?: string;
   primaryColor?: string;
@@ -202,6 +204,15 @@ export function brandingToTicketingTheme(
     logoSrc: imageUrl(logoSrc, BLOCKTICKETS_LOGO),
     brandLogoSrc: imageUrl(brandLogo, BLOCKTICKETS_LOGO),
   };
+}
+
+/**
+ * Fields on an org-branded surface focus in that org's colour instead of
+ * Blocktickets lime. Spread onto the surface's root element — every field under
+ * it inherits the variable, including wrappers that use `.bt-focus-edge`.
+ */
+export function fieldFocusVars(accent?: string | null): CSSProperties {
+  return accent ? ({ "--bt-field-focus": accent } as CSSProperties) : {};
 }
 
 export function brandingCssVars(

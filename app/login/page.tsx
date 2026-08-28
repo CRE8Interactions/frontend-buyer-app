@@ -19,6 +19,7 @@ import {
 import { setSession, getLastKnown, type AuthSession } from "@/lib/auth";
 import {
   FIELD_COPY,
+  codeSubmitError,
   emailBlurInvalid,
   emailSubmitError,
   emailSubmitInvalid,
@@ -212,11 +213,9 @@ function LoginForm() {
         setStep(2);
       } else {
         setCodeError("code");
-        setCode("");
       }
-    } catch {
-      setCodeError("network");
-      setCode("");
+    } catch (cause) {
+      setCodeError(codeSubmitError(cause));
     }
   };
 
@@ -439,29 +438,34 @@ function LoginForm() {
                 }}
                 onComplete={(next) => void verifyUserCode(next)}
               />
-              <p className="text-center text-[13px] text-[#8a93a3]">
-                {done ? (
-                  <span className="font-semibold text-[#2f8f4e]">
-                    Verified — signing you in…
-                  </span>
-                ) : resent ? (
-                  <span className="font-semibold text-[#2f8f4e]">
-                    A new code is on its way.
-                  </span>
-                ) : (
-                  <>
-                    Didn&apos;t get it?{" "}
-                    <button
-                      type="button"
-                      disabled={isSaving}
-                      onClick={() => void resend()}
-                      className="font-semibold text-[#051b35]"
-                    >
-                      {isSaving ? "Sending…" : "Send a new code"}
-                    </button>
-                  </>
-                )}
-              </p>
+              <div className="flex flex-col gap-4 text-center text-[13px] text-[#8a93a3]">
+                <p>
+                  Codes expire after 10 minutes, so be sure to use the right one.
+                </p>
+                <p>
+                  {done ? (
+                    <span className="font-semibold text-[#2f8f4e]">
+                      Verified — signing you in…
+                    </span>
+                  ) : resent ? (
+                    <span className="font-semibold text-[#2f8f4e]">
+                      A new code is on its way.
+                    </span>
+                  ) : (
+                    <>
+                      Haven&apos;t received your code? Check your spam folder or{" "}
+                      <button
+                        type="button"
+                        disabled={isSaving}
+                        onClick={() => void resend()}
+                        className="font-semibold text-[#051b35]"
+                      >
+                        {isSaving ? "Sending…" : "Send a new code"}
+                      </button>
+                    </>
+                  )}
+                </p>
+              </div>
             </div>
           </>
         )}

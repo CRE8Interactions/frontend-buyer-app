@@ -13,6 +13,7 @@ import BrandedActionButton from "@/components/atoms/BrandedActionButton";
 import PageLoader from "@/components/molecules/PageLoader";
 import { BrandedLoader } from "@/components/molecules/RouteLoader";
 import Modal from "@/components/molecules/Modal";
+import useAutoFocus from "@/hooks/useAutoFocus";
 import {
   createPublicMenuPaymentIntent,
   getPublicMenu,
@@ -135,6 +136,7 @@ export default function MenuExperience({
   // In-venue ordering always wears Blocktickets colors, not the org's.
   const primaryColor = BLOCKTICKETS_NAVY;
   const textColor = "#ffffff";
+  const autoFocusField = useAutoFocus<HTMLInputElement>(true);
   const router = useRouter();
   const searchParams = useSearchParams();
   const eventUuid =
@@ -498,6 +500,7 @@ export default function MenuExperience({
               Row
             </label>
             <input
+              ref={autoFocusField}
               id="row"
               name="row"
               className={`mt-2 ${fieldClass("light", Boolean(gateError) && !gateRow.trim())}`}

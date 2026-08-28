@@ -9,6 +9,37 @@
   --accent: #a6e773;
 }
 
+/* Brand focus for every field: the field's own edge takes the brand colour, with
+   no ring around it. Blocktickets lime by default; an org-branded surface sets
+   `--bt-field-focus` on its root so its fields focus in the org's colour.
+   Invalid fields are red only while idle — the error copy carries the failure,
+   and focus always returns to brand so the shopper can see where they are typing.
+   Marked !important so inline `outline: none` / `border: none`
+   on ported design markup cannot suppress it. `:focus` is matched alongside
+   `:focus-visible` because mobile browsers focus a field on tap without matching
+   `:focus-visible`, and would otherwise paint their own dark outline. */
+input[aria-invalid="true"]:not([type="checkbox"]):not([type="radio"]):not(:focus),
+textarea[aria-invalid="true"]:not(:focus),
+select[aria-invalid="true"]:not(:focus) {
+  border-color: #c2394a !important;
+}
+
+input:not([type="checkbox"]):not([type="radio"]):focus,
+input:not([type="checkbox"]):not([type="radio"]):focus-visible,
+textarea:focus,
+textarea:focus-visible,
+select:focus,
+select:focus-visible {
+  border-color: var(--bt-field-focus, var(--accent)) !important;
+  outline: none !important;
+}
+
+/* Fields with no border of their own (phone pill, search pills) hand their edge
+   to a wrapper, which paints the same brand colour while it holds the cursor. */
+.bt-focus-edge:focus-within {
+  border-color: var(--bt-field-focus, var(--accent)) !important;
+}
+
 /* react-phone-number-input — layout only; color is theme-scoped below */
 .PhoneInput {
   display: flex;
@@ -64,6 +95,8 @@ button[aria-busy="true"] {
 }
 html {
   -webkit-text-size-adjust: 100%;
+  /* Kills the dark flash mobile browsers paint over tapped fields and controls. */
+  -webkit-tap-highlight-color: transparent;
 }
 body {
   background: var(--bg);

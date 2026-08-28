@@ -18,6 +18,7 @@ import {
 } from "@/lib/api";
 import AppShell from "@/components/templates/AppShell";
 import { BrandedLoader } from "@/components/molecules/RouteLoader";
+import useAutoFocus from "@/hooks/useAutoFocus";
 import useOrgBranding from "@/hooks/useOrgBranding";
 import {
   BLOCKTICKETS_NAVY,
@@ -163,6 +164,7 @@ export function FundraisingCampaignClient({
   organizationUUID?: string;
   organizationSlug?: string;
 }) {
+  const autoFocusField = useAutoFocus<HTMLInputElement>(true);
   const [loading, setLoading] = useState(true);
   const [campaign, setCampaign] = useState<Campaign | null>(null);
   const [loadError, setLoadError] = useState("");
@@ -456,6 +458,7 @@ export function FundraisingCampaignClient({
                   Amount
                 </label>
                 <input
+                  ref={autoFocusField}
                   id="amount"
                   name="amount"
                   className={`mt-2 ${fieldClass("light", false)}`}

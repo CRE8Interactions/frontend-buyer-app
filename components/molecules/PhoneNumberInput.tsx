@@ -1,8 +1,9 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import PhoneInput, { type Country } from "react-phone-number-input";
 import "react-phone-number-input/style.css";
+import { focusFirstField } from "@/lib/autoFocus";
 import {
   FIELD_COPY,
   PHONE_ERROR,
@@ -29,6 +30,7 @@ export default function PhoneNumberInput({
   error,
   disabled = false,
   variant = "light",
+  autoFocus = false,
 }: {
   id?: string;
   name?: string;
@@ -38,9 +40,15 @@ export default function PhoneNumberInput({
   error?: PhoneErrorType | null;
   disabled?: boolean;
   variant?: FieldVariant;
+  autoFocus?: boolean;
 }) {
   const [defaultCountry, setDefaultCountry] =
     useState<Country>(FALLBACK_COUNTRY);
+  const fieldRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    if (autoFocus) focusFirstField(fieldRef.current);
+  }, [autoFocus]);
 
   useEffect(() => {
     const key = process.env.NEXT_PUBLIC_IP_DATA_API_KEY;
@@ -67,14 +75,13 @@ export default function PhoneNumberInput({
   return (
     <div>
       <div
+        ref={fieldRef}
         className={`phone-field mt-2 rounded-[14px] border px-3 ${
           dark ? "bg-[#051B35]" : "bg-[#f7f8fc]"
         } ${
           invalid
-            ? "border-[#c2394a] focus-within:border-[#c2394a]"
-            : dark
-              ? "border-white/15 focus-within:border-[#A6E773]"
-              : "border-[rgba(5,27,53,0.12)] focus-within:border-[#051b35]"
+            ? "bt-focus-edge border-[#c2394a]"
+            : `bt-focus-edge ${dark ? "border-white/15" : "border-[rgba(5,27,53,0.12)]"}`
         }`}
       >
         <PhoneInput
@@ -88,9 +95,8 @@ export default function PhoneNumberInput({
           required
           autoComplete="tel"
           aria-invalid={invalid}
-          numberInputProps={{
-            name,
-          }}
+          countrySelectProps={{ "data-no-autofocus": true }}
+          numberInputProps={{ name }}
           className={`phone-input flex h-[52px] items-center text-[16px] ${
             dark
               ? "phone-input-dark text-white"

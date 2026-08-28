@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { DEMO_USER } from "@/lib/demo/fixtures";
 import {
+  codeSubmitError,
   emailBlurInvalid,
   emailLooksInvalid,
   emailSubmitError,
@@ -68,5 +69,25 @@ describe("phoneNumberError", () => {
     expect(phoneNumberError(undefined)).toBe("required");
     expect(phoneNumberError("+1")).toBe("invalid");
     expect(phoneNumberError(DEMO_USER.phoneNumber)).toBeNull();
+  });
+});
+
+describe("codeSubmitError", () => {
+  it("reads a rejected code as a wrong code", () => {
+    expect(
+      codeSubmitError({
+        response: {
+          status: 400,
+          data: { error: { message: "Code provided is incorrect" } },
+        },
+      }),
+    ).toBe("code");
+    expect(codeSubmitError({ status: 401 })).toBe("code");
+  });
+
+  it("keeps network copy for a code that never got a verdict", () => {
+    expect(codeSubmitError(new Error("offline"))).toBe("network");
+    expect(codeSubmitError({ response: { status: 429 } })).toBe("network");
+    expect(codeSubmitError({ response: { status: 500 } })).toBe("network");
   });
 });

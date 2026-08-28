@@ -24,6 +24,14 @@ describe("EmailField", () => {
     expect(onChange).toHaveBeenCalledWith(DEMO_USER.email);
   });
 
+  it("takes the cursor when the form asks it to autofocus", () => {
+    render(
+      <EmailField id="email" value="" onChange={() => {}} autoFocus />,
+    );
+
+    expect(document.activeElement).toBe(screen.getByLabelText(/email address/i));
+  });
+
   it("passes the current field value to blur", () => {
     const onBlur = vi.fn();
     function Harness() {

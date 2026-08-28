@@ -1,6 +1,7 @@
 "use client";
 
 import type { InputHTMLAttributes } from "react";
+import useAutoFocus from "@/hooks/useAutoFocus";
 import {
   FIELD_COPY,
   fieldClass,
@@ -24,6 +25,7 @@ export default function EmailField({
   readOnly = false,
   variant = "light",
   className = "",
+  autoFocus = false,
   ...rest
 }: {
   id: string;
@@ -43,6 +45,7 @@ export default function EmailField({
   InputHTMLAttributes<HTMLInputElement>,
   "id" | "name" | "value" | "onChange" | "onBlur" | "onInput"
 >) {
+  const focusRef = useAutoFocus<HTMLInputElement>(autoFocus);
   const kind: EmailFieldError = error ?? (invalid ? "invalid" : null);
   const showInvalid = Boolean(kind);
   const showNetwork = !showInvalid && networkError;
@@ -66,6 +69,7 @@ export default function EmailField({
         name={name}
         type="email"
         autoComplete="email"
+        ref={focusRef}
         value={value}
         disabled={disabled}
         readOnly={readOnly}

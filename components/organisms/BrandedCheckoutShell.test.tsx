@@ -39,6 +39,23 @@ describe("BrandedCheckoutShell", () => {
     expect(screen.getByText("Payment form")).toBeInTheDocument();
   });
 
+  it("focuses checkout fields in the org's colour", () => {
+    const { container } = render(
+      <BrandedCheckoutShell
+        accent={raptors.branding.primaryColor}
+        onBack={() => undefined}
+      >
+        <input aria-label="Email address" />
+      </BrandedCheckoutShell>,
+    );
+
+    expect(
+      (container.firstChild as HTMLElement).style.getPropertyValue(
+        "--bt-field-focus",
+      ),
+    ).toBe(raptors.branding.primaryColor);
+  });
+
   it("hides the seat-hold clock when remaining seconds are missing", () => {
     render(
       <BrandedCheckoutShell accent="#051b35" onBack={() => undefined}>

@@ -10,6 +10,7 @@ import {
   type FieldVariant,
   type NameFieldError,
 } from "@/lib/fieldValidation";
+import useAutoFocus from "@/hooks/useAutoFocus";
 
 export default function NameField({
   id,
@@ -38,6 +39,7 @@ export default function NameField({
   required?: boolean;
   autoFocus?: boolean;
 }) {
+  const focusRef = useAutoFocus<HTMLInputElement>(autoFocus);
   const sync = (next: string) => {
     if (nameAllows(next)) onChange(next);
   };
@@ -61,7 +63,7 @@ export default function NameField({
         pattern={namePatternMatch}
         title={FIELD_COPY.namePattern}
         autoComplete={autoComplete}
-        autoFocus={autoFocus}
+        ref={focusRef}
         aria-invalid={Boolean(error)}
         placeholder={placeholder}
         onChange={(e) => sync(e.target.value)}

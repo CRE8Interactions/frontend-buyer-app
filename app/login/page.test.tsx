@@ -185,6 +185,10 @@ describe("Login page", () => {
     });
     expect(screen.getByText(DEMO_USER.email)).toBeInTheDocument();
     expect(screen.getByLabelText(/six-digit code/i)).toHaveFocus();
+    expect(screen.getByText(/check your spam folder/i)).toBeInTheDocument();
+    expect(
+      screen.getByText(/codes expire after 10 minutes/i),
+    ).toBeInTheDocument();
     expect(screen.queryByText(/localhost:1080/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/open http/i)).not.toBeInTheDocument();
   });
@@ -305,6 +309,27 @@ describe("Login page", () => {
     expect(
       await screen.findByLabelText(/six-digit code/i),
     ).toBeInTheDocument();
+  });
+
+  it("shows the incorrect-code message when the API rejects the code", async () => {
+    const user = userEvent.setup();
+    mockedVerifyCode.mockRejectedValue({
+      response: {
+        status: 400,
+        data: { error: { message: "Code provided is incorrect" } },
+      },
+    });
+    await sendCodeForDemoUser(user);
+
+    await user.type(screen.getByLabelText(/six-digit code/i), "111111");
+
+    expect(
+      await screen.findByText(FIELD_COPY.codeIncorrect),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByText(/experiencing technical difficulties/i),
+    ).not.toBeInTheDocument();
+    expect(screen.getByLabelText(/six-digit code/i)).toHaveValue("1");
   });
 
   it("shows a network error when verifying the code fails, not an incorrect-code message", async () => {
