@@ -8,6 +8,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import useAutoFocus from "@/hooks/useAutoFocus";
 
 const NAVY = "#051b35";
 const GREEN = "#a6e773";
@@ -21,6 +22,7 @@ const labelSpan: React.CSSProperties = { fontSize: 13, fontWeight: 600, color: F
 const groupLabel: React.CSSProperties = { fontSize: 12, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.1em", color: MUTE };
 
 export default function SellWithUs() {
+  const autoFocusField = useAutoFocus<HTMLInputElement>(true);
   const [vw, setVw] = useState(1100);
   const [screen, setScreen] = useState<"form" | "done">("form");
   const [org, setOrg] = useState("");
@@ -61,8 +63,10 @@ export default function SellWithUs() {
     <div style={{ minHeight: "100vh", display: "flex", flexDirection: "column", background: "#f7f8fc", color: NAVY, fontFamily: "'Geist', system-ui, -apple-system, sans-serif", WebkitFontSmoothing: "antialiased" }}>
       <header style={{ background: NAVY, position: "sticky", top: 0, zIndex: 20 }}>
         <div style={{ maxWidth: 1100, margin: "0 auto", padding: narrow ? "14px 16px" : "18px 32px", display: "flex", alignItems: "center", gap: 16 }}>
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src={LOCKUP} alt="Blocktickets" style={{ height: 20, width: "auto", display: "block" }} />
+          <Link href="/" aria-label="Blocktickets home" style={{ display: "flex", alignItems: "center", flexShrink: 0 }}>
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src={LOCKUP} alt="Blocktickets" style={{ height: 20, width: "auto", display: "block" }} />
+          </Link>
           <Link href="/browse" style={{ marginLeft: "auto", fontSize: 14, fontWeight: 600, color: "#fff", textDecoration: "none" }}>Browse events</Link>
         </div>
       </header>
@@ -83,7 +87,7 @@ export default function SellWithUs() {
                 <div style={{ display: "grid", gridTemplateColumns: twoCol, gap: 12 }}>
                   <label style={{ display: "flex", flexDirection: "column", gap: 7 }}>
                     <span style={labelSpan}>Organization name</span>
-                    <input value={org} onChange={(e) => setOrg(e.target.value)} placeholder="Aggie Memorial Stadium" style={input} />
+                    <input ref={autoFocusField} value={org} onChange={(e) => setOrg(e.target.value)} placeholder="Aggie Memorial Stadium" style={input} />
                   </label>
                   <label style={{ display: "flex", flexDirection: "column", gap: 7 }}>
                     <span style={labelSpan}>City</span>
