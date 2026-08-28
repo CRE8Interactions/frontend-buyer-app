@@ -43,3 +43,7 @@ next-env.d.ts
 # Cursor plan files — keep local; do not commit or push
 .cursor/plans/
 **/*.plan.md
+
+# Local UI captures — keep out of the repo
+.screenshots/
+
