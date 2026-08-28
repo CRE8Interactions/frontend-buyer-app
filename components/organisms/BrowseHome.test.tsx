@@ -126,6 +126,9 @@ describe("Browse page", () => {
       "href",
       "/login/?from=%2Fbrowse%2F",
     );
+    expect(
+      screen.getByRole("link", { name: /blocktickets home/i }),
+    ).toHaveAttribute("href", "/");
     expect(screen.getByText(/build bigger/i)).toBeInTheDocument();
     expect(screen.getByText(/block by block/i)).toBeInTheDocument();
   });

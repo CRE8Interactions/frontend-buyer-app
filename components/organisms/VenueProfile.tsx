@@ -551,7 +551,7 @@ export default function VenueProfile({ slug }: { slug: string }) {
           <InAppBackLink href="/browse/" aria-label="Back to browse" style={{ width: 40, height: 40, borderRadius: 999, background: "rgba(255,255,255,0.12)", color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, textDecoration: "none" }}>
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" style={{ width: 19, height: 19 }}><polyline points="15 18 9 12 15 6" /></svg>
           </InAppBackLink>
-          <Link href="/browse" style={{ display: "flex", alignItems: "center", flexShrink: 0, textDecoration: "none" }}>
+          <Link href="/browse" aria-label="Blocktickets home" style={{ display: "flex", alignItems: "center", flexShrink: 0, textDecoration: "none" }}>
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img src={LOCKUP} alt="blocktickets" style={{ height: 19, width: "auto" }} />
           </Link>

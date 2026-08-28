@@ -323,6 +323,10 @@ describe("team and venue back buttons", () => {
     expect(
       await screen.findByRole("link", { name: /back to browse/i }),
     ).toHaveAttribute("href", "/browse/");
+    expect(screen.getByRole("link", { name: /blocktickets/i })).toHaveAttribute(
+      "href",
+      "/browse",
+    );
     expect(screen.getByText(venue.name)).toBeInTheDocument();
   });
 

@@ -19,6 +19,11 @@ import { ROUTE_TRANSITION_EVENT } from "@/lib/routeTransition";
 const MIN_VISIBLE_MS = 450;
 const MAX_VISIBLE_MS = 15000;
 
+function isPlatformLinkOrigin(pathname: string) {
+  const path = pathname.replace(/\/+$/, "") || "/";
+  return path === "/" || path === "/our-story";
+}
+
 /**
  * Immediate feedback for internal link transitions. Destination branding wins;
  * home / browse / Our Story / legal pages use the Blocktickets spinner.
@@ -45,7 +50,10 @@ export default function GlobalRouteTransitionLoader() {
       timeoutRef.current = window.setTimeout(() => setVisible(false), remaining);
     };
 
-    const startTransition = (href: string) => {
+    const startTransition = (
+      href: string,
+      options: { preservePlatformBrand?: boolean } = {},
+    ) => {
       const destination = new URL(href, window.location.href);
       if (destination.origin !== window.location.origin) return;
       if (
@@ -68,7 +76,10 @@ export default function GlobalRouteTransitionLoader() {
         ? "blocktickets"
         : "none";
 
-      if (isWalletAccountPath(toPath)) {
+      if (options.preservePlatformBrand) {
+        destinationBranding = null;
+        nextFallback = "blocktickets";
+      } else if (isWalletAccountPath(toPath)) {
         if (isTenantOriginPath(fromPath)) {
           markWalletEntryFromTenant();
           const origin = walletLoaderFromOrigin(fromPath, toPath);
@@ -124,10 +135,16 @@ export default function GlobalRouteTransitionLoader() {
         return;
       }
 
-      startTransition(anchor.href);
+      startTransition(anchor.href, {
+        preservePlatformBrand:
+          isPlatformLinkOrigin(window.location.pathname) &&
+          !anchor.closest("footer"),
+      });
     };
 
     const onProgrammaticNav = (event: Event) => {
+      // App hand-offs such as checkout keep their destination's branding; only
+      // links a shopper clicks on a platform page hold the Blocktickets mark.
       const href = (event as CustomEvent<{ href?: string }>).detail?.href;
       if (href) startTransition(href);
     };

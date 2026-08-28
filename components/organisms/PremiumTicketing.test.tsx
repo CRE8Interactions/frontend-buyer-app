@@ -260,7 +260,7 @@ describe("Select tickets page (PremiumTicketing)", () => {
     );
     expect(
       screen.getByRole("link", { name: /blocktickets home/i }),
-    ).toHaveAttribute("href", "/");
+    ).toHaveAttribute("href", "/browse");
   });
 
   it("links the header to My tickets as My wallet when logged in", async () => {

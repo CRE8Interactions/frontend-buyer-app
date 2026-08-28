@@ -269,7 +269,10 @@ export const getEventsByIds = (ids: Array<string | number>) => {
 };
 
 export const getOrganizationStorefront = (slug: string) =>
-  instance.get(`/organizations/storefront/${slug}`);
+  instance.get(`/organizations/storefront/${encodeURIComponent(slug)}`);
+
+export const getPublicOrganizationBranding = (idOrSlug: string) =>
+  getOrganizationStorefront(idOrSlug);
 
 export const getEvents = () => instance.get(`/events/on-sale`);
 

@@ -48,8 +48,10 @@ export default function Policies({ initial = "purchase" }: { initial?: string })
 
       <header style={{ background: NAVY, position: "sticky", top: 0, zIndex: 20 }}>
         <div style={{ maxWidth: 1180, margin: "0 auto", padding: narrow ? "14px 16px" : "18px 32px", display: "flex", alignItems: "center", gap: 16 }}>
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src={LOCKUP} alt="Blocktickets" style={{ height: 20, width: "auto", display: "block" }} />
+          <Link href="/" aria-label="Blocktickets home" style={{ display: "flex", alignItems: "center", flexShrink: 0 }}>
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src={LOCKUP} alt="Blocktickets" style={{ height: 20, width: "auto", display: "block" }} />
+          </Link>
           <Link href="/browse" style={{ marginLeft: "auto", fontSize: 14, fontWeight: 600, color: "#fff", textDecoration: "none" }}>Browse events</Link>
         </div>
       </header>

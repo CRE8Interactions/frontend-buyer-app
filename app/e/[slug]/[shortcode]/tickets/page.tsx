@@ -156,6 +156,7 @@ function toTicketingData(
     venueCityState,
     mapsQuery: `${venueName} ${city} ${state}`.trim(),
     logoSrc: imageOf(ev.image) || theme.logoSrc,
+    orgHref: ev.organization?.slug ? `/${ev.organization.slug}/` : undefined,
     orgLabel,
     providerLabel: `Official ticketing marketplace for ${orgLabel}`,
     aboutText:

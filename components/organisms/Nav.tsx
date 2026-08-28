@@ -17,8 +17,9 @@
 
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import NavAuthActions from "@/components/molecules/NavAuthActions";
+import { blockticketsNavLogoHref } from "@/lib/navLogo";
 
 const NAVY = "#051b35";
 const GREEN = "#a6e773";
@@ -77,6 +78,7 @@ export default function Nav({ search, variant = "app" }: Props) {
   const [sheetOpen, setSheetOpen] = useState(false); // mobile full-screen search
   const searchRef = useRef<HTMLDivElement>(null);
   const router = useRouter();
+  const pathname = usePathname();
   const showSearch = variant === "app";
   const showLogin = variant === "app";
   const showLinks = variant === "marketing";
@@ -112,6 +114,7 @@ export default function Nav({ search, variant = "app" }: Props) {
 
   const field = (light?: boolean) => (
     <input
+      data-seamless-focus
       value={value}
       onChange={(e) => onChange(e.target.value)}
       onKeyDown={onKeyDown}
@@ -167,7 +170,7 @@ export default function Nav({ search, variant = "app" }: Props) {
       <style>{SEARCH_CSS}</style>
       <div className={`snav-bar ${variant === "app" ? "snav-app" : "snav-mk"}`}>
         <Link
-          href="/"
+          href={blockticketsNavLogoHref(pathname)}
           aria-label="Blocktickets home"
           style={{ display: "flex", alignItems: "center", flexShrink: 0 }}
         >
@@ -247,7 +250,7 @@ export default function Nav({ search, variant = "app" }: Props) {
           <div style={{ flex: 1, display: "flex", alignItems: "center", gap: 10, background: "rgba(255,255,255,0.14)", border: "1px solid rgba(166,231,115,0.55)", borderRadius: 999, padding: "12px 16px" }}>
             {searchIcon("rgba(255,255,255,0.7)")}
             {/* eslint-disable-next-line jsx-a11y/no-autofocus */}
-            <input autoFocus value={value} onChange={(e) => onChange(e.target.value)} onKeyDown={onKeyDown} placeholder={placeholder} style={{ fontFamily: "inherit", fontSize: 16, color: "#fff", background: "transparent", border: "none", outline: "none", flex: 1, minWidth: 0 }} />
+            <input data-seamless-focus autoFocus value={value} onChange={(e) => onChange(e.target.value)} onKeyDown={onKeyDown} placeholder={placeholder} style={{ fontFamily: "inherit", fontSize: 16, color: "#fff", background: "transparent", border: "none", outline: "none", flex: 1, minWidth: 0 }} />
             {hasQuery && (
               <button onClick={() => onChange("")} aria-label="Clear search" style={{ fontFamily: "inherit", width: 24, height: 24, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", borderRadius: 999, background: "rgba(255,255,255,0.16)", border: "none", color: "#fff", cursor: "pointer", padding: 0 }}>
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5} strokeLinecap="round" style={{ width: 13, height: 13 }}><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
