@@ -194,7 +194,7 @@ export default function WaitingRoomPage() {
         branding={
           theme
             ? {
-                primaryColor: theme.accent,
+                primaryColor: theme.buttonColor || theme.accent,
                 logoSrc: theme.brandLogoSrc,
                 name: event?.organization?.name,
               }
@@ -204,7 +204,7 @@ export default function WaitingRoomPage() {
     );
   }
 
-  const accent = theme?.accent || "#3b82f6";
+  const accent = theme?.buttonColor || theme?.accent || "#3b82f6";
   const logo = theme?.brandLogoSrc;
 
   return (

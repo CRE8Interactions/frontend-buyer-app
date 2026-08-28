@@ -70,7 +70,7 @@ const DEMO_BRANDING: Record<
   "ogden-raptors": {
     enabled: true,
     primaryColor: "#1a3a6b",
-    buttonColor: "#1a3a6b",
+    buttonColor: "#007b85",
     buttonTextColor: "#ffffff",
     logo: { url: "/clients/raptors.svg" },
   },
@@ -780,6 +780,8 @@ export function demoCheckoutCart(
       seoUrl: event.seoUrl,
       shortCode: event.shortCode,
       shortcode: event.shortcode,
+      enableTransfers:
+        (event as { enableTransfers?: boolean }).enableTransfers ?? true,
       image: event.image,
       branding: organization?.branding,
       organization,
@@ -787,6 +789,10 @@ export function demoCheckoutCart(
       seatmap: event.seatmap,
     },
     tickets: Array.from({ length: ticketCount }, (_, index) => ({
+      id: 7001 + index,
+      uuid: `ticket-raptors-${index + 1}`,
+      checkInCode: `RAPTORS-${index + 1}`,
+      eventUUID: event.uuid,
       sectionName: listing.sectionNumber,
       sectionNumber: listing.sectionNumber,
       rowNumber: listing.rowNumber,
@@ -896,6 +902,7 @@ export function demoSeatedTicketingData(
     venueAddress: venueLine,
     venueCityState,
     mapsQuery: `${event.venue.name} ${event.venue.city} ${event.venue.state}`,
+    orgHref: org.slug ? `/${org.slug}/` : undefined,
     orgLabel: org.name,
     providerLabel: `Official ticketing marketplace for ${org.name}`,
     aboutText:
@@ -1098,6 +1105,9 @@ export function demoCompletedPackageOrder(
   const unit = Number(pkg.pricingTiers[0].price);
   const cart = demoPackageCheckoutCart({
     tickets: [21, 22].map((seatNumber) => ({
+      id: 8000 + seatNumber,
+      uuid: `ticket-nms-package-${seatNumber}`,
+      checkInCode: `NMS-${seatNumber}`,
       sectionName: listing.sectionNumber,
       sectionNumber: listing.sectionNumber,
       rowNumber: listing.rowNumber,
@@ -1153,6 +1163,168 @@ export function demoFlexPack(overrides: Record<string, unknown> = {}) {
       timezone: venue.timezone,
     },
     organization: org,
+    ...overrides,
+  };
+}
+
+/** Active fan access pass returned by GET /events/myAccessPasses. */
+export function demoAccessPass(overrides: Record<string, unknown> = {}) {
+  const org = DEMO_ICEDOGS_ORG;
+  const events = DEMO_EVENTS.filter(
+    (event) => event.organization?.slug === org.slug,
+  ).slice(0, 3);
+  return {
+    uuid: "access-pass-icedogs-1",
+    checkInCode: "PASS2026",
+    type: "organizer",
+    name: "IceDogs All-Access Pass",
+    status: "active",
+    generalAdmission: true,
+    sectionNumber: "Club",
+    backgroundColor: org.branding.primaryColor,
+    fontColor: "#ffffff",
+    artwork: org.image,
+    events,
+    ...overrides,
+  };
+}
+
+/** Season pass linked to the demo package order. */
+export function demoPackageAccessPass(
+  overrides: Record<string, unknown> = {},
+) {
+  const pkg = demoSeasonPackage();
+  const order = demoCompletedPackageOrder();
+  const ticket = order.tickets[0];
+  return {
+    uuid: "access-pass-nms-package-1",
+    checkInCode: "NMSPASS2026",
+    type: "package",
+    name: pkg.name,
+    status: "active",
+    generalAdmission: false,
+    sectionNumber: ticket.sectionNumber,
+    rowNumber: ticket.rowNumber,
+    seatNumber: ticket.seatNumber,
+    backgroundColor: "#8c0b42",
+    fontColor: "#ffffff",
+    artwork: pkg.image,
+    events: pkg.events,
+    ...overrides,
+  };
+}
+
+/**
+ * Group-purchase invitation attributes for
+ * GET /group-purchase-invitations (Strapi data/attributes shape).
+ */
+export function demoGroupInvitation(overrides: Record<string, unknown> = {}) {
+  const event = DEMO_EVENTS.find((row) => row.shortCode === "RAPT003")!;
+  return {
+    groupCode: "RAPTORS26",
+    inviteLink: "https://blocktickets.xyz/group/RAPTORS26/",
+    event: {
+      data: {
+        attributes: {
+          name: event.name,
+          start: event.start,
+          image: event.image,
+          venue: {
+            data: {
+              attributes: {
+                name: event.venue.name,
+                timezone: event.venue.timezone,
+              },
+            },
+          },
+        },
+      },
+    },
+    ...overrides,
+  };
+}
+
+/** In-venue menu payload for GET /fnb-items/public-menu/{org}/{section}/{row}/{seat}. */
+export function demoPublicMenu(overrides: Record<string, unknown> = {}) {
+  return {
+    accessMode: "seat_delivery",
+    location: { name: "Lindquist Field Concessions" },
+    categories: [
+      { id: "cat-food", name: "Food", displayOrder: 1 },
+      { id: "cat-drinks", name: "Drinks", displayOrder: 2 },
+      { id: "cat-sweets", name: "Sweets", displayOrder: 3 },
+    ],
+    items: [
+      {
+        id: "item-hot-dog",
+        name: "Stadium hot dog",
+        description: "Quarter-pound all-beef dog on a toasted bun.",
+        price: 7.5,
+        categoryId: "cat-food",
+        available: true,
+      },
+      {
+        id: "item-nachos",
+        name: "Loaded nachos",
+        description: "Warm cheese, jalapeños, and pico.",
+        price: 11,
+        categoryId: "cat-food",
+        available: true,
+      },
+      {
+        id: "item-garlic-fries",
+        name: "Garlic fries",
+        description: "Hand-cut, tossed with parsley and parmesan.",
+        price: 8.25,
+        categoryId: "cat-food",
+        available: true,
+      },
+      {
+        id: "item-draft-beer",
+        name: "Local draft beer",
+        description: "16 oz pour from Ogden Brewing. ID required at delivery.",
+        price: 12,
+        categoryId: "cat-drinks",
+        available: true,
+      },
+      {
+        id: "item-soda",
+        name: "Fountain soda",
+        description: "Free refills at any concession stand.",
+        price: 5,
+        categoryId: "cat-drinks",
+        available: true,
+      },
+      {
+        id: "item-ice-cream",
+        name: "Helmet sundae",
+        description: "Vanilla soft serve in a souvenir mini helmet.",
+        price: 9.5,
+        categoryId: "cat-sweets",
+        available: true,
+      },
+    ],
+    ...overrides,
+  };
+}
+
+/** Public campaign payload for GET /fundraising-campaigns/public/{slug}. */
+export function demoFundraisingCampaign(overrides: Record<string, unknown> = {}) {
+  const org = DEMO_ICEDOGS_ORG;
+  return {
+    slug: "power-play-fund",
+    title: "Power Play Fund",
+    description:
+      "Dummy fundraiser for UI/UX review — all data here is local demo content. Donations help cover ice time, travel, and equipment for the season.",
+    heroImage: { url: "/cases/icedogs.jpg" },
+    enableLandingPageDonation: true,
+    organizationUUID: org.uuid,
+    organization: org,
+    suggestedAmounts: [25, 50, 100, 250],
+    participants: [
+      { uuid: "demo-participant-1", name: "Skate-a-thon team" },
+      { uuid: "demo-participant-2", name: "Equipment drive" },
+    ],
     ...overrides,
   };
 }
