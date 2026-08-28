@@ -35,6 +35,7 @@ type EventLike = {
   image?: ApiImage;
   organization?: { name?: string };
   attractions?: { name?: string; primary?: boolean; artwork?: ApiImage }[];
+  enableTransfers?: boolean;
 };
 
 export type AttractionCard = {
@@ -78,18 +79,22 @@ export type CartEventSummary = {
   doorsTime: string;
   startTime: string;
   eventUUID?: string;
+  availability: "available" | "past" | "transferred";
 };
 
 export type SeasonPackageSummary = {
   key: string;
+  orderId?: string;
   name: string;
   venueLine: string;
   eventCount: number;
   ticketCount: number;
   thumb?: string;
+  packageUUID?: string;
 };
 
 export type CartTicketDetail = {
+  id?: number | string;
   seat: string;
   holder: string;
   code: string;
@@ -117,8 +122,12 @@ export type CartEventDetail = {
   cartId: string;
   cartTotal?: number;
   orderId?: string;
+  orderRecordId?: number | string;
   purchasedAt?: string;
   eventUUID?: string;
+  event: EventLike;
+  transfersEnabled: boolean;
+  availability: CartEventSummary["availability"];
   attractions: AttractionCard[];
   teams: {
     name: string;
@@ -268,10 +277,105 @@ function mapEventTickets(
   holderEmail: string,
 ): CartTicketDetail[] {
   return tickets.map((t, i) => ({
+    id:
+      typeof t.id === "number" || typeof t.id === "string"
+        ? t.id
+        : typeof t.uuid === "string"
+          ? t.uuid
+          : undefined,
     seat: ticketSeatLabel(t),
     holder: holderName(holderEmail),
     code: String(t.checkInCode || t.uuid || `CART-${i + 1}`),
   }));
+}
+
+const TRANSFERRED_TICKET_STATUSES = new Set([
+  "accepted",
+  "assigned",
+  "complete",
+  "completed",
+  "pending",
+  "pending_transfer",
+  "transfer_pending",
+  "transferred",
+]);
+
+function normalizedStatus(value: unknown) {
+  return String(value || "").trim().toLowerCase().replace(/[\s-]+/g, "_");
+}
+
+function activeTransferRelation(value: unknown): boolean {
+  if (Array.isArray(value)) return value.some(activeTransferRelation);
+  if (!value || typeof value !== "object") return false;
+  const row = value as {
+    id?: unknown;
+    status?: unknown;
+    attributes?: unknown;
+    data?: unknown;
+  };
+  if ("data" in row) return activeTransferRelation(row.data);
+  if (row.attributes) return activeTransferRelation(row.attributes);
+  const status = normalizedStatus(row.status);
+  if (status === "cancelled" || status === "canceled" || status === "rejected") {
+    return false;
+  }
+  return status
+    ? TRANSFERRED_TICKET_STATUSES.has(status)
+    : row.id != null;
+}
+
+/** Ticket transfer payloads differ between API versions, so accept each known shape. */
+export function isTransferredTicket(ticket?: TicketLike | null): boolean {
+  if (!ticket) return false;
+  if (
+    ticket.isTransferred === true ||
+    ticket.transferred === true ||
+    Boolean(ticket.transferredAt)
+  ) {
+    return true;
+  }
+
+  const directStatuses = [
+    ticket.status,
+    ticket.transferStatus,
+    ticket.transfer_status,
+  ];
+  if (
+    directStatuses.some((status) =>
+      TRANSFERRED_TICKET_STATUSES.has(normalizedStatus(status)),
+    )
+  ) {
+    return true;
+  }
+  if (
+    ["assigned", "pending_transfer", "transfer_pending", "transferred"].includes(
+      normalizedStatus(ticket.on_sale_status),
+    )
+  ) {
+    return true;
+  }
+
+  return activeTransferRelation(
+    ticket.ticketTransfer ||
+    ticket.ticket_transfer ||
+    ticket.ticketTransfers ||
+    ticket.ticket_transfers ||
+    ticket.transfer,
+  );
+}
+
+function eventAvailability(
+  event: EventLike,
+  tickets: Array<Record<string, unknown>>,
+): CartEventSummary["availability"] {
+  if (!isUpcomingEvent(event)) return "past";
+  if (
+    tickets.length > 0 &&
+    tickets.every((ticket) => isTransferredTicket(ticket as TicketLike))
+  ) {
+    return "transferred";
+  }
+  return "available";
 }
 
 function detailFromEvent(
@@ -320,6 +424,9 @@ function detailFromEvent(
     cartId,
     cartTotal,
     eventUUID: String(ev.uuid || "").trim() || undefined,
+    event: ev,
+    transfersEnabled: ev.enableTransfers !== false,
+    availability: eventAvailability(ev, tickets),
     attractions,
     teams:
       attractions.length >= 2
@@ -416,6 +523,9 @@ export function buildCartEventDetails(
       ),
       cartId: id,
       cartTotal: total,
+      event: {},
+      transfersEnabled: false,
+      availability: "available",
       teams: [],
     };
     return out;
@@ -489,6 +599,7 @@ export function summarizeEventDetails(
     doorsTime: d.doors,
     startTime: d.startTime,
     eventUUID: d.eventUUID,
+    availability: d.availability,
   }));
 }
 
@@ -504,27 +615,76 @@ export function walletEventTicketsPath(eventUUID?: string | null) {
   return uuid ? `${walletSectionHref("events")}event/${uuid}/` : "";
 }
 
+/** Wallet detail for an access pass owned by the shopper. */
+export function walletAccessPassPath(accessPassUUID?: string | null) {
+  const uuid = String(accessPassUUID || "").trim();
+  return uuid
+    ? `${walletSectionHref("events")}access-pass/${uuid}/`
+    : "";
+}
+
+/** Wallet package detail for a purchased season package. */
+export function walletPackagePath(packageUUID?: string | null) {
+  const uuid = String(packageUUID || "").trim();
+  return uuid ? `${walletSectionHref("events")}package/${uuid}/` : "";
+}
+
+/** Wallet event detail nested under a season package. */
+export function walletPackageEventPath(
+  packageUUID?: string | null,
+  eventUUID?: string | null,
+) {
+  const pkg = String(packageUUID || "").trim();
+  const event = String(eventUUID || "").trim();
+  return pkg && event
+    ? `${walletSectionHref("events")}package/${pkg}/event/${event}/`
+    : "";
+}
+
 /** Wallet flex-pack detail for a purchased pack. */
 export function walletFlexPackPath(flexPackUUID?: string | null) {
   const uuid = String(flexPackUUID || "").trim();
   return uuid ? `${walletSectionHref("events")}flex-pack/${uuid}/` : "";
 }
 
-/** Event or flex-pack UUID from a wallet detail URL. */
+/** Event, package, flex-pack, or access-pass UUID from a wallet detail URL. */
 export function walletRouteFromPath(
   pathname = "",
-  params?: { eventUUID?: string | string[]; flexPackUUID?: string | string[] },
-): { eventUUID?: string; flexPackUUID?: string } {
+  params?: {
+    eventUUID?: string | string[];
+    flexPackUUID?: string | string[];
+    packageUUID?: string | string[];
+    accessPassUUID?: string | string[];
+  },
+): {
+  eventUUID?: string;
+  flexPackUUID?: string;
+  packageUUID?: string;
+  accessPassUUID?: string;
+} {
   const path = (pathname.split("?")[0] || "").replace(/\/+$/, "") || "/";
+  const packageEvent = path.match(
+    /^\/wallet\/(?:my-tickets\/)?package\/([^/]+)\/event\/([^/]+)$/,
+  );
+  const packageUUID =
+    packageEvent?.[1] ||
+    path.match(/^\/wallet\/(?:my-tickets\/)?package\/([^/]+)$/)?.[1] ||
+    firstRouteParam(params?.packageUUID);
   const eventUUID =
+    packageEvent?.[2] ||
     path.match(/^\/wallet\/my-tickets\/event\/([^/]+)$/)?.[1] ||
     firstRouteParam(params?.eventUUID);
   const flexPackUUID =
     path.match(/^\/wallet\/my-tickets\/flex-pack\/([^/]+)$/)?.[1] ||
     firstRouteParam(params?.flexPackUUID);
+  const accessPassUUID =
+    path.match(/^\/wallet\/my-tickets\/access-pass\/([^/]+)$/)?.[1] ||
+    firstRouteParam(params?.accessPassUUID);
   return {
     ...(eventUUID ? { eventUUID } : {}),
     ...(flexPackUUID ? { flexPackUUID } : {}),
+    ...(packageUUID ? { packageUUID } : {}),
+    ...(accessPassUUID ? { accessPassUUID } : {}),
   };
 }
 
@@ -552,8 +712,9 @@ function attachOrderEventDetail(
   holderEmail: string,
   ticketLabel: string,
   packageName?: string,
+  includeUnavailable = false,
 ) {
-  if (!tickets.length || !isUpcomingEvent(ev)) return;
+  if (!tickets.length || (!includeUnavailable && !isUpcomingEvent(ev))) return;
   const orderId = orderIdOf(order);
   const total = typeof order.total === "number" ? order.total : undefined;
   const purchasedAt = order.createdAt
@@ -575,6 +736,7 @@ function attachOrderEventDetail(
       packageName,
     ),
     orderId,
+    orderRecordId: order.id,
     purchasedAt,
     eventUUID: String(ev.uuid || "").trim() || undefined,
   };
@@ -641,7 +803,8 @@ export function buildSeasonPackageEventDetails(
 
   for (const order of orders) {
     if (!order.package?.events?.length) continue;
-    const orderId = orderIdOf(order);
+    const packageKey =
+      String(order.package.uuid || "").trim() || orderIdOf(order);
     const seen = new Set<string>();
     for (const ev of order.package.events) {
       const uuid = String(ev.uuid || ev.name || "");
@@ -653,11 +816,12 @@ export function buildSeasonPackageEventDetails(
         out,
         order,
         ev,
-        `${orderId}:${uuid}`,
+        `${packageKey}:${uuid}`,
         tickets,
         holderEmail,
         "Package",
         order.package.name,
+        true,
       );
     }
   }
@@ -675,13 +839,17 @@ export function buildSeasonPackageSummaries(
     const pkg = order.package;
     if (!pkg) continue;
     const tickets = order.tickets ?? [];
+    const orderId = orderIdOf(order) || undefined;
+    const packageUUID = String(pkg.uuid || "").trim() || undefined;
     out.push({
-      key: orderIdOf(order) || `package-${out.length + 1}`,
+      key: packageUUID || orderId || `package-${out.length + 1}`,
+      orderId,
       name: pkg.name || "Season tickets",
       venueLine: formatCartVenueLine(pkg.venue, pkg.organization?.name),
       eventCount: (pkg.events ?? []).filter((ev) => isUpcomingEvent(ev)).length,
       ticketCount: uniqueSeatCount(tickets) || tickets.length,
       thumb: pkg.image ? imageUrl(pkg.image, "") : undefined,
+      packageUUID,
     });
   }
 

@@ -53,6 +53,9 @@ export type OrderLike = {
   uuid?: string;
   createdAt?: string;
   total?: number;
+  /** Purchase origin; wallet inventory is intentionally not filtered by it. */
+  source?: "website" | "box_office" | "ticket_assignment" | string;
+  box_office?: boolean;
   event?: EventLike | null;
   package?: {
     uuid?: string;
@@ -104,6 +107,7 @@ export type AccessPassLike = {
   uuid?: string;
   name?: string;
   type?: string;
+  status?: string;
   checkInCode?: string;
   sectionNumber?: string | number;
   rowNumber?: string | number;
@@ -112,9 +116,70 @@ export type AccessPassLike = {
   artwork?: ApiImage;
   backgroundColor?: string;
   fontColor?: string;
+  primaryColor?: string;
   events?: EventLike[];
   [key: string]: unknown;
 };
+
+export type AccessPassSummary = {
+  key: string;
+  /** The pass as the API returned it, for wallet-pass payloads. */
+  pass: AccessPassLike;
+  accessPassUUID?: string;
+  name: string;
+  typeLabel: string;
+  checkInCode: string;
+  seat: string;
+  eventCount: number;
+  attendedCount: number;
+  season: string;
+  status: string;
+  validThrough: string;
+  events: EventLike[];
+  nextEvent?: EventLike;
+  artwork?: string;
+  backgroundColor?: string;
+  fontColor?: string;
+};
+
+/** Fan-visible access passes returned by GET /events/myAccessPasses. */
+export function buildAccessPassSummaries(
+  passes: AccessPassLike[],
+): AccessPassSummary[] {
+  return passes
+    .filter((pass) => !pass.status || pass.status === "active")
+    .map((pass, index) => {
+      const events = [...(pass.events ?? [])].sort((a, b) =>
+        String(a.start || "").localeCompare(String(b.start || "")),
+      );
+      return {
+        key: String(pass.uuid || pass.checkInCode || `access-pass-${index + 1}`),
+        pass,
+        accessPassUUID: String(pass.uuid || "").trim() || undefined,
+        name: pass.name || "Access pass",
+        typeLabel: pass.type === "organizer" ? "All-access pass" : "Season pass",
+        checkInCode: String(pass.checkInCode || ""),
+        seat: seatLabel(pass),
+        eventCount: events.length,
+        attendedCount: events.filter((event) => event.status === "complete").length,
+        season: events[0]?.start ? moment(events[0].start).format("YYYY") : "",
+        status: pass.status
+          ? `${pass.status.charAt(0).toUpperCase()}${pass.status.slice(1)}`
+          : "Active",
+        validThrough: events.at(-1)?.start
+          ? moment(events.at(-1)?.start).format("MMM YYYY")
+          : "",
+        events,
+        nextEvent:
+          events.find(
+            (event) => event.status !== "complete" && isUpcomingEvent(event),
+          ) || events.find((event) => event.status !== "complete"),
+        artwork: pass.artwork ? imageUrl(pass.artwork, "") : undefined,
+        backgroundColor: pass.backgroundColor || pass.primaryColor,
+        fontColor: pass.fontColor,
+      };
+    });
+}
 
 export function seatLabel(ticket?: TicketLike | null): string {
   if (!ticket) return "Ticket";
@@ -215,4 +280,27 @@ export function isIos() {
 export function isAndroid() {
   if (typeof navigator === "undefined") return false;
   return /android/i.test(navigator.userAgent);
+}
+
+/**
+ * Phone layouts belong to phones, so they ask the device rather than
+ * `window.innerWidth` — a narrow desktop window keeps the desktop layout.
+ */
+export function isMobileDevice() {
+  if (typeof window === "undefined" || typeof navigator === "undefined") {
+    return false;
+  }
+  const hints = (
+    navigator as Navigator & { userAgentData?: { mobile?: boolean } }
+  ).userAgentData;
+  if (hints?.mobile) return true;
+  if (typeof window.matchMedia === "function") {
+    // Phones and tablets report a coarse pointer that cannot hover; a
+    // touchscreen laptop still reports its mouse, so it stays on desktop.
+    const coarse = window.matchMedia("(pointer: coarse)").matches;
+    const hover = window.matchMedia("(hover: hover)").matches;
+    if (coarse && !hover) return true;
+  }
+  const touch = (navigator.maxTouchPoints ?? 0) > 0 || "ontouchstart" in window;
+  return touch && (isIos() || isAndroid());
 }

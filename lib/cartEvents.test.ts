@@ -18,8 +18,11 @@ import {
   summarizeCartEvents,
   summarizeEventDetails,
   walletEventScheduleLine,
+  walletAccessPassPath,
   walletEventTicketsPath,
   walletFlexPackPath,
+  walletPackageEventPath,
+  walletPackagePath,
   walletRouteFromPath,
 } from "@/lib/cartEvents";
 
@@ -77,6 +80,17 @@ describe("wallet season-package orders", () => {
     expect(upcoming.some((row) => row.name === pkg.events[1].name)).toBe(false);
     expect(countSeasonPackages(orders)).toBe(1);
     expect(season[0].name).toBe(pkg.name);
+    expect(season[0].orderId).toBe(packageOrder.orderId);
+    expect(season[0].packageUUID).toBe(pkg.uuid);
+    expect(season[0].key).toBe(pkg.uuid);
+    expect(walletPackagePath(season[0].packageUUID)).toBe(
+      `/wallet/my-tickets/package/${pkg.uuid}/`,
+    );
+    expect(
+      walletPackageEventPath(season[0].packageUUID, packageGames[0].eventUUID),
+    ).toBe(
+      `/wallet/my-tickets/package/${pkg.uuid}/event/${packageGames[0].eventUUID}/`,
+    );
     expect(season[0].eventCount).toBe(pkg.events.length);
     expect(season[0].ticketCount).toBe(packageOrder.tickets.length);
     expect(packageGames.map((row) => row.name)).toEqual(
@@ -94,9 +108,70 @@ describe("wallet season-package orders", () => {
     ).toHaveLength(0);
   });
 
+  it("marks past and fully transferred package events as unavailable", () => {
+    const order = demoCompletedPackageOrder();
+    const [pastEvent, activeEvent, transferredEvent] = pkg.events;
+    const events = [
+      { ...pastEvent, start: "2020-08-15T23:00:00.000Z", status: "complete" },
+      activeEvent,
+      transferredEvent,
+    ];
+    const tickets = events.flatMap((event) =>
+      order.tickets.map((ticket) => ({
+        ...ticket,
+        id: `${ticket.id}-${event.uuid}`,
+        eventUUID: event.uuid,
+        ...(event.uuid === transferredEvent.uuid
+          ? { transferStatus: "transferred" }
+          : {}),
+      })),
+    );
+    const packageOrder = demoCompletedPackageOrder({
+      package: { ...order.package, events },
+      tickets,
+    });
+
+    const rows = summarizeEventDetails(
+      buildSeasonPackageEventDetails([packageOrder]),
+    );
+
+    expect(rows).toHaveLength(3);
+    expect(rows.find((row) => row.eventUUID === pastEvent.uuid)?.availability).toBe(
+      "past",
+    );
+    expect(rows.find((row) => row.eventUUID === activeEvent.uuid)?.availability).toBe(
+      "available",
+    );
+    expect(
+      rows.find((row) => row.eventUUID === transferredEvent.uuid)?.availability,
+    ).toBe("transferred");
+
+    const oneTransferredTicket = tickets.map((ticket, index) =>
+      ticket.eventUUID === transferredEvent.uuid && index === tickets.length - 1
+        ? { ...ticket, transferStatus: undefined }
+        : ticket,
+    );
+    const partialRows = summarizeEventDetails(
+      buildSeasonPackageEventDetails([
+        demoCompletedPackageOrder({
+          package: { ...order.package, events },
+          tickets: oneTransferredTicket,
+        }),
+      ]),
+    );
+    expect(
+      partialRows.find((row) => row.eventUUID === transferredEvent.uuid)
+        ?.availability,
+    ).toBe("available");
+  });
+
   it("does not build a wallet event path without an event UUID", () => {
     expect(walletEventTicketsPath("")).toBe("");
     expect(walletEventTicketsPath(undefined)).toBe("");
+    expect(walletPackagePath("")).toBe("");
+    expect(walletPackageEventPath(pkg.uuid, "")).toBe("");
+    expect(walletPackageEventPath("", icedogs.uuid)).toBe("");
+    expect(walletAccessPassPath("")).toBe("");
   });
 });
 
@@ -158,8 +233,9 @@ describe("wallet flex-pack orders", () => {
     expect(walletFlexPackPath(undefined)).toBe("");
   });
 
-  it("reads event and flex-pack UUIDs from the nested wallet URLs", () => {
+  it("reads event, package, and flex-pack UUIDs from the nested wallet URLs", () => {
     const pack = demoFlexPack();
+    const pkg = demoSeasonPackage();
     const icedogs = DEMO_EVENTS.find((event) => event.shortCode === "ICEDOG5")!;
     expect(walletRouteFromPath("/wallet/my-tickets/")).toEqual({});
     expect(walletRouteFromPath(`/wallet/my-tickets/${icedogs.uuid}/`)).toEqual({});
@@ -168,6 +244,32 @@ describe("wallet flex-pack orders", () => {
     });
     expect(walletRouteFromPath(`/wallet/my-tickets/flex-pack/${pack.uuid}/`)).toEqual({
       flexPackUUID: pack.uuid,
+    });
+    expect(
+      walletRouteFromPath(`/wallet/my-tickets/package/${pkg.uuid}/`),
+    ).toEqual({
+      packageUUID: pkg.uuid,
+    });
+    expect(
+      walletRouteFromPath(
+        `/wallet/my-tickets/package/${pkg.uuid}/event/${icedogs.uuid}/`,
+      ),
+    ).toEqual({
+      eventUUID: icedogs.uuid,
+      packageUUID: pkg.uuid,
+    });
+    expect(walletRouteFromPath(`/wallet/package/${pkg.uuid}/`)).toEqual({
+      packageUUID: pkg.uuid,
+    });
+    expect(walletAccessPassPath("access-pass-1")).toBe(
+      "/wallet/my-tickets/access-pass/access-pass-1/",
+    );
+    expect(
+      walletRouteFromPath(
+        "/wallet/my-tickets/access-pass/access-pass-1/",
+      ),
+    ).toEqual({
+      accessPassUUID: "access-pass-1",
     });
   });
 
