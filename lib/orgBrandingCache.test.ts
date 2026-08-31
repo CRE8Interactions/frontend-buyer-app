@@ -45,7 +45,7 @@ describe("org branding cookie", () => {
       name: raptors.name,
       primaryColor: raptors.branding.primaryColor,
     });
-    expect(getLoaderBranding("/checkout/checkout-success/")).toMatchObject({
+    expect(getLoaderBranding("/checkout/success/")).toMatchObject({
       name: raptors.name,
       primaryColor: raptors.branding.primaryColor,
     });
@@ -243,7 +243,7 @@ describe("wallet origin loaders", () => {
     cacheOrgBranding(raptors);
 
     expect(
-      walletLoaderFromOrigin("/checkout/checkout-success/", "/wallet/my-tickets/"),
+      walletLoaderFromOrigin("/checkout/success/", "/wallet/my-tickets/"),
     ).toMatchObject({
       fallback: "none",
       branding: { name: raptors.name },
@@ -256,18 +256,31 @@ describe("wallet origin loaders", () => {
     });
 
     consumeWalletEntryFromTenant();
-    expect(isWalletAccountPath("/wallet/my-tickets/event/abc/")).toBe(true);
-    expect(isWalletAccountPath("/wallet/my-tickets/package/pkg-1/event/abc/")).toBe(
+    expect(isWalletAccountPath("/wallet/my-tickets/order/ord-1/")).toBe(
       true,
     );
-    expect(orgSlugFromPathname("/wallet/my-tickets/package/pkg-1/")).toBeNull();
     expect(
-      walletLoaderFromOrigin("/wallet/my-tickets/", "/wallet/my-tickets/event/abc/"),
+      isWalletAccountPath(
+        "/wallet/my-tickets/order/ord-1/package/pkg-1/event/abc/",
+      ),
+    ).toBe(true);
+    expect(
+      orgSlugFromPathname("/wallet/my-tickets/order/ord-1/package/pkg-1/"),
+    ).toBeNull();
+    expect(
+      walletLoaderFromOrigin(
+        "/wallet/my-tickets/",
+        "/wallet/my-tickets/order/ord-1/",
+      ),
     ).toEqual({
       branding: null,
       fallback: "blocktickets",
     });
-    expect(isPlatformLoaderPath("/wallet/my-tickets/event/abc/")).toBe(true);
-    expect(getLoaderBranding("/wallet/my-tickets/event/abc/")).toBeNull();
+    expect(
+      isPlatformLoaderPath("/wallet/my-tickets/order/ord-1/"),
+    ).toBe(true);
+    expect(
+      getLoaderBranding("/wallet/my-tickets/order/ord-1/"),
+    ).toBeNull();
   });
 });

@@ -97,7 +97,7 @@ describe("RouteLoader", () => {
   });
 
   it("shows retrieving payment details on checkout confirmation", () => {
-    mockPathname = "/checkout/checkout-success/";
+    mockPathname = "/checkout/success/";
     cacheOrgBranding(raptors);
     render(<RouteLoader />);
 

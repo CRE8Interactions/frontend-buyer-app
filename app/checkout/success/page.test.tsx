@@ -32,7 +32,7 @@ vi.mock("next/link", () => ({
 
 vi.mock("next/navigation", () => ({
   useSearchParams: () => new URLSearchParams("intentId=pi_test"),
-  usePathname: () => "/checkout/checkout-success/",
+  usePathname: () => "/checkout/success/",
   useRouter: () => ({ push: vi.fn(), replace: vi.fn(), back: vi.fn() }),
   useParams: () => ({}),
 }));
@@ -61,7 +61,7 @@ vi.mock("@/lib/orderReceipt", () => ({
 
 import CheckoutSuccessPageRoute, {
   __resetCheckoutSuccessOrderInflightForTests,
-} from "@/app/checkout/checkout-success/page";
+} from "@/app/checkout/success/page";
 import { getOrder, getOrderByPaymentIntentId } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import {

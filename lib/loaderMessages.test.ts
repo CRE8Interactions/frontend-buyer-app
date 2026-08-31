@@ -15,11 +15,11 @@ describe("loaderMessageForPath", () => {
     expect(loaderMessageForPath("/checkout/?cartId=1")).toBe(
       CHECKOUT_LOADER_MESSAGE,
     );
-    expect(loaderMessageForPath("/checkout/checkout-success/")).toBe(
+    expect(loaderMessageForPath("/checkout/success/")).toBe(
       CHECKOUT_SUCCESS_LOADER_MESSAGE,
     );
     expect(
-      loaderMessageForPath("/checkout/checkout-success/?intentId=pi_test"),
+      loaderMessageForPath("/checkout/success/?intentId=pi_test"),
     ).toBe(CHECKOUT_SUCCESS_LOADER_MESSAGE);
   });
 

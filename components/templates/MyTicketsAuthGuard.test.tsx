@@ -70,7 +70,7 @@ describe("MyTicketsAuthGuard", () => {
   it("returns a guest arriving from checkout success back to the wallet", async () => {
     mockedUseAuth.mockReturnValue(authState(false));
     mockedGetLastKnown.mockReturnValue(
-      "/checkout/checkout-success/?intentId=pi_test",
+      "/checkout/success/?intentId=pi_test",
     );
     render(
       <MyTicketsAuthGuard>

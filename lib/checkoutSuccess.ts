@@ -3,7 +3,7 @@ import { markStripePaymentSyncStarted } from "@/lib/stripePaymentSync";
 
 /** Confirmation path after a PaymentIntent succeeds. */
 export function checkoutSuccessPath(intentId: string) {
-  return `/checkout/checkout-success/?intentId=${encodeURIComponent(intentId)}`;
+  return `/checkout/success/?intentId=${encodeURIComponent(intentId)}`;
 }
 
 /** Absolute URL Stripe should return to after a redirect payment (3DS, Link). */

@@ -1,0 +1,17 @@
+%% Platform routes: each node is path then the component that renders.
+
+flowchart TD
+  home["/ → app/page.tsx"]
+  browse["/browse → BrowseHome"]
+  search["/search → SearchPage"]
+  login["/login → LoginPage"]
+  signOut["/sign-out → SignOut"]
+  story["/our-story → MarketingPage"]
+  sell["/sell → SellWithUs"]
+  caseStudy["/case-study/:slug → MarketingPage"]
+  design["/design-system → MarketingPage"]
+  privacy["/privacy-policy → Policies"]
+  terms["/terms-conditions → Policies"]
+  purchase["/purchase-policy → Policies"]
+  cookies["/cookies-policy → Policies"]
+  disclaimer["/disclaimer → Policies"]

@@ -9,8 +9,8 @@ export const MENU_LOADER_MESSAGE = "loading menu";
 export function loaderMessageForPath(pathname = "") {
   const path = (pathname.split("?")[0] || "").replace(/\/+$/, "") || "/";
   if (
-    path === "/checkout/checkout-success" ||
-    path.startsWith("/checkout/checkout-success/")
+    path === "/checkout/success" ||
+    path.startsWith("/checkout/success/")
   ) {
     return CHECKOUT_SUCCESS_LOADER_MESSAGE;
   }

@@ -55,7 +55,7 @@ export const LOADER_BOOT_SCRIPT = `(function(){
     var norm = path.replace(/\\/+$/, "") || "/";
     var loginReturnsToTenant =
       norm === "/login" && /[?&]from=[^&]/.test(location.search || "");
-    var wallet = /^\\/wallet\\/(?:my-tickets|my-transfers|my-listings|giving|my-profile|package)(?:\\/|$)/.test(norm);
+    var wallet = /^\\/wallet\\/(?:my-tickets|my-transfers|my-listings|giving|my-profile)(?:\\/|$)/.test(norm);
     var fromTenant = false;
     try { fromTenant = read("bt_wallet_entry_from_tenant") === "1"; } catch (e) {}
     if (!fromTenant) {
@@ -178,7 +178,7 @@ export const LOADER_BOOT_SCRIPT = `(function(){
     }
     var msg = document.createElement("div");
     var msgText = ${JSON.stringify(LOADER_MESSAGE)};
-    if (norm === "/checkout/checkout-success") {
+    if (norm === "/checkout/success") {
       msgText = ${JSON.stringify(CHECKOUT_SUCCESS_LOADER_MESSAGE)};
     } else if (norm === "/checkout" || norm.indexOf("/checkout/") === 0) {
       msgText = ${JSON.stringify(CHECKOUT_LOADER_MESSAGE)};

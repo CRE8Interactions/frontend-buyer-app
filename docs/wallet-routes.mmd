@@ -1,0 +1,15 @@
+%% Wallet routes: each node is path then the component that renders.
+%% Section and detail URLs share WalletLayout (MyTicketsAuthGuard + SeasonTickets).
+%% Their page.tsx files return null and only own the URL.
+
+flowchart TD
+  myTickets["/wallet/my-tickets → SeasonTickets"]
+  transfers["/wallet/my-transfers → SeasonTickets"]
+  listings["/wallet/my-listings → SeasonTickets"]
+  giving["/wallet/giving → SeasonTickets"]
+  profile["/wallet/my-profile → SeasonTickets"]
+  myTickets --> orderEvent["/wallet/my-tickets/order/:orderId → SeasonTickets"]
+  myTickets --> pkg["/wallet/my-tickets/order/:orderId/package/:packageUUID → SeasonTickets"]
+  pkg --> pkgEvent["/wallet/my-tickets/order/:orderId/package/:packageUUID/event/:eventUUID → SeasonTickets"]
+  myTickets --> flex["/wallet/my-tickets/order/:orderId/flex-pack/:flexPackUUID → SeasonTickets"]
+  myTickets --> pass["/wallet/my-tickets/order/:orderId/access-pass/:accessPassUUID → SeasonTickets"]

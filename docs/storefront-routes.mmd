@@ -1,0 +1,27 @@
+%% Storefront routes: each node is path then the component that renders.
+
+flowchart TD
+  event["/e/:slug/:shortcode → PremiumTicketing"]
+  seated["/e/:slug/:shortcode/tickets → PremiumTicketing"]
+  waiting["/e/:slug/:shortcode/waiting-room → WaitingRoomPage"]
+  org["/:slug → ClientProfile"]
+  venue["/venue/:slug → VenueProfile"]
+  orgPkg["/:slug/package/:id → PackageDetailClient"]
+  venuePkg["/venue/:slug/package/:id → PackageDetailClient"]
+  orgFlex["/:slug/flex-pack/:uuid → FlexPackDetailClient"]
+  venueFlex["/venue/:slug/flex-pack/:uuid → FlexPackDetailClient"]
+  orgPass["/:slug/access-pass/:uuid → AccessPassDetailClient"]
+  venuePass["/venue/:slug/access-pass/:uuid → AccessPassDetailClient"]
+  fundraise["/fundraise/:slug → FundraisingCampaignClient"]
+  orgFund["/:slug/fundraisers/:campaignSlug → FundraisingCampaignClient"]
+  group["/group/:groupCode → GroupManagePage"]
+  menu["/menu/:organization_uuid/... → MenuExperience"]
+  event --> seated
+  event --> waiting
+  org --> orgPkg
+  org --> orgFlex
+  org --> orgPass
+  org --> orgFund
+  venue --> venuePkg
+  venue --> venueFlex
+  venue --> venuePass

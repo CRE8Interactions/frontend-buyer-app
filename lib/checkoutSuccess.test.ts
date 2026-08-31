@@ -11,7 +11,7 @@ import { msUntilStripePaymentSyncReady } from "@/lib/stripePaymentSync";
 describe("checkoutSuccessPath", () => {
   it("sends confirmation to the payment intent", () => {
     expect(checkoutSuccessPath("pi_flex")).toBe(
-      "/checkout/checkout-success/?intentId=pi_flex",
+      "/checkout/success/?intentId=pi_flex",
     );
   });
 });
@@ -19,7 +19,7 @@ describe("checkoutSuccessPath", () => {
 describe("checkoutSuccessReturnUrl", () => {
   it("points Stripe redirects at confirmation, not checkout", () => {
     expect(checkoutSuccessReturnUrl("pi_flex")).toBe(
-      `${window.location.origin}/checkout/checkout-success/?intentId=pi_flex`,
+      `${window.location.origin}/checkout/success/?intentId=pi_flex`,
     );
   });
 });
@@ -58,7 +58,7 @@ describe("leaveCheckoutForSuccess", () => {
     leaveCheckoutForSuccess("pi_flex");
 
     expect(replace).toHaveBeenCalledWith(
-      "http://localhost/checkout/checkout-success/?intentId=pi_flex",
+      "http://localhost/checkout/success/?intentId=pi_flex",
     );
     expect(msUntilStripePaymentSyncReady()).toBeGreaterThan(0);
   });

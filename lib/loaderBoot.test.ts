@@ -23,7 +23,7 @@ describe("boot splash", () => {
   it("spins the org logo and names the org while checkout confirmation loads", () => {
     cacheOrgBranding(RAPTORS);
 
-    const splash = paintBootSplash("/checkout/checkout-success/?intentId=pi_1");
+    const splash = paintBootSplash("/checkout/success/?intentId=pi_1");
 
     expect(splash?.querySelector("[data-bt-boot-spinner] svg")).not.toBeNull();
     expect(splash?.querySelector("img")).toHaveAttribute(
@@ -107,7 +107,7 @@ describe("boot splash", () => {
   });
 
   it("paints nothing when no org branding is known", () => {
-    expect(paintBootSplash("/checkout/checkout-success/?intentId=pi_1")).toBe(
+    expect(paintBootSplash("/checkout/success/?intentId=pi_1")).toBe(
       null,
     );
   });

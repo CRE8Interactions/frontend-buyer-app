@@ -80,6 +80,22 @@ function parseBody(config: InternalAxiosRequestConfig): Record<string, unknown> 
   return d as Record<string, unknown>;
 }
 
+const walletOrders = () => [
+  demoCompletedTicketOrder({ source: "website" }),
+  demoCompletedTicketOrder({
+    id: 128186,
+    orderId: "1474-145929-3863",
+    source: "box_office",
+  }),
+  demoCompletedTicketOrder({
+    id: 128187,
+    orderId: "1474-145929-3864",
+    source: "ticket_assignment",
+  }),
+  demoCompletedPackageOrder({ source: "ticket_assignment" }),
+  demoCompletedFlexPackOrder({ source: "website" }),
+];
+
 const routes: Route[] = [
   // ---- Browse / discovery (real snapshots) ----
   { methods: ["get"], match: endsWith("/organizations/on-sale"), handle: async () => ({ data: await snap("organizations-on-sale.json") }) },
@@ -89,23 +105,18 @@ const routes: Route[] = [
   {
     methods: ["get"],
     match: endsWith("/events/myUpcomingEvents"),
-    handle: () => ({
-      data: [
-        demoCompletedTicketOrder({ source: "website" }),
-        demoCompletedTicketOrder({
-          id: 128186,
-          orderId: "1474-145929-3863",
-          source: "box_office",
-        }),
-        demoCompletedTicketOrder({
-          id: 128187,
-          orderId: "1474-145929-3864",
-          source: "ticket_assignment",
-        }),
-        demoCompletedPackageOrder({ source: "ticket_assignment" }),
-        demoCompletedFlexPackOrder({ source: "website" }),
-      ],
-    }),
+    handle: () => ({ data: walletOrders() }),
+  },
+  {
+    methods: ["get"],
+    match: (path) => path.includes("/orders?filters[orderId]"),
+    handle: (path) => {
+      const orderId = new URLSearchParams(path.split("?")[1] || "").get(
+        "filters[orderId][$eq]",
+      );
+      const order = walletOrders().find((row) => row.orderId === orderId);
+      return { data: order ?? null, status: order ? 200 : 404 };
+    },
   },
   {
     methods: ["get"],
