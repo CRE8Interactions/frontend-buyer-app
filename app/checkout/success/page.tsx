@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, useEffect, useLayoutEffect, useState } from "react";
+import { Suspense, useEffect, useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import BrandedActionButton from "@/components/atoms/BrandedActionButton";
@@ -60,6 +60,7 @@ import {
   trackPurchase,
   type TrackingOrganization,
 } from "@/lib/tracking";
+import { useClientReady } from "@/lib/useClientReady";
 
 const NAVY = "#051b35";
 const MUTED = "#6e7180";
@@ -90,22 +91,14 @@ function CheckoutSuccessPage() {
   const [error, setError] = useState("");
   const [receiptMsg, setReceiptMsg] = useState("");
   const [downloadingReceipt, setDownloadingReceipt] = useState(false);
-  const [allowCachedBranding, setAllowCachedBranding] = useState(false);
+  const allowCachedBranding = useClientReady();
 
   useEffect(() => {
     hideIntercomLauncher();
   }, []);
 
-  useLayoutEffect(() => {
-    setAllowCachedBranding(true);
-  }, []);
-
   useEffect(() => {
-    if (!intentId) {
-      setError("Missing payment reference.");
-      setLoading(false);
-      return;
-    }
+    if (!intentId) return;
     let cancelled = false;
     let delayTimer: ReturnType<typeof setTimeout> | null = null;
     const abort = new AbortController();
@@ -235,7 +228,8 @@ function CheckoutSuccessPage() {
   };
 
   const awaitingAuth = !authReady;
-  const shellLoading = awaitingAuth || loading;
+  const displayError = intentId ? error : "Missing payment reference.";
+  const shellLoading = awaitingAuth || (Boolean(intentId) && loading);
   const loaderBranding = branding.organization
     ? {
         primaryColor: accent,
@@ -326,11 +320,11 @@ function CheckoutSuccessPage() {
         </div>
       </header>
 
-      {error || !order ? (
+      {displayError || !order ? (
         <div className={`${CARD} mx-auto mt-10 max-w-lg p-8 text-center`}>
           <h1 className="text-[22px] font-semibold">Order not found</h1>
           <p className="mt-2 text-[15px]" style={{ color: MUTED }}>
-            {error}
+            {displayError}
           </p>
           <Link
             href={walletHref}
