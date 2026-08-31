@@ -34,6 +34,7 @@ import {
   getMyAccessPass,
   getMyAccessPasses,
   getMyEvents,
+  getOrder,
 } from "@/lib/api";
 import { getSession } from "@/lib/auth";
 import { imageUrl } from "@/lib/helpers";
@@ -51,6 +52,7 @@ import {
   walletPackageEventPath,
   walletPackagePath,
   walletRouteFromPath,
+  withFullOrder,
   type AttractionCard,
   type CartEventDetail,
   type CartEventSummary,
@@ -63,6 +65,7 @@ import {
   isMobileDevice,
   isUpcomingEvent,
   unwrapList,
+  unwrapOrder,
   type AccessPassLike,
   type AccessPassSummary,
   type OrderLike,
@@ -78,6 +81,7 @@ import {
   walletSectionFromPath,
   walletSectionHref,
 } from "@/lib/walletNav";
+import { printTicketsPdf } from "@/lib/ticketPdf";
 
 /* ---- brand tokens ---- */
 const CRIMSON = "#8c0b42";
@@ -511,11 +515,12 @@ type EventT = {
   title: string; when: string; doors: string; venue: string; city: string; address: string;
   id: string; brand: string; initials: string; blurb: string; rec: string; opp: string;
   teams: { name: string; role: string; rec: string; initials: string; brand: string; logo?: string }[];
-  tickets: { id?: number | string; seat: string; holder: string; code: string }[];
+  tickets: { id?: number | string; seat: string; holder: string; code: string; raw?: Record<string, unknown> }[];
   attractions?: AttractionCard[];
   heroImage?: string;
   posterSrc?: string;
   ticketLabel?: string;
+  packageName?: string;
   isCart?: boolean;
   orderId?: string;
   purchasedAt?: string;
@@ -547,6 +552,7 @@ function detailToEventT(d: CartEventDetail, isCart = false): EventT {
     heroImage: d.heroImage,
     posterSrc: d.posterSrc,
     ticketLabel: d.ticketLabel,
+    packageName: d.packageName,
     isCart,
     orderId: d.orderId,
     purchasedAt: d.purchasedAt,
@@ -659,6 +665,7 @@ export default function SeasonTickets({
   flexPackUUID?: string;
 }) {
   const params = useParams<{
+    orderId?: string | string[];
     eventUUID?: string | string[];
     flexPackUUID?: string | string[];
     packageUUID?: string | string[];
@@ -667,6 +674,7 @@ export default function SeasonTickets({
   const pathname = usePathname() || "";
   const searchParams = useSearchParams();
   const route = walletRouteFromPath(pathname, params);
+  const routedOrderId = route.orderId;
   const routedEventUUID = eventUUID || route.eventUUID;
   const routedFlexPackUUID = flexPackUUID || route.flexPackUUID;
   const routedPackageUUID = route.packageUUID;
@@ -688,6 +696,8 @@ export default function SeasonTickets({
   const [saleTab, setSaleTab] = useState<"active" | "sold" | "expired">("active");
   const [modal, setModal] = useState<null | "details" | "field" | "vouchers">(null);
   const [detail, setDetail] = useState<{ seat?: string; holder?: string; code?: string } | null>(null);
+  const [printing, setPrinting] = useState<string | null>(null);
+  const [printError, setPrintError] = useState("");
   const [field, setField] = useState<{ group: string; heading: string; label: string; help: string; key: string } | null>(null);
   const [fieldValue, setFieldValue] = useState("");
   const [pvals, setPvals] = useState<Record<string, string>>({});
@@ -714,6 +724,10 @@ export default function SeasonTickets({
     Record<string, AccessPassSummary[]>
   >({});
   const [packagePassChecked, setPackagePassChecked] = useState<
+    Record<string, boolean>
+  >({});
+  const [fullOrders, setFullOrders] = useState<Record<string, OrderLike>>({});
+  const [fullOrderChecked, setFullOrderChecked] = useState<
     Record<string, boolean>
   >({});
   const [packageView, setPackageView] = useState<"pass" | "events">("pass");
@@ -886,7 +900,10 @@ export default function SeasonTickets({
         if (summary) {
           setAccessPassDetails((current) => ({
             ...current,
-            [uuid]: summary,
+            [uuid]: {
+              ...summary,
+              orderId: summary.orderId || routedOrderId,
+            },
           }));
         }
       })
@@ -907,6 +924,7 @@ export default function SeasonTickets({
     accessPassDetailChecked,
     accessPassDetails,
     routedAccessPassUUID,
+    routedOrderId,
   ]);
 
   const mobile = vw < 900;
@@ -916,7 +934,8 @@ export default function SeasonTickets({
   const isHolder = email.trim().toLowerCase() === "harrison.cogan@gmail.com";
   const events = useMemo(buildEvents, []);
   const showRoutedWallet = Boolean(
-    routedEventUUID ||
+    routedOrderId ||
+      routedEventUUID ||
       routedFlexPackUUID ||
       routedPackageUUID ||
       routedAccessPassUUID,
@@ -926,10 +945,17 @@ export default function SeasonTickets({
       routedPackageUUID
         ? seasonPackages.find(
             (row) =>
+              (row.packageUUID === routedPackageUUID ||
+                row.key === routedPackageUUID) &&
+              (!routedOrderId || row.orderId === routedOrderId),
+          ) ||
+          seasonPackages.find(
+            (row) =>
               row.packageUUID === routedPackageUUID || row.key === routedPackageUUID,
-          ) || null
+          ) ||
+          null
         : null,
-    [routedPackageUUID, seasonPackages],
+    [routedOrderId, routedPackageUUID, seasonPackages],
   );
   const routedPackagePassPending = Boolean(
     routedSeasonPackage?.orderId &&
@@ -937,44 +963,97 @@ export default function SeasonTickets({
       !packagePassChecked[routedSeasonPackage.key],
   );
   const routedDetail = useMemo(() => {
-    if (!routedEventUUID) return null;
     const list = Object.values(eventDetails);
-    if (routedPackageUUID) {
+    const sameOrder = (d: CartEventDetail) =>
+      !routedOrderId || d.orderId === routedOrderId;
+    if (routedPackageUUID && routedEventUUID) {
       return (
+        list.find(
+          (d) =>
+            sameOrder(d) &&
+            d.eventUUID === routedEventUUID &&
+            d.key.startsWith(`${routedPackageUUID}:`),
+        ) ||
         list.find(
           (d) =>
             d.eventUUID === routedEventUUID &&
             d.key.startsWith(`${routedPackageUUID}:`),
+        ) ||
+        null
+      );
+    }
+    if (routedEventUUID) {
+      return (
+        list.find(
+          (d) =>
+            sameOrder(d) &&
+            d.eventUUID === routedEventUUID &&
+            !d.key.includes(":"),
+        ) ||
+        list.find((d) => sameOrder(d) && d.eventUUID === routedEventUUID) ||
+        list.find(
+          (d) => d.eventUUID === routedEventUUID && !d.key.includes(":"),
+        ) ||
+        list.find((d) => d.eventUUID === routedEventUUID) ||
+        null
+      );
+    }
+    if (
+      routedOrderId &&
+      !routedPackageUUID &&
+      !routedFlexPackUUID &&
+      !routedAccessPassUUID
+    ) {
+      return (
+        list.find(
+          (d) => d.orderId === routedOrderId && !d.key.includes(":"),
         ) || null
       );
     }
-    return (
-      list.find(
-        (d) => d.eventUUID === routedEventUUID && !d.key.includes(":"),
-      ) ||
-      list.find((d) => d.eventUUID === routedEventUUID) ||
-      null
-    );
-  }, [routedEventUUID, routedPackageUUID, eventDetails]);
+    return null;
+  }, [
+    routedAccessPassUUID,
+    routedEventUUID,
+    routedFlexPackUUID,
+    routedOrderId,
+    routedPackageUUID,
+    eventDetails,
+  ]);
   const routedFlexPack = useMemo(
     () =>
       routedFlexPackUUID
         ? flexPacks.find(
             (row) =>
-              row.flexPackUUID === routedFlexPackUUID || row.key === routedFlexPackUUID,
-          ) || null
-        : null,
-    [routedFlexPackUUID, flexPacks],
-  );
-  const routedAccessPass = useMemo(
-    () =>
-      routedAccessPassUUID
-        ? accessPassDetails[routedAccessPassUUID] ||
-          accessPasses.find((row) => row.key === routedAccessPassUUID) ||
+              (row.flexPackUUID === routedFlexPackUUID ||
+                row.key === routedFlexPackUUID) &&
+              (!routedOrderId || row.orderId === routedOrderId),
+          ) ||
+          flexPacks.find(
+            (row) =>
+              row.flexPackUUID === routedFlexPackUUID ||
+              row.key === routedFlexPackUUID,
+          ) ||
           null
         : null,
-    [routedAccessPassUUID, accessPassDetails, accessPasses],
+    [routedFlexPackUUID, routedOrderId, flexPacks],
   );
+  const routedAccessPass = useMemo(() => {
+    if (!routedAccessPassUUID) return null;
+    const byOrder = (row: AccessPassSummary) =>
+      !routedOrderId || row.orderId === routedOrderId;
+    return (
+      (accessPassDetails[routedAccessPassUUID] &&
+      byOrder(accessPassDetails[routedAccessPassUUID])
+        ? accessPassDetails[routedAccessPassUUID]
+        : null) ||
+      accessPasses.find(
+        (row) => row.key === routedAccessPassUUID && byOrder(row),
+      ) ||
+      accessPassDetails[routedAccessPassUUID] ||
+      accessPasses.find((row) => row.key === routedAccessPassUUID) ||
+      null
+    );
+  }, [routedAccessPassUUID, routedOrderId, accessPassDetails, accessPasses]);
   const routedAccessPassPending = Boolean(
     routedAccessPassUUID &&
       !routedAccessPass &&
@@ -983,6 +1062,10 @@ export default function SeasonTickets({
   const routedTargetFound = Boolean(
     routedFlexPack ||
       routedAccessPass ||
+      (routedDetail &&
+        !routedPackageUUID &&
+        !routedFlexPackUUID &&
+        !routedAccessPassUUID) ||
       (routedEventUUID && routedDetail) ||
       (routedPackageUUID && !routedEventUUID && routedSeasonPackage),
   );
@@ -1023,9 +1106,11 @@ export default function SeasonTickets({
       ? evId.slice(6)
       : null;
   const activeEvId = orderEventKey ? `order:${orderEventKey}` : evId;
+  const activeDetail = orderEventKey ? eventDetails[orderEventKey] ?? null : null;
+  const activeOrderId = activeDetail?.orderId ?? "";
   const ev =
-    (orderEventKey && eventDetails[orderEventKey]
-      ? detailToEventT(eventDetails[orderEventKey])
+    (activeDetail
+      ? detailToEventT(withFullOrder(activeDetail, fullOrders[activeOrderId]))
       : events[evId]) || events.lobos;
   const ticketBadge = ev.ticketLabel || "Season Tickets";
   const attractionCards: AttractionCard[] = ev.attractions?.length
@@ -1213,11 +1298,16 @@ export default function SeasonTickets({
     seasonPackages.find((pkg) => pkg.key === seasonPackageKey) ??
     null;
   const activePackageKey = selectedSeasonPackage?.key ?? seasonPackageKey;
-  const seasonPackageGames = activePackageKey
+  const seasonPackageGames = selectedSeasonPackage
     ? summarizeEventDetails(
         Object.fromEntries(
-          Object.entries(eventDetails).filter(([key]) =>
-            key.startsWith(`${activePackageKey}:`),
+          Object.entries(eventDetails).filter(
+            ([key, detail]) =>
+              (!selectedSeasonPackage.orderId ||
+                detail.orderId === selectedSeasonPackage.orderId) &&
+              (selectedSeasonPackage.packageUUID
+                ? key.startsWith(`${selectedSeasonPackage.packageUUID}:`)
+                : key.startsWith(`${activePackageKey}:`)),
           ),
         ),
       )
@@ -1244,7 +1334,7 @@ export default function SeasonTickets({
         if (cancelled) return;
         const passes = buildAccessPassSummaries(
           unwrapList<AccessPassLike>(res.data),
-        );
+        ).map((pass) => ({ ...pass, orderId: pass.orderId || orderId }));
         setPackageAccessPasses((current) => ({
           ...current,
           [key]: passes,
@@ -1270,6 +1360,33 @@ export default function SeasonTickets({
     selectedSeasonPackage?.key,
     selectedSeasonPackage?.orderId,
   ]);
+
+  useEffect(() => {
+    if (!activeOrderId || fullOrderChecked[activeOrderId]) return;
+
+    let cancelled = false;
+    getOrder(activeOrderId)
+      .then((res) => {
+        if (cancelled) return;
+        const order = unwrapOrder(res.data);
+        if (order) {
+          setFullOrders((current) => ({ ...current, [activeOrderId]: order }));
+        }
+      })
+      .catch(() => {})
+      .finally(() => {
+        if (!cancelled) {
+          setFullOrderChecked((current) => ({
+            ...current,
+            [activeOrderId]: true,
+          }));
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [activeOrderId, fullOrderChecked]);
 
   const TicketsLoader = () => (
     <div
@@ -1336,7 +1453,7 @@ export default function SeasonTickets({
   };
 
   const SeasonPackageRow = ({ row }: { row: SeasonPackageSummary }) => {
-    const href = walletPackagePath(row.packageUUID);
+    const href = walletPackagePath(row.orderId, row.packageUUID);
     const rowStyle = {
       ...card,
       borderRadius: 20,
@@ -1432,7 +1549,7 @@ export default function SeasonTickets({
   };
 
   const FlexPackRow = ({ row }: { row: FlexPackSummary }) => {
-    const href = walletFlexPackPath(row.flexPackUUID);
+    const href = walletFlexPackPath(row.orderId, row.flexPackUUID);
     const rowStyle = {
       ...card,
       borderRadius: 20,
@@ -1565,8 +1682,8 @@ export default function SeasonTickets({
   }) => {
     const available = row.availability === "available";
     const href = packageUUID
-      ? walletPackageEventPath(packageUUID, row.eventUUID)
-      : walletEventTicketsPath(row.eventUUID);
+      ? walletPackageEventPath(row.orderId, packageUUID, row.eventUUID)
+      : walletEventTicketsPath(row.orderId);
     const rowStyle = {
       ...card,
       borderRadius: 20,
@@ -1671,7 +1788,7 @@ export default function SeasonTickets({
       ? eventWhenLabel(row.nextEvent, row.nextEvent.venue?.timezone)
       : "";
     const foreground = row.fontColor || "#ffffff";
-    const href = walletAccessPassPath(row.accessPassUUID);
+    const href = walletAccessPassPath(row.orderId, row.accessPassUUID);
     const rowStyle = {
       ...card,
       borderRadius: 20,
@@ -1843,7 +1960,7 @@ export default function SeasonTickets({
   };
 
   const PackageAccessPassCard = ({ row }: { row: AccessPassSummary }) => {
-    const href = walletAccessPassPath(row.accessPassUUID);
+    const href = walletAccessPassPath(row.orderId, row.accessPassUUID);
     const summary = (
       <>
       <div style={{ padding: cardPad, display: "flex", alignItems: "center", justifyContent: "space-between", gap: 14, borderBottom: `1px solid ${LINE}` }}>
@@ -2012,7 +2129,20 @@ export default function SeasonTickets({
       return clickable ? (
         <Link
           key={`${highlighted ? "next-link-" : ""}${event.uuid || event.name}`}
-          href={walletEventTicketsPath(eventUUID)}
+          href={(() => {
+            const detail = Object.values(eventDetails).find(
+              (d) => d.eventUUID === eventUUID,
+            );
+            if (detail?.key.includes(":")) {
+              const packageUUID = detail.key.split(":")[0];
+              return walletPackageEventPath(
+                detail.orderId,
+                packageUUID,
+                eventUUID,
+              );
+            }
+            return walletEventTicketsPath(detail?.orderId || routedOrderId);
+          })()}
           aria-label={`View ${event.name || "event"}`}
           style={{ color: "inherit", textDecoration: "none" }}
         >
@@ -2253,6 +2383,37 @@ export default function SeasonTickets({
     setTfError("");
     setModal(null);
   };
+  const printTickets = async (
+    tickets: EventT["tickets"],
+    mode: "open" | "download",
+  ) => {
+    const printKey =
+      mode === "download" ? "all" : String(tickets[0]?.id || tickets[0]?.code);
+    setPrinting(printKey);
+    setPrintError("");
+    try {
+      await printTicketsPdf({
+        event: ev.event || {
+          name: ev.title,
+          venue: { name: ev.venue },
+          organization: { name: ev.teams[0]?.name },
+        },
+        tickets: tickets.map((ticket) => ({
+          ...(ticket.raw || {}),
+          id: ticket.id,
+          checkInCode: ticket.code,
+          holder: ticket.holder,
+        })),
+        packageName: ev.packageName,
+        filename: ev.title,
+        mode,
+      });
+    } catch {
+      setPrintError("We couldn’t prepare your ticket PDF. Please try again.");
+    } finally {
+      setPrinting(null);
+    }
+  };
   const canTransferEvent =
     ev.transfersEnabled !== false &&
     ev.tickets.some((ticket) => ticket.id != null);
@@ -2264,11 +2425,11 @@ export default function SeasonTickets({
     label?: string,
     preferSeasonPackage = true,
   ) =>
-    eventUUID || flexPackUUID || routedEventUUID || routedFlexPackUUID || routedPackageUUID ? (
+    eventUUID || flexPackUUID || routedEventUUID || routedFlexPackUUID || routedPackageUUID || routedOrderId ? (
       <Link
         href={
           routedPackageUUID && routedEventUUID && preferSeasonPackage
-            ? walletPackagePath(routedPackageUUID)
+            ? walletPackagePath(routedOrderId, routedPackageUUID)
             : walletSectionHref("events")
         }
         aria-label={label}
@@ -2527,7 +2688,14 @@ export default function SeasonTickets({
                   <div style={{ fontSize: 17, fontWeight: 600, letterSpacing: "-0.015em" }}>{t.seat}</div>
                 </div>
                 <div className="st-ev-seat-actions">
-                  <button style={{ ...ghostBtn, fontSize: 13, padding: "11px 18px" }}>Print PDF</button>
+                  <button
+                    type="button"
+                    disabled={printing !== null}
+                    onClick={() => void printTickets([t], "open")}
+                    style={{ ...ghostBtn, fontSize: 13, padding: "11px 18px" }}
+                  >
+                    {printing === String(t.id || t.code) ? "Preparing…" : "Print PDF"}
+                  </button>
                   <button onClick={() => { setDetail(t); setModal("details"); }} style={{ fontFamily: "inherit", fontSize: 13, fontWeight: 600, color: INK, background: "#f1f3f8", border: "none", borderRadius: 999, padding: "11px 18px", cursor: "pointer" }}>Details</button>
                 </div>
               </div>
@@ -2545,7 +2713,15 @@ export default function SeasonTickets({
             {canTransferEvent ? (
               <button onClick={openTransfer} style={{ fontFamily: "inherit", width: "100%", textAlign: "left", fontSize: 14, fontWeight: 600, color: INK, background: "#fff", border: "1px solid rgba(5,27,53,0.14)", borderRadius: 12, padding: "13px 16px", cursor: "pointer" }}>Transfer</button>
             ) : null}
-            <button style={{ fontFamily: "inherit", width: "100%", textAlign: "left", fontSize: 14, fontWeight: 600, color: INK, background: "#fff", border: "1px solid rgba(5,27,53,0.14)", borderRadius: 12, padding: "13px 16px", cursor: "pointer" }}>Print all</button>
+            <button
+              type="button"
+              disabled={printing !== null || ev.tickets.length === 0}
+              onClick={() => void printTickets(ev.tickets, "download")}
+              style={{ fontFamily: "inherit", width: "100%", textAlign: "left", fontSize: 14, fontWeight: 600, color: INK, background: "#fff", border: "1px solid rgba(5,27,53,0.14)", borderRadius: 12, padding: "13px 16px", cursor: "pointer" }}
+            >
+              {printing === "all" ? "Preparing…" : "Print all"}
+            </button>
+            {printError ? <p role="alert" style={{ margin: 0, color: "#c2394a", fontSize: 13 }}>{printError}</p> : null}
           </div>
           <div style={{ ...card, borderRadius: 20, padding: cardPad, display: "flex", flexDirection: "column", gap: 8 }}>
             <div style={eyebrow}>Getting there</div>
@@ -3099,8 +3275,8 @@ export default function SeasonTickets({
     { k: "Ticket", v: detail?.seat || "" },
     { k: "Holder", v: detail?.holder || email },
     { k: "Barcode", v: detail?.code || "—" },
-    { k: "Order", v: "1473-802122-9407" },
-    { k: "Purchased", v: "Thu, Jul 30 · 8:52 AM" },
+    { k: "Order", v: ev.orderId || "—" },
+    { k: "Purchased", v: ev.purchasedAt || "—" },
     { k: "Delivery", v: "Mobile entry" },
   ];
 

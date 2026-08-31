@@ -1175,6 +1175,7 @@ export function demoAccessPass(overrides: Record<string, unknown> = {}) {
   ).slice(0, 3);
   return {
     uuid: "access-pass-icedogs-1",
+    orderId: "1474-900001-0001",
     checkInCode: "PASS2026",
     type: "organizer",
     name: "IceDogs All-Access Pass",
@@ -1198,6 +1199,7 @@ export function demoPackageAccessPass(
   const ticket = order.tickets[0];
   return {
     uuid: "access-pass-nms-package-1",
+    orderId: order.orderId,
     checkInCode: "NMSPASS2026",
     type: "package",
     name: pkg.name,

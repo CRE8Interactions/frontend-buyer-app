@@ -1,5 +1,53 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { isMobileDevice, isToday } from "@/lib/wallet";
+import {
+  buildAccessPassSummaries,
+  formatTicketHolderName,
+  isMobileDevice,
+  isToday,
+  unwrapOrder,
+} from "@/lib/wallet";
+import { demoAccessPass } from "@/lib/demo/fixtures";
+
+describe("unwrapOrder", () => {
+  it("reads the order whether it comes bare, wrapped, or in a list", () => {
+    const order = { orderId: "1474-023249-8851", total: 452.2 };
+
+    expect(unwrapOrder(order)).toBe(order);
+    expect(unwrapOrder({ data: order })).toBe(order);
+    expect(unwrapOrder([order])).toBe(order);
+  });
+
+  it("returns nothing when the order is missing", () => {
+    expect(unwrapOrder({ data: null })).toBeNull();
+    expect(unwrapOrder(null)).toBeNull();
+  });
+});
+
+describe("buildAccessPassSummaries", () => {
+  it("keeps the purchase order id on the pass", () => {
+    const pass = demoAccessPass();
+    expect(buildAccessPassSummaries([pass])[0].orderId).toBe(pass.orderId);
+  });
+});
+
+describe("formatTicketHolderName", () => {
+  it("renders the buyer's first and last name as 'Joe Doe'", () => {
+    expect(
+      formatTicketHolderName({
+        firstName: "joe",
+        lastName: "DOE",
+        email: "joedoe@example.com",
+      }),
+    ).toBe("Joe Doe");
+  });
+
+  it("falls back to the email only when no name is on the order", () => {
+    expect(formatTicketHolderName({ email: "jaimeconvery@example.com" })).toBe(
+      "jaimeconvery@example.com",
+    );
+    expect(formatTicketHolderName({})).toBe("Guest");
+  });
+});
 
 describe("isToday", () => {
   afterEach(() => {

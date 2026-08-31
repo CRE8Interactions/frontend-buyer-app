@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
@@ -30,6 +30,15 @@ vi.mock("@/lib/api", () => ({
   getMyAccessPass: vi.fn(),
   getMyAccessPasses: vi.fn(),
   getMyEvents: vi.fn(),
+  getOrder: vi.fn(),
+}));
+
+const pdfMocks = vi.hoisted(() => ({
+  printTicketsPdf: vi.fn(),
+}));
+
+vi.mock("@/lib/ticketPdf", () => ({
+  printTicketsPdf: pdfMocks.printTicketsPdf,
 }));
 
 const navigationMocks = vi.hoisted(() => ({
@@ -52,6 +61,7 @@ import {
   getMyAccessPass,
   getMyAccessPasses,
   getMyEvents,
+  getOrder,
 } from "@/lib/api";
 
 const mockedDownloadApplePass = vi.mocked(downloadApplePass);
@@ -60,8 +70,13 @@ const mockedGetAccessPassesByOrder = vi.mocked(getAccessPassesByOrder);
 const mockedGetMyAccessPass = vi.mocked(getMyAccessPass);
 const mockedGetMyAccessPasses = vi.mocked(getMyAccessPasses);
 const mockedGetMyEvents = vi.mocked(getMyEvents);
-const icedogs = DEMO_EVENTS.find((event) => event.shortCode === "ICEDOG5")!;
+const mockedGetOrder = vi.mocked(getOrder);
+const printableEvent = DEMO_EVENTS.find((event) => event.shortCode === "NMST004")!;
+const icedogs = printableEvent;
 const pkg = demoSeasonPackage();
+const ticketOrderId = String(demoCompletedTicketOrder().orderId);
+const packageOrderId = String(demoCompletedPackageOrder().orderId);
+const flexOrderId = String(demoCompletedFlexPackOrder().orderId);
 
 beforeEach(() => {
   navigationMocks.pathname = "/wallet/my-tickets/";
@@ -78,6 +93,10 @@ beforeEach(() => {
   mockedGetAccessPassesByOrder.mockResolvedValue({
     data: { data: [] },
   } as never);
+  mockedGetOrder.mockReset();
+  mockedGetOrder.mockResolvedValue({ data: null } as never);
+  pdfMocks.printTicketsPdf.mockReset();
+  pdfMocks.printTicketsPdf.mockResolvedValue(undefined);
 });
 
 describe("SeasonTickets package tab", () => {
@@ -106,7 +125,7 @@ describe("SeasonTickets package tab", () => {
       screen.getByRole("link", { name: new RegExp(icedogs.name) }),
     ).toHaveAttribute(
       "href",
-      expect.stringMatching(`/wallet/my-tickets/event/${icedogs.uuid}`),
+      expect.stringMatching(`/wallet/my-tickets/order/${ticketOrderId}`),
     );
     expect(screen.queryByText(pkg.name)).not.toBeInTheDocument();
     expect(screen.queryByText(pkg.events[1].name)).not.toBeInTheDocument();
@@ -118,12 +137,12 @@ describe("SeasonTickets package tab", () => {
       screen.getByRole("link", { name: new RegExp(pkg.name) }),
     ).toHaveAttribute(
       "href",
-      expect.stringMatching(`/wallet/my-tickets/package/${pkg.uuid}`),
+      expect.stringMatching(`/wallet/my-tickets/order/${packageOrderId}/package/${pkg.uuid}`),
     );
     expect(screen.queryByText(icedogs.name)).not.toBeInTheDocument();
     expect(screen.queryByText(pkg.events[1].name)).not.toBeInTheDocument();
 
-    navigationMocks.pathname = `/wallet/my-tickets/package/${pkg.uuid}/`;
+    navigationMocks.pathname = `/wallet/my-tickets/order/${packageOrderId}/package/${pkg.uuid}/`;
     rerender(<SeasonTickets />);
 
     expect(
@@ -135,11 +154,11 @@ describe("SeasonTickets package tab", () => {
     ).toHaveAttribute(
       "href",
       expect.stringMatching(
-        `/wallet/my-tickets/package/${pkg.uuid}/event/${pkg.events[1].uuid}`,
+        `/wallet/my-tickets/order/${packageOrderId}/package/${pkg.uuid}/event/${pkg.events[1].uuid}`,
       ),
     );
 
-    navigationMocks.pathname = `/wallet/my-tickets/package/${pkg.uuid}/event/${pkg.events[1].uuid}/`;
+    navigationMocks.pathname = `/wallet/my-tickets/order/${packageOrderId}/package/${pkg.uuid}/event/${pkg.events[1].uuid}/`;
     rerender(<SeasonTickets />);
 
     expect(
@@ -147,7 +166,7 @@ describe("SeasonTickets package tab", () => {
     ).toBeInTheDocument();
     expect(screen.getByRole("link", { name: /All tickets/i })).toHaveAttribute(
       "href",
-      expect.stringMatching(`/wallet/my-tickets/package/${pkg.uuid}`),
+      expect.stringMatching(`/wallet/my-tickets/order/${packageOrderId}/package/${pkg.uuid}`),
     );
   });
 
@@ -155,7 +174,7 @@ describe("SeasonTickets package tab", () => {
     const user = userEvent.setup();
     const order = demoCompletedPackageOrder();
     const pass = demoPackageAccessPass();
-    navigationMocks.pathname = `/wallet/my-tickets/package/${pkg.uuid}/`;
+    navigationMocks.pathname = `/wallet/my-tickets/order/${packageOrderId}/package/${pkg.uuid}/`;
     mockedGetMyEvents.mockResolvedValue({ data: [order] } as never);
     mockedGetAccessPassesByOrder.mockResolvedValue({
       data: { data: [pass] },
@@ -178,7 +197,7 @@ describe("SeasonTickets package tab", () => {
     ).toHaveAttribute(
       "href",
       expect.stringMatching(
-        `^/wallet/my-tickets/access-pass/${pass.uuid}/?$`,
+        `^/wallet/my-tickets/order/${pass.orderId}/access-pass/${pass.uuid}/?$`,
       ),
     );
     expect(screen.queryByText(pkg.events[1].name)).not.toBeInTheDocument();
@@ -229,7 +248,7 @@ describe("SeasonTickets package tab", () => {
           : {}),
       })),
     );
-    navigationMocks.pathname = `/wallet/my-tickets/package/${pkg.uuid}/`;
+    navigationMocks.pathname = `/wallet/my-tickets/order/${packageOrderId}/package/${pkg.uuid}/`;
     mockedGetMyEvents.mockResolvedValue({
       data: [
         demoCompletedPackageOrder({
@@ -264,7 +283,7 @@ describe("SeasonTickets package tab", () => {
     const user = userEvent.setup();
     const order = demoCompletedPackageOrder();
     const pass = demoPackageAccessPass();
-    navigationMocks.pathname = `/wallet/my-tickets/package/${pkg.uuid}/`;
+    navigationMocks.pathname = `/wallet/my-tickets/order/${packageOrderId}/package/${pkg.uuid}/`;
     mockedGetMyEvents.mockResolvedValue({ data: [order] } as never);
     mockedGetAccessPassesByOrder.mockResolvedValue({
       data: { data: [pass] },
@@ -301,7 +320,7 @@ describe("SeasonTickets package tab", () => {
     const user = userEvent.setup();
     const order = demoCompletedPackageOrder();
     const pass = demoPackageAccessPass();
-    navigationMocks.pathname = `/wallet/my-tickets/package/${pkg.uuid}/`;
+    navigationMocks.pathname = `/wallet/my-tickets/order/${packageOrderId}/package/${pkg.uuid}/`;
     mockedGetMyEvents.mockResolvedValue({ data: [order] } as never);
     mockedGetAccessPassesByOrder.mockResolvedValue({
       data: { data: [pass] },
@@ -348,7 +367,7 @@ describe("SeasonTickets package tab", () => {
 
   it("loads active access passes into their own tab", async () => {
     const user = userEvent.setup();
-    const pass = demoAccessPass();
+    const pass = demoAccessPass({ events: [printableEvent] });
     mockedGetMyEvents.mockResolvedValue({ data: [] } as never);
     mockedGetMyAccessPasses.mockResolvedValue({
       data: { data: [pass] },
@@ -368,7 +387,7 @@ describe("SeasonTickets package tab", () => {
     ).toHaveAttribute(
       "href",
       expect.stringMatching(
-        `^/wallet/my-tickets/access-pass/${pass.uuid}/?$`,
+        `^/wallet/my-tickets/order/${pass.orderId}/access-pass/${pass.uuid}/?$`,
       ),
     );
     expect(screen.getByText(`Pass #${pass.checkInCode}`)).toBeInTheDocument();
@@ -379,7 +398,7 @@ describe("SeasonTickets package tab", () => {
       screen.getAllByText(pass.events.at(-1)!.name).length,
     ).toBeGreaterThan(0);
 
-    navigationMocks.pathname = `/wallet/my-tickets/access-pass/${pass.uuid}/`;
+    navigationMocks.pathname = `/wallet/my-tickets/order/${pass.orderId}/access-pass/${pass.uuid}/`;
     rerender(<SeasonTickets />);
 
     expect(
@@ -440,7 +459,7 @@ describe("SeasonTickets package tab", () => {
       tickets,
     });
     const pass = demoPackageAccessPass({ events });
-    navigationMocks.pathname = `/wallet/my-tickets/access-pass/${pass.uuid}/`;
+    navigationMocks.pathname = `/wallet/my-tickets/order/${pass.orderId}/access-pass/${pass.uuid}/`;
     mockedGetMyEvents.mockResolvedValue({ data: [packageOrder] } as never);
     mockedGetMyAccessPass.mockResolvedValue({
       data: { data: pass },
@@ -459,7 +478,9 @@ describe("SeasonTickets package tab", () => {
     })) {
       expect(link).toHaveAttribute(
         "href",
-        expect.stringMatching(`/wallet/my-tickets/event/${activeEvent.uuid}`),
+        expect.stringMatching(
+          `/wallet/my-tickets/order/${packageOrder.orderId}/package/${pkg.uuid}/event/${activeEvent.uuid}`,
+        ),
       );
     }
     expect(
@@ -470,7 +491,7 @@ describe("SeasonTickets package tab", () => {
 
   it("explains when an access-pass URL is not in the wallet", async () => {
     navigationMocks.pathname =
-      "/wallet/my-tickets/access-pass/missing-access-pass/";
+      "/wallet/my-tickets/order/missing-order/access-pass/missing-access-pass/";
     mockedGetMyEvents.mockResolvedValue({ data: [] } as never);
     mockedGetMyAccessPasses.mockResolvedValue({
       data: { data: [demoAccessPass()] },
@@ -486,7 +507,7 @@ describe("SeasonTickets package tab", () => {
   it("loads an access-pass detail URL directly", async () => {
     const pass = demoPackageAccessPass();
     navigationMocks.pathname =
-      `/wallet/my-tickets/access-pass/${pass.uuid}/`;
+      `/wallet/my-tickets/order/${pass.orderId}/access-pass/${pass.uuid}/`;
     mockedGetMyEvents.mockResolvedValue({ data: [] } as never);
     mockedGetMyAccessPass.mockResolvedValue({
       data: { data: pass },
@@ -505,7 +526,7 @@ describe("SeasonTickets package tab", () => {
     const user = userEvent.setup();
     const pass = demoAccessPass();
     navigationMocks.pathname =
-      `/wallet/my-tickets/access-pass/${pass.uuid}/`;
+      `/wallet/my-tickets/order/${pass.orderId}/access-pass/${pass.uuid}/`;
     mockedGetMyEvents.mockResolvedValue({ data: [] } as never);
     mockedGetMyAccessPass.mockResolvedValue({
       data: { data: pass },
@@ -536,7 +557,7 @@ describe("SeasonTickets package tab", () => {
     const user = userEvent.setup();
     const pass = demoAccessPass();
     navigationMocks.pathname =
-      `/wallet/my-tickets/access-pass/${pass.uuid}/`;
+      `/wallet/my-tickets/order/${pass.orderId}/access-pass/${pass.uuid}/`;
     mockedGetMyEvents.mockResolvedValue({ data: [] } as never);
     mockedGetMyAccessPass.mockResolvedValue({
       data: { data: pass },
@@ -575,7 +596,7 @@ describe("SeasonTickets package tab", () => {
     expect(screen.getByRole("button", { name: /Access passes.*0/i })).toBeInTheDocument();
   });
 
-  it("does not link a wallet event that has no UUID", async () => {
+  it("still links a single-event purchase when the event has no UUID", async () => {
     mockedGetMyEvents.mockResolvedValue({
       data: [demoCompletedTicketOrder({ event: { ...icedogs, uuid: "" } })],
     } as never);
@@ -584,8 +605,11 @@ describe("SeasonTickets package tab", () => {
 
     expect(await screen.findByText(icedogs.name)).toBeInTheDocument();
     expect(
-      screen.queryByRole("link", { name: new RegExp(icedogs.name) }),
-    ).not.toBeInTheDocument();
+      screen.getByRole("link", { name: new RegExp(icedogs.name) }),
+    ).toHaveAttribute(
+      "href",
+      expect.stringMatching(`/wallet/my-tickets/order/${ticketOrderId}`),
+    );
   });
 
   it("does not link a wallet package that has no UUID", async () => {
@@ -609,7 +633,7 @@ describe("SeasonTickets package tab", () => {
   });
 
   it("explains when the routed package is not in the wallet", async () => {
-    navigationMocks.pathname = "/wallet/my-tickets/package/missing-package-uuid/";
+    navigationMocks.pathname = "/wallet/my-tickets/order/missing-order/package/missing-package-uuid/";
     mockedGetMyEvents.mockResolvedValue({
       data: [demoCompletedPackageOrder()],
     } as never);
@@ -791,6 +815,157 @@ describe("SeasonTickets routed event screen", () => {
     );
   });
 
+  it("shows live ticket and order data in ticket details", async () => {
+    const user = userEvent.setup();
+    const order = demoCompletedTicketOrder({
+      event: printableEvent,
+      orderId: "live-order-2048",
+      createdAt: "2026-09-01T16:00:00.000Z",
+    });
+    mockedGetMyEvents.mockResolvedValue({ data: [order] } as never);
+
+    render(
+      <SeasonTickets initialScreen="event" eventUUID={printableEvent.uuid} />,
+    );
+
+    const detailsButtons = await screen.findAllByRole("button", {
+      name: "Details",
+    });
+    await user.click(detailsButtons[0]);
+
+    const modal = screen
+      .getByRole("heading", { name: "Ticket details" })
+      .closest("div")?.parentElement;
+    expect(modal).not.toBeNull();
+    const details = within(modal!);
+    expect(details.getByText(order.tickets[0].checkInCode)).toBeInTheDocument();
+    expect(details.getByText(order.orderId)).toBeInTheDocument();
+    expect(details.getByText(/Tue, Sep 1 · 10:00 AM/)).toBeInTheDocument();
+    expect(details.getByText("Mobile entry")).toBeInTheDocument();
+  });
+
+  it("fills the amount paid and buyer name from the single-order fetch", async () => {
+    const user = userEvent.setup();
+    const listed = demoCompletedTicketOrder({
+      event: printableEvent,
+      orderId: "1474-023249-8851",
+      total: undefined,
+      firstName: undefined,
+      lastName: undefined,
+    });
+    mockedGetMyEvents.mockResolvedValue({ data: [listed] } as never);
+    mockedGetOrder.mockResolvedValue({
+      data: { ...listed, total: "452.2", firstName: "jaime", lastName: "convery" },
+    } as never);
+
+    render(
+      <SeasonTickets initialScreen="event" eventUUID={printableEvent.uuid} />,
+    );
+
+    const detailsButtons = await screen.findAllByRole("button", {
+      name: "Details",
+    });
+    await user.click(detailsButtons[0]);
+
+    expect(mockedGetOrder).toHaveBeenCalledWith("1474-023249-8851");
+    expect(await screen.findByText("$452.20")).toBeInTheDocument();
+    const modal = screen
+      .getByRole("heading", { name: "Ticket details" })
+      .closest("div")?.parentElement;
+    expect(within(modal!).getByText("Jaime Convery")).toBeInTheDocument();
+  });
+
+  it("keeps the listed order details when the order fetch fails", async () => {
+    const user = userEvent.setup();
+    const listed = demoCompletedTicketOrder({
+      event: printableEvent,
+      orderId: "1474-023249-8851",
+    });
+    mockedGetMyEvents.mockResolvedValue({ data: [listed] } as never);
+    mockedGetOrder.mockRejectedValue(new Error("offline"));
+
+    render(
+      <SeasonTickets initialScreen="event" eventUUID={printableEvent.uuid} />,
+    );
+
+    const detailsButtons = await screen.findAllByRole("button", {
+      name: "Details",
+    });
+    await user.click(detailsButtons[0]);
+
+    const modal = screen
+      .getByRole("heading", { name: "Ticket details" })
+      .closest("div")?.parentElement;
+    const details = within(modal!);
+    expect(details.getByText("1474-023249-8851")).toBeInTheDocument();
+  });
+
+  it("prints one ticket in a new PDF and downloads all tickets together", async () => {
+    const user = userEvent.setup();
+    const order = demoCompletedTicketOrder({ event: printableEvent });
+    mockedGetMyEvents.mockResolvedValue({ data: [order] } as never);
+
+    render(
+      <SeasonTickets initialScreen="event" eventUUID={printableEvent.uuid} />,
+    );
+
+    const oneTicketButtons = await screen.findAllByRole("button", {
+      name: "Print PDF",
+    });
+    await user.click(oneTicketButtons[0]);
+
+    expect(pdfMocks.printTicketsPdf).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({
+        event: order.event,
+        mode: "open",
+        tickets: [
+          expect.objectContaining({
+            id: order.tickets[0].id,
+            checkInCode: order.tickets[0].checkInCode,
+          }),
+        ],
+      }),
+    );
+
+    await user.click(screen.getByRole("button", { name: "Print all" }));
+
+    expect(pdfMocks.printTicketsPdf).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({
+        event: order.event,
+        mode: "download",
+        tickets: expect.arrayContaining(
+          order.tickets.map((ticket) =>
+            expect.objectContaining({
+              id: ticket.id,
+              checkInCode: ticket.checkInCode,
+            }),
+          ),
+        ),
+      }),
+    );
+  });
+
+  it("shows an error when a ticket PDF cannot be prepared", async () => {
+    const user = userEvent.setup();
+    const order = demoCompletedTicketOrder({ event: printableEvent });
+    mockedGetMyEvents.mockResolvedValue({ data: [order] } as never);
+    pdfMocks.printTicketsPdf.mockRejectedValueOnce(new Error("PDF failed"));
+
+    render(
+      <SeasonTickets initialScreen="event" eventUUID={printableEvent.uuid} />,
+    );
+
+    await user.click(
+      (await screen.findAllByRole("button", { name: "Print PDF" }))[0],
+    );
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "We couldn’t prepare your ticket PDF. Please try again.",
+    );
+  });
+
   it("transfers the selected single ticket with the legacy API payload", async () => {
     const user = userEvent.setup();
     const order = demoCompletedTicketOrder({ event: icedogs });
@@ -942,7 +1117,7 @@ describe("SeasonTickets flex packs tab", () => {
       screen.getByRole("link", { name: new RegExp(pack.name) }),
     ).toHaveAttribute(
       "href",
-      expect.stringMatching(`/wallet/my-tickets/flex-pack/${pack.uuid}`),
+      expect.stringMatching(`/wallet/my-tickets/order/${flexOrderId}/flex-pack/${pack.uuid}`),
     );
     expect(screen.getByText(`${order.vouchers.length} of ${order.vouchers.length} vouchers left`)).toBeInTheDocument();
     expect(screen.queryByText(icedogs.name)).not.toBeInTheDocument();
@@ -1038,7 +1213,7 @@ describe("SeasonTickets pass wallet", () => {
     } as never);
     mockedGetMyAccessPass.mockResolvedValue({ data: { data: pass } } as never);
     mockedDownloadApplePass.mockReset();
-    navigationMocks.pathname = `/wallet/my-tickets/access-pass/${pass.uuid}/`;
+    navigationMocks.pathname = `/wallet/my-tickets/order/${pass.orderId}/access-pass/${pass.uuid}/`;
     Object.defineProperty(navigator, "userAgent", {
       configurable: true,
       writable: true,
@@ -1113,7 +1288,7 @@ describe("SeasonTickets ticket screen responsive layout", () => {
     mockedGetMyEvents.mockResolvedValue({
       data: [demoCompletedTicketOrder({ event: icedogs })],
     } as never);
-    navigationMocks.pathname = `/wallet/my-tickets/event/${icedogs.uuid}/`;
+    navigationMocks.pathname = `/wallet/my-tickets/order/${ticketOrderId}/`;
     setWidth(390);
   });
 

@@ -32,7 +32,6 @@ export const WALLET_SECTION_PREFIXES = WALLET_NAV.map((section) =>
 /** Ticket list and its event / flex-pack / package detail routes. */
 export const WALLET_TICKETS_PREFIXES = [
   "/wallet/my-tickets",
-  "/wallet/package",
 ];
 
 function pathOnly(pathname = "") {
@@ -45,7 +44,7 @@ function pathMatchesPrefix(path: string, prefix: string) {
 
 /**
  * Section a wallet URL belongs to. Ticket detail routes
- * (`/wallet/my-tickets/event/:uuid`, `/wallet/my-tickets/package/:uuid`) stay on Tickets;
+ * (`/wallet/my-tickets/order/:orderId`, `/wallet/my-tickets/order/:orderId/package/:uuid`) stay on Tickets;
  * anything else falls back to Tickets so the wallet always has a section to render.
  */
 export function walletSectionFromPath(pathname = ""): WalletSection {

@@ -52,7 +52,10 @@ export type OrderLike = {
   orderId?: string;
   uuid?: string;
   createdAt?: string;
-  total?: number;
+  firstName?: string;
+  lastName?: string;
+  email?: string;
+  total?: number | string;
   /** Purchase origin; wallet inventory is intentionally not filtered by it. */
   source?: "website" | "box_office" | "ticket_assignment" | string;
   box_office?: boolean;
@@ -117,15 +120,26 @@ export type AccessPassLike = {
   backgroundColor?: string;
   fontColor?: string;
   primaryColor?: string;
+  orderId?: string;
+  order?: { orderId?: string };
   events?: EventLike[];
   [key: string]: unknown;
 };
+
+function accessPassOrderId(pass: AccessPassLike) {
+  const nested =
+    pass.order && typeof pass.order === "object"
+      ? String(pass.order.orderId || "").trim()
+      : "";
+  return String(pass.orderId || "").trim() || nested || undefined;
+}
 
 export type AccessPassSummary = {
   key: string;
   /** The pass as the API returned it, for wallet-pass payloads. */
   pass: AccessPassLike;
   accessPassUUID?: string;
+  orderId?: string;
   name: string;
   typeLabel: string;
   checkInCode: string;
@@ -156,6 +170,7 @@ export function buildAccessPassSummaries(
         key: String(pass.uuid || pass.checkInCode || `access-pass-${index + 1}`),
         pass,
         accessPassUUID: String(pass.uuid || "").trim() || undefined,
+        orderId: accessPassOrderId(pass),
         name: pass.name || "Access pass",
         typeLabel: pass.type === "organizer" ? "All-access pass" : "Season pass",
         checkInCode: String(pass.checkInCode || ""),
@@ -179,6 +194,26 @@ export function buildAccessPassSummaries(
         fontColor: pass.fontColor,
       };
     });
+}
+
+/** Ticket holders read as "Joe Doe"; the email is only a last resort. */
+export function formatTicketHolderName(source?: {
+  firstName?: string;
+  lastName?: string;
+  name?: string;
+  email?: string;
+} | null): string {
+  const full = [source?.firstName, source?.lastName]
+    .map((part) => String(part ?? "").trim())
+    .filter(Boolean)
+    .join(" ");
+  const named = full || String(source?.name ?? "").trim();
+  if (named) {
+    return named
+      .toLowerCase()
+      .replace(/(^|[\s'-])(\p{L})/gu, (_, lead: string, char: string) => lead + char.toUpperCase());
+  }
+  return String(source?.email ?? "").trim() || "Guest";
 }
 
 export function seatLabel(ticket?: TicketLike | null): string {
@@ -241,6 +276,18 @@ export function unwrapList<T>(payload: unknown): T[] {
     if (Array.isArray(obj.data)) return obj.data as T[];
   }
   return [];
+}
+
+/** GET /orders answers with the order itself; some deployments wrap it like a list. */
+export function unwrapOrder(payload: unknown): OrderLike | null {
+  const [first] = unwrapList<OrderLike>(payload);
+  if (first) return first;
+  if (payload && typeof payload === "object") {
+    const row = payload as { data?: unknown; orderId?: unknown };
+    if (row.data && typeof row.data === "object") return row.data as OrderLike;
+    if (row.orderId != null) return payload as OrderLike;
+  }
+  return null;
 }
 
 export function strapiAttr<T extends Record<string, unknown>>(item: unknown): T & { id?: number | string } {

@@ -21,12 +21,16 @@ describe("wallet nav", () => {
 
   it("reads the section back from the URL", () => {
     expect(walletSectionFromPath("/wallet/my-tickets/")).toBe("events");
-    expect(walletSectionFromPath("/wallet/my-tickets/event/event-1/")).toBe("events");
-    expect(walletSectionFromPath("/wallet/my-tickets/package/pkg-1/")).toBe(
-      "events",
-    );
     expect(
-      walletSectionFromPath("/wallet/my-tickets/package/pkg-1/event/event-1/"),
+      walletSectionFromPath("/wallet/my-tickets/order/ord-1/"),
+    ).toBe("events");
+    expect(
+      walletSectionFromPath("/wallet/my-tickets/order/ord-1/package/pkg-1/"),
+    ).toBe("events");
+    expect(
+      walletSectionFromPath(
+        "/wallet/my-tickets/order/ord-1/package/pkg-1/event/event-1/",
+      ),
     ).toBe("events");
     expect(walletSectionFromPath("/wallet/my-transfers/")).toBe("listings");
     expect(walletSectionFromPath("/wallet/my-listings/")).toBe("resale");
@@ -41,9 +45,13 @@ describe("wallet nav", () => {
     expect(isWalletSectionPath("/my-tickets/")).toBe(false);
     expect(isWalletSectionPath("/wallet/my-profile/")).toBe(true);
     expect(isWalletSectionPath("/wallet/my-listings/")).toBe(true);
-    expect(isWalletSectionPath("/wallet/my-tickets/package/pkg-1/")).toBe(true);
     expect(
-      isWalletSectionPath("/wallet/my-tickets/package/pkg-1/event/event-1/"),
+      isWalletSectionPath("/wallet/my-tickets/order/ord-1/package/pkg-1/"),
+    ).toBe(true);
+    expect(
+      isWalletSectionPath(
+        "/wallet/my-tickets/order/ord-1/package/pkg-1/event/event-1/",
+      ),
     ).toBe(true);
   });
 });
