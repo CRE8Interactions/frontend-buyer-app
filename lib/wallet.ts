@@ -27,7 +27,7 @@ export type EventLike = {
   venue?: VenueLike;
   enableTransfers?: boolean;
   enableResale?: boolean;
-  organization?: { name?: string; uuid?: string };
+  organization?: { name?: string; uuid?: string } | null;
   attractions?: { name?: string; artwork?: ApiImage }[];
   summary?: string;
 };

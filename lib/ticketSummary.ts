@@ -382,7 +382,8 @@ export function packageSeatLines(
   tickets.forEach((ticket, index) => {
     const section = String(ticket.sectionName || ticket.sectionNumber || "GA");
     const row = String(ticket.rowNumber || ticket.rowName || "—");
-    const seatNumber = ticket.seatNumber ?? "—";
+    const seatNumber =
+      (ticket.seatNumber as string | number | null | undefined) ?? "—";
     const ga = Boolean(ticket.GA || ticket.generalAdmission);
     const seatKey = ga
       ? `ga:${section}:${ticket.id ?? ticket.seatId ?? index}`

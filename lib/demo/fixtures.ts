@@ -17,8 +17,11 @@ import {
   formatVenueCityState,
   formatVenueLocationLine,
 } from "@/lib/venueLocation";
+import { demoDate } from "@/lib/demo/now";
 import type { SeatmapMapping } from "@/lib/seatmapLookups";
 import { groupsToListings, type RawTicketGroup } from "@/lib/ticketListings";
+
+export { DEMO_FIXTURES_NOW } from "@/lib/demo/now";
 
 export type DemoImage = { url: string };
 
@@ -232,8 +235,8 @@ export const DEMO_EVENTS = [
     name: "IceDogs vs. Erie Otters",
     slug: "icedogs-vs-otters",
     seoUrl: "icedogs-vs-otters",
-    start: "2026-08-15T23:00:00.000Z",
-    doorsOpen: "2026-08-15T22:00:00.000Z",
+    start: demoDate({ days: -5 }, "23:00"),
+    doorsOpen: demoDate({ days: -5 }, "22:00"),
     status: "on_sale",
     pricingLevels: DEMO_EVENT_PRICING_LEVELS,
     image: { url: "/cases/icedogs.jpg" },
@@ -263,8 +266,8 @@ export const DEMO_EVENTS = [
     name: "Buccaneers vs. Dubuque Fighting Saints",
     slug: "bucs-vs-fighting-saints",
     seoUrl: "bucs-vs-fighting-saints",
-    start: "2026-08-22T00:05:00.000Z",
-    doorsOpen: "2026-08-21T23:05:00.000Z",
+    start: demoDate({ days: 2 }, "00:05"),
+    doorsOpen: demoDate({ days: 1 }, "23:05"),
     status: "on_sale",
     pricingLevels: DEMO_EVENT_PRICING_LEVELS,
     image: { url: "/cases/buccaneers.jpg" },
@@ -298,8 +301,8 @@ export const DEMO_EVENTS = [
     name: "Raptors vs. Great Falls Voyagers",
     slug: "raptors-vs-voyagers",
     seoUrl: "raptors-vs-voyagers",
-    start: "2026-08-09T01:35:00.000Z",
-    doorsOpen: "2026-08-09T00:35:00.000Z",
+    start: demoDate({ days: -11 }, "01:35"),
+    doorsOpen: demoDate({ days: -11 }, "00:35"),
     status: "on_sale",
     pricingLevels: DEMO_EVENT_PRICING_LEVELS,
     image: { url: "/cases/raptors.jpg" },
@@ -329,8 +332,8 @@ export const DEMO_EVENTS = [
     name: "NM State Aggies vs. Liberty Flames",
     slug: "nmstate-vs-liberty",
     seoUrl: "nmstate-vs-liberty",
-    start: "2026-09-05T23:00:00.000Z",
-    doorsOpen: "2026-09-05T22:00:00.000Z",
+    start: demoDate({ days: 16 }, "23:00"),
+    doorsOpen: demoDate({ days: 16 }, "22:00"),
     status: "on_sale",
     pricingLevels: DEMO_EVENT_PRICING_LEVELS,
     image: { url: "/cases/nmstate.jpg" },
@@ -360,8 +363,8 @@ export const DEMO_EVENTS = [
     name: "IceDogs vs. Windsor Spitfires",
     slug: "icedogs-vs-spitfires",
     seoUrl: "icedogs-vs-spitfires",
-    start: "2026-08-29T23:00:00.000Z",
-    doorsOpen: "2026-08-29T22:00:00.000Z",
+    start: demoDate({ days: 9 }, "23:00"),
+    doorsOpen: demoDate({ days: 9 }, "22:00"),
     status: "presale",
     pricingLevels: DEMO_EVENT_PRICING_LEVELS,
     image: { url: "/cases/icedogs.jpg" },
@@ -391,8 +394,8 @@ export const DEMO_EVENTS = [
     name: "Raptors vs. Idaho Falls Chukars",
     slug: "raptors-vs-chukars",
     seoUrl: "raptors-vs-chukars",
-    start: "2026-08-16T01:35:00.000Z",
-    doorsOpen: "2026-08-16T00:35:00.000Z",
+    start: demoDate({ days: -4 }, "01:35"),
+    doorsOpen: demoDate({ days: -4 }, "00:35"),
     status: "on_sale",
     pricingLevels: DEMO_EVENT_PRICING_LEVELS,
     image: { url: "/cases/raptors.jpg" },
@@ -761,6 +764,7 @@ export function demoCheckoutCart(
       ? undefined
       : (overrides.organization ?? event.organization);
   const listing = DEMO_SEATED_TICKET_GROUPS[0];
+  const unitPrice = listing.price ?? 0;
   const ticketCount = Math.max(1, overrides.ticketCount ?? 1);
   const serviceFee = overrides.serviceFee ?? 0;
   const processingFee = overrides.processingFee ?? 0;
@@ -775,7 +779,7 @@ export function demoCheckoutCart(
       name: event.name,
       start: event.start,
       doorsOpen: event.doorsOpen,
-      realDoorsOpen: event.realDoorsOpen,
+      realDoorsOpen: (event as { realDoorsOpen?: string }).realDoorsOpen,
       slug: event.slug,
       seoUrl: event.seoUrl,
       shortCode: event.shortCode,
@@ -797,11 +801,11 @@ export function demoCheckoutCart(
       sectionNumber: listing.sectionNumber,
       rowNumber: listing.rowNumber,
       seatNumber: 7 + index,
-      cost: listing.price,
-      price: listing.price,
+      cost: unitPrice,
+      price: unitPrice,
       offerName: listing.offer?.name,
     })),
-    total: listing.price * ticketCount + serviceFee + processingFee,
+    total: unitPrice * ticketCount + serviceFee + processingFee,
     serviceFee,
     processingFee,
     estimatedProcessingFee: processingFee,
@@ -957,25 +961,25 @@ export function demoSeasonPackage(
     {
       uuid: "evt-nmstate-vs-lobos",
       name: `${event.attractions?.[0]?.name || org.name} vs. New Mexico Lobos`,
-      start: "2026-09-26T19:30:00.000Z",
+      start: demoDate({ days: 37 }, "19:30"),
       venue,
     },
     {
       uuid: "evt-nmstate-vs-wku",
       name: `${event.attractions?.[0]?.name || org.name} vs. Western Kentucky Hilltoppers`,
-      start: "2026-10-02T00:00:00.000Z",
+      start: demoDate({ days: 43 }),
       venue,
     },
     {
       uuid: "evt-nmstate-vs-jax",
       name: `${event.attractions?.[0]?.name || org.name} vs. Jacksonville State Gamecocks`,
-      start: "2026-10-28T00:00:00.000Z",
+      start: demoDate({ days: 69 }),
       venue,
     },
     {
       uuid: "evt-nmstate-vs-delaware",
       name: `${event.attractions?.[0]?.name || org.name} vs. Delaware Fightin' Blue Hens`,
-      start: "2026-11-21T19:00:00.000Z",
+      start: demoDate({ days: 93 }, "19:00"),
       venue,
     },
   ];
@@ -988,6 +992,7 @@ export function demoSeasonPackage(
     end: events[events.length - 1].start,
     maxQuantity: 4,
     pricingTiers: [{ price: 200, name: "Level A" }],
+    image: event.image,
     venue,
     organization: org,
     category: org.category,
@@ -1077,8 +1082,8 @@ export function demoCompletedTicketOrder(
   return {
     id: 1474,
     orderId: "1474-643535-0700",
-    processedAt: "2026-08-18T16:00:00.000Z",
-    dateOfIssue: "2026-08-18T16:00:00.000Z",
+    processedAt: demoDate({ days: -2 }, "16:00"),
+    dateOfIssue: demoDate({ days: -2 }, "16:00"),
     firstName: DEMO_USER.firstName,
     lastName: DEMO_USER.lastName,
     email: DEMO_USER.email,
@@ -1120,8 +1125,8 @@ export function demoCompletedPackageOrder(
   return {
     id: 1474,
     orderId: "1474-601490-8744",
-    processedAt: "2026-08-17T16:00:00.000Z",
-    dateOfIssue: "2026-08-17T16:00:00.000Z",
+    processedAt: demoDate({ days: -3 }, "16:00"),
+    dateOfIssue: demoDate({ days: -3 }, "16:00"),
     firstName: DEMO_USER.firstName,
     lastName: DEMO_USER.lastName,
     email: DEMO_USER.email,
@@ -1154,8 +1159,8 @@ export function demoFlexPack(overrides: Record<string, unknown> = {}) {
       "Six Gold vouchers for any IceDogs home game. Redeem when you know you can go.",
     price: 145,
     gameTickets: 6,
-    start: "2026-09-01T00:00:00.000Z",
-    end: "2027-04-30T00:00:00.000Z",
+    start: demoDate({ days: 12 }),
+    end: demoDate({ months: 8, days: 10 }),
     image: { url: "/cases/icedogs.jpg" },
     venue: {
       name: venue.name,
@@ -1346,7 +1351,7 @@ export function demoCompletedFlexPackOrder(
     id: 128185,
     orderId: "1474-145929-3862",
     status: "complete",
-    createdAt: "2026-08-19T22:47:16.540Z",
+    createdAt: demoDate({ days: -1 }, "22:47:16.540"),
     email: DEMO_USER.email,
     event: null,
     package: null,

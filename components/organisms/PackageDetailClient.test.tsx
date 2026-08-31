@@ -288,7 +288,7 @@ describe("Package detail (PackageDetailClient)", () => {
     mockedPlacePackage.mockImplementation(
       () =>
         new Promise((resolve) => {
-          finishHold = resolve;
+          finishHold = resolve as (value: unknown) => void;
         }),
     );
     const pkg = demoSeasonPackage();

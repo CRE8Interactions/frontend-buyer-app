@@ -59,10 +59,9 @@ vi.mock("@/lib/orderReceipt", () => ({
   downloadOrderReceipt: vi.fn(),
 }));
 
-import CheckoutSuccessPageRoute, {
-  __resetCheckoutSuccessOrderInflightForTests,
-} from "@/app/checkout/success/page";
+import CheckoutSuccessPageRoute from "@/app/checkout/success/page";
 import { getOrder, getOrderByPaymentIntentId } from "@/lib/api";
+import { __resetCompletedOrderInflightForTests } from "@/lib/completedOrder";
 import { useAuth } from "@/lib/auth";
 import {
   __setOrderPaymentDetailsPollForTests,
@@ -81,7 +80,7 @@ const mockedDownload = vi.mocked(downloadOrderReceipt);
 
 describe("Checkout success receipt", () => {
   beforeEach(() => {
-    __resetCheckoutSuccessOrderInflightForTests();
+    __resetCompletedOrderInflightForTests();
     __setOrderPaymentDetailsPollForTests({ attempts: 5, delayMs: 0 });
     sessionStorage.clear();
     mockedUseAuth.mockReturnValue({
@@ -126,7 +125,7 @@ describe("Checkout success receipt", () => {
   it("shows the order offer name beside the seat thumbnail", async () => {
     render(<CheckoutSuccessPageRoute />);
     expect(
-      await screen.findByText(DEMO_SEATED_TICKET_GROUPS[0].offer!.name),
+      await screen.findByText(DEMO_SEATED_TICKET_GROUPS[0].offer!.name!),
     ).toBeInTheDocument();
     expect(mockedGetOrder).not.toHaveBeenCalled();
   });
@@ -155,7 +154,7 @@ describe("Checkout success receipt", () => {
     } as never);
     render(<CheckoutSuccessPageRoute />);
     expect(
-      await screen.findByText(DEMO_SEATED_TICKET_GROUPS[0].offer!.name),
+      await screen.findByText(DEMO_SEATED_TICKET_GROUPS[0].offer!.name!),
     ).toBeInTheDocument();
   });
 
@@ -171,7 +170,7 @@ describe("Checkout success receipt", () => {
     render(<CheckoutSuccessPageRoute />);
     expect(await screen.findByText("Standard admission")).toBeInTheDocument();
     expect(
-      screen.queryByText(DEMO_SEATED_TICKET_GROUPS[0].offer!.name),
+      screen.queryByText(DEMO_SEATED_TICKET_GROUPS[0].offer!.name!),
     ).not.toBeInTheDocument();
   });
 
@@ -285,7 +284,7 @@ describe("Checkout success receipt", () => {
     render(<CheckoutSuccessPageRoute />);
 
     expect(
-      await screen.findByText(DEMO_SEATED_TICKET_GROUPS[0].offer!.name),
+      await screen.findByText(DEMO_SEATED_TICKET_GROUPS[0].offer!.name!),
     ).toBeInTheDocument();
     expect(screen.queryByText(/order not found/i)).not.toBeInTheDocument();
   });
@@ -346,7 +345,7 @@ describe("Checkout success receipt", () => {
     render(<CheckoutSuccessPageRoute />);
 
     expect(
-      await screen.findByText(DEMO_SEATED_TICKET_GROUPS[0].offer!.name),
+      await screen.findByText(DEMO_SEATED_TICKET_GROUPS[0].offer!.name!),
     ).toBeInTheDocument();
     expect(mockedGetOrder).not.toHaveBeenCalled();
   });
@@ -418,7 +417,7 @@ describe("Checkout success receipt", () => {
     render(<CheckoutSuccessPageRoute />);
 
     expect(
-      await screen.findByText(DEMO_SEATED_TICKET_GROUPS[0].offer!.name),
+      await screen.findByText(DEMO_SEATED_TICKET_GROUPS[0].offer!.name!),
     ).toBeInTheDocument();
     expect(screen.getByText("Card")).toBeInTheDocument();
     expect(mockedGetOrderByPi).toHaveBeenCalledTimes(5);
@@ -438,7 +437,7 @@ describe("Checkout success receipt", () => {
     render(<CheckoutSuccessPageRoute />);
 
     expect(
-      await screen.findByText(DEMO_SEATED_TICKET_GROUPS[0].offer!.name),
+      await screen.findByText(DEMO_SEATED_TICKET_GROUPS[0].offer!.name!),
     ).toBeInTheDocument();
     expect(
       screen.getByRole("link", { name: /go to my wallet/i }),

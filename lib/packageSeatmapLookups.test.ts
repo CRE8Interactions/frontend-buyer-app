@@ -8,7 +8,9 @@ import {
 import { createPackageLookupTables } from "@/lib/packageSeatmapLookups";
 
 const listing = DEMO_SEATED_TICKET_GROUPS.find((g) => g.seatIds?.includes("s1"));
-if (!listing?.seatIds?.[0] || !listing.offer?.name) {
+const seatId = listing?.seatIds?.[0];
+const offerName = listing?.offer?.name;
+if (!listing || !seatId || !offerName) {
   throw new Error("demo fixtures need a seated group with an offer on seat s1");
 }
 
@@ -18,16 +20,14 @@ describe("createPackageLookupTables", () => {
       package_tickets: [
         {
           ...listing,
-          seatId: listing.seatIds[0],
+          seatId,
         },
       ],
     });
 
     const { seatLookupTable } = createPackageLookupTables(pkg, null, null);
 
-    expect(seatLookupTable[listing.seatIds[0]]?.offer?.name).toBe(
-      listing.offer.name,
-    );
+    expect(seatLookupTable[seatId]?.offer?.name).toBe(offerName);
   });
 
   it("does not invent an offer from the package name", () => {
@@ -36,13 +36,13 @@ describe("createPackageLookupTables", () => {
       package_tickets: [
         {
           ...withoutOffer,
-          seatId: listing.seatIds[0],
+          seatId,
         },
       ],
     });
 
     const { seatLookupTable } = createPackageLookupTables(pkg, null, null);
-    const lookedUp = seatLookupTable[listing.seatIds[0]];
+    const lookedUp = seatLookupTable[seatId];
 
     expect(lookedUp?.offer?.name).toBeUndefined();
     expect(lookedUp?.offer?.name).not.toBe(pkg.name);

@@ -9,22 +9,28 @@ import {
 } from "@/lib/helpers";
 import { BACK_FALLBACK_HREF } from "@/lib/inAppBack";
 
+type LeaveVenue = { slug?: string; [key: string]: unknown } | null;
+type LeaveOrg = { slug?: string; [key: string]: unknown } | null;
+
 export type CheckoutLeaveCart = {
   id?: string | number;
   event?: CheckoutLeaveEvent | null;
-  organization?: { slug?: string } | null;
+  organization?: LeaveOrg;
   package?: {
     uuid?: string | number;
     id?: string | number;
-    organization?: { slug?: string } | null;
-    venue?: { slug?: string } | null;
+    organization?: LeaveOrg;
+    venue?: LeaveVenue;
+    [key: string]: unknown;
   } | null;
   flex_pack?: {
     uuid?: string | number;
     id?: string | number;
-    organization?: { slug?: string } | null;
-    venue?: { slug?: string } | null;
+    organization?: LeaveOrg;
+    venue?: LeaveVenue;
+    [key: string]: unknown;
   } | null;
+  [key: string]: unknown;
 } | null;
 
 export type CheckoutLeaveEvent = {
@@ -34,7 +40,8 @@ export type CheckoutLeaveEvent = {
   shortCode?: string;
   shortcode?: string;
   seatmap?: { ga_only?: boolean };
-  venue?: { isGeneralAdmissionOnly?: boolean };
+  venue?: { isGeneralAdmissionOnly?: boolean; [key: string]: unknown };
+  [key: string]: unknown;
 } | null;
 
 export function ticketsPathFromEvent(eventData?: CheckoutLeaveEvent) {
@@ -55,7 +62,7 @@ export function ticketsPathFromEvent(eventData?: CheckoutLeaveEvent) {
   });
 }
 
-type LeaveOrganization = { slug?: string } | null | undefined;
+type LeaveOrganization = LeaveOrg | undefined;
 
 /** Cart payloads often carry an org without a slug — keep looking for one. */
 function firstOrgWithSlug(...candidates: LeaveOrganization[]) {

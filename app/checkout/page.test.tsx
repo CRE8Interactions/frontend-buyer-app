@@ -27,9 +27,11 @@ const locationMocks = vi.hoisted(() => ({
 const stripeMocks = vi.hoisted(() => ({
   submit: vi.fn(async () => ({})),
   confirmPayment: vi.fn(async () => ({})),
-  retrievePaymentIntent: vi.fn(async () => ({
-    paymentIntent: { status: "requires_payment_method" },
-  })),
+  retrievePaymentIntent: vi.fn(
+    async (): Promise<{ paymentIntent: { status: string; id?: string } }> => ({
+      paymentIntent: { status: "requires_payment_method" },
+    }),
+  ),
 }));
 
 vi.mock("next/link", () => ({
@@ -334,7 +336,7 @@ describe("Checkout page", () => {
     mockedProcessOrder.mockImplementation(
       () =>
         new Promise((resolve) => {
-          finishProcess = resolve;
+          finishProcess = resolve as (value: unknown) => void;
         }),
     );
     const user = userEvent.setup();
@@ -387,7 +389,7 @@ describe("Checkout page", () => {
     stripeMocks.retrievePaymentIntent.mockImplementation(
       () =>
         new Promise((resolve) => {
-          finishRetrieve = resolve;
+          finishRetrieve = resolve as (value: unknown) => void;
         }),
     );
     const user = userEvent.setup();

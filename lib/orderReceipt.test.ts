@@ -64,7 +64,7 @@ describe("buildOrderReceipt", () => {
     const receipt = buildOrderReceipt(order)!;
     const line = receipt.lines[0];
     const ticketCount = order.tickets.length;
-    const subtotal = ticketCount * listing.price;
+    const subtotal = ticketCount * (listing.price ?? 0);
 
     expect(receipt.title).toBe("Receipt");
     expect(receipt.sellerName).toBe(raptorsEvent.organization.name);

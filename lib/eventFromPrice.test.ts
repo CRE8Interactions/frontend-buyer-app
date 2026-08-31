@@ -156,7 +156,7 @@ describe("eventDetailRefs", () => {
 
 describe("mergeEventDetails", () => {
   it("copies pricing levels onto a shortcode-only stub", () => {
-    const [merged] = mergeEventDetails(
+    const [merged] = mergeEventDetails<Partial<typeof priced>>(
       [{ name: priced.name, shortCode: priced.shortCode }],
       [priced],
     );
