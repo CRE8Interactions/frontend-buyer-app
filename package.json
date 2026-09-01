@@ -8,7 +8,9 @@
     "start": "next start",
     "lint": "eslint",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "precommit": "npm run lint && npm test",
+    "prepare": "husky"
   },
   "dependencies": {
     "@growthbook/growthbook-react": "^1.6.5",
@@ -48,6 +50,7 @@
     "@vitejs/plugin-react": "^6.0.5",
     "eslint": "^9",
     "eslint-config-next": "16.2.7",
+    "husky": "^9.1.7",
     "jsdom": "^29.1.1",
     "tailwindcss": "^4",
     "typescript": "^5",
