@@ -11,10 +11,12 @@ import {
 } from "@/lib/orgBrandingCache";
 import { loaderMessageForPath } from "@/lib/loaderMessages";
 import {
+  ROUTE_COMMITTED_EVENT,
   ROUTE_TRANSITION_EVENT,
   WALLET_SHELL_READY_EVENT,
   isWalletShellReady,
   markWalletShellPending,
+  routePathKey,
 } from "@/lib/routeTransition";
 
 const MAX_VISIBLE_MS = 15000;
@@ -28,11 +30,14 @@ function locationKey() {
   return `${window.location.pathname}${window.location.search}`;
 }
 
+function destinationKey(destination: URL) {
+  return `${destination.pathname}${destination.search}${destination.hash}`;
+}
+
 /**
- * Immediate feedback for internal link transitions. Destination branding wins;
- * home / browse / Our Story / legal pages use the Blocktickets spinner.
- * Wallet hops hold that spinner until ticket data is ready, so the wallet
- * chrome never paints empty.
+ * Immediate feedback for internal link transitions. The address bar updates
+ * first, then the branded loader covers the outgoing page until Next.js
+ * commits the destination (wallet hops also wait for ticket data).
  */
 export default function GlobalRouteTransitionLoader() {
   const [branding, setBranding] = useState<CachedBranding | null>(null);
@@ -42,6 +47,7 @@ export default function GlobalRouteTransitionLoader() {
   const pollRef = useRef<number | null>(null);
   const timeoutRef = useRef<number | null>(null);
   const walletReadyRef = useRef<(() => void) | null>(null);
+  const routeCommittedRef = useRef<((event: Event) => void) | null>(null);
 
   useEffect(() => {
     const clearTimers = () => {
@@ -54,6 +60,13 @@ export default function GlobalRouteTransitionLoader() {
         );
         walletReadyRef.current = null;
       }
+      if (routeCommittedRef.current) {
+        window.removeEventListener(
+          ROUTE_COMMITTED_EVENT,
+          routeCommittedRef.current,
+        );
+        routeCommittedRef.current = null;
+      }
       pollRef.current = null;
       timeoutRef.current = null;
     };
@@ -65,7 +78,7 @@ export default function GlobalRouteTransitionLoader() {
 
     const startTransition = (
       href: string,
-      options: { preservePlatformBrand?: boolean } = {},
+      options: { preservePlatformBrand?: boolean; replace?: boolean } = {},
     ) => {
       const destination = new URL(href, window.location.href);
       if (destination.origin !== window.location.origin) return;
@@ -76,9 +89,9 @@ export default function GlobalRouteTransitionLoader() {
         return;
       }
 
-      const startingUrl = locationKey();
       const fromPath = window.location.pathname;
       const toPath = destination.pathname;
+      const dest = destinationKey(destination);
       const waitingWallet =
         isWalletAccountPath(toPath) && !isWalletAccountPath(fromPath);
 
@@ -87,6 +100,11 @@ export default function GlobalRouteTransitionLoader() {
       }
 
       if (waitingWallet) markWalletShellPending();
+
+      if (locationKey() !== dest) {
+        if (options.replace) window.history.replaceState({}, "", dest);
+        else window.history.pushState({}, "", dest);
+      }
 
       let destinationBranding = getLoaderBranding(toPath);
       let nextFallback: "none" | "blocktickets" = isPlatformLoaderPath(
@@ -110,29 +128,36 @@ export default function GlobalRouteTransitionLoader() {
       setMessage(loaderMessageForPath(destination.pathname));
       setVisible(true);
 
-      if (waitingWallet) {
-        const dest = `${destination.pathname}${destination.search}${destination.hash}`;
-        if (locationKey() !== dest) {
-          window.history.pushState({}, "", dest);
-        }
-      }
-
       const tryFinish = () => {
-        if (locationKey() === startingUrl) return;
         // A logged-out shopper is bounced to login, so the wallet shell never
         // reports ready — stop waiting once the URL leaves the wallet.
-        if (
-          waitingWallet &&
-          isWalletAccountPath(window.location.pathname) &&
-          !isWalletShellReady()
-        ) {
+        if (waitingWallet) {
+          if (
+            isWalletAccountPath(window.location.pathname) &&
+            !isWalletShellReady()
+          ) {
+            return;
+          }
+          finish();
           return;
         }
-        finish();
+        if (routePathKey(window.location.pathname) !== routePathKey(toPath)) {
+          finish();
+        }
+      };
+
+      const onRouteCommitted = (event: Event) => {
+        if (waitingWallet) return;
+        const path = (event as CustomEvent<{ path?: string }>).detail?.path;
+        if (path && routePathKey(path) === routePathKey(toPath)) {
+          finish();
+        }
       };
 
       walletReadyRef.current = tryFinish;
+      routeCommittedRef.current = onRouteCommitted;
       window.addEventListener(WALLET_SHELL_READY_EVENT, tryFinish);
+      window.addEventListener(ROUTE_COMMITTED_EVENT, onRouteCommitted);
       pollRef.current = window.setInterval(tryFinish, 40);
       timeoutRef.current = window.setTimeout(finish, MAX_VISIBLE_MS);
     };
@@ -169,8 +194,11 @@ export default function GlobalRouteTransitionLoader() {
     };
 
     const onProgrammaticNav = (event: Event) => {
-      const href = (event as CustomEvent<{ href?: string }>).detail?.href;
-      if (href) startTransition(href);
+      const detail = (event as CustomEvent<{ href?: string; replace?: boolean }>)
+        .detail;
+      if (detail?.href) {
+        startTransition(detail.href, { replace: detail.replace });
+      }
     };
 
     const onPopState = () => {

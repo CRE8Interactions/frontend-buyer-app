@@ -6,7 +6,10 @@ import { afterEach, describe, expect, it } from "vitest";
 import GlobalRouteTransitionLoader from "@/components/molecules/GlobalRouteTransitionLoader";
 import { DEMO_ORGS } from "@/lib/demo/fixtures";
 import { cacheOrgBranding } from "@/lib/orgBrandingCache";
-import { notifyWalletShellReady } from "@/lib/routeTransition";
+import {
+  notifyRouteCommitted,
+  notifyWalletShellReady,
+} from "@/lib/routeTransition";
 
 const raptors = DEMO_ORGS.find((org) => org.slug === "ogden-raptors")!;
 
@@ -27,6 +30,7 @@ describe("GlobalRouteTransitionLoader platform links", () => {
 
     fireEvent.click(screen.getByRole("link", { name: "Partner tickets" }));
 
+    expect(window.location.pathname).toBe(`/${raptors.slug}/`);
     expect(document.querySelector("[data-bt-platform-loader]")).toBeTruthy();
     expect(document.querySelector("[data-bt-tenant-loader]")).toBeNull();
 
@@ -40,8 +44,31 @@ describe("GlobalRouteTransitionLoader platform links", () => {
 
     fireEvent.click(screen.getByRole("link", { name: "See partner events" }));
 
+    expect(window.location.pathname).toBe(`/${raptors.slug}/`);
     expect(document.querySelector("[data-bt-platform-loader]")).toBeTruthy();
     expect(document.querySelector("[data-bt-tenant-loader]")).toBeNull();
+  });
+
+  it("keeps the loader up until the destination route commits", async () => {
+    cacheOrgBranding(raptors);
+    window.history.replaceState({}, "", "/");
+    render(
+      <>
+        <GlobalRouteTransitionLoader />
+        <a href={`/${raptors.slug}/`}>Partner tickets</a>
+      </>,
+    );
+
+    fireEvent.click(screen.getByRole("link", { name: "Partner tickets" }));
+
+    expect(window.location.pathname).toBe(`/${raptors.slug}/`);
+    expect(document.querySelector("[data-bt-platform-loader]")).toBeTruthy();
+
+    notifyRouteCommitted(`/${raptors.slug}/`);
+
+    await waitFor(() => {
+      expect(document.querySelector("[data-bt-platform-loader]")).toBeNull();
+    });
   });
 
   it("lets footer links use their destination organization branding", () => {
@@ -58,6 +85,7 @@ describe("GlobalRouteTransitionLoader platform links", () => {
 
     fireEvent.click(screen.getByRole("link", { name: "Partner footer" }));
 
+    expect(window.location.pathname).toBe(`/${raptors.slug}/`);
     expect(document.querySelector("[data-bt-tenant-loader]")).toBeTruthy();
     expect(screen.getByText(raptors.name)).toBeInTheDocument();
   });
@@ -74,6 +102,8 @@ describe("GlobalRouteTransitionLoader platform links", () => {
 
     fireEvent.click(screen.getByRole("link", { name: "My tickets" }));
 
+    expect(window.location.pathname).toBe("/wallet/my-tickets/");
+    notifyRouteCommitted("/wallet/my-tickets/");
     // The wallet is never a team, so the previous org must not paint here.
     expect(document.querySelector("[data-bt-platform-loader]")).toBeTruthy();
     expect(document.querySelector("[data-bt-tenant-loader]")).toBeNull();

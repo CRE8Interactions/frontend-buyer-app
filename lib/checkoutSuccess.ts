@@ -35,7 +35,7 @@ export function leaveCheckoutForSuccess(
   if (!id) return;
   markStripePaymentSyncStarted();
   const href = checkoutSuccessPath(id);
-  beginRouteTransition(href);
+  beginRouteTransition(href, { replace: true });
   replace(href);
 }
 
