@@ -26,6 +26,9 @@ vi.mock("@/lib/api", () => ({
   createTicketTransfer: vi.fn(),
   downloadApplePass: vi.fn(),
   downloadGooglePass: vi.fn(),
+  getEventByUuid: vi.fn(),
+  getEventByShortCode: vi.fn(),
+  getOrganizationStorefront: vi.fn(),
   getAccessPassesByOrder: vi.fn(),
   getMyAccessPass: vi.fn(),
   getMyAccessPasses: vi.fn(),
@@ -57,6 +60,7 @@ import SeasonTickets from "@/components/organisms/SeasonTickets";
 import {
   createTicketTransfer,
   downloadApplePass,
+  downloadGooglePass,
   getAccessPassesByOrder,
   getMyAccessPass,
   getMyAccessPasses,
@@ -65,6 +69,7 @@ import {
 } from "@/lib/api";
 
 const mockedDownloadApplePass = vi.mocked(downloadApplePass);
+const mockedDownloadGooglePass = vi.mocked(downloadGooglePass);
 const mockedCreateTicketTransfer = vi.mocked(createTicketTransfer);
 const mockedGetAccessPassesByOrder = vi.mocked(getAccessPassesByOrder);
 const mockedGetMyAccessPass = vi.mocked(getMyAccessPass);
@@ -179,7 +184,7 @@ describe("SeasonTickets package tab", () => {
     rerender(<SeasonTickets />);
 
     expect(
-      screen.getByRole("heading", { name: pkg.events[1].name }),
+      await screen.findByRole("heading", { name: pkg.events[1].name }),
     ).toBeInTheDocument();
     expect(screen.getByRole("link", { name: /All tickets/i })).toHaveAttribute(
       "href",
@@ -861,6 +866,38 @@ describe("SeasonTickets routed event screen", () => {
     expect(details.getByText("Mobile entry")).toBeInTheDocument();
   });
 
+  it("holds the event page until the order total is ready", async () => {
+    let releaseOrder: (value: { data: unknown }) => void = () => {};
+    const listed = demoCompletedTicketOrder({
+      event: printableEvent,
+      orderId: "1474-968546-6022",
+      total: 0,
+    });
+    mockedGetMyEvents.mockResolvedValue({ data: [listed] } as never);
+    mockedGetOrder.mockReturnValue(
+      new Promise((resolve) => {
+        releaseOrder = resolve;
+      }) as never,
+    );
+
+    render(
+      <SeasonTickets initialScreen="event" eventUUID={printableEvent.uuid} />,
+    );
+
+    expect(await screen.findByText("Loading your tickets…")).toBeInTheDocument();
+    expect(screen.queryByText("Total paid")).not.toBeInTheDocument();
+    expect(screen.queryByText("$0.00")).not.toBeInTheDocument();
+
+    releaseOrder({
+      data: { ...listed, total: "452.2", firstName: "jaime", lastName: "convery" },
+    });
+
+    expect(await screen.findByText("$452.20")).toBeInTheDocument();
+    expect(screen.getByText("Total paid")).toBeInTheDocument();
+    expect(screen.queryByText("Loading your tickets…")).not.toBeInTheDocument();
+    expect(screen.queryByText("$0.00")).not.toBeInTheDocument();
+  });
+
   it("fills the amount paid and buyer name from the single-order fetch", async () => {
     const user = userEvent.setup();
     const listed = demoCompletedTicketOrder({
@@ -915,6 +952,52 @@ describe("SeasonTickets routed event screen", () => {
       .closest("div")?.parentElement;
     const details = within(modal!);
     expect(details.getByText("1474-023249-8851")).toBeInTheDocument();
+  });
+
+  it("prints with category and org branding from the single-order fetch", async () => {
+    const user = userEvent.setup();
+    const listed = demoCompletedTicketOrder({
+      event: {
+        uuid: printableEvent.uuid,
+        name: printableEvent.name,
+        venue: printableEvent.venue,
+      },
+    });
+    mockedGetMyEvents.mockResolvedValue({ data: [listed] } as never);
+    mockedGetOrder.mockResolvedValue({
+      data: {
+        ...listed,
+        event: {
+          ...printableEvent,
+          category: { name: "sports" },
+        },
+      },
+    } as never);
+
+    render(
+      <SeasonTickets initialScreen="event" eventUUID={printableEvent.uuid} />,
+    );
+
+    await waitFor(() => {
+      expect(mockedGetOrder).toHaveBeenCalledWith(listed.orderId);
+    });
+
+    await user.click(
+      (await screen.findAllByRole("button", { name: "Print PDF" }))[0],
+    );
+
+    expect(pdfMocks.printTicketsPdf).toHaveBeenCalledWith(
+      expect.objectContaining({
+        event: expect.objectContaining({
+          category: { name: "sports" },
+          organization: expect.objectContaining({
+            branding: expect.objectContaining({
+              primaryColor: printableEvent.organization.branding?.primaryColor,
+            }),
+          }),
+        }),
+      }),
+    );
   });
 
   it("prints one ticket in a new PDF and downloads all tickets together", async () => {
@@ -1341,5 +1424,162 @@ describe("SeasonTickets ticket screen responsive layout", () => {
     expect(
       screen.queryByRole("link", { name: /All tickets/i }),
     ).not.toBeInTheDocument();
+  });
+});
+
+describe("SeasonTickets mobile ticket actions", () => {
+  const order = demoCompletedTicketOrder({ event: icedogs });
+  const ticket = order.tickets[0];
+
+  function stubPhone(userAgent: string) {
+    Object.defineProperty(window, "innerWidth", {
+      configurable: true,
+      writable: true,
+      value: 390,
+    });
+    Object.defineProperty(window, "matchMedia", {
+      configurable: true,
+      writable: true,
+      value: (query: string) =>
+        ({ matches: query === "(pointer: coarse)" }) as MediaQueryList,
+    });
+    Object.defineProperty(navigator, "userAgent", {
+      configurable: true,
+      writable: true,
+      value: userAgent,
+    });
+  }
+
+  beforeEach(() => {
+    sessionMocks.getSession.mockReturnValue(DEMO_SESSION);
+    mockedGetMyEvents.mockReset();
+    mockedGetMyEvents.mockResolvedValue({ data: [order] } as never);
+    mockedDownloadApplePass.mockReset();
+    mockedDownloadGooglePass.mockReset();
+    mockedDownloadApplePass.mockResolvedValue({
+      data: new Blob(["pkpass"], { type: "application/vnd.apple.pkpass" }),
+    } as never);
+    mockedDownloadGooglePass.mockResolvedValue({
+      data: { url: "https://pay.google.com/gp/v/save/ticket-1" },
+    } as never);
+    navigationMocks.pathname = `/wallet/my-tickets/order/${order.orderId}/`;
+    stubPhone("Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X)");
+    Object.defineProperty(window.URL, "createObjectURL", {
+      configurable: true,
+      writable: true,
+      value: vi.fn(() => "blob:pass"),
+    });
+    Object.defineProperty(window.URL, "revokeObjectURL", {
+      configurable: true,
+      writable: true,
+      value: vi.fn(),
+    });
+  });
+
+  afterEach(() => {
+    Reflect.deleteProperty(window, "matchMedia");
+    Reflect.deleteProperty(navigator, "userAgent");
+    Object.defineProperty(window, "innerWidth", {
+      configurable: true,
+      writable: true,
+      value: 1440,
+    });
+  });
+
+  it("shows the entry gate on the mobile ticket card", async () => {
+    render(<SeasonTickets />);
+
+    expect(
+      (
+        await screen.findAllByText(
+          `Enter at ${icedogs.entryGate} · ${icedogs.venue.name}`,
+        )
+      ).length,
+    ).toBeGreaterThan(0);
+  });
+
+  it("hides the entry line when the event has no gate", async () => {
+    const event = DEMO_EVENTS.find((row) => row.shortCode === "ICEDOG5")!;
+    const orderWithoutGate = demoCompletedTicketOrder({ event });
+    mockedGetMyEvents.mockResolvedValue({ data: [orderWithoutGate] } as never);
+    navigationMocks.pathname = `/wallet/my-tickets/order/${orderWithoutGate.orderId}/`;
+
+    render(<SeasonTickets />);
+
+    expect(
+      (await screen.findAllByRole("button", { name: "View QR-Code" })).length,
+    ).toBeGreaterThan(0);
+    expect(screen.queryByText(/Enter at/i)).not.toBeInTheDocument();
+  });
+
+  it("opens a QR-only sheet from View QR-Code", async () => {
+    const user = userEvent.setup();
+    render(<SeasonTickets />);
+
+    await user.click(
+      (await screen.findAllByRole("button", { name: "View QR-Code" }))[0],
+    );
+
+    expect(
+      screen.getByRole("heading", { name: "Scan at entrance" }),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("img", { name: /QR code/i })).toBeInTheDocument();
+    expect(
+      screen.queryByRole("heading", { name: "Ticket details" }),
+    ).not.toBeInTheDocument();
+    expect(screen.queryByText("Holder")).not.toBeInTheDocument();
+  });
+
+  it("opens details without a QR from Ticket details", async () => {
+    const user = userEvent.setup();
+    render(<SeasonTickets />);
+
+    await user.click(
+      (await screen.findAllByRole("button", { name: "Ticket details" }))[0],
+    );
+
+    expect(
+      screen.getByRole("heading", { name: "Ticket details" }),
+    ).toBeInTheDocument();
+    expect(screen.getByText("Holder")).toBeInTheDocument();
+    expect(screen.getByText(ticket.checkInCode)).toBeInTheDocument();
+    expect(
+      screen.queryByRole("heading", { name: "Scan at entrance" }),
+    ).not.toBeInTheDocument();
+    expect(screen.queryByRole("img", { name: /QR code/i })).not.toBeInTheDocument();
+  });
+
+  it("adds the ticket to Apple Wallet on iPhone", async () => {
+    const user = userEvent.setup();
+    render(<SeasonTickets />);
+
+    await user.click(
+      (await screen.findAllByRole("button", { name: "Add to Apple Wallet" }))[0],
+    );
+
+    expect(mockedDownloadApplePass).toHaveBeenCalledWith({
+      event: expect.objectContaining({ uuid: icedogs.uuid }),
+      obj: expect.objectContaining({ checkInCode: ticket.checkInCode }),
+    });
+  });
+
+  it("offers Google Wallet on Android", async () => {
+    stubPhone("Mozilla/5.0 (Linux; Android 14; Pixel 8)");
+    const user = userEvent.setup();
+    render(<SeasonTickets />);
+
+    await user.click(
+      (await screen.findAllByRole("button", { name: "Add to Google Wallet" }))[0],
+    );
+
+    await waitFor(() => {
+      expect(mockedDownloadGooglePass).toHaveBeenCalledWith(
+        expect.objectContaining({
+          event: icedogs.uuid,
+          ticket: expect.objectContaining({ checkInCode: ticket.checkInCode }),
+          obj: expect.objectContaining({ checkInCode: ticket.checkInCode }),
+        }),
+      );
+    });
   });
 });

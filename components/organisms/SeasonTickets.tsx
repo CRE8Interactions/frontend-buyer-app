@@ -45,6 +45,7 @@ import {
   buildSeasonPackageSummaries,
   summarizeEventDetails,
   formatCartOrderTotal,
+  ticketEntryLine,
   walletAccessPassPath,
   walletEventScheduleLine,
   walletEventTicketsPath,
@@ -72,6 +73,7 @@ import {
 } from "@/lib/wallet";
 import {
   addAccessPassToPhoneWallet,
+  addTicketToPhoneWallet,
   phoneWalletKind,
   phoneWalletLabel,
   type PhoneWalletKind,
@@ -82,6 +84,7 @@ import {
   walletSectionHref,
 } from "@/lib/walletNav";
 import { notifyWalletShellReady } from "@/lib/routeTransition";
+import { Ticket } from "@/components/atoms/icons";
 import { printTicketsPdf } from "@/lib/ticketPdf";
 
 /* ---- brand tokens ---- */
@@ -588,35 +591,6 @@ function buildEvents(): Record<string, EventT> {
   return map;
 }
 
-/* deterministic faux-QR as an inline SVG data URI */
-function qr(seed: string): string {
-  const N = 25, Q = 2, S = N + Q * 2;
-  let h = 2166136261;
-  for (let i = 0; i < seed.length; i++) { h ^= seed.charCodeAt(i); h = Math.imul(h, 16777619); }
-  let r = h >>> 0;
-  const rnd = () => { r = (Math.imul(r, 1103515245) + 12345) >>> 0; return r / 4294967296; };
-  const g: boolean[][] = [];
-  for (let y = 0; y < N; y++) { g.push([]); for (let x = 0; x < N; x++) g[y].push(rnd() > 0.5); }
-  const finder = (ox: number, oy: number) => {
-    for (let y = 0; y < 7; y++) for (let x = 0; x < 7; x++) {
-      const edge = x === 0 || y === 0 || x === 6 || y === 6;
-      const core = x > 1 && x < 5 && y > 1 && y < 5;
-      g[oy + y][ox + x] = edge || core;
-    }
-    for (let y = -1; y < 8; y++) for (let x = -1; x < 8; x++) {
-      const yy = oy + y, xx = ox + x;
-      if (yy < 0 || xx < 0 || yy >= N || xx >= N) continue;
-      if (x === -1 || y === -1 || x === 7 || y === 7) g[yy][xx] = false;
-    }
-  };
-  finder(0, 0); finder(N - 7, 0); finder(0, N - 7);
-  for (let i = 8; i < N - 8; i++) { g[6][i] = i % 2 === 0; g[i][6] = i % 2 === 0; }
-  let rects = "";
-  for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) if (g[y][x]) rects += `<rect x="${x + Q}" y="${y + Q}" width="1" height="1"/>`;
-  const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${S} ${S}" shape-rendering="crispEdges"><rect width="${S}" height="${S}" fill="#fff"/><g fill="#3d0420">${rects}</g></svg>`;
-  return "data:image/svg+xml;utf8," + encodeURIComponent(svg);
-}
-
 /**
  * The event screen reflows from the real viewport rather than a measured width,
  * so a narrow desktop window stacks to one column even before (or without) a
@@ -695,7 +669,7 @@ export default function SeasonTickets({
   const [evId, setEvId] = useState("lobos");
   const [listTab, setListTab] = useState<"active" | "received">("active");
   const [saleTab, setSaleTab] = useState<"active" | "sold" | "expired">("active");
-  const [modal, setModal] = useState<null | "details" | "field" | "vouchers">(null);
+  const [modal, setModal] = useState<null | "details" | "qr" | "field" | "vouchers">(null);
   const [detail, setDetail] = useState<{ seat?: string; holder?: string; code?: string } | null>(null);
   const [printing, setPrinting] = useState<string | null>(null);
   const [printError, setPrintError] = useState("");
@@ -715,6 +689,8 @@ export default function SeasonTickets({
   const [passWallet, setPassWallet] = useState<PhoneWalletKind | null>(null);
   const [passWalletSaving, setPassWalletSaving] = useState(false);
   const [passWalletError, setPassWalletError] = useState("");
+  const [ticketWalletSaving, setTicketWalletSaving] = useState<string | null>(null);
+  const [ticketWalletError, setTicketWalletError] = useState("");
   const [confirmCancel, setConfirmCancel] = useState<Sent | null>(null);
   const [sent, setSent] = useState<Sent[] | null>(null);
   const [toast, setToast] = useState<string | null>(null);
@@ -877,11 +853,6 @@ export default function SeasonTickets({
       cancelled = true;
     };
   }, []);
-
-  useEffect(() => {
-    if (!eventsChecked || eventsLoading) return;
-    notifyWalletShellReady();
-  }, [eventsChecked, eventsLoading]);
 
   useEffect(() => {
     const uuid = routedAccessPassUUID;
@@ -1075,9 +1046,21 @@ export default function SeasonTickets({
       (routedEventUUID && routedDetail) ||
       (routedPackageUUID && !routedEventUUID && routedSeasonPackage),
   );
+  const orderEventKey = routedDetail
+    ? routedDetail.key
+    : evId.startsWith("order:")
+      ? evId.slice(6)
+      : null;
+  const activeEvId = orderEventKey ? `order:${orderEventKey}` : evId;
+  const activeDetail = orderEventKey ? eventDetails[orderEventKey] ?? null : null;
+  const activeOrderId = activeDetail?.orderId ?? "";
+  const eventOrderPending = Boolean(
+    activeOrderId && !fullOrderChecked[activeOrderId],
+  );
   const routedWalletPending =
     routedPackagePassPending ||
     routedAccessPassPending ||
+    eventOrderPending ||
     (showRoutedWallet &&
       !routedTargetFound &&
       (eventsLoading || !eventsChecked));
@@ -1085,8 +1068,13 @@ export default function SeasonTickets({
     showRoutedWallet && !routedTargetFound && !routedWalletPending;
   const showingEventDetail =
     showRoutedWallet
-      ? Boolean(routedDetail && !routedWalletPending && !routedWalletMissing)
-      : screen === "event";
+      ? Boolean(
+          routedDetail &&
+            !eventOrderPending &&
+            !routedWalletPending &&
+            !routedWalletMissing,
+        )
+      : screen === "event" && !eventOrderPending;
   const showingSeasonPackage =
     showRoutedWallet
       ? Boolean(
@@ -1106,14 +1094,11 @@ export default function SeasonTickets({
       !routedWalletPending &&
       !routedWalletMissing,
   );
-  const orderEventKey = routedDetail
-    ? routedDetail.key
-    : evId.startsWith("order:")
-      ? evId.slice(6)
-      : null;
-  const activeEvId = orderEventKey ? `order:${orderEventKey}` : evId;
-  const activeDetail = orderEventKey ? eventDetails[orderEventKey] ?? null : null;
-  const activeOrderId = activeDetail?.orderId ?? "";
+  useEffect(() => {
+    if (!eventsChecked || eventsLoading || eventOrderPending) return;
+    notifyWalletShellReady();
+  }, [eventsChecked, eventsLoading, eventOrderPending]);
+
   const ev =
     (activeDetail
       ? detailToEventT(withFullOrder(activeDetail, fullOrders[activeOrderId]))
@@ -1145,7 +1130,7 @@ export default function SeasonTickets({
         initials: ev.teams[1]?.initials || ev.initials,
       };
 
-  const anyModal = !!modal || !!tf || !!passTransfer || !!confirmCancel;
+  const anyModal = !!modal || !!tf || !!passTransfer || !!confirmCancel || !!qrPass;
   useEffect(() => {
     document.body.style.overflow = anyModal ? "hidden" : "";
     return () => { document.body.style.overflow = ""; };
@@ -1274,8 +1259,8 @@ export default function SeasonTickets({
     </div>
   );
 
-  const SeatIcon = () => (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" style={{ width: 14, height: 14 }}><path d="M5 11V6a2 2 0 0 1 2-2h6a2 2 0 0 1 2 2v5" /><path d="M4 11h13a2 2 0 0 1 2 2v3H6a2 2 0 0 1-2-2v-3z" /><path d="M6 16v3M17 16v3" /></svg>
+  const TicketIcon = () => (
+    <Ticket width={14} height={14} strokeWidth={1.8} aria-hidden />
   );
 
   /* ---------- My Tickets (events list) ---------- */
@@ -1475,7 +1460,7 @@ export default function SeasonTickets({
           </span>
           {row.ticketCount > 0 ? (
             <span style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, fontWeight: 600, color: INK, border: "1px solid rgba(5,27,53,0.16)", borderRadius: 8, padding: "5px 10px", whiteSpace: "nowrap" }}>
-              <SeatIcon />
+              <TicketIcon />
               {row.ticketCount} {row.ticketCount === 1 ? "ticket" : "tickets"}
             </span>
           ) : null}
@@ -1643,7 +1628,7 @@ export default function SeasonTickets({
         <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 2, flexWrap: "wrap" }}>
           <span style={{ fontSize: 12, fontWeight: 600, color: INK, border: "1px solid rgba(5,27,53,0.16)", borderRadius: 8, padding: "5px 10px", whiteSpace: "nowrap" }}>Season tickets</span>
           <span style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, fontWeight: 600, color: INK, border: "1px solid rgba(5,27,53,0.16)", borderRadius: 8, padding: "5px 10px", whiteSpace: "nowrap" }}>
-            <SeatIcon />2
+            <TicketIcon />2
           </span>
         </div>
       </div>
@@ -1703,7 +1688,7 @@ export default function SeasonTickets({
         <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 2, flexWrap: "wrap" }}>
           {available ? (
             <span style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, fontWeight: 600, color: INK, border: "1px solid rgba(5,27,53,0.16)", borderRadius: 8, padding: "5px 10px", whiteSpace: "nowrap" }}>
-              <SeatIcon />
+              <TicketIcon />
               {row.ticketCount} {row.ticketCount === 1 ? "ticket" : "tickets"}
             </span>
           ) : (
@@ -2259,7 +2244,7 @@ export default function SeasonTickets({
                 ))}
                 {upcomingEvents.length === 0 ? (
                   <div style={{ ...card, borderRadius: 20, padding: "28px 22px", textAlign: "center" }}>
-                    <div style={{ fontSize: 15, fontWeight: 600 }}>No tickets yet</div>
+                    <div style={{ fontSize: 15, fontWeight: 600 }}>No upcoming tickets yet</div>
                     <div style={{ marginTop: 6, fontSize: 13, color: SUB }}>Your purchased tickets will show up here after checkout.</div>
                   </div>
                 ) : null}
@@ -2326,15 +2311,17 @@ export default function SeasonTickets({
   /* ---------- event detail ---------- */
   const ticketRows = ev.tickets.map((t) => {
     const parts = t.seat.split("·").map((p) => p.trim());
+    const entryLine = ticketEntryLine(t.raw, ev.venue, ev.event);
     if (parts.length >= 3) {
       return {
         ...t,
         sec: parts[0].replace(/^Sec\s*/i, ""),
         row: parts[1].replace(/^Row\s*/i, ""),
         seatNo: parts[2].replace(/^Seat\s*/i, ""),
+        entryLine,
       };
     }
-    return { ...t, sec: parts[0] || "GA", row: "—", seatNo: "—" };
+    return { ...t, sec: parts[0] || "GA", row: "—", seatNo: "—", entryLine };
   });
   const orderRows = ev.isCart
     ? [
@@ -2385,6 +2372,28 @@ export default function SeasonTickets({
     } finally {
       setPrinting(null);
     }
+  };
+  const addTicketCardToWallet = async (ticket: EventT["tickets"][number]) => {
+    if (!passWallet) return;
+    setTicketWalletSaving(String(ticket.id || ticket.code));
+    setTicketWalletError("");
+    const error = await addTicketToPhoneWallet(
+      {
+        ...(ev.event || {}),
+        uuid: ev.event?.uuid || ev.eventUUID,
+      },
+      {
+        ...(ticket.raw || {}),
+        checkInCode: ticket.code,
+        eventUUID:
+          (typeof ticket.raw?.eventUUID === "string" && ticket.raw.eventUUID) ||
+          ev.eventUUID,
+      },
+      passWallet,
+    );
+    setTicketWalletSaving(null);
+    if (error) setTicketWalletError(error);
+    else flashToast("Pass sent to your phone wallet");
   };
   const canTransferEvent =
     ev.transfersEnabled !== false &&
@@ -2576,20 +2585,34 @@ export default function SeasonTickets({
                     </div>
                   ))}
                 </div>
-                <div style={{ fontSize: 13, color: SUB }}>Enter at Gate 3 · Aggie Memorial</div>
+                {t.entryLine ? (
+                  <div style={{ fontSize: 13, color: SUB }}>{t.entryLine}</div>
+                ) : null}
               </div>
             </div>
 
             {/* actions */}
             <div style={{ padding: "16px 18px 18px", display: "flex", flexDirection: "column", gap: 12 }}>
-              <button onClick={() => { setDetail(t); setModal("details"); }} style={{ fontFamily: "inherit", width: "100%", display: "flex", alignItems: "center", justifyContent: "center", gap: 10, minHeight: 50, fontSize: 15, fontWeight: 600, color: "#fff", background: "#14161c", border: "none", borderRadius: 12, cursor: "pointer" }}>
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" style={{ width: 18, height: 18 }}><rect x="2" y="6" width="20" height="13" rx="3" /><path d="M2 11h20" /></svg>
-                Add to Apple Wallet
-              </button>
+              {passWallet ? (
+                <button
+                  type="button"
+                  disabled={ticketWalletSaving !== null}
+                  onClick={() => void addTicketCardToWallet(t)}
+                  style={{ fontFamily: "inherit", width: "100%", display: "flex", alignItems: "center", justifyContent: "center", gap: 10, minHeight: 50, fontSize: 15, fontWeight: 600, color: "#fff", background: "#14161c", border: "none", borderRadius: 12, cursor: ticketWalletSaving ? "default" : "pointer", opacity: ticketWalletSaving ? 0.7 : 1 }}
+                >
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" style={{ width: 18, height: 18 }}><rect x="2" y="6" width="20" height="13" rx="3" /><path d="M2 11h20" /></svg>
+                  {ticketWalletSaving === String(t.id || t.code)
+                    ? "Adding…"
+                    : phoneWalletLabel(passWallet)}
+                </button>
+              ) : null}
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
-                <button onClick={() => { setDetail(t); setModal("details"); }} style={{ fontFamily: "inherit", minHeight: 44, fontSize: 14, fontWeight: 600, color: INK, background: "#fff", border: `1px solid ${ACCENT}`, borderRadius: 12, cursor: "pointer" }}>View QR-Code</button>
+                <button onClick={() => { setDetail(t); setModal("qr"); }} style={{ fontFamily: "inherit", minHeight: 44, fontSize: 14, fontWeight: 600, color: INK, background: "#fff", border: `1px solid ${ACCENT}`, borderRadius: 12, cursor: "pointer" }}>View QR-Code</button>
                 <button onClick={() => { setDetail(t); setModal("details"); }} style={{ fontFamily: "inherit", minHeight: 44, fontSize: 14, fontWeight: 600, color: INK, background: "#fff", border: "1px solid rgba(5,27,53,0.14)", borderRadius: 12, cursor: "pointer" }}>Ticket details</button>
               </div>
+              {ticketWalletError ? (
+                <p role="alert" style={{ margin: 0, color: DANGER, fontSize: 13 }}>{ticketWalletError}</p>
+              ) : null}
             </div>
 
             {/* verified footer */}
@@ -2751,7 +2774,7 @@ export default function SeasonTickets({
               <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 2, flexWrap: "wrap" }}>
                 <span style={{ fontSize: 12, fontWeight: 600, color: INK, border: "1px solid rgba(5,27,53,0.16)", borderRadius: 8, padding: "5px 10px", whiteSpace: "nowrap" }}>Season Tickets</span>
                 <span style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, fontWeight: 600, color: INK, border: "1px solid rgba(5,27,53,0.16)", borderRadius: 8, padding: "5px 10px", whiteSpace: "nowrap" }}>
-                  <SeatIcon />2
+                  <TicketIcon />2
                 </span>
               </div>
             </div>
@@ -3259,12 +3282,6 @@ export default function SeasonTickets({
           <h2 style={{ margin: 0, fontSize: 22, fontWeight: 600, letterSpacing: "-0.02em" }}>Ticket details</h2>
           {closeX(() => setModal(null))}
         </div>
-        {mobileTicketView && detail?.code && (
-          <div style={{ alignSelf: "center", width: 180, height: 180, borderRadius: 14, overflow: "hidden", border: `1px solid ${LINE}` }}>
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src={qr(detail.code)} alt="Ticket QR" style={{ width: "100%", height: "100%", display: "block" }} />
-          </div>
-        )}
         <div style={{ display: "flex", flexDirection: "column" }}>
           {detailRows.map((d) => (
             <div key={d.k} style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 16, padding: "13px 0", borderBottom: "1px solid rgba(5,27,53,0.07)" }}>
@@ -3277,6 +3294,41 @@ export default function SeasonTickets({
       </div>
     </div>
   );
+
+  const TicketQrModal = () => {
+    if (!detail?.code) return null;
+    return (
+      <div onClick={() => setModal(null)} style={overlay}>
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="ticket-qr-title"
+          onClick={(event) => event.stopPropagation()}
+          style={{ ...sheet, maxWidth: 500, padding: 0, gap: 0, overflow: "hidden" }}
+        >
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, padding: "18px 22px", borderBottom: `1px solid ${LINE}` }}>
+            <h2 id="ticket-qr-title" style={{ margin: 0, fontSize: 16, fontWeight: 600, color: INK, letterSpacing: "-0.01em" }}>
+              Scan at entrance
+            </h2>
+            {closeX(() => setModal(null), "Close QR code")}
+          </div>
+          <div style={{ padding: mobile ? "26px 20px 30px" : "28px 28px 34px", display: "flex", flexDirection: "column", alignItems: "center", gap: 18 }}>
+            <div role="img" aria-label={`QR code for ${detail.seat || "ticket"}`} style={{ padding: 10, background: "#fff", lineHeight: 0 }}>
+              <QRCodeSVG value={detail.code} size={mobile ? 220 : 256} fgColor={INK} />
+            </div>
+            <p style={{ margin: 0, color: SUB, fontSize: 15, lineHeight: 1.5, textAlign: "center" }}>
+              Show this code at the gate.
+            </p>
+          </div>
+          <div style={{ padding: "18px 24px 24px", borderTop: `1px solid ${LINE}`, display: "flex", justifyContent: "flex-end" }}>
+            <button type="button" onClick={() => setModal(null)} style={{ fontFamily: "inherit", fontSize: 15, fontWeight: 600, color: INK, background: ACCENT, border: "none", borderRadius: 999, padding: "12px 26px", minHeight: 44, cursor: "pointer" }}>
+              Close
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  };
 
   const FieldModal = () => (
     <div onClick={() => setModal(null)} style={overlay}>
@@ -3676,7 +3728,7 @@ export default function SeasonTickets({
           {screen === "login" && Login()}
           {screen === "code" && CodeScreen()}
           {screen === "events" && Events()}
-          {screen === "event" && EventDetail()}
+          {screen === "event" && (eventOrderPending ? TicketsLoader() : EventDetail())}
           {screen === "seasonPackage" && SeasonPackage()}
           {screen === "package" && Package()}
           {screen === "listings" && Listings()}
@@ -3687,6 +3739,7 @@ export default function SeasonTickets({
       )}
 
       {modal === "details" && DetailsModal()}
+      {modal === "qr" && TicketQrModal()}
       {modal === "field" && FieldModal()}
       {modal === "vouchers" && VouchersModal()}
       {tf && TransferModal()}
