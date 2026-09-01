@@ -372,7 +372,11 @@ export default function VenueProfile({ slug }: { slug: string }) {
             e.organization?.url,
         )?.organization;
         if (orgFromEvents) {
-          setOrganization((current) => current ?? orgFromEvents);
+          const brandingOrg: BrandingOrganization = {
+            ...orgFromEvents,
+            slug: orgFromEvents.slug ?? undefined,
+          };
+          setOrganization((current) => current ?? brandingOrg);
         }
 
         const orgSlug = orgFromEvents?.slug;

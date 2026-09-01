@@ -757,7 +757,7 @@ describe("Select tickets page (PremiumTicketing)", () => {
     mockedPlaceTickets.mockImplementation(
       () =>
         new Promise((resolve) => {
-          finishHold = resolve;
+          finishHold = resolve as (value: unknown) => void;
         }),
     );
     const user = userEvent.setup();

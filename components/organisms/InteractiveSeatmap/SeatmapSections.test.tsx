@@ -334,12 +334,12 @@ describe("InteractiveSeatmap canvas", () => {
   });
 
   it("does not reset pan or zoom when the canvas resizes after zooming", () => {
-    let notifyResize: (() => void) | null = null;
+    const resize: { notify: (() => void) | null } = { notify: null };
     vi.stubGlobal(
       "ResizeObserver",
       class {
         constructor(callback: () => void) {
-          notifyResize = callback;
+          resize.notify = callback;
         }
         observe() {}
         disconnect() {}
@@ -357,7 +357,7 @@ describe("InteractiveSeatmap canvas", () => {
       clientWidth: { configurable: true, get: () => 390 },
       clientHeight: { configurable: true, get: () => 420 },
     });
-    notifyResize?.();
+    resize.notify?.();
 
     expect(viewport).toHaveAttribute("transform", zoomedTransform);
 

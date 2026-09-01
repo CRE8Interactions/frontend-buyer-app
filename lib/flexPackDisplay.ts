@@ -78,7 +78,11 @@ export function flexPackSeasonLabel(
 }
 
 export function flexPackSeasonLine(
-  pack?: { start?: string; end?: string; venue?: { timezone?: string } } | null,
+  pack?: {
+    start?: string;
+    end?: string;
+    venue?: { timezone?: TimezoneLike };
+  } | null,
 ) {
   const label = flexPackSeasonLabel(
     pack?.start,

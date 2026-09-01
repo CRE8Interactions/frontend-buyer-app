@@ -40,6 +40,7 @@ export type EventPriceSource = {
     am_pricing_objects?: EventPricingLevel[] | null;
     ticketPrices?: Array<{ price?: number } | null> | null;
   } | null> | null;
+  [key: string]: unknown;
 };
 
 function asNumber(value: unknown): number | null {

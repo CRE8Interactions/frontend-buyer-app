@@ -58,15 +58,13 @@ export function handleInAppBackClick(
   goBack(fallbackHref, router);
 }
 
-export function inAppBackAnchorProps(
-  href: string,
-  router: AppRouterLike,
-  onClick?: (event: { preventDefault: () => void }) => void,
-) {
+export function inAppBackAnchorProps<
+  E extends { preventDefault: () => void } = { preventDefault: () => void },
+>(href: string, router: AppRouterLike, onClick?: (event: E) => void) {
   return {
     href: backFallbackHref(href),
     [IN_APP_BACK_ATTR]: "true",
-    onClick: (event: { preventDefault: () => void }) => {
+    onClick: (event: E) => {
       onClick?.(event);
       handleInAppBackClick(event, href, router);
     },

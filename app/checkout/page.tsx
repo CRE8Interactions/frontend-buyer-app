@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { loadStripe, type Stripe } from "@stripe/stripe-js";
@@ -27,6 +27,7 @@ import {
   type CheckoutCartBrandingSource,
 } from "@/lib/checkoutBranding";
 import { cacheOrgBranding, orgSlugFromPathname } from "@/lib/orgBrandingCache";
+import { useClientReady } from "@/lib/useClientReady";
 import { formString } from "@/lib/fieldValidation";
 import {
   flexPackSeasonLine,
@@ -627,7 +628,7 @@ function CheckoutPage() {
   const [promoDiscount, setPromoDiscount] =
     useState<CheckoutPromoDiscount | null>(null);
   const [loadError, setLoadError] = useState("");
-  const [allowCachedBranding, setAllowCachedBranding] = useState(false);
+  const allowCachedBranding = useClientReady();
   const [guestBuyer, setGuestBuyer] = useState<GuestBuyer | null>(null);
 
   const [leavingForLogin, setLeavingForLogin] = useState(false);
@@ -653,10 +654,6 @@ function CheckoutPage() {
   useEffect(() => {
     hideIntercomLauncher();
     captureCheckoutReferrer();
-  }, []);
-
-  useLayoutEffect(() => {
-    setAllowCachedBranding(true);
   }, []);
 
   // Hold the loader until the router commits to /login/ so checkout never

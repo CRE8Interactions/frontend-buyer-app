@@ -1,17 +1,21 @@
 "use client";
 
-import { Suspense, useEffect, useLayoutEffect, useState } from "react";
+import { Suspense, useEffect, useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import BrandedActionButton from "@/components/atoms/BrandedActionButton";
 import RouteLoader from "@/components/molecules/RouteLoader";
-import { getOrderByPaymentIntentId } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { BLOCKTICKETS_NAVY, type BrandingOrganization } from "@/lib/branding";
 import {
   checkoutBrandingFromCart,
   type CheckoutCartBrandingSource,
 } from "@/lib/checkoutBranding";
+import {
+  fetchCompletedOrder,
+  type OrderData,
+  type OrderEvent,
+} from "@/lib/completedOrder";
 import {
   eventDoorsIso,
   eventWhenWithDoors,
@@ -20,7 +24,6 @@ import {
   formatEventWhen,
   imageUrl,
   isRequestCanceled,
-  type TimezoneLike,
 } from "@/lib/helpers";
 import { clearStoredCart, getStoredCart } from "@/lib/cart";
 import { getGuestCheckoutEmail } from "@/lib/guestCheckout";
@@ -52,147 +55,17 @@ import {
   clearStripePaymentSyncMark,
   msUntilStripePaymentSyncReady,
 } from "@/lib/stripePaymentSync";
-import { unwrapList, strapiAttr } from "@/lib/wallet";
 import {
   trackCheckoutCompleted,
   trackPurchase,
   type TrackingOrganization,
 } from "@/lib/tracking";
+import { useClientReady } from "@/lib/useClientReady";
 
 const NAVY = "#051b35";
 const MUTED = "#6e7180";
 const CARD =
   "rounded-[18px] border border-[rgba(5,27,53,0.08)] bg-white shadow-[0_10px_30px_-20px_rgba(5,27,53,0.35)]";
-
-type VenueAddress = {
-  address_1?: string;
-  city?: string;
-  state?: string;
-  zipcode?: string;
-};
-
-type OrderEvent = {
-  name?: string;
-  start?: string;
-  uuid?: string;
-  doorsOpen?: string;
-  realDoorsOpen?: string;
-  image?: { url?: string };
-  venue?: {
-    timezone?: TimezoneLike;
-    name?: string;
-    address?: VenueAddress[];
-  };
-  organization?: BrandingOrganization & {
-    setting?: { foodAndBeverage?: boolean };
-    uuid?: string;
-  };
-  [key: string]: unknown;
-};
-
-type OrderData = {
-  id?: string | number;
-  orderId?: string | number;
-  total?: number;
-  serviceFee?: number;
-  processingFee?: number;
-  estimatedProcessingFee?: number;
-  salesTax?: number;
-  totalTax?: number;
-  discountApplied?: number;
-  discountBreakdown?: { code?: string } | null;
-  promoPricingDetails?: { code?: string } | null;
-  promoCode?: Array<{ code?: string } | null> | { code?: string } | null;
-  promo_code?: { code?: string } | null;
-  last4?: string | number;
-  paymentProcessor?: string;
-  paymentMethodType?: string;
-  tickets?: Array<Record<string, unknown>>;
-  event?: OrderEvent | null;
-  package?: {
-    name?: string;
-    organization?: BrandingOrganization | null;
-    events?: Array<Record<string, unknown>>;
-  } | null;
-  flex_pack?: {
-    name?: string;
-    price?: number;
-    gameTickets?: number;
-    start?: string;
-    end?: string;
-    image?: { url?: string };
-    venue?: { name?: string; timezone?: TimezoneLike };
-    organization?: BrandingOrganization | null;
-  } | null;
-  vouchers?: Array<{ code?: string }>;
-  access_pass_template?: {
-    name?: string;
-    organization?: (TrackingOrganization & BrandingOrganization) | null;
-    venue?: { name?: string; timezone?: TimezoneLike };
-    events?: Array<Record<string, unknown>>;
-  } | null;
-  access_pass?: { uuid?: string } | null;
-  priceObject?:
-    | Record<string, unknown>
-    | Array<Record<string, unknown> | null | undefined>
-    | null;
-  [key: string]: unknown;
-};
-
-function normalizeOrderPayload(payload: unknown): OrderData {
-  const listed = unwrapList<unknown>(payload).map((item) =>
-    strapiAttr<OrderData>(item),
-  );
-  if (listed.length) return listed[0];
-  if (payload && typeof payload === "object") {
-    const obj = payload as Record<string, unknown>;
-    if (obj.order && typeof obj.order === "object") {
-      return normalizeOrderPayload(obj.order);
-    }
-    return strapiAttr<OrderData>(payload);
-  }
-  return {} as OrderData;
-}
-
-const orderByIntentInflight = new Map<string, Promise<OrderData>>();
-
-export function __resetCheckoutSuccessOrderInflightForTests() {
-  orderByIntentInflight.clear();
-}
-
-async function fetchCompletedOrder(intentId: string): Promise<OrderData> {
-  const existing = orderByIntentInflight.get(intentId);
-  if (existing) return existing;
-
-  const pending = (async () => {
-    try {
-      const res = await getOrderByPaymentIntentId(intentId);
-      return normalizeOrderPayload(res.data);
-    } catch (err) {
-      orderByIntentInflight.delete(intentId);
-      throw err;
-    }
-  })();
-
-  orderByIntentInflight.set(intentId, pending);
-  void pending.then(
-    (order) => {
-      if (!orderPaymentDetailsReady(order)) {
-        orderByIntentInflight.delete(intentId);
-        return;
-      }
-      window.setTimeout(() => {
-        if (orderByIntentInflight.get(intentId) === pending) {
-          orderByIntentInflight.delete(intentId);
-        }
-      }, 5000);
-    },
-    () => {
-      orderByIntentInflight.delete(intentId);
-    },
-  );
-  return pending;
-}
 
 function resolveOrderDisplayId(order: OrderData | null): string {
   if (order?.id == null) return "";
@@ -218,22 +91,14 @@ function CheckoutSuccessPage() {
   const [error, setError] = useState("");
   const [receiptMsg, setReceiptMsg] = useState("");
   const [downloadingReceipt, setDownloadingReceipt] = useState(false);
-  const [allowCachedBranding, setAllowCachedBranding] = useState(false);
+  const allowCachedBranding = useClientReady();
 
   useEffect(() => {
     hideIntercomLauncher();
   }, []);
 
-  useLayoutEffect(() => {
-    setAllowCachedBranding(true);
-  }, []);
-
   useEffect(() => {
-    if (!intentId) {
-      setError("Missing payment reference.");
-      setLoading(false);
-      return;
-    }
+    if (!intentId) return;
     let cancelled = false;
     let delayTimer: ReturnType<typeof setTimeout> | null = null;
     const abort = new AbortController();
@@ -363,7 +228,8 @@ function CheckoutSuccessPage() {
   };
 
   const awaitingAuth = !authReady;
-  const shellLoading = awaitingAuth || loading;
+  const displayError = intentId ? error : "Missing payment reference.";
+  const shellLoading = awaitingAuth || (Boolean(intentId) && loading);
   const loaderBranding = branding.organization
     ? {
         primaryColor: accent,
@@ -454,11 +320,11 @@ function CheckoutSuccessPage() {
         </div>
       </header>
 
-      {error || !order ? (
+      {displayError || !order ? (
         <div className={`${CARD} mx-auto mt-10 max-w-lg p-8 text-center`}>
           <h1 className="text-[22px] font-semibold">Order not found</h1>
           <p className="mt-2 text-[15px]" style={{ color: MUTED }}>
-            {error}
+            {displayError}
           </p>
           <Link
             href={walletHref}
