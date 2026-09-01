@@ -41,8 +41,9 @@ vi.mock("next/navigation", () => ({
 vi.mock("@/lib/api", () => ({
   getOrder: vi.fn(),
   getOrderByPaymentIntentId: vi.fn(),
-  getEvent: vi.fn(),
+  getEventByUuid: vi.fn(),
   getEventByShortCode: vi.fn(),
+  getOrganizationStorefront: vi.fn(),
   downloadApplePass: vi.fn(),
   downloadGooglePass: vi.fn(),
 }));
@@ -756,6 +757,28 @@ describe("Checkout success guest wallet", () => {
       }),
     ).toHaveAttribute("aria-checked", "true");
     expect(mockedDownloadApplePass).not.toHaveBeenCalled();
+  });
+
+  it("shows an error and leaves the add button usable when the pass cannot be built", async () => {
+    mockedDownloadApplePass.mockRejectedValue(new Error("500"));
+    const user = userEvent.setup();
+    render(<CheckoutSuccessPageRoute />);
+
+    await user.click(
+      await screen.findByRole("button", { name: "Add to Apple Wallet" }),
+    );
+    const dialog = screen.getByRole("dialog", {
+      name: "Add a ticket to your wallet.",
+    });
+    await user.click(
+      within(dialog).getByRole("button", { name: "Add to Apple Wallet" }),
+    );
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(/could not add/i);
+    expect(
+      within(dialog).getByRole("button", { name: "Add to Apple Wallet" }),
+    ).toBeEnabled();
+    expect(within(dialog).queryByText("Adding…")).not.toBeInTheDocument();
   });
 
   it("keeps the picker open and locks a seat after it is added", async () => {

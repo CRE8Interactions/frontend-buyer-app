@@ -412,44 +412,49 @@ function CheckoutSuccessPage() {
       order && typeof order.organization === "object" && order.organization
         ? (order.organization as Record<string, unknown>)
         : null;
-    const error = await addTicketToPhoneWallet(
-      {
-        ...event,
-        organization: {
-          ...orderOrganization,
-          ...(typeof event.organization === "object" && event.organization
-            ? event.organization
-            : null),
+    try {
+      const error = await addTicketToPhoneWallet(
+        {
+          ...event,
+          organization: {
+            ...orderOrganization,
+            ...(typeof event.organization === "object" && event.organization
+              ? event.organization
+              : null),
+          },
         },
-      },
-      {
-        ...selectedTicket,
-        eventUUID:
-          (typeof selectedTicket.eventUUID === "string" &&
-            selectedTicket.eventUUID) ||
-          event.uuid,
-        organizationUUID:
-          selectedTicket.organizationUUID ||
-          event.organizationUUID ||
-          orderOrganization?.uuid,
-      },
-      passWallet,
-    );
-    setWalletSaving(false);
-    if (error) {
-      setWalletError(error);
-      return;
+        {
+          ...selectedTicket,
+          eventUUID:
+            (typeof selectedTicket.eventUUID === "string" &&
+              selectedTicket.eventUUID) ||
+            event.uuid,
+          organizationUUID:
+            selectedTicket.organizationUUID ||
+            event.organizationUUID ||
+            orderOrganization?.uuid,
+        },
+        passWallet,
+      );
+      if (error) {
+        setWalletError(error);
+        return;
+      }
+      const nextAdded = [...addedWalletKeys, addedKey];
+      setAddedWalletKeys(nextAdded);
+      const nextIndex = walletTickets.findIndex(
+        (ticket) => !nextAdded.includes(walletTicketKey(ticket)),
+      );
+      if (nextIndex < 0) {
+        setWalletSheetOpen(false);
+        return;
+      }
+      setSelectedWalletTicket(nextIndex);
+    } catch {
+      setWalletError("Could not add this pass to your wallet. Please try again.");
+    } finally {
+      setWalletSaving(false);
     }
-    const nextAdded = [...addedWalletKeys, addedKey];
-    setAddedWalletKeys(nextAdded);
-    const nextIndex = walletTickets.findIndex(
-      (ticket) => !nextAdded.includes(walletTicketKey(ticket)),
-    );
-    if (nextIndex < 0) {
-      setWalletSheetOpen(false);
-      return;
-    }
-    setSelectedWalletTicket(nextIndex);
   };
 
   if (shellLoading) {
