@@ -19,6 +19,15 @@ import {
 } from "@/lib/ticketSummary";
 import moment from "moment-timezone";
 
+export type OrderReceiptPerson = {
+  firstName?: string;
+  lastName?: string;
+  first_name?: string;
+  last_name?: string;
+  name?: string;
+  email?: string;
+};
+
 export type OrderReceiptPurchaser = {
   firstName?: string;
   lastName?: string;
@@ -31,8 +40,13 @@ export type OrderReceiptSource = {
   invoiceUUID?: string;
   firstName?: string;
   lastName?: string;
+  first_name?: string;
+  last_name?: string;
+  name?: string;
   email?: string;
   purchaserEmail?: string;
+  user?: OrderReceiptPerson | null;
+  purchaser?: OrderReceiptPerson | null;
   paymentMethodType?: string | number | null;
   last4?: string | number | null;
   paymentProcessor?: string | null;
@@ -162,6 +176,90 @@ type ReceiptSellerOrg = BrandingOrganization & {
 function money(value: unknown, fallback = 0) {
   const n = Number(value);
   return Number.isFinite(n) ? n : fallback;
+}
+
+function namePart(...values: unknown[]) {
+  for (const value of values) {
+    if (typeof value === "string" && value.trim()) return value.trim();
+  }
+  return "";
+}
+
+function splitPersonName(value?: string) {
+  const parts = String(value || "")
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean);
+  if (!parts.length) return { firstName: "", lastName: "" };
+  if (parts.length === 1) return { firstName: parts[0], lastName: "" };
+  return { firstName: parts[0], lastName: parts.slice(1).join(" ") };
+}
+
+function personFirstName(person?: OrderReceiptPerson | null) {
+  return namePart(person?.firstName, person?.first_name);
+}
+
+function personLastName(person?: OrderReceiptPerson | null) {
+  return namePart(person?.lastName, person?.last_name);
+}
+
+/** Buyer name/email from the success page, guest session, or completed order. */
+export function receiptPurchaserFromSources({
+  user,
+  guest,
+  purchaser,
+  order,
+}: {
+  user?: OrderReceiptPerson | null;
+  guest?: OrderReceiptPerson | null;
+  purchaser?: OrderReceiptPerson | null;
+  order?: OrderReceiptSource | null;
+} = {}): OrderReceiptPurchaser {
+  let firstName = namePart(
+    personFirstName(user),
+    personFirstName(guest),
+    personFirstName(purchaser),
+    order?.firstName,
+    order?.first_name,
+    personFirstName(order?.user),
+    personFirstName(order?.purchaser),
+  );
+  let lastName = namePart(
+    personLastName(user),
+    personLastName(guest),
+    personLastName(purchaser),
+    order?.lastName,
+    order?.last_name,
+    personLastName(order?.user),
+    personLastName(order?.purchaser),
+  );
+  if (!firstName || !lastName) {
+    const combined = splitPersonName(
+      namePart(
+        user?.name,
+        guest?.name,
+        purchaser?.name,
+        order?.name,
+        order?.user?.name,
+        order?.purchaser?.name,
+      ),
+    );
+    firstName = firstName || combined.firstName;
+    lastName = lastName || combined.lastName;
+  }
+  return {
+    firstName,
+    lastName,
+    email: namePart(
+      user?.email,
+      guest?.email,
+      purchaser?.email,
+      order?.email,
+      order?.purchaserEmail,
+      order?.user?.email,
+      order?.purchaser?.email,
+    ),
+  };
 }
 
 function titleCaseName(value: string) {
@@ -384,12 +482,12 @@ export function receiptDownloadFilename(receipt: OrderReceipt) {
 export function buildOrderReceipt(
   order?: OrderReceiptSource | null,
   purchaser?: OrderReceiptPurchaser,
-  options?: { sellerLogoUrl?: string | null },
+  options?: { sellerLogoUrl?: string | null; sellerName?: string | null },
 ): OrderReceipt | null {
   if (!order) return null;
 
   const org = sellerOrganization(order);
-  const sellerName = org?.name || "blocktickets";
+  const sellerName = options?.sellerName?.trim() || org?.name || "blocktickets";
   const timezone = receiptTimezone(order);
   const issueSource = order.dateOfIssue || order.processedAt || order.paidAt;
   const dueSource = order.dueDate || issueSource;
@@ -438,16 +536,16 @@ export function buildOrderReceipt(
   const flexLine = ticketLines.length ? null : flexPackReceiptLine(order, subtotal);
   const lines = ticketLines.length ? ticketLines : flexLine ? [flexLine] : [];
 
-  const first = order.firstName || purchaser?.firstName;
-  const last = order.lastName || purchaser?.lastName;
+  const billTo = receiptPurchaserFromSources({ order, purchaser });
+  const first = billTo.firstName;
+  const last = billTo.lastName;
   const billToName =
     first && last
       ? titleCaseName(`${first} ${last}`)
       : first || last
         ? titleCaseName(String(first || last))
         : "N/A";
-  const billToEmail =
-    order.email || order.purchaserEmail || purchaser?.email || "N/A";
+  const billToEmail = billTo.email || "N/A";
 
   const invoiceNumber = String(
     order.stripe_invoices?.[0]?.stripeInvoiceId ||
@@ -639,16 +737,21 @@ export async function downloadOrderReceipt({
   order,
   purchaser,
   sellerLogoUrl,
+  sellerName,
   toPdf = htmlToReceiptPdf,
   saveFile = saveReceiptPdf,
 }: {
   order?: OrderReceiptSource | null;
   purchaser?: OrderReceiptPurchaser;
   sellerLogoUrl?: string | null;
+  sellerName?: string | null;
   toPdf?: (html: string) => Promise<Uint8Array>;
   saveFile?: (bytes: Uint8Array, filename: string) => void;
 }) {
-  const receipt = buildOrderReceipt(order, purchaser, { sellerLogoUrl });
+  const receipt = buildOrderReceipt(order, purchaser, {
+    sellerLogoUrl,
+    sellerName,
+  });
   if (!receipt) throw new Error("Receipt unavailable");
   const html = renderOrderReceiptHtml(receipt);
   if (!html.trim() || !receiptHasInvoiceDoc(html)) {

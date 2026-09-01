@@ -42,9 +42,9 @@ const TICKET_GAP = 20;
 const TOP_TICKET_Y = PAGE_HEIGHT - 48 - TICKET_H;
 const BOTTOM_TICKET_Y = TOP_TICKET_Y - TICKET_GAP - TICKET_H;
 const TICKET_SLOTS = [TOP_TICKET_Y, BOTTOM_TICKET_Y];
-const HEADER_H = 64.8;
-const STRIPE_W = 13;
 const CORNER_R = 14;
+const SHELL_PAD = 12;
+const TITLE_BAND = 76;
 const DEFAULT_PRIMARY = "#1A365D";
 
 const CATEGORY_THEMES = {
@@ -146,21 +146,10 @@ function fitText(text: unknown, font: PDFFont, size: number, maxWidth: number) {
   return low > 0 ? `${value.slice(0, low)}…` : "…";
 }
 
-function richTextToPlain(value: unknown) {
-  return String(value ?? "")
-    .replace(/<[^>]*>/g, " ")
-    .replace(/^\s{0,3}#{1,6}\s+/gm, "")
-    .replace(/[*_`>]/g, "");
-}
-
-/** Org categories name the sport itself ("Hockey"), not the word "sport". */
-const SPORT_WORDS =
-  /sport|athletic|football|hockey|baseball|softball|basketball|soccer|rugby|lacrosse|volleyball|tennis|golf|wrestling|boxing|mma|racing/;
-
 export function resolveTicketCategoryKey(categoryName?: string) {
   const name = String(categoryName || "").trim().toLowerCase();
   if (!name) return "default" as const;
-  if (SPORT_WORDS.test(name)) return "sports" as const;
+  if (name.includes("sport")) return "sports" as const;
   if (name.includes("concert") || name.includes("music")) return "concert" as const;
   if (
     name.includes("theater") ||
@@ -187,18 +176,6 @@ export function resolveTicketTheme(event: EventLike) {
     primaryColor: resolvePrimaryColor(event, event.organization),
     ...CATEGORY_THEMES[resolveTicketCategoryKey(resolveCategoryName(event))],
   };
-}
-
-function resolveSubtitle(event: EventLike) {
-  if (event.summary) return richTextToPlain(event.summary).trim();
-  const attractions = event.attractions;
-  if (Array.isArray(attractions) && attractions.length > 0) {
-    return attractions
-      .map((a) => a?.name)
-      .filter(Boolean)
-      .join("  •  ");
-  }
-  return event.subCategory?.name || "";
 }
 
 /** Package purchases title the ticket with the package itself; don't repeat it. */
@@ -303,10 +280,9 @@ async function drawBrandedTicket(
   const primaryHex = theme.primaryColor;
   const primary = hexToRgb(primaryHex);
   const badgeColor = hexToRgb(theme.badgeColor);
-  const bodyBg = theme.bodyTint ? hexToRgb(theme.bodyTint) : lightenHex(primaryHex, 0.94);
+  const bodyBg = lightenHex(primaryHex, 0.92);
   const headerOnLight = relativeLuminance(primary) > CONTRAST_PIVOT;
-  const headerText = headerOnLight ? hexToRgb("#1A1F2B") : rgb(1, 1, 1);
-  const headerSubtleText = headerOnLight ? hexToRgb("#41506B") : hexToRgb("#E2E8EF");
+  const titleColor = headerOnLight ? hexToRgb("#1A1F2B") : rgb(1, 1, 1);
   const textDark = hexToRgb("#1A1F2B");
   const textBody = hexToRgb("#2D3648");
   const textMuted = hexToRgb("#708095");
@@ -338,86 +314,63 @@ async function drawBrandedTicket(
     width: TICKET_W,
     height: TICKET_H,
     radius: CORNER_R,
-    color: bodyBg,
-    borderColor: primary,
-    borderWidth: 1.5,
+    color: primary,
   });
 
-  const headerBottom = ticketY + TICKET_H - HEADER_H;
-  page.drawRectangle({
-    x: TICKET_X,
-    y: headerBottom,
-    width: TICKET_W,
-    height: HEADER_H,
-    color: primary,
-  });
-  page.drawRectangle({
-    x: TICKET_X,
-    y: ticketY,
-    width: STRIPE_W,
-    height: TICKET_H,
-    color: primary,
-  });
-  // Re-stroke the outline so the header and stripe keep clean rounded corners.
+  const innerX = TICKET_X + SHELL_PAD;
+  const innerY = ticketY + SHELL_PAD;
+  const innerW = TICKET_W - SHELL_PAD * 2;
+  const innerH = TICKET_H - SHELL_PAD - TITLE_BAND;
   drawRoundedRect(page, {
-    x: TICKET_X,
-    y: ticketY,
-    width: TICKET_W,
-    height: TICKET_H,
-    radius: CORNER_R,
-    borderColor: primary,
-    borderWidth: 1.5,
+    x: innerX,
+    y: innerY,
+    width: innerW,
+    height: innerH,
+    radius: 10,
+    color: bodyBg,
   });
 
-  const contentLeft = TICKET_X + 25;
-  const headerTop = ticketY + TICKET_H;
+  const contentLeft = innerX + 14;
+  const shellTop = ticketY + TICKET_H;
 
   const badgeTextWidth = bold.widthOfTextAtSize(theme.badgeLabel, 9);
   const badgeW = Math.max(111, badgeTextWidth + 24);
-  const badgeY = headerTop - 42;
+  const badgeY = shellTop - 36;
   drawRoundedRect(page, {
     x: contentLeft,
     y: badgeY,
     width: badgeW,
-    height: 23,
+    height: 22,
     radius: 11,
     color: badgeColor,
   });
   page.drawText(theme.badgeLabel, {
     x: contentLeft + (badgeW - badgeTextWidth) / 2,
-    y: badgeY + 7,
+    y: badgeY + 6.5,
     size: 9,
     font: bold,
     color: rgb(1, 1, 1),
   });
 
-  const subtitle = resolveSubtitle(event);
-  if (subtitle) {
-    const subtitleX = contentLeft + badgeW + 12;
-    page.drawText(
-      fitText(subtitle, regular, 9, TICKET_X + TICKET_W - 110 - subtitleX),
-      { x: subtitleX, y: badgeY + 7, size: 9, font: regular, color: headerSubtleText },
-    );
-  }
-
-  page.drawText(fitText(event.name, bold, 20, TICKET_W - 140) || "Event", {
+  page.drawText(fitText(event.name, bold, 18, TICKET_W - 150) || "Event", {
     x: contentLeft,
-    y: headerTop - 58,
-    size: 20,
+    y: shellTop - 62,
+    size: 18,
     font: bold,
-    color: headerText,
+    color: titleColor,
   });
 
   if (logo) {
-    const scale = Math.min(70 / logo.width, 40 / logo.height);
+    const scale = Math.min(64 / logo.width, 36 / logo.height);
     page.drawImage(logo, {
       x: TICKET_X + TICKET_W - logo.width * scale - 18,
-      y: headerTop - 52,
+      y: shellTop - 50,
       width: logo.width * scale,
       height: logo.height * scale,
     });
   }
 
+  const innerTop = innerY + innerH;
   const drawField = (label: string, value: unknown, x: number, y: number) => {
     page.drawText(label, { x, y: y + 16, size: 8, font: bold, color: labelColor });
     page.drawText(fitText(value, regular, 11, 230) || "—", {
@@ -430,39 +383,39 @@ async function drawBrandedTicket(
   };
 
   const timezone = event.venue?.timezone;
-  drawField("DATE", formatEventWhen(event.start, timezone, "ddd, MMM D, YYYY"), contentLeft, headerBottom - 40);
-  drawField("TIME", formatEventWhen(event.start, timezone, "h:mm A"), contentLeft, headerBottom - 80);
-  drawField("VENUE", venueLabel(event), contentLeft, headerBottom - 120);
+  drawField("DATE", formatEventWhen(event.start, timezone, "ddd, MMM D, YYYY"), contentLeft, innerTop - 32);
+  drawField("TIME", formatEventWhen(event.start, timezone, "h:mm A"), contentLeft, innerTop - 68);
+  drawField("VENUE", venueLabel(event), contentLeft, innerTop - 104);
 
-  const holderX = TICKET_X + 270;
+  const holderX = innerX + innerW / 2 + 8;
   page.drawText("TICKET HOLDER", {
     x: holderX,
-    y: headerBottom - 24,
+    y: innerTop - 16,
     size: 8,
     font: bold,
     color: labelColor,
   });
-  page.drawText(fitText(ticket.holder, regular, 12, 140) || "Guest", {
+  page.drawText(fitText(ticket.holder, regular, 12, 150) || "Guest", {
     x: holderX,
-    y: headerBottom - 40,
+    y: innerTop - 32,
     size: 12,
     font: regular,
     color: textBody,
   });
   page.drawLine({
-    start: { x: holderX, y: headerBottom - 48 },
-    end: { x: holderX + 140, y: headerBottom - 48 },
+    start: { x: holderX, y: innerTop - 40 },
+    end: { x: holderX + 150, y: innerTop - 40 },
     thickness: 0.75,
     color: hexToRgb("#CBCFD8"),
   });
 
   const resolvedPackage = resolvePackageName(packageName, event);
   if (resolvedPackage) {
-    drawField("PACKAGE", resolvedPackage, holderX, headerBottom - 80);
+    drawField("PACKAGE", resolvedPackage, holderX, innerTop - 68);
   }
 
   const seatBoxX = contentLeft;
-  const seatBoxY = ticketY + 28;
+  const seatBoxY = innerY + 28;
   drawRoundedRect(page, {
     x: seatBoxX,
     y: seatBoxY,
@@ -506,19 +459,9 @@ async function drawBrandedTicket(
     });
   });
 
-  const qrSize = 118;
-  const qrX = TICKET_X + TICKET_W - qrSize - 24;
-  const qrY = ticketY + 40;
-  drawRoundedRect(page, {
-    x: qrX - 6,
-    y: qrY - 6,
-    width: qrSize + 12,
-    height: qrSize + 12,
-    radius: 8,
-    color: rgb(1, 1, 1),
-    borderColor: boxBorder,
-    borderWidth: 1,
-  });
+  const qrSize = 124;
+  const qrX = innerX + innerW - qrSize - 14;
+  const qrY = innerY + 22;
   const qrImage = await pdf.embedPng(
     await QRCode.toDataURL(ticket.checkInCode, { margin: 0, width: 512 }),
   );
@@ -527,7 +470,7 @@ async function drawBrandedTicket(
   const scanLabel = "SCAN AT ENTRANCE";
   page.drawText(scanLabel, {
     x: qrX + (qrSize - regular.widthOfTextAtSize(scanLabel, 7)) / 2,
-    y: qrY - 16,
+    y: qrY - 14,
     size: 7,
     font: regular,
     color: textMuted,
@@ -535,7 +478,7 @@ async function drawBrandedTicket(
 
   page.drawText("Valid ID required  •  Non-transferable  •  Subject to venue policies", {
     x: contentLeft,
-    y: ticketY + 10,
+    y: innerY + 10,
     size: 7,
     font: regular,
     color: textFaint,

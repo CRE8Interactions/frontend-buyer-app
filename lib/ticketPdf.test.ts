@@ -10,7 +10,7 @@ const nmState = DEMO_EVENTS.find((event) => event.shortCode === "NMST004")!;
 
 describe("printed ticket branding", () => {
   it("draws a team event in the organization brand colour with a sporting badge", () => {
-    const theme = resolveTicketTheme(nmState);
+    const theme = resolveTicketTheme({ ...nmState, category: { name: "Sports" } });
 
     expect(theme.primaryColor).toBe(
       nmState.organization.branding?.primaryColor,
@@ -18,11 +18,37 @@ describe("printed ticket branding", () => {
     expect(theme.badgeLabel).toBe("SPORTING EVENT");
   });
 
+  it("uses a generic badge when the org category is a named sport without sport in the name", () => {
+    const theme = resolveTicketTheme(nmState);
+
+    expect(theme.primaryColor).toBe(
+      nmState.organization.branding?.primaryColor,
+    );
+    expect(theme.badgeLabel).toBe("EVENT TICKET");
+  });
+
   it("falls back to Blocktickets navy and a generic badge without org branding", () => {
     const theme = resolveTicketTheme({ name: "Community Meetup" });
 
     expect(theme.primaryColor).toBe("#051b35");
     expect(theme.badgeLabel).toBe("EVENT TICKET");
+  });
+
+  it.each([
+    ["Sporting", "SPORTING EVENT"],
+    ["Motorsport", "SPORTING EVENT"],
+    ["Football", "EVENT TICKET"],
+    ["Hockey", "EVENT TICKET"],
+    ["Baseball", "EVENT TICKET"],
+    ["NCAA Basketball", "EVENT TICKET"],
+    ["Concert", "CONCERT EVENT"],
+    ["Theater", "THEATER EVENT"],
+    ["Family Show", "FAMILY EVENT"],
+    ["Access Pass", "ACCESS PASS"],
+  ] as const)("maps category %s to %s", (category, badgeLabel) => {
+    expect(
+      resolveTicketTheme({ ...nmState, category: { name: category } }).badgeLabel,
+    ).toBe(badgeLabel);
   });
 });
 

@@ -45,6 +45,8 @@ export type EventLike = {
   primaryColor?: string;
   category?: { name?: string };
   categoryName?: string;
+  entryGate?: string;
+  entry_gate?: string;
   subCategory?: { name?: string };
   attractions?: { name?: string; primary?: boolean; artwork?: ApiImage }[];
   enableTransfers?: boolean;
@@ -163,6 +165,32 @@ function formatCartVenueLine(venue?: VenueLike | null, orgName?: string) {
 
 function formatDoors(ev?: EventLike | null) {
   return formatDoorsTime(eventDoorsIso(ev), ev?.venue?.timezone);
+}
+
+export function ticketEntryGate(
+  ticket?: Record<string, unknown> | null,
+  event?: Pick<EventLike, "entryGate" | "entry_gate"> | null,
+): string {
+  return String(
+    ticket?.entryGate ?? ticket?.entry_gate ?? event?.entryGate ?? event?.entry_gate ?? "",
+  ).trim();
+}
+
+/** Seat-strip copy: hide the whole line when the pass has no entry gate. */
+export function ticketEntryLine(
+  ticket?: Record<string, unknown> | null,
+  venue?: string,
+  event?: Pick<EventLike, "entryGate" | "entry_gate"> | null,
+): string {
+  const gate = ticketEntryGate(ticket, event);
+  if (!gate) return "";
+  const enter = /^enter\s+at\b/i.test(gate)
+    ? gate
+    : /^gate\b/i.test(gate)
+      ? `Enter at ${gate}`
+      : `Enter at Gate ${gate}`;
+  const place = String(venue || "").trim();
+  return place ? `${enter} · ${place}` : enter;
 }
 
 function ticketSeatLabel(t: Record<string, unknown>) {
@@ -1020,8 +1048,47 @@ export function summarizeCartEvents(
 }
 
 /**
- * The wallet list endpoint returns trimmed orders, so the amount paid and the
- * buyer's name only arrive with a single-order fetch. Overlay them when it does.
+ * GET /orders?filters[orderId] includes event.category and organization.branding
+ * that the wallet list endpoint omits. Prefer the matching package event, then
+ * the order event.
+ */
+export function eventFromFullOrder(
+  listed: EventLike | undefined,
+  order?: OrderLike | null,
+): EventLike | undefined {
+  if (!order) return listed;
+  const listedUuid = String(listed?.uuid || "").trim();
+  const packageMatch =
+    listedUuid && order.package?.events?.length
+      ? order.package.events.find((event) => String(event.uuid || "") === listedUuid)
+      : undefined;
+  const full = packageMatch || order.event || undefined;
+  if (!full) return listed;
+  const fullUuid = String(full.uuid || "").trim();
+  return {
+    ...listed,
+    ...full,
+    uuid: fullUuid || listedUuid || undefined,
+    organization:
+      listed?.organization || full.organization
+        ? {
+            ...listed?.organization,
+            ...full.organization,
+            branding:
+              full.organization?.branding ?? listed?.organization?.branding,
+            category:
+              full.organization?.category ?? listed?.organization?.category,
+          }
+        : listed?.organization,
+    category: full.category ?? listed?.category,
+    categoryName: full.categoryName ?? listed?.categoryName,
+    branding: full.branding ?? listed?.branding,
+  };
+}
+
+/**
+ * The wallet list endpoint returns trimmed orders, so the amount paid, the
+ * buyer's name, and print branding only arrive with a single-order fetch.
  */
 export function withFullOrder(
   detail: CartEventDetail,
@@ -1046,6 +1113,7 @@ export function withFullOrder(
     : "";
   return {
     ...detail,
+    event: eventFromFullOrder(detail.event, order) ?? detail.event,
     cartTotal: orderTotal(order.total) ?? detail.cartTotal,
     orderId: orderIdOf(order) || detail.orderId,
     purchasedAt: purchasedAt || detail.purchasedAt,
