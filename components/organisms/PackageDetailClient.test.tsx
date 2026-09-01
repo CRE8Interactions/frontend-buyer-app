@@ -157,6 +157,10 @@ describe("Package detail (PackageDetailClient)", () => {
     expect(orgLoader).toBeTruthy();
     expect(screen.getByText(nmState.name)).toBeInTheDocument();
     expect(screen.getByText(/loading tickets/i)).toBeInTheDocument();
+    expect(screen.getByAltText(/blocktickets/i)).toHaveAttribute(
+      "src",
+      "/blocktickets-logo.svg",
+    );
     expect(screen.queryByText(/loading package/i)).not.toBeInTheDocument();
     expect(orgLoader).not.toHaveAttribute("data-bt-platform-loader");
   });

@@ -16,7 +16,7 @@ import Link from "next/link";
 import { useParams, usePathname, useSearchParams } from "next/navigation";
 import { QRCodeSVG } from "qrcode.react";
 import WalletChrome from "@/components/organisms/WalletChrome";
-import WalletTicketsLoader from "@/components/organisms/WalletTicketsLoader";
+import { WalletListSkeleton } from "@/components/organisms/WalletTicketsLoader";
 import { BLOCKTICKETS_GREEN, BLOCKTICKETS_NAVY } from "@/lib/branding";
 import EmailField from "@/components/molecules/EmailField";
 import useAutoFocus from "@/hooks/useAutoFocus";
@@ -1095,9 +1095,8 @@ export default function SeasonTickets({
       !routedWalletMissing,
   );
   useEffect(() => {
-    if (!eventsChecked || eventsLoading || eventOrderPending) return;
     notifyWalletShellReady();
-  }, [eventsChecked, eventsLoading, eventOrderPending]);
+  }, []);
 
   const ev =
     (activeDetail
@@ -1379,7 +1378,7 @@ export default function SeasonTickets({
     };
   }, [activeOrderId, fullOrderChecked]);
 
-  const TicketsLoader = () => <WalletTicketsLoader />;
+  const TicketsLoader = () => <WalletListSkeleton />;
 
   const RoutedEventShell = (children: React.ReactNode) => (
     <div style={{ maxWidth: 1100, margin: "0 auto", boxSizing: "border-box", padding: mobile ? "24px 16px 128px" : "40px 32px 96px", display: "flex", flexDirection: "column", gap: 18 }}>
@@ -2225,17 +2224,16 @@ export default function SeasonTickets({
         {!mobile && <div style={{ fontSize: 13, color: MUTE, whiteSpace: "nowrap" }}>{email}</div>}
       </div>
 
+      <div className="st-noscroll" style={{ display: "flex", gap: 6, overflowX: "auto", paddingBottom: 2 }}>
+        {tabDefs.map((t) => (
+          <button key={t.id} onClick={() => setTab(t.id)} style={chip(tab === t.id)}>
+            {t.label}<span style={{ fontSize: 12, fontWeight: 500, fontVariantNumeric: "tabular-nums", color: tab === t.id ? "rgba(255,255,255,0.72)" : MUTE }}>{t.n}</span>
+          </button>
+        ))}
+      </div>
       {!eventsChecked || eventsLoading ? (
         <TicketsLoader />
       ) : (
-        <>
-          <div className="st-noscroll" style={{ display: "flex", gap: 6, overflowX: "auto", paddingBottom: 2 }}>
-            {tabDefs.map((t) => (
-              <button key={t.id} onClick={() => setTab(t.id)} style={chip(tab === t.id)}>
-                {t.label}<span style={{ fontSize: 12, fontWeight: 500, fontVariantNumeric: "tabular-nums", color: tab === t.id ? "rgba(255,255,255,0.72)" : MUTE }}>{t.n}</span>
-              </button>
-            ))}
-          </div>
           <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
             {tab === "upcoming" ? (
               <>
@@ -2303,7 +2301,6 @@ export default function SeasonTickets({
               </>
               )}
           </div>
-        </>
       )}
     </div>
   );
@@ -2946,6 +2943,9 @@ export default function SeasonTickets({
           </button>
         ))}
       </div>
+      {!eventsChecked || eventsLoading ? (
+        <TicketsLoader />
+      ) : (
       <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
         {listData.length === 0 ? (
           <div style={{ background: "#fff", border: "1px dashed rgba(5,27,53,0.16)", borderRadius: 20, padding: "34px 22px", textAlign: "center", display: "flex", flexDirection: "column", gap: 5 }}>
@@ -2972,6 +2972,7 @@ export default function SeasonTickets({
           );
         })}
       </div>
+      )}
     </div>
   );
 
@@ -3039,10 +3040,14 @@ export default function SeasonTickets({
           );
         })}
       </div>
+      {!eventsChecked || eventsLoading ? (
+        <TicketsLoader />
+      ) : (
       <div style={{ background: "#fff", border: "1px dashed rgba(5,27,53,0.16)", borderRadius: 20, padding: "34px 22px", textAlign: "center", display: "flex", flexDirection: "column", gap: 5 }}>
         <div style={{ fontSize: 15, fontWeight: 600 }}>{saleEmpty[saleTab].title}</div>
         <div style={{ fontSize: 13, color: SUB }}>{saleEmpty[saleTab].body}</div>
       </div>
+      )}
     </div>
   );
 

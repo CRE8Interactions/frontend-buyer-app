@@ -69,7 +69,7 @@ export function BrandedLoader({
         logoSrc={branding.logoSrc || undefined}
         name={branding.name || undefined}
         message={caption}
-        poweredBy={false}
+        poweredBy={!embedded}
         embedded={embedded}
       />
     );

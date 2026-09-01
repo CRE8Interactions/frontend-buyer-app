@@ -13,9 +13,6 @@ import { loaderMessageForPath } from "@/lib/loaderMessages";
 import {
   ROUTE_COMMITTED_EVENT,
   ROUTE_TRANSITION_EVENT,
-  WALLET_SHELL_READY_EVENT,
-  isWalletShellReady,
-  markWalletShellPending,
   routePathKey,
 } from "@/lib/routeTransition";
 
@@ -37,7 +34,8 @@ function destinationKey(destination: URL) {
 /**
  * Immediate feedback for internal link transitions. The address bar updates
  * first, then the branded loader covers the outgoing page until Next.js
- * commits the destination (wallet hops also wait for ticket data).
+ * commits the destination. Wallet hops skip this overlay so tickets,
+ * transfers, and listings can show their in-page loader instead.
  */
 export default function GlobalRouteTransitionLoader() {
   const [branding, setBranding] = useState<CachedBranding | null>(null);
@@ -46,20 +44,12 @@ export default function GlobalRouteTransitionLoader() {
   const [visible, setVisible] = useState(false);
   const pollRef = useRef<number | null>(null);
   const timeoutRef = useRef<number | null>(null);
-  const walletReadyRef = useRef<(() => void) | null>(null);
   const routeCommittedRef = useRef<((event: Event) => void) | null>(null);
 
   useEffect(() => {
     const clearTimers = () => {
       if (pollRef.current != null) window.clearInterval(pollRef.current);
       if (timeoutRef.current != null) window.clearTimeout(timeoutRef.current);
-      if (walletReadyRef.current) {
-        window.removeEventListener(
-          WALLET_SHELL_READY_EVENT,
-          walletReadyRef.current,
-        );
-        walletReadyRef.current = null;
-      }
       if (routeCommittedRef.current) {
         window.removeEventListener(
           ROUTE_COMMITTED_EVENT,
@@ -89,17 +79,14 @@ export default function GlobalRouteTransitionLoader() {
         return;
       }
 
-      const fromPath = window.location.pathname;
       const toPath = destination.pathname;
       const dest = destinationKey(destination);
-      const waitingWallet =
-        isWalletAccountPath(toPath) && !isWalletAccountPath(fromPath);
 
-      if (isWalletAccountPath(fromPath) && isWalletAccountPath(toPath)) {
+      // Wallet pages own their in-page spinner — do not cover them with the
+      // Blocktickets watermark, including hops in from a team or checkout.
+      if (isWalletAccountPath(toPath)) {
         return;
       }
-
-      if (waitingWallet) markWalletShellPending();
 
       if (locationKey() !== dest) {
         if (options.replace) window.history.replaceState({}, "", dest);
@@ -117,9 +104,6 @@ export default function GlobalRouteTransitionLoader() {
       if (options.preservePlatformBrand) {
         destinationBranding = null;
         nextFallback = "blocktickets";
-      } else if (waitingWallet) {
-        destinationBranding = null;
-        nextFallback = "blocktickets";
       }
 
       clearTimers();
@@ -129,34 +113,19 @@ export default function GlobalRouteTransitionLoader() {
       setVisible(true);
 
       const tryFinish = () => {
-        // A logged-out shopper is bounced to login, so the wallet shell never
-        // reports ready — stop waiting once the URL leaves the wallet.
-        if (waitingWallet) {
-          if (
-            isWalletAccountPath(window.location.pathname) &&
-            !isWalletShellReady()
-          ) {
-            return;
-          }
-          finish();
-          return;
-        }
         if (routePathKey(window.location.pathname) !== routePathKey(toPath)) {
           finish();
         }
       };
 
       const onRouteCommitted = (event: Event) => {
-        if (waitingWallet) return;
         const path = (event as CustomEvent<{ path?: string }>).detail?.path;
         if (path && routePathKey(path) === routePathKey(toPath)) {
           finish();
         }
       };
 
-      walletReadyRef.current = tryFinish;
       routeCommittedRef.current = onRouteCommitted;
-      window.addEventListener(WALLET_SHELL_READY_EVENT, tryFinish);
       window.addEventListener(ROUTE_COMMITTED_EVENT, onRouteCommitted);
       pollRef.current = window.setInterval(tryFinish, 40);
       timeoutRef.current = window.setTimeout(finish, MAX_VISIBLE_MS);

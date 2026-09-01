@@ -130,7 +130,11 @@ describe("Checkout success receipt", () => {
     render(<CheckoutSuccessPageRoute />);
     expect(screen.getByText(raptors.name)).toBeInTheDocument();
     expect(screen.getByText(/retrieving payment details/i)).toBeInTheDocument();
-    expect(screen.queryByAltText(/blocktickets/i)).not.toBeInTheDocument();
+    expect(screen.getByAltText(/blocktickets/i)).toHaveAttribute(
+      "src",
+      "/blocktickets-logo.svg",
+    );
+    expect(document.querySelector("[data-bt-platform-loader]")).toBeNull();
   });
 
   it("does not show the Blocktickets loader when no org is cached yet", () => {

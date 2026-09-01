@@ -105,7 +105,7 @@ beforeEach(() => {
 });
 
 describe("SeasonTickets empty wallet", () => {
-  it("finishes loading and shows No tickets yet when there are no tickets, transfers, or listings", async () => {
+  it("finishes loading and shows No upcoming tickets yet when there are no tickets, transfers, or listings", async () => {
     sessionMocks.getSession.mockReturnValue(DEMO_SESSION);
     mockedGetMyEvents.mockReset();
     mockedGetMyEvents.mockResolvedValue({ data: [] } as never);
@@ -113,7 +113,7 @@ describe("SeasonTickets empty wallet", () => {
 
     render(<SeasonTickets />);
 
-    expect(await screen.findByText("No tickets yet")).toBeInTheDocument();
+    expect(await screen.findByText("No upcoming tickets yet")).toBeInTheDocument();
     expect(
       screen.getByText(/purchased tickets will show up here after checkout/i),
     ).toBeInTheDocument();
@@ -138,11 +138,7 @@ describe("SeasonTickets package tab", () => {
 
     const { rerender } = render(<SeasonTickets />);
 
-    await waitFor(() => {
-      expect(screen.getByRole("button", { name: /Packages/i })).toBeInTheDocument();
-    });
-
-    expect(screen.getByText(icedogs.name)).toBeInTheDocument();
+    expect(await screen.findByText(icedogs.name)).toBeInTheDocument();
     expect(
       screen.getByRole("link", { name: new RegExp(icedogs.name) }),
     ).toHaveAttribute(
@@ -676,9 +672,7 @@ describe("SeasonTickets package tab", () => {
 
     render(<SeasonTickets />);
 
-    await waitFor(() => {
-      expect(screen.getByRole("button", { name: /Packages/i })).toBeInTheDocument();
-    });
+    expect(await screen.findByText(icedogs.name)).toBeInTheDocument();
 
     await user.click(screen.getByRole("button", { name: /Packages/i }));
 
@@ -734,6 +728,26 @@ describe("SeasonTickets section routes", () => {
   });
 
   it.each([
+    ["/wallet/my-tickets/", "My tickets", /upcoming/i, /purchased tickets will show up here/i],
+    ["/wallet/my-transfers/", "Transfers", /sent/i, /no transfers sent/i],
+    ["/wallet/my-listings/", "Listings", /^active$/i, /no active listings/i],
+  ])("opens %s immediately and loads the list in place", async (pathname, heading, chrome, readyCopy) => {
+    navigationMocks.pathname = pathname;
+    mockedGetMyEvents.mockReset();
+    mockedGetMyEvents.mockReturnValue(new Promise(() => {}) as never);
+
+    render(<SeasonTickets />);
+
+    expect(
+      await screen.findByRole("heading", { name: heading, level: 1 }),
+    ).toBeInTheDocument();
+    expect(screen.getByText(chrome)).toBeInTheDocument();
+    expect(screen.getByLabelText("Loading tickets")).toBeInTheDocument();
+    expect(screen.queryByText("Loading your tickets…")).not.toBeInTheDocument();
+    expect(screen.queryByText(readyCopy)).not.toBeInTheDocument();
+  });
+
+  it.each([
     ["/wallet/my-transfers/", "Transfers"],
     ["/wallet/my-listings/", "Listings"],
     ["/wallet/giving/", "Giving"],
@@ -777,7 +791,7 @@ describe("SeasonTickets section routes", () => {
     expect(
       await screen.findByRole("heading", { name: "Listings", level: 1 }),
     ).toBeInTheDocument();
-    expect(screen.getByText("No active listings")).toBeInTheDocument();
+    expect(await screen.findByText("No active listings")).toBeInTheDocument();
     expect(
       screen.getByText(/when you list tickets for resale/i),
     ).toBeInTheDocument();
@@ -884,7 +898,8 @@ describe("SeasonTickets routed event screen", () => {
       <SeasonTickets initialScreen="event" eventUUID={printableEvent.uuid} />,
     );
 
-    expect(await screen.findByText("Loading your tickets…")).toBeInTheDocument();
+    expect(await screen.findByLabelText("Loading tickets")).toBeInTheDocument();
+    expect(screen.queryByText("Loading your tickets…")).not.toBeInTheDocument();
     expect(screen.queryByText("Total paid")).not.toBeInTheDocument();
     expect(screen.queryByText("$0.00")).not.toBeInTheDocument();
 
@@ -894,7 +909,7 @@ describe("SeasonTickets routed event screen", () => {
 
     expect(await screen.findByText("$452.20")).toBeInTheDocument();
     expect(screen.getByText("Total paid")).toBeInTheDocument();
-    expect(screen.queryByText("Loading your tickets…")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("Loading tickets")).not.toBeInTheDocument();
     expect(screen.queryByText("$0.00")).not.toBeInTheDocument();
   });
 
@@ -1203,11 +1218,7 @@ describe("SeasonTickets flex packs tab", () => {
 
     render(<SeasonTickets />);
 
-    await waitFor(() => {
-      expect(screen.getByRole("button", { name: /Flex packs/i })).toBeInTheDocument();
-    });
-
-    expect(screen.getByText(icedogs.name)).toBeInTheDocument();
+    expect(await screen.findByText(icedogs.name)).toBeInTheDocument();
     expect(screen.queryByText(pack.name)).not.toBeInTheDocument();
 
     await user.click(screen.getByRole("button", { name: /Flex packs/i }));
@@ -1232,9 +1243,7 @@ describe("SeasonTickets flex packs tab", () => {
 
     render(<SeasonTickets />);
 
-    await waitFor(() => {
-      expect(screen.getByRole("button", { name: /Flex packs/i })).toBeInTheDocument();
-    });
+    expect(await screen.findByText(icedogs.name)).toBeInTheDocument();
 
     await user.click(screen.getByRole("button", { name: /Flex packs/i }));
 
