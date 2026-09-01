@@ -139,16 +139,12 @@ describe("RouteLoader", () => {
     expect(screen.queryByText(raptors.name)).not.toBeInTheDocument();
   });
 
-  it("shows the Blocktickets spinner on the wallet unless this landing came from a tenant", () => {
+  it("shows the Blocktickets spinner on wallet routes that still use RouteLoader", () => {
     cacheOrgBranding(raptors);
     mockPathname = "/wallet/my-tickets/";
-    const { rerender } = render(<RouteLoader />);
+    render(<RouteLoader />);
 
     expect(screen.getByAltText(/blocktickets/i)).toBeInTheDocument();
     expect(screen.queryByText(raptors.name)).not.toBeInTheDocument();
-
-    rerender(<RouteLoader walletEntryFromTenant />);
-    expect(screen.getByText(raptors.name)).toBeInTheDocument();
-    expect(screen.queryByAltText(/blocktickets/i)).not.toBeInTheDocument();
   });
 });

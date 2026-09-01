@@ -15,6 +15,10 @@ import {
   demoTicketGroups,
 } from "@/lib/demo/fixtures";
 import { MIXED_MAP_SELECTION_ERROR } from "@/lib/mapSelection";
+import {
+  finishSeatmapBackgroundLoad,
+  resetSeatmapBackgroundCache,
+} from "@/tests/seatmap";
 import type { TicketingData } from "@/components/organisms/PremiumTicketing";
 import GlobalRouteTransitionLoader from "@/components/molecules/GlobalRouteTransitionLoader";
 import { cacheOrgBranding } from "@/lib/orgBrandingCache";
@@ -172,8 +176,14 @@ async function openLiveMap() {
   const user = await renderReady({
     ...seatedTicketingFixture,
     seatmapMapping: demoSeatmapMapping(),
+    mapBackground: {
+      url: "https://example.com/bg.svg",
+      width: 1000,
+      height: 800,
+    },
   });
   await user.click(screen.getAllByText(/find on map/i)[0]);
+  await finishSeatmapBackgroundLoad();
   await screen.findByTestId("interactive-seatmap");
   return user;
 }
@@ -192,6 +202,7 @@ describe("Select tickets page (PremiumTicketing)", () => {
       data: { cartId: "cart-ga-1" },
     } as never);
     useFiltersStore.setState({ loadingTicketGroups: false });
+    resetSeatmapBackgroundCache();
     useSeatmapStore.setState({
       selectedFromMap: [],
       totalCount: 0,
@@ -898,14 +909,14 @@ describe("Select tickets page (PremiumTicketing)", () => {
     expect(
       await screen.findByRole("dialog", { name: /select your seats/i }),
     ).toBeInTheDocument();
+    await finishSeatmapBackgroundLoad();
     expect(await screen.findByTestId("interactive-seatmap")).toBeInTheDocument();
     expect(screen.queryByLabelText(/loading seat map/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/your selection/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/0 tickets/i)).not.toBeInTheDocument();
   });
 
-  it("shows the org loader in the Find on map popup while inventory is loading", async () => {
-    useFiltersStore.setState({ loadingTicketGroups: true });
+  it("shows the org loader in Find on map while the seatmap is still loading", async () => {
     const user = await renderReady({
       ...seatedTicketingFixture,
       seatmapMapping: demoSeatmapMapping(),
@@ -918,7 +929,25 @@ describe("Select tickets page (PremiumTicketing)", () => {
       within(loader).getByText(seatedTicketingFixture.orgLabel),
     ).toBeInTheDocument();
     expect(screen.queryByTestId("interactive-seatmap")).not.toBeInTheDocument();
-    expect(screen.queryByLabelText(/loading seat map/i)).not.toBeInTheDocument();
+  });
+
+  it("does not show the org loader in Find on map when the map is already loaded", async () => {
+    useFiltersStore.setState({ loadingTicketGroups: true });
+    const user = await renderReady({
+      ...seatedTicketingFixture,
+      seatmapMapping: demoSeatmapMapping(),
+      mapBackground: {
+        url: "https://example.com/bg.svg",
+        width: 1000,
+        height: 800,
+      },
+    });
+
+    await user.click(screen.getAllByText(/find on map/i)[0]);
+    await finishSeatmapBackgroundLoad();
+    expect(await screen.findByLabelText(/loading seat map/i)).toBeInTheDocument();
+    expect(document.querySelector("[data-bt-tenant-loader]")).toBeNull();
+    expect(screen.queryByTestId("interactive-seatmap")).not.toBeInTheDocument();
   });
 
   it("opens ticket details with the seat location and no quantity stepper", async () => {

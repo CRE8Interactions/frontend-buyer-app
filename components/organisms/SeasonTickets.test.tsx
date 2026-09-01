@@ -99,6 +99,23 @@ beforeEach(() => {
   pdfMocks.printTicketsPdf.mockResolvedValue(undefined);
 });
 
+describe("SeasonTickets empty wallet", () => {
+  it("finishes loading and shows No tickets yet when there are no tickets, transfers, or listings", async () => {
+    sessionMocks.getSession.mockReturnValue(DEMO_SESSION);
+    mockedGetMyEvents.mockReset();
+    mockedGetMyEvents.mockResolvedValue({ data: [] } as never);
+    mockedGetMyAccessPasses.mockResolvedValue({ data: { data: [] } } as never);
+
+    render(<SeasonTickets />);
+
+    expect(await screen.findByText("No tickets yet")).toBeInTheDocument();
+    expect(
+      screen.getByText(/purchased tickets will show up here after checkout/i),
+    ).toBeInTheDocument();
+    expect(screen.queryByLabelText("Loading tickets")).not.toBeInTheDocument();
+  });
+});
+
 describe("SeasonTickets package tab", () => {
   beforeEach(() => {
     sessionMocks.getSession.mockReturnValue(DEMO_SESSION);

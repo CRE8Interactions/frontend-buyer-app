@@ -273,10 +273,18 @@ export default function PackageDetailClient({
 
     hideIntercomLauncher();
     setLoadingTicketGroups(false);
-    setPreparingMap(true);
+
+    const mapping = (inventory.seatmap?.mapping ||
+      null) as SeatmapMapping | null;
+    const store = useSeatmapStore.getState();
+    const skipPrepare = Boolean(
+      (store.data?.sections || store.data?.seats) && store.background?.url,
+    );
+
+    if (!skipPrepare) setPreparingMap(true);
     setSeatmapOpen(true);
 
-    window.setTimeout(() => {
+    const hydrate = () => {
       setEvent({
         venue: pkg.venue,
         organization: pkg.organization,
@@ -284,8 +292,6 @@ export default function PackageDetailClient({
       });
       setEventTicketLimit(pkg.maxQuantity ?? null);
 
-      const mapping = (inventory.seatmap?.mapping ||
-        null) as SeatmapMapping | null;
       setData(mapping);
       setBackground(normalizeSeatmapBackground(inventory.seatmap?.background));
       if (inventory.seatmap?.id != null) setSeatmapId(inventory.seatmap.id);
@@ -310,7 +316,10 @@ export default function PackageDetailClient({
       resetMapSelection();
       setMapReady(true);
       setPreparingMap(false);
-    }, 50);
+    };
+
+    if (skipPrepare) hydrate();
+    else window.setTimeout(hydrate, 50);
   };
 
   const checkout = async () => {
@@ -850,7 +859,7 @@ export default function PackageDetailClient({
           mapBackground={background}
           mapMapping={storeMapping}
           venueSlug={pkg.venue?.slug}
-          preparing={preparingMap || !mapReady || !background?.url}
+          preparing={preparingMap || !mapReady}
           orgName={pkg.organization?.name}
           logoSrc={theme.brandLogoSrc || theme.logoSrc}
         />

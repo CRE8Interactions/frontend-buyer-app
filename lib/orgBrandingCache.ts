@@ -419,41 +419,6 @@ export function getCachedBrandingForPath(
   return lastBranding();
 }
 
-/** Cookie + session flag: this wallet landing came from a tenant page. */
-export const WALLET_ENTRY_COOKIE = "bt_wallet_entry_from_tenant";
-const WALLET_ENTRY_KEY = "bt_wallet_entry_from_tenant";
-
-function writeWalletEntryCookie(on: boolean) {
-  if (typeof document === "undefined") return;
-  try {
-    document.cookie = `${WALLET_ENTRY_COOKIE}=${on ? "1" : ""}; Path=/; SameSite=Lax; Max-Age=${on ? 120 : 0}`;
-  } catch {
-    // ignore
-  }
-}
-
-export function peekWalletEntryFromTenant() {
-  if (typeof window === "undefined") return false;
-  if (readRaw(WALLET_ENTRY_KEY) === "1") return true;
-  try {
-    return cookieValue(document.cookie, WALLET_ENTRY_COOKIE) === "1";
-  } catch {
-    return false;
-  }
-}
-
-export function markWalletEntryFromTenant() {
-  writeRaw(WALLET_ENTRY_KEY, "1");
-  writeWalletEntryCookie(true);
-}
-
-export function consumeWalletEntryFromTenant() {
-  const hit = peekWalletEntryFromTenant();
-  removeRaw(WALLET_ENTRY_KEY);
-  writeWalletEntryCookie(false);
-  return hit;
-}
-
 const WALLET_ACCOUNT_PREFIXES = Array.from(
   new Set([...WALLET_SECTION_PREFIXES, ...WALLET_TICKETS_PREFIXES]),
 );
@@ -480,24 +445,6 @@ export function isTenantOriginPath(pathname = "") {
   if (orgSlugFromPathname(pathname)) return true;
   if (isBrandedLoaderPath(pathname)) return true;
   return false;
-}
-
-export function walletLoaderFromOrigin(
-  fromPathname = "",
-  toPathname = "",
-): { branding: CachedBranding | null; fallback: "none" | "blocktickets" } {
-  if (!isWalletAccountPath(toPathname)) {
-    return { branding: null, fallback: "none" };
-  }
-  if (isTenantOriginPath(fromPathname)) {
-    const branding =
-      getLoaderBranding(fromPathname) || lastBranding();
-    return {
-      branding: branding?.primaryColor ? branding : null,
-      fallback: "none",
-    };
-  }
-  return { branding: null, fallback: "blocktickets" };
 }
 
 /** Login has no tenant of its own — its shell is Blocktickets. */
@@ -537,16 +484,11 @@ export function isPlatformPagePath(pathname = "") {
 export function isPlatformLoaderPath(
   pathname = "",
   search = "",
-  opts: { walletEntryFromTenant?: boolean } = {},
 ) {
   const path = pathname.replace(/\/+$/, "") || "/";
   if (isPlatformPagePath(path)) return true;
   if (/^\/(?:fundraise|group|menu)(\/|$)/.test(path)) return true;
-  if (isWalletAccountPath(path)) {
-    const fromTenant =
-      opts.walletEntryFromTenant ?? peekWalletEntryFromTenant();
-    return !fromTenant;
-  }
+  if (isWalletAccountPath(path)) return true;
   return isLoginLoaderPath(path) && !hasLoginRedirect(search);
 }
 
@@ -557,10 +499,9 @@ export function isPlatformLoaderPath(
 export function lastBrandingIfCompatible(
   last: CachedBranding | null | undefined,
   pathname = "",
-  opts: { walletEntryFromTenant?: boolean } = {},
 ): CachedBranding | null {
   if (!last?.primaryColor) return null;
-  if (isPlatformLoaderPath(pathname, "", opts)) return null;
+  if (isPlatformLoaderPath(pathname, "")) return null;
   if (isLoginLoaderPath(pathname)) return null;
   const orgSlug = orgSlugFromPathname(pathname);
   if (orgSlug) {
@@ -580,17 +521,13 @@ export function getLoaderBranding(
   pathname = "",
   params: { slug?: string } = {},
   lastCookie?: CachedBranding | null,
-  opts: { walletEntryFromTenant?: boolean } = {},
 ): CachedBranding | null {
-  if (
-    isPlatformLoaderPath(pathname, "", opts) ||
-    isLoginLoaderPath(pathname)
-  ) {
+  if (isPlatformLoaderPath(pathname, "") || isLoginLoaderPath(pathname)) {
     return null;
   }
   const exact = getCachedBrandingForPath(pathname, params);
   if (exact) return exact;
-  return lastBrandingIfCompatible(lastBranding() || lastCookie || null, pathname, opts);
+  return lastBrandingIfCompatible(lastBranding() || lastCookie || null, pathname);
 }
 
 type RouteLoaderBranding = {
@@ -619,18 +556,16 @@ export function resolveLoaderBrandingForRender(
     lastCookie?: CachedBranding | null;
     params?: { slug?: string };
     allowClientCache?: boolean;
-    walletEntryFromTenant?: boolean;
   } = {},
 ): RouteLoaderBranding | CachedBranding | null {
-  const opts = { walletEntryFromTenant: options.walletEntryFromTenant };
-  if (isPlatformLoaderPath(pathname, "", opts) || isLoginLoaderPath(pathname)) {
+  if (isPlatformLoaderPath(pathname, "") || isLoginLoaderPath(pathname)) {
     return null;
   }
   if (hasTenantBranding(options.branding)) return options.branding;
   if (options.allowClientCache) {
-    return getLoaderBranding(pathname, options.params, options.lastCookie, opts);
+    return getLoaderBranding(pathname, options.params, options.lastCookie);
   }
-  return lastBrandingIfCompatible(options.lastCookie || null, pathname, opts);
+  return lastBrandingIfCompatible(options.lastCookie || null, pathname);
 }
 
 /** Infer an organization slug from common branded storefront paths. */

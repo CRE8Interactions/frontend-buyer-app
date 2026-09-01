@@ -1,16 +1,24 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 import AppShell from "@/components/templates/AppShell";
 import BackChip from "@/components/molecules/BackChip";
 import EmptyState from "@/components/molecules/EmptyState";
 import PageLoader from "@/components/molecules/PageLoader";
+import { BrandedLoader } from "@/components/molecules/RouteLoader";
 import { cardCls } from "@/components/molecules/Card";
 import Button from "@/components/atoms/Button";
 import { ArrowRight } from "@/components/atoms/icons";
 import { getAccessPassTemplate, placeAccessPassIntoCart } from "@/lib/api";
 import { useAuth, setLastKnown } from "@/lib/auth";
-import { rememberCheckoutReturnPath, setStoredCart } from "@/lib/cart";
+import {
+  checkoutHref,
+  rememberCheckoutReturnPath,
+  setStoredCart,
+} from "@/lib/cart";
+import { getLoaderBranding } from "@/lib/orgBrandingCache";
+import { beginRouteTransition } from "@/lib/routeTransition";
 import {
   formatCurrency,
   getSingularOrPluralWord,
@@ -40,10 +48,13 @@ export default function AccessPassDetailClient({
   backHref: string;
 }) {
   const { isAuthenticated, ready } = useAuth();
+  const router = useRouter();
   const [accessPass, setAccessPass] = useState<AccessPassTemplate | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [buying, setBuying] = useState(false);
+  const [leavingForLogin, setLeavingForLogin] = useState(false);
+  const leavingForLoginRef = useRef(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -65,11 +76,15 @@ export default function AccessPassDetailClient({
     };
   }, [uuid]);
 
-  const goLogin = () => {
+  const goLogin = useCallback(() => {
+    if (leavingForLoginRef.current) return;
+    leavingForLoginRef.current = true;
+    setLeavingForLogin(true);
     const from = window.location.pathname + window.location.search;
     setLastKnown(from);
-    window.location.href = `/login/?from=${encodeURIComponent(from)}`;
-  };
+    // Soft navigation: the loader stays painted and the tab does not spin.
+    router.replace(`/login/?from=${encodeURIComponent(from)}`);
+  }, [router]);
 
   const buy = async () => {
     if (!accessPass) return;
@@ -90,7 +105,9 @@ export default function AccessPassDetailClient({
       if (cartId != null) {
         rememberCheckoutReturnPath();
         setStoredCart(cartId, 1);
-        window.location.href = `/checkout/?cartId=${encodeURIComponent(String(cartId))}`;
+        const href = checkoutHref(cartId);
+        beginRouteTransition(href);
+        router.push(href);
         return;
       }
       setError("Cart could not be created. Please try again.");
@@ -102,6 +119,17 @@ export default function AccessPassDetailClient({
   };
 
   const eventCount = accessPass?.events?.length || 0;
+
+  if (leavingForLogin) {
+    return (
+      <BrandedLoader
+        branding={getLoaderBranding(
+          typeof window !== "undefined" ? window.location.pathname : "",
+        )}
+        fallback="blocktickets"
+      />
+    );
+  }
 
   return (
     <AppShell>

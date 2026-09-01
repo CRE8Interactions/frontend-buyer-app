@@ -9,10 +9,27 @@ import { InteractiveSeatmap } from "@/components/organisms/InteractiveSeatmap";
 import type { SeatmapBackground, SeatmapMapping } from "@/lib/seatmapLookups";
 import { getSeatViewImageCandidates } from "@/lib/seatView";
 import { selectionOfferName } from "@/lib/ticketSummary";
-import useFiltersStore from "@/stores/filtersStore";
 import useSeatmapStore from "@/stores/seatmapStore";
 
 const NAVY = "#051b35";
+
+/**
+ * A seatmap can legitimately ship without a background image, so stop waiting
+ * rather than pinning the loader open forever. Geometry is never waived —
+ * InteractiveSeatmap renders here with its own spinner hidden, so an empty map
+ * would leave the shopper with nothing.
+ */
+const MAX_PREPARING_MS = 6000;
+
+/**
+ * Artwork downloaded once this session should not put the loader back up when
+ * the shopper closes and reopens the map.
+ */
+const loadedBackgrounds = new Set<string>();
+
+export function __resetSeatmapBackgroundCacheForTests() {
+  loadedBackgrounds.clear();
+}
 
 const money = (n: number) =>
   "$" + n.toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ",");
@@ -158,11 +175,28 @@ export default function SeatMapSelectionOverlay({
   const storeBackground = useSeatmapStore((s) => s.background);
   const seatedError = useSeatmapStore((s) => s.seatedError);
   const setSeatedError = useSeatmapStore((s) => s.setSeatedError);
-  const loadingTicketGroups = useFiltersStore((s) => s.loadingTicketGroups);
-  const showOrgLoader = preparing || loadingTicketGroups;
+  const [prepareExpired, setPrepareExpired] = useState(false);
 
   const mapping = mapMapping || storeMapping;
   const background = mapBackground || storeBackground;
+
+  // Paint only once the geometry and the background are both in. Either half
+  // arriving a frame after the other reads as a flash. A URL alone is not
+  // enough: InteractiveSeatmap draws seats at full opacity while its artwork is
+  // still downloading, so wait for the image itself to decode.
+  const backgroundUrl = background?.url || "";
+  const [loadedBackgroundUrl, setLoadedBackgroundUrl] = useState("");
+  const mapHasSeats = Boolean(mapping?.sections || mapping?.seats);
+  const backgroundReady =
+    Boolean(backgroundUrl) &&
+    (loadedBackgroundUrl === backgroundUrl ||
+      loadedBackgrounds.has(backgroundUrl));
+  const markBackgroundLoaded = () => {
+    loadedBackgrounds.add(backgroundUrl);
+    setLoadedBackgroundUrl(backgroundUrl);
+  };
+  const mapPaintable = mapHasSeats && (backgroundReady || prepareExpired);
+  const showOrgLoader = preparing || !mapPaintable;
 
   const [mapDetail, setMapDetail] = useState<number | null>(null);
   const [mapSelectionOpen, setMapSelectionOpen] = useState(false);
@@ -205,6 +239,17 @@ export default function SeatMapSelectionOverlay({
       setMapDetail(null);
     }
   }, [selectedFromMap.length]);
+
+  // Never reset this: closing the overlay unmounts it, and clearing the flag
+  // while the loader is up would flip it straight back on.
+  useEffect(() => {
+    if (!showOrgLoader) return;
+    const timer = window.setTimeout(
+      () => setPrepareExpired(true),
+      MAX_PREPARING_MS,
+    );
+    return () => window.clearTimeout(timer);
+  }, [showOrgLoader]);
 
   useEffect(() => {
     const prev = document.body.style.overflow;
@@ -428,6 +473,30 @@ export default function SeatMapSelectionOverlay({
               name: orgName,
             }}
           />
+          {backgroundUrl ? (
+            // Warms the browser cache behind the loader so the seatmap's own
+            // <image> paints on its first frame instead of after the seats.
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src={backgroundUrl}
+              alt=""
+              aria-hidden
+              data-seatmap-background-preload="true"
+              // An already-cached image can finish before React attaches onLoad.
+              ref={(el) => {
+                if (el?.complete) markBackgroundLoaded();
+              }}
+              onLoad={markBackgroundLoaded}
+              onError={markBackgroundLoaded}
+              style={{
+                position: "absolute",
+                width: 1,
+                height: 1,
+                opacity: 0,
+                pointerEvents: "none",
+              }}
+            />
+          ) : null}
         </div>
       ) : (
         <div

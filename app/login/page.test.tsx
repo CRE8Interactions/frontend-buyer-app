@@ -22,8 +22,14 @@ vi.mock("next/link", () => ({
   ),
 }));
 
+const routerMocks = vi.hoisted(() => ({
+  push: vi.fn(),
+  replace: vi.fn(),
+  back: vi.fn(),
+}));
+
 vi.mock("next/navigation", () => ({
-  useRouter: () => ({ push: vi.fn(), replace: vi.fn(), back: vi.fn() }),
+  useRouter: () => routerMocks,
   useSearchParams: () => new URLSearchParams({ from: navState.from }),
   usePathname: () => "/login/",
   useParams: () => ({}),
@@ -101,6 +107,7 @@ describe("Login page", () => {
     mockedSetSession.mockReset();
     mockedGetLastKnown.mockReset();
     mockedGetLastKnown.mockReturnValue(null);
+    routerMocks.replace.mockReset();
     stubLocation();
     vi.stubGlobal(
       "fetch",
@@ -220,15 +227,14 @@ describe("Login page", () => {
     });
     await waitFor(
       () => {
-        expect(hrefSetter).toHaveBeenCalledWith(
-          "/checkout/?cartId=cart-raptors-1",
-        );
-        expect(location.replace).toHaveBeenCalledWith(
+        expect(routerMocks.replace).toHaveBeenCalledWith(
           "/checkout/?cartId=cart-raptors-1",
         );
       },
       { timeout: 1500 },
     );
+    // A document load would spin the tab and drop the destination's loader.
+    expect(hrefSetter).not.toHaveBeenCalled();
   });
 
   it("does not call the email API for a blocked domain", async () => {
@@ -378,6 +384,7 @@ describe("Login page create account", () => {
     mockedSetSession.mockReset();
     mockedGetLastKnown.mockReset();
     mockedGetLastKnown.mockReturnValue(null);
+    routerMocks.replace.mockReset();
     stubLocation();
     vi.stubGlobal(
       "fetch",
@@ -522,7 +529,7 @@ describe("Login page create account", () => {
 
   it("creates the account with the fixture profile and signs in", async () => {
     const user = userEvent.setup();
-    const hrefSetter = stubLocation();
+    stubLocation();
     await openCreateAccount(user);
 
     await user.type(screen.getByLabelText(/first name/i), DEMO_USER.firstName);
@@ -547,7 +554,7 @@ describe("Login page create account", () => {
     });
     await waitFor(
       () => {
-        expect(hrefSetter).toHaveBeenCalledWith(
+        expect(routerMocks.replace).toHaveBeenCalledWith(
           "/checkout/?cartId=cart-raptors-1",
         );
       },
@@ -559,7 +566,7 @@ describe("Login page create account", () => {
     const user = userEvent.setup();
     navState.from = "";
     mockedGetLastKnown.mockReturnValue("/checkout/?cartId=cart-raptors-1");
-    const hrefSetter = stubLocation();
+    stubLocation();
     await openCreateAccount(user);
 
     await user.type(screen.getByLabelText(/first name/i), DEMO_USER.firstName);
@@ -573,7 +580,7 @@ describe("Login page create account", () => {
     });
     await waitFor(
       () => {
-        expect(hrefSetter).toHaveBeenCalledWith(
+        expect(routerMocks.replace).toHaveBeenCalledWith(
           "/checkout/?cartId=cart-raptors-1",
         );
       },

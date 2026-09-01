@@ -72,9 +72,9 @@ export default function AppShell({
     if (typeof window !== "undefined") {
       const returnTo = window.location.pathname + window.location.search;
       setLastKnown(returnTo);
-      window.location.href = `/login/?from=${encodeURIComponent(returnTo)}`;
+      router.replace(`/login/?from=${encodeURIComponent(returnTo)}`);
     }
-  }, [ready, requireAuth, isAuthenticated]);
+  }, [ready, requireAuth, isAuthenticated, router]);
 
   const onSearch = (e: FormEvent) => {
     e.preventDefault();

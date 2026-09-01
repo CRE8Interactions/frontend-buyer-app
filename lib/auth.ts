@@ -21,6 +21,18 @@ export type AuthSession = {
 const USER_KEY = "user";
 const LOCATION_KEY = "location";
 
+/**
+ * `storage` only fires in other tabs. Login now soft-navigates instead of
+ * reloading the document, so already-mounted consumers need this to learn
+ * about a session that changed in their own tab.
+ */
+export const AUTH_SESSION_EVENT = "blocktickets:auth-session";
+
+function notifySessionChange() {
+  if (typeof window === "undefined") return;
+  window.dispatchEvent(new Event(AUTH_SESSION_EVENT));
+}
+
 function parseSession(raw: string | null): AuthSession | null {
   if (!raw) return null;
   try {
@@ -39,10 +51,12 @@ export function getSession(): AuthSession | null {
 
 export function setSession(session: AuthSession) {
   sessionStorage.setItem(USER_KEY, JSON.stringify(session));
+  notifySessionChange();
 }
 
 export function clearSession() {
   sessionStorage.removeItem(USER_KEY);
+  notifySessionChange();
 }
 
 export function getToken(): string | undefined {
@@ -82,8 +96,13 @@ export function useAuth() {
     const onStorage = (e: StorageEvent) => {
       if (e.key === USER_KEY || e.key === null) setSessionState(getSession());
     };
+    const onSessionChange = () => setSessionState(getSession());
     window.addEventListener("storage", onStorage);
-    return () => window.removeEventListener("storage", onStorage);
+    window.addEventListener(AUTH_SESSION_EVENT, onSessionChange);
+    return () => {
+      window.removeEventListener("storage", onStorage);
+      window.removeEventListener(AUTH_SESSION_EVENT, onSessionChange);
+    };
   }, []);
 
   const login = (next: AuthSession) => {

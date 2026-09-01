@@ -4,19 +4,19 @@ import { useEffect, useRef, useState } from "react";
 import { BrandedLoader } from "@/components/molecules/RouteLoader";
 import { isInAppBackAnchor } from "@/lib/inAppBack";
 import {
-  consumeWalletEntryFromTenant,
   getLoaderBranding,
   isPlatformLoaderPath,
-  isTenantOriginPath,
   isWalletAccountPath,
-  markWalletEntryFromTenant,
-  walletLoaderFromOrigin,
   type CachedBranding,
 } from "@/lib/orgBrandingCache";
 import { loaderMessageForPath } from "@/lib/loaderMessages";
-import { ROUTE_TRANSITION_EVENT } from "@/lib/routeTransition";
+import {
+  ROUTE_TRANSITION_EVENT,
+  WALLET_SHELL_READY_EVENT,
+  isWalletShellReady,
+  markWalletShellPending,
+} from "@/lib/routeTransition";
 
-const MIN_VISIBLE_MS = 450;
 const MAX_VISIBLE_MS = 15000;
 
 function isPlatformLinkOrigin(pathname: string) {
@@ -24,9 +24,15 @@ function isPlatformLinkOrigin(pathname: string) {
   return path === "/" || path === "/our-story";
 }
 
+function locationKey() {
+  return `${window.location.pathname}${window.location.search}`;
+}
+
 /**
  * Immediate feedback for internal link transitions. Destination branding wins;
  * home / browse / Our Story / legal pages use the Blocktickets spinner.
+ * Wallet hops hold that spinner until ticket data is ready, so the wallet
+ * chrome never paints empty.
  */
 export default function GlobalRouteTransitionLoader() {
   const [branding, setBranding] = useState<CachedBranding | null>(null);
@@ -35,19 +41,26 @@ export default function GlobalRouteTransitionLoader() {
   const [visible, setVisible] = useState(false);
   const pollRef = useRef<number | null>(null);
   const timeoutRef = useRef<number | null>(null);
+  const walletReadyRef = useRef<(() => void) | null>(null);
 
   useEffect(() => {
     const clearTimers = () => {
       if (pollRef.current != null) window.clearInterval(pollRef.current);
       if (timeoutRef.current != null) window.clearTimeout(timeoutRef.current);
+      if (walletReadyRef.current) {
+        window.removeEventListener(
+          WALLET_SHELL_READY_EVENT,
+          walletReadyRef.current,
+        );
+        walletReadyRef.current = null;
+      }
       pollRef.current = null;
       timeoutRef.current = null;
     };
 
-    const finish = (startedAt: number) => {
+    const finish = () => {
       clearTimers();
-      const remaining = Math.max(0, MIN_VISIBLE_MS - (Date.now() - startedAt));
-      timeoutRef.current = window.setTimeout(() => setVisible(false), remaining);
+      setVisible(false);
     };
 
     const startTransition = (
@@ -63,10 +76,17 @@ export default function GlobalRouteTransitionLoader() {
         return;
       }
 
-      const startedAt = Date.now();
-      const startingUrl = `${window.location.pathname}${window.location.search}`;
+      const startingUrl = locationKey();
       const fromPath = window.location.pathname;
       const toPath = destination.pathname;
+      const waitingWallet =
+        isWalletAccountPath(toPath) && !isWalletAccountPath(fromPath);
+
+      if (isWalletAccountPath(fromPath) && isWalletAccountPath(toPath)) {
+        return;
+      }
+
+      if (waitingWallet) markWalletShellPending();
 
       let destinationBranding = getLoaderBranding(toPath);
       let nextFallback: "none" | "blocktickets" = isPlatformLoaderPath(
@@ -79,19 +99,9 @@ export default function GlobalRouteTransitionLoader() {
       if (options.preservePlatformBrand) {
         destinationBranding = null;
         nextFallback = "blocktickets";
-      } else if (isWalletAccountPath(toPath)) {
-        if (isTenantOriginPath(fromPath)) {
-          markWalletEntryFromTenant();
-          const origin = walletLoaderFromOrigin(fromPath, toPath);
-          destinationBranding = origin.branding;
-          nextFallback = origin.fallback;
-        } else {
-          consumeWalletEntryFromTenant();
-          destinationBranding = null;
-          nextFallback = "blocktickets";
-        }
-      } else if (isWalletAccountPath(fromPath)) {
-        consumeWalletEntryFromTenant();
+      } else if (waitingWallet) {
+        destinationBranding = null;
+        nextFallback = "blocktickets";
       }
 
       clearTimers();
@@ -100,15 +110,31 @@ export default function GlobalRouteTransitionLoader() {
       setMessage(loaderMessageForPath(destination.pathname));
       setVisible(true);
 
-      // The App Router commits the URL when the destination is ready.
-      pollRef.current = window.setInterval(() => {
-        const currentUrl = `${window.location.pathname}${window.location.search}`;
-        if (currentUrl !== startingUrl) finish(startedAt);
-      }, 40);
-      timeoutRef.current = window.setTimeout(
-        () => finish(startedAt),
-        MAX_VISIBLE_MS,
-      );
+      if (waitingWallet) {
+        const dest = `${destination.pathname}${destination.search}${destination.hash}`;
+        if (locationKey() !== dest) {
+          window.history.pushState({}, "", dest);
+        }
+      }
+
+      const tryFinish = () => {
+        if (locationKey() === startingUrl) return;
+        // A logged-out shopper is bounced to login, so the wallet shell never
+        // reports ready — stop waiting once the URL leaves the wallet.
+        if (
+          waitingWallet &&
+          isWalletAccountPath(window.location.pathname) &&
+          !isWalletShellReady()
+        ) {
+          return;
+        }
+        finish();
+      };
+
+      walletReadyRef.current = tryFinish;
+      window.addEventListener(WALLET_SHELL_READY_EVENT, tryFinish);
+      pollRef.current = window.setInterval(tryFinish, 40);
+      timeoutRef.current = window.setTimeout(finish, MAX_VISIBLE_MS);
     };
 
     const onClick = (event: MouseEvent) => {
@@ -143,20 +169,15 @@ export default function GlobalRouteTransitionLoader() {
     };
 
     const onProgrammaticNav = (event: Event) => {
-      // App hand-offs such as checkout keep their destination's branding; only
-      // links a shopper clicks on a platform page hold the Blocktickets mark.
       const href = (event as CustomEvent<{ href?: string }>).detail?.href;
       if (href) startTransition(href);
     };
 
-    // Back/forward restores a cached page, so never cover it with a loader.
     const onPopState = () => {
       clearTimers();
       setVisible(false);
     };
 
-    // Capture before Next <Link> prevents the native event during its own
-    // client-side navigation handling.
     document.addEventListener("click", onClick, true);
     window.addEventListener(ROUTE_TRANSITION_EVENT, onProgrammaticNav);
     window.addEventListener("popstate", onPopState);

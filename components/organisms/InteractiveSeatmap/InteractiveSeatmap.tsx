@@ -698,6 +698,10 @@ export default function InteractiveSeatmap({
         >
           <g
             transform={`translate(${viewport.posX} ${viewport.posY}) scale(${viewport.scale})`}
+            // Hide the map as a whole, not just the artwork: revealing seats
+            // before the background has painted or the viewport has been fitted
+            // shows them on a blank stage and then snaps them into place.
+            opacity={showLoading ? 0 : 1}
           >
             {background?.url ? (
               <image
@@ -707,7 +711,6 @@ export default function InteractiveSeatmap({
                 width={stage.width}
                 height={stage.height}
                 preserveAspectRatio="none"
-                opacity={showLoading ? 0 : 1}
                 onLoad={() => setBackgroundReady(true)}
                 onError={() => setBackgroundReady(true)}
               />

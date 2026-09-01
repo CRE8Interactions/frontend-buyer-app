@@ -641,11 +641,14 @@ function CheckoutPage() {
   } | null>(null);
   const guestBuyerRef = useRef<GuestBuyer | null>(null);
 
-  const goToSuccess = useCallback((id: string) => {
-    if (leavingForSuccessRef.current) return;
-    leavingForSuccessRef.current = true;
-    leaveCheckoutForSuccess(id);
-  }, []);
+  const goToSuccess = useCallback(
+    (id: string) => {
+      if (leavingForSuccessRef.current) return;
+      leavingForSuccessRef.current = true;
+      leaveCheckoutForSuccess(id, (href) => router.replace(href));
+    },
+    [router],
+  );
 
   useEffect(() => {
     hideIntercomLauncher();
@@ -656,7 +659,7 @@ function CheckoutPage() {
     setAllowCachedBranding(true);
   }, []);
 
-  // Hold the loader until the browser commits to /login/ so checkout never
+  // Hold the loader until the router commits to /login/ so checkout never
   // paints behind the redirect.
   const sendToLogin = useCallback(() => {
     if (leavingForLoginRef.current) return;
@@ -665,8 +668,8 @@ function CheckoutPage() {
     const returnTo = `${window.location.pathname}${window.location.search}`;
     setLastKnown(returnTo);
     markCheckoutLoginDetour();
-    window.location.href = `/login/?from=${encodeURIComponent(returnTo)}`;
-  }, []);
+    router.replace(`/login/?from=${encodeURIComponent(returnTo)}`);
+  }, [router]);
 
   const expiredRef = useRef(false);
   const [restarting, setRestarting] = useState(false);

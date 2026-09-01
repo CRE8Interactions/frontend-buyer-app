@@ -2,7 +2,7 @@
 
 import { Suspense, useState } from "react";
 import Link from "next/link";
-import { useSearchParams } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import CodeField, { type CodeError } from "@/components/molecules/CodeField";
 import EmailField from "@/components/molecules/EmailField";
 import NameField from "@/components/molecules/NameField";
@@ -46,7 +46,10 @@ const cardCls =
 const backBtnCls =
   "inline-flex items-center gap-2 self-start rounded-full border border-[rgba(5,27,53,0.12)] bg-white px-[18px] py-2.5 text-[14px] font-semibold text-[#051b35]";
 
-function redirectAfterAuth(fromParam: string | null) {
+function redirectAfterAuth(
+  fromParam: string | null,
+  replace: (href: string) => void,
+) {
   const lastKnown = getLastKnown();
   const requested = fromParam?.trim() || "";
   // Login buttons record the page where they were clicked. Keep this fallback
@@ -70,8 +73,10 @@ function redirectAfterAuth(fromParam: string | null) {
   }
   setTimeout(() => {
     // Replace /login so neither browser Back nor any in-app Back control can
-    // return the shopper to the authentication screen.
-    window.location.replace(from.startsWith("/") ? from : `/${from}`);
+    // return the shopper to the authentication screen. A router replace keeps
+    // this document, so the destination's loading boundary paints instead of
+    // the browser reloading the app and spinning the tab.
+    replace(from.startsWith("/") ? from : `/${from}`);
   }, 500);
 }
 
@@ -130,6 +135,7 @@ function Emblem({ size }: { size: number }) {
 
 function LoginForm() {
   const searchParams = useSearchParams();
+  const router = useRouter();
   const fromParam = searchParams.get("from");
 
   const [step, setStep] = useState(0);
@@ -208,7 +214,7 @@ function LoginForm() {
       if (res.status === 200) {
         setDone(true);
         setSession(res.data as AuthSession);
-        redirectAfterAuth(fromParam);
+        redirectAfterAuth(fromParam, (href) => router.replace(href));
       } else if (res.status === 203) {
         setStep(2);
       } else {
@@ -291,7 +297,7 @@ function LoginForm() {
       if (res.status === 200) {
         setDone(true);
         setSession(res.data as AuthSession);
-        redirectAfterAuth(fromParam);
+        redirectAfterAuth(fromParam, (href) => router.replace(href));
         return;
       }
       if (res.status === 226) {

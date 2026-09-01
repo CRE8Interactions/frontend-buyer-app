@@ -24,20 +24,19 @@ export function succeededStripeRedirectIntentId(
 
 /**
  * Leave checkout for confirmation and drop the checkout history entry so a
- * succeeded PaymentIntent cannot remount the card form.
+ * succeeded PaymentIntent cannot remount the card form. `replace` is the
+ * router's, so the app keeps this document and the browser tab never spins.
  */
-export function leaveCheckoutForSuccess(intentId: string) {
+export function leaveCheckoutForSuccess(
+  intentId: string,
+  replace: (href: string) => void,
+) {
   const id = String(intentId || "").trim();
   if (!id) return;
   markStripePaymentSyncStarted();
   const href = checkoutSuccessPath(id);
   beginRouteTransition(href);
-  if (typeof window === "undefined") return;
-  if (typeof window.location.replace === "function") {
-    window.location.replace(checkoutSuccessReturnUrl(id));
-    return;
-  }
-  window.location.href = checkoutSuccessReturnUrl(id);
+  replace(href);
 }
 
 export function paymentIntentAlreadySucceeded(status?: string | null) {

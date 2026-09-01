@@ -15,6 +15,10 @@ import {
 } from "@/lib/inAppBack";
 import useSeatmapStore from "@/stores/seatmapStore";
 import GlobalRouteTransitionLoader from "@/components/molecules/GlobalRouteTransitionLoader";
+import {
+  finishSeatmapBackgroundLoad,
+  resetSeatmapBackgroundCache,
+} from "@/tests/seatmap";
 
 const routerMocks = vi.hoisted(() => ({
   back: vi.fn(),
@@ -120,6 +124,7 @@ describe("Package detail (PackageDetailClient)", () => {
     routerMocks.back.mockReset();
     routerMocks.push.mockReset();
     __resetInAppBackForTests();
+    resetSeatmapBackgroundCache();
     useSeatmapStore.setState({
       selectedFromMap: [],
       totalCount: 0,
@@ -229,6 +234,7 @@ describe("Package detail (PackageDetailClient)", () => {
     expect(
       await screen.findByRole("dialog", { name: /select your seats/i }),
     ).toBeInTheDocument();
+    await finishSeatmapBackgroundLoad();
     expect(await screen.findByTestId("interactive-seatmap")).toBeInTheDocument();
 
     const selected = seedMapSelection({
@@ -239,6 +245,25 @@ describe("Package detail (PackageDetailClient)", () => {
     expect(screen.getByRole("button", { name: /details/i })).toBeInTheDocument();
   });
 
+  it("shows the org loader in the package seatmap only while the map hydrates", async () => {
+    const nmState = DEMO_ORGS.find((org) => org.slug === "nm-state")!;
+    cacheOrgBranding(nmState);
+    const pkg = demoSeasonPackage();
+    const user = await renderPackage(pkg);
+    await screen.findByRole("heading", { name: pkg.name });
+
+    fireEvent.click(screen.getByRole("button", { name: /choose your seats/i }));
+    expect(document.querySelector("[data-bt-tenant-loader]")).toBeTruthy();
+    await finishSeatmapBackgroundLoad();
+    expect(await screen.findByTestId("interactive-seatmap")).toBeInTheDocument();
+    expect(document.querySelector("[data-bt-tenant-loader]")).toBeNull();
+
+    await user.click(screen.getByRole("button", { name: /close seat map/i }));
+    fireEvent.click(screen.getByRole("button", { name: /choose your seats/i }));
+    expect(document.querySelector("[data-bt-tenant-loader]")).toBeNull();
+    expect(screen.getByTestId("interactive-seatmap")).toBeInTheDocument();
+  });
+
   it("shows Standard admission and keeps Details when a package seat has no offer", async () => {
     const pkg = demoSeasonPackage();
     const user = await renderPackage(pkg);
@@ -246,6 +271,7 @@ describe("Package detail (PackageDetailClient)", () => {
 
     await user.click(screen.getByRole("button", { name: /choose your seats/i }));
     await screen.findByText(/select your seats/i);
+    await finishSeatmapBackgroundLoad();
     await screen.findByTestId("interactive-seatmap");
 
     seedMapSelection({
@@ -264,6 +290,7 @@ describe("Package detail (PackageDetailClient)", () => {
     await screen.findByRole("heading", { name: pkg.name });
 
     await user.click(screen.getByRole("button", { name: /choose your seats/i }));
+    await finishSeatmapBackgroundLoad();
     await screen.findByTestId("interactive-seatmap");
     seedMapSelection();
     await screen.findByText(/your selection/i);
@@ -302,6 +329,7 @@ describe("Package detail (PackageDetailClient)", () => {
     );
     await screen.findByRole("heading", { name: pkg.name });
     await user.click(screen.getByRole("button", { name: /choose your seats/i }));
+    await finishSeatmapBackgroundLoad();
     await screen.findByTestId("interactive-seatmap");
     seedMapSelection();
     await screen.findByText(/your selection/i);

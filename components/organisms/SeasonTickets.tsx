@@ -15,8 +15,8 @@ import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent a
 import Link from "next/link";
 import { useParams, usePathname, useSearchParams } from "next/navigation";
 import { QRCodeSVG } from "qrcode.react";
-import Spinner from "@/components/atoms/Spinner";
 import WalletChrome from "@/components/organisms/WalletChrome";
+import WalletTicketsLoader from "@/components/organisms/WalletTicketsLoader";
 import { BLOCKTICKETS_GREEN, BLOCKTICKETS_NAVY } from "@/lib/branding";
 import EmailField from "@/components/molecules/EmailField";
 import useAutoFocus from "@/hooks/useAutoFocus";
@@ -81,6 +81,7 @@ import {
   walletSectionFromPath,
   walletSectionHref,
 } from "@/lib/walletNav";
+import { notifyWalletShellReady } from "@/lib/routeTransition";
 import { printTicketsPdf } from "@/lib/ticketPdf";
 
 /* ---- brand tokens ---- */
@@ -878,6 +879,11 @@ export default function SeasonTickets({
   }, []);
 
   useEffect(() => {
+    if (!eventsChecked || eventsLoading) return;
+    notifyWalletShellReady();
+  }, [eventsChecked, eventsLoading]);
+
+  useEffect(() => {
     const uuid = routedAccessPassUUID;
     if (
       !uuid ||
@@ -1388,28 +1394,7 @@ export default function SeasonTickets({
     };
   }, [activeOrderId, fullOrderChecked]);
 
-  const TicketsLoader = () => (
-    <div
-      style={{
-        ...card,
-        borderRadius: 20,
-        padding: mobile ? "44px 20px" : "56px 32px",
-        display: "flex",
-        flexDirection: "column",
-        alignItems: "center",
-        justifyContent: "center",
-        gap: 14,
-        minHeight: mobile ? 180 : 220,
-      }}
-      role="status"
-      aria-busy="true"
-      aria-label="Loading tickets"
-    >
-      <Spinner size={48} variant="assemble" label="Loading tickets" />
-      <div style={{ fontSize: 15, fontWeight: 600, color: INK }}>Loading your tickets…</div>
-      <div style={{ fontSize: 13, color: SUB }}>Loading your wallet events.</div>
-    </div>
-  );
+  const TicketsLoader = () => <WalletTicketsLoader />;
 
   const RoutedEventShell = (children: React.ReactNode) => (
     <div style={{ maxWidth: 1100, margin: "0 auto", boxSizing: "border-box", padding: mobile ? "24px 16px 128px" : "40px 32px 96px", display: "flex", flexDirection: "column", gap: 18 }}>
@@ -2257,7 +2242,7 @@ export default function SeasonTickets({
 
       {!eventsChecked || eventsLoading ? (
         <TicketsLoader />
-      ) : isHolder || upcomingEvents.length > 0 || seasonPackages.length > 0 || flexPacks.length > 0 || accessPasses.length > 0 ? (
+      ) : (
         <>
           <div className="st-noscroll" style={{ display: "flex", gap: 6, overflowX: "auto", paddingBottom: 2 }}>
             {tabDefs.map((t) => (
@@ -2334,19 +2319,6 @@ export default function SeasonTickets({
               )}
           </div>
         </>
-      ) : (
-        <div style={{ ...card, borderRadius: 24, padding: mobile ? "34px 20px" : "48px 32px", display: "flex", flexDirection: "column", alignItems: "center", gap: 14, textAlign: "center" }}>
-          <div style={{ width: 64, height: 64, borderRadius: 999, background: INK, display: "flex", alignItems: "center", justifyContent: "center", padding: 11, boxSizing: "border-box" }}>
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src={LOGO} alt="" style={{ maxWidth: "100%", maxHeight: "100%", display: "block" }} />
-          </div>
-          <h2 style={{ margin: 0, fontSize: 21, fontWeight: 600, letterSpacing: "-0.02em", lineHeight: 1.2 }}>No NM State tickets on this email</h2>
-          <p style={{ margin: 0, maxWidth: 420, fontSize: 15, lineHeight: 1.6, color: SUB }}>We couldn&apos;t find season tickets, single-game tickets, or vouchers for <strong style={{ fontWeight: 600, color: INK }}>{email}</strong>. If you bought with a different address, sign in with that one.</p>
-          <div style={{ display: "flex", flexWrap: "wrap", justifyContent: "center", gap: 8, paddingTop: 4 }}>
-            <button style={{ ...accentBtn, padding: "14px 22px", minHeight: 48, fontSize: 15 }}>Browse NM State tickets</button>
-            <button onClick={() => setScreen("login")} style={{ ...ghostBtn, padding: "14px 22px", minHeight: 48, fontSize: 15 }}>Try a different email</button>
-          </div>
-        </div>
       )}
     </div>
   );

@@ -55,24 +55,12 @@ export const LOADER_BOOT_SCRIPT = `(function(){
     var norm = path.replace(/\\/+$/, "") || "/";
     var loginReturnsToTenant =
       norm === "/login" && /[?&]from=[^&]/.test(location.search || "");
-    var wallet = /^\\/wallet\\/(?:my-tickets|my-transfers|my-listings|giving|my-profile)(?:\\/|$)/.test(norm);
-    var fromTenant = false;
-    try { fromTenant = read("bt_wallet_entry_from_tenant") === "1"; } catch (e) {}
-    if (!fromTenant) {
-      try {
-        var parts0 = document.cookie.split("; ");
-        for (var c = 0; c < parts0.length; c++) {
-          if (parts0[c].indexOf("bt_wallet_entry_from_tenant=1") === 0) { fromTenant = true; break; }
-        }
-      } catch (e) {}
-    }
-    var walletTenant = wallet && fromTenant ? last() : null;
     var platPages = ${JSON.stringify(PLATFORM_PAGE_PATHS)};
     if (
       platPages.indexOf(norm) !== -1 ||
       /^\\/(?:fundraise|group|menu)(\\/|$)/.test(norm) ||
-      (norm === "/login" && !loginReturnsToTenant) ||
-      (wallet && !walletTenant)
+      /^\\/wallet\\/(?:my-tickets|my-transfers|my-listings|giving|my-profile)(?:\\/|$)/.test(norm) ||
+      (norm === "/login" && !loginReturnsToTenant)
     ) {
       var plat = document.createElement("div");
       plat.id = "bt-boot-loader";

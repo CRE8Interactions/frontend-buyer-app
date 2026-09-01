@@ -354,7 +354,7 @@ describe("Checkout page", () => {
       name: /processing/i,
     });
     expect(processingBtn).toBeDisabled();
-    expect(locationMocks.replace).not.toHaveBeenCalled();
+    expect(routerMocks.replace).not.toHaveBeenCalled();
     expect(screen.queryByText(/getting payment ready/i)).not.toBeInTheDocument();
     expect(stripeMocks.confirmPayment).not.toHaveBeenCalled();
 
@@ -363,10 +363,12 @@ describe("Checkout page", () => {
     await waitFor(() => {
       expect(mockedProcessOrder).toHaveBeenCalled();
       expect(stripeMocks.confirmPayment).toHaveBeenCalled();
-      expect(locationMocks.replace).toHaveBeenCalledWith(
-        "http://localhost/checkout/success/?intentId=pi_test",
+      expect(routerMocks.replace).toHaveBeenCalledWith(
+        "/checkout/success/?intentId=pi_test",
       );
     });
+    // Soft navigation only: a document load would spin the browser tab.
+    expect(locationMocks.replace).not.toHaveBeenCalled();
     expect(msUntilStripePaymentSyncReady()).toBeGreaterThan(0);
     const orgLoader = document.querySelector("[data-bt-tenant-loader]");
     expect(orgLoader).toBeTruthy();
@@ -407,7 +409,7 @@ describe("Checkout page", () => {
       expect(stripeMocks.confirmPayment).toHaveBeenCalled();
       expect(stripeMocks.retrievePaymentIntent).toHaveBeenCalled();
     });
-    expect(locationMocks.replace).not.toHaveBeenCalled();
+    expect(routerMocks.replace).not.toHaveBeenCalled();
     expect(screen.queryByText(/retrieving payment details/i)).not.toBeInTheDocument();
     expect(
       screen.getByRole("button", { name: /processing/i }),
@@ -416,8 +418,8 @@ describe("Checkout page", () => {
     finishRetrieve({ paymentIntent: { status: "succeeded" } });
 
     await waitFor(() => {
-      expect(locationMocks.replace).toHaveBeenCalledWith(
-        "http://localhost/checkout/success/?intentId=pi_test",
+      expect(routerMocks.replace).toHaveBeenCalledWith(
+        "/checkout/success/?intentId=pi_test",
       );
     });
     expect(document.querySelector("[data-bt-tenant-loader]")).toBeTruthy();
@@ -920,8 +922,8 @@ describe("Checkout page", () => {
           },
         }),
       );
-      expect(locationMocks.replace).toHaveBeenCalledWith(
-        "http://localhost/checkout/success/?intentId=pi_test",
+      expect(routerMocks.replace).toHaveBeenCalledWith(
+        "/checkout/success/?intentId=pi_test",
       );
     });
   });
@@ -931,8 +933,8 @@ describe("Checkout page", () => {
     render(<CheckoutPageRoute />);
 
     await waitFor(() => {
-      expect(locationMocks.replace).toHaveBeenCalledWith(
-        "http://localhost/checkout/success/?intentId=pi_flex",
+      expect(routerMocks.replace).toHaveBeenCalledWith(
+        "/checkout/success/?intentId=pi_flex",
       );
     });
     expect(mockedGetCart).not.toHaveBeenCalled();
@@ -956,8 +958,8 @@ describe("Checkout page", () => {
     render(<CheckoutPageRoute />);
 
     await waitFor(() => {
-      expect(locationMocks.replace).toHaveBeenCalledWith(
-        "http://localhost/checkout/success/?intentId=pi_test",
+      expect(routerMocks.replace).toHaveBeenCalledWith(
+        "/checkout/success/?intentId=pi_test",
       );
     });
   });
@@ -1087,10 +1089,12 @@ describe("Checkout page", () => {
       expect(mockedSetLastKnown).toHaveBeenCalledWith(
         `/checkout/?cartId=${cart.id}`,
       );
-      expect(hrefSetter).toHaveBeenCalledWith(
+      expect(routerMocks.replace).toHaveBeenCalledWith(
         `/login/?from=${encodeURIComponent(`/checkout/?cartId=${cart.id}`)}`,
       );
     });
+    // Soft navigation only: a document load would spin the browser tab.
+    expect(hrefSetter).not.toHaveBeenCalled();
     expect(mockedGetPaymentIntent).not.toHaveBeenCalled();
     expect(
       screen.queryByRole("heading", { name: "Payment" }),
@@ -1108,8 +1112,8 @@ describe("Checkout page", () => {
 
     await waitFor(() => {
       expect(mockedProcessFreeOrder).toHaveBeenCalledWith({ cartId: cart.id });
-      expect(locationMocks.replace).toHaveBeenCalledWith(
-        "http://localhost/checkout/success/?intentId=pi_free",
+      expect(routerMocks.replace).toHaveBeenCalledWith(
+        "/checkout/success/?intentId=pi_free",
       );
     });
     expect(mockedGetPaymentIntent).not.toHaveBeenCalled();

@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { DEMO_ORGS } from "@/lib/demo/fixtures";
 import { LOADER_BOOT_SCRIPT } from "@/lib/loaderBoot";
 import { CHECKOUT_SUCCESS_LOADER_MESSAGE } from "@/lib/loaderMessages";
-import { cacheOrgBranding, markWalletEntryFromTenant } from "@/lib/orgBrandingCache";
+import { cacheOrgBranding } from "@/lib/orgBrandingCache";
 
 const RAPTORS = DEMO_ORGS.find((org) => org.slug === "ogden-raptors")!;
 
@@ -16,7 +16,6 @@ describe("boot splash", () => {
   beforeEach(() => {
     sessionStorage.clear();
     document.cookie = "bt_org_branding_last=; Path=/; Max-Age=0";
-    document.cookie = "bt_wallet_entry_from_tenant=; Path=/; Max-Age=0";
     document.getElementById("bt-boot-loader")?.remove();
   });
 
@@ -85,25 +84,16 @@ describe("boot splash", () => {
     expect(splash?.textContent).toContain(RAPTORS.name);
   });
 
-  it("spins the Blocktickets mark on a wallet path after Browse", () => {
+  it("spins the Blocktickets mark on a wallet path even when a team is cached", () => {
     cacheOrgBranding(RAPTORS);
-
-    const splash = paintBootSplash("/wallet/my-tickets/");
-
-    expect(splash?.querySelector("img")).toHaveAttribute("alt", "Blocktickets");
-  });
-
-  it("spins the org logo on a wallet path entered from a tenant page", () => {
-    cacheOrgBranding(RAPTORS);
-    markWalletEntryFromTenant();
 
     const splash = paintBootSplash("/wallet/my-tickets/");
 
     expect(splash?.querySelector("img")).toHaveAttribute(
-      "src",
-      RAPTORS.branding.logo.url,
+      "alt",
+      "Blocktickets",
     );
-    expect(splash?.textContent).toContain(RAPTORS.name);
+    expect(splash?.textContent).not.toContain(RAPTORS.name);
   });
 
   it("paints nothing when no org branding is known", () => {

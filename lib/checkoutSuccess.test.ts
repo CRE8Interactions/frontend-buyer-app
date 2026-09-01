@@ -50,17 +50,20 @@ describe("leaveCheckoutForSuccess", () => {
 
   it("replaces checkout with confirmation so the card form cannot remount", () => {
     const replace = vi.fn();
-    vi.stubGlobal("location", {
-      origin: "http://localhost",
-      replace,
-    });
 
-    leaveCheckoutForSuccess("pi_flex");
+    leaveCheckoutForSuccess("pi_flex", replace);
 
-    expect(replace).toHaveBeenCalledWith(
-      "http://localhost/checkout/success/?intentId=pi_flex",
-    );
+    // A router path, not an absolute URL: a document load would spin the tab.
+    expect(replace).toHaveBeenCalledWith("/checkout/success/?intentId=pi_flex");
     expect(msUntilStripePaymentSyncReady()).toBeGreaterThan(0);
+  });
+
+  it("stays on checkout when there is no payment intent to confirm", () => {
+    const replace = vi.fn();
+
+    leaveCheckoutForSuccess("  ", replace);
+
+    expect(replace).not.toHaveBeenCalled();
   });
 });
 
