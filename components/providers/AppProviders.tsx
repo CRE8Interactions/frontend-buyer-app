@@ -13,6 +13,7 @@ import {
 import { useAuth, displayName } from "@/lib/auth";
 import GlobalRouteTransitionLoader from "@/components/molecules/GlobalRouteTransitionLoader";
 import { markInAppNavigation } from "@/lib/inAppBack";
+import { notifyRouteCommitted } from "@/lib/routeTransition";
 
 const HOTJAR_ID = 3697606;
 
@@ -95,6 +96,7 @@ export default function AppProviders({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (seenPath.current != null && seenPath.current !== pathname) {
       markInAppNavigation();
+      notifyRouteCommitted(pathname);
     }
     seenPath.current = pathname;
   }, [pathname]);

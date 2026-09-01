@@ -72,7 +72,7 @@ import {
 import {
   isComplimentaryWebsiteCart,
   isGuestEligibleCart,
-  setGuestCheckoutEmail,
+  setGuestCheckoutBuyer,
   type GuestBuyer,
 } from "@/lib/guestCheckout";
 import { setLastKnown, useAuth } from "@/lib/auth";
@@ -1049,7 +1049,7 @@ function CheckoutPage() {
   const confirmGuestBuyer = async (buyer: GuestBuyer) => {
     guestBuyerRef.current = buyer;
     setGuestBuyer(buyer);
-    setGuestCheckoutEmail(buyer.email);
+    setGuestCheckoutBuyer(buyer);
     if (!cartRef.current) return;
     setIsRefreshingIntent(true);
     try {

@@ -202,7 +202,11 @@ describe("FundraisingCampaignClient donor fields", () => {
 
     expect(screen.getByText(org.name)).toBeInTheDocument();
     expect(screen.getByText("loading fundraiser")).toBeInTheDocument();
-    expect(screen.queryByAltText(/blocktickets/i)).not.toBeInTheDocument();
+    expect(screen.getByAltText(/blocktickets/i)).toHaveAttribute(
+      "src",
+      "/blocktickets-logo.svg",
+    );
+    expect(document.querySelector("[data-bt-platform-loader]")).toBeNull();
 
     releaseCampaign({
       data: {

@@ -16,6 +16,7 @@ import {
   countFlexPacks,
   countSeasonPackages,
   formatCartOrderTotal,
+  ticketEntryLine,
   summarizeCartEvents,
   summarizeEventDetails,
   walletEventScheduleLine,
@@ -92,6 +93,64 @@ describe("wallet order totals", () => {
 
     expect(withFullOrder(listed, null)).toEqual(listed);
   });
+
+  it("takes category and org branding from a fetched order", () => {
+    const listed = orderDetail("129.50");
+    const thin = {
+      ...listed,
+      event: { uuid: upcoming.uuid, name: upcoming.name },
+    };
+    const detail = withFullOrder(thin, {
+      event: {
+        ...upcoming,
+        category: { name: "sports" },
+        organization: {
+          ...upcoming.organization,
+          branding: {
+            ...upcoming.organization.branding,
+            primaryColor: "#861F41",
+          },
+        },
+      },
+    });
+
+    expect(detail.event?.category?.name).toBe("sports");
+    expect(detail.event?.organization?.branding?.primaryColor).toBe("#861F41");
+  });
+
+  it("keeps the listed event uuid when the fetched order event omits it", () => {
+    const listed = orderDetail("129.50");
+    const detail = withFullOrder(
+      {
+        ...listed,
+        event: { uuid: upcoming.uuid, name: upcoming.name },
+      },
+      {
+        event: {
+          name: upcoming.name,
+          category: { name: "sports" },
+        },
+      },
+    );
+
+    expect(detail.event?.uuid).toBe(upcoming.uuid);
+  });
+});
+
+describe("ticket entry line", () => {
+  const event = DEMO_EVENTS.find((row) => row.shortCode === "NMST004")!;
+  const ticket = demoCompletedTicketOrder({ event }).tickets[0];
+
+  it("shows the entry gate with the venue", () => {
+    expect(ticketEntryLine(ticket, event.venue.name, event)).toBe(
+      `Enter at ${event.entryGate} · ${event.venue.name}`,
+    );
+  });
+
+  it("hides the line when the ticket and event have no entry gate", () => {
+    const icedogs = DEMO_EVENTS.find((row) => row.shortCode === "ICEDOG5")!;
+    expect(ticketEntryLine(ticket, icedogs.venue.name, icedogs)).toBe("");
+  });
 });
 
 describe("wallet season-package orders", () => {
@@ -143,6 +202,24 @@ describe("wallet season-package orders", () => {
     expect(packageGames.map((row) => row.name)).toEqual(
       pkg.events.map((event) => event.name),
     );
+  });
+
+  it("takes the matching package event category from a fetched order", () => {
+    const listed = Object.values(
+      buildSeasonPackageEventDetails([demoCompletedPackageOrder()]),
+    )[0];
+    const detail = withFullOrder(listed, {
+      package: {
+        events: [
+          {
+            ...listed.event,
+            category: { name: "sports" },
+          },
+        ],
+      },
+    });
+
+    expect(detail.event?.category?.name).toBe("sports");
   });
 
   it("does not list a single-event order as season tickets", () => {

@@ -17,6 +17,7 @@ import {
   openOrderReceiptPdf,
   printOrderReceiptHtml,
   receiptDownloadFilename,
+  receiptPurchaserFromSources,
   resolveOrderReceiptPdfUrl,
 } from "./orderReceipt";
 import { renderOrderReceiptHtml } from "./orderReceiptHtml";
@@ -220,6 +221,86 @@ describe("buildOrderReceipt", () => {
     const receipt = buildOrderReceipt(demoCompletedTicketOrder({ tickets: [] }))!;
     expect(receipt.lines).toEqual([]);
     expect(receipt.emptyLinesMessage).toMatch(/no ticket line items/i);
+  });
+
+  it("uses the provided seller name when the order has no organization", () => {
+    const receipt = buildOrderReceipt(
+      demoCompletedTicketOrder({
+        organization: null,
+        event: { name: raptorsEvent.name, organization: null },
+      }),
+      undefined,
+      { sellerName: raptorsEvent.organization.name },
+    )!;
+    expect(receipt.sellerName).toBe(raptorsEvent.organization.name);
+  });
+
+  it("falls back to blocktickets when no organization name is available", () => {
+    const receipt = buildOrderReceipt(
+      demoCompletedTicketOrder({
+        organization: null,
+        event: { name: raptorsEvent.name, organization: null },
+      }),
+    )!;
+    expect(receipt.sellerName).toBe("blocktickets");
+  });
+
+  it("bills the purchaser name from the page when the order omits it", () => {
+    const receipt = buildOrderReceipt(
+      demoCompletedTicketOrder({
+        firstName: undefined,
+        lastName: undefined,
+      }),
+      {
+        firstName: DEMO_USER.firstName,
+        lastName: DEMO_USER.lastName,
+        email: DEMO_USER.email,
+      },
+    )!;
+    expect(receipt.billToName).toBe(
+      `${DEMO_USER.firstName} ${DEMO_USER.lastName}`,
+    );
+  });
+
+  it("reads snake_case first and last names from the signed-in user", () => {
+    const purchaser = receiptPurchaserFromSources({
+      user: {
+        first_name: DEMO_USER.firstName,
+        last_name: DEMO_USER.lastName,
+        email: DEMO_USER.email,
+      },
+      order: demoCompletedTicketOrder({
+        firstName: undefined,
+        lastName: undefined,
+      }),
+    });
+    expect(purchaser).toEqual({
+      firstName: DEMO_USER.firstName,
+      lastName: DEMO_USER.lastName,
+      email: DEMO_USER.email,
+    });
+  });
+
+  it("splits a combined order name when first and last are missing", () => {
+    const purchaser = receiptPurchaserFromSources({
+      order: demoCompletedTicketOrder({
+        firstName: undefined,
+        lastName: undefined,
+        name: `${DEMO_USER.firstName} ${DEMO_USER.lastName}`,
+      }),
+    });
+    expect(purchaser.firstName).toBe(DEMO_USER.firstName);
+    expect(purchaser.lastName).toBe(DEMO_USER.lastName);
+  });
+
+  it("shows N/A when no purchaser name is available", () => {
+    const receipt = buildOrderReceipt(
+      demoCompletedTicketOrder({
+        firstName: undefined,
+        lastName: undefined,
+      }),
+    )!;
+    expect(receipt.billToName).toBe("N/A");
   });
 
   it("lists a flex pack as description, qty, unit price, and amount", () => {

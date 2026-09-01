@@ -175,6 +175,14 @@ export const LOADER_BOOT_SCRIPT = `(function(){
     msg.style.cssText = "font-size:12px;font-weight:500;color:rgba(255,255,255,0.62);";
     caption.appendChild(msg);
     el.appendChild(caption);
+    var lockupWrap = document.createElement("div");
+    lockupWrap.style.cssText = "position:absolute;bottom:24px;left:0;right:0;display:flex;align-items:center;justify-content:center;";
+    var lockup = document.createElement("img");
+    lockup.src = "/blocktickets-logo.svg";
+    lockup.alt = "Blocktickets";
+    lockup.style.cssText = "width:96px;opacity:0.5;";
+    lockupWrap.appendChild(lockup);
+    el.appendChild(lockupWrap);
     document.documentElement.appendChild(el);
   } catch (e) {}
 })();`;

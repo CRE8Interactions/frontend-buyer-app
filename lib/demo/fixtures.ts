@@ -354,6 +354,7 @@ export const DEMO_EVENTS = [
       },
     ],
     organization: demoOrg("nm-state", "NM State Athletics", "Football"),
+    entryGate: "Gate 3",
   },
   {
     id: 105,

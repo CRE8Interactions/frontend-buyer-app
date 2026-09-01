@@ -1,4 +1,5 @@
 import moment from "moment-timezone";
+import type { BrandingOrganization, OrgBranding } from "@/lib/branding";
 import {
   dateChip,
   formatEventWhen,
@@ -27,7 +28,15 @@ export type EventLike = {
   venue?: VenueLike;
   enableTransfers?: boolean;
   enableResale?: boolean;
-  organization?: { name?: string; uuid?: string } | null;
+  organization?:
+    | (BrandingOrganization & {
+        email_logo?: ApiImage;
+        category?: { name?: string };
+      })
+    | null;
+  branding?: OrgBranding | null;
+  category?: { name?: string };
+  categoryName?: string;
   attractions?: { name?: string; artwork?: ApiImage }[];
   summary?: string;
 };

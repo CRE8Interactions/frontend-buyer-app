@@ -6,7 +6,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import GlobalRouteTransitionLoader from "@/components/molecules/GlobalRouteTransitionLoader";
 import { DEMO_ORGS } from "@/lib/demo/fixtures";
 import { cacheOrgBranding } from "@/lib/orgBrandingCache";
-import { notifyWalletShellReady } from "@/lib/routeTransition";
+import { notifyRouteCommitted } from "@/lib/routeTransition";
 
 const raptors = DEMO_ORGS.find((org) => org.slug === "ogden-raptors")!;
 
@@ -27,6 +27,7 @@ describe("GlobalRouteTransitionLoader platform links", () => {
 
     fireEvent.click(screen.getByRole("link", { name: "Partner tickets" }));
 
+    expect(window.location.pathname).toBe(`/${raptors.slug}/`);
     expect(document.querySelector("[data-bt-platform-loader]")).toBeTruthy();
     expect(document.querySelector("[data-bt-tenant-loader]")).toBeNull();
 
@@ -40,8 +41,31 @@ describe("GlobalRouteTransitionLoader platform links", () => {
 
     fireEvent.click(screen.getByRole("link", { name: "See partner events" }));
 
+    expect(window.location.pathname).toBe(`/${raptors.slug}/`);
     expect(document.querySelector("[data-bt-platform-loader]")).toBeTruthy();
     expect(document.querySelector("[data-bt-tenant-loader]")).toBeNull();
+  });
+
+  it("keeps the loader up until the destination route commits", async () => {
+    cacheOrgBranding(raptors);
+    window.history.replaceState({}, "", "/");
+    render(
+      <>
+        <GlobalRouteTransitionLoader />
+        <a href={`/${raptors.slug}/`}>Partner tickets</a>
+      </>,
+    );
+
+    fireEvent.click(screen.getByRole("link", { name: "Partner tickets" }));
+
+    expect(window.location.pathname).toBe(`/${raptors.slug}/`);
+    expect(document.querySelector("[data-bt-platform-loader]")).toBeTruthy();
+
+    notifyRouteCommitted(`/${raptors.slug}/`);
+
+    await waitFor(() => {
+      expect(document.querySelector("[data-bt-platform-loader]")).toBeNull();
+    });
   });
 
   it("lets footer links use their destination organization branding", () => {
@@ -58,71 +82,29 @@ describe("GlobalRouteTransitionLoader platform links", () => {
 
     fireEvent.click(screen.getByRole("link", { name: "Partner footer" }));
 
+    expect(window.location.pathname).toBe(`/${raptors.slug}/`);
     expect(document.querySelector("[data-bt-tenant-loader]")).toBeTruthy();
     expect(screen.getByText(raptors.name)).toBeInTheDocument();
   });
 
-  it("holds the Blocktickets splash over a wallet hop until the tickets are ready", async () => {
+  it.each([
+    ["/wallet/my-tickets/", "My tickets"],
+    ["/wallet/my-transfers/", "Transfers"],
+    ["/wallet/my-listings/", "Listings"],
+  ])("does not cover %s with the Blocktickets splash", (href, label) => {
     cacheOrgBranding(raptors);
     window.history.replaceState({}, "", `/${raptors.slug}/`);
     render(
       <>
         <GlobalRouteTransitionLoader />
-        <a href="/wallet/my-tickets/">My tickets</a>
+        <a href={href}>{label}</a>
       </>,
     );
 
-    fireEvent.click(screen.getByRole("link", { name: "My tickets" }));
+    fireEvent.click(screen.getByRole("link", { name: label }));
 
-    // The wallet is never a team, so the previous org must not paint here.
-    expect(document.querySelector("[data-bt-platform-loader]")).toBeTruthy();
+    expect(document.querySelector("[data-bt-platform-loader]")).toBeNull();
     expect(document.querySelector("[data-bt-tenant-loader]")).toBeNull();
     expect(screen.queryByText(raptors.name)).not.toBeInTheDocument();
-    expect(window.location.pathname).toBe("/wallet/my-tickets/");
-
-    notifyWalletShellReady();
-
-    await waitFor(() => {
-      expect(document.querySelector("[data-bt-platform-loader]")).toBeNull();
-    });
-  });
-
-  it("hides when a logged-out shopper is bounced from the wallet to login", async () => {
-    window.history.replaceState({}, "", "/browse/");
-    render(
-      <>
-        <GlobalRouteTransitionLoader />
-        <a href="/wallet/my-tickets/">My tickets</a>
-      </>,
-    );
-
-    fireEvent.click(screen.getByRole("link", { name: "My tickets" }));
-    expect(document.querySelector("[data-bt-platform-loader]")).toBeTruthy();
-
-    // The guard bounces to login, so the wallet shell never reports ready.
-    window.history.replaceState({}, "", "/login/?from=%2Fwallet%2Fmy-tickets%2F");
-
-    await waitFor(() => {
-      expect(document.querySelector("[data-bt-platform-loader]")).toBeNull();
-    });
-  });
-
-  it("hides after an empty wallet finishes loading", async () => {
-    window.history.replaceState({}, "", "/");
-    render(
-      <>
-        <GlobalRouteTransitionLoader />
-        <a href="/wallet/my-tickets/">My tickets</a>
-      </>,
-    );
-
-    fireEvent.click(screen.getByRole("link", { name: "My tickets" }));
-    expect(document.querySelector("[data-bt-platform-loader]")).toBeTruthy();
-
-    notifyWalletShellReady();
-
-    await waitFor(() => {
-      expect(document.querySelector("[data-bt-platform-loader]")).toBeNull();
-    });
   });
 });

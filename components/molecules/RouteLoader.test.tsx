@@ -38,11 +38,30 @@ describe("BrandedLoader", () => {
     expect(screen.getByText(raptors.name)).toBeInTheDocument();
     expect(screen.getByText("loading tickets")).toBeInTheDocument();
     expect(screen.queryByText(/loading blocktickets/i)).not.toBeInTheDocument();
-    expect(screen.queryByAltText(/blocktickets/i)).not.toBeInTheDocument();
+    expect(screen.getByAltText(/blocktickets/i)).toHaveAttribute(
+      "src",
+      "/blocktickets-logo.svg",
+    );
     expect(screen.getByAltText(raptors.name)).toHaveAttribute(
       "src",
       raptors.branding.logo.url,
     );
+  });
+
+  it("does not show the Blocktickets lockup on an embedded tenant loader", () => {
+    render(
+      <BrandedLoader
+        embedded
+        branding={{
+          primaryColor: raptors.branding.primaryColor,
+          logoSrc: raptors.branding.logo.url,
+          name: raptors.name,
+        }}
+      />,
+    );
+
+    expect(screen.getByText(raptors.name)).toBeInTheDocument();
+    expect(screen.queryByAltText(/blocktickets/i)).not.toBeInTheDocument();
   });
 
   it("does not show the Blocktickets launch loader when branding is missing", () => {
@@ -92,6 +111,10 @@ describe("RouteLoader", () => {
 
     expect(screen.getByText(raptors.name)).toBeInTheDocument();
     expect(screen.getByText("getting payment ready")).toBeInTheDocument();
+    expect(screen.getByAltText(/blocktickets/i)).toHaveAttribute(
+      "src",
+      "/blocktickets-logo.svg",
+    );
     expect(screen.queryByText(/loading tickets/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/loading blocktickets/i)).not.toBeInTheDocument();
   });

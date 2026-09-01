@@ -29,6 +29,10 @@ describe("boot splash", () => {
       "src",
       RAPTORS.branding.logo.url,
     );
+    expect(splash?.querySelector('img[alt="Blocktickets"]')).toHaveAttribute(
+      "src",
+      "/blocktickets-logo.svg",
+    );
     expect(splash?.textContent).toContain(RAPTORS.name);
     expect(splash?.textContent).toContain(CHECKOUT_SUCCESS_LOADER_MESSAGE);
   });
@@ -80,6 +84,10 @@ describe("boot splash", () => {
     expect(splash?.querySelector("img")).toHaveAttribute(
       "src",
       RAPTORS.branding.logo.url,
+    );
+    expect(splash?.querySelector('img[alt="Blocktickets"]')).toHaveAttribute(
+      "src",
+      "/blocktickets-logo.svg",
     );
     expect(splash?.textContent).toContain(RAPTORS.name);
   });

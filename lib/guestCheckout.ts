@@ -58,28 +58,58 @@ export function parseGuestBuyer(input: {
   return { email, firstName, lastName };
 }
 
+function readGuestCheckout(): GuestBuyer {
+  if (typeof window === "undefined") {
+    return { email: "", firstName: "", lastName: "" };
+  }
+  try {
+    const raw = sessionStorage.getItem(GUEST_CHECKOUT_KEY);
+    if (!raw) return { email: "", firstName: "", lastName: "" };
+    const parsed = JSON.parse(raw) as {
+      email?: unknown;
+      firstName?: unknown;
+      lastName?: unknown;
+    };
+    return {
+      email: typeof parsed?.email === "string" ? parsed.email : "",
+      firstName: typeof parsed?.firstName === "string" ? parsed.firstName : "",
+      lastName: typeof parsed?.lastName === "string" ? parsed.lastName : "",
+    };
+  } catch {
+    return { email: "", firstName: "", lastName: "" };
+  }
+}
+
+export function setGuestCheckoutBuyer(buyer: GuestBuyer) {
+  if (typeof window === "undefined") return;
+  try {
+    sessionStorage.setItem(GUEST_CHECKOUT_KEY, JSON.stringify(buyer));
+  } catch {
+    /* ignore quota / private mode */
+  }
+}
+
 export function setGuestCheckoutEmail(email: string) {
   if (typeof window === "undefined") return;
   try {
     sessionStorage.setItem(
       GUEST_CHECKOUT_KEY,
-      JSON.stringify({ email: normalizeEmail(email) }),
+      JSON.stringify({
+        ...readGuestCheckout(),
+        email: normalizeEmail(email),
+      }),
     );
   } catch {
     /* ignore quota / private mode */
   }
 }
 
+export function getGuestCheckoutBuyer(): GuestBuyer {
+  return readGuestCheckout();
+}
+
 export function getGuestCheckoutEmail(): string {
-  if (typeof window === "undefined") return "";
-  try {
-    const raw = sessionStorage.getItem(GUEST_CHECKOUT_KEY);
-    if (!raw) return "";
-    const parsed = JSON.parse(raw) as { email?: string };
-    return typeof parsed?.email === "string" ? parsed.email : "";
-  } catch {
-    return "";
-  }
+  return getGuestCheckoutBuyer().email;
 }
 
 export function clearGuestCheckout() {

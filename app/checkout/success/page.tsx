@@ -11,8 +11,10 @@ import {
   checkoutBrandingFromCart,
   type CheckoutCartBrandingSource,
 } from "@/lib/checkoutBranding";
+import { getOrder } from "@/lib/api";
 import {
   fetchCompletedOrder,
+  normalizeOrderPayload,
   type OrderData,
   type OrderEvent,
 } from "@/lib/completedOrder";
@@ -26,7 +28,7 @@ import {
   isRequestCanceled,
 } from "@/lib/helpers";
 import { clearStoredCart, getStoredCart } from "@/lib/cart";
-import { getGuestCheckoutEmail } from "@/lib/guestCheckout";
+import { getGuestCheckoutBuyer } from "@/lib/guestCheckout";
 import { hideIntercomLauncher } from "@/lib/intercom";
 import { cacheOrgBranding } from "@/lib/orgBrandingCache";
 import {
@@ -50,7 +52,10 @@ import {
   orderPaymentDetailsReady,
   waitUntilOrderPaymentDetailsReady,
 } from "@/lib/orderPayment";
-import { downloadOrderReceipt } from "@/lib/orderReceipt";
+import {
+  downloadOrderReceipt,
+  receiptPurchaserFromSources,
+} from "@/lib/orderReceipt";
 import {
   clearStripePaymentSyncMark,
   msUntilStripePaymentSyncReady,
@@ -61,11 +66,63 @@ import {
   type TrackingOrganization,
 } from "@/lib/tracking";
 import { useClientReady } from "@/lib/useClientReady";
+import {
+  addTicketToPhoneWallet,
+  phoneWalletKind,
+  phoneWalletLabel,
+  type PhoneWalletKind,
+} from "@/lib/phoneWallet";
+import { isMobileDevice, seatLabel, type TicketLike } from "@/lib/wallet";
 
 const NAVY = "#051b35";
 const MUTED = "#6e7180";
 const CARD =
   "rounded-[18px] border border-[rgba(5,27,53,0.08)] bg-white shadow-[0_10px_30px_-20px_rgba(5,27,53,0.35)]";
+
+function walletableOrderTickets(
+  tickets: Array<Record<string, unknown>>,
+): Array<Record<string, unknown>> {
+  return tickets.filter((ticket) => String(ticket.checkInCode || "").trim());
+}
+
+function walletTicketKey(ticket: Record<string, unknown>): string {
+  return String(ticket.id ?? ticket.uuid ?? ticket.checkInCode ?? "");
+}
+
+function WalletPassIcon() {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={1.8}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className="h-[18px] w-[18px]"
+      aria-hidden
+    >
+      <rect x="2" y="6" width="20" height="13" rx="3" />
+      <path d="M2 11h20" />
+    </svg>
+  );
+}
+
+function WalletAddedCheckIcon() {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={2.2}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className="h-[18px] w-[18px]"
+      aria-hidden
+    >
+      <polyline points="20 6 9 17 4 12" />
+    </svg>
+  );
+}
 
 function resolveOrderDisplayId(order: OrderData | null): string {
   if (order?.id == null) return "";
@@ -91,10 +148,20 @@ function CheckoutSuccessPage() {
   const [error, setError] = useState("");
   const [receiptMsg, setReceiptMsg] = useState("");
   const [downloadingReceipt, setDownloadingReceipt] = useState(false);
+  const [passWallet, setPassWallet] = useState<PhoneWalletKind | null>(null);
+  const [walletSheetOpen, setWalletSheetOpen] = useState(false);
+  const [selectedWalletTicket, setSelectedWalletTicket] = useState(0);
+  const [walletSaving, setWalletSaving] = useState(false);
+  const [walletError, setWalletError] = useState("");
+  const [addedWalletKeys, setAddedWalletKeys] = useState<string[]>([]);
   const allowCachedBranding = useClientReady();
 
   useEffect(() => {
     hideIntercomLauncher();
+  }, []);
+
+  useEffect(() => {
+    setPassWallet(isMobileDevice() ? phoneWalletKind() : null);
   }, []);
 
   useEffect(() => {
@@ -208,17 +275,25 @@ function CheckoutSuccessPage() {
     setReceiptMsg("");
     setDownloadingReceipt(true);
     try {
+      const guest = getGuestCheckoutBuyer();
+      let purchaser = receiptPurchaserFromSources({ user, guest, order });
+      if (!purchaser.firstName && !purchaser.lastName && order.orderId) {
+        try {
+          const res = await getOrder(String(order.orderId));
+          purchaser = receiptPurchaserFromSources({
+            user,
+            guest,
+            order: normalizeOrderPayload(res.data),
+          });
+        } catch {
+          /* keep the page / guest / slim-order name */
+        }
+      }
       await downloadOrderReceipt({
         order,
-        purchaser: {
-          firstName: user?.firstName || String(order.firstName || ""),
-          lastName: user?.lastName || String(order.lastName || ""),
-          email:
-            user?.email ||
-            (typeof order.email === "string" ? order.email : "") ||
-            getGuestCheckoutEmail(),
-        },
+        purchaser,
         sellerLogoUrl: branding.theme.brandLogoSrc,
+        sellerName: branding.orgLabel,
       });
     } catch {
       setReceiptMsg("Could not download receipt.");
@@ -260,6 +335,29 @@ function CheckoutSuccessPage() {
   const mapsQuery = [venueName, venueAddress].filter(Boolean).join(" ");
 
   const tickets = order?.tickets || [];
+  const walletTickets = walletableOrderTickets(tickets);
+  const addedWalletKeySet = new Set(addedWalletKeys);
+  const firstUnaddedWalletIndex = walletTickets.findIndex(
+    (ticket) => !addedWalletKeySet.has(walletTicketKey(ticket)),
+  );
+  const allWalletTicketsAdded =
+    walletTickets.length > 0 && firstUnaddedWalletIndex < 0;
+  const showWalletCta = Boolean(
+    !isAuthenticated &&
+      passWallet &&
+      event &&
+      walletTickets.length &&
+      !order?.package &&
+      !order?.flex_pack &&
+      !order?.access_pass_template,
+  );
+  const selectedTicket =
+    walletTickets[selectedWalletTicket] ||
+    walletTickets[firstUnaddedWalletIndex] ||
+    walletTickets[0];
+  const selectedTicketAdded = selectedTicket
+    ? addedWalletKeySet.has(walletTicketKey(selectedTicket))
+    : true;
   const ticketSummary = ticketSelectionSummary(
     tickets,
     order?.package ? { defaultOffer: "Standard admission" } : undefined,
@@ -280,7 +378,7 @@ function CheckoutSuccessPage() {
     user?.email ||
     (typeof order?.email === "string" ? order.email : "") ||
     (typeof order?.purchaserEmail === "string" ? order.purchaserEmail : "") ||
-    getGuestCheckoutEmail();
+    getGuestCheckoutBuyer().email;
   const mobileTicketMessage = ticketEmail
     ? `We've emailed it to ${ticketEmail} — add it to your wallet now.`
     : isAuthenticated
@@ -289,6 +387,75 @@ function CheckoutSuccessPage() {
   const walletHref = isAuthenticated ? accessPassHref : ticketsHref;
   const walletLabel =
     isAuthenticated && isAccessPass ? "View access pass" : "Go to my wallet";
+
+  const openWalletSheet = () => {
+    if (allWalletTicketsAdded) return;
+    setSelectedWalletTicket(
+      firstUnaddedWalletIndex >= 0 ? firstUnaddedWalletIndex : 0,
+    );
+    setWalletError("");
+    setWalletSheetOpen(true);
+  };
+
+  const closeWalletSheet = () => {
+    if (walletSaving) return;
+    setWalletSheetOpen(false);
+    setWalletError("");
+  };
+
+  const addSelectedTicketToWallet = async () => {
+    if (!passWallet || !selectedTicket || !event || selectedTicketAdded) return;
+    const addedKey = walletTicketKey(selectedTicket);
+    setWalletSaving(true);
+    setWalletError("");
+    const orderOrganization =
+      order && typeof order.organization === "object" && order.organization
+        ? (order.organization as Record<string, unknown>)
+        : null;
+    try {
+      const error = await addTicketToPhoneWallet(
+        {
+          ...event,
+          organization: {
+            ...orderOrganization,
+            ...(typeof event.organization === "object" && event.organization
+              ? event.organization
+              : null),
+          },
+        },
+        {
+          ...selectedTicket,
+          eventUUID:
+            (typeof selectedTicket.eventUUID === "string" &&
+              selectedTicket.eventUUID) ||
+            event.uuid,
+          organizationUUID:
+            selectedTicket.organizationUUID ||
+            event.organizationUUID ||
+            orderOrganization?.uuid,
+        },
+        passWallet,
+      );
+      if (error) {
+        setWalletError(error);
+        return;
+      }
+      const nextAdded = [...addedWalletKeys, addedKey];
+      setAddedWalletKeys(nextAdded);
+      const nextIndex = walletTickets.findIndex(
+        (ticket) => !nextAdded.includes(walletTicketKey(ticket)),
+      );
+      if (nextIndex < 0) {
+        setWalletSheetOpen(false);
+        return;
+      }
+      setSelectedWalletTicket(nextIndex);
+    } catch {
+      setWalletError("Could not add this pass to your wallet. Please try again.");
+    } finally {
+      setWalletSaving(false);
+    }
+  };
 
   if (shellLoading) {
     return <RouteLoader branding={loaderBranding} />;
@@ -335,7 +502,7 @@ function CheckoutSuccessPage() {
           </Link>
         </div>
       ) : (
-        <div className="mx-auto grid max-w-[1140px] grid-cols-1 items-start gap-5 px-3.5 pb-10 pt-3.5 md:px-5 md:pt-6 lg:grid-cols-[minmax(0,1fr)_372px]">
+        <div className={`mx-auto grid max-w-[1140px] grid-cols-1 items-start gap-5 px-3.5 pt-3.5 md:px-5 md:pt-6 lg:grid-cols-[minmax(0,1fr)_372px] ${showWalletCta ? "pb-28" : "pb-10"}`}>
           <div className="flex items-center gap-3.5 lg:col-span-2">
             <span className="flex h-[38px] w-[38px] shrink-0 items-center justify-center rounded-full bg-[#a6e773]">
               <svg
@@ -607,6 +774,155 @@ function CheckoutSuccessPage() {
           </div>
         </div>
       )}
+
+      {showWalletCta && passWallet ? (
+        <div className="fixed inset-x-0 bottom-0 z-[3] border-t border-[rgba(5,27,53,0.10)] bg-white pb-[env(safe-area-inset-bottom)]">
+          <div className="mx-auto max-w-[1140px] px-3.5 py-3">
+            <button
+              type="button"
+              disabled={allWalletTicketsAdded}
+              onClick={openWalletSheet}
+              className="flex w-full items-center justify-center gap-2.5 rounded-full px-[26px] py-4 text-[16px] font-semibold disabled:opacity-80"
+              style={{
+                background: accent,
+                color: branding.theme.buttonTextColor,
+              }}
+            >
+              {allWalletTicketsAdded ? <WalletAddedCheckIcon /> : <WalletPassIcon />}
+              {allWalletTicketsAdded
+                ? `All tickets added to ${passWallet === "apple" ? "Apple" : "Google"} Wallet`
+                : phoneWalletLabel(passWallet)}
+            </button>
+          </div>
+        </div>
+      ) : null}
+
+      {showWalletCta && passWallet && walletSheetOpen ? (
+        <div
+          className="fixed inset-0 z-[80] flex items-end justify-center bg-[rgba(5,27,53,0.55)]"
+          onClick={closeWalletSheet}
+        >
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="wallet-ticket-title"
+            className="flex max-h-[88vh] w-full flex-col rounded-t-[26px] bg-white"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="flex justify-center pt-3">
+              <div className="h-1 w-10 rounded-full bg-[#d5d8e0]" />
+            </div>
+            <div className="flex items-start justify-between gap-3 px-5 pb-2 pt-3">
+              <div className="min-w-0">
+                <h2
+                  id="wallet-ticket-title"
+                  className="text-[22px] font-semibold tracking-[-0.02em]"
+                >
+                  Add a ticket to your wallet.
+                </h2>
+                <p className="mt-1.5 text-[14px]" style={{ color: MUTED }}>
+                  Passes are added one ticket at a time. Pick a seat, then
+                  choose a wallet.
+                </p>
+              </div>
+              <button
+                type="button"
+                aria-label="Close"
+                onClick={closeWalletSheet}
+                className="flex h-[34px] w-[34px] shrink-0 items-center justify-center rounded-full bg-[#f1f3f8]"
+              >
+                <svg
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth={2}
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  className="h-4 w-4"
+                  aria-hidden
+                >
+                  <line x1="18" y1="6" x2="6" y2="18" />
+                  <line x1="6" y1="6" x2="18" y2="18" />
+                </svg>
+              </button>
+            </div>
+            <div
+              role="radiogroup"
+              aria-label="Tickets"
+              className="flex min-h-0 flex-1 flex-col gap-2.5 overflow-y-auto px-5 py-3"
+            >
+              {walletTickets.map((ticket, index) => {
+                const added = addedWalletKeySet.has(walletTicketKey(ticket));
+                const selected = !added && index === selectedWalletTicket;
+                const seat = seatLabel(ticket as TicketLike);
+                return (
+                  <button
+                    key={walletTicketKey(ticket) || String(index)}
+                    type="button"
+                    role={added ? undefined : "radio"}
+                    aria-checked={added ? undefined : selected}
+                    disabled={added || walletSaving}
+                    onClick={() => setSelectedWalletTicket(index)}
+                    className="flex w-full items-center gap-3 rounded-[18px] border px-3.5 py-3.5 text-left disabled:opacity-100"
+                    style={{
+                      borderColor: added || selected ? accent : "rgba(5,27,53,0.12)",
+                      background:
+                        selected && !added
+                          ? `color-mix(in srgb, ${accent} 8%, white)`
+                          : "#fff",
+                    }}
+                  >
+                    {added ? null : (
+                      <span
+                        className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full border-2"
+                        style={{ borderColor: selected ? accent : "rgba(5,27,53,0.22)" }}
+                      >
+                        {selected ? (
+                          <span
+                            className="h-2.5 w-2.5 rounded-full"
+                            style={{ background: accent }}
+                          />
+                        ) : null}
+                      </span>
+                    )}
+                    <span className="min-w-0 flex-1 text-[16px] font-semibold tracking-[-0.015em]">
+                      {seat}
+                    </span>
+                    {added ? (
+                      <span
+                        className="shrink-0 text-[11px] font-semibold uppercase tracking-[0.12em]"
+                        style={{ color: accent }}
+                      >
+                        ADDED
+                      </span>
+                    ) : null}
+                  </button>
+                );
+              })}
+            </div>
+            <div className="border-t border-[rgba(5,27,53,0.08)] px-5 pb-[max(18px,env(safe-area-inset-bottom))] pt-3">
+              <button
+                type="button"
+                disabled={walletSaving || !selectedTicket || selectedTicketAdded}
+                onClick={() => void addSelectedTicketToWallet()}
+                className="flex w-full items-center justify-center gap-2.5 rounded-full px-[26px] py-4 text-[16px] font-semibold disabled:opacity-70"
+                style={{
+                  background: accent,
+                  color: branding.theme.buttonTextColor,
+                }}
+              >
+                <WalletPassIcon />
+                {walletSaving ? "Adding…" : phoneWalletLabel(passWallet)}
+              </button>
+              {walletError ? (
+                <p role="alert" className="mt-2 text-center text-[13px] text-[#b91c1c]">
+                  {walletError}
+                </p>
+              ) : null}
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }

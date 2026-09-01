@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it } from "vitest";
 import {
   demoAccessPassCheckoutCart,
   demoCheckoutCart,
@@ -7,9 +7,13 @@ import {
   DEMO_USER,
 } from "@/lib/demo/fixtures";
 import {
+  getGuestCheckoutBuyer,
+  getGuestCheckoutEmail,
   isComplimentaryWebsiteCart,
   isGuestEligibleCart,
   parseGuestBuyer,
+  setGuestCheckoutBuyer,
+  setGuestCheckoutEmail,
 } from "@/lib/guestCheckout";
 
 describe("isGuestEligibleCart", () => {
@@ -70,5 +74,35 @@ describe("parseGuestBuyer", () => {
         lastName: DEMO_USER.lastName,
       }),
     ).toBeNull();
+  });
+});
+
+describe("guest checkout session", () => {
+  beforeEach(() => {
+    sessionStorage.clear();
+  });
+
+  it("persists the buyer first and last name with the email", () => {
+    setGuestCheckoutBuyer({
+      email: DEMO_USER.email,
+      firstName: DEMO_USER.firstName,
+      lastName: DEMO_USER.lastName,
+    });
+    expect(getGuestCheckoutBuyer()).toEqual({
+      email: DEMO_USER.email,
+      firstName: DEMO_USER.firstName,
+      lastName: DEMO_USER.lastName,
+    });
+    expect(getGuestCheckoutEmail()).toBe(DEMO_USER.email);
+  });
+
+  it("keeps an email-only session without a name", () => {
+    setGuestCheckoutEmail(DEMO_USER.email);
+    expect(getGuestCheckoutEmail()).toBe(DEMO_USER.email);
+    expect(getGuestCheckoutBuyer()).toEqual({
+      email: DEMO_USER.email,
+      firstName: "",
+      lastName: "",
+    });
   });
 });
