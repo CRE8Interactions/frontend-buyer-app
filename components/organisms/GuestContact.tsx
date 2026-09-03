@@ -9,6 +9,7 @@ import {
   emailBlurInvalid,
   emailSubmitError,
   formString,
+  nameBlurError,
   nameFieldError,
   submittedEmail,
   type EmailFieldError,
@@ -102,9 +103,7 @@ export default function GuestContact({
             setFirstName(value);
             setFirstError(null);
           }}
-          onBlur={(value) =>
-            setFirstError(value.trim() ? nameFieldError(value) : null)
-          }
+          onBlur={(value) => setFirstError(nameBlurError(value))}
         />
         <NameField
           id="guest-last"
@@ -118,9 +117,7 @@ export default function GuestContact({
             setLastName(value);
             setLastError(null);
           }}
-          onBlur={(value) =>
-            setLastError(value.trim() ? nameFieldError(value) : null)
-          }
+          onBlur={(value) => setLastError(nameBlurError(value))}
         />
       </div>
       <BrandedActionButton

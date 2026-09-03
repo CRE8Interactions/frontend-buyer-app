@@ -14,29 +14,48 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import BrandedActionButton from "@/components/atoms/BrandedActionButton";
 import EmailField from "@/components/molecules/EmailField";
+import ExpandableDescription from "@/components/molecules/ExpandableDescription";
 import LoginLink from "@/components/molecules/LoginLink";
 import Modal from "@/components/molecules/Modal";
+import RedemptionCodeField from "@/components/molecules/RedemptionCodeField";
 import SectionLocatorThumb from "@/components/molecules/SectionLocatorThumb";
 import SeatMapSelectionOverlay from "@/components/organisms/SeatMapSelectionOverlay";
-import useAutoFocus from "@/hooks/useAutoFocus";
 import { placeGATicketsIntoCart, placeTicketsIntoCart } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
+import { isStandaloneCatalogOffer } from "@/lib/connectedOffers";
 import { goBack } from "@/lib/inAppBack";
 import { verifyOfferAccessCode } from "@/lib/offerUnlock";
 import {
+  CHECKOUT_DEMO_LISTINGS_ERROR,
+  CHECKOUT_DEMO_TIERS_ERROR,
+  checkoutHoldError,
+} from "@/lib/mapSelection";
+import {
   clampQuantity,
+  initialTicketQuantity,
+  limitsFromGaTier,
+  limitsFromListing,
+  listingAvailabilityRange,
+  listingDetailAvailabilityLabel,
   quantityIsAllowed,
-  type QuantityLimits,
+  ticketQuantityOptions,
 } from "@/lib/ticketListings";
 import { fieldFocusVars } from "@/lib/branding";
+import {
+  selectionOfferDescription,
+} from "@/lib/ticketSummary";
 import { checkoutHref, rememberCheckoutReturnPath, setStoredCart } from "@/lib/cart";
 import {
   emailBlurInvalid,
   emailSubmitError,
   emailSubmitInvalid,
   formString,
+  normalizeRedemptionCode,
+  redemptionCodeBlurFieldError,
+  redemptionCodeSubmitError,
   submittedEmail,
   type EmailFieldError,
+  type RedemptionCodeFieldError,
 } from "@/lib/fieldValidation";
 import { beginRouteTransition } from "@/lib/routeTransition";
 import { walletSectionHref } from "@/lib/walletNav";
@@ -49,6 +68,7 @@ import {
   TICKETING_MAIN_PAD_BOTTOM_PX,
   TICKETING_MAIN_PAD_TOP_PX,
 } from "@/lib/ticketingSticky";
+import useFiltersStore from "@/stores/filtersStore";
 import useSeatmapStore from "@/stores/seatmapStore";
 
 const NAVY = "#051b35";
@@ -98,6 +118,13 @@ export type TicketingData = {
   homeLabel: string;
   awayLabel: string;
   awayShort: string;
+  /** When false, hide Who's playing (no attractions on the event). */
+  showMatchupSection?: boolean;
+  /** When false, omit the away/visitor row (single-attraction events). */
+  showAwayTeam?: boolean;
+  /** Matchup logos for Who's playing — falls back to initials when absent. */
+  homeLogoSrc?: string;
+  awayLogoSrc?: string;
   listings: TicketingListing[];
   /** "reserved" (seatmap flow, default) or "ga" (general-admission tier flow). */
   eventType?: "reserved" | "ga";
@@ -114,6 +141,11 @@ export type TicketingData = {
   seatmapMapping?: SeatmapMapping | null;
   /** Offer catalog from the ticket-groups response — drives the filter chips. */
   offerNames?: string[];
+  /**
+   * Unfiltered listings used for the All quantity dropdown. The visible
+   * `listings` shrink when a quantity has no matches; this catalog must not.
+   */
+  quantityCatalog?: TicketingListing[];
   /** Whole event is sold out: no listings, waitlist only. */
   soldOut?: boolean;
   /** No offer is active yet; scheduled offers stay hidden until their window. */
@@ -134,7 +166,7 @@ export type GATier = {
   price: string; // "$10.08" or "Free"
   unit: number; // numeric price for totals
   note: string;
-  state: "live" | "scheduled" | "soldout";
+  state: "live" | "locked" | "scheduled" | "soldout";
   min?: number;
   max?: number;
   multipleOf?: number;
@@ -148,26 +180,6 @@ export type GATier = {
  */
 type NotifySubject = { name: string; soldout: boolean; onSaleAt?: string };
 
-function listingLimits(l: TicketingListing): QuantityLimits {
-  return {
-    min: l.min,
-    max: l.max,
-    step: Math.max(1, l.multipleOf || 1),
-    valid: l.min <= l.max,
-  };
-}
-
-function initialListingQuantity(listings: TicketingListing[]) {
-  if (listings.some((listing) => quantityIsAllowed(2, listingLimits(listing)))) {
-    return 2;
-  }
-  const minimums = listings
-    .map((listing) => listingLimits(listing))
-    .filter((limits) => limits.valid)
-    .map((limits) => limits.min);
-  return minimums.length ? Math.min(...minimums) : 1;
-}
-
 const LEGEND = [
   { label: "Unavailable", color: "#dfe3ee" },
   { label: "Available", color: "var(--acc)" },
@@ -178,6 +190,8 @@ const money = (n: number) => "$" + n.toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g,
 const SEATMAP = "/nmstate/seatmap-dummy.svg";
 /** How long the listing placeholders stay up after a filter change. */
 const LIST_SHIMMER_MS = 420;
+/** Bottom bar height reserved so the map fills the locked mobile viewport. */
+const LISTINGS_SHEET_BAR_PX = 88;
 
 const DEFAULT_GA_TIERS: GATier[] = [
   { name: "Standard admission", sub: "General admission · unreserved seating", price: "$10.08", unit: 10.08, note: "Ticket limit: 100 per order", state: "live" },
@@ -250,13 +264,14 @@ export default function PremiumTicketing({
 }) {
   const { isAuthenticated } = useAuth();
   const router = useRouter();
-  const autoFocusField = useAutoFocus<HTMLInputElement>(true);
   const ACC = d.accent;
   const ACC_DK = d.accentDark;
   const ACC_SOFT = d.accentSoft;
   const BTN = d.buttonColor || ACC;
   const BTN_INK = d.buttonTextColor || "#fff";
   const LOGO = d.logoSrc;
+  const showMatchupSection = d.showMatchupSection ?? true;
+  const showAwayTeam = d.showAwayTeam ?? Boolean(d.awayLabel);
   const isGa = d.eventType === "ga";
   const POSTER = d.posterSrc || LOGO;
   // Future offers never render as cards. The inventory response exposes their
@@ -283,6 +298,8 @@ export default function PremiumTicketing({
   const navBtnStyle = { fontFamily: "inherit", fontSize: 15, fontWeight: 600, color: navBtnInk, background: navBtnBg, border: "none", borderRadius: 999, padding: "13px 30px", whiteSpace: "nowrap", cursor: "pointer", textDecoration: "none", display: "inline-flex", alignItems: "center" } as const;
 
   const selectedFromMap = useSeatmapStore((s) => s.selectedFromMap);
+  const seatedError = useSeatmapStore((s) => s.seatedError);
+  const setSeatedError = useSeatmapStore((s) => s.setSeatedError);
   const resetMapState = useSeatmapStore((s) => s.resetMapState);
   const getTicketImage = useSeatmapStore((s) => s.getTicketImage);
   const bucket = useSeatmapStore((s) => s.bucket);
@@ -301,12 +318,13 @@ export default function PremiumTicketing({
 
   const [mounted, setMounted] = useState(false);
   const [vw, setVw] = useState(1440);
-  const [want, setWant] = useState(() => initialListingQuantity(d.listings));
+  const [want, setWant] = useState(() => initialTicketQuantity(d.listings));
   const [zoneFilter, setZoneFilter] = useState<string[]>([]);
   const [unlocked, setUnlocked] = useState<string[]>([]);
   const [unlockZone, setUnlockZone] = useState<string | null>(null);
   const [unlockInput, setUnlockInput] = useState("");
-  const [unlockError, setUnlockError] = useState(false);
+  const [unlockFieldError, setUnlockFieldError] =
+    useState<RedemptionCodeFieldError>(null);
   const [unlocking, setUnlocking] = useState(false);
   const [qtyMenu, setQtyMenu] = useState(false);
   const [ada, setAda] = useState(false);
@@ -332,6 +350,8 @@ export default function PremiumTicketing({
   const [notifySent, setNotifySent] = useState(false);
   const [notified, setNotified] = useState<Record<string, boolean>>({});
   const [gaSheet, setGaSheet] = useState(false);
+  const [listingsExpanded, setListingsExpanded] = useState(false);
+  const [mapTop, setMapTop] = useState(0);
   const headerRef = useRef<HTMLElement | null>(null);
   const sticky = useRef<HTMLDivElement | null>(null);
   const listingsScroll = useRef<HTMLDivElement | null>(null);
@@ -412,9 +432,34 @@ export default function PremiumTicketing({
   const mobile = vw < 900;
   const narrow = mobile || vw < 1120;
   const wide = !narrow;
+  const listingsSheet = !isGa && narrow && !d.soldOut && !seatedScheduled;
+
+  useEffect(() => {
+    setListingsExpanded(listingsSheet);
+  }, [listingsSheet]);
+
+  useEffect(() => {
+    if (!listingsSheet) return;
+    const el = sticky.current;
+    if (!el || typeof ResizeObserver === "undefined") return;
+    const apply = () => {
+      const top = Math.round(el.getBoundingClientRect().bottom + 8);
+      if (top > 0) setMapTop(top);
+    };
+    apply();
+    const ro = new ResizeObserver(apply);
+    ro.observe(el);
+    window.addEventListener("resize", apply);
+    return () => {
+      ro.disconnect();
+      window.removeEventListener("resize", apply);
+    };
+  }, [listingsSheet, vw, headerH]);
+
   const stickTop = stickyOffsetBelowHeader(headerH);
   const chromeReserve = ticketingChromeReservePx(headerH);
   const offersViewportMax = `calc(100dvh - ${chromeReserve}px)`;
+  const listingsSheetTop = mapTop || headerH + 12 + (mobile ? 140 : 260) + 8;
 
   useEffect(() => {
     const onScroll = () => {
@@ -496,40 +541,63 @@ export default function PremiumTicketing({
     (d.lockedZones || []).forEach((z) => { m[z.zone] = z.code.trim().toUpperCase(); });
     return m;
   }, [d.lockedZones]);
+  const eventTicketLimit = useFiltersStore((s) => s.eventTicketLimit);
+  const listingQtyLimits = (l: TicketingListing) =>
+    limitsFromListing(l, eventTicketLimit);
+  const gaTierQtyLimits = (t: GATier) => limitsFromGaTier(t, eventTicketLimit);
   const isLocked = (zone: string) => !!lockedMap[zone] && !unlocked.includes(zone);
   const busy = loading || refreshing;
+  const mapLocked = Boolean(d.soldOut) || seatedScheduled;
   const priceOf = (l: TicketingListing) =>
     parseFloat(l.price.replace(/[^0-9.]/g, "")) || 0;
   const rows = useMemo(() => {
-    const filtered = d.listings.filter((l) => quantityIsAllowed(want, listingLimits(l)) && (!zoneFilter.length || zoneFilter.includes(l.zone)) && !(!!lockedMap[l.zone] && !unlocked.includes(l.zone)) && (!ada || Boolean(l.cartGroup?.accessible)));
+    const filtered = d.listings.filter((l) => quantityIsAllowed(want, listingQtyLimits(l)) && (!zoneFilter.length || zoneFilter.includes(l.zone)) && !(!!lockedMap[l.zone] && !unlocked.includes(l.zone)) && (!ada || Boolean(l.cartGroup?.accessible)));
     const sorted = [...filtered].sort((a, b) =>
       sortDir === "price" ? priceOf(a) - priceOf(b) : priceOf(b) - priceOf(a),
     );
-    return sorted.map((l) => ({ ...l, range: `${l.min} – ${l.max} Tickets` }));
-  }, [want, d.listings, zoneFilter, lockedMap, unlocked, ada, sortDir]);
+    return sorted.map((l) => ({
+      ...l,
+      range: `${l.min} – ${l.max} Tickets`,
+    }));
+  }, [want, d.listings, zoneFilter, lockedMap, unlocked, ada, sortDir, eventTicketLimit]);
   // Placeholder rows roughly match the list being replaced, so the column keeps
   // its height while new inventory settles.
   const skeletonRows = Math.min(Math.max(rows.length || 3, 3), 5);
   // Offer catalog first — it includes offers with no inventory right now.
   const zoneChips = useMemo(() => {
     const seen: string[] = [...(d.offerNames || [])];
-    d.listings.forEach((l) => { if (!seen.includes(l.zone)) seen.push(l.zone); });
+    d.listings.forEach((l) => {
+      const offer = (l.cartGroup as { offer?: { name?: string; isConnectedOffer?: boolean | null } })
+        ?.offer;
+      if (offer && !isStandaloneCatalogOffer(offer)) return;
+      if (!seen.includes(l.zone)) seen.push(l.zone);
+    });
     return seen;
   }, [d.listings, d.offerNames]);
+  const quantityCatalogRef = useRef<TicketingListing[]>(
+    d.quantityCatalog?.length ? d.quantityCatalog : d.listings,
+  );
+  if (d.quantityCatalog?.length) {
+    quantityCatalogRef.current = d.quantityCatalog;
+  } else if (d.listings.length) {
+    quantityCatalogRef.current = d.listings;
+  }
+  const quantityCatalog = quantityCatalogRef.current.length
+    ? quantityCatalogRef.current
+    : d.listings;
   const quantityOptions = useMemo(() => {
-    const options = new Set<number>();
-    d.listings.forEach((listing) => {
-      const limits = listingLimits(listing);
-      for (
-        let quantity = limits.min;
-        limits.valid && quantity <= limits.max;
-        quantity += limits.step
-      ) {
-        options.add(quantity);
-      }
-    });
-    return [...options].sort((a, b) => a - b);
-  }, [d.listings]);
+    const scoped = zoneFilter.length
+      ? quantityCatalog.filter((listing) => zoneFilter.includes(listing.zone))
+      : quantityCatalog;
+    const options = ticketQuantityOptions(
+      eventTicketLimit,
+      scoped.map((listing) => listing.cartGroup || {}),
+    );
+    if (want >= 1 && !options.includes(want)) {
+      return [...options, want].sort((a, b) => a - b);
+    }
+    return options;
+  }, [quantityCatalog, zoneFilter, eventTicketLimit, want]);
   const ZONES = useMemo(() => {
     // derive 4 map zones from the distinct listing zones (fallback to listings)
     const seen = new Map<string, TicketingListing>();
@@ -544,6 +612,7 @@ export default function PremiumTicketing({
     rows[0] ||
     d.listings.find((l) => !isLocked(l.zone));
   const unit = selRow ? parseFloat(selRow.price.replace(/[^0-9.]/g, "")) : 0;
+  const panelOfferDescription = selectionOfferDescription(selRow?.cartGroup);
   const panelOpen = sel !== null && !map;
 
   const pickTotal = picks.reduce((t, p) => t + p.unit, 0);
@@ -582,22 +651,24 @@ export default function PremiumTicketing({
   const submitUnlockCode = async (code = unlockInput) => {
     const zone = unlockZone;
     if (!zone || unlocking) return;
-    const nextCode = code.trim();
-    if (!nextCode) {
-      setUnlockError(true);
+    const submitErr = redemptionCodeSubmitError(code);
+    if (submitErr) {
+      setUnlockFieldError(submitErr);
       return;
     }
+    const typed = normalizeRedemptionCode(code);
     setUnlocking(true);
     const opened = await verifyOfferAccessCode({
       eventId: d.eventId,
-      code: nextCode,
+      code: typed,
       expected: lockedMap[zone],
     });
     setUnlocking(false);
     if (!opened) {
-      setUnlockError(true);
+      setUnlockFieldError("rejected");
       return;
     }
+    setUnlockFieldError(null);
     setUnlocked((u) => (u.includes(zone) ? u : [...u, zone]));
     filterByZones((prev) => (prev.includes(zone) ? prev : [...prev, zone]));
     setUnlockZone(null);
@@ -652,12 +723,7 @@ export default function PremiumTicketing({
       if (opts?.closeGaSheet) setGaSheet(false);
       goToCheckout(cartId);
     } catch (err: unknown) {
-      const msg =
-        (err as { response?: { data?: { error?: { message?: string } } } })
-          ?.response?.data?.error?.message ||
-        (err as Error)?.message ||
-        "Unable to hold tickets.";
-      setHoldError(msg);
+      setSeatedError(checkoutHoldError(err));
       setHolding(false);
       setHoldingTier(null);
     }
@@ -675,12 +741,7 @@ export default function PremiumTicketing({
       const cartId = await placeSelectedTickets(groups);
       goToCheckout(cartId);
     } catch (err: unknown) {
-      const msg =
-        (err as { response?: { data?: { error?: { message?: string } } } })
-          ?.response?.data?.error?.message ||
-        (err as Error)?.message ||
-        "Unable to hold tickets.";
-      setHoldError(msg);
+      setSeatedError(checkoutHoldError(err));
       setHolding(false);
     }
   };
@@ -690,9 +751,7 @@ export default function PremiumTicketing({
     const listing = selRow as TicketingListing | undefined;
     const group = listing?.cartGroup;
     if (!group) {
-      setHoldError(
-        "These listings are demo-only. Real inventory is required to checkout.",
-      );
+      setSeatedError({ ...CHECKOUT_DEMO_LISTINGS_ERROR });
       return;
     }
     await runCheckoutWithGroup(group, panelQty);
@@ -708,9 +767,7 @@ export default function PremiumTicketing({
     const chosen = tier || GA_TIERS.find((t) => t.state === "live");
     const group = chosen?.cartGroup;
     if (!group) {
-      setHoldError(
-        "These tiers are demo-only. Real inventory is required to checkout.",
-      );
+      setSeatedError({ ...CHECKOUT_DEMO_TIERS_ERROR });
       return;
     }
     await runCheckoutWithGroup(
@@ -732,10 +789,32 @@ export default function PremiumTicketing({
   const pill = (bg: string, color: string): React.CSSProperties => ({ display: "inline-flex", alignItems: "center", gap: 7, background: bg, color, fontSize: 13, fontWeight: 600, padding: "4px 12px", borderRadius: 999, whiteSpace: "nowrap" });
   const primaryBtn: React.CSSProperties = { fontFamily: "inherit", fontWeight: 600, color: BTN_INK, background: BTN, border: "none", borderRadius: 999, cursor: "pointer" };
   const shimmer: React.CSSProperties = { background: "linear-gradient(90deg,#eef0f6 0%,#f7f8fc 50%,#eef0f6 100%)", backgroundSize: "420px 100%", animation: "nmt-shimmer 1.4s linear infinite" };
-  const thumbSize = mobile ? 72 : 96;
+  const thumbSize = mobile ? 52 : 96;
 
   const findOnMapBtn = (h: number, radius: number) => (
-    <button className="nmt-map-btn" onClick={() => setMap(true)} style={{ fontFamily: "inherit", position: "relative", width: "100%", height: h, borderRadius: radius, border: "1px solid rgba(5,27,53,0.10)", background: "#edeff7", cursor: "pointer", overflow: "hidden", display: "flex", alignItems: "center", justifyContent: "center", padding: 0, ...card }}>
+    <button
+      className="nmt-map-btn"
+      type="button"
+      disabled={mapLocked}
+      onClick={() => setMap(true)}
+      style={{
+        fontFamily: "inherit",
+        position: "relative",
+        width: "100%",
+        height: h,
+        borderRadius: radius,
+        border: "1px solid rgba(5,27,53,0.10)",
+        background: "#edeff7",
+        cursor: mapLocked ? "default" : "pointer",
+        opacity: mapLocked ? 0.55 : 1,
+        overflow: "hidden",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        padding: 0,
+        ...card,
+      }}
+    >
       <div style={{ position: "absolute", inset: 0 }}>
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img src={MAP_SRC} alt="Seat map" style={{ width: "100%", height: "100%", objectFit: "cover", objectPosition: "center", display: "block" }} />
@@ -794,17 +873,16 @@ export default function PremiumTicketing({
     </div>
   );
 
-  // Compact trust rows shown inside the ticket-details panel (bold label + copy).
-  const trustRows = (
-    <div style={{ display: "flex", flexDirection: "column", gap: 14, background: "#f7f8fc", border: "1px solid rgba(5,27,53,0.08)", borderRadius: 14, padding: 18 }}>
+  const compactTrustCard = (
+    <div style={{ ...card, width: "100%", boxSizing: "border-box", borderRadius: 20, padding: 20, display: "flex", flexDirection: "column", gap: 16 }}>
       {[
-        { t: "Mobile tickets.", d: " Delivered to your account and scanned at the gate.", icon: <><rect x="5" y="2" width="14" height="20" rx="3" /><line x1="10" y1="18.5" x2="14" y2="18.5" /></> },
-        { t: "Buyer protection.", d: " Every listing is verified inventory, safe from bots and scalpers.", icon: <><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" /><polyline points="9 12 11 14 15 10" /></> },
-        { t: "Prices are all-in.", d: " Taxes and fees included. No surprises at checkout.", icon: <><path d="M20.59 13.41 13.4 20.6a2 2 0 0 1-2.82 0L3 13V4a1 1 0 0 1 1-1h9l7.59 7.59a2 2 0 0 1 0 2.82Z" /><circle cx="7.5" cy="7.5" r="1.2" /></> },
+        { t: "Mobile tickets.", d: " Securely stored in your account.", icon: <><rect x="5" y="2" width="14" height="20" rx="3" /><line x1="10" y1="18.5" x2="14" y2="18.5" /></> },
+        { t: "Buyer protection.", d: " Safe from bots and scalpers.", icon: <><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" /><polyline points="9 12 11 14 15 10" /></> },
+        { t: "Prices are all-in.", d: " Taxes and fees included.", icon: <><path d="M20.6 13.4l-7.2 7.2a2 2 0 0 1-2.8 0l-7.2-7.2a2 2 0 0 1-.6-1.4V4a1 1 0 0 1 1-1h8a2 2 0 0 1 1.4.6l7.4 7.4a2 2 0 0 1 0 2.8z" /><line x1="7.5" y1="7.5" x2="7.51" y2="7.5" /></> },
       ].map((r) => (
-        <div key={r.t} style={{ display: "flex", gap: 12 }}>
-          <svg viewBox="0 0 24 24" fill="none" stroke={ACC} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" style={{ width: 18, height: 18, flexShrink: 0, marginTop: 1 }}>{r.icon}</svg>
-          <div style={{ fontSize: 14, color: "#4a5567", lineHeight: 1.5 }}><span style={{ fontWeight: 600, color: NAVY }}>{r.t}</span>{r.d}</div>
+        <div key={r.t} style={{ display: "flex", alignItems: "center", gap: 12, minWidth: 0 }}>
+          <svg viewBox="0 0 24 24" fill="none" stroke={ACC} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" style={{ width: 18, height: 18, flexShrink: 0 }}>{r.icon}</svg>
+          <div style={{ flex: 1, minWidth: 0, fontSize: 14, color: "#4a5567" }}><span style={{ fontWeight: 600, color: NAVY }}>{r.t}</span>{r.d}</div>
         </div>
       ))}
     </div>
@@ -827,19 +905,19 @@ export default function PremiumTicketing({
     >
       {d.scheduledAt ? (
         <>
-          <div style={{ fontSize: 15, color: "#6e7180" }}>
+          <div style={{ fontSize: 20, color: "#6e7180" }}>
             Tickets will be on sale
           </div>
-          <div style={{ fontSize: 22, fontWeight: 600, letterSpacing: "-0.02em" }}>
+          <div style={{ fontSize: 30, fontWeight: 600, letterSpacing: "-0.02em" }}>
             {d.scheduledAt}
           </div>
         </>
       ) : (
         <>
-          <div style={{ fontSize: 22, fontWeight: 600, letterSpacing: "-0.02em" }}>
+          <div style={{ fontSize: 30, fontWeight: 600, letterSpacing: "-0.02em" }}>
             Tickets are not on sale yet
           </div>
-          <div style={{ fontSize: 15, color: "#6e7180", maxWidth: 420 }}>
+          <div style={{ fontSize: 20, color: "#6e7180", maxWidth: 420 }}>
             Please check back later for on-sale availability.
           </div>
         </>
@@ -970,14 +1048,12 @@ export default function PremiumTicketing({
   const gaTierCards = (
     <>
       {GA_TIERS.map((t, i) => {
-        const live = t.state === "live";
-        const soldout = t.state === "soldout";
-        const limits: QuantityLimits = {
-          min: Math.max(1, t.min || 1),
-          max: Math.max(1, t.max || 100),
-          step: Math.max(1, t.multipleOf || 1),
-          valid: (t.min || 1) <= (t.max || 100),
-        };
+        const effectiveState =
+          t.state === "locked" && unlocked.includes(t.name) ? "live" : t.state;
+        const live = effectiveState === "live";
+        const soldout = effectiveState === "soldout";
+        const locked = effectiveState === "locked";
+        const limits = gaTierQtyLimits(t);
         const gaQty = clampQuantity(gaQuantities[i] ?? limits.min, limits);
         const setTierQuantity = (next: number) =>
           setGaQuantities((current) => ({
@@ -985,14 +1061,17 @@ export default function PremiumTicketing({
             [i]: clampQuantity(next, limits),
           }));
         const done = !!notified[t.name];
-        const s = t.state === "live"
+        const tierOfferDescription = selectionOfferDescription(t.cartGroup);
+        const s = effectiveState === "live"
           ? { label: "On sale", dot: "#7fbe4d", pillBg: "rgba(166,231,115,0.22)", pillInk: "#3f6b1f" }
-          : t.state === "scheduled"
+          : locked
+            ? { label: "Access code", dot: "#8a6410", pillBg: "rgba(201,150,46,0.16)", pillInk: "#8a6410" }
+          : effectiveState === "scheduled"
             ? { label: "Scheduled", dot: "#c9962e", pillBg: "rgba(201,150,46,0.16)", pillInk: "#8a6410" }
             : { label: "Sold out", dot: "#a9b0bd", pillBg: "#eef0f6", pillInk: "#6e7180" };
         const stepBtn: React.CSSProperties = { fontFamily: "inherit", width: 38, height: 38, display: "flex", alignItems: "center", justifyContent: "center", background: "#fff", border: "none", borderRadius: 999, color: NAVY, cursor: "pointer" };
         return (
-          <div key={t.name} style={{ border: live ? `1.5px solid ${ACC}` : "1px solid rgba(5,27,53,0.10)", background: soldout ? "#f7f8fc" : "#fff", borderRadius: 16, padding: 18, display: "flex", flexDirection: "column", gap: 16 }}>
+          <div key={t.name} style={{ border: live ? `1.5px solid ${ACC}` : locked ? "1.5px dashed rgba(201,150,46,0.55)" : "1px solid rgba(5,27,53,0.10)", background: soldout ? "#f7f8fc" : locked ? "#fffdf8" : "#fff", borderRadius: 16, padding: 18, display: "flex", flexDirection: "column", gap: 16 }}>
             <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 16 }}>
               <div style={{ display: "flex", flexDirection: "column", gap: 6, minWidth: 0 }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
@@ -1009,6 +1088,17 @@ export default function PremiumTicketing({
               </div>
             </div>
             <div style={{ height: 1, background: "rgba(5,27,53,0.08)" }} />
+            {tierOfferDescription ? (
+              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                <div style={{ fontSize: 12, fontWeight: 600, letterSpacing: "0.12em", textTransform: "uppercase", color: "#8a93a3" }}>About this ticket</div>
+                <ExpandableDescription
+                  text={tierOfferDescription}
+                  mobile={mobile}
+                  toggleColor={ACC}
+                  style={{ fontSize: 14, color: "#4a5567", lineHeight: 1.6 }}
+                />
+              </div>
+            ) : null}
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16, flexWrap: "wrap" }}>
               <div style={{ fontSize: 13, color: "#6e7180" }}>{t.note}</div>
               {live ? (
@@ -1039,6 +1129,19 @@ export default function PremiumTicketing({
                     Checkout {money(t.unit * gaQty)}
                   </BrandedActionButton>
                 </div>
+              ) : locked ? (
+                <BrandedActionButton
+                  tone="secondary"
+                  onClick={() => {
+                    setUnlockZone(t.name);
+                    setUnlockInput("");
+                    setUnlockFieldError(null);
+                  }}
+                  className="text-[16px]"
+                  style={{ padding: "13px 22px" }}
+                >
+                  <LockIcon s={16} /> Enter access code
+                </BrandedActionButton>
               ) : done && soldout ? (
                 <div
                   role="status"
@@ -1066,19 +1169,24 @@ export default function PremiumTicketing({
     </>
   );
 
-  const filterToolbar = (
+  const filterToolbar = (() => {
+    const compact = listingsSheet;
+    const type = compact ? 14 : 15;
+    const chipPad = compact ? "10px 14px" : "12px 20px";
+    const icon = compact ? 14 : 17;
+    return (
     <>
-      <div className="nmt-filter-scroll" style={{ display: "flex", alignItems: "center", gap: 10, minWidth: 0, overflowX: "auto", flexWrap: "nowrap", padding: "2px 0 10px 2px" }}>
-        <button ref={qtyBtn} onClick={() => setQtyMenu((v) => !v)} style={{ fontFamily: "inherit", display: "inline-flex", alignItems: "center", justifyContent: "space-between", gap: 8, minWidth: 132, boxSizing: "border-box", fontSize: 15, fontWeight: 600, color: "#fff", background: ACC, border: `1px solid ${ACC}`, borderRadius: 999, padding: "12px 20px", whiteSpace: "nowrap", cursor: "pointer", flexShrink: 0 }}>
+      <div className="nmt-filter-scroll" style={{ display: "flex", alignItems: "center", gap: compact ? 8 : 10, minWidth: 0, overflowX: "auto", flexWrap: "nowrap", padding: compact ? "0 0 6px" : "2px 0 10px 2px" }}>
+        <button ref={qtyBtn} onClick={() => setQtyMenu((v) => !v)} style={{ fontFamily: "inherit", display: "inline-flex", alignItems: "center", justifyContent: "space-between", gap: compact ? 6 : 8, minWidth: compact ? 108 : 132, minHeight: compact ? 40 : undefined, boxSizing: "border-box", fontSize: type, fontWeight: 600, color: "#fff", background: ACC, border: `1px solid ${ACC}`, borderRadius: 999, padding: chipPad, whiteSpace: "nowrap", cursor: "pointer", flexShrink: 0 }}>
           {want === 1 ? "1 ticket" : `${want} tickets`}
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" style={{ width: 15, height: 15, opacity: 0.8, transform: qtyMenu ? "rotate(180deg)" : "rotate(0deg)", transition: "transform 180ms ease" }}><polyline points="6 9 12 15 18 9" /></svg>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" style={{ width: icon, height: icon, opacity: 0.8, transform: qtyMenu ? "rotate(180deg)" : "rotate(0deg)", transition: "transform 180ms ease" }}><polyline points="6 9 12 15 18 9" /></svg>
         </button>
         {qtyMenu && mounted && qtyBtn.current && createPortal(
           <>
             <div onClick={() => setQtyMenu(false)} style={{ position: "fixed", inset: 0, zIndex: 29 }} />
-            <div role="listbox" aria-label="Ticket quantity" style={{ position: "fixed", top: qtyBtn.current.getBoundingClientRect().bottom + 8, left: qtyBtn.current.getBoundingClientRect().left, zIndex: 30, minWidth: 150, background: "#fff", border: "1px solid rgba(5,27,53,0.10)", borderRadius: 14, boxShadow: "0 20px 44px -18px rgba(5,27,53,0.45)", padding: 6, display: "flex", flexDirection: "column" }}>
+            <div role="listbox" aria-label="Ticket quantity" style={{ position: "fixed", top: qtyBtn.current.getBoundingClientRect().bottom + 8, left: qtyBtn.current.getBoundingClientRect().left, zIndex: 30, minWidth: 150, maxHeight: 280, overflowY: "auto", background: "#fff", border: "1px solid rgba(5,27,53,0.10)", borderRadius: 14, boxShadow: "0 20px 44px -18px rgba(5,27,53,0.45)", padding: 6, display: "flex", flexDirection: "column" }}>
               {quantityOptions.map((n) => (
-                <button key={n} onClick={() => { setQtyMenu(false); reload(n); }} style={{ fontFamily: "inherit", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, width: "100%", textAlign: "left", fontSize: 15, fontWeight: n === want ? 600 : 500, color: n === want ? ACC : NAVY, background: n === want ? ACC_SOFT : "transparent", border: "none", borderRadius: 10, padding: "11px 14px", cursor: "pointer", whiteSpace: "nowrap" }}>
+                <button key={n} onClick={() => { setQtyMenu(false); reload(n); }} style={{ fontFamily: "inherit", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, width: "100%", textAlign: "left", fontSize: type, fontWeight: n === want ? 600 : 500, color: n === want ? ACC : NAVY, background: n === want ? ACC_SOFT : "transparent", border: "none", borderRadius: 10, padding: compact ? "10px 12px" : "11px 14px", cursor: "pointer", whiteSpace: "nowrap" }}>
                   {n === 1 ? "1 ticket" : `${n} tickets`}
                 </button>
               ))}
@@ -1097,7 +1205,7 @@ export default function PremiumTicketing({
                   if (locked) {
                     setUnlockZone(z);
                     setUnlockInput("");
-                    setUnlockError(false);
+                    setUnlockFieldError(null);
                     return;
                   }
                   if (z === null) {
@@ -1109,36 +1217,37 @@ export default function PremiumTicketing({
                   );
                 }}
                 className={`nmt-filter${active ? " active" : ""}`}
-                style={{ fontFamily: "inherit", display: "inline-flex", alignItems: "center", gap: 9, fontSize: 15, fontWeight: active ? 600 : 500, borderRadius: 999, padding: "12px 20px", whiteSpace: "nowrap", flexShrink: 0, cursor: "pointer" }}
+                style={{ fontFamily: "inherit", display: "inline-flex", alignItems: "center", gap: compact ? 6 : 9, fontSize: type, fontWeight: active ? 600 : 500, borderRadius: 999, padding: chipPad, minHeight: compact ? 40 : undefined, whiteSpace: "nowrap", flexShrink: 0, cursor: "pointer" }}
               >
-                <span className="nmt-star">{locked ? <LockIcon s={15} /> : <Star s={17} filled={active} />}</span>
+                <span className="nmt-star">{locked ? <LockIcon s={compact ? 13 : 15} /> : <Star s={icon} filled={active} />}</span>
                 {label}
               </button>
             );
           })}
         </div>
 
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16, marginTop: 22 }}>
-        {busy ? <div style={{ height: 20, width: 96, borderRadius: 999, ...shimmer }} /> : <div style={{ fontSize: 16, fontWeight: 500, fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap" }}>{rows.length} Listings</div>}
-        <div style={{ display: "flex", alignItems: "center", gap: 20 }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 10, color: "#6e7180" }}>
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" style={{ width: 21, height: 21 }}><circle cx="16" cy="4" r="1" /><path d="m18 19 1-7-6 1" /><path d="m5 8 3-3 5.5 3-2.36 3.5" /><path d="M4.24 14.5a5 5 0 0 0 6.88 6" /><path d="M13.76 17.5a5 5 0 0 0-6.88-6" /></svg>
-            <button onClick={toggleAda} aria-label="Accessible seating only" style={{ width: 48, height: 28, borderRadius: 999, border: "none", padding: 3, cursor: "pointer", boxSizing: "border-box", display: "flex", alignItems: "center", transition: "background 180ms ease", background: ada ? ACC : "#d3d6e0" }}>
-              <span style={{ display: "block", width: 22, height: 22, borderRadius: 999, background: "#fff", boxShadow: "0 1px 3px rgba(5,27,53,0.3)", transition: "transform 180ms cubic-bezier(0.2,0.8,0.2,1)", transform: ada ? "translateX(20px)" : "translateX(0)" }} />
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: compact ? 10 : 16, marginTop: compact ? 10 : 22 }}>
+        {busy ? <div style={{ height: 20, width: 96, borderRadius: 999, ...shimmer }} /> : <div style={{ fontSize: type, fontWeight: 500, fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap" }}>{rows.length} Listings</div>}
+        <div style={{ display: "flex", alignItems: "center", gap: compact ? 12 : 20 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: compact ? 8 : 10, color: "#6e7180" }}>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" style={{ width: compact ? 18 : 21, height: compact ? 18 : 21 }}><circle cx="16" cy="4" r="1" /><path d="m18 19 1-7-6 1" /><path d="m5 8 3-3 5.5 3-2.36 3.5" /><path d="M4.24 14.5a5 5 0 0 0 6.88 6" /><path d="M13.76 17.5a5 5 0 0 0-6.88-6" /></svg>
+            <button onClick={toggleAda} aria-label="Accessible seating only" style={{ width: compact ? 44 : 48, height: compact ? 26 : 28, borderRadius: 999, border: "none", padding: 3, cursor: "pointer", boxSizing: "border-box", display: "flex", alignItems: "center", transition: "background 180ms ease", background: ada ? ACC : "#d3d6e0" }}>
+              <span style={{ display: "block", width: compact ? 20 : 22, height: compact ? 20 : 22, borderRadius: 999, background: "#fff", boxShadow: "0 1px 3px rgba(5,27,53,0.3)", transition: "transform 180ms cubic-bezier(0.2,0.8,0.2,1)", transform: ada ? (compact ? "translateX(18px)" : "translateX(20px)") : "translateX(0)" }} />
             </button>
           </div>
-          <button onClick={toggleSort} aria-label={sortDir === "price" ? "Sorted by lowest price" : "Sorted by highest price"} style={{ fontFamily: "inherit", display: "inline-flex", alignItems: "center", gap: 9, fontSize: 15, fontWeight: 500, color: NAVY, background: "transparent", border: "none", padding: 0, whiteSpace: "nowrap", cursor: "pointer" }}>
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" style={{ width: 18, height: 18, transform: sortDir === "price" ? "none" : "scaleY(-1)" }}><path d="M11 5h10" /><path d="M11 9h7" /><path d="M11 13h4" /><path d="M3 17l3 3 3-3" /><path d="M6 4v16" /></svg>
+          <button onClick={toggleSort} aria-label={sortDir === "price" ? "Sorted by lowest price" : "Sorted by highest price"} style={{ fontFamily: "inherit", display: "inline-flex", alignItems: "center", gap: 6, fontSize: type, fontWeight: 500, color: NAVY, background: "transparent", border: "none", padding: compact ? "8px 0" : 0, minHeight: compact ? 40 : undefined, whiteSpace: "nowrap", cursor: "pointer" }}>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" style={{ width: compact ? 16 : 18, height: compact ? 16 : 18, transform: sortDir === "price" ? "none" : "scaleY(-1)" }}><path d="M11 5h10" /><path d="M11 9h7" /><path d="M11 13h4" /><path d="M3 17l3 3 3-3" /><path d="M6 4v16" /></svg>
             Sort by price
           </button>
         </div>
       </div>
-      <div style={{ height: 1, background: "rgba(5,27,53,0.08)", margin: "16px 0 0" }} />
+      <div style={{ height: 1, background: "rgba(5,27,53,0.08)", margin: compact ? "10px 0 0" : "16px 0 0" }} />
     </>
-  );
+    );
+  })();
 
   return (
-    <div data-theme="light" style={{ position: "relative", display: "flex", flexDirection: "column", background: "#f7f8fc", color: NAVY, width: "100%", minHeight: "100dvh", fontFamily: "'Geist', system-ui, -apple-system, sans-serif", WebkitFontSmoothing: "antialiased", ["--acc" as string]: ACC, ...fieldFocusVars(ACC), ...(!isGa ? { height: "100dvh", overflowY: "auto" } : { minHeight: "100vh" }) }}>
+    <div data-theme="light" style={{ position: "relative", display: "flex", flexDirection: "column", background: "#f7f8fc", color: NAVY, width: "100%", minHeight: "100dvh", fontFamily: "'Geist', system-ui, -apple-system, sans-serif", WebkitFontSmoothing: "antialiased", ["--acc" as string]: ACC, ...fieldFocusVars(ACC), ...(!isGa ? { height: "100dvh", overflowY: listingsSheet ? "hidden" : "auto" } : { minHeight: "100vh" }) }}>
       <style>{`
         @keyframes nmt-shimmer { 0% { background-position: -420px 0 } 100% { background-position: 420px 0 } }
         .nmt-primary { transition: transform 180ms cubic-bezier(0.2,0.8,0.2,1), background 180ms; }
@@ -1242,41 +1351,66 @@ export default function PremiumTicketing({
 
       {/* MAIN (reserved / seatmap flow) */}
       {!isGa && (
-      <main style={{ flex: "1 1 auto", width: "100%", maxWidth: 1320, margin: "0 auto", padding: mobile ? 12 : `${TICKETING_MAIN_PAD_TOP_PX}px 32px ${TICKETING_MAIN_PAD_BOTTOM_PX}px`, boxSizing: "border-box", display: narrow ? "flex" : "grid", flexDirection: "column", gridTemplateColumns: narrow ? undefined : d.soldOut ? "minmax(0, 1fr)" : "minmax(0, 1fr) 340px", gap: 16, alignItems: "start" }}>
-        {/* A sold-out event has nothing to filter or map, so the waitlist card stands alone. */}
-        {narrow && !d.soldOut && (
+      <main style={{ flex: "1 1 auto", width: "100%", maxWidth: 1320, margin: "0 auto", padding: mobile ? 12 : `${TICKETING_MAIN_PAD_TOP_PX}px 32px ${TICKETING_MAIN_PAD_BOTTOM_PX}px`, ...(listingsSheet ? { paddingBottom: LISTINGS_SHEET_BAR_PX, minHeight: 0, overflow: "hidden" } : {}), boxSizing: "border-box", display: narrow ? "flex" : "grid", flexDirection: "column", gridTemplateColumns: narrow ? undefined : "minmax(0, 1fr) 340px", gap: 16, alignItems: listingsSheet ? "stretch" : "start" }}>
+        {/* Scheduled and sold-out mobile have nothing to filter, so skip the listing chrome. */}
+        {narrow && !d.soldOut && !seatedScheduled && (
           <div
             ref={sticky}
             data-testid="ticketing-map"
-            style={{
-              ...card,
-              borderRadius: mobile ? 16 : 20,
-              padding: mobile ? 16 : "16px 22px 12px",
-              flexShrink: 0,
-              alignSelf: "stretch",
-              boxShadow: pinned ? "0 12px 24px -18px rgba(5,27,53,0.55)" : card.boxShadow,
-              transition: "box-shadow 180ms ease",
-            }}
+            style={{ flexShrink: 0, alignSelf: "stretch" }}
           >
-            <div style={{ marginBottom: 12 }}>{findOnMapBtn(mobile ? 132 : 150, 14)}</div>
-            {filterToolbar}
+            {findOnMapBtn(mobile ? 140 : 260, mobile ? 16 : 14)}
           </div>
         )}
+        {narrow && <div style={{ flexShrink: 0, width: "100%", alignSelf: "stretch" }}>{compactTrustCard}</div>}
         <section
           data-testid="ticketing-offers"
           ref={wide ? sticky : undefined}
           style={{
             ...card,
-            borderRadius: mobile ? 16 : 20,
+            borderRadius: listingsSheet
+              ? listingsExpanded
+                ? "24px 24px 0 0"
+                : 0
+              : mobile
+                ? 16
+                : 20,
             padding: d.soldOut
               ? 0
-              : mobile
-                ? "16px 16px 20px"
-                : narrow
-                  ? "14px 22px 26px"
-                  : "0 32px 32px",
+              : listingsSheet
+                ? listingsExpanded
+                  ? "0 16px calc(16px + env(safe-area-inset-bottom))"
+                  : "12px 16px calc(12px + env(safe-area-inset-bottom))"
+                : mobile
+                  ? "16px 16px 20px"
+                  : narrow
+                    ? "14px 22px 26px"
+                    : "0 32px 32px",
             minWidth: 0,
-            ...(narrow && !d.soldOut
+            ...(listingsSheet
+              ? {
+                  position: "fixed",
+                  left: 0,
+                  right: 0,
+                  bottom: 0,
+                  zIndex: 18,
+                  ...(listingsExpanded
+                    ? {
+                        top: listingsSheetTop,
+                        height: "auto",
+                        maxHeight: "none",
+                        display: "flex",
+                        flexDirection: "column",
+                        overflow: "hidden",
+                        boxShadow: "0 -20px 60px -20px rgba(5,27,53,0.5)",
+                      }
+                    : {
+                        height: "auto",
+                        boxShadow: "0 -8px 24px -12px rgba(5,27,53,0.25)",
+                      }),
+                }
+              : {}),
+            ...(narrow && !d.soldOut && !listingsSheet
               ? {
                   flex: "1 1 0",
                   minHeight: TICKETING_LISTINGS_MIN_PX,
@@ -1313,7 +1447,49 @@ export default function PremiumTicketing({
               {filterToolbar}
             </div>
           )}
-
+          {listingsSheet && !listingsExpanded && (
+            <button
+              type="button"
+              className="nmt-primary"
+              onClick={() => setListingsExpanded(true)}
+              style={{ ...primaryBtn, width: "100%", fontSize: 16, padding: "16px 24px" }}
+            >
+              Select tickets
+            </button>
+          )}
+          {listingsSheet && listingsExpanded && (
+            <div style={{ flexShrink: 0, background: "#fff" }}>
+              <div style={{ display: "flex", justifyContent: "center", paddingTop: 10 }}>
+                <div style={{ width: 40, height: 5, borderRadius: 999, background: "rgba(5,27,53,0.14)" }} />
+              </div>
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16, padding: "8px 4px 12px" }}>
+                <div style={{ fontSize: 16, fontWeight: 600, letterSpacing: "-0.02em" }}>Select tickets</div>
+                <button
+                  type="button"
+                  onClick={() => setListingsExpanded(false)}
+                  aria-label="Close"
+                  style={{
+                    fontFamily: "inherit",
+                    width: 40,
+                    height: 40,
+                    flexShrink: 0,
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    background: "#fff",
+                    border: "1px solid #d3d6e0",
+                    borderRadius: 999,
+                    color: NAVY,
+                    cursor: "pointer",
+                  }}
+                >
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" style={{ width: 18, height: 18 }}><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
+                </button>
+              </div>
+              {filterToolbar}
+            </div>
+          )}
+          {(!listingsSheet || listingsExpanded) && (
           <div
             ref={listingsScroll}
             data-testid="ticketing-listings"
@@ -1321,7 +1497,7 @@ export default function PremiumTicketing({
               display: "flex",
               flexDirection: "column",
               gap: 14,
-              marginTop: wide ? 18 : 0,
+              marginTop: wide ? 18 : listingsSheet ? 14 : 0,
               flex: 1,
               minHeight: 0,
               overflowY: "auto",
@@ -1376,38 +1552,31 @@ export default function PremiumTicketing({
 
             {!busy &&
               rows.map((l, idx) => (
-                <div key={`${l.sec}-${l.row}-${idx}`} className="nmt-listing" onClick={() => { setSel(idx); setPanelQty(clampQuantity(want, listingLimits(l))); setMedia(0); }} style={{ display: "flex", alignItems: "center", gap: 18, background: "#fff", border: "1px solid rgba(5,27,53,0.10)", borderRadius: 16, padding: "16px 20px", cursor: "pointer" }}>
-                  <div style={{ width: thumbSize, height: thumbSize, borderRadius: 12, background: "#f1f3f8", border: "1px solid rgba(5,27,53,0.08)", flexShrink: 0, overflow: "hidden" }}>
+                <div key={`${l.sec}-${l.row}-${idx}`} className="nmt-listing" onClick={() => { setSel(idx); setPanelQty(clampQuantity(want, listingQtyLimits(l))); setMedia(0); }} style={{ display: "flex", alignItems: mobile ? "flex-start" : "center", gap: mobile ? 10 : 18, background: "#fff", border: "1px solid rgba(5,27,53,0.10)", borderRadius: mobile ? 12 : 16, padding: mobile ? "10px 12px" : "16px 20px", cursor: "pointer" }}>
+                  <div style={{ width: thumbSize, height: thumbSize, borderRadius: mobile ? 8 : 12, background: "#f1f3f8", border: "1px solid rgba(5,27,53,0.08)", flexShrink: 0, overflow: "hidden" }}>
                     {listingThumb(l)}
                   </div>
-                  <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 6, minWidth: 0 }}>
-                    <span style={{ alignSelf: "flex-start", ...pill(ACC_SOFT, ACC) }}><Star s={14} /> {l.zone}</span>
-                    <div style={{ display: "flex", alignItems: "center", gap: 9, minWidth: 0, fontSize: 18, fontWeight: 600, letterSpacing: "-0.015em" }}>
-                      <span style={{ color: "#6e7180", flexShrink: 0 }}><TicketIcon s={18} /></span>
-                      <span style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>Sec {l.sec} · Row {l.row}</span>
+                  <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: mobile ? 3 : 6, minWidth: 0 }}>
+                    <span style={{ alignSelf: "flex-start", ...pill(ACC_SOFT, ACC), ...(mobile ? { fontSize: 12, padding: "3px 8px" } : {}) }}><Star s={mobile ? 12 : 14} /> {l.zone}</span>
+                    <div style={{ display: "flex", alignItems: "center", gap: mobile ? 6 : 9, minWidth: 0, fontSize: mobile ? 14 : 18, fontWeight: 600, letterSpacing: "-0.015em" }}>
+                      <span style={{ color: "#6e7180", flexShrink: 0, display: "flex", alignItems: "center" }}><TicketIcon s={mobile ? 14 : 18} /></span>
+                      <span style={{ minWidth: 0, overflowWrap: "anywhere" }}>Sec {l.sec} · Row {l.row}</span>
                     </div>
-                    <div style={{ fontSize: 15, color: "#6e7180" }}>{l.range}</div>
-                    {mobile && (
-                      <div style={{ display: "flex", alignItems: "baseline", gap: 8, marginTop: 2 }}>
-                        <span style={{ fontSize: 17, fontWeight: 600, fontVariantNumeric: "tabular-nums", letterSpacing: "-0.015em", whiteSpace: "nowrap" }}>{l.price} each</span>
-                        <span style={{ fontSize: 13, color: "#6e7180", whiteSpace: "nowrap" }}>Incl. fees</span>
-                      </div>
-                    )}
+                    <div style={{ fontSize: mobile ? 13 : 15, color: "#6e7180" }}>{l.range}</div>
                   </div>
-                  {!mobile && (
-                    <div style={{ textAlign: "right", flexShrink: 0 }}>
-                      <div style={{ fontSize: 20, fontWeight: 600, fontVariantNumeric: "tabular-nums", letterSpacing: "-0.015em", whiteSpace: "nowrap" }}>{l.price} each</div>
-                      <div style={{ fontSize: 13, color: "#6e7180", marginTop: 2, whiteSpace: "nowrap" }}>Incl. Taxes &amp; Fees</div>
-                    </div>
-                  )}
+                  <div style={{ textAlign: "right", flexShrink: 0, marginLeft: 8 }}>
+                    <div style={{ fontSize: mobile ? 14 : 20, fontWeight: 600, fontVariantNumeric: "tabular-nums", letterSpacing: "-0.015em", whiteSpace: "nowrap" }}>{l.price} each</div>
+                    <div style={{ fontSize: mobile ? 12 : 13, color: "#6e7180", marginTop: 2, whiteSpace: "nowrap" }}>{mobile ? "incl. fees" : "Incl. Taxes & Fees"}</div>
+                  </div>
                 </div>
               ))}
           </div>
+          )}
           </>
           )}
         </section>
 
-        {wide && !d.soldOut && (
+        {wide && (
           <aside
             data-testid="ticketing-map"
             style={{ display: "flex", flexDirection: "column", gap: 20, position: "sticky", top: stickTop, alignSelf: "start" }}
@@ -1430,18 +1599,7 @@ export default function PremiumTicketing({
                 <img src={POSTER} alt="" style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
               </div>
             </div>
-            <div style={{ ...card, borderRadius: 20, padding: 20, display: "flex", flexDirection: "column", gap: 16 }}>
-              {[
-                { t: "Mobile tickets.", d: " Securely stored in your account.", icon: <><rect x="5" y="2" width="14" height="20" rx="3" /><line x1="10" y1="18.5" x2="14" y2="18.5" /></> },
-                { t: "Buyer protection.", d: " Safe from bots and scalpers.", icon: <><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" /><polyline points="9 12 11 14 15 10" /></> },
-                { t: "Prices are all-in.", d: " Taxes and fees included.", icon: <><path d="M20.6 13.4l-7.2 7.2a2 2 0 0 1-2.8 0l-7.2-7.2a2 2 0 0 1-.6-1.4V4a1 1 0 0 1 1-1h8a2 2 0 0 1 1.4.6l7.4 7.4a2 2 0 0 1 0 2.8z" /><line x1="7.5" y1="7.5" x2="7.51" y2="7.5" /></> },
-              ].map((r) => (
-                <div key={r.t} style={{ display: "flex", gap: 12 }}>
-                  <svg viewBox="0 0 24 24" fill="none" stroke={ACC} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" style={{ width: 18, height: 18, flexShrink: 0, marginTop: 2 }}>{r.icon}</svg>
-                  <div style={{ fontSize: 14, color: "#4a5567" }}><span style={{ fontWeight: 600, color: NAVY }}>{r.t}</span>{r.d}</div>
-                </div>
-              ))}
-            </div>
+            {compactTrustCard}
           </div>
 
           {/* right: title + tiers + about + who + venue */}
@@ -1455,44 +1613,70 @@ export default function PremiumTicketing({
             {/* Empty event states have no bottom sheet, so mobile shows inline. */}
             {gaSoldOut ? (
               <div style={{ ...card, borderRadius: 20 }}>{soldOutPanel(false)}</div>
-            ) : !mobile || gaScheduled ? (
+            ) : gaScheduled ? (
+              <div style={{ ...card, borderRadius: 20 }}>{scheduledPanel(false)}</div>
+            ) : !mobile ? (
               <div style={{ ...card, borderRadius: 20, padding: mobile ? 18 : 24, display: "flex", flexDirection: "column", gap: 16 }}>
                 <div style={{ fontSize: 22, fontWeight: 600, letterSpacing: "-0.025em" }}>Get tickets</div>
-                {gaScheduled ? scheduledPanel(false) : gaTierCards}
+                {gaTierCards}
                 {holdError ? (
                   <div style={{ fontSize: 13, color: "#b91c1c", lineHeight: 1.4 }}>{holdError}</div>
                 ) : null}
               </div>
             ) : null}
 
-            <div style={{ ...card, borderRadius: 20, padding: mobile ? 18 : 24, display: "flex", flexDirection: "column", gap: 14 }}>
-              <div style={{ fontSize: 12, fontWeight: 600, letterSpacing: "0.12em", textTransform: "uppercase", color: "#8a93a3" }}>About this event</div>
-              <div style={{ fontSize: 15, lineHeight: 1.6, color: "#4a5567" }}>{d.aboutText}</div>
-            </div>
+            {d.aboutText ? (
+              <div style={{ ...card, borderRadius: 20, padding: mobile ? 18 : 24, display: "flex", flexDirection: "column", gap: 14 }}>
+                <div style={{ fontSize: 12, fontWeight: 600, letterSpacing: "0.12em", textTransform: "uppercase", color: "#8a93a3" }}>About this event</div>
+                <ExpandableDescription
+                  text={d.aboutText}
+                  mobile={mobile}
+                  toggleColor={ACC}
+                  style={{ fontSize: 15, lineHeight: 1.6, color: "#4a5567" }}
+                />
+              </div>
+            ) : null}
 
+            {showMatchupSection ? (
             <div style={{ ...card, borderRadius: 20, padding: mobile ? 18 : 24, display: "flex", flexDirection: "column", gap: 14 }}>
               <div style={{ fontSize: 12, fontWeight: 600, letterSpacing: "0.12em", textTransform: "uppercase", color: "#8a93a3" }}>Who&rsquo;s playing</div>
               <div style={{ display: "flex", alignItems: "center", gap: 24, flexWrap: "wrap" }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 11 }}>
-                  <div style={{ width: 44, height: 44, borderRadius: 999, background: "#f1f3f8", border: "1px solid rgba(5,27,53,0.08)", display: "flex", alignItems: "center", justifyContent: "center", padding: 6, boxSizing: "border-box" }}>
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img src={LOGO} alt="" style={{ maxWidth: "100%", maxHeight: "100%", objectFit: "contain" }} />
+                  <div style={{ width: 44, height: 44, borderRadius: 999, background: "#f1f3f8", border: "1px solid rgba(5,27,53,0.08)", display: "flex", alignItems: "center", justifyContent: "center", boxSizing: "border-box", overflow: "hidden" }}>
+                    {d.homeLogoSrc || LOGO ? (
+                      /* eslint-disable-next-line @next/next/no-img-element */
+                      <img src={d.homeLogoSrc || LOGO} alt="" style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
+                    ) : (
+                      <span style={{ fontSize: 13, fontWeight: 600, color: NAVY }}>{(d.homeLabel || "").slice(0, 3).toUpperCase()}</span>
+                    )}
                   </div>
                   <div style={{ fontSize: 15, fontWeight: 500 }}>{d.homeLabel}</div>
                 </div>
+                {showAwayTeam ? (
                 <div style={{ display: "flex", alignItems: "center", gap: 11 }}>
-                  <div style={{ width: 44, height: 44, borderRadius: 999, background: NAVY, color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 13, fontWeight: 600 }}>{d.awayShort}</div>
+                  <div style={{ width: 44, height: 44, borderRadius: 999, background: d.awayLogoSrc ? "#f1f3f8" : NAVY, border: d.awayLogoSrc ? "1px solid rgba(5,27,53,0.08)" : "none", color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 13, fontWeight: 600, boxSizing: "border-box", overflow: "hidden" }}>
+                    {d.awayLogoSrc ? (
+                      /* eslint-disable-next-line @next/next/no-img-element */
+                      <img src={d.awayLogoSrc} alt="" style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
+                    ) : (
+                      d.awayShort
+                    )}
+                  </div>
                   <div style={{ fontSize: 15, fontWeight: 500 }}>{d.awayLabel}</div>
                 </div>
+                ) : null}
               </div>
             </div>
+            ) : null}
 
             <div style={{ ...card, borderRadius: 20, padding: mobile ? 18 : 24, display: "flex", flexDirection: "column", gap: 14 }}>
               <div style={{ fontSize: 12, fontWeight: 600, letterSpacing: "0.12em", textTransform: "uppercase", color: "#8a93a3" }}>Venue</div>
               <div style={{ display: "flex", alignItems: "center", gap: 16, flexWrap: "wrap" }}>
                 <div style={{ width: 148, height: 100, borderRadius: 12, overflow: "hidden", background: "#f1f3f8", border: "1px solid rgba(5,27,53,0.08)", flexShrink: 0 }}>
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img src={d.venuePhotoSrc || POSTER} alt="" style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
+                  {d.venuePhotoSrc ? (
+                    /* eslint-disable-next-line @next/next/no-img-element */
+                    <img src={d.venuePhotoSrc} alt="" style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
+                  ) : null}
                 </div>
                 <div style={{ display: "flex", flexDirection: "column", gap: 8, minWidth: 0, flex: 1 }}>
                   <div style={{ fontSize: 19, fontWeight: 600, letterSpacing: "-0.02em" }}>{d.venueName}</div>
@@ -1639,7 +1823,8 @@ export default function PremiumTicketing({
         );
       })()}
 
-      {/* provider pill */}
+      {/* provider pill — hidden under the seated mobile listings sheet */}
+      {!listingsSheet && (
       <div style={{ position: "fixed", bottom: 20, left: 0, right: 0, zIndex: 14, display: "flex", justifyContent: "center", pointerEvents: "none" }}>
         <div style={{ display: "flex", alignItems: "center", gap: 12, background: NAVY, border: "1px solid rgba(158,182,216,0.14)", borderRadius: 999, padding: "10px 20px", boxShadow: "0 24px 60px -12px rgba(5,27,53,0.45)", maxWidth: "calc(100% - 32px)" }}>
           {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -1648,9 +1833,10 @@ export default function PremiumTicketing({
           <span style={{ fontSize: 12, fontWeight: 500, color: "#b8c6dc", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{d.providerLabel}</span>
         </div>
       </div>
+      )}
 
-      {/* SEAT MAP MODAL — live InteractiveSeatmap when venue geometry is loaded */}
-      {map && hasLiveSeatmap && (
+      {/* Same overlay as package: open immediately, org spinner until the map paints. */}
+      {map && (
         <SeatMapSelectionOverlay
           title={d.eventName}
           accent={ACC}
@@ -1665,208 +1851,16 @@ export default function PremiumTicketing({
           }}
           onCheckout={() => void startHoldFromMap()}
           checkoutLoading={holding}
-          checkoutError={holdError}
+          checkoutError=""
           mapBackground={mapBackground}
           mapMapping={mapMapping}
           venueSlug={d.venueSlug}
+          preparing={!hasLiveSeatmap}
           orgName={d.orgLabel}
           logoSrc={d.brandLogoSrc || d.logoSrc}
         />
       )}
 
-      {/* SEAT MAP MODAL — fallback when no live seatmap geometry */}
-      {map && !hasLiveSeatmap && (
-        <div style={{ position: "fixed", inset: 0, zIndex: 40, background: "rgba(5,27,53,0.5)", backdropFilter: "blur(4px)", display: "flex", alignItems: "center", justifyContent: "center", padding: 14, boxSizing: "border-box" }}>
-          <div style={{ width: "100%", height: "100%", background: "#fff", borderRadius: 20, boxShadow: "0 40px 90px -30px rgba(5,27,53,0.6)", display: "flex", flexDirection: "column", overflow: "hidden" }}>
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16, padding: "22px 28px" }}>
-              <div style={{ fontSize: 24, fontWeight: 600, letterSpacing: "-0.02em" }}>Select your seats</div>
-              <button onClick={requestCloseMap} aria-label="Close seat map" style={{ fontFamily: "inherit", width: 44, height: 44, borderRadius: 999, border: "1px solid #d3d6e0", background: "#fff", color: NAVY, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}>
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" style={{ width: 20, height: 20 }}><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
-              </button>
-            </div>
-            <div style={{ flex: 1, minHeight: 0, display: "grid", gridTemplateColumns: picks.length ? "minmax(0, 1fr) 380px" : "minmax(0, 1fr)", gap: 0, padding: "0 20px 20px", boxSizing: "border-box" }}>
-              <div style={{ position: "relative", minWidth: 0, background: "#f1f3f8", border: "1px solid rgba(5,27,53,0.08)", borderRadius: 16, overflow: "hidden" }}>
-                <div style={{ position: "absolute", inset: 0, padding: "16px 16px 84px", boxSizing: "border-box", display: "flex", alignItems: "center", justifyContent: "center" }}>
-                  <div style={{ position: "relative", width: "100%", maxWidth: 620, aspectRatio: "62 / 42", maxHeight: "100%", transform: `scale(${zoom / 100})`, transition: "transform 220ms cubic-bezier(0.2,0.8,0.2,1)" }}>
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img src={MAP_SRC} alt="Seat map" style={{ width: "100%", height: "100%", objectFit: "contain" }} />
-                    {ZONES.map((z) => (
-                      <button key={z.label} onClick={() => addPick(z)} style={{ fontFamily: "inherit", position: "absolute", left: z.x, top: z.y, transform: "translate(-50%, -50%)", display: "inline-flex", alignItems: "center", gap: 7, fontSize: 13, fontWeight: 600, color: "#fff", background: z.bg, border: "2px solid #fff", borderRadius: 999, padding: "8px 14px", whiteSpace: "nowrap", cursor: "pointer", boxShadow: "0 6px 18px -8px rgba(5,27,53,0.6)" }}>
-                        {z.label}
-                        <span style={{ fontWeight: 500, opacity: 0.85 }}>{z.price}</span>
-                      </button>
-                    ))}
-                  </div>
-                </div>
-                <div style={{ position: "absolute", left: 16, bottom: 16, background: "#fff", border: "1px solid #d3d6e0", borderRadius: 14, overflow: "hidden", minWidth: 200 }}>
-                  <button onClick={() => setLegendOpen((v) => !v)} style={{ fontFamily: "inherit", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, width: "100%", fontSize: 15, fontWeight: 500, color: NAVY, background: "#fff", border: "none", padding: "13px 18px", cursor: "pointer" }}>
-                    Legend
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" style={{ width: 16, height: 16, color: "#6e7180", transform: legendOpen ? "rotate(180deg)" : "rotate(0deg)", transition: "transform 180ms ease" }}><polyline points="6 9 12 15 18 9" /></svg>
-                  </button>
-                  {legendOpen && (
-                    <div style={{ display: "flex", flexDirection: "column", gap: 12, padding: "4px 18px 16px" }}>
-                      {LEGEND.map((g) => (
-                        <div key={g.label} style={{ display: "flex", alignItems: "center", gap: 10, fontSize: 14, color: "#4a5567" }}>
-                          <span style={{ width: 12, height: 12, borderRadius: 999, flexShrink: 0, background: g.color === "var(--acc)" ? ACC : g.color, border: "1px solid rgba(5,27,53,0.12)" }} />
-                          {g.label}
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-                <div style={{ position: "absolute", right: 16, bottom: 16, display: "flex", alignItems: "center", gap: 4, background: "#fff", border: "1px solid #d3d6e0", borderRadius: 12, padding: 6 }}>
-                  <button onClick={() => setZoom((z) => Math.max(55, z - 15))} aria-label="Zoom out" style={{ fontFamily: "inherit", width: 36, height: 36, border: "none", background: "transparent", color: NAVY, fontSize: 20, lineHeight: 1, borderRadius: 8, cursor: "pointer" }}>−</button>
-                  <span style={{ minWidth: 56, textAlign: "center", fontSize: 15, fontWeight: 600, fontVariantNumeric: "tabular-nums" }}>{zoom}%</span>
-                  <button onClick={() => setZoom((z) => Math.min(200, z + 15))} aria-label="Zoom in" style={{ fontFamily: "inherit", width: 36, height: 36, border: "none", background: "transparent", color: NAVY, fontSize: 20, lineHeight: 1, borderRadius: 8, cursor: "pointer" }}>+</button>
-                </div>
-              </div>
-
-              {picks.length > 0 && (
-                <div style={{ width: 380, display: "flex", flexDirection: "column", paddingLeft: 24, boxSizing: "border-box", minHeight: 0 }}>
-                  {detail === null ? (
-                    <>
-                      <div style={{ fontSize: 20, fontWeight: 600, letterSpacing: "-0.02em", textAlign: "center", paddingBottom: 16 }}>Your selection</div>
-                      <div style={{ flex: 1, minHeight: 0, overflowY: "auto", overflowX: "hidden", display: "flex", flexDirection: "column", gap: 12, padding: 10, margin: -10 }}>
-                        {picks.map((p, idx) => (
-                          <div key={idx} style={{ position: "relative", border: "1px solid rgba(5,27,53,0.10)", borderRadius: 16, padding: 18, display: "flex", flexDirection: "column", gap: 14 }}>
-                            <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 12 }}>
-                              <div style={{ display: "flex", gap: 22 }}>
-                                {(["Sec", "Row", "Seat"] as const).map((lbl, k) => (
-                                  <div key={lbl} style={{ display: "flex", flexDirection: "column", gap: 2 }}>
-                                    <span style={{ fontSize: 11, fontWeight: 600, letterSpacing: "0.12em", textTransform: "uppercase", color: "#8a93a3" }}>{lbl}</span>
-                                    <span style={{ fontSize: 17, fontWeight: 600 }}>{k === 0 ? p.sec : k === 1 ? p.row : p.seat}</span>
-                                  </div>
-                                ))}
-                              </div>
-                              <div style={{ textAlign: "right" }}>
-                                <div style={{ fontSize: 17, fontWeight: 600, fontVariantNumeric: "tabular-nums" }}>{p.price}</div>
-                                <div style={{ fontSize: 12, color: "#6e7180" }}>Incl. Taxes &amp; Fees</div>
-                              </div>
-                            </div>
-                            <div style={{ height: 1, background: "rgba(5,27,53,0.08)" }} />
-                            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
-                              <span style={pill(ACC_SOFT, ACC)}><Star s={13} /> {p.zone}</span>
-                              <button onClick={() => { setDetail(idx); setMedia(0); }} style={{ fontFamily: "inherit", display: "inline-flex", alignItems: "center", gap: 7, fontSize: 13, fontWeight: 500, color: "#4a5567", background: "#f1f3f8", border: "none", borderRadius: 999, padding: "6px 12px", cursor: "pointer" }}>
-                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" style={{ width: 14, height: 14 }}><circle cx="12" cy="12" r="10" /><line x1="12" y1="16" x2="12" y2="12" /><line x1="12" y1="8" x2="12.01" y2="8" /></svg>
-                                Details
-                              </button>
-                            </div>
-                            <button onClick={() => setPicks((s) => s.filter((_, k) => k !== idx))} aria-label="Remove seat" style={{ fontFamily: "inherit", position: "absolute", top: -8, right: -8, width: 28, height: 28, borderRadius: 999, border: "1px solid rgba(5,27,53,0.10)", background: "#fff", color: "#4a5567", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", boxShadow: "0 4px 12px -6px rgba(5,27,53,0.5)" }}>
-                              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" style={{ width: 14, height: 14 }}><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
-                            </button>
-                          </div>
-                        ))}
-                      </div>
-                      <div style={{ paddingTop: 16, display: "flex", flexDirection: "column", gap: 14 }}>
-                        <div style={{ display: "flex", alignItems: "flex-end", justifyContent: "space-between" }}>
-                          <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
-                            <span style={{ fontSize: 16, fontWeight: 600 }}>Subtotal</span>
-                            <span style={{ fontSize: 14, color: "#6e7180" }}>{picks.length === 1 ? "1 Ticket" : `${picks.length} Tickets`}</span>
-                          </div>
-                          <span style={{ fontSize: 26, fontWeight: 600, fontVariantNumeric: "tabular-nums", letterSpacing: "-0.025em" }}>{money(pickTotal)}</span>
-                        </div>
-                        <BrandedActionButton
-                          primaryColor={BTN}
-                          textColor={BTN_INK}
-                          loading={holding}
-                          loadingLabel="Holding seats…"
-                          onClick={() => void startHold()}
-                          className="w-full text-[17px]"
-                          style={{ ...checkoutBtnRow, padding: 16 }}
-                        >
-                          Checkout
-                        </BrandedActionButton>
-                      </div>
-                    </>
-                  ) : (
-                    <>
-                      <div style={{ display: "flex", alignItems: "center", gap: 10, paddingBottom: 16 }}>
-                        <button onClick={() => setDetail(null)} aria-label="Back to selection" style={{ fontFamily: "inherit", width: 40, height: 40, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", background: "#fff", border: "1px solid #d3d6e0", borderRadius: 12, color: NAVY, cursor: "pointer" }}>
-                          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" style={{ width: 18, height: 18 }}><polyline points="15 18 9 12 15 6" /></svg>
-                        </button>
-                        <div style={{ flex: 1, textAlign: "center", fontSize: 20, fontWeight: 600, letterSpacing: "-0.02em" }}>Ticket details</div>
-                        <div style={{ width: 40, flexShrink: 0 }} />
-                      </div>
-                      {picks[detail] && (
-                        <>
-                        <div style={{ flex: 1, minHeight: 0, overflowY: "auto", display: "flex", flexDirection: "column", gap: 16 }}>
-                          <div style={{ position: "relative", height: 180, borderRadius: 14, background: "#f1f3f8", border: "1px solid rgba(5,27,53,0.08)", overflow: "hidden", flexShrink: 0 }}>
-                            {media === 0 ? (
-                              <SectionLocatorThumb
-                                background={mapBackground}
-                                mapping={mapMapping}
-                                sectionId={undefined}
-                                sectionNumber={picks[detail].sec}
-                                section={picks[detail].sec}
-                                pinColor={ACC}
-                                thumbnailCandidates={venueImageCandidates(
-                                  picks[detail].sec,
-                                )}
-                              />
-                            ) : (
-                              <SeatViewImage
-                                src={venueImage(
-                                  picks[detail].sec,
-                                  "seat-view",
-                                )}
-                                section={picks[detail].sec}
-                              />
-                            )}
-                            <div style={{ position: "absolute", left: 0, right: 0, bottom: 10, display: "flex", alignItems: "center", justifyContent: "center", gap: 10 }}>
-                              <span style={{ display: "inline-flex", alignItems: "center", background: "rgba(5,27,53,0.82)", color: "#fff", fontSize: 11, fontWeight: 600, letterSpacing: "0.08em", textTransform: "uppercase", padding: "5px 12px", borderRadius: 999 }}>{media === 0 ? "Seat location" : "Seat view"}</span>
-                              <span style={{ display: "flex", alignItems: "center", gap: 5 }}>
-                                <span style={{ width: 6, height: 6, borderRadius: 999, background: media === 0 ? ACC : "rgba(5,27,53,0.22)" }} />
-                                <span style={{ width: 6, height: 6, borderRadius: 999, background: media === 1 ? ACC : "rgba(5,27,53,0.22)" }} />
-                              </span>
-                            </div>
-                            <button onClick={flip} aria-label="Previous view" style={{ fontFamily: "inherit", position: "absolute", left: 10, top: "50%", transform: "translateY(-50%)", width: 38, height: 38, borderRadius: 999, background: "#fff", border: "1px solid rgba(5,27,53,0.10)", color: NAVY, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", boxShadow: "0 6px 18px -8px rgba(5,27,53,0.4)" }}>
-                              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" style={{ width: 18, height: 18 }}><polyline points="15 18 9 12 15 6" /></svg>
-                            </button>
-                            <button onClick={flip} aria-label="Next view" style={{ fontFamily: "inherit", position: "absolute", right: 10, top: "50%", transform: "translateY(-50%)", width: 38, height: 38, borderRadius: 999, background: "#fff", border: "1px solid rgba(5,27,53,0.10)", color: NAVY, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", boxShadow: "0 6px 18px -8px rgba(5,27,53,0.4)" }}>
-                              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" style={{ width: 18, height: 18 }}><polyline points="9 18 15 12 9 6" /></svg>
-                            </button>
-                          </div>
-                          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                            <span style={{ alignSelf: "flex-start", flexShrink: 0, ...pill(ACC_SOFT, ACC) }}><Star s={13} /> {picks[detail].tier || picks[detail].zone}</span>
-                            <div style={{ fontSize: 20, fontWeight: 600, letterSpacing: "-0.02em", minWidth: 0 }}>Sec {picks[detail].sec} · Row {picks[detail].row} · Seat {picks[detail].seat}</div>
-                          </div>
-                          <div style={{ height: 1, background: "rgba(5,27,53,0.08)" }} />
-                          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                            <div style={{ fontSize: 12, fontWeight: 600, letterSpacing: "0.12em", textTransform: "uppercase", color: "#8a93a3" }}>About this ticket</div>
-                            <div style={{ fontSize: 14, color: "#4a5567", lineHeight: 1.6 }}>{picks[detail].tier || picks[detail].zone} seating in {picks[detail].zone}, with covered concourse access.</div>
-                          </div>
-                          {trustRows}
-                        </div>
-                        <div style={{ flexShrink: 0, borderTop: "1px solid rgba(5,27,53,0.08)", paddingTop: 16, marginTop: 4, display: "flex", flexDirection: "column", gap: 14 }}>
-                          <div style={{ display: "flex", alignItems: "flex-end", justifyContent: "space-between" }}>
-                            <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
-                              <span style={{ fontSize: 16, fontWeight: 600 }}>Subtotal</span>
-                              <span style={{ fontSize: 14, color: "#6e7180" }}>1 Ticket</span>
-                            </div>
-                            <span style={{ fontSize: 26, fontWeight: 600, fontVariantNumeric: "tabular-nums", letterSpacing: "-0.025em" }}>{picks[detail].price}</span>
-                          </div>
-                          <BrandedActionButton
-                          primaryColor={BTN}
-                          textColor={BTN_INK}
-                          loading={holding}
-                          loadingLabel="Holding seats…"
-                          onClick={() => void startHold()}
-                          className="w-full text-[17px]"
-                          style={{ ...checkoutBtnRow, padding: 16 }}
-                        >
-                          Checkout
-                        </BrandedActionButton>
-                        </div>
-                        </>
-                      )}
-                    </>
-                  )}
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* Confirm before discarding map selections */}
       {mapExitConfirm && (
@@ -1907,7 +1901,7 @@ export default function PremiumTicketing({
               <button onClick={() => setSel(null)} aria-label="Back" style={{ fontFamily: "inherit", width: 44, height: 44, display: "flex", alignItems: "center", justifyContent: "center", background: "#fff", border: "1px solid #d3d6e0", borderRadius: 12, color: NAVY, cursor: "pointer", flexShrink: 0 }}>
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" style={{ width: 20, height: 20 }}><polyline points="15 18 9 12 15 6" /></svg>
               </button>
-              <div style={{ flex: 1, textAlign: "center", fontSize: 18, fontWeight: 600, letterSpacing: "-0.015em" }}>Ticket details</div>
+              <div style={{ flex: 1, textAlign: "center", fontSize: mobile ? 16 : 18, fontWeight: 600, letterSpacing: "-0.015em" }}>Ticket details</div>
               <div style={{ width: 44, flexShrink: 0 }} />
             </div>
             <div style={{ flex: 1, overflowY: "auto", padding: 20 }}>
@@ -1943,47 +1937,59 @@ export default function PremiumTicketing({
                 </button>
               </div>
               <div style={{ display: "flex", flexDirection: "column", gap: 8, padding: "18px 0 16px" }}>
-                <span style={{ alignSelf: "flex-start", flexShrink: 0, ...pill(ACC_SOFT, ACC) }}><Star s={14} /> {selRow.tier || selRow.zone}</span>
+                <span style={{ alignSelf: "flex-start", flexShrink: 0, ...pill(ACC_SOFT, ACC), ...(mobile ? { fontSize: 14, padding: "5px 10px" } : {}) }}><Star s={14} /> {selRow.tier || selRow.zone}</span>
                 <div style={{ display: "flex", flexDirection: "column", gap: 5, minWidth: 0 }}>
-                  <div style={{ fontSize: 22, fontWeight: 600, letterSpacing: "-0.02em" }}>Sec {selRow.sec} · Row {selRow.row}</div>
-                  <div style={{ fontSize: 14, color: "#6e7180" }}>{(selRow as TicketingListing & { range?: string }).range} available</div>
+                  <div style={{ fontSize: mobile ? 18 : 22, fontWeight: 600, letterSpacing: "-0.02em" }}>Sec {selRow.sec} · Row {selRow.row}</div>
+                  <div style={{ fontSize: mobile ? 15 : 14, color: "#6e7180" }}>{listingDetailAvailabilityLabel(selRow.min, selRow.max, selRow.multipleOf)}</div>
                 </div>
               </div>
               <div style={{ height: 1, background: "rgba(5,27,53,0.08)" }} />
-              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16, padding: "18px 0" }}>
-                <div style={{ display: "flex", alignItems: "baseline", gap: 8 }}>
-                  <span style={{ fontSize: 22, fontWeight: 600, fontVariantNumeric: "tabular-nums", letterSpacing: "-0.02em" }}>{selRow.price} ea</span>
-                  <span style={{ fontSize: 14, color: "#6e7180" }}>incl. fees</span>
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, padding: "18px 0" }}>
+                <div style={{ display: "flex", alignItems: "baseline", gap: 5, minWidth: 0, flexShrink: 1, whiteSpace: "nowrap" }}>
+                  <span style={{ fontSize: mobile ? 18 : 22, fontWeight: 600, fontVariantNumeric: "tabular-nums", letterSpacing: "-0.02em" }}>{selRow.price}</span>
+                  <span style={{ fontSize: mobile ? 15 : 13, fontWeight: 600 }}>ea</span>
+                  <span style={{ fontSize: mobile ? 14 : 12, color: "#6e7180" }}>incl. fees</span>
                 </div>
-                <div style={{ display: "flex", alignItems: "center", gap: 6, border: "1px solid #d3d6e0", borderRadius: 999, padding: "5px 8px" }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 6, border: "1px solid #d3d6e0", borderRadius: 999, padding: mobile ? "4px 6px" : "5px 8px", flexShrink: 0 }}>
                   <button
-                    onClick={() => setPanelQty((q) => clampQuantity(q - Math.max(1, selRow.multipleOf || 1), listingLimits(selRow)))}
+                    onClick={() => setPanelQty((q) => clampQuantity(q - Math.max(1, selRow.multipleOf || 1), listingQtyLimits(selRow)))}
                     aria-label="Fewer tickets"
                     disabled={panelQty <= selRow.min}
-                    style={{ fontFamily: "inherit", width: 36, height: 36, borderRadius: 999, border: "none", background: "#f1f3f8", color: NAVY, fontSize: 20, lineHeight: 1, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", opacity: panelQty <= selRow.min ? 0.4 : 1 }}
+                    style={{ fontFamily: "inherit", width: mobile ? 40 : 36, height: mobile ? 40 : 36, borderRadius: 999, border: "none", background: "#f1f3f8", color: NAVY, fontSize: mobile ? 22 : 20, lineHeight: 1, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", opacity: panelQty <= selRow.min ? 0.4 : 1 }}
                   >−</button>
-                  <span style={{ minWidth: 74, textAlign: "center", fontSize: 15, fontWeight: 600, fontVariantNumeric: "tabular-nums" }}>{panelQty === 1 ? "1 Ticket" : `${panelQty} Tickets`}</span>
+                  <span style={{ minWidth: mobile ? 82 : 74, textAlign: "center", fontSize: mobile ? 16 : 15, fontWeight: 600, fontVariantNumeric: "tabular-nums" }}>{panelQty === 1 ? "1 Ticket" : `${panelQty} Tickets`}</span>
                   <button
-                    onClick={() => setPanelQty((q) => clampQuantity(q + Math.max(1, selRow.multipleOf || 1), listingLimits(selRow)))}
+                    onClick={() => setPanelQty((q) => clampQuantity(q + Math.max(1, selRow.multipleOf || 1), listingQtyLimits(selRow)))}
                     aria-label="More tickets"
                     disabled={panelQty >= selRow.max}
-                    style={{ fontFamily: "inherit", width: 36, height: 36, borderRadius: 999, border: "none", background: "#f1f3f8", color: NAVY, fontSize: 20, lineHeight: 1, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", opacity: panelQty >= selRow.max ? 0.4 : 1 }}
+                    style={{ fontFamily: "inherit", width: mobile ? 40 : 36, height: mobile ? 40 : 36, borderRadius: 999, border: "none", background: "#f1f3f8", color: NAVY, fontSize: mobile ? 22 : 20, lineHeight: 1, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", opacity: panelQty >= selRow.max ? 0.4 : 1 }}
                   >+</button>
                 </div>
               </div>
-              <div style={{ display: "flex", flexDirection: "column", gap: 8, paddingBottom: 18 }}>
-                <div style={{ fontSize: 12, fontWeight: 600, letterSpacing: "0.12em", textTransform: "uppercase", color: "#8a93a3" }}>About this ticket</div>
-                <div style={{ fontSize: 14, color: "#4a5567", lineHeight: 1.6 }}>{selRow.tier || selRow.zone} seating in {selRow.zone} with covered concourse access.</div>
-              </div>
-              {trustRows}
+              {panelOfferDescription ? (
+                <div style={{ display: "flex", flexDirection: "column", gap: 8, paddingBottom: 18 }}>
+                  <div style={{ fontSize: mobile ? 13 : 12, fontWeight: 600, letterSpacing: "0.12em", textTransform: "uppercase", color: "#8a93a3" }}>About this ticket</div>
+                  <ExpandableDescription
+                    text={panelOfferDescription}
+                    mobile={mobile}
+                    toggleColor={ACC}
+                    style={{
+                      fontSize: mobile ? 16 : 14,
+                      color: "#4a5567",
+                      lineHeight: 1.6,
+                    }}
+                  />
+                </div>
+              ) : null}
+              <div style={{ width: "100%", boxSizing: "border-box" }}>{compactTrustCard}</div>
             </div>
             <div style={{ flexShrink: 0, borderTop: "1px solid rgba(5,27,53,0.08)", padding: "18px 20px 22px", display: "flex", flexDirection: "column", gap: 14 }}>
               <div style={{ display: "flex", alignItems: "flex-end", justifyContent: "space-between" }}>
                 <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
                   <span style={{ fontSize: 16, fontWeight: 600, letterSpacing: "-0.01em" }}>Subtotal</span>
-                  <span style={{ fontSize: 14, color: "#6e7180" }}>{panelQty === 1 ? "1 Ticket" : `${panelQty} Tickets`}</span>
+                  <span style={{ fontSize: mobile ? 15 : 14, color: "#6e7180" }}>{panelQty === 1 ? "1 Ticket" : `${panelQty} Tickets`}</span>
                 </div>
-                <span style={{ fontSize: 28, fontWeight: 600, fontVariantNumeric: "tabular-nums", letterSpacing: "-0.025em" }}>{money(unit * panelQty)}</span>
+                <span style={{ fontSize: mobile ? 22 : 28, fontWeight: 600, fontVariantNumeric: "tabular-nums", letterSpacing: "-0.025em" }}>{money(unit * panelQty)}</span>
               </div>
               {holdError ? (
                 <div style={{ fontSize: 13, color: "#b91c1c", lineHeight: 1.4 }}>{holdError}</div>
@@ -1994,8 +2000,8 @@ export default function PremiumTicketing({
                 loading={holding}
                 loadingLabel="Holding seats…"
                 onClick={() => void startHold()}
-                className="w-full text-[17px]"
-                style={{ ...checkoutBtnRow, padding: 17 }}
+                className="w-full text-[16px]"
+                style={{ ...checkoutBtnRow, padding: mobile ? 16 : 17, minHeight: 48 }}
               >
                 Checkout
               </BrandedActionButton>
@@ -2007,7 +2013,7 @@ export default function PremiumTicketing({
       {unlockZone !== null && (
         <Modal
           variant="light"
-          title={`${unlockZone} is locked`}
+          title={isGa ? `${unlockZone} requires a code` : `${unlockZone} is locked`}
           onClose={() => setUnlockZone(null)}
         >
           <form
@@ -2025,26 +2031,26 @@ export default function PremiumTicketing({
               <LockIcon s={22} />
             </div>
             <p className="text-[14px] leading-relaxed text-[#6e7180]">
-              Enter your access code to unlock these seats.
+              Enter your access code to unlock {isGa ? "this offer" : "these seats"}.
             </p>
-            <input
+            <RedemptionCodeField
               name="accessCode"
+              label="Access code"
               value={unlockInput}
-              onChange={(e) => {
-                setUnlockInput(e.target.value);
-                setUnlockError(false);
-              }}
-              ref={autoFocusField}
+              autoFocus
               placeholder="Access code"
-              className="w-full rounded-xl border bg-white px-4 py-3.5 text-[16px] tracking-[0.06em] text-[#051b35] outline-none"
-              aria-invalid={unlockError}
-              style={{ borderColor: unlockError ? "#c2394a" : "#d3d6e0" }}
+              error={unlockFieldError}
+              onChange={(value) => {
+                setUnlockInput(value);
+                setUnlockFieldError(null);
+              }}
+              onBlur={(value) =>
+                setUnlockFieldError((current) =>
+                  redemptionCodeBlurFieldError(current, value),
+                )
+              }
+              inputClassName="tracking-[0.06em]"
             />
-            {unlockError ? (
-              <p className="text-[13px] text-[#c2394a]">
-                That code didn&apos;t match. Check with the event for the right one.
-              </p>
-            ) : null}
             <BrandedActionButton
               type="submit"
               primaryColor={ACC}
@@ -2053,19 +2059,43 @@ export default function PremiumTicketing({
               loadingLabel="Checking…"
               className="w-full text-[16px]"
             >
-              <LockIcon s={16} /> Unlock seats
+              <LockIcon s={16} /> {isGa ? "Unlock offer" : "Unlock seats"}
             </BrandedActionButton>
           </form>
         </Modal>
       )}
 
+      {seatedError && !map ? (
+        <Modal
+          variant="light"
+          title={seatedError.title}
+          onClose={() => setSeatedError(null)}
+        >
+          <p className="mt-4 text-[15px] leading-relaxed text-[#4a5567]">
+            {seatedError.message}
+          </p>
+          <BrandedActionButton
+            primaryColor={BTN}
+            textColor={BTN_INK}
+            onClick={() => setSeatedError(null)}
+            className="mt-6 w-full text-[16px]"
+          >
+            {seatedError.buttonText || "Close"}
+          </BrandedActionButton>
+        </Modal>
+      ) : null}
+
       {info && (
         <Modal variant="light" title="Event information" onClose={() => setInfo(false)}>
           <div className="mt-4 flex max-h-[min(70vh,640px)] flex-col gap-[22px] overflow-y-auto">
             <div className="flex flex-col items-center gap-3.5 text-center">
-              <div className="flex h-[132px] w-[132px] items-center justify-center rounded-[22px] border border-[rgba(5,27,53,0.08)] bg-[#f1f3f8] p-[18px]">
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img src={LOGO} alt={d.homeLabel} className="max-h-full max-w-full object-contain" />
+              <div className="flex h-[132px] w-[132px] items-center justify-center overflow-hidden rounded-[22px] border border-[rgba(5,27,53,0.08)] bg-[#f1f3f8]">
+                {d.homeLogoSrc || LOGO ? (
+                  /* eslint-disable-next-line @next/next/no-img-element */
+                  <img src={d.homeLogoSrc || LOGO} alt={d.homeLabel} className="h-full w-full object-cover" />
+                ) : (
+                  <span className="text-[28px] font-semibold text-[#051b35]">{(d.homeLabel || "").slice(0, 3).toUpperCase()}</span>
+                )}
               </div>
               <div className="text-[22px] font-semibold tracking-[-0.025em]">{d.eventName}</div>
               <div className="text-[15px] text-[#6e7180]">{d.doorsLine}</div>
@@ -2089,29 +2119,61 @@ export default function PremiumTicketing({
                 Open in maps
               </a>
             </div>
+            {showMatchupSection ? (
             <div className="flex flex-col gap-3.5 rounded-2xl border border-[rgba(5,27,53,0.08)] bg-[#f7f8fc] p-[18px]">
               <div className="text-[12px] font-semibold uppercase tracking-[0.12em] text-[#8a93a3]">Who&rsquo;s playing</div>
               <div className="flex flex-wrap items-center gap-6">
                 <div className="flex items-center gap-2.5">
-                  <div className="flex h-[42px] w-[42px] items-center justify-center rounded-full border border-[rgba(5,27,53,0.08)] bg-white p-1.5">
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img src={LOGO} alt="" className="max-h-full max-w-full object-contain" />
+                  <div className="flex h-[42px] w-[42px] items-center justify-center overflow-hidden rounded-full border border-[rgba(5,27,53,0.08)] bg-white">
+                    {d.homeLogoSrc || LOGO ? (
+                      /* eslint-disable-next-line @next/next/no-img-element */
+                      <img src={d.homeLogoSrc || LOGO} alt="" className="h-full w-full object-cover" />
+                    ) : (
+                      <span className="text-[14px] font-semibold text-[#051b35]">{(d.homeLabel || "").slice(0, 3).toUpperCase()}</span>
+                    )}
                   </div>
                   <div className="text-[15px] font-medium">{d.homeLabel}</div>
                 </div>
+                {showAwayTeam ? (
                 <div className="flex items-center gap-2.5">
-                  <div className="flex h-[42px] w-[42px] items-center justify-center rounded-full bg-[#051b35] text-[14px] font-semibold text-white">
-                    {d.awayShort}
+                  <div className={`flex h-[42px] w-[42px] items-center justify-center overflow-hidden rounded-full text-[14px] font-semibold ${d.awayLogoSrc ? "border border-[rgba(5,27,53,0.08)] bg-white text-[#051b35]" : "bg-[#051b35] text-white"}`}>
+                    {d.awayLogoSrc ? (
+                      /* eslint-disable-next-line @next/next/no-img-element */
+                      <img src={d.awayLogoSrc} alt="" className="h-full w-full object-cover" />
+                    ) : (
+                      d.awayShort
+                    )}
                   </div>
                   <div className="text-[15px] font-medium">{d.awayLabel}</div>
                 </div>
+                ) : null}
               </div>
-              <div className="h-px bg-[rgba(5,27,53,0.08)]" />
-              <div className="flex flex-col gap-2">
-                <div className="text-[12px] font-semibold uppercase tracking-[0.12em] text-[#8a93a3]">About this event</div>
-                <div className="text-[14px] leading-relaxed text-[#4a5567]">{d.aboutText}</div>
-              </div>
+              {d.aboutText ? (
+                <>
+                  <div className="h-px bg-[rgba(5,27,53,0.08)]" />
+                  <div className="flex flex-col gap-2">
+                    <div className="text-[12px] font-semibold uppercase tracking-[0.12em] text-[#8a93a3]">About this event</div>
+                    <ExpandableDescription
+                      text={d.aboutText}
+                      mobile={mobile}
+                      toggleColor={ACC}
+                      className="text-[14px] leading-relaxed text-[#4a5567]"
+                    />
+                  </div>
+                </>
+              ) : null}
             </div>
+            ) : d.aboutText ? (
+              <div className="flex flex-col gap-2 rounded-2xl border border-[rgba(5,27,53,0.08)] bg-[#f7f8fc] p-[18px]">
+                <div className="text-[12px] font-semibold uppercase tracking-[0.12em] text-[#8a93a3]">About this event</div>
+                <ExpandableDescription
+                  text={d.aboutText}
+                  mobile={mobile}
+                  toggleColor={ACC}
+                  className="text-[14px] leading-relaxed text-[#4a5567]"
+                />
+              </div>
+            ) : null}
           </div>
         </Modal>
       )}
@@ -2142,6 +2204,8 @@ export const NM_STATE_DATA: TicketingData = {
   homeLabel: "New Mexico State",
   awayLabel: "New Mexico",
   awayShort: "UNM",
+  showMatchupSection: true,
+  showAwayTeam: true,
   listings: [
     { zone: "Sections A–B", tier: "Premium chairback", sec: "A", row: "12", min: 1, max: 4, price: "$46.00" },
     { zone: "Sections A–B", tier: "Premium chairback", sec: "B", row: "3", min: 2, max: 6, price: "$44.00" },

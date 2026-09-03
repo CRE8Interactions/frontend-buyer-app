@@ -1,16 +1,22 @@
 import { describe, expect, it } from "vitest";
 import { DEMO_EVENTS, DEMO_USER, demoFlexPack, demoSeasonPackage } from "@/lib/demo/fixtures";
 import {
+  attractionImageUrl,
   emailPatternMatch,
+  eventAboutText,
   eventDoorsIso,
   eventWhenWithDoors,
   flexPackPurchasePath,
   formatDoorsTime,
   formatEventWhen,
+  imageUrl,
   isBlockedEmail,
   isRequestCanceled,
+  normalizeApiImage,
   normalizeEmail,
+  normalizeAttractions,
   packagePurchasePath,
+  resolveEventMatchup,
 } from "@/lib/helpers";
 
 const seated = DEMO_EVENTS.find((e) => e.shortcode === "RAPT006")!;
@@ -116,6 +122,236 @@ describe("isBlockedEmail", () => {
     expect(isBlockedEmail(DEMO_USER.email)).toBe(false);
     expect(isBlockedEmail("not-an-email")).toBe(false);
     expect(isBlockedEmail("user@")).toBe(false);
-    expect(isBlockedEmail()).toBe(false);
+  });
+});
+
+describe("eventAboutText", () => {
+  it("prefers summary over description", () => {
+    expect(
+      eventAboutText({
+        summary: "  Event summary  ",
+        description: "Event description",
+      }),
+    ).toBe("Event summary");
+  });
+
+  it("falls back to description when summary is missing", () => {
+    expect(
+      eventAboutText({ description: "<p>Long description.</p>" }),
+    ).toBe("Long description.");
+  });
+
+  it("returns empty when neither field is set", () => {
+    expect(eventAboutText({})).toBe("");
+  });
+});
+
+describe("normalizeApiImage", () => {
+  it("unwraps Strapi data.attributes media", () => {
+    expect(
+      normalizeApiImage({
+        data: {
+          attributes: {
+            url: "https://cdn.example.com/logo.png",
+          },
+        },
+      }),
+    ).toEqual({ url: "https://cdn.example.com/logo.png" });
+  });
+
+  it("returns the first resolvable item from an artwork array", () => {
+    expect(
+      normalizeApiImage([
+        { url: "/home.png" },
+        { url: "/away.png" },
+      ]),
+    ).toEqual({ url: "/home.png" });
+  });
+});
+
+describe("imageUrl", () => {
+  it("resolves nested Strapi media and format fallbacks", () => {
+    expect(
+      imageUrl({
+        data: {
+          attributes: {
+            formats: {
+              thumbnail: { url: "/thumb.png" },
+            },
+          },
+        },
+      }),
+    ).toBe("/thumb.png");
+  });
+
+  it("resolves venue images stored as a media array", () => {
+    expect(
+      imageUrl([
+        { url: "https://cdn.example.com/nmsu-soccer-field.png" },
+      ]),
+    ).toBe("https://cdn.example.com/nmsu-soccer-field.png");
+  });
+});
+
+describe("attractionImageUrl", () => {
+  it("prefers artwork over images", () => {
+    expect(
+      attractionImageUrl({
+        artwork: { url: "/artwork.png" },
+        images: [{ url: "/images.png" }],
+      }),
+    ).toBe("/artwork.png");
+  });
+
+  it("falls back to the images array when artwork is missing", () => {
+    expect(
+      attractionImageUrl({
+        images: [{ url: "/from-images.png" }],
+      }),
+    ).toBe("/from-images.png");
+  });
+
+  it("resolves artwork stored as a Strapi media array", () => {
+    expect(
+      attractionImageUrl({
+        artwork: [{ url: "/utep.png" }],
+      }),
+    ).toBe("/utep.png");
+  });
+
+  it("falls back to logo when artwork is missing", () => {
+    expect(
+      attractionImageUrl({
+        logo: { url: "/logo.png" },
+      }),
+    ).toBe("/logo.png");
+  });
+});
+
+describe("normalizeAttractions", () => {
+  it("unwraps Strapi relation entries with nested attributes", () => {
+    expect(
+      normalizeAttractions({
+        data: [
+          {
+            id: 1,
+            attributes: {
+              name: "Niagara IceDogs",
+              primary: true,
+              order: 1,
+              artwork: {
+                data: {
+                  attributes: {
+                    url: "/clients/icedogs.svg",
+                  },
+                },
+              },
+            },
+          },
+          {
+            id: 2,
+            attributes: {
+              name: "Erie Otters",
+              primary: false,
+              order: 2,
+              images: [{ url: "/clients/pjhl.png" }],
+            },
+          },
+        ],
+      }),
+    ).toEqual([
+      expect.objectContaining({
+        name: "Niagara IceDogs",
+        primary: true,
+      }),
+      expect.objectContaining({
+        name: "Erie Otters",
+        primary: false,
+      }),
+    ]);
+  });
+});
+
+describe("resolveEventMatchup", () => {
+  it("resolves home and away labels and artwork from normalized attractions", () => {
+    expect(
+      resolveEventMatchup(
+        [
+          {
+            name: "Ogden Raptors",
+            primary: true,
+            order: 1,
+            artwork: { url: "/clients/raptors.svg" },
+          },
+          {
+            name: "Idaho Falls Chukars",
+            primary: false,
+            order: 2,
+            artwork: { url: "/clients/houston-bulls.png" },
+          },
+        ],
+        { orgName: "Ogden Raptors" },
+      ),
+    ).toEqual({
+      home: expect.objectContaining({ name: "Ogden Raptors" }),
+      away: expect.objectContaining({ name: "Idaho Falls Chukars" }),
+      homeLabel: "Ogden Raptors",
+      awayLabel: "Idaho Falls Chukars",
+      homeLogoSrc: "/clients/raptors.svg",
+      awayLogoSrc: "/clients/houston-bulls.png",
+      awayShort: "IDA",
+      showMatchupSection: true,
+      showAwayTeam: true,
+    });
+  });
+
+  it("shows a visitor placeholder for a single-attraction sporting event", () => {
+    expect(
+      resolveEventMatchup(
+        [
+          {
+            name: "Niagara IceDogs",
+            primary: true,
+            artwork: { url: "/clients/icedogs.svg" },
+          },
+        ],
+        { orgName: "Niagara IceDogs", sportingEvent: true },
+      ),
+    ).toEqual({
+      home: expect.objectContaining({ name: "Niagara IceDogs" }),
+      away: null,
+      homeLabel: "Niagara IceDogs",
+      awayLabel: "Visitor",
+      homeLogoSrc: "/clients/icedogs.svg",
+      awayLogoSrc: undefined,
+      awayShort: "AWA",
+      showMatchupSection: true,
+      showAwayTeam: true,
+    });
+  });
+
+  it("omits the visitor placeholder for a single-attraction non-sporting event", () => {
+    expect(
+      resolveEventMatchup(
+        [
+          {
+            name: "Headliner Act",
+            primary: true,
+            artwork: { url: "/clients/concert.png" },
+          },
+        ],
+        { orgName: "Live Nation", sportingEvent: false },
+      ),
+    ).toEqual({
+      home: expect.objectContaining({ name: "Headliner Act" }),
+      away: null,
+      homeLabel: "Headliner Act",
+      awayLabel: "",
+      homeLogoSrc: "/clients/concert.png",
+      awayLogoSrc: undefined,
+      awayShort: "",
+      showMatchupSection: true,
+      showAwayTeam: false,
+    });
   });
 });

@@ -8,13 +8,16 @@ import {
 } from "@/lib/demo/fixtures";
 import {
   completedOrderPromoCode,
+  gaTierSubtitle,
   packageOrderSummary,
   packageSeatLines,
   promoSummaryLabel,
   resolveCompletedOrderFees,
   resolveFlexPackCheckoutTotals,
   resolvePackageCheckoutTotals,
+  selectionOfferDescription,
   selectionOfferName,
+  selectionTicketCards,
   ticketSelectionSummary,
   withPackageCheckoutSeatPrices,
 } from "@/lib/ticketSummary";
@@ -41,6 +44,109 @@ describe("selectionOfferName", () => {
         offer: { data: { attributes: { name: listing.offer?.name } } },
       }),
     ).toBe(listing.offer?.name);
+  });
+});
+
+describe("selectionOfferDescription", () => {
+  it("returns the ticket offer description", () => {
+    expect(selectionOfferDescription(listing)).toBe(
+      listing.offer?.description,
+    );
+  });
+
+  it("reads a nested Strapi offer description", () => {
+    expect(
+      selectionOfferDescription({
+        offer: {
+          data: {
+            attributes: { description: "VIP lounge and in-seat service." },
+          },
+        },
+      }),
+    ).toBe("VIP lounge and in-seat service.");
+  });
+
+  it("strips HTML from the offer description", () => {
+    expect(
+      selectionOfferDescription({
+        offer: { description: "<p>Premium <strong>club</strong> access.</p>" },
+      }),
+    ).toBe("Premium club access.");
+  });
+});
+
+describe("gaTierSubtitle", () => {
+  it("uses the quick-pick section name when set", () => {
+    expect(
+      gaTierSubtitle({
+        sectionName: "General Admission",
+        sectionNumber: "GA",
+      }),
+    ).toBe("General Admission · unreserved seating");
+  });
+
+  it("uses sectionNumber when sectionName is missing or generic GA", () => {
+    expect(
+      gaTierSubtitle({
+        sectionNumber: "O-Town",
+        offer: { name: "Section M-N & GA" },
+      }),
+    ).toBe("O-Town · unreserved seating");
+    expect(
+      gaTierSubtitle({
+        sectionName: "GA",
+        sectionNumber: "O-Town",
+      }),
+    ).toBe("O-Town · unreserved seating");
+  });
+
+  it("shows Ga when that is the section name on GA-only offers", () => {
+    expect(
+      gaTierSubtitle({
+        sectionName: "GA",
+        sectionNumber: "GA",
+      }),
+    ).toBe("Ga · unreserved seating");
+    expect(gaTierSubtitle({ sectionName: "GA" })).toBe(
+      "Ga · unreserved seating",
+    );
+    expect(gaTierSubtitle({ sectionNumber: "GA" })).toBe(
+      "Ga · unreserved seating",
+    );
+  });
+
+  it("falls back to the offer description then General Admission", () => {
+    expect(
+      gaTierSubtitle({
+        offer: {
+          description: "Premium club access + in-seat service.",
+        },
+      }),
+    ).toBe("Premium club access + in-seat service. · unreserved seating");
+    expect(gaTierSubtitle({})).toBe("General Admission · unreserved seating");
+  });
+});
+
+describe("selectionTicketCards", () => {
+  it("expands a GA quantity into one card per ticket", () => {
+    const cards = selectionTicketCards([
+      { ...listing, GA: true, quantity: 2 },
+    ]);
+    expect(cards).toHaveLength(2);
+    expect(cards[0].groupIndex).toBe(0);
+    expect(cards[1].unitIndex).toBe(1);
+  });
+
+  it("expands package quantity the same way and leaves reserved seats as one card", () => {
+    const pkg = demoSeasonPackage();
+    const reserved = { ...listing, GA: false, quantity: 1 };
+    expect(
+      selectionTicketCards([
+        { ...listing, GA: false, package: { name: pkg.name }, quantity: 3 },
+        reserved,
+      ]),
+    ).toHaveLength(4);
+    expect(selectionTicketCards([reserved])).toHaveLength(1);
   });
 });
 

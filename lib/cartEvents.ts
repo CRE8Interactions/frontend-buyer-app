@@ -1,10 +1,14 @@
-import type { BrandingOrganization, OrgBranding } from "@/lib/branding";
+import { BLOCKTICKETS_NAVY, resolvePrimaryColor, type BrandingOrganization, type OrgBranding } from "@/lib/branding";
+import { isSportingEvent } from "@/lib/eventCategory";
 import {
+  attractionImageUrl,
   eventDoorsIso,
   formatCurrency,
   formatDoorsTime,
   formatEventWhen,
   imageUrl,
+  normalizeAttractions,
+  resolveEventMatchup,
   type ApiImage,
 } from "@/lib/helpers";
 import {
@@ -215,7 +219,7 @@ function orderTotal(value?: number | string | null) {
 }
 
 
-function eventInitials(name?: string) {
+function eventInitials(name?: string | null) {
   if (!name) return "EVENT";
   const words = name.trim().split(/\s+/).filter(Boolean);
   if (words.length === 1) return words[0].slice(0, 8).toUpperCase();
@@ -226,51 +230,88 @@ function eventInitials(name?: string) {
     .toUpperCase();
 }
 
+/** Visitor/away panel color — navy placeholder when no logo (matches Who's playing). */
+function awayPanelBrand(logo?: string | null) {
+  return logo ? "#252930" : BLOCKTICKETS_NAVY;
+}
+
+function homePanelBrand(ev?: EventLike | null) {
+  return resolvePrimaryColor(ev, ev?.organization);
+}
+
 function buildAttractionCards(
   ev?: EventLike | null,
   packageName?: string,
 ): AttractionCard[] {
-  const raw = ev?.attractions ?? [];
+  const orgName = ev?.organization?.name || packageName || "";
+  const sporting = isSportingEvent(ev);
+  const raw = normalizeAttractions(ev?.attractions);
+  const matchup = resolveEventMatchup(ev?.attractions, {
+    orgName,
+    sportingEvent: sporting,
+  });
+
   if (raw.length >= 2) {
     const sorted = [...raw].sort((a, b) => {
       if (a.primary && !b.primary) return -1;
       if (!a.primary && b.primary) return 1;
-      return 0;
+      return (a.order ?? 0) - (b.order ?? 0);
     });
-    return sorted.map((a, i) => ({
-      name: a.name || `Guest ${i + 1}`,
-      role: i === 0 ? "Home" : i === 1 ? "Visitor" : "Guest",
-      logo: a.artwork ? imageUrl(a.artwork, "") : undefined,
-      brand: i === 0 ? "#8c0b42" : i === 1 ? "#0d3b2e" : "#1b1e26",
-      initials: eventInitials(a.name),
-    }));
+    return sorted.map((a, i) => {
+      const logo = attractionImageUrl(a) || undefined;
+      return {
+        name: a.name || `Guest ${i + 1}`,
+        role: i === 0 ? "Home" : i === 1 ? "Visitor" : "Guest",
+        logo,
+        brand:
+          i === 0 ? homePanelBrand(ev) : i === 1 ? awayPanelBrand(logo) : "#1b1e26",
+        initials: eventInitials(a.name),
+      };
+    });
   }
+
   if (raw.length === 1) {
+    if (matchup.showAwayTeam) {
+      return [
+        {
+          name: matchup.homeLabel,
+          role: "Home",
+          logo: matchup.homeLogoSrc,
+          brand: homePanelBrand(ev),
+          initials: eventInitials(matchup.homeLabel),
+        },
+        {
+          name: matchup.awayLabel,
+          role: "Visitor",
+          logo: matchup.awayLogoSrc,
+          brand: awayPanelBrand(matchup.awayLogoSrc),
+          initials: matchup.awayShort || eventInitials(matchup.awayLabel),
+        },
+      ];
+    }
     return [
       {
-        name: raw[0].name || ev?.name || "Event",
+        name: matchup.homeLabel,
         role: "Featured",
-        logo: raw[0].artwork ? imageUrl(raw[0].artwork, "") : undefined,
-        brand: "#8c0b42",
-        initials: eventInitials(raw[0].name || ev?.name),
+        logo: matchup.homeLogoSrc,
+        brand: homePanelBrand(ev),
+        initials: eventInitials(matchup.homeLabel),
       },
     ];
   }
-  const fallbackName =
-    ev?.organization?.name || packageName || ev?.name || "Event";
+
+  const fallbackName = orgName || ev?.name || "Event";
   const fallbackImage = imageUrl(ev?.image, "");
-  if (fallbackName) {
-    return [
-      {
-        name: fallbackName,
-        role: "Featured",
-        logo: fallbackImage || undefined,
-        brand: "#8c0b42",
-        initials: eventInitials(fallbackName),
-      },
-    ];
-  }
-  return [];
+  if (!fallbackName) return [];
+  return [
+    {
+      name: fallbackName,
+      role: "Featured",
+      logo: fallbackImage || undefined,
+      brand: homePanelBrand(ev),
+      initials: eventInitials(fallbackName),
+    },
+  ];
 }
 
 function resolvePosterSrc(
@@ -313,17 +354,49 @@ function buildTeams(ev?: EventLike | null, packageName?: string) {
       role: "Visitor",
       rec: "",
       initials: eventInitials(visitor),
-      brand: "#0d3b2e",
+      brand: awayPanelBrand(visitorLogo),
       logo: visitorLogo || undefined,
     },
   ];
+}
+
+function seatSortValue(value: unknown) {
+  if (value == null) return "";
+  return String(value).trim();
+}
+
+/** Empty / GA parts sort last so reserved seats stay grouped. */
+function compareSeatPart(a: unknown, b: unknown) {
+  const left = seatSortValue(a);
+  const right = seatSortValue(b);
+  if (!left && !right) return 0;
+  if (!left) return 1;
+  if (!right) return -1;
+  return left.localeCompare(right, undefined, {
+    numeric: true,
+    sensitivity: "base",
+  });
+}
+
+function compareWalletTickets(
+  a: Record<string, unknown>,
+  b: Record<string, unknown>,
+) {
+  return (
+    compareSeatPart(
+      a.sectionNumber ?? a.sectionName,
+      b.sectionNumber ?? b.sectionName,
+    ) ||
+    compareSeatPart(a.rowNumber ?? a.rowName, b.rowNumber ?? b.rowName) ||
+    compareSeatPart(a.seatNumber, b.seatNumber)
+  );
 }
 
 function mapEventTickets(
   tickets: Array<Record<string, unknown>>,
   holder: string,
 ): CartTicketDetail[] {
-  return tickets.map((t, i) => ({
+  return [...tickets].sort(compareWalletTickets).map((t, i) => ({
     id:
       typeof t.id === "number" || typeof t.id === "string"
         ? t.id
@@ -1086,6 +1159,21 @@ export function eventFromFullOrder(
   };
 }
 
+function refreshEventMatchupFields(
+  ev?: EventLike | null,
+  packageName?: string,
+): Pick<CartEventDetail, "attractions" | "teams" | "posterSrc"> {
+  const attractions = buildAttractionCards(ev, packageName);
+  return {
+    attractions,
+    posterSrc: resolvePosterSrc(attractions, ev),
+    teams:
+      attractions.length >= 2
+        ? buildTeamsFromAttractions(attractions)
+        : buildTeams(ev, packageName),
+  };
+}
+
 /**
  * The wallet list endpoint returns trimmed orders, so the amount paid, the
  * buyer's name, and print branding only arrive with a single-order fetch.
@@ -1095,6 +1183,7 @@ export function withFullOrder(
   order?: OrderLike | null,
 ): CartEventDetail {
   if (!order) return detail;
+  const event = eventFromFullOrder(detail.event, order) ?? detail.event;
   const holder =
     order.firstName || order.lastName
       ? formatTicketHolderName({
@@ -1113,7 +1202,8 @@ export function withFullOrder(
     : "";
   return {
     ...detail,
-    event: eventFromFullOrder(detail.event, order) ?? detail.event,
+    ...refreshEventMatchupFields(event, detail.packageName),
+    event,
     cartTotal: orderTotal(order.total) ?? detail.cartTotal,
     orderId: orderIdOf(order) || detail.orderId,
     purchasedAt: purchasedAt || detail.purchasedAt,

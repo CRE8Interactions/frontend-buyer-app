@@ -7,11 +7,13 @@ import {
   demoAccessPass,
   demoCompletedFlexPackOrder,
   demoCompletedPackageOrder,
+  demoCheckoutCart,
   demoCompletedTicketOrder,
   demoFlexPack,
   demoPackageAccessPass,
   demoSeasonPackage,
 } from "@/lib/demo/fixtures";
+import { googleMapsDirectionsUrl } from "@/lib/venueLocation";
 import { seatLabel } from "@/lib/wallet";
 
 const sessionMocks = vi.hoisted(() => ({
@@ -56,7 +58,9 @@ vi.mock("next/navigation", () => ({
   useRouter: () => ({ push: vi.fn(), back: vi.fn(), replace: vi.fn() }),
 }));
 
-import SeasonTickets from "@/components/organisms/SeasonTickets";
+import SeasonTickets, {
+  clearJerseyPanelFillCacheForTests,
+} from "@/components/organisms/SeasonTickets";
 import {
   createTicketTransfer,
   downloadApplePass,
@@ -86,6 +90,11 @@ const flexOrderId = String(demoCompletedFlexPackOrder().orderId);
 beforeEach(() => {
   navigationMocks.pathname = "/wallet/my-tickets/";
   navigationMocks.search = "";
+  clearJerseyPanelFillCacheForTests();
+  vi.stubGlobal(
+    "fetch",
+    vi.fn().mockRejectedValue(new Error("fetch unavailable in test")),
+  );
   mockedCreateTicketTransfer.mockReset();
   mockedCreateTicketTransfer.mockResolvedValue({
     data: { id: "transfer-1", status: "pending" },
@@ -102,6 +111,10 @@ beforeEach(() => {
   mockedGetOrder.mockResolvedValue({ data: null } as never);
   pdfMocks.printTicketsPdf.mockReset();
   pdfMocks.printTicketsPdf.mockResolvedValue(undefined);
+});
+
+afterEach(() => {
+  vi.unstubAllGlobals();
 });
 
 describe("SeasonTickets empty wallet", () => {
@@ -745,6 +758,25 @@ describe("SeasonTickets section routes", () => {
     expect(screen.getByLabelText("Loading tickets")).toBeInTheDocument();
     expect(screen.queryByText("Loading your tickets…")).not.toBeInTheDocument();
     expect(screen.queryByText(readyCopy)).not.toBeInTheDocument();
+
+    const listPills: Record<string, { role: "button" | "tab"; labels: string[] }> = {
+      "/wallet/my-tickets/": {
+        role: "button",
+        labels: ["Upcoming", "Packages", "Flex packs", "Access passes"],
+      },
+      "/wallet/my-transfers/": {
+        role: "button",
+        labels: ["Sent", "Received"],
+      },
+      "/wallet/my-listings/": {
+        role: "tab",
+        labels: ["Active", "Sold", "Expired"],
+      },
+    };
+    const pills = listPills[pathname];
+    for (const label of pills.labels) {
+      expect(screen.getByRole(pills.role, { name: label })).toHaveAccessibleName(label);
+    }
   });
 
   it.each([
@@ -851,6 +883,31 @@ describe("SeasonTickets routed event screen", () => {
     );
   });
 
+  it("lists seats in ascending order when the API returns them reversed", async () => {
+    const user = userEvent.setup();
+    const [first, second] = demoCheckoutCart({ ticketCount: 2 }).tickets;
+    const order = demoCompletedTicketOrder({
+      event: icedogs,
+      tickets: [second, first],
+    });
+    mockedGetMyEvents.mockResolvedValue({ data: [order] } as never);
+
+    render(<SeasonTickets initialScreen="event" eventUUID={icedogs.uuid} />);
+
+    const seatLines = await screen.findAllByText(/Sec .+ · Row .+ · Seat /);
+    expect(seatLines[0]).toHaveTextContent(
+      `Sec ${first.sectionNumber} · Row ${first.rowNumber} · Seat ${first.seatNumber}`,
+    );
+    expect(seatLines[1]).toHaveTextContent(
+      `Sec ${second.sectionNumber} · Row ${second.rowNumber} · Seat ${second.seatNumber}`,
+    );
+
+    await user.click(screen.getByRole("button", { name: "Transfer" }));
+    const seatButtons = screen.getAllByRole("button", { name: /^Seat / });
+    expect(seatButtons[0]).toHaveAccessibleName(`Seat ${first.seatNumber}`);
+    expect(seatButtons[1]).toHaveAccessibleName(`Seat ${second.seatNumber}`);
+  });
+
   it("shows live ticket and order data in ticket details", async () => {
     const user = userEvent.setup();
     const order = demoCompletedTicketOrder({
@@ -880,6 +937,49 @@ describe("SeasonTickets routed event screen", () => {
     expect(details.getByText("Mobile entry")).toBeInTheDocument();
   });
 
+  it("holds the event page until panel fills are sampled for split heroes", async () => {
+    const releasePanels: Array<() => void> = [];
+    const splitHeroEvent =
+      DEMO_EVENTS.find((event) => event.shortCode === "BUCS002")!;
+    const order = demoCompletedTicketOrder({ event: splitHeroEvent });
+    mockedGetMyEvents.mockResolvedValue({ data: [order] } as never);
+    vi.mocked(fetch).mockImplementation((input) => {
+      const url = String(input);
+      if (!url.includes("/api/dominant-color/")) {
+        return Promise.reject(new Error(`unexpected fetch: ${url}`));
+      }
+      return new Promise((resolve) => {
+        releasePanels.push(() =>
+          resolve({
+            ok: true,
+            json: async () => ({ color: "#bf0c26" }),
+          } as Response),
+        );
+      });
+    });
+
+    render(
+      <SeasonTickets
+        initialScreen="event"
+        eventUUID={splitHeroEvent.uuid}
+      />,
+    );
+
+    expect(await screen.findByRole("link", { name: /All tickets/i })).toBeInTheDocument();
+    expect(screen.getByLabelText("Loading")).toBeInTheDocument();
+    expect(
+      screen.queryByRole("heading", { name: splitHeroEvent.name }),
+    ).not.toBeInTheDocument();
+
+    await waitFor(() => expect(releasePanels.length).toBeGreaterThanOrEqual(2));
+    releasePanels.forEach((release) => release());
+
+    expect(
+      await screen.findByRole("heading", { name: splitHeroEvent.name }),
+    ).toBeInTheDocument();
+    expect(screen.queryByLabelText("Loading")).not.toBeInTheDocument();
+  });
+
   it("holds the event page until the order total is ready", async () => {
     let releaseOrder: (value: { data: unknown }) => void = () => {};
     const listed = demoCompletedTicketOrder({
@@ -898,8 +998,9 @@ describe("SeasonTickets routed event screen", () => {
       <SeasonTickets initialScreen="event" eventUUID={printableEvent.uuid} />,
     );
 
-    expect(await screen.findByLabelText("Loading tickets")).toBeInTheDocument();
-    expect(screen.queryByText("Loading your tickets…")).not.toBeInTheDocument();
+    expect(await screen.findByRole("link", { name: /All tickets/i })).toBeInTheDocument();
+    expect(screen.getByLabelText("Loading")).toBeInTheDocument();
+    expect(screen.queryByLabelText("Loading tickets")).not.toBeInTheDocument();
     expect(screen.queryByText("Total paid")).not.toBeInTheDocument();
     expect(screen.queryByText("$0.00")).not.toBeInTheDocument();
 
@@ -909,6 +1010,7 @@ describe("SeasonTickets routed event screen", () => {
 
     expect(await screen.findByText("$452.20")).toBeInTheDocument();
     expect(screen.getByText("Total paid")).toBeInTheDocument();
+    expect(screen.queryByLabelText("Loading")).not.toBeInTheDocument();
     expect(screen.queryByLabelText("Loading tickets")).not.toBeInTheDocument();
     expect(screen.queryByText("$0.00")).not.toBeInTheDocument();
   });
@@ -1013,6 +1115,76 @@ describe("SeasonTickets routed event screen", () => {
         }),
       }),
     );
+  });
+
+  it("links Get directions to Google Maps for the event venue", async () => {
+    const order = demoCompletedTicketOrder({ event: printableEvent });
+    mockedGetMyEvents.mockResolvedValue({ data: [order] } as never);
+
+    render(
+      <SeasonTickets initialScreen="event" eventUUID={printableEvent.uuid} />,
+    );
+
+    expect(
+      await screen.findByRole("link", { name: "Get directions" }),
+    ).toHaveAttribute(
+      "href",
+      googleMapsDirectionsUrl(printableEvent.venue.address),
+    );
+  });
+
+  it("hides Get directions when the event has no venue to map", async () => {
+    const order = demoCompletedTicketOrder({
+      event: {
+        uuid: printableEvent.uuid,
+        name: printableEvent.name,
+        venue: {},
+      },
+    });
+    mockedGetMyEvents.mockResolvedValue({ data: [order] } as never);
+
+    render(
+      <SeasonTickets initialScreen="event" eventUUID={printableEvent.uuid} />,
+    );
+
+    expect(await screen.findByText("Getting there")).toBeInTheDocument();
+    expect(
+      screen.queryByRole("link", { name: "Get directions" }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("shows a spinner and Preparing… on Print PDF while the PDF is in flight", async () => {
+    const user = userEvent.setup();
+    const order = demoCompletedTicketOrder({ event: printableEvent });
+    mockedGetMyEvents.mockResolvedValue({ data: [order] } as never);
+    let finishPrint: (() => void) | undefined;
+    pdfMocks.printTicketsPdf.mockReturnValue(
+      new Promise<void>((resolve) => {
+        finishPrint = resolve;
+      }),
+    );
+
+    render(
+      <SeasonTickets initialScreen="event" eventUUID={printableEvent.uuid} />,
+    );
+
+    await user.click(
+      (await screen.findAllByRole("button", { name: "Print PDF" }))[0],
+    );
+
+    const printing = await screen.findByRole("button", { name: /Preparing/ });
+    expect(printing).toBeDisabled();
+    expect(printing).toHaveAttribute("aria-busy", "true");
+    expect(
+      within(printing).getByRole("status", { name: "Loading" }),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Print all" })).toBeDisabled();
+
+    finishPrint?.();
+
+    await waitFor(() => {
+      expect(screen.getAllByRole("button", { name: "Print PDF" })[0]).toBeEnabled();
+    });
   });
 
   it("prints one ticket in a new PDF and downloads all tickets together", async () => {

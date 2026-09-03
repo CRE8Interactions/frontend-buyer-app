@@ -11,8 +11,14 @@ import {
 } from "pdf-lib";
 import QRCode from "qrcode";
 import { resolveBrandLogo, resolvePrimaryColor } from "@/lib/branding";
+import {
+  CATEGORY_THEMES,
+  resolveEventCategoryName,
+  resolveTicketCategoryKey,
+} from "@/lib/eventCategory";
 import { formatEventWhen } from "@/lib/helpers";
 import type { EventLike } from "@/lib/cartEvents";
+import { formatVenueCityState } from "@/lib/venueLocation";
 
 type PrintableTicket = {
   id?: string | number;
@@ -46,15 +52,6 @@ const CORNER_R = 14;
 const SHELL_PAD = 12;
 const TITLE_BAND = 76;
 const DEFAULT_PRIMARY = "#1A365D";
-
-const CATEGORY_THEMES = {
-  sports: { badgeLabel: "SPORTING EVENT", badgeColor: "#E53E3E", bodyTint: "#EBF8FF" },
-  theater: { badgeLabel: "THEATER EVENT", badgeColor: "#D69E2E", bodyTint: "#FFFFF0" },
-  concert: { badgeLabel: "CONCERT EVENT", badgeColor: "#ED64A6", bodyTint: "#FAF5FF" },
-  family: { badgeLabel: "FAMILY EVENT", badgeColor: "#38A169", bodyTint: "#F0FFF4" },
-  access: { badgeLabel: "ACCESS PASS", badgeColor: "#9757D7", bodyTint: "#F8F0FF" },
-  default: { badgeLabel: "EVENT TICKET", badgeColor: "#3182CE", bodyTint: "#F7FAFC" },
-} as const;
 
 function hexToRgb(hex?: string | null, fallback = DEFAULT_PRIMARY): RGB {
   const raw = String(hex || fallback).trim().replace("#", "");
@@ -146,35 +143,13 @@ function fitText(text: unknown, font: PDFFont, size: number, maxWidth: number) {
   return low > 0 ? `${value.slice(0, low)}…` : "…";
 }
 
-export function resolveTicketCategoryKey(categoryName?: string) {
-  const name = String(categoryName || "").trim().toLowerCase();
-  if (!name) return "default" as const;
-  if (name.includes("sport")) return "sports" as const;
-  if (name.includes("concert") || name.includes("music")) return "concert" as const;
-  if (
-    name.includes("theater") ||
-    name.includes("theatre") ||
-    name.includes("arts") ||
-    name.includes("comedy")
-  ) {
-    return "theater" as const;
-  }
-  if (name.includes("family")) return "family" as const;
-  if (name.includes("access")) return "access" as const;
-  return "default" as const;
-}
-
-function resolveCategoryName(event: EventLike) {
-  return (
-    event.category?.name || event.categoryName || event.organization?.category?.name || ""
-  );
-}
+export { resolveTicketCategoryKey } from "@/lib/eventCategory";
 
 /** Brand colour and category treatment a printed ticket is drawn with. */
 export function resolveTicketTheme(event: EventLike) {
   return {
     primaryColor: resolvePrimaryColor(event, event.organization),
-    ...CATEGORY_THEMES[resolveTicketCategoryKey(resolveCategoryName(event))],
+    ...CATEGORY_THEMES[resolveTicketCategoryKey(resolveEventCategoryName(event))],
   };
 }
 
@@ -248,10 +223,21 @@ async function embedLogo(pdf: PDFDocument, event: EventLike) {
   }
 }
 
-function venueLabel(event: EventLike) {
-  const name = event.venue?.name || "";
-  const city = event.venue?.address?.[0]?.city;
-  return city && name && !name.includes(city) ? `${name}, ${city}` : name;
+/** Venue line on Print PDF / Print all. City is title-cased (Las Cruces). */
+export function printedVenueLabel(event: EventLike) {
+  const name = String(event.venue?.name || "").trim();
+  const rawCity = String(event.venue?.address?.[0]?.city || "").trim();
+  const city = formatVenueCityState({ city: rawCity });
+  if (!name) return city;
+  if (!city) return name;
+  if (
+    name.toLowerCase().includes(city.toLowerCase()) ||
+    name.toLowerCase().includes(rawCity.toLowerCase())
+  ) {
+    const escaped = rawCity.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    return escaped ? name.replace(new RegExp(escaped, "ig"), city) : name;
+  }
+  return `${name}, ${city}`;
 }
 
 async function drawBrandedTicket(
@@ -385,7 +371,7 @@ async function drawBrandedTicket(
   const timezone = event.venue?.timezone;
   drawField("DATE", formatEventWhen(event.start, timezone, "ddd, MMM D, YYYY"), contentLeft, innerTop - 32);
   drawField("TIME", formatEventWhen(event.start, timezone, "h:mm A"), contentLeft, innerTop - 68);
-  drawField("VENUE", venueLabel(event), contentLeft, innerTop - 104);
+  drawField("VENUE", printedVenueLabel(event), contentLeft, innerTop - 104);
 
   const holderX = innerX + innerW / 2 + 8;
   page.drawText("TICKET HOLDER", {

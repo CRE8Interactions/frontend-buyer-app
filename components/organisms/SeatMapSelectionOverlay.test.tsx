@@ -1,6 +1,13 @@
-import { act, fireEvent, render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { DEMO_ORGS, demoSeatmapMapping } from "@/lib/demo/fixtures";
+import {
+  DEMO_ORGS,
+  DEMO_SEATED_TICKET_GROUPS,
+  demoSeatmapMapping,
+  demoSeasonPackage,
+  demoTicketGroups,
+} from "@/lib/demo/fixtures";
+import { selectionOfferName } from "@/lib/ticketSummary";
 import type { SeatmapBackground } from "@/lib/seatmapLookups";
 import { resetSeatmapBackgroundCache } from "@/tests/seatmap";
 import useSeatmapStore from "@/stores/seatmapStore";
@@ -143,6 +150,102 @@ describe("SeatMapSelectionOverlay map readiness", () => {
     // A seatmap may ship without a background; the geometry still draws.
     expect(screen.getByTestId("interactive-seatmap")).toBeInTheDocument();
     expect(loaderShowing()).toBe(false);
+  });
+
+  it("shows one Your selection card per GA ticket instead of a quantity multiplier", () => {
+    const ga = demoTicketGroups().ticketGroups.find((group) => group.GA);
+    if (!ga) throw new Error("demo fixtures need a GA ticket group");
+    useSeatmapStore.setState({
+      selectedFromMap: [{ ...ga, quantity: 2 }],
+      totalCount: 2,
+      totalPrice: Number(ga.price || 0) * 2,
+    });
+    renderOverlay({
+      mapMapping: demoSeatmapMapping(),
+      mapBackground: BACKGROUND,
+    });
+    fireEvent.load(backgroundPreload()!);
+
+    expect(screen.getAllByRole("button", { name: /remove ticket/i })).toHaveLength(
+      2,
+    );
+    expect(screen.queryByText(/× 2/)).not.toBeInTheDocument();
+    expect(screen.getAllByText(`$${Number(ga.price).toFixed(2)}`)).toHaveLength(2);
+    expect(screen.getAllByText(selectionOfferName(ga)).length).toBeGreaterThan(0);
+  });
+
+  it("shows one Your selection card per package ticket", () => {
+    const pkg = demoSeasonPackage();
+    const group = DEMO_SEATED_TICKET_GROUPS[0];
+    useSeatmapStore.setState({
+      selectedFromMap: [
+        {
+          ...group,
+          GA: false,
+          quantity: 2,
+          package: { name: pkg.name, maxQuantity: pkg.maxQuantity },
+        },
+      ],
+      totalCount: 2,
+      totalPrice: Number(group.price || 0) * 2,
+    });
+    renderOverlay({
+      mapMapping: demoSeatmapMapping(),
+      mapBackground: BACKGROUND,
+    });
+    fireEvent.load(backgroundPreload()!);
+
+    expect(screen.getAllByRole("button", { name: /remove ticket/i })).toHaveLength(
+      2,
+    );
+    expect(screen.queryByText(/× 2/)).not.toBeInTheDocument();
+    expect(
+      screen.getAllByText(`$${Number(group.price).toFixed(2)}`),
+    ).toHaveLength(2);
+  });
+
+  it("shows one ticket in GA ticket details even when the group quantity is higher", () => {
+    const ga = demoTicketGroups().ticketGroups.find((group) => group.GA);
+    if (!ga) throw new Error("demo fixtures need a GA ticket group");
+    useSeatmapStore.setState({
+      selectedFromMap: [{ ...ga, quantity: 6 }],
+      totalCount: 6,
+      totalPrice: Number(ga.price || 0) * 6,
+    });
+    renderOverlay({
+      mapMapping: demoSeatmapMapping(),
+      mapBackground: BACKGROUND,
+    });
+    fireEvent.load(backgroundPreload()!);
+
+    fireEvent.click(screen.getAllByRole("button", { name: /details/i })[0]);
+
+    expect(screen.getByText("Ticket details")).toBeInTheDocument();
+    const detailHeading = screen.getByText(/general admission/i);
+    expect(within(detailHeading.parentElement!).getByText("1 Ticket")).toBeInTheDocument();
+    expect(within(detailHeading.parentElement!).queryByText("6 Tickets")).not.toBeInTheDocument();
+  });
+
+  it("removes one GA card without dropping the rest of the quantity", () => {
+    const ga = demoTicketGroups().ticketGroups.find((group) => group.GA);
+    if (!ga) throw new Error("demo fixtures need a GA ticket group");
+    useSeatmapStore.setState({
+      selectedFromMap: [{ ...ga, quantity: 2 }],
+      totalCount: 2,
+      totalPrice: Number(ga.price || 0) * 2,
+    });
+    renderOverlay({
+      mapMapping: demoSeatmapMapping(),
+      mapBackground: BACKGROUND,
+    });
+    fireEvent.load(backgroundPreload()!);
+
+    fireEvent.click(screen.getAllByRole("button", { name: /remove ticket/i })[0]);
+
+    expect(screen.getAllByRole("button", { name: /remove ticket/i })).toHaveLength(
+      1,
+    );
+    expect(useSeatmapStore.getState().selectedFromMap[0]?.quantity).toBe(1);
   });
 
   it("keeps the org loader up when the geometry never arrives", () => {

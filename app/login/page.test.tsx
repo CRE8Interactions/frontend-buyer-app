@@ -438,6 +438,51 @@ describe("Login page create account", () => {
     expect(mockedCreateNewUser).not.toHaveBeenCalled();
   });
 
+  it("does not show phone or name required copy on idle blur when fields are empty", async () => {
+    const user = userEvent.setup();
+    await openCreateAccount(user);
+
+    await user.click(screen.getByLabelText(/mobile number/i));
+    await user.tab();
+    expect(screen.queryByText(PHONE_ERROR.required)).not.toBeInTheDocument();
+
+    await user.click(screen.getByLabelText(/first name/i));
+    await user.tab();
+    expect(screen.queryByText("First name is required.")).not.toBeInTheDocument();
+
+    await user.click(screen.getByLabelText(/last name/i));
+    await user.tab();
+    expect(screen.queryByText("Last name is required.")).not.toBeInTheDocument();
+
+    await user.click(screen.getByLabelText(/birth date/i));
+    await user.tab();
+    expect(screen.queryByText(/date of birth is required/i)).not.toBeInTheDocument();
+  });
+
+  it("shows invalid phone copy on blur of a partial number without calling the API", async () => {
+    const user = userEvent.setup();
+    await openCreateAccount(user);
+
+    await fillMobile(user, "123");
+    await user.tab();
+
+    expect(screen.getByText(PHONE_ERROR.invalid)).toBeInTheDocument();
+    expect(mockedCreateNewUser).not.toHaveBeenCalled();
+  });
+
+  it("shows invalid date of birth copy on blur of a future date", async () => {
+    const user = userEvent.setup();
+    await openCreateAccount(user);
+
+    await user.type(screen.getByLabelText(/birth date/i), "01/01/2099");
+    await user.tab();
+
+    expect(
+      screen.getByText(/date of birth is incorrect/i),
+    ).toBeInTheDocument();
+    expect(mockedCreateNewUser).not.toHaveBeenCalled();
+  });
+
   it("ignores digits in name fields and exposes the letters-only pattern", async () => {
     const user = userEvent.setup();
     await openCreateAccount(user);

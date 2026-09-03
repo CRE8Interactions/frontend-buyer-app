@@ -2,7 +2,7 @@
 
 import { useEffect, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
-import WalletTicketsLoader from "@/components/organisms/WalletTicketsLoader";
+import RouteLoader from "@/components/molecules/RouteLoader";
 import { setLastKnown, useAuth } from "@/lib/auth";
 
 /** Production wallet: send logged-out shoppers to login with a return path. */
@@ -24,10 +24,9 @@ export default function MyTicketsAuthGuard({
     router.replace(`/login/?from=${encodeURIComponent(returnTo)}`);
   }, [ready, isAuthenticated, router]);
 
-  // In-page wallet spinner covers resolving auth and the hop to login, so the
-  // Blocktickets watermark never paints over tickets / transfers / listings.
+  // Blocktickets splash covers resolving auth and the hop to login.
   if (!ready || !isAuthenticated) {
-    return <WalletTicketsLoader fullPage />;
+    return <RouteLoader />;
   }
 
   return children;

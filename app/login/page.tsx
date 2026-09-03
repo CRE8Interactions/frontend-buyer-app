@@ -7,9 +7,11 @@ import CodeField, { type CodeError } from "@/components/molecules/CodeField";
 import EmailField from "@/components/molecules/EmailField";
 import NameField from "@/components/molecules/NameField";
 import PhoneNumberInput, {
-  phoneNumberError,
+  phoneBlurError,
+  phoneSubmitError,
   type PhoneErrorType,
 } from "@/components/molecules/PhoneNumberInput";
+import { ButtonBusyContents } from "@/components/atoms/BrandedActionButton";
 import {
   verifyUser,
   verifyCode,
@@ -20,11 +22,17 @@ import { setSession, getLastKnown, type AuthSession } from "@/lib/auth";
 import {
   FIELD_COPY,
   codeSubmitError,
+  dobBlurError,
+  dobSubmitError,
+  DOB_INVALID_MESSAGE,
+  DOB_REQUIRED_MESSAGE,
   emailBlurInvalid,
   emailSubmitError,
   emailSubmitInvalid,
+  formatDobInput,
   formString,
   lightFieldClass,
+  nameBlurError,
   nameFieldError,
   normalizeEmail,
   submittedEmail,
@@ -35,12 +43,9 @@ import {
 type Choice = "email" | "phone-number";
 
 const NAVY = "#051b35";
-const DOB_REQUIRED_MESSAGE = "Date of birth is required.";
-const DOB_INVALID_MESSAGE =
-  "Date of birth is incorrect. Make sure it is in the correct format: MM/DD/YYYY";
 
 const greenBtnCls =
-  "w-full rounded-full bg-[#a6e773] px-5 py-4 text-[15px] font-semibold text-[#051b35] disabled:opacity-70";
+  "inline-flex w-full items-center justify-center gap-2.5 rounded-full bg-[#a6e773] px-5 py-4 text-[15px] font-semibold text-[#051b35] disabled:opacity-70";
 const cardCls =
   "rounded-[24px] border border-[rgba(5,27,53,0.10)] bg-white p-[22px] shadow-[0_1px_2px_rgba(5,27,53,0.05),0_20px_46px_-22px_rgba(5,27,53,0.35)]";
 const backBtnCls =
@@ -78,34 +83,6 @@ function redirectAfterAuth(
     // the browser reloading the app and spinning the tab.
     replace(from.startsWith("/") ? from : `/${from}`);
   }, 500);
-}
-
-function isValidDob(dob: string) {
-  const digits = dob.replace(/\D/g, "");
-  if (digits.length !== 8) return false;
-  const [month, day, year] = [
-    Number(digits.slice(0, 2)),
-    Number(digits.slice(2, 4)),
-    Number(digits.slice(4, 8)),
-  ];
-  const dateObj = new Date(year, month - 1, day);
-  if (
-    dateObj.getFullYear() !== year ||
-    dateObj.getMonth() !== month - 1 ||
-    dateObj.getDate() !== day
-  ) {
-    return false;
-  }
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  return dateObj <= today;
-}
-
-function formatDobInput(raw: string) {
-  const digits = raw.replace(/\D/g, "").slice(0, 8);
-  if (digits.length <= 2) return digits;
-  if (digits.length <= 4) return `${digits.slice(0, 2)}/${digits.slice(2)}`;
-  return `${digits.slice(0, 2)}/${digits.slice(2, 4)}/${digits.slice(4)}`;
 }
 
 function Emblem({ size }: { size: number }) {
@@ -260,20 +237,14 @@ function LoginForm() {
     setLastNameError(lastErr);
     if (firstErr || lastErr) invalid = true;
 
-    const nextPhoneError = phoneNumberError(nextPhone);
+    const nextPhoneError = phoneSubmitError(nextPhone);
     setPhoneError(nextPhoneError);
     if (nextPhoneError) invalid = true;
 
     const dobValue = nextDob ? formatDobInput(nextDob) : dob;
-    if (!dobValue) {
-      setDobError("required");
-      invalid = true;
-    } else if (!isValidDob(dobValue)) {
-      setDobError("invalid");
-      invalid = true;
-    } else {
-      setDobError(null);
-    }
+    const dobErr = dobSubmitError(dobValue);
+    setDobError(dobErr);
+    if (dobErr) invalid = true;
 
     if (emailSubmitInvalid(nextEmail)) {
       setEmailError(emailSubmitError(nextEmail));
@@ -400,9 +371,17 @@ function LoginForm() {
               <button
                 type="submit"
                 disabled={isSaving}
+                aria-busy={isSaving || undefined}
                 className={greenBtnCls}
               >
-                {isSaving ? "Sending…" : "Send my code"}
+                <ButtonBusyContents
+                  loading={isSaving}
+                  loadingLabel="Sending…"
+                  spinnerColor="#051b35"
+                  trackColor="rgba(5,27,53,0.2)"
+                >
+                  Send my code
+                </ButtonBusyContents>
               </button>
               <p className="text-center text-[12px] leading-relaxed text-[#8a93a3]">
                 By continuing you agree to the Blocktickets{" "}
@@ -463,10 +442,18 @@ function LoginForm() {
                       <button
                         type="button"
                         disabled={isSaving}
+                        aria-busy={isSaving || undefined}
                         onClick={() => void resend()}
-                        className="font-semibold text-[#051b35]"
+                        className="inline-flex items-center gap-2 font-semibold text-[#051b35]"
                       >
-                        {isSaving ? "Sending…" : "Send a new code"}
+                        <ButtonBusyContents
+                          loading={isSaving}
+                          loadingLabel="Sending…"
+                          spinnerColor="#051b35"
+                          trackColor="rgba(5,27,53,0.2)"
+                        >
+                          Send a new code
+                        </ButtonBusyContents>
                       </button>
                     </>
                   )}
@@ -518,7 +505,7 @@ function LoginForm() {
                     setPhoneError(null);
                     setHasError(false);
                   }}
-                  onBlur={(value) => setPhoneError(phoneNumberError(value))}
+                  onBlur={(value) => setPhoneError(phoneBlurError(value))}
                 />
               </div>
               <NameField
@@ -534,9 +521,7 @@ function LoginForm() {
                   setFirstNameError(null);
                   setHasError(false);
                 }}
-                onBlur={(value) =>
-                  setFirstNameError(value.trim() ? nameFieldError(value) : null)
-                }
+                onBlur={(value) => setFirstNameError(nameBlurError(value))}
               />
               <NameField
                 id="lastName"
@@ -551,9 +536,7 @@ function LoginForm() {
                   setLastNameError(null);
                   setHasError(false);
                 }}
-                onBlur={(value) =>
-                  setLastNameError(value.trim() ? nameFieldError(value) : null)
-                }
+                onBlur={(value) => setLastNameError(nameBlurError(value))}
               />
               <div>
                 <label
@@ -578,11 +561,7 @@ function LoginForm() {
                     setDob(formatDobInput(e.currentTarget.value));
                     setDobError(null);
                   }}
-                  onBlur={(e) => {
-                    const next = formatDobInput(e.currentTarget.value);
-                    if (!next) return;
-                    setDobError(isValidDob(next) ? null : "invalid");
-                  }}
+                  onBlur={(e) => setDobError(dobBlurError(e.currentTarget.value))}
                   placeholder="MM/DD/YYYY"
                   inputMode="numeric"
                   className={`mt-2 ${lightFieldClass(Boolean(dobError))}`}
@@ -607,9 +586,17 @@ function LoginForm() {
               <button
                 type="submit"
                 disabled={isSaving || done}
+                aria-busy={isSaving || undefined}
                 className={greenBtnCls}
               >
-                {isSaving ? "Signing up…" : done ? "Signed up…" : "Sign up"}
+                <ButtonBusyContents
+                  loading={isSaving}
+                  loadingLabel="Signing up…"
+                  spinnerColor="#051b35"
+                  trackColor="rgba(5,27,53,0.2)"
+                >
+                  {done ? "Signed up…" : "Sign up"}
+                </ButtonBusyContents>
               </button>
             </form>
           </>

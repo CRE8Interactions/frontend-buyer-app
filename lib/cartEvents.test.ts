@@ -1,6 +1,8 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { BLOCKTICKETS_NAVY } from "@/lib/branding";
 import {
   DEMO_EVENTS,
+  DEMO_SEATED_TICKET_GROUPS,
   demoCheckoutCart,
   demoCompletedFlexPackOrder,
   demoCompletedPackageOrder,
@@ -8,6 +10,7 @@ import {
   demoFlexPack,
   demoSeasonPackage,
 } from "@/lib/demo/fixtures";
+import { demoDate } from "@/lib/demo/now";
 import {
   buildFlexPackSummaries,
   buildOrderEventDetails,
@@ -118,6 +121,45 @@ describe("wallet order totals", () => {
     expect(detail.event?.organization?.branding?.primaryColor).toBe("#861F41");
   });
 
+  it("rebuilds home and visitor cards when a fetched order adds sporting category", () => {
+    const icedogs = DEMO_EVENTS.find((event) => event.shortCode === "ICEDOG1")!;
+    const thinEvent = {
+      ...icedogs,
+      start: demoDate({ days: 5 }, "19:00"),
+      category: undefined,
+      organization: {
+        ...icedogs.organization,
+        category: undefined,
+      },
+      attractions: [icedogs.attractions![0]],
+    };
+    const listed = Object.values(
+      buildOrderEventDetails([demoCompletedTicketOrder({ event: thinEvent })]),
+    )[0];
+    expect(listed.attractions).toEqual([
+      expect.objectContaining({ role: "Featured" }),
+    ]);
+
+    const detail = withFullOrder(listed, {
+      event: {
+        ...thinEvent,
+        category: { name: "sports" },
+      },
+    });
+
+    expect(detail.attractions).toEqual([
+      expect.objectContaining({
+        name: "Niagara IceDogs",
+        role: "Home",
+      }),
+      expect.objectContaining({
+        name: "Visitor",
+        role: "Visitor",
+      }),
+    ]);
+    expect(detail.posterSrc).toBeUndefined();
+  });
+
   it("keeps the listed event uuid when the fetched order event omits it", () => {
     const listed = orderDetail("129.50");
     const detail = withFullOrder(
@@ -134,6 +176,57 @@ describe("wallet order totals", () => {
     );
 
     expect(detail.event?.uuid).toBe(upcoming.uuid);
+  });
+});
+
+describe("wallet ticket seat order", () => {
+  const upcoming = DEMO_EVENTS.find((event) => event.shortCode === "NMST004")!;
+
+  it("lists seats in ascending order when the API returns them reversed", () => {
+    const [first, second] = demoCheckoutCart({ ticketCount: 2 }).tickets;
+    const detail = Object.values(
+      buildOrderEventDetails([
+        demoCompletedTicketOrder({
+          event: upcoming,
+          tickets: [second, first],
+        }),
+      ]),
+    )[0];
+
+    expect(detail.tickets.map((ticket) => ticket.seat)).toEqual([
+      `Sec ${first.sectionNumber} · Row ${first.rowNumber} · Seat ${first.seatNumber}`,
+      `Sec ${second.sectionNumber} · Row ${second.rowNumber} · Seat ${second.seatNumber}`,
+    ]);
+  });
+
+  it("lists the lower row first when seat numbers match", () => {
+    const [first, second] = demoCheckoutCart({ ticketCount: 2 }).tickets;
+    const lowerRow = DEMO_SEATED_TICKET_GROUPS[3].rowNumber;
+    const higherRow = DEMO_SEATED_TICKET_GROUPS[1].rowNumber;
+    const detail = Object.values(
+      buildOrderEventDetails([
+        demoCompletedTicketOrder({
+          event: upcoming,
+          tickets: [
+            {
+              ...second,
+              rowNumber: higherRow,
+              seatNumber: first.seatNumber,
+            },
+            {
+              ...first,
+              rowNumber: lowerRow,
+              seatNumber: first.seatNumber,
+            },
+          ],
+        }),
+      ]),
+    )[0];
+
+    expect(detail.tickets.map((ticket) => ticket.seat)).toEqual([
+      `Sec ${first.sectionNumber} · Row ${lowerRow} · Seat ${first.seatNumber}`,
+      `Sec ${first.sectionNumber} · Row ${higherRow} · Seat ${first.seatNumber}`,
+    ]);
   });
 });
 
@@ -431,5 +524,58 @@ describe("wallet flex-pack orders", () => {
     const ticketOrder = demoCompletedTicketOrder();
     expect(buildFlexPackSummaries([ticketOrder])).toEqual([]);
     expect(countFlexPacks([ticketOrder])).toBe(0);
+  });
+});
+
+describe("wallet event attractions", () => {
+  const icedogs = DEMO_EVENTS.find((event) => event.shortCode === "ICEDOG1")!;
+
+  it("shows home and visitor cards for a single-attraction sporting event", () => {
+    const event = {
+      ...icedogs,
+      start: demoDate({ days: 5 }, "19:00"),
+      attractions: [icedogs.attractions![0]],
+    };
+    const detail = Object.values(
+      buildOrderEventDetails([demoCompletedTicketOrder({ event })]),
+    )[0];
+
+    expect(detail.attractions).toEqual([
+      expect.objectContaining({
+        name: "Niagara IceDogs",
+        role: "Home",
+        logo: "/clients/icedogs.svg",
+      }),
+      expect.objectContaining({
+        name: "Visitor",
+        role: "Visitor",
+        initials: "AWA",
+        brand: BLOCKTICKETS_NAVY,
+      }),
+    ]);
+    expect(detail.posterSrc).toBeUndefined();
+  });
+
+  it("keeps a single featured card for a non-sporting event", () => {
+    const event = {
+      ...icedogs,
+      start: demoDate({ days: 5 }, "19:00"),
+      organization: {
+        ...icedogs.organization,
+        category: { name: "Concert" },
+      },
+      attractions: [icedogs.attractions![0]],
+    };
+    const detail = Object.values(
+      buildOrderEventDetails([demoCompletedTicketOrder({ event })]),
+    )[0];
+
+    expect(detail.attractions).toEqual([
+      expect.objectContaining({
+        name: "Niagara IceDogs",
+        role: "Featured",
+      }),
+    ]);
+    expect(detail.attractions).toHaveLength(1);
   });
 });

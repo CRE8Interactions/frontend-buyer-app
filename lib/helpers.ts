@@ -1,6 +1,4 @@
 import moment from "moment-timezone";
-
-export const COUNTDOWN_NUM = 9;
 export const COUNTDOWN_DURATION = 1000;
 
 const ABBR_TO_IANA: Record<string, string> = {
@@ -169,6 +167,21 @@ export const formatOfferListPrice = (
 
 export const formatNumber = (num?: number | string | null) =>
   parseFloat(String(num ?? 0)).toLocaleString("en-US");
+
+function stripRichText(value?: string | null): string {
+  if (!value) return "";
+  return value.replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim();
+}
+
+/** Event "About" copy prefers summary, then description. Empty when neither is set. */
+export function eventAboutText(ev?: {
+  summary?: string | null;
+  description?: string | null;
+}): string {
+  const raw = (ev?.summary || ev?.description || "").trim();
+  if (!raw) return "";
+  return stripRichText(raw);
+}
 
 export {
   emailPatternMatch,
@@ -357,11 +370,177 @@ export type ApiImage =
   | null
   | undefined;
 
-export const imageUrl = (img?: ApiImage, fallback = "/blocktickets-logo.svg") => {
-  if (!img) return fallback;
-  if (typeof img === "string") return img;
-  return img.url || img.formats?.small?.url || img.formats?.thumbnail?.url || fallback;
+export type AttractionLike = {
+  artwork?: ApiImage | unknown;
+  images?: ApiImage[] | unknown;
+  logo?: ApiImage | unknown;
 };
+
+type ResolvedApiImage = Exclude<ApiImage, null | undefined>;
+
+/** Unwrap Strapi media shapes (arrays, `data`, `attributes`) to a plain image object or URL. */
+export function normalizeApiImage(img: unknown): ResolvedApiImage | null {
+  if (img == null) return null;
+  if (typeof img === "string") return img;
+  if (Array.isArray(img)) {
+    for (const item of img) {
+      const resolved = normalizeApiImage(item);
+      if (resolved) return resolved;
+    }
+    return null;
+  }
+  if (typeof img === "object") {
+    const obj = img as Record<string, unknown>;
+    if ("data" in obj) return normalizeApiImage(obj.data);
+    if ("attributes" in obj && obj.attributes && typeof obj.attributes === "object") {
+      return normalizeApiImage(obj.attributes);
+    }
+    if ("url" in obj || "formats" in obj) return obj as ResolvedApiImage;
+  }
+  return null;
+}
+
+export const imageUrl = (img?: ApiImage | unknown, fallback = "/blocktickets-logo.svg") => {
+  const normalized = normalizeApiImage(img);
+  if (!normalized) return fallback;
+  if (typeof normalized === "string") return normalized;
+  return (
+    normalized.url ||
+    normalized.formats?.small?.url ||
+    normalized.formats?.thumbnail?.url ||
+    fallback
+  );
+};
+
+/** Attraction logo from `artwork`, `logo`, or the first resolvable entry in `images`. */
+export function attractionImageUrl(
+  attraction?: AttractionLike | null,
+): string | null {
+  if (!attraction) return null;
+  const fromArtwork = imageUrl(attraction.artwork, "");
+  if (fromArtwork) return fromArtwork;
+  const fromLogo = imageUrl(attraction.logo, "");
+  if (fromLogo) return fromLogo;
+  if (Array.isArray(attraction.images)) {
+    for (const item of attraction.images) {
+      const url = imageUrl(item, "");
+      if (url) return url;
+    }
+    return null;
+  }
+  const fromImages = imageUrl(attraction.images, "");
+  return fromImages || null;
+}
+
+export type MatchupAttraction = AttractionLike & {
+  name?: string | null;
+  primary?: boolean | null;
+  order?: number | null;
+};
+
+export type EventMatchup = {
+  home: MatchupAttraction | null;
+  away: MatchupAttraction | null;
+  homeLabel: string;
+  awayLabel: string;
+  homeLogoSrc?: string;
+  awayLogoSrc?: string;
+  awayShort: string;
+  /** True when the event has at least one attraction to show. */
+  showMatchupSection: boolean;
+  /** True when there are two or more attractions (no visitor placeholder). */
+  showAwayTeam: boolean;
+};
+
+/** Unwrap a Strapi attraction entry onto a flat matchup shape. */
+export function normalizeAttractionEntry(raw: unknown): MatchupAttraction | null {
+  if (!raw || typeof raw !== "object") return null;
+  const row = raw as Record<string, unknown>;
+  const attrs =
+    row.attributes && typeof row.attributes === "object"
+      ? (row.attributes as Record<string, unknown>)
+      : null;
+  const merged = attrs ? { ...row, ...attrs } : row;
+  const name = merged.name;
+  return {
+    name: typeof name === "string" ? name : undefined,
+    primary:
+      typeof merged.primary === "boolean"
+        ? merged.primary
+        : merged.primary == null
+          ? undefined
+          : Boolean(merged.primary),
+    order: typeof merged.order === "number" ? merged.order : undefined,
+    artwork: merged.artwork,
+    images: merged.images as AttractionLike["images"],
+    logo: merged.logo,
+  };
+}
+
+/** Unwrap Strapi relation arrays (`data`, nested `attributes`) for event attractions. */
+export function normalizeAttractions(raw: unknown): MatchupAttraction[] {
+  if (!raw) return [];
+  if (Array.isArray(raw)) {
+    return raw
+      .map(normalizeAttractionEntry)
+      .filter((entry): entry is MatchupAttraction => entry != null);
+  }
+  if (typeof raw === "object" && "data" in raw) {
+    return normalizeAttractions((raw as { data: unknown }).data);
+  }
+  return [];
+}
+
+/** Resolve home/away labels and artwork for event pages and modals. */
+export function resolveEventMatchup(
+  rawAttractions: unknown,
+  options?: {
+    orgName?: string;
+    defaultAwayLabel?: string;
+    sportingEvent?: boolean;
+  },
+): EventMatchup {
+  const attractions = normalizeAttractions(rawAttractions);
+  const sorted = [...attractions].sort((a, b) => {
+    if (a.primary && !b.primary) return -1;
+    if (!a.primary && b.primary) return 1;
+    return (a.order ?? 0) - (b.order ?? 0);
+  });
+  const home = sorted.find((a) => a.primary) ?? sorted[0] ?? null;
+  const away = sorted.find((a) => a !== home) ?? sorted[1] ?? null;
+  const orgName = options?.orgName ?? "";
+  const defaultAwayLabel = options?.defaultAwayLabel ?? "Visitor";
+  const sportingEvent = options?.sportingEvent ?? false;
+  const hasAwayAttraction = away != null;
+  const showVisitorPlaceholder = !hasAwayAttraction && sportingEvent;
+  const showMatchupSection = sorted.length > 0 || Boolean(orgName);
+  const showAwayTeam = hasAwayAttraction || showVisitorPlaceholder;
+  const homeLabel = home?.name || orgName || "Home";
+  const awayLabel = hasAwayAttraction
+    ? away?.name || defaultAwayLabel
+    : showVisitorPlaceholder
+      ? defaultAwayLabel
+      : "";
+  const awayShort = hasAwayAttraction
+    ? (away?.name || "AWAY").slice(0, 3).toUpperCase()
+    : showVisitorPlaceholder
+      ? "AWA"
+      : "";
+
+  return {
+    home,
+    away,
+    homeLabel,
+    awayLabel,
+    homeLogoSrc: attractionImageUrl(home) || undefined,
+    awayLogoSrc: hasAwayAttraction
+      ? attractionImageUrl(away) || undefined
+      : undefined,
+    awayShort,
+    showMatchupSection,
+    showAwayTeam,
+  };
+}
 
 function seatIdCount(value: unknown): number {
   if (Array.isArray(value)) return value.length;

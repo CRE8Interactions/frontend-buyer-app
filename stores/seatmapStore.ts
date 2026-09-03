@@ -1,5 +1,15 @@
 import { create } from "zustand";
-import { mixedMapSelectionError } from "@/lib/mapSelection";
+import {
+  invalidOfferQuantityError,
+  maxTicketLimitError,
+  mixedMapSelectionError,
+} from "@/lib/mapSelection";
+import {
+  limitsFromTicketGroup,
+  quantityIsAllowed,
+  quantityRestrictionLabel,
+  selectionTicketLimit,
+} from "@/lib/ticketListings";
 import useFiltersStore, { type TicketGroup } from "./filtersStore";
 import type {
   SeatmapBackground,
@@ -71,7 +81,10 @@ type SeatmapState = {
   setSeatmapId: (id: string | number | null) => void;
   _addToSeats: (ticketGroup: TicketGroup) => void;
   _calculateTotals: () => void;
-  _withingEventTicketLimit: (additionalTickets: number) => boolean;
+  _withingEventTicketLimit: (
+    additionalTickets: number,
+    incoming?: TicketGroup | TicketGroup[],
+  ) => boolean;
   resetMapState: () => void;
   selectGASeats: (selectedGroups: TicketGroup[]) => void;
   selectSpecificSeat: (id: string | number, ticketGroup: TicketGroup) => void;
@@ -146,9 +159,16 @@ const useSeatmapStore = create<SeatmapState>((set, get) => ({
     set({ totalCount: seatedCount + gaCount, totalPrice: newTotalPrice });
   },
 
-  _withingEventTicketLimit: (additionalTickets) => {
-    const limit =
-      get().eventTicketLimit ?? useFiltersStore.getState().eventTicketLimit;
+  _withingEventTicketLimit: (additionalTickets, incoming) => {
+    const incomingGroups = incoming
+      ? Array.isArray(incoming)
+        ? incoming
+        : [incoming]
+      : [];
+    const limit = selectionTicketLimit(
+      get().eventTicketLimit ?? useFiltersStore.getState().eventTicketLimit,
+      [...get().selectedFromMap, ...incomingGroups],
+    );
     if (!limit) return true;
 
     const { selectedFromMap } = get();
@@ -173,20 +193,30 @@ const useSeatmapStore = create<SeatmapState>((set, get) => ({
       set({ seatedError: mixed });
       return;
     }
+    const eventLimit =
+      get().eventTicketLimit ?? useFiltersStore.getState().eventTicketLimit;
+    for (const group of selectedGroups) {
+      const limits = limitsFromTicketGroup(group, eventLimit);
+      const qty = Number(group.quantity || 0);
+      if (!quantityIsAllowed(qty, limits)) {
+        set({
+          seatedError: invalidOfferQuantityError(
+            quantityRestrictionLabel(limits),
+          ),
+        });
+        return;
+      }
+    }
     const totalNew = selectedGroups.reduce(
       (sum, { quantity }) => sum + (quantity || 0),
       0,
     );
-    if (!get()._withingEventTicketLimit(totalNew)) {
-      const limit =
-        get().eventTicketLimit ?? useFiltersStore.getState().eventTicketLimit;
-      set({
-        seatedError: {
-          title: "Max ticket limit reached",
-          message: `Adding these tickets would exceed the ticket limit of ${limit}. Please change your selection.`,
-          buttonText: "Close",
-        },
-      });
+    if (!get()._withingEventTicketLimit(totalNew, selectedGroups)) {
+      const limit = selectionTicketLimit(
+        get().eventTicketLimit ?? useFiltersStore.getState().eventTicketLimit,
+        [...get().selectedFromMap, ...selectedGroups],
+      );
+      set({ seatedError: maxTicketLimitError(limit ?? totalNew) });
       return;
     }
     selectedGroups.forEach((group) => {
@@ -206,16 +236,12 @@ const useSeatmapStore = create<SeatmapState>((set, get) => ({
       set({ seatedError: mixed });
       return;
     }
-    if (!get()._withingEventTicketLimit(1)) {
-      const limit =
-        get().eventTicketLimit ?? useFiltersStore.getState().eventTicketLimit;
-      set({
-        seatedError: {
-          title: "Max ticket limit reached",
-          message: `Adding these tickets would exceed the ticket limit of ${limit}. Please change your selection.`,
-          buttonText: "Close",
-        },
-      });
+    if (!get()._withingEventTicketLimit(1, ticketGroup)) {
+      const limit = selectionTicketLimit(
+        get().eventTicketLimit ?? useFiltersStore.getState().eventTicketLimit,
+        [...get().selectedFromMap, ticketGroup],
+      );
+      set({ seatedError: maxTicketLimitError(limit ?? 1) });
       return;
     }
 
@@ -263,20 +289,33 @@ const useSeatmapStore = create<SeatmapState>((set, get) => ({
       set({ seatedError: mixed });
       return;
     }
+    const eventLimit =
+      get().eventTicketLimit ?? useFiltersStore.getState().eventTicketLimit;
+    for (const group of groups) {
+      const limits = limitsFromTicketGroup(
+        { ...group, availableCount: 1, maxContiguous: 1 },
+        eventLimit,
+      );
+      const qty = Number(group.quantity || 0);
+      if (!quantityIsAllowed(qty, limits)) {
+        set({
+          seatedError: invalidOfferQuantityError(
+            quantityRestrictionLabel(limits),
+          ),
+        });
+        return;
+      }
+    }
     const totalNew = groups.reduce(
       (sum, g) => sum + (g.quantity || 1),
       0,
     );
-    if (!get()._withingEventTicketLimit(totalNew)) {
-      const limit =
-        get().eventTicketLimit ?? useFiltersStore.getState().eventTicketLimit;
-      set({
-        seatedError: {
-          title: "Max ticket limit reached",
-          message: `Adding these tickets would exceed the ticket limit of ${limit}. Please change your selection.`,
-          buttonText: "Close",
-        },
-      });
+    if (!get()._withingEventTicketLimit(totalNew, groups)) {
+      const limit = selectionTicketLimit(
+        get().eventTicketLimit ?? useFiltersStore.getState().eventTicketLimit,
+        [...get().selectedFromMap, ...groups],
+      );
+      set({ seatedError: maxTicketLimitError(limit ?? totalNew) });
       return;
     }
 

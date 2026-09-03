@@ -8,7 +8,9 @@
 import type { TicketingData } from "@/components/organisms/PremiumTicketing";
 import { brandingToTicketingTheme } from "@/lib/branding";
 import { CHECKOUT_HOLD_SECONDS } from "@/lib/checkoutBranding";
+import { isSportingEvent } from "@/lib/eventCategory";
 import {
+  resolveEventMatchup,
   eventWhenShortWithDoors,
   eventWhenWithDoors,
   formatEventWhen,
@@ -457,11 +459,28 @@ export function demoTicketGroups() {
       {
         id: "grp-ga",
         price: 25,
+        PLName: "Standard",
         availableCount: 240,
         sectionId: DEMO_GA_SECTION_ID,
         sectionName: "General Admission",
         sectionNumber: "GA",
         GA: true,
+        offer: {
+          id: "off-ga-std",
+          name: "Standard Admission",
+          connected_offers: [
+            {
+              id: "off-student-rate",
+              name: "Student Rate",
+              isConnectedOffer: true,
+              minQuantity: 2,
+              maxQuantity: 6,
+              multipleOf: 2,
+              description: "Valid student ID required at the gate.",
+              am_pricing_objects: [{ name: "Standard", totalDue: 15 }],
+            },
+          ],
+        },
       },
       {
         id: "grp-vip",
@@ -520,6 +539,12 @@ export function demoTicketGroups() {
     offers: [
       { id: "off-vip", name: "VIP Club", am_pricing_objects: [{ totalDue: 75 }] },
       {
+        id: "off-student-rate",
+        name: "Student Rate",
+        isConnectedOffer: true,
+        am_pricing_objects: [{ totalDue: 15 }],
+      },
+      {
         id: "off-presale",
         name: "STH Presale",
         accessCode: "GO2026",
@@ -553,6 +578,8 @@ export const DEMO_SEATED_TICKET_GROUPS: RawTicketGroup[] = [
     offer: {
       id: 10,
       name: "Field Club",
+      description:
+        "Premium field-level club seats with covered concourse access.",
       color: "#F032E6",
       inventoryType: "exclusive",
       minQuantity: 1,
@@ -564,6 +591,7 @@ export const DEMO_SEATED_TICKET_GROUPS: RawTicketGroup[] = [
     sectionId: "sec-a",
     sectionNumber: "A",
     rowNumber: "12",
+    PLName: "Level A",
     price: 21.94,
     availableCount: 6,
     maxContiguous: 6,
@@ -577,6 +605,17 @@ export const DEMO_SEATED_TICKET_GROUPS: RawTicketGroup[] = [
       inventoryType: "exclusive",
       minQuantity: 2,
       maxQuantity: 6,
+      connected_offers: [
+        {
+          id: 14,
+          name: "Companion Seat",
+          isConnectedOffer: true,
+          minQuantity: 1,
+          maxQuantity: 2,
+          description: "Must be purchased with a full-price seat in this row.",
+          am_pricing_objects: [{ name: "Level A", totalDue: 12 }],
+        },
+      ],
     },
   },
   {
@@ -616,6 +655,7 @@ export const DEMO_SEATED_TICKET_GROUPS: RawTicketGroup[] = [
     sectionId: "sec-a",
     sectionNumber: "A",
     rowNumber: "12",
+    PLName: "Level A",
     price: 21.94,
     availableCount: 6,
     maxContiguous: 6,
@@ -629,6 +669,16 @@ export const DEMO_SEATED_TICKET_GROUPS: RawTicketGroup[] = [
       inventoryType: "exclusive",
       minQuantity: 2,
       maxQuantity: 6,
+      connected_offers: [
+        {
+          id: 14,
+          name: "Companion Seat",
+          isConnectedOffer: true,
+          minQuantity: 1,
+          maxQuantity: 2,
+          am_pricing_objects: [{ name: "Level A", totalDue: 12 }],
+        },
+      ],
     },
   },
   {
@@ -884,9 +934,10 @@ export function demoSeatedTicketingData(
   const org = event.organization;
   const theme = brandingToTicketingTheme(event, org);
   const listings = groupsToListings(DEMO_SEATED_TICKET_GROUPS);
-  const home = event.attractions?.find((a) => a.primary)?.name || org.name;
-  const away =
-    event.attractions?.find((a) => !a.primary)?.name || "Visitor";
+  const matchup = resolveEventMatchup(event.attractions, {
+    orgName: org.name,
+    sportingEvent: isSportingEvent(event),
+  });
   const venueCityState = formatVenueCityState(event.venue.address);
   const venueLine = formatVenueLocationLine(event.venue.name, event.venue.address);
   const tz = event.venue.timezone;
@@ -912,9 +963,13 @@ export function demoSeatedTicketingData(
     providerLabel: `Official ticketing marketplace for ${org.name}`,
     aboutText:
       "Dummy event for UI/UX review — all data here is local demo content, not real inventory.",
-    homeLabel: home,
-    awayLabel: away,
-    awayShort: away.slice(0, 3).toUpperCase(),
+    homeLabel: matchup.homeLabel,
+    awayLabel: matchup.awayLabel,
+    awayShort: matchup.awayShort,
+    homeLogoSrc: matchup.homeLogoSrc,
+    awayLogoSrc: matchup.awayLogoSrc,
+    showMatchupSection: matchup.showMatchupSection,
+    showAwayTeam: matchup.showAwayTeam,
     offerNames: ["Field Club", "Section A-B", "Section M-N & GA"],
     listings,
     ...overrides,

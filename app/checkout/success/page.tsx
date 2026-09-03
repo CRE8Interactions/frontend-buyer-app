@@ -3,7 +3,9 @@
 import { Suspense, useEffect, useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
-import BrandedActionButton from "@/components/atoms/BrandedActionButton";
+import BrandedActionButton, {
+  ButtonBusyContents,
+} from "@/components/atoms/BrandedActionButton";
 import RouteLoader from "@/components/molecules/RouteLoader";
 import { useAuth } from "@/lib/auth";
 import { BLOCKTICKETS_NAVY, type BrandingOrganization } from "@/lib/branding";
@@ -904,6 +906,7 @@ function CheckoutSuccessPage() {
               <button
                 type="button"
                 disabled={walletSaving || !selectedTicket || selectedTicketAdded}
+                aria-busy={walletSaving || undefined}
                 onClick={() => void addSelectedTicketToWallet()}
                 className="flex w-full items-center justify-center gap-2.5 rounded-full px-[26px] py-4 text-[16px] font-semibold disabled:opacity-70"
                 style={{
@@ -911,8 +914,15 @@ function CheckoutSuccessPage() {
                   color: branding.theme.buttonTextColor,
                 }}
               >
-                <WalletPassIcon />
-                {walletSaving ? "Adding…" : phoneWalletLabel(passWallet)}
+                <ButtonBusyContents
+                  loading={walletSaving}
+                  loadingLabel="Adding…"
+                  spinnerColor={branding.theme.buttonTextColor}
+                  trackColor="rgba(5,27,53,0.2)"
+                >
+                  <WalletPassIcon />
+                  {phoneWalletLabel(passWallet)}
+                </ButtonBusyContents>
               </button>
               {walletError ? (
                 <p role="alert" className="mt-2 text-center text-[13px] text-[#b91c1c]">

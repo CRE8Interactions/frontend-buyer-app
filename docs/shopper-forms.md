@@ -1,8 +1,19 @@
 # Shopper forms
 
-This is how shopper-facing forms behave across the site. Technical diagrams for the login journey live in `docs/login-validations.mmd`, `docs/code-validations.mmd`, and `docs/create-account-validations.mmd`.
+This is how shopper-facing forms behave across the site.
 
-In every form below, **the primary button stays clickable when a field is empty or mistyped**. Leaving a filled field can show a hint. Pressing the button or Enter always checks the values that are actually in the fields right then. A request is sent only after those local checks pass.
+In every form below, **the primary button stays clickable when a field is empty or mistyped**. Pressing the button or Enter always checks the values that are actually in the fields right then. A request is sent only after those local checks pass.
+
+### Blur and submit (all text fields)
+
+Every shopper text field — email, phone, names, date of birth, access code, promo code, and the rest — follows the same contract:
+
+- **Idle blur (empty field):** no error. The shopper can tab away without seeing required copy.
+- **Idle blur (filled field):** if what they typed is wrong, show the field’s invalid copy immediately. Whitespace-only counts as empty on blur.
+- **Submit or Enter:** re-check every field from the form, whether or not blur already ran. Empty required fields show required copy. Typed-but-wrong fields show invalid copy.
+- **API rejections** (wrong access code, rejected promo, existing phone): the server message stays visible on blur until the shopper edits the field. Connection problems behave the same way.
+
+Shared rules and copy live in `lib/fieldValidation.ts`. Login flowcharts are in `docs/login-validations.mmd`, `docs/code-validations.mmd`, and `docs/create-account-validations.mmd`.
 
 Buttons still grey out when something operational is in the way: a request already in progress, an action that already succeeded, payment not ready, sold out, no tickets selected, or personal details that have not changed.
 
@@ -34,16 +45,18 @@ Under the boxes: a reminder that codes expire after 10 minutes so the right one 
 Shoppers enter first name, last name, phone, and date of birth. The email from sign-in is shown but cannot be edited.
 
 - Names only accept letters, spaces, apostrophes, and hyphens while typing.
-- Leaving a filled name, phone, or date of birth can show a field error. Empty fields stay quiet until **Sign up**.
-- Sign up / Enter re-checks every field. Missing names, invalid phone, or missing/invalid date of birth stop the request.
+- **First / last name:** empty blur is quiet. A filled name with illegal characters shows “Letters only — no digits.” on blur. Empty or whitespace-only submit shows “First name is required.” / “Last name is required.”
+- **Phone:** empty blur is quiet. A partial or invalid number shows “Phone number is not valid. Please try again” on blur. Empty submit shows “Phone number is required.”
+- **Date of birth:** empty blur is quiet. A filled but invalid or future date shows the format / incorrect-date copy on blur. Empty submit shows “Date of birth is required.”
+- **Sign up** / Enter re-checks every field from the form. Nothing is sent until names, phone, and date of birth all pass.
 - Success signs them in. A phone that already belongs to an account shows the existing-phone message.
 
 ## Guest checkout
 
 Shoppers type email, first name, and last name, then **Continue to payment** or Enter.
 
-- Empty submit shows “Email address is required.” and “First name is required.” / “Last name is required.” and stays on the form.
-- A disposable or malformed email uses the same invalid-email copy as sign-in.
+- **Email:** same blur and submit rules as sign-in — empty blur is quiet; invalid email on blur or submit uses “Email is invalid. Please try again.”; empty submit uses “Email address is required.”
+- **Names:** empty blur is quiet. A filled name with illegal characters shows “Letters only — no digits.” on blur. Empty or whitespace-only submit shows “First name is required.” / “Last name is required.”
 - Success continues into payment.
 
 ## Waitlist and Remind me
@@ -51,15 +64,17 @@ Shoppers type email, first name, and last name, then **Continue to payment** or 
 Shoppers type an email in the ticket modal (or the sold-out event box) and press **Join waitlist**, **Set reminder**, or **Get Notified**, or Enter.
 
 - The button is never greyed out just because the email is empty.
+- Empty blur is quiet. A filled invalid email shows invalid-email copy on blur.
 - Empty submit shows “Email address is required.” and does not join.
-- Typed invalid email shows invalid-email copy and does not join.
+- Typed invalid submit shows the same invalid-email copy and does not join.
 - Success confirms they will be emailed if tickets return or when sales open.
 
 ## Transfer email
 
 Shoppers pick tickets first (that step stays blocked until at least one ticket is selected). Then they type a recipient email and press **Continue** / **Next** or Enter.
 
-- Empty or invalid email shows required copy when empty and invalid-email copy when typed. The transfer is not sent.
+- Empty blur is quiet. A filled invalid email shows invalid-email copy on blur.
+- Empty submit shows required copy. Typed invalid submit shows invalid-email copy. The transfer is not sent in either case.
 - They cannot send tickets to their own address.
 - After a valid email they confirm, then the transfer is sent.
 
@@ -68,7 +83,7 @@ Shoppers pick tickets first (that step stays blocked until at least one ticket i
 Shoppers pick or type an amount, optionally a name and email, then **Continue to payment** or Enter.
 
 - Amount must be greater than zero.
-- Unless they donate anonymously, a valid email is required. Name may be blank but cannot include digits.
+- Unless they donate anonymously, email follows the same blur and submit rules as sign-in. Name may be blank but cannot include digits while typing.
 - Success opens the payment step. Pay stays blocked until Stripe is ready.
 
 ## Personal details
@@ -76,14 +91,14 @@ Shoppers pick or type an amount, optionally a name and email, then **Continue to
 Shoppers change email, first name, and last name.
 
 - **Update** stays greyed out until something actually changed.
-- Once dirty, it stays clickable even if the email looks wrong. Submit still blocks a bad or disposable email.
+- Once dirty, it stays clickable even if the email looks wrong. Email uses the same empty-quiet / invalid-on-blur / full re-check on submit pattern as sign-in.
 - Success shows that details were saved.
 
 ## Phone update
 
-Shoppers enter a new phone and press **Update phone number** or Enter. Uniqueness is checked then, not when they leave the field.
+Shoppers enter a new phone and press **Update phone number** or Enter. Uniqueness is checked on submit, not when they leave the field.
 
-- Local phone format is checked first.
+- Empty blur is quiet. Format and required checks run on submit.
 - If the number is already in use they see the existing-phone copy.
 - Otherwise a six-digit code is sent. Entering all six digits finishes the update.
 
@@ -91,16 +106,18 @@ Shoppers enter a new phone and press **Update phone number** or Enter. Uniquenes
 
 Shoppers type a code at checkout and press **Apply** or Enter.
 
-- Apply stays clickable when the field is empty. Empty submit asks them to enter a code.
-- A rejected code shows the server message and asks them to try again.
+- Apply stays clickable when the field is empty. Empty blur is quiet.
+- Empty submit shows “Enter a promo code.”
+- A rejected code shows the server message and asks them to try again. That rejection stays on blur until the shopper edits the field.
 - A valid code shows the discount on the order. **Pay** still waits on Stripe and any required donation.
 
 ## Access code
 
-Shoppers type a code to unlock a seating zone and press **Unlock seats** or Enter.
+Shoppers type a code to unlock a seating zone and press **Unlock seats** / **Unlock offer** or Enter.
 
-- Empty or wrong codes show that the code did not match.
-- A matching code unlocks those seats. Checking stays disabled only while a check is in progress.
+- Empty blur is quiet. Empty submit shows “Access code is required.”
+- A code that does not match shows “That code didn't match. Check with the event for the right one.” That rejection stays on blur until the shopper edits the field.
+- A matching code unlocks those seats or offers. Checking stays disabled only while a check is in progress.
 
 ## Seat-delivery menu
 

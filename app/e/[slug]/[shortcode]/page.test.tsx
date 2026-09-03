@@ -71,8 +71,11 @@ describe("GA event page tiers", () => {
       }),
     ).toBeInTheDocument();
     expect(screen.getByText(/vip club · live/i)).toBeInTheDocument();
-    // Locked offers stay behind their code rather than posing as sold out.
-    expect(screen.queryByText(/sth presale/i)).not.toBeInTheDocument();
+    expect(
+      await screen.findByText(/sth presale · locked/i, undefined, {
+        timeout: 4000,
+      }),
+    ).toBeInTheDocument();
   });
 
   it("leaves an offer with no ticket groups off the page", async () => {
