@@ -65,7 +65,25 @@ export type TicketGroup = {
     description?: string;
     inventoryType?: string;
     isDefaultOffer?: boolean;
-    connected_offers?: unknown[];
+    connected_offers?: Array<{
+      id?: string | number;
+      name?: string;
+      description?: string | null;
+      isConnectedOffer?: boolean | null;
+      freeOffer?: boolean | null;
+      minQuantity?: number | null;
+      maxQuantity?: number | null;
+      multipleOf?: number | null;
+      incrementsOf?: number | null;
+      limit?: number | null;
+      accessCode?: string | null;
+      am_pricing_objects?: Array<{
+        name?: string;
+        totalDue?: number;
+        price?: number;
+      }>;
+    }>;
+    isConnectedOffer?: boolean | null;
     minQuantity?: number | null;
     maxQuantity?: number | null;
     multipleOf?: number | null;
