@@ -219,7 +219,7 @@ function orderTotal(value?: number | string | null) {
 }
 
 
-function eventInitials(name?: string) {
+function eventInitials(name?: string | null) {
   if (!name) return "EVENT";
   const words = name.trim().split(/\s+/).filter(Boolean);
   if (words.length === 1) return words[0].slice(0, 8).toUpperCase();

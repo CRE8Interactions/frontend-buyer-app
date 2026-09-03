@@ -30,6 +30,7 @@ import {
   groupsToGaTiers,
   lockedZonesFromGroups,
   normalizeGlobalTicketLimit,
+  type RawTicketGroup as RawGroup,
 } from "@/lib/ticketListings";
 import useWaitingRoomHeartbeat from "@/hooks/useWaitingRoomHeartbeat";
 import {
@@ -38,31 +39,6 @@ import {
   isWaitingRoomRequired,
   rememberWaitingRoomEntry,
 } from "@/lib/waitingRoom";
-
-type RawGroup = {
-  id?: string | number;
-  GA?: boolean;
-  price?: number;
-  availableCount?: number;
-  sectionName?: string;
-  sectionNumber?: string;
-  ticketGroupUUID?: string;
-  eventUUID?: string;
-  offer?: {
-    id?: string | number;
-    name?: string;
-    description?: string | null;
-    isDefaultOffer?: boolean;
-    minQuantity?: number | null;
-    maxQuantity?: number | null;
-    multipleOf?: number | null;
-    incrementsOf?: number | null;
-    limit?: number | null;
-    accessCode?: string | null;
-    freeOffer?: boolean | null;
-  };
-  [key: string]: unknown;
-};
 
 type EventData = {
   id?: string | number;

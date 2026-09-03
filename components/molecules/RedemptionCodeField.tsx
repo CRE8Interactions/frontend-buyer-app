@@ -40,7 +40,6 @@ export default function RedemptionCodeField({
   disabled?: boolean;
   variant?: FieldVariant;
   placeholder?: string;
-  hideLabel?: boolean;
   autoFocus?: boolean;
   hideLabel?: boolean;
   className?: string;
