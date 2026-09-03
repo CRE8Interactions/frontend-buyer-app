@@ -20,6 +20,10 @@ import {
   maxTicketLimitError,
 } from "@/lib/mapSelection";
 import {
+  groupsToGaTiers,
+  lockedZonesFromGroups,
+} from "@/lib/ticketListings";
+import {
   finishSeatmapBackgroundLoad,
   resetSeatmapBackgroundCache,
 } from "@/tests/seatmap";
@@ -163,9 +167,13 @@ async function renderReady(
     await waitFor(() => {
       expect(screen.getByRole("button", { name: /find on map/i })).toBeEnabled();
     });
-    await screen.findByText(waitForListing, {}, { timeout: 3000 });
+    await waitFor(() => {
+      expect(screen.getAllByText(waitForListing).length).toBeGreaterThan(0);
+    }, { timeout: 3000 });
   } else {
-    await screen.findByText(waitForListing, {}, { timeout: 3000 });
+    await waitFor(() => {
+      expect(screen.getAllByText(waitForListing).length).toBeGreaterThan(0);
+    }, { timeout: 3000 });
   }
   return user;
 }
@@ -238,7 +246,7 @@ describe("Select tickets page (PremiumTicketing)", () => {
 
     expect(screen.getByText(DEMO_SEATED_EVENT.name)).toBeInTheDocument();
     expect(screen.getByText(/event information/i)).toBeInTheDocument();
-    expect(screen.getByText(/2 tickets/i)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /^2 tickets$/i })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /^all$/i })).toBeInTheDocument();
     expect(
       screen.getByRole("button", { name: /field club/i }),
@@ -347,10 +355,11 @@ describe("Select tickets page (PremiumTicketing)", () => {
     expect(screen.getByText(/sec m · row m3/i)).toBeInTheDocument();
 
     await user.click(screen.getByRole("button", { name: /^all$/i }));
-    expect(await screen.findByText(/sec a · row 12/i)).toBeInTheDocument();
+    expect((await screen.findAllByText(/sec a · row 12/i)).length).toBeGreaterThan(0);
+    expect(screen.getByText(/companion seat/i)).toBeInTheDocument();
   });
 
-  it("lists ticket quantities up to the highest offer maxQuantity, else the event limit", async () => {
+  it("lists ticket quantities up to the default when any offer has no max, else the highest offer max or event limit", async () => {
     const sectionAB = DEMO_SEATED_TICKET_GROUPS.find(
       (g) => g.offer?.name && g.seatIds?.includes("a1"),
     );
@@ -365,17 +374,18 @@ describe("Select tickets page (PremiumTicketing)", () => {
     }
 
     const user = await renderReady();
-    await user.click(screen.getByRole("button", { name: /2 tickets/i }));
+    await user.click(screen.getByRole("button", { name: /^2 tickets$/i }));
     const allMenu = screen.getByRole("listbox", { name: /ticket quantity/i });
     expect(
-      within(allMenu).getByRole("button", {
-        name: `${sectionMN.offer.maxQuantity} tickets`,
-      }),
+      within(allMenu).getByRole("button", { name: "50 tickets" }),
     ).toBeInTheDocument();
+    expect(
+      within(allMenu).queryByRole("button", { name: "51 tickets" }),
+    ).not.toBeInTheDocument();
     await user.click(within(allMenu).getByRole("button", { name: /^2 tickets$/i }));
 
     await user.click(screen.getByRole("button", { name: sectionAB.offer.name }));
-    await user.click(screen.getByRole("button", { name: /2 tickets/i }));
+    await user.click(screen.getByRole("button", { name: /^2 tickets$/i }));
     const selectedMenu = screen.getByRole("listbox", { name: /ticket quantity/i });
     expect(
       within(selectedMenu).getByRole("button", {
@@ -393,17 +403,15 @@ describe("Select tickets page (PremiumTicketing)", () => {
 
     await user.click(screen.getByRole("button", { name: /^all$/i }));
     useFiltersStore.setState({ eventTicketLimit: 3 });
-    await user.click(screen.getByRole("button", { name: /2 tickets/i }));
+    await user.click(screen.getByRole("button", { name: /^2 tickets$/i }));
     const allWithEvent = screen.getByRole("listbox", {
       name: /ticket quantity/i,
     });
     expect(
-      within(allWithEvent).getByRole("button", {
-        name: `${sectionMN.offer.maxQuantity} tickets`,
-      }),
+      within(allWithEvent).getByRole("button", { name: "3 tickets" }),
     ).toBeInTheDocument();
     expect(
-      within(allWithEvent).queryByRole("button", { name: "50 tickets" }),
+      within(allWithEvent).queryByRole("button", { name: "4 tickets" }),
     ).not.toBeInTheDocument();
   });
 
@@ -421,7 +429,7 @@ describe("Select tickets page (PremiumTicketing)", () => {
     );
     await screen.findByText(/sec m · row m3/i);
 
-    await user.click(screen.getByRole("button", { name: /2 tickets/i }));
+    await user.click(screen.getByRole("button", { name: /^2 tickets$/i }));
     await user.click(screen.getByRole("button", { name: `${pick} tickets` }));
 
     rerender(
@@ -454,7 +462,7 @@ describe("Select tickets page (PremiumTicketing)", () => {
     const onFiltersChange = vi.fn();
     const user = await renderReady(seatedTicketingFixture, { onFiltersChange });
 
-    await user.click(screen.getByRole("button", { name: /2 tickets/i }));
+    await user.click(screen.getByRole("button", { name: /^2 tickets$/i }));
     await user.click(screen.getByRole("button", { name: /^4 tickets$/i }));
     expect(onFiltersChange).toHaveBeenCalledWith({
       quantity: 4,
@@ -643,7 +651,7 @@ describe("Select tickets page (PremiumTicketing)", () => {
     expect(screen.getByRole("button", { name: /^all$/i })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /field club/i })).toBeInTheDocument();
     expect(screen.getByText(/sort by price/i)).toBeInTheDocument();
-    expect(screen.getByText(/2 tickets/i)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /^2 tickets$/i })).toBeInTheDocument();
 
     await user.click(screen.getByRole("button", { name: /close/i }));
 
@@ -679,7 +687,7 @@ describe("Select tickets page (PremiumTicketing)", () => {
       ],
     });
 
-    await user.click(screen.getByRole("button", { name: /2 tickets/i }));
+    await user.click(screen.getByRole("button", { name: /^2 tickets$/i }));
     expect(
       screen.queryByRole("button", { name: /^4 tickets$/i }),
     ).not.toBeInTheDocument();
@@ -692,8 +700,11 @@ describe("Select tickets page (PremiumTicketing)", () => {
 
     expect(await screen.findByText("Ticket details")).toBeInTheDocument();
     expect(screen.getByText(/seat location/i)).toBeInTheDocument();
-    expect(screen.getByText(/1 – 4 tickets available/i)).toBeInTheDocument();
+    expect(screen.getByText(/1-4 tickets available/i)).toBeInTheDocument();
     expect(screen.getByText(/about this ticket/i)).toBeInTheDocument();
+    expect(
+      screen.getByText(DEMO_SEATED_TICKET_GROUPS[0].offer?.description || ""),
+    ).toBeInTheDocument();
     expect(
       screen.getByRole("button", { name: /^checkout$/i }),
     ).toBeInTheDocument();
@@ -741,8 +752,14 @@ describe("Select tickets page (PremiumTicketing)", () => {
     };
     const user = await renderReady(restricted);
 
+    expect(screen.getByText(/2 – 6 tickets$/i)).toBeInTheDocument();
+    expect(screen.queryByText(/increments of 2/i)).not.toBeInTheDocument();
+
     await user.click(screen.getByText(/sec m · row m3/i));
     await screen.findByText("Ticket details");
+    expect(
+      screen.getByText(/2-6 tickets available · Increments of 2/i),
+    ).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: /more tickets/i }));
 
     expect(screen.getAllByText(/4 tickets/i).length).toBeGreaterThan(0);
@@ -870,6 +887,56 @@ describe("Select tickets page (PremiumTicketing)", () => {
     ).not.toBeInTheDocument();
   });
 
+  it("shows the offer description on GA tier cards when the group carries one", async () => {
+    const vipGroup = demoTicketGroups().ticketGroups.find(
+      (group) => group.offer?.name === "VIP Club",
+    )!;
+    render(
+      <PremiumTicketing
+        data={{
+          ...seatedTicketingFixture,
+          eventType: "ga",
+          gaTiers: [
+            {
+              name: vipGroup.offer!.name,
+              sub: "Ga · unreserved seating",
+              price: "$75.00",
+              unit: 75,
+              note: "Ticket limit: 1–100 per order",
+              state: "live",
+              cartGroup: vipGroup,
+            },
+          ],
+        }}
+      />,
+    );
+
+    expect(await screen.findByText("About this ticket")).toBeInTheDocument();
+    expect(
+      screen.getByText(vipGroup.offer!.description!),
+    ).toBeInTheDocument();
+    expect(screen.getByText("Ga · unreserved seating")).toBeInTheDocument();
+  });
+
+  it("shows connected GA tiers with their own ticket limits", async () => {
+    const groups = demoTicketGroups().ticketGroups;
+    render(
+      <PremiumTicketing
+        data={{
+          ...seatedTicketingFixture,
+          eventType: "ga",
+          gaTiers: groupsToGaTiers(groups, { includeLocked: true }),
+        }}
+      />,
+    );
+
+    expect(await screen.findByText("Student Rate")).toBeInTheDocument();
+    expect(screen.getByText("$15.00")).toBeInTheDocument();
+    expect(
+      screen.getByText(/ticket limit: 2–6 per order · increments of 2/i),
+    ).toBeInTheDocument();
+  });
+
   it("uses each GA offer's min, max, and multiple for checkout quantity", async () => {
     const gaGroup = demoTicketGroups().ticketGroups[0];
     const user = userEvent.setup();
@@ -884,7 +951,7 @@ describe("Select tickets page (PremiumTicketing)", () => {
               sub: "General admission",
               price: "$25.00",
               unit: 25,
-              note: "Ticket limit: 2–6 per order · multiples of 2",
+              note: "Ticket limit: 2–6 per order · Increments of 2",
               state: "live",
               min: 2,
               max: 6,
@@ -911,6 +978,77 @@ describe("Select tickets page (PremiumTicketing)", () => {
         ticketGroup: expect.objectContaining({ quantity: 6 }),
       });
     });
+  });
+
+  it("unlocks a passcode-locked GA offer and enables checkout", async () => {
+    mockedCheckAccessCode.mockResolvedValue({ data: { valid: true } } as never);
+    const presaleGroup = demoTicketGroups().ticketGroups.find(
+      (group) => group.offer?.accessCode,
+    );
+    if (!presaleGroup) throw new Error("demo fixtures need a locked GA group");
+    const lockedZones = lockedZonesFromGroups([presaleGroup]);
+    const gaTiers = groupsToGaTiers([presaleGroup], { includeLocked: true });
+    const user = userEvent.setup();
+
+    render(
+      <PremiumTicketing
+        data={{
+          ...seatedTicketingFixture,
+          eventType: "ga",
+          gaTiers,
+          lockedZones,
+        }}
+      />,
+    );
+
+    expect(
+      screen.getByRole("button", { name: /enter access code/i }),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: /checkout \$30/i }),
+    ).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: /enter access code/i }));
+    expect(
+      screen.getByText(/enter your access code to unlock this offer/i),
+    ).toBeInTheDocument();
+    await user.type(screen.getByPlaceholderText(/access code/i), "GO2026");
+    await user.click(screen.getByRole("button", { name: /unlock offer/i }));
+
+    expect(
+      await screen.findByRole("button", { name: /checkout \$30/i }),
+    ).toBeInTheDocument();
+  });
+
+  it("keeps a locked GA offer gated when the code is rejected", async () => {
+    mockedCheckAccessCode.mockResolvedValue({ data: { valid: false } } as never);
+    const presaleGroup = demoTicketGroups().ticketGroups.find(
+      (group) => group.offer?.accessCode,
+    );
+    if (!presaleGroup) throw new Error("demo fixtures need a locked GA group");
+    const user = userEvent.setup();
+
+    render(
+      <PremiumTicketing
+        data={{
+          ...seatedTicketingFixture,
+          eventType: "ga",
+          gaTiers: groupsToGaTiers([presaleGroup], { includeLocked: true }),
+          lockedZones: lockedZonesFromGroups([presaleGroup]),
+        }}
+      />,
+    );
+
+    await user.click(screen.getByRole("button", { name: /enter access code/i }));
+    await user.type(screen.getByPlaceholderText(/access code/i), "WRONG");
+    await user.click(screen.getByRole("button", { name: /unlock offer/i }));
+
+    expect(
+      await screen.findByText(/that code didn.t match/i),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: /checkout \$30/i }),
+    ).not.toBeInTheDocument();
   });
 
   it("holds only the GA offer the shopper checked out", async () => {
@@ -1284,7 +1422,7 @@ describe("Select tickets page (PremiumTicketing)", () => {
     await openLiveMap();
 
     expect(screen.getByText(/your selection/i)).toBeInTheDocument();
-    expect(screen.getByText("Ticket limit: 6 per order")).toBeInTheDocument();
+    expect(screen.getByText("Ticket limit: 1–6 per order")).toBeInTheDocument();
   });
 
   it("shows the highest offer maxQuantity on Your selection when one is set", async () => {
@@ -1301,7 +1439,7 @@ describe("Select tickets page (PremiumTicketing)", () => {
     await openLiveMap();
 
     expect(
-      screen.getByText(`Ticket limit: ${group.offer.maxQuantity} per order`),
+      screen.getByText(`Ticket limit: 2–${group.offer.maxQuantity} per order`),
     ).toBeInTheDocument();
     expect(screen.queryByText("Ticket limit: 3 per order")).not.toBeInTheDocument();
   });
@@ -1319,7 +1457,7 @@ describe("Select tickets page (PremiumTicketing)", () => {
     await openLiveMap();
 
     expect(
-      screen.getByText(`Ticket limit: ${group.offer.maxQuantity} per order`),
+      screen.getByText(`Ticket limit: 2–${group.offer.maxQuantity} per order`),
     ).toBeInTheDocument();
   });
 
@@ -1328,7 +1466,7 @@ describe("Select tickets page (PremiumTicketing)", () => {
     await openLiveMap();
 
     expect(screen.getByText(/your selection/i)).toBeInTheDocument();
-    expect(screen.getByText("Ticket limit: 50 per order")).toBeInTheDocument();
+    expect(screen.getByText("Ticket limit: 1–50 per order")).toBeInTheDocument();
   });
 
   it("shows the GA default ticket limit on Your selection for GA seats", async () => {
@@ -1342,7 +1480,7 @@ describe("Select tickets page (PremiumTicketing)", () => {
     await openLiveMap();
 
     expect(screen.getByText(/your selection/i)).toBeInTheDocument();
-    expect(screen.getByText("Ticket limit: 100 per order")).toBeInTheDocument();
+    expect(screen.getByText("Ticket limit: 1–100 per order")).toBeInTheDocument();
   });
 
   it("opens the max-ticket popup when a map seat would exceed the offer limit", async () => {
@@ -1472,7 +1610,7 @@ describe("Select tickets page (PremiumTicketing)", () => {
     );
 
     await waitFor(() => {
-      expect(screen.getByText(/sec a · row 12/i)).toBeInTheDocument();
+      expect(screen.getAllByText(/sec a · row 12/i).length).toBeGreaterThan(0);
       expect(screen.queryByText(/sec m · row m3/i)).not.toBeInTheDocument();
     });
   });
@@ -1506,6 +1644,10 @@ describe("Select tickets page (PremiumTicketing)", () => {
     expect(
       screen.getByRole("link", { name: /open in maps/i }),
     ).toBeInTheDocument();
+    expect(within(dialog).getByText(seatedTicketingFixture.awayLabel)).toBeInTheDocument();
+    expect(
+      dialog.querySelector(`img[src="${seatedTicketingFixture.awayLogoSrc}"]`),
+    ).not.toBeNull();
     expect(
       within(dialog).queryByRole("button", { name: /^done$/i }),
     ).not.toBeInTheDocument();
@@ -1514,5 +1656,42 @@ describe("Select tickets page (PremiumTicketing)", () => {
     expect(
       screen.queryByRole("dialog", { name: /event information/i }),
     ).not.toBeInTheDocument();
+  });
+
+  it("hides About this event when the event has no summary or description", async () => {
+    const user = await renderReady({
+      ...seatedTicketingFixture,
+      aboutText: "",
+    });
+    await user.click(screen.getByText(/event information/i));
+
+    const dialog = screen.getByRole("dialog", { name: /event information/i });
+    expect(within(dialog).queryByText(/about this event/i)).not.toBeInTheDocument();
+  });
+
+  it("truncates long event descriptions with More and Less in event information", async () => {
+    const longAbout = Array.from(
+      { length: 12 },
+      (_, i) => `Event detail paragraph ${i + 1}.`,
+    ).join(" ");
+    vi.spyOn(HTMLElement.prototype, "scrollHeight", "get").mockReturnValue(240);
+    vi.spyOn(HTMLElement.prototype, "clientHeight", "get").mockReturnValue(80);
+
+    const user = await renderReady({
+      ...seatedTicketingFixture,
+      aboutText: longAbout,
+    });
+    await user.click(screen.getByText(/event information/i));
+
+    const dialog = screen.getByRole("dialog", { name: /event information/i });
+    expect(
+      within(dialog).getByRole("button", { name: /^more$/i }),
+    ).toBeInTheDocument();
+    await user.click(within(dialog).getByRole("button", { name: /^more$/i }));
+    expect(
+      within(dialog).getByRole("button", { name: /^less$/i }),
+    ).toBeInTheDocument();
+
+    vi.restoreAllMocks();
   });
 });

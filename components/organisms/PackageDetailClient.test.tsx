@@ -14,6 +14,7 @@ import {
   markInAppNavigation,
 } from "@/lib/inAppBack";
 import { CHECKOUT_UNAVAILABLE_ERROR, maxTicketLimitError } from "@/lib/mapSelection";
+import { packageQuantitySource } from "@/lib/packageSeatmapLookups";
 import useFiltersStore from "@/stores/filtersStore";
 import useSeatmapStore from "@/stores/seatmapStore";
 import GlobalRouteTransitionLoader from "@/components/molecules/GlobalRouteTransitionLoader";
@@ -333,11 +334,36 @@ describe("Package detail (PackageDetailClient)", () => {
     await user.click(screen.getByRole("button", { name: /choose your seats/i }));
     await finishSeatmapBackgroundLoad();
     await screen.findByTestId("interactive-seatmap");
-    seedMapSelection();
+    seedMapSelection({
+      package: packageQuantitySource(pkg),
+      offer: undefined,
+    });
     await screen.findByText(/your selection/i);
 
     expect(
-      screen.getByText(`Ticket limit: ${pkg.maxQuantity} per order`),
+      screen.getByText(`Ticket limit: 1–${pkg.maxQuantity} per order`),
+    ).toBeInTheDocument();
+  });
+
+  it("shows the full package restriction label when min and incrementsOf are set", async () => {
+    const pkg = demoSeasonPackage({
+      minQuantity: 2,
+      incrementsOf: 2,
+      maxQuantity: 6,
+    });
+    const user = await renderPackage(pkg);
+    await screen.findByRole("heading", { name: pkg.name });
+    await user.click(screen.getByRole("button", { name: /choose your seats/i }));
+    await finishSeatmapBackgroundLoad();
+    await screen.findByTestId("interactive-seatmap");
+    seedMapSelection({
+      package: packageQuantitySource(pkg),
+      offer: undefined,
+    });
+    await screen.findByText(/your selection/i);
+
+    expect(
+      screen.getByText("Ticket limit: 2–6 per order"),
     ).toBeInTheDocument();
   });
 
@@ -348,7 +374,10 @@ describe("Package detail (PackageDetailClient)", () => {
     await user.click(screen.getByRole("button", { name: /choose your seats/i }));
     await finishSeatmapBackgroundLoad();
     await screen.findByTestId("interactive-seatmap");
-    seedMapSelection();
+    seedMapSelection({
+      package: packageQuantitySource(pkg),
+      offer: undefined,
+    });
     await screen.findByText(/your selection/i);
 
     expect(screen.getByText("Ticket limit: 3 per order")).toBeInTheDocument();

@@ -448,7 +448,10 @@ describe("SeatmapTooltip GA stepper", () => {
     const group = {
       ...ga,
       availableCount: 20,
-      offer: kind === "offer" ? { ...ga.offer, ...source } : ga.offer,
+      offer:
+        kind === "offer"
+          ? { ...ga.offer, ...source, connected_offers: [] }
+          : undefined,
       package: kind === "package" ? source : undefined,
     };
     useSeatmapStore.setState({
@@ -483,7 +486,7 @@ describe("SeatmapTooltip GA stepper", () => {
     fireEvent.click(decrease);
     expect(screen.getByLabelText(/ticket quantity/i)).toHaveTextContent("2");
     expect(decrease).toBeDisabled();
-    expect(screen.getByText("Ticket limit: 6 per order")).toBeInTheDocument();
+    expect(screen.getByText("Ticket limit: 2–6 per order · Increments of 2")).toBeInTheDocument();
   });
 
   it("steps a package GA section by min, max, and incrementsOf", () => {
@@ -495,7 +498,7 @@ describe("SeatmapTooltip GA stepper", () => {
     fireEvent.click(increase);
     expect(screen.getByLabelText(/ticket quantity/i)).toHaveTextContent("6");
     expect(increase).toBeDisabled();
-    expect(screen.getByText("Ticket limit: 6 per order")).toBeInTheDocument();
+    expect(screen.getByText("Ticket limit: 2–6 per order · Increments of 2")).toBeInTheDocument();
   });
 
   it("locks the GA stepper to the exact offer limit", () => {
@@ -511,12 +514,12 @@ describe("SeatmapTooltip GA stepper", () => {
 
   it("shows the event global limit when the GA offer has no max or limit", () => {
     renderGaTooltip({}, "offer", 3);
-    expect(screen.getByText("Ticket limit: 3 per order")).toBeInTheDocument();
+    expect(screen.getByText("Ticket limit: 1–3 per order")).toBeInTheDocument();
   });
 
   it("shows the GA default ticket limit when the event and offer have none", () => {
     renderGaTooltip({}, "offer");
-    expect(screen.getByText("Ticket limit: 100 per order")).toBeInTheDocument();
+    expect(screen.getByText("Ticket limit: 1–20 per order")).toBeInTheDocument();
     expect(screen.getByLabelText(/ticket quantity/i)).toHaveTextContent("1");
   });
 });

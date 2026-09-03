@@ -1,9 +1,15 @@
 import { create } from "zustand";
 import {
+  invalidOfferQuantityError,
   maxTicketLimitError,
   mixedMapSelectionError,
 } from "@/lib/mapSelection";
-import { selectionTicketLimit } from "@/lib/ticketListings";
+import {
+  limitsFromTicketGroup,
+  quantityIsAllowed,
+  quantityRestrictionLabel,
+  selectionTicketLimit,
+} from "@/lib/ticketListings";
 import useFiltersStore, { type TicketGroup } from "./filtersStore";
 import type {
   SeatmapBackground,
@@ -187,6 +193,20 @@ const useSeatmapStore = create<SeatmapState>((set, get) => ({
       set({ seatedError: mixed });
       return;
     }
+    const eventLimit =
+      get().eventTicketLimit ?? useFiltersStore.getState().eventTicketLimit;
+    for (const group of selectedGroups) {
+      const limits = limitsFromTicketGroup(group, eventLimit);
+      const qty = Number(group.quantity || 0);
+      if (!quantityIsAllowed(qty, limits)) {
+        set({
+          seatedError: invalidOfferQuantityError(
+            quantityRestrictionLabel(limits),
+          ),
+        });
+        return;
+      }
+    }
     const totalNew = selectedGroups.reduce(
       (sum, { quantity }) => sum + (quantity || 0),
       0,
@@ -268,6 +288,23 @@ const useSeatmapStore = create<SeatmapState>((set, get) => ({
     if (mixed) {
       set({ seatedError: mixed });
       return;
+    }
+    const eventLimit =
+      get().eventTicketLimit ?? useFiltersStore.getState().eventTicketLimit;
+    for (const group of groups) {
+      const limits = limitsFromTicketGroup(
+        { ...group, availableCount: 1, maxContiguous: 1 },
+        eventLimit,
+      );
+      const qty = Number(group.quantity || 0);
+      if (!quantityIsAllowed(qty, limits)) {
+        set({
+          seatedError: invalidOfferQuantityError(
+            quantityRestrictionLabel(limits),
+          ),
+        });
+        return;
+      }
     }
     const totalNew = groups.reduce(
       (sum, g) => sum + (g.quantity || 1),

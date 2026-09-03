@@ -58,7 +58,9 @@ vi.mock("next/navigation", () => ({
   useRouter: () => ({ push: vi.fn(), back: vi.fn(), replace: vi.fn() }),
 }));
 
-import SeasonTickets from "@/components/organisms/SeasonTickets";
+import SeasonTickets, {
+  clearJerseyPanelFillCacheForTests,
+} from "@/components/organisms/SeasonTickets";
 import {
   createTicketTransfer,
   downloadApplePass,
@@ -88,6 +90,11 @@ const flexOrderId = String(demoCompletedFlexPackOrder().orderId);
 beforeEach(() => {
   navigationMocks.pathname = "/wallet/my-tickets/";
   navigationMocks.search = "";
+  clearJerseyPanelFillCacheForTests();
+  vi.stubGlobal(
+    "fetch",
+    vi.fn().mockRejectedValue(new Error("fetch unavailable in test")),
+  );
   mockedCreateTicketTransfer.mockReset();
   mockedCreateTicketTransfer.mockResolvedValue({
     data: { id: "transfer-1", status: "pending" },
@@ -104,6 +111,10 @@ beforeEach(() => {
   mockedGetOrder.mockResolvedValue({ data: null } as never);
   pdfMocks.printTicketsPdf.mockReset();
   pdfMocks.printTicketsPdf.mockResolvedValue(undefined);
+});
+
+afterEach(() => {
+  vi.unstubAllGlobals();
 });
 
 describe("SeasonTickets empty wallet", () => {
@@ -924,6 +935,49 @@ describe("SeasonTickets routed event screen", () => {
     expect(details.getByText(order.orderId)).toBeInTheDocument();
     expect(details.getByText(/Tue, Sep 1 · 10:00 AM/)).toBeInTheDocument();
     expect(details.getByText("Mobile entry")).toBeInTheDocument();
+  });
+
+  it("holds the event page until panel fills are sampled for split heroes", async () => {
+    const releasePanels: Array<() => void> = [];
+    const splitHeroEvent =
+      DEMO_EVENTS.find((event) => event.shortCode === "BUCS002")!;
+    const order = demoCompletedTicketOrder({ event: splitHeroEvent });
+    mockedGetMyEvents.mockResolvedValue({ data: [order] } as never);
+    vi.mocked(fetch).mockImplementation((input) => {
+      const url = String(input);
+      if (!url.includes("/api/dominant-color/")) {
+        return Promise.reject(new Error(`unexpected fetch: ${url}`));
+      }
+      return new Promise((resolve) => {
+        releasePanels.push(() =>
+          resolve({
+            ok: true,
+            json: async () => ({ color: "#bf0c26" }),
+          } as Response),
+        );
+      });
+    });
+
+    render(
+      <SeasonTickets
+        initialScreen="event"
+        eventUUID={splitHeroEvent.uuid}
+      />,
+    );
+
+    expect(await screen.findByRole("link", { name: /All tickets/i })).toBeInTheDocument();
+    expect(screen.getByLabelText("Loading")).toBeInTheDocument();
+    expect(
+      screen.queryByRole("heading", { name: splitHeroEvent.name }),
+    ).not.toBeInTheDocument();
+
+    await waitFor(() => expect(releasePanels.length).toBeGreaterThanOrEqual(2));
+    releasePanels.forEach((release) => release());
+
+    expect(
+      await screen.findByRole("heading", { name: splitHeroEvent.name }),
+    ).toBeInTheDocument();
+    expect(screen.queryByLabelText("Loading")).not.toBeInTheDocument();
   });
 
   it("holds the event page until the order total is ready", async () => {

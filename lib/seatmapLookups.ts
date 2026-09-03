@@ -1,4 +1,5 @@
 import type { TicketGroup } from "@/stores/filtersStore";
+import { expandGroupsWithConnectedOffers } from "@/lib/connectedOffers";
 
 export type SeatmapBackground = {
   url: string;
@@ -199,7 +200,7 @@ export function createSeatLookupTables(
 ) {
   const candidatesBySeat: Record<string, TicketGroup[]> = {};
 
-  ticketGroups.forEach((ticketGroup) => {
+  expandGroupsWithConnectedOffers(ticketGroups).forEach((ticketGroup) => {
     if (ticketGroup.GA === false) {
       const seatIds = (ticketGroup.seatIds as string[] | undefined) || [];
       seatIds.forEach((seatId) => {
@@ -226,7 +227,7 @@ export function createSeatLookupTables(
 export function createSectionLookupTable(ticketGroups: TicketGroup[]) {
   const lookupTable: Record<string, TicketGroup[]> = {};
 
-  ticketGroups.forEach((ticketGroup) => {
+  expandGroupsWithConnectedOffers(ticketGroups).forEach((ticketGroup) => {
     if (!ticketGroup.GA) return;
     const sectionId = String(ticketGroup.sectionId ?? "");
     if (!sectionId) return;

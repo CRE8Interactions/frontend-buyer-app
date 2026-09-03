@@ -24,6 +24,7 @@ import { cacheOrgBranding } from "@/lib/orgBrandingCache";
 import { formatPackageFromPrice, packageFromPrice } from "@/lib/eventFromPrice";
 import {
   createPackageLookupTables,
+  packageQuantitySource,
   type PackagePurchaseLog,
 } from "@/lib/packageSeatmapLookups";
 import type { SeatmapMapping } from "@/lib/seatmapLookups";
@@ -853,6 +854,7 @@ export default function PackageDetailClient({
           preparing={preparingMap || !mapReady}
           orgName={pkg.organization?.name}
           logoSrc={theme.brandLogoSrc || theme.logoSrc}
+          orderQuantitySource={packageQuantitySource(pkg)}
         />
       ) : null}
 

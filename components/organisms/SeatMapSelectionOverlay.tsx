@@ -3,13 +3,19 @@
 import { useEffect, useState } from "react";
 import BrandedActionButton from "@/components/atoms/BrandedActionButton";
 import Modal from "@/components/molecules/Modal";
+import ExpandableDescription from "@/components/molecules/ExpandableDescription";
 import { BrandedLoader } from "@/components/molecules/RouteLoader";
 import SectionLocatorThumb from "@/components/molecules/SectionLocatorThumb";
 import { InteractiveSeatmap } from "@/components/organisms/InteractiveSeatmap";
 import type { SeatmapBackground, SeatmapMapping } from "@/lib/seatmapLookups";
 import { getSeatViewImageCandidates } from "@/lib/seatView";
-import { selectionPaneTicketLimit } from "@/lib/ticketListings";
-import { selectionOfferName, selectionTicketCards } from "@/lib/ticketSummary";
+import {
+  quantityLimits,
+  quantityRestrictionLabel,
+  selectionPaneRestrictionLabel,
+} from "@/lib/ticketListings";
+import type { QuantityRestrictionSource } from "@/lib/ticketListings";
+import { selectionOfferDescription, selectionOfferName, selectionTicketCards } from "@/lib/ticketSummary";
 import useFiltersStore from "@/stores/filtersStore";
 import useSeatmapStore from "@/stores/seatmapStore";
 
@@ -147,6 +153,7 @@ export default function SeatMapSelectionOverlay({
   preparing = false,
   orgName,
   logoSrc,
+  orderQuantitySource,
 }: {
   title: string;
   accent: string;
@@ -166,6 +173,7 @@ export default function SeatMapSelectionOverlay({
   preparing?: boolean;
   orgName?: string | null;
   logoSrc?: string | null;
+  orderQuantitySource?: QuantityRestrictionSource | null;
 }) {
   const selectedFromMap = useSeatmapStore((s) => s.selectedFromMap);
   const totalCount = useSeatmapStore((s) => s.totalCount);
@@ -182,9 +190,10 @@ export default function SeatMapSelectionOverlay({
   const [prepareExpired, setPrepareExpired] = useState(false);
   const [dismissTooltipKey, setDismissTooltipKey] = useState(0);
   const dismissMapTooltip = () => setDismissTooltipKey((key) => key + 1);
-  const paneTicketLimit = selectionPaneTicketLimit(
+  const paneRestrictionLabel = selectionPaneRestrictionLabel(
     seatmapTicketLimit ?? eventTicketLimit,
     selectedFromMap,
+    orderQuantitySource,
   );
 
   const mapping = mapMapping || storeMapping;
@@ -221,7 +230,7 @@ export default function SeatMapSelectionOverlay({
     mapDetailGroup?.sectionNumber || mapDetailGroup?.sectionName || "GA",
   );
   const mapDetailOffer = selectionOfferName(mapDetailGroup);
-  const mapDetailQty = Number(mapDetailGroup?.quantity || 1);
+  const mapDetailOfferDescription = selectionOfferDescription(mapDetailGroup);
   const selectionCards = selectionTicketCards(selectedFromMap);
   const mapTicketCount = totalCount || selectedFromMap.length;
   const mapTicketLabel = subtotalCaption
@@ -902,9 +911,7 @@ export default function SeatMapSelectionOverlay({
                             : `Sec ${mapDetailSection} · Row ${mapDetailGroup.rowNumber || mapDetailGroup.rowName || "—"} · Seat ${mapDetailGroup.seatNumber ?? "—"}`}
                         </div>
                         <div style={{ fontSize: 15, color: "#6e7180" }}>
-                          {mapDetailQty === 1
-                            ? "1 Ticket"
-                            : `${mapDetailQty} Tickets`}
+                          1 Ticket
                         </div>
                       </div>
                     </div>
@@ -934,36 +941,46 @@ export default function SeatMapSelectionOverlay({
                         incl. fees
                       </span>
                     </div>
-                    <div
-                      style={{
-                        display: "flex",
-                        flexDirection: "column",
-                        gap: 8,
-                        paddingBottom: 18,
-                      }}
-                    >
+                    {mapDetailOfferDescription ? (
                       <div
                         style={{
-                          fontSize: 13,
-                          fontWeight: 600,
-                          letterSpacing: "0.12em",
-                          textTransform: "uppercase",
-                          color: "#8a93a3",
+                          display: "flex",
+                          flexDirection: "column",
+                          gap: 8,
+                          paddingBottom: 18,
                         }}
                       >
-                        About this ticket
+                        <div
+                          style={{
+                            fontSize: 13,
+                            fontWeight: 600,
+                            letterSpacing: "0.12em",
+                            textTransform: "uppercase",
+                            color: "#8a93a3",
+                          }}
+                        >
+                          About this ticket
+                        </div>
+                        <div
+                          style={{
+                            fontSize: 16,
+                            color: "#4a5567",
+                            lineHeight: 1.6,
+                          }}
+                        >
+                          <ExpandableDescription
+                            text={mapDetailOfferDescription}
+                            mobile={mobile}
+                            toggleColor={accent}
+                            style={{
+                              fontSize: 16,
+                              color: "#4a5567",
+                              lineHeight: 1.6,
+                            }}
+                          />
+                        </div>
                       </div>
-                      <div
-                        style={{
-                          fontSize: 16,
-                          color: "#4a5567",
-                          lineHeight: 1.6,
-                        }}
-                      >
-                        {mapDetailOffer} seating in Section {mapDetailSection}{" "}
-                        with covered concourse access.
-                      </div>
-                    </div>
+                    ) : null}
                     {trustRows}
                   </>
                 ) : (
@@ -1032,12 +1049,12 @@ export default function SeatMapSelectionOverlay({
                             fontWeight: 700,
                             textAlign: "center",
                             letterSpacing: "-0.025em",
-                            marginBottom: paneTicketLimit ? 8 : 32,
+                            marginBottom: paneRestrictionLabel ? 8 : 32,
                           }}
                         >
                           Your selection
                         </div>
-                        {paneTicketLimit ? (
+                        {paneRestrictionLabel ? (
                           <p
                             style={{
                               margin: "0 0 32px",
@@ -1047,7 +1064,7 @@ export default function SeatMapSelectionOverlay({
                               textAlign: "center",
                             }}
                           >
-                            Ticket limit: {paneTicketLimit} per order
+                            Ticket limit: {paneRestrictionLabel}
                           </p>
                         ) : null}
                       </>

@@ -321,8 +321,6 @@ function MatchupHero({
 }
 
 /** Jersey mesh overlay on brand-color panels. */
-const CARD_MESH_BG = "#252930";
-
 function meshPanelStyle(brand: string): React.CSSProperties {
   return {
     backgroundColor: brand,
@@ -335,6 +333,27 @@ function meshPanelStyle(brand: string): React.CSSProperties {
   };
 }
 
+function splitHeroLogoAnchor(panel: "left" | "right") {
+  return {
+    x: panel === "right" ? "77%" : "23%",
+    y: "56%",
+  };
+}
+
+/** Place text marks away from the diagonal overlap between panels. */
+function splitHeroMarkAnchor(panel: "left" | "right") {
+  return {
+    x: panel === "right" ? "84%" : "16%",
+    y: "56%",
+  };
+}
+
+function splitHeroPlaceholderMark(side: AttractionCard) {
+  if (side.initials.trim()) return side.initials.trim();
+  if (side.role === "Visitor") return "AWA";
+  return side.name.slice(0, 3).toUpperCase() || "AWA";
+}
+
 function resolveImageSrc(src: string) {
   if (src.startsWith("http://") || src.startsWith("https://")) return src;
   const path = src.startsWith("/") ? src : `/${src}`;
@@ -342,20 +361,66 @@ function resolveImageSrc(src: string) {
   return path;
 }
 
-/** Sample jersey/card background from logo border pixels (server-side, CORS-safe). */
-async function sampleMeshColor(src: string, fallback: string): Promise<string> {
-  if (!src) return fallback;
+const jerseyPanelFillCache = new Map<string, string>();
+
+/** @internal Test hook — clears cached jersey panel fills between cases. */
+export function clearJerseyPanelFillCacheForTests() {
+  jerseyPanelFillCache.clear();
+}
+
+async function fetchJerseyPanelFill(
+  src: string,
+  fallback: string,
+): Promise<string> {
+  const absolute = resolveImageSrc(src);
+  const cached = jerseyPanelFillCache.get(absolute);
+  if (cached) return cached;
+
   try {
-    const absolute = resolveImageSrc(src);
     const res = await fetch(
-      `/api/dominant-color/?src=${encodeURIComponent(absolute)}&mode=mesh`,
+      `/api/dominant-color/?src=${encodeURIComponent(absolute)}&mode=jersey`,
     );
-    if (!res.ok) return fallback;
-    const data = (await res.json()) as { color?: string };
-    return data.color || fallback;
+    const color = res.ok
+      ? ((await res.json()) as { color?: string }).color || fallback
+      : fallback;
+    jerseyPanelFillCache.set(absolute, color);
+    return color;
   } catch {
+    jerseyPanelFillCache.set(absolute, fallback);
     return fallback;
   }
+}
+
+function usesSplitAttractionHero(
+  showMatchupCards: boolean,
+  cards: AttractionCard[],
+  ev: { id: string; isCart?: boolean },
+) {
+  if (!showMatchupCards || !cards[0] || !cards[1]) return false;
+  if (!ev.isCart && MATCHUP[ev.id]) return false;
+  return true;
+}
+
+function splitAttractionHeroKey(
+  evId: string,
+  cards: AttractionCard[],
+  ev: { id: string; isCart?: boolean },
+) {
+  if (!usesSplitAttractionHero(cards.length >= 2, cards, ev)) return "";
+  return [
+    evId,
+    cards[0]?.logo || "",
+    cards[1]?.logo || "",
+    ev.isCart ? "cart" : "event",
+  ].join("|");
+}
+
+async function prefetchSplitAttractionHeroPanels(cards: AttractionCard[]) {
+  await Promise.all(
+    cards
+      .filter((side) => side.logo)
+      .map((side) => fetchJerseyPanelFill(side.logo!, side.brand)),
+  );
 }
 
 function SplitHeroPanel({
@@ -373,20 +438,25 @@ function SplitHeroPanel({
   clipPath: string;
   dropShadow?: boolean;
 }) {
-  const [meshBg, setMeshBg] = useState(CARD_MESH_BG);
+  const anchor = splitHeroLogoAnchor(panel);
+  const markAnchor = splitHeroMarkAnchor(panel);
+  const placeholderMark = splitHeroPlaceholderMark(side);
+  const markSize = Math.max(34, Math.round(logoSize * 0.42));
+  const [panelColor, setPanelColor] = useState(side.brand);
 
   useEffect(() => {
-    if (!side.logo) return;
+    if (!side.logo) {
+      setPanelColor(side.brand);
+      return;
+    }
     let cancelled = false;
-    sampleMeshColor(side.logo, CARD_MESH_BG).then((color) => {
-      if (!cancelled) setMeshBg(color);
+    fetchJerseyPanelFill(side.logo, side.brand).then((color) => {
+      if (!cancelled) setPanelColor(color);
     });
     return () => {
       cancelled = true;
     };
-  }, [side.logo]);
-
-  const panelBg = side.logo ? meshBg : side.brand;
+  }, [side.brand, side.logo]);
 
   return (
     <div
@@ -396,22 +466,28 @@ function SplitHeroPanel({
         inset: 0,
         zIndex,
         clipPath,
-        backgroundColor: panelBg,
         overflow: "hidden",
         filter: dropShadow ? "drop-shadow(3px 0 8px rgba(0,0,0,0.35))" : undefined,
       }}
     >
       {side.logo ? (
         <>
-          <div aria-hidden style={{ position: "absolute", inset: 0, ...meshPanelStyle(meshBg) }} />
+          <div
+            aria-hidden
+            style={{
+              position: "absolute",
+              inset: 0,
+              ...meshPanelStyle(panelColor),
+            }}
+          />
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
             src={side.logo}
             alt={side.name}
             style={{
               position: "absolute",
-              top: "56%",
-              left: panel === "right" ? "77%" : "23%",
+              top: anchor.y,
+              left: anchor.x,
               transform: "translate(-50%, -50%)",
               objectFit: "cover",
               objectPosition: "center",
@@ -431,16 +507,20 @@ function SplitHeroPanel({
         >
           <span
             style={{
-              fontSize: logoSize > 72 ? 20 : 15,
+              position: "absolute",
+              top: markAnchor.y,
+              left: markAnchor.x,
+              transform: "translate(-50%, -50%)",
+              fontSize: markSize,
               fontWeight: 700,
-              letterSpacing: "0.06em",
+              letterSpacing: "0.1em",
               color: "rgba(255,255,255,0.94)",
               textAlign: "center",
-              lineHeight: 1.15,
-              textShadow: "0 2px 10px rgba(0,0,0,0.35)",
+              lineHeight: 1,
+              textShadow: "0 2px 12px rgba(0,0,0,0.4)",
             }}
           >
-            {side.initials}
+            {placeholderMark}
           </span>
         </div>
       )}
@@ -710,6 +790,7 @@ export default function SeasonTickets({
   const [fullOrderChecked, setFullOrderChecked] = useState<
     Record<string, boolean>
   >({});
+  const [matchupHeroReadyKey, setMatchupHeroReadyKey] = useState("");
   const [packageView, setPackageView] = useState<"pass" | "events">("pass");
   const [flexPacks, setFlexPacks] = useState<FlexPackSummary[]>([]);
   const [accessPasses, setAccessPasses] = useState<AccessPassSummary[]>([]);
@@ -1057,13 +1138,37 @@ export default function SeasonTickets({
   const activeEvId = orderEventKey ? `order:${orderEventKey}` : evId;
   const activeDetail = orderEventKey ? eventDetails[orderEventKey] ?? null : null;
   const activeOrderId = activeDetail?.orderId ?? "";
+  const ev =
+    (activeDetail
+      ? detailToEventT(withFullOrder(activeDetail, fullOrders[activeOrderId]))
+      : events[evId]) || events.lobos;
+  const attractionCards: AttractionCard[] = ev.attractions?.length
+    ? ev.attractions
+    : ev.teams.map((t) => ({
+        name: t.name,
+        role: t.role,
+        logo: t.logo,
+        brand: t.brand,
+        initials: t.initials,
+      }));
   const eventOrderPending = Boolean(
     activeOrderId && !fullOrderChecked[activeOrderId],
   );
+  const matchupHeroKey = splitAttractionHeroKey(
+    activeEvId,
+    attractionCards,
+    ev,
+  );
+  const matchupHeroPending = Boolean(
+    !eventOrderPending &&
+      matchupHeroKey &&
+      matchupHeroReadyKey !== matchupHeroKey,
+  );
+  const eventDetailPending = eventOrderPending || matchupHeroPending;
   const routedWalletPending =
     routedPackagePassPending ||
     routedAccessPassPending ||
-    eventOrderPending ||
+    eventDetailPending ||
     (showRoutedWallet &&
       !routedTargetFound &&
       (eventsLoading || !eventsChecked));
@@ -1073,11 +1178,11 @@ export default function SeasonTickets({
     showRoutedWallet
       ? Boolean(
           routedDetail &&
-            !eventOrderPending &&
+            !eventDetailPending &&
             !routedWalletPending &&
             !routedWalletMissing,
         )
-      : screen === "event" && !eventOrderPending;
+      : screen === "event" && !eventDetailPending;
   const showingSeasonPackage =
     showRoutedWallet
       ? Boolean(
@@ -1101,20 +1206,21 @@ export default function SeasonTickets({
     notifyWalletShellReady();
   }, []);
 
-  const ev =
-    (activeDetail
-      ? detailToEventT(withFullOrder(activeDetail, fullOrders[activeOrderId]))
-      : events[evId]) || events.lobos;
+  useEffect(() => {
+    if (eventOrderPending || !matchupHeroKey) return;
+    if (matchupHeroReadyKey === matchupHeroKey) return;
+
+    let cancelled = false;
+    prefetchSplitAttractionHeroPanels(attractionCards).finally(() => {
+      if (!cancelled) setMatchupHeroReadyKey(matchupHeroKey);
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [eventOrderPending, matchupHeroKey, matchupHeroReadyKey]);
+
   const ticketBadge = ev.ticketLabel || "Season Tickets";
-  const attractionCards: AttractionCard[] = ev.attractions?.length
-    ? ev.attractions
-    : ev.teams.map((t) => ({
-        name: t.name,
-        role: t.role,
-        logo: t.logo,
-        brand: t.brand,
-        initials: t.initials,
-      }));
   const showMatchupCards = attractionCards.length >= 2;
   const eventPosterSrc =
     ev.posterSrc ||
@@ -3847,7 +3953,7 @@ export default function SeasonTickets({
           {screen === "login" && Login()}
           {screen === "code" && CodeScreen()}
           {screen === "events" && Events()}
-          {screen === "event" && (eventOrderPending ? DetailLoader() : EventDetail())}
+          {screen === "event" && (eventDetailPending ? DetailLoader() : EventDetail())}
           {screen === "seasonPackage" && SeasonPackage()}
           {screen === "package" && Package()}
           {screen === "listings" && Listings()}

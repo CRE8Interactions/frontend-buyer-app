@@ -16,18 +16,26 @@ export type TicketSelectionSummary = {
 
 type OfferNameSource = {
   name?: string;
+  description?: string;
   offerName?: string;
   offer?:
     | string
     | {
         name?: string;
+        description?: string;
         data?: {
           name?: string;
-          attributes?: { name?: string };
+          description?: string;
+          attributes?: { name?: string; description?: string };
         };
       }
     | null;
 };
+
+function stripRichText(value?: string | null): string {
+  if (!value) return "";
+  return value.replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim();
+}
 
 function offerNameFromSource(source?: OfferNameSource | null): string {
   if (!source) return "";
@@ -47,6 +55,63 @@ export function selectionOfferName(
   fallback = "Standard admission",
 ): string {
   return offerNameFromSource(group) || fallback;
+}
+
+function offerDescriptionFromSource(source?: OfferNameSource | null): string {
+  if (!source) return "";
+  if (String(source.description || "").trim()) {
+    return stripRichText(source.description);
+  }
+  const offer = source.offer;
+  if (offer && typeof offer === "object") {
+    const nested =
+      offer.description ||
+      offer.data?.attributes?.description ||
+      offer.data?.description ||
+      "";
+    if (String(nested).trim()) return stripRichText(String(nested));
+  }
+  return "";
+}
+
+/** Listing / map detail copy from the ticket group's offer description. */
+export function selectionOfferDescription(
+  group?: OfferNameSource | null,
+): string {
+  return offerDescriptionFromSource(group);
+}
+
+type GaTierSubtitleSource = {
+  sectionName?: string | null;
+  sectionNumber?: string | null;
+  offer?: { description?: string | null } | null;
+};
+
+function isGenericGaLabel(value: string) {
+  return value.trim().toUpperCase() === "GA";
+}
+
+/** GA quick-pick card subtitle: section name, else offer description, else General Admission. */
+export function gaTierSubtitle(source?: GaTierSubtitleSource | null): string {
+  const sectionName = String(source?.sectionName ?? "").trim();
+  const sectionNumber = String(source?.sectionNumber ?? "").trim();
+  const offerDesc = stripRichText(source?.offer?.description);
+
+  let label = "";
+  if (sectionName && !isGenericGaLabel(sectionName)) {
+    label = sectionName;
+  } else if (sectionNumber && !isGenericGaLabel(sectionNumber)) {
+    label = sectionNumber;
+  } else if (
+    (sectionName && isGenericGaLabel(sectionName)) ||
+    (sectionNumber && isGenericGaLabel(sectionNumber))
+  ) {
+    label = "Ga";
+  }
+  if (!label) label = offerDesc;
+  if (!label) label = "General Admission";
+
+  return `${label} · unreserved seating`;
 }
 
 type SelectionCardGroup = {

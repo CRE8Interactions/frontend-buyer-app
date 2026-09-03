@@ -33,6 +33,8 @@ function packageQuantitySource(eventPackage: PackageForSeatmap) {
   };
 }
 
+export { packageQuantitySource };
+
 /**
  * Build seat + section lookup tables for season packages.
  * Mirrors the CRA PackageSeatmapWrapper logic (availability + sibling sold inventory).

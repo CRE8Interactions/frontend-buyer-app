@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   DEMO_ORGS,
@@ -202,6 +202,28 @@ describe("SeatMapSelectionOverlay map readiness", () => {
     expect(
       screen.getAllByText(`$${Number(group.price).toFixed(2)}`),
     ).toHaveLength(2);
+  });
+
+  it("shows one ticket in GA ticket details even when the group quantity is higher", () => {
+    const ga = demoTicketGroups().ticketGroups.find((group) => group.GA);
+    if (!ga) throw new Error("demo fixtures need a GA ticket group");
+    useSeatmapStore.setState({
+      selectedFromMap: [{ ...ga, quantity: 6 }],
+      totalCount: 6,
+      totalPrice: Number(ga.price || 0) * 6,
+    });
+    renderOverlay({
+      mapMapping: demoSeatmapMapping(),
+      mapBackground: BACKGROUND,
+    });
+    fireEvent.load(backgroundPreload()!);
+
+    fireEvent.click(screen.getAllByRole("button", { name: /details/i })[0]);
+
+    expect(screen.getByText("Ticket details")).toBeInTheDocument();
+    const detailHeading = screen.getByText(/general admission/i);
+    expect(within(detailHeading.parentElement!).getByText("1 Ticket")).toBeInTheDocument();
+    expect(within(detailHeading.parentElement!).queryByText("6 Tickets")).not.toBeInTheDocument();
   });
 
   it("removes one GA card without dropping the rest of the quantity", () => {

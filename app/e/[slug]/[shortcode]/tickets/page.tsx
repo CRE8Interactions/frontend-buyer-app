@@ -15,11 +15,15 @@ import {
 } from "@/lib/api";
 import { brandingToTicketingTheme, type OrgBranding } from "@/lib/branding";
 import { cacheEventBranding } from "@/lib/orgBrandingCache";
+import { isSportingEvent } from "@/lib/eventCategory";
 import {
+  eventAboutText,
   eventDoorsIso,
   eventWhenShortWithDoors,
   eventWhenWithDoors,
   formatEventWhen,
+  imageUrl,
+  resolveEventMatchup,
   type ApiImage,
   type TimezoneLike,
 } from "@/lib/helpers";
@@ -62,7 +66,10 @@ type EventData = {
   doorsOpen?: string;
   realDoorsOpen?: string;
   summary?: string;
+  description?: string;
   image?: ApiImage;
+  category?: { name?: string | null };
+  categoryName?: string | null;
   shortCode?: string;
   seoUrl?: string;
   slug?: string;
@@ -72,12 +79,14 @@ type EventData = {
     name?: string;
     primary?: boolean;
     artwork?: { url?: string };
+    images?: ApiImage[];
   }>;
   branding?: OrgBranding | null;
   organization?: {
     name?: string;
     slug?: string;
     branding?: OrgBranding | null;
+    category?: { name?: string | null };
     primaryColor?: string;
     accentColor?: string;
     brandColor?: string;
@@ -131,9 +140,11 @@ function toTicketingData(
   const venueAddress = [addr?.address_1, city, state, addr?.zipcode]
     .filter(Boolean)
     .join(", ");
-  const home = ev.attractions?.find((a) => a.primary) || ev.attractions?.[0];
-  const away = ev.attractions?.find((a) => a !== home);
   const orgLabel = ev.organization?.name || "Blocktickets";
+  const matchup = resolveEventMatchup(ev.attractions, {
+    orgName: orgLabel,
+    sportingEvent: isSportingEvent(ev),
+  });
   const lockedZones = lockedZonesFromGroups(groups);
   const globalMax = normalizeGlobalTicketLimit(ev.globalTicketLimit);
   const listingOpts = {
@@ -159,15 +170,17 @@ function toTicketingData(
     venueCityState,
     mapsQuery: `${venueName} ${city} ${state}`.trim(),
     logoSrc: imageOf(ev.image) || theme.logoSrc,
+    homeLogoSrc: matchup.homeLogoSrc,
+    awayLogoSrc: matchup.awayLogoSrc,
     orgHref: ev.organization?.slug ? `/${ev.organization.slug}/` : undefined,
     orgLabel,
     providerLabel: `Official ticketing marketplace for ${orgLabel}`,
-    aboutText:
-      ev.summary ||
-      `Secure your seats for ${ev.name}. Mobile tickets delivered to your account, verified inventory, and all-in pricing with no surprises at checkout.`,
-    homeLabel: home?.name || orgLabel,
-    awayLabel: away?.name || "Visitor",
-    awayShort: (away?.name || "AWAY").slice(0, 3).toUpperCase(),
+    aboutText: eventAboutText(ev),
+    homeLabel: matchup.homeLabel,
+    awayLabel: matchup.awayLabel,
+    awayShort: matchup.awayShort,
+    showMatchupSection: matchup.showMatchupSection,
+    showAwayTeam: matchup.showAwayTeam,
     listings,
     quantityCatalog,
     lockedZones,

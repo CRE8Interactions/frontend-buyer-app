@@ -45,6 +45,15 @@ export function maxTicketLimitError(limit: number) {
   };
 }
 
+export function invalidOfferQuantityError(restrictionLabel: string) {
+  return {
+    title: "Invalid ticket quantity",
+    message: `This offer requires ${restrictionLabel}. Please change your selection.`,
+    buttonText: "Close",
+    leaveMap: false,
+  };
+}
+
 export function checkoutHoldError(err: unknown) {
   const msg =
     err instanceof Error

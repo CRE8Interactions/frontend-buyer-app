@@ -14,13 +14,15 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import BrandedActionButton from "@/components/atoms/BrandedActionButton";
 import EmailField from "@/components/molecules/EmailField";
+import ExpandableDescription from "@/components/molecules/ExpandableDescription";
 import LoginLink from "@/components/molecules/LoginLink";
 import Modal from "@/components/molecules/Modal";
+import RedemptionCodeField from "@/components/molecules/RedemptionCodeField";
 import SectionLocatorThumb from "@/components/molecules/SectionLocatorThumb";
 import SeatMapSelectionOverlay from "@/components/organisms/SeatMapSelectionOverlay";
-import useAutoFocus from "@/hooks/useAutoFocus";
 import { placeGATicketsIntoCart, placeTicketsIntoCart } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
+import { isStandaloneCatalogOffer } from "@/lib/connectedOffers";
 import { goBack } from "@/lib/inAppBack";
 import { verifyOfferAccessCode } from "@/lib/offerUnlock";
 import {
@@ -30,19 +32,30 @@ import {
 } from "@/lib/mapSelection";
 import {
   clampQuantity,
+  initialTicketQuantity,
+  limitsFromGaTier,
+  limitsFromListing,
+  listingAvailabilityRange,
+  listingDetailAvailabilityLabel,
   quantityIsAllowed,
   ticketQuantityOptions,
-  type QuantityLimits,
 } from "@/lib/ticketListings";
 import { fieldFocusVars } from "@/lib/branding";
+import {
+  selectionOfferDescription,
+} from "@/lib/ticketSummary";
 import { checkoutHref, rememberCheckoutReturnPath, setStoredCart } from "@/lib/cart";
 import {
   emailBlurInvalid,
   emailSubmitError,
   emailSubmitInvalid,
   formString,
+  normalizeRedemptionCode,
+  redemptionCodeBlurFieldError,
+  redemptionCodeSubmitError,
   submittedEmail,
   type EmailFieldError,
+  type RedemptionCodeFieldError,
 } from "@/lib/fieldValidation";
 import { beginRouteTransition } from "@/lib/routeTransition";
 import { walletSectionHref } from "@/lib/walletNav";
@@ -105,6 +118,13 @@ export type TicketingData = {
   homeLabel: string;
   awayLabel: string;
   awayShort: string;
+  /** When false, hide Who's playing (no attractions on the event). */
+  showMatchupSection?: boolean;
+  /** When false, omit the away/visitor row (single-attraction events). */
+  showAwayTeam?: boolean;
+  /** Matchup logos for Who's playing — falls back to initials when absent. */
+  homeLogoSrc?: string;
+  awayLogoSrc?: string;
   listings: TicketingListing[];
   /** "reserved" (seatmap flow, default) or "ga" (general-admission tier flow). */
   eventType?: "reserved" | "ga";
@@ -146,7 +166,7 @@ export type GATier = {
   price: string; // "$10.08" or "Free"
   unit: number; // numeric price for totals
   note: string;
-  state: "live" | "scheduled" | "soldout";
+  state: "live" | "locked" | "scheduled" | "soldout";
   min?: number;
   max?: number;
   multipleOf?: number;
@@ -159,26 +179,6 @@ export type GATier = {
  * takes a waitlist signup, anything else takes an on-sale reminder.
  */
 type NotifySubject = { name: string; soldout: boolean; onSaleAt?: string };
-
-function listingLimits(l: TicketingListing): QuantityLimits {
-  return {
-    min: l.min,
-    max: l.max,
-    step: Math.max(1, l.multipleOf || 1),
-    valid: l.min <= l.max,
-  };
-}
-
-function initialListingQuantity(listings: TicketingListing[]) {
-  if (listings.some((listing) => quantityIsAllowed(2, listingLimits(listing)))) {
-    return 2;
-  }
-  const minimums = listings
-    .map((listing) => listingLimits(listing))
-    .filter((limits) => limits.valid)
-    .map((limits) => limits.min);
-  return minimums.length ? Math.min(...minimums) : 1;
-}
 
 const LEGEND = [
   { label: "Unavailable", color: "#dfe3ee" },
@@ -264,13 +264,14 @@ export default function PremiumTicketing({
 }) {
   const { isAuthenticated } = useAuth();
   const router = useRouter();
-  const autoFocusField = useAutoFocus<HTMLInputElement>(true);
   const ACC = d.accent;
   const ACC_DK = d.accentDark;
   const ACC_SOFT = d.accentSoft;
   const BTN = d.buttonColor || ACC;
   const BTN_INK = d.buttonTextColor || "#fff";
   const LOGO = d.logoSrc;
+  const showMatchupSection = d.showMatchupSection ?? true;
+  const showAwayTeam = d.showAwayTeam ?? Boolean(d.awayLabel);
   const isGa = d.eventType === "ga";
   const POSTER = d.posterSrc || LOGO;
   // Future offers never render as cards. The inventory response exposes their
@@ -317,12 +318,13 @@ export default function PremiumTicketing({
 
   const [mounted, setMounted] = useState(false);
   const [vw, setVw] = useState(1440);
-  const [want, setWant] = useState(() => initialListingQuantity(d.listings));
+  const [want, setWant] = useState(() => initialTicketQuantity(d.listings));
   const [zoneFilter, setZoneFilter] = useState<string[]>([]);
   const [unlocked, setUnlocked] = useState<string[]>([]);
   const [unlockZone, setUnlockZone] = useState<string | null>(null);
   const [unlockInput, setUnlockInput] = useState("");
-  const [unlockError, setUnlockError] = useState(false);
+  const [unlockFieldError, setUnlockFieldError] =
+    useState<RedemptionCodeFieldError>(null);
   const [unlocking, setUnlocking] = useState(false);
   const [qtyMenu, setQtyMenu] = useState(false);
   const [ada, setAda] = useState(false);
@@ -539,28 +541,39 @@ export default function PremiumTicketing({
     (d.lockedZones || []).forEach((z) => { m[z.zone] = z.code.trim().toUpperCase(); });
     return m;
   }, [d.lockedZones]);
+  const eventTicketLimit = useFiltersStore((s) => s.eventTicketLimit);
+  const listingQtyLimits = (l: TicketingListing) =>
+    limitsFromListing(l, eventTicketLimit);
+  const gaTierQtyLimits = (t: GATier) => limitsFromGaTier(t, eventTicketLimit);
   const isLocked = (zone: string) => !!lockedMap[zone] && !unlocked.includes(zone);
   const busy = loading || refreshing;
   const mapLocked = Boolean(d.soldOut) || seatedScheduled;
   const priceOf = (l: TicketingListing) =>
     parseFloat(l.price.replace(/[^0-9.]/g, "")) || 0;
   const rows = useMemo(() => {
-    const filtered = d.listings.filter((l) => quantityIsAllowed(want, listingLimits(l)) && (!zoneFilter.length || zoneFilter.includes(l.zone)) && !(!!lockedMap[l.zone] && !unlocked.includes(l.zone)) && (!ada || Boolean(l.cartGroup?.accessible)));
+    const filtered = d.listings.filter((l) => quantityIsAllowed(want, listingQtyLimits(l)) && (!zoneFilter.length || zoneFilter.includes(l.zone)) && !(!!lockedMap[l.zone] && !unlocked.includes(l.zone)) && (!ada || Boolean(l.cartGroup?.accessible)));
     const sorted = [...filtered].sort((a, b) =>
       sortDir === "price" ? priceOf(a) - priceOf(b) : priceOf(b) - priceOf(a),
     );
-    return sorted.map((l) => ({ ...l, range: `${l.min} – ${l.max} Tickets` }));
-  }, [want, d.listings, zoneFilter, lockedMap, unlocked, ada, sortDir]);
+    return sorted.map((l) => ({
+      ...l,
+      range: `${l.min} – ${l.max} Tickets`,
+    }));
+  }, [want, d.listings, zoneFilter, lockedMap, unlocked, ada, sortDir, eventTicketLimit]);
   // Placeholder rows roughly match the list being replaced, so the column keeps
   // its height while new inventory settles.
   const skeletonRows = Math.min(Math.max(rows.length || 3, 3), 5);
   // Offer catalog first — it includes offers with no inventory right now.
   const zoneChips = useMemo(() => {
     const seen: string[] = [...(d.offerNames || [])];
-    d.listings.forEach((l) => { if (!seen.includes(l.zone)) seen.push(l.zone); });
+    d.listings.forEach((l) => {
+      const offer = (l.cartGroup as { offer?: { name?: string; isConnectedOffer?: boolean | null } })
+        ?.offer;
+      if (offer && !isStandaloneCatalogOffer(offer)) return;
+      if (!seen.includes(l.zone)) seen.push(l.zone);
+    });
     return seen;
   }, [d.listings, d.offerNames]);
-  const eventTicketLimit = useFiltersStore((s) => s.eventTicketLimit);
   const quantityCatalogRef = useRef<TicketingListing[]>(
     d.quantityCatalog?.length ? d.quantityCatalog : d.listings,
   );
@@ -599,6 +612,7 @@ export default function PremiumTicketing({
     rows[0] ||
     d.listings.find((l) => !isLocked(l.zone));
   const unit = selRow ? parseFloat(selRow.price.replace(/[^0-9.]/g, "")) : 0;
+  const panelOfferDescription = selectionOfferDescription(selRow?.cartGroup);
   const panelOpen = sel !== null && !map;
 
   const pickTotal = picks.reduce((t, p) => t + p.unit, 0);
@@ -637,22 +651,24 @@ export default function PremiumTicketing({
   const submitUnlockCode = async (code = unlockInput) => {
     const zone = unlockZone;
     if (!zone || unlocking) return;
-    const nextCode = code.trim();
-    if (!nextCode) {
-      setUnlockError(true);
+    const submitErr = redemptionCodeSubmitError(code);
+    if (submitErr) {
+      setUnlockFieldError(submitErr);
       return;
     }
+    const typed = normalizeRedemptionCode(code);
     setUnlocking(true);
     const opened = await verifyOfferAccessCode({
       eventId: d.eventId,
-      code: nextCode,
+      code: typed,
       expected: lockedMap[zone],
     });
     setUnlocking(false);
     if (!opened) {
-      setUnlockError(true);
+      setUnlockFieldError("rejected");
       return;
     }
+    setUnlockFieldError(null);
     setUnlocked((u) => (u.includes(zone) ? u : [...u, zone]));
     filterByZones((prev) => (prev.includes(zone) ? prev : [...prev, zone]));
     setUnlockZone(null);
@@ -1032,14 +1048,12 @@ export default function PremiumTicketing({
   const gaTierCards = (
     <>
       {GA_TIERS.map((t, i) => {
-        const live = t.state === "live";
-        const soldout = t.state === "soldout";
-        const limits: QuantityLimits = {
-          min: Math.max(1, t.min || 1),
-          max: Math.max(1, t.max || 100),
-          step: Math.max(1, t.multipleOf || 1),
-          valid: (t.min || 1) <= (t.max || 100),
-        };
+        const effectiveState =
+          t.state === "locked" && unlocked.includes(t.name) ? "live" : t.state;
+        const live = effectiveState === "live";
+        const soldout = effectiveState === "soldout";
+        const locked = effectiveState === "locked";
+        const limits = gaTierQtyLimits(t);
         const gaQty = clampQuantity(gaQuantities[i] ?? limits.min, limits);
         const setTierQuantity = (next: number) =>
           setGaQuantities((current) => ({
@@ -1047,14 +1061,17 @@ export default function PremiumTicketing({
             [i]: clampQuantity(next, limits),
           }));
         const done = !!notified[t.name];
-        const s = t.state === "live"
+        const tierOfferDescription = selectionOfferDescription(t.cartGroup);
+        const s = effectiveState === "live"
           ? { label: "On sale", dot: "#7fbe4d", pillBg: "rgba(166,231,115,0.22)", pillInk: "#3f6b1f" }
-          : t.state === "scheduled"
+          : locked
+            ? { label: "Access code", dot: "#8a6410", pillBg: "rgba(201,150,46,0.16)", pillInk: "#8a6410" }
+          : effectiveState === "scheduled"
             ? { label: "Scheduled", dot: "#c9962e", pillBg: "rgba(201,150,46,0.16)", pillInk: "#8a6410" }
             : { label: "Sold out", dot: "#a9b0bd", pillBg: "#eef0f6", pillInk: "#6e7180" };
         const stepBtn: React.CSSProperties = { fontFamily: "inherit", width: 38, height: 38, display: "flex", alignItems: "center", justifyContent: "center", background: "#fff", border: "none", borderRadius: 999, color: NAVY, cursor: "pointer" };
         return (
-          <div key={t.name} style={{ border: live ? `1.5px solid ${ACC}` : "1px solid rgba(5,27,53,0.10)", background: soldout ? "#f7f8fc" : "#fff", borderRadius: 16, padding: 18, display: "flex", flexDirection: "column", gap: 16 }}>
+          <div key={t.name} style={{ border: live ? `1.5px solid ${ACC}` : locked ? "1.5px dashed rgba(201,150,46,0.55)" : "1px solid rgba(5,27,53,0.10)", background: soldout ? "#f7f8fc" : locked ? "#fffdf8" : "#fff", borderRadius: 16, padding: 18, display: "flex", flexDirection: "column", gap: 16 }}>
             <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 16 }}>
               <div style={{ display: "flex", flexDirection: "column", gap: 6, minWidth: 0 }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
@@ -1071,6 +1088,17 @@ export default function PremiumTicketing({
               </div>
             </div>
             <div style={{ height: 1, background: "rgba(5,27,53,0.08)" }} />
+            {tierOfferDescription ? (
+              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                <div style={{ fontSize: 12, fontWeight: 600, letterSpacing: "0.12em", textTransform: "uppercase", color: "#8a93a3" }}>About this ticket</div>
+                <ExpandableDescription
+                  text={tierOfferDescription}
+                  mobile={mobile}
+                  toggleColor={ACC}
+                  style={{ fontSize: 14, color: "#4a5567", lineHeight: 1.6 }}
+                />
+              </div>
+            ) : null}
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16, flexWrap: "wrap" }}>
               <div style={{ fontSize: 13, color: "#6e7180" }}>{t.note}</div>
               {live ? (
@@ -1101,6 +1129,19 @@ export default function PremiumTicketing({
                     Checkout {money(t.unit * gaQty)}
                   </BrandedActionButton>
                 </div>
+              ) : locked ? (
+                <BrandedActionButton
+                  tone="secondary"
+                  onClick={() => {
+                    setUnlockZone(t.name);
+                    setUnlockInput("");
+                    setUnlockFieldError(null);
+                  }}
+                  className="text-[16px]"
+                  style={{ padding: "13px 22px" }}
+                >
+                  <LockIcon s={16} /> Enter access code
+                </BrandedActionButton>
               ) : done && soldout ? (
                 <div
                   role="status"
@@ -1164,7 +1205,7 @@ export default function PremiumTicketing({
                   if (locked) {
                     setUnlockZone(z);
                     setUnlockInput("");
-                    setUnlockError(false);
+                    setUnlockFieldError(null);
                     return;
                   }
                   if (z === null) {
@@ -1511,7 +1552,7 @@ export default function PremiumTicketing({
 
             {!busy &&
               rows.map((l, idx) => (
-                <div key={`${l.sec}-${l.row}-${idx}`} className="nmt-listing" onClick={() => { setSel(idx); setPanelQty(clampQuantity(want, listingLimits(l))); setMedia(0); }} style={{ display: "flex", alignItems: mobile ? "flex-start" : "center", gap: mobile ? 10 : 18, background: "#fff", border: "1px solid rgba(5,27,53,0.10)", borderRadius: mobile ? 12 : 16, padding: mobile ? "10px 12px" : "16px 20px", cursor: "pointer" }}>
+                <div key={`${l.sec}-${l.row}-${idx}`} className="nmt-listing" onClick={() => { setSel(idx); setPanelQty(clampQuantity(want, listingQtyLimits(l))); setMedia(0); }} style={{ display: "flex", alignItems: mobile ? "flex-start" : "center", gap: mobile ? 10 : 18, background: "#fff", border: "1px solid rgba(5,27,53,0.10)", borderRadius: mobile ? 12 : 16, padding: mobile ? "10px 12px" : "16px 20px", cursor: "pointer" }}>
                   <div style={{ width: thumbSize, height: thumbSize, borderRadius: mobile ? 8 : 12, background: "#f1f3f8", border: "1px solid rgba(5,27,53,0.08)", flexShrink: 0, overflow: "hidden" }}>
                     {listingThumb(l)}
                   </div>
@@ -1584,34 +1625,58 @@ export default function PremiumTicketing({
               </div>
             ) : null}
 
-            <div style={{ ...card, borderRadius: 20, padding: mobile ? 18 : 24, display: "flex", flexDirection: "column", gap: 14 }}>
-              <div style={{ fontSize: 12, fontWeight: 600, letterSpacing: "0.12em", textTransform: "uppercase", color: "#8a93a3" }}>About this event</div>
-              <div style={{ fontSize: 15, lineHeight: 1.6, color: "#4a5567" }}>{d.aboutText}</div>
-            </div>
+            {d.aboutText ? (
+              <div style={{ ...card, borderRadius: 20, padding: mobile ? 18 : 24, display: "flex", flexDirection: "column", gap: 14 }}>
+                <div style={{ fontSize: 12, fontWeight: 600, letterSpacing: "0.12em", textTransform: "uppercase", color: "#8a93a3" }}>About this event</div>
+                <ExpandableDescription
+                  text={d.aboutText}
+                  mobile={mobile}
+                  toggleColor={ACC}
+                  style={{ fontSize: 15, lineHeight: 1.6, color: "#4a5567" }}
+                />
+              </div>
+            ) : null}
 
+            {showMatchupSection ? (
             <div style={{ ...card, borderRadius: 20, padding: mobile ? 18 : 24, display: "flex", flexDirection: "column", gap: 14 }}>
               <div style={{ fontSize: 12, fontWeight: 600, letterSpacing: "0.12em", textTransform: "uppercase", color: "#8a93a3" }}>Who&rsquo;s playing</div>
               <div style={{ display: "flex", alignItems: "center", gap: 24, flexWrap: "wrap" }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 11 }}>
-                  <div style={{ width: 44, height: 44, borderRadius: 999, background: "#f1f3f8", border: "1px solid rgba(5,27,53,0.08)", display: "flex", alignItems: "center", justifyContent: "center", padding: 6, boxSizing: "border-box" }}>
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img src={LOGO} alt="" style={{ maxWidth: "100%", maxHeight: "100%", objectFit: "contain" }} />
+                  <div style={{ width: 44, height: 44, borderRadius: 999, background: "#f1f3f8", border: "1px solid rgba(5,27,53,0.08)", display: "flex", alignItems: "center", justifyContent: "center", boxSizing: "border-box", overflow: "hidden" }}>
+                    {d.homeLogoSrc || LOGO ? (
+                      /* eslint-disable-next-line @next/next/no-img-element */
+                      <img src={d.homeLogoSrc || LOGO} alt="" style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
+                    ) : (
+                      <span style={{ fontSize: 13, fontWeight: 600, color: NAVY }}>{(d.homeLabel || "").slice(0, 3).toUpperCase()}</span>
+                    )}
                   </div>
                   <div style={{ fontSize: 15, fontWeight: 500 }}>{d.homeLabel}</div>
                 </div>
+                {showAwayTeam ? (
                 <div style={{ display: "flex", alignItems: "center", gap: 11 }}>
-                  <div style={{ width: 44, height: 44, borderRadius: 999, background: NAVY, color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 13, fontWeight: 600 }}>{d.awayShort}</div>
+                  <div style={{ width: 44, height: 44, borderRadius: 999, background: d.awayLogoSrc ? "#f1f3f8" : NAVY, border: d.awayLogoSrc ? "1px solid rgba(5,27,53,0.08)" : "none", color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 13, fontWeight: 600, boxSizing: "border-box", overflow: "hidden" }}>
+                    {d.awayLogoSrc ? (
+                      /* eslint-disable-next-line @next/next/no-img-element */
+                      <img src={d.awayLogoSrc} alt="" style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
+                    ) : (
+                      d.awayShort
+                    )}
+                  </div>
                   <div style={{ fontSize: 15, fontWeight: 500 }}>{d.awayLabel}</div>
                 </div>
+                ) : null}
               </div>
             </div>
+            ) : null}
 
             <div style={{ ...card, borderRadius: 20, padding: mobile ? 18 : 24, display: "flex", flexDirection: "column", gap: 14 }}>
               <div style={{ fontSize: 12, fontWeight: 600, letterSpacing: "0.12em", textTransform: "uppercase", color: "#8a93a3" }}>Venue</div>
               <div style={{ display: "flex", alignItems: "center", gap: 16, flexWrap: "wrap" }}>
                 <div style={{ width: 148, height: 100, borderRadius: 12, overflow: "hidden", background: "#f1f3f8", border: "1px solid rgba(5,27,53,0.08)", flexShrink: 0 }}>
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img src={d.venuePhotoSrc || POSTER} alt="" style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
+                  {d.venuePhotoSrc ? (
+                    /* eslint-disable-next-line @next/next/no-img-element */
+                    <img src={d.venuePhotoSrc} alt="" style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
+                  ) : null}
                 </div>
                 <div style={{ display: "flex", flexDirection: "column", gap: 8, minWidth: 0, flex: 1 }}>
                   <div style={{ fontSize: 19, fontWeight: 600, letterSpacing: "-0.02em" }}>{d.venueName}</div>
@@ -1875,7 +1940,7 @@ export default function PremiumTicketing({
                 <span style={{ alignSelf: "flex-start", flexShrink: 0, ...pill(ACC_SOFT, ACC), ...(mobile ? { fontSize: 14, padding: "5px 10px" } : {}) }}><Star s={14} /> {selRow.tier || selRow.zone}</span>
                 <div style={{ display: "flex", flexDirection: "column", gap: 5, minWidth: 0 }}>
                   <div style={{ fontSize: mobile ? 18 : 22, fontWeight: 600, letterSpacing: "-0.02em" }}>Sec {selRow.sec} · Row {selRow.row}</div>
-                  <div style={{ fontSize: mobile ? 15 : 14, color: "#6e7180" }}>{(selRow as TicketingListing & { range?: string }).range} available</div>
+                  <div style={{ fontSize: mobile ? 15 : 14, color: "#6e7180" }}>{listingDetailAvailabilityLabel(selRow.min, selRow.max, selRow.multipleOf)}</div>
                 </div>
               </div>
               <div style={{ height: 1, background: "rgba(5,27,53,0.08)" }} />
@@ -1887,24 +1952,35 @@ export default function PremiumTicketing({
                 </div>
                 <div style={{ display: "flex", alignItems: "center", gap: 6, border: "1px solid #d3d6e0", borderRadius: 999, padding: mobile ? "4px 6px" : "5px 8px", flexShrink: 0 }}>
                   <button
-                    onClick={() => setPanelQty((q) => clampQuantity(q - Math.max(1, selRow.multipleOf || 1), listingLimits(selRow)))}
+                    onClick={() => setPanelQty((q) => clampQuantity(q - Math.max(1, selRow.multipleOf || 1), listingQtyLimits(selRow)))}
                     aria-label="Fewer tickets"
                     disabled={panelQty <= selRow.min}
                     style={{ fontFamily: "inherit", width: mobile ? 40 : 36, height: mobile ? 40 : 36, borderRadius: 999, border: "none", background: "#f1f3f8", color: NAVY, fontSize: mobile ? 22 : 20, lineHeight: 1, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", opacity: panelQty <= selRow.min ? 0.4 : 1 }}
                   >−</button>
                   <span style={{ minWidth: mobile ? 82 : 74, textAlign: "center", fontSize: mobile ? 16 : 15, fontWeight: 600, fontVariantNumeric: "tabular-nums" }}>{panelQty === 1 ? "1 Ticket" : `${panelQty} Tickets`}</span>
                   <button
-                    onClick={() => setPanelQty((q) => clampQuantity(q + Math.max(1, selRow.multipleOf || 1), listingLimits(selRow)))}
+                    onClick={() => setPanelQty((q) => clampQuantity(q + Math.max(1, selRow.multipleOf || 1), listingQtyLimits(selRow)))}
                     aria-label="More tickets"
                     disabled={panelQty >= selRow.max}
                     style={{ fontFamily: "inherit", width: mobile ? 40 : 36, height: mobile ? 40 : 36, borderRadius: 999, border: "none", background: "#f1f3f8", color: NAVY, fontSize: mobile ? 22 : 20, lineHeight: 1, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", opacity: panelQty >= selRow.max ? 0.4 : 1 }}
                   >+</button>
                 </div>
               </div>
-              <div style={{ display: "flex", flexDirection: "column", gap: 8, paddingBottom: 18 }}>
-                <div style={{ fontSize: mobile ? 13 : 12, fontWeight: 600, letterSpacing: "0.12em", textTransform: "uppercase", color: "#8a93a3" }}>About this ticket</div>
-                <div style={{ fontSize: mobile ? 16 : 14, color: "#4a5567", lineHeight: 1.6 }}>{selRow.tier || selRow.zone} seating in {selRow.zone} with covered concourse access.</div>
-              </div>
+              {panelOfferDescription ? (
+                <div style={{ display: "flex", flexDirection: "column", gap: 8, paddingBottom: 18 }}>
+                  <div style={{ fontSize: mobile ? 13 : 12, fontWeight: 600, letterSpacing: "0.12em", textTransform: "uppercase", color: "#8a93a3" }}>About this ticket</div>
+                  <ExpandableDescription
+                    text={panelOfferDescription}
+                    mobile={mobile}
+                    toggleColor={ACC}
+                    style={{
+                      fontSize: mobile ? 16 : 14,
+                      color: "#4a5567",
+                      lineHeight: 1.6,
+                    }}
+                  />
+                </div>
+              ) : null}
               <div style={{ width: "100%", boxSizing: "border-box" }}>{compactTrustCard}</div>
             </div>
             <div style={{ flexShrink: 0, borderTop: "1px solid rgba(5,27,53,0.08)", padding: "18px 20px 22px", display: "flex", flexDirection: "column", gap: 14 }}>
@@ -1937,7 +2013,7 @@ export default function PremiumTicketing({
       {unlockZone !== null && (
         <Modal
           variant="light"
-          title={`${unlockZone} is locked`}
+          title={isGa ? `${unlockZone} requires a code` : `${unlockZone} is locked`}
           onClose={() => setUnlockZone(null)}
         >
           <form
@@ -1955,26 +2031,26 @@ export default function PremiumTicketing({
               <LockIcon s={22} />
             </div>
             <p className="text-[14px] leading-relaxed text-[#6e7180]">
-              Enter your access code to unlock these seats.
+              Enter your access code to unlock {isGa ? "this offer" : "these seats"}.
             </p>
-            <input
+            <RedemptionCodeField
               name="accessCode"
+              label="Access code"
               value={unlockInput}
-              onChange={(e) => {
-                setUnlockInput(e.target.value);
-                setUnlockError(false);
-              }}
-              ref={autoFocusField}
+              autoFocus
               placeholder="Access code"
-              className="w-full rounded-xl border bg-white px-4 py-3.5 text-[16px] tracking-[0.06em] text-[#051b35] outline-none"
-              aria-invalid={unlockError}
-              style={{ borderColor: unlockError ? "#c2394a" : "#d3d6e0" }}
+              error={unlockFieldError}
+              onChange={(value) => {
+                setUnlockInput(value);
+                setUnlockFieldError(null);
+              }}
+              onBlur={(value) =>
+                setUnlockFieldError((current) =>
+                  redemptionCodeBlurFieldError(current, value),
+                )
+              }
+              inputClassName="tracking-[0.06em]"
             />
-            {unlockError ? (
-              <p className="text-[13px] text-[#c2394a]">
-                That code didn&apos;t match. Check with the event for the right one.
-              </p>
-            ) : null}
             <BrandedActionButton
               type="submit"
               primaryColor={ACC}
@@ -1983,7 +2059,7 @@ export default function PremiumTicketing({
               loadingLabel="Checking…"
               className="w-full text-[16px]"
             >
-              <LockIcon s={16} /> Unlock seats
+              <LockIcon s={16} /> {isGa ? "Unlock offer" : "Unlock seats"}
             </BrandedActionButton>
           </form>
         </Modal>
@@ -2013,9 +2089,13 @@ export default function PremiumTicketing({
         <Modal variant="light" title="Event information" onClose={() => setInfo(false)}>
           <div className="mt-4 flex max-h-[min(70vh,640px)] flex-col gap-[22px] overflow-y-auto">
             <div className="flex flex-col items-center gap-3.5 text-center">
-              <div className="flex h-[132px] w-[132px] items-center justify-center rounded-[22px] border border-[rgba(5,27,53,0.08)] bg-[#f1f3f8] p-[18px]">
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img src={LOGO} alt={d.homeLabel} className="max-h-full max-w-full object-contain" />
+              <div className="flex h-[132px] w-[132px] items-center justify-center overflow-hidden rounded-[22px] border border-[rgba(5,27,53,0.08)] bg-[#f1f3f8]">
+                {d.homeLogoSrc || LOGO ? (
+                  /* eslint-disable-next-line @next/next/no-img-element */
+                  <img src={d.homeLogoSrc || LOGO} alt={d.homeLabel} className="h-full w-full object-cover" />
+                ) : (
+                  <span className="text-[28px] font-semibold text-[#051b35]">{(d.homeLabel || "").slice(0, 3).toUpperCase()}</span>
+                )}
               </div>
               <div className="text-[22px] font-semibold tracking-[-0.025em]">{d.eventName}</div>
               <div className="text-[15px] text-[#6e7180]">{d.doorsLine}</div>
@@ -2039,29 +2119,61 @@ export default function PremiumTicketing({
                 Open in maps
               </a>
             </div>
+            {showMatchupSection ? (
             <div className="flex flex-col gap-3.5 rounded-2xl border border-[rgba(5,27,53,0.08)] bg-[#f7f8fc] p-[18px]">
               <div className="text-[12px] font-semibold uppercase tracking-[0.12em] text-[#8a93a3]">Who&rsquo;s playing</div>
               <div className="flex flex-wrap items-center gap-6">
                 <div className="flex items-center gap-2.5">
-                  <div className="flex h-[42px] w-[42px] items-center justify-center rounded-full border border-[rgba(5,27,53,0.08)] bg-white p-1.5">
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img src={LOGO} alt="" className="max-h-full max-w-full object-contain" />
+                  <div className="flex h-[42px] w-[42px] items-center justify-center overflow-hidden rounded-full border border-[rgba(5,27,53,0.08)] bg-white">
+                    {d.homeLogoSrc || LOGO ? (
+                      /* eslint-disable-next-line @next/next/no-img-element */
+                      <img src={d.homeLogoSrc || LOGO} alt="" className="h-full w-full object-cover" />
+                    ) : (
+                      <span className="text-[14px] font-semibold text-[#051b35]">{(d.homeLabel || "").slice(0, 3).toUpperCase()}</span>
+                    )}
                   </div>
                   <div className="text-[15px] font-medium">{d.homeLabel}</div>
                 </div>
+                {showAwayTeam ? (
                 <div className="flex items-center gap-2.5">
-                  <div className="flex h-[42px] w-[42px] items-center justify-center rounded-full bg-[#051b35] text-[14px] font-semibold text-white">
-                    {d.awayShort}
+                  <div className={`flex h-[42px] w-[42px] items-center justify-center overflow-hidden rounded-full text-[14px] font-semibold ${d.awayLogoSrc ? "border border-[rgba(5,27,53,0.08)] bg-white text-[#051b35]" : "bg-[#051b35] text-white"}`}>
+                    {d.awayLogoSrc ? (
+                      /* eslint-disable-next-line @next/next/no-img-element */
+                      <img src={d.awayLogoSrc} alt="" className="h-full w-full object-cover" />
+                    ) : (
+                      d.awayShort
+                    )}
                   </div>
                   <div className="text-[15px] font-medium">{d.awayLabel}</div>
                 </div>
+                ) : null}
               </div>
-              <div className="h-px bg-[rgba(5,27,53,0.08)]" />
-              <div className="flex flex-col gap-2">
-                <div className="text-[12px] font-semibold uppercase tracking-[0.12em] text-[#8a93a3]">About this event</div>
-                <div className="text-[14px] leading-relaxed text-[#4a5567]">{d.aboutText}</div>
-              </div>
+              {d.aboutText ? (
+                <>
+                  <div className="h-px bg-[rgba(5,27,53,0.08)]" />
+                  <div className="flex flex-col gap-2">
+                    <div className="text-[12px] font-semibold uppercase tracking-[0.12em] text-[#8a93a3]">About this event</div>
+                    <ExpandableDescription
+                      text={d.aboutText}
+                      mobile={mobile}
+                      toggleColor={ACC}
+                      className="text-[14px] leading-relaxed text-[#4a5567]"
+                    />
+                  </div>
+                </>
+              ) : null}
             </div>
+            ) : d.aboutText ? (
+              <div className="flex flex-col gap-2 rounded-2xl border border-[rgba(5,27,53,0.08)] bg-[#f7f8fc] p-[18px]">
+                <div className="text-[12px] font-semibold uppercase tracking-[0.12em] text-[#8a93a3]">About this event</div>
+                <ExpandableDescription
+                  text={d.aboutText}
+                  mobile={mobile}
+                  toggleColor={ACC}
+                  className="text-[14px] leading-relaxed text-[#4a5567]"
+                />
+              </div>
+            ) : null}
           </div>
         </Modal>
       )}
@@ -2092,6 +2204,8 @@ export const NM_STATE_DATA: TicketingData = {
   homeLabel: "New Mexico State",
   awayLabel: "New Mexico",
   awayShort: "UNM",
+  showMatchupSection: true,
+  showAwayTeam: true,
   listings: [
     { zone: "Sections A–B", tier: "Premium chairback", sec: "A", row: "12", min: 1, max: 4, price: "$46.00" },
     { zone: "Sections A–B", tier: "Premium chairback", sec: "B", row: "3", min: 2, max: 6, price: "$44.00" },

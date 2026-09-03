@@ -1,14 +1,20 @@
 import { describe, expect, it } from "vitest";
 import {
+  groupsToGaTiers,
   groupsToListings,
+  limitsFromTicketGroup,
   lockedZonesFromGroups,
-  normalizeGlobalTicketLimit,
   offerChipNames,
+  validQuantityOptions,
+  listingAvailabilityRange,
+  listingDetailAvailabilityLabel,
+  normalizeGlobalTicketLimit,
   clampQuantity,
   quantityIsAllowed,
   quantityLimits,
   quantityRestrictionLabel,
   selectionPaneTicketLimit,
+  selectionPaneRestrictionLabel,
   selectionTicketLimit,
   ticketQuantityCap,
   ticketQuantityOptions,
@@ -16,7 +22,7 @@ import {
   DEFAULT_SEATED_TICKET_LIMIT,
   sellableCount,
 } from "@/lib/ticketListings";
-import { DEMO_SEATED_TICKET_GROUPS } from "@/lib/demo/fixtures";
+import { DEMO_SEATED_TICKET_GROUPS, demoTicketGroups } from "@/lib/demo/fixtures";
 
 const CODED_GROUP = DEMO_SEATED_TICKET_GROUPS.find(
   (g) => g.offer?.accessCode,
@@ -62,7 +68,7 @@ describe("offer quantity restrictions", () => {
     expect(quantityIsAllowed(5, limits)).toBe(false);
     expect(clampQuantity(7, limits)).toBe(6);
     expect(quantityRestrictionLabel(limits)).toBe(
-      "4–8 per order · multiples of 2",
+      "4–8 per order · Increments of 2",
     );
     expect(
       quantityLimits(
@@ -118,7 +124,7 @@ describe("groupsToListings", () => {
   it("maps sellable DEMO groups into listing rows with min/max and zone names", () => {
     const listings = groupsToListings(DEMO_SEATED_TICKET_GROUPS);
 
-    expect(listings).toHaveLength(3);
+    expect(listings).toHaveLength(4);
     expect(listings[0]).toMatchObject({
       zone: "Field Club",
       sec: "M",
@@ -134,6 +140,12 @@ describe("groupsToListings", () => {
       price: "$21.94",
     });
     expect(listings[2]).toMatchObject({
+      zone: "Companion Seat",
+      min: 1,
+      max: 2,
+      price: "$12.00",
+    });
+    expect(listings[3]).toMatchObject({
       zone: "Section M-N & GA",
       sec: "N",
       row: "I",
@@ -191,7 +203,7 @@ describe("groupsToListings", () => {
     expect(selectionTicketLimit(10, [{ offer: { limit: 4 } }])).toBe(4);
   });
 
-  it("lists the highest offer maxQuantity or limit, else the event limit, else the default", () => {
+  it("lists the highest offer maxQuantity or limit when every offer sets one, else the event limit or default", () => {
     const fieldClub = DEMO_SEATED_TICKET_GROUPS[0];
     const sectionAB = DEMO_SEATED_TICKET_GROUPS[1];
     const sectionMN = DEMO_SEATED_TICKET_GROUPS[5];
@@ -205,7 +217,11 @@ describe("groupsToListings", () => {
       ]),
     ).toBe(10);
     expect(ticketQuantityCap(3, [fieldClub])).toBe(3);
+    expect(ticketQuantityCap(3, [fieldClub, sectionAB])).toBe(3);
     expect(ticketQuantityCap(null, [fieldClub], DEFAULT_SEATED_TICKET_LIMIT)).toBe(
+      DEFAULT_SEATED_TICKET_LIMIT,
+    );
+    expect(ticketQuantityCap(null, [fieldClub, sectionAB], DEFAULT_SEATED_TICKET_LIMIT)).toBe(
       DEFAULT_SEATED_TICKET_LIMIT,
     );
     expect(ticketQuantityCap(null, [sectionAB])).toBe(
@@ -214,6 +230,9 @@ describe("groupsToListings", () => {
     expect(ticketQuantityOptions(3, [sectionAB, sectionMN])).toEqual([
       1, 2, 3, 4, 5, 6, 7, 8,
     ]);
+    expect(ticketQuantityOptions(null, [fieldClub, sectionAB])).toEqual(
+      Array.from({ length: DEFAULT_SEATED_TICKET_LIMIT }, (_, i) => i + 1),
+    );
     expect(
       ticketQuantityOptions(3, [
         { ...fieldClub, offer: { ...fieldClub.offer, limit: 10 } },
@@ -245,6 +264,87 @@ describe("groupsToListings", () => {
 
     expect(fieldClub?.max).toBe(3);
     expect(sectionAB?.max).toBe(DEMO_SEATED_TICKET_GROUPS[1].offer?.maxQuantity);
+  });
+});
+
+describe("listingAvailabilityRange", () => {
+  it("shows the min–max ticket count", () => {
+    expect(listingAvailabilityRange(1, 4)).toBe("1 – 4 Tickets");
+  });
+
+  it("uses singular copy for a single available ticket", () => {
+    expect(listingAvailabilityRange(1, 1)).toBe("1 Ticket");
+  });
+});
+
+describe("listingDetailAvailabilityLabel", () => {
+  it("shows lowercase tickets available", () => {
+    expect(listingDetailAvailabilityLabel(1, 4)).toBe("1-4 tickets available");
+  });
+
+  it("appends Increments of with the step size", () => {
+    expect(listingDetailAvailabilityLabel(2, 20, 2)).toBe(
+      "2-20 tickets available · Increments of 2",
+    );
+  });
+
+  it("uses singular copy for one ticket", () => {
+    expect(listingDetailAvailabilityLabel(1, 1)).toBe("1 ticket available");
+  });
+});
+
+describe("selectionPaneRestrictionLabel", () => {
+  it("includes min and multiples when the selected offer sets them", () => {
+    const sectionAB = DEMO_SEATED_TICKET_GROUPS[1];
+    expect(
+      selectionPaneRestrictionLabel(null, [
+        { ...sectionAB, seatId: "a1", quantity: 1 },
+      ]),
+    ).toBe("2–6 per order");
+  });
+
+  it("uses exact limit copy when the offer sets limit", () => {
+    expect(
+      selectionPaneRestrictionLabel(null, [
+        {
+          offer: {
+            limit: 4,
+            minQuantity: 2,
+            maxQuantity: 8,
+            multipleOf: 2,
+          },
+        },
+      ]),
+    ).toBe("4 per order");
+  });
+
+  it("shows the event cap range when only a global limit is set", () => {
+    expect(selectionPaneRestrictionLabel(6, [])).toBe("1–6 per order");
+  });
+
+  it("uses the GA default max when all selected seats are GA", () => {
+    expect(
+      selectionPaneRestrictionLabel(null, [{ GA: true, offer: {} }]),
+    ).toBe(`1–${DEFAULT_GA_TICKET_LIMIT} per order`);
+  });
+
+  it("reads package incrementsOf from the fallback source", () => {
+    expect(
+      selectionPaneRestrictionLabel(
+        null,
+        [{ seatId: "s1" }],
+        { minQuantity: 2, maxQuantity: 6, incrementsOf: 2 },
+      ),
+    ).toBe("2–6 per order");
+  });
+
+  it("uses the event cap when the selected offer has no max", () => {
+    const fieldClub = DEMO_SEATED_TICKET_GROUPS[0];
+    expect(
+      selectionPaneRestrictionLabel(4, [
+        { ...fieldClub, seatId: "s1", quantity: 1 },
+      ]),
+    ).toBe("1–4 per order");
   });
 });
 
@@ -310,6 +410,152 @@ describe("offerChipNames", () => {
       sec: "GA",
       row: "GA",
       min: 1,
+      max: DEFAULT_GA_TICKET_LIMIT,
     });
+  });
+
+  it("uses the GA default max on seated-event GA listings without an offer max", () => {
+    const listings = groupsToListings([
+      {
+        id: "grp-ga-otown",
+        GA: true,
+        sectionNumber: "O-Town",
+        rowNumber: "GA",
+        price: 14.71,
+        availableCount: 742,
+        offer: {
+          id: "off-mn-ga",
+          name: "Section M-N & GA",
+          minQuantity: 2,
+        },
+      },
+    ]);
+
+    expect(listings[0]).toMatchObject({
+      sec: "O-Town",
+      row: "GA",
+      min: 2,
+      max: DEFAULT_GA_TICKET_LIMIT,
+    });
+  });
+});
+
+describe("groupsToGaTiers", () => {
+  const groups = demoTicketGroups().ticketGroups;
+
+  it("includes access-coded offers as locked tiers when includeLocked is set", () => {
+    const tiers = groupsToGaTiers(groups, { includeLocked: true });
+    const presale = tiers.find((tier) => tier.name === "STH Presale");
+
+    expect(presale).toMatchObject({
+      state: "locked",
+      price: "$30.00",
+    });
+  });
+
+  it("drops access-coded offers by default", () => {
+    const tiers = groupsToGaTiers(groups);
+    expect(tiers.some((tier) => tier.name === "STH Presale")).toBe(false);
+  });
+
+  it("cards drained inventory as sold out even when the offer is coded", () => {
+    const codedSoldOut = {
+      ...groups[0],
+      id: "grp-coded-out",
+      availableCount: 0,
+      offer: {
+        id: "off-coded-out",
+        name: "Members Only",
+        accessCode: "MEMBER",
+      },
+    };
+    const tiers = groupsToGaTiers([codedSoldOut], { includeLocked: true });
+
+    expect(tiers[0]).toMatchObject({ name: "Members Only", state: "soldout" });
+  });
+
+  it("fans out connected child offers as their own live tiers", () => {
+    const tiers = groupsToGaTiers(groups, { includeLocked: true });
+    const student = tiers.find((tier) => tier.name === "Student Rate");
+
+    expect(student).toMatchObject({
+      state: "live",
+      price: "$15.00",
+      note: "Ticket limit: 2–6 per order · Increments of 2",
+      min: 2,
+      max: 6,
+      multipleOf: 2,
+    });
+  });
+});
+
+describe("groupsToListings connected offers", () => {
+  it("lists connected seated inventory beside the parent offer", () => {
+    const group = DEMO_SEATED_TICKET_GROUPS.find((g) => g.id === 2)!;
+    const listings = groupsToListings([group], { includeLocked: true });
+
+    expect(listings.map((l) => l.tier)).toEqual([
+      "Section A-B",
+      "Companion Seat",
+    ]);
+    expect(listings[1]).toMatchObject({
+      price: "$12.00",
+      min: 1,
+      max: 2,
+    });
+  });
+});
+
+describe("limitsFromTicketGroup", () => {
+  it("matches connected offer limits for GA and seated inventory", () => {
+    const gaGroups = demoTicketGroups().ticketGroups;
+    const parent = gaGroups[0];
+    const connected = parent.offer!.connected_offers![0];
+
+    expect(
+      limitsFromTicketGroup(
+        { ...parent, offer: connected, availableCount: 240, GA: true },
+        null,
+      ),
+    ).toMatchObject({ min: 2, max: 6, step: 2, valid: true });
+
+    const seated = DEMO_SEATED_TICKET_GROUPS.find(
+      (g) => g.offer?.connected_offers?.length,
+    );
+    expect(seated).toBeTruthy();
+    const companionLimits = limitsFromTicketGroup(
+      {
+        ...seated!,
+        offer: seated!.offer!.connected_offers![0],
+      },
+      null,
+    );
+    expect(companionLimits).toMatchObject({ min: 1, max: 2, step: 1, valid: true });
+  });
+});
+
+describe("validQuantityOptions", () => {
+  it("steps quantities the same way blocktickets getValidQuantitiesForTicketGroup does", () => {
+    const connected = demoTicketGroups().ticketGroups[0].offer!.connected_offers![0];
+
+    expect(
+      validQuantityOptions(connected, {
+        available: 240,
+        defaultMax: 100,
+        globalMax: null,
+      }),
+    ).toEqual([2, 4, 6]);
+  });
+});
+
+describe("offerChipNames connected offers", () => {
+  it("hides connected child offers from filter chips", () => {
+    const offers = [
+      { name: "Standard Admission" },
+      { name: "Student Rate", isConnectedOffer: true },
+      { name: "VIP Club" },
+    ];
+
+    expect(offerChipNames(offers)).toEqual(["Standard Admission", "VIP Club"]);
   });
 });
