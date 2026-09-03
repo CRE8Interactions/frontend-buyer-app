@@ -7,12 +7,14 @@ import { focusFirstField } from "@/lib/autoFocus";
 import {
   FIELD_COPY,
   PHONE_ERROR,
+  phoneBlurError,
   phoneNumberError,
+  phoneSubmitError,
   type FieldVariant,
   type PhoneErrorType,
 } from "@/lib/fieldValidation";
 
-export { PHONE_ERROR, phoneNumberError };
+export { PHONE_ERROR, phoneBlurError, phoneNumberError, phoneSubmitError };
 export type { PhoneErrorType };
 
 const FALLBACK_COUNTRY: Country = "US";

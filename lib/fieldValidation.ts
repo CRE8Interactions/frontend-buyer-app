@@ -12,6 +12,9 @@ export const FIELD_COPY = {
   nameRequired: "This field is required.",
   namePattern: "Letters only — no digits.",
   codeIncorrect: "Code is incorrect. Please try again",
+  accessCodeIncorrect:
+    "That code didn't match. Check with the event for the right one.",
+  promoCodeRequired: "Enter a promo code.",
   phoneRequired: "Phone number is required.",
   phoneInvalid: "Phone number is not valid. Please try again",
   phoneExists: "An account with this phone number already exists.",
@@ -26,8 +29,14 @@ export const PHONE_ERROR = {
 export type PhoneErrorType = keyof typeof PHONE_ERROR;
 export type NameFieldError = "required" | "pattern" | null;
 export type EmailFieldError = "required" | "invalid" | null;
+export type DobFieldError = "required" | "invalid" | null;
 export type CodeFieldError = "code" | "network" | null;
+export type RedemptionCodeFieldError = "required" | "rejected" | "network" | null;
 export type FieldVariant = "light" | "dark";
+
+export const DOB_REQUIRED_MESSAGE = "Date of birth is required.";
+export const DOB_INVALID_MESSAGE =
+  "Date of birth is incorrect. Make sure it is in the correct format: MM/DD/YYYY";
 
 export function requiredCopy(label: string) {
   return `${label} is required.`;
@@ -89,11 +98,73 @@ export function nameFieldError(value: string): NameFieldError {
   return null;
 }
 
-export function phoneNumberError(
+/** Empty is valid on idle blur; pattern errors only when the field has content. */
+export function nameBlurError(value: string): "pattern" | null {
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+  if (!new RegExp(namePatternMatch).test(trimmed)) return "pattern";
+  return null;
+}
+
+export function phoneSubmitError(
   value: string | undefined,
 ): PhoneErrorType | null {
   if (!value) return "required";
   if (!isValidPhoneNumber(value)) return "invalid";
+  return null;
+}
+
+/** Empty is valid on idle blur; invalid only when a number was entered. */
+export function phoneBlurError(value: string | undefined): "invalid" | null {
+  if (!value) return null;
+  if (!isValidPhoneNumber(value)) return "invalid";
+  return null;
+}
+
+/** Submit-time phone validation (required + invalid). */
+export function phoneNumberError(value: string | undefined): PhoneErrorType | null {
+  return phoneSubmitError(value);
+}
+
+export function formatDobInput(raw: string) {
+  const digits = raw.replace(/\D/g, "").slice(0, 8);
+  if (digits.length <= 2) return digits;
+  if (digits.length <= 4) return `${digits.slice(0, 2)}/${digits.slice(2)}`;
+  return `${digits.slice(0, 2)}/${digits.slice(2, 4)}/${digits.slice(4)}`;
+}
+
+export function isValidDob(dob: string) {
+  const digits = dob.replace(/\D/g, "");
+  if (digits.length !== 8) return false;
+  const [month, day, year] = [
+    Number(digits.slice(0, 2)),
+    Number(digits.slice(2, 4)),
+    Number(digits.slice(4, 8)),
+  ];
+  const dateObj = new Date(year, month - 1, day);
+  if (
+    dateObj.getFullYear() !== year ||
+    dateObj.getMonth() !== month - 1 ||
+    dateObj.getDate() !== day
+  ) {
+    return false;
+  }
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  return dateObj <= today;
+}
+
+/** Empty is valid on idle blur; invalid only when a date was entered. */
+export function dobBlurError(value: string): "invalid" | null {
+  const next = formatDobInput(value);
+  if (!next) return null;
+  return isValidDob(next) ? null : "invalid";
+}
+
+export function dobSubmitError(value: string): DobFieldError {
+  const next = formatDobInput(value);
+  if (!next) return "required";
+  if (!isValidDob(next)) return "invalid";
   return null;
 }
 
@@ -180,4 +251,33 @@ export function emailSubmitError(value: string): EmailFieldError {
 
 export function emailSubmitInvalid(value: string) {
   return emailSubmitError(value) !== null;
+}
+
+/** Trim access/promo codes before submit or API calls. */
+export function normalizeRedemptionCode(value?: string | null) {
+  return (value || "").trim();
+}
+
+/** Empty and whitespace-only are valid on idle blur; submit rejects empty. */
+export function redemptionCodeBlurError(_value: string): null {
+  return null;
+}
+
+export function redemptionCodeSubmitError(value: string): "required" | null {
+  return normalizeRedemptionCode(value) ? null : "required";
+}
+
+/** Keep API rejections on blur; otherwise re-run idle blur rules. */
+export function redemptionCodeBlurFieldError(
+  current: RedemptionCodeFieldError,
+  value: string,
+): RedemptionCodeFieldError {
+  if (current === "rejected" || current === "network") return current;
+  return redemptionCodeBlurError(value);
+}
+
+/** Checkout promo rejections keep the API message when present. */
+export function promoCodeRejectedMessage(apiMessage?: string | null) {
+  const msg = apiMessage?.trim() || "Promo code could not be applied";
+  return `${msg}${/[.!?]$/.test(msg) ? " " : ". "}Please try again.`;
 }

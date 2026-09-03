@@ -28,7 +28,8 @@ import {
 } from "@/lib/checkoutBranding";
 import { cacheOrgBranding, orgSlugFromPathname } from "@/lib/orgBrandingCache";
 import { useClientReady } from "@/lib/useClientReady";
-import { formString } from "@/lib/fieldValidation";
+import { formString, promoCodeRejectedMessage, redemptionCodeBlurFieldError, redemptionCodeSubmitError, type RedemptionCodeFieldError } from "@/lib/fieldValidation";
+import RedemptionCodeField from "@/components/molecules/RedemptionCodeField";
 import {
   flexPackSeasonLine,
   flexPackVoucherCount,
@@ -276,7 +277,8 @@ function CheckoutPaymentForm({
   const [promoDetails, setPromoDetails] = useState<Record<string, unknown> | null>(
     null,
   );
-  const [codeError, setCodeError] = useState("");
+  const [promoFieldError, setPromoFieldError] = useState<RedemptionCodeFieldError>(null);
+  const [promoRejectedMessage, setPromoRejectedMessage] = useState("");
   const [submittingPromo, setSubmittingPromo] = useState(false);
   const [removingPromo, setRemovingPromo] = useState(false);
   const [purchasing, setPurchasing] = useState(false);
@@ -342,17 +344,20 @@ function CheckoutPaymentForm({
   const submitPromo = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     const code =
-      formString(new FormData(e.currentTarget), "promo") || promoCode.trim();
+      formString(new FormData(e.currentTarget), "promo") || promoCode;
     setPromoCode(code);
-    if (!code) {
-      setCodeError("Enter a promo code.");
+    const submitErr = redemptionCodeSubmitError(code);
+    if (submitErr) {
+      setPromoFieldError(submitErr);
+      setPromoRejectedMessage("");
       return;
     }
     setSubmittingPromo(true);
-    setCodeError("");
+    setPromoFieldError(null);
+    setPromoRejectedMessage("");
     try {
       const res = await redeemPromoCode({
-        code,
+        code: code.trim(),
         paymentIntentId: intentId,
         cart,
       });
@@ -362,8 +367,9 @@ function CheckoutPaymentForm({
     } catch (err: unknown) {
       const msg =
         (err as { response?: { data?: { error?: { message?: string } } } })
-          ?.response?.data?.error?.message || "Promo code could not be applied.";
-      setCodeError(`${msg}${/[.!?]$/.test(msg.trim()) ? " " : ". "}Please try again.`);
+          ?.response?.data?.error?.message;
+      setPromoFieldError("rejected");
+      setPromoRejectedMessage(promoCodeRejectedMessage(msg));
     } finally {
       setSubmittingPromo(false);
     }
@@ -377,6 +383,8 @@ function CheckoutPaymentForm({
       setDiscountedPrice(null);
       setPromoDetails(null);
       setPromoCode("");
+      setPromoFieldError(null);
+      setPromoRejectedMessage("");
     } catch {
       /* ignore */
     } finally {
@@ -476,42 +484,41 @@ function CheckoutPaymentForm({
               <p className="mb-2 text-[12px] font-semibold uppercase tracking-[0.1em] text-[#8a93a3]">
                 Promo code
               </p>
-              <form noValidate onSubmit={submitPromo} className="flex gap-2.5">
-                <input
+              <form noValidate onSubmit={submitPromo} className="flex items-start gap-2.5">
+                <RedemptionCodeField
                   id="promo"
                   name="promo"
-                  aria-invalid={Boolean(codeError)}
-                  aria-describedby={codeError ? "promo-error" : undefined}
-                  className={`h-12 min-w-0 flex-1 rounded-[10px] border bg-white px-[18px] text-[15px] text-[#051b35] outline-none placeholder:text-[#8a93a3] ${
-                    codeError
-                      ? "border-[#c2394a]"
-                      : "border-[rgba(5,27,53,0.16)]"
-                  }`}
+                  label="Promo code"
+                  hideLabel
                   value={promoCode}
-                  onChange={(e) => {
-                    setPromoCode(e.target.value);
-                    setCodeError("");
-                  }}
                   placeholder="Enter promo code"
-                  autoComplete="off"
+                  error={promoFieldError}
+                  rejectedMessage={promoRejectedMessage}
+                  className="min-w-0 flex-1"
+                  inputClassName="!h-12 !rounded-[10px] !bg-white !px-[18px] !text-[15px]"
+                  onChange={(value) => {
+                    setPromoCode(value);
+                    setPromoFieldError(null);
+                    setPromoRejectedMessage("");
+                  }}
+                  onBlur={(value) =>
+                    setPromoFieldError((current) =>
+                      redemptionCodeBlurFieldError(current, value),
+                    )
+                  }
                 />
                 <BrandedActionButton
                   type="submit"
                   tone="secondary"
                   loading={submittingPromo}
                   loadingLabel="Applying…"
-                  className="!rounded-[10px] px-6"
+                  className="!rounded-[10px] px-6 !h-12"
                 >
                   Apply
                 </BrandedActionButton>
               </form>
             </div>
           )}
-          {codeError ? (
-            <p id="promo-error" className="mt-2 text-[13px] text-[#c2394a]">
-              {codeError}
-            </p>
-          ) : null}
         </div>
       ) : null}
 
