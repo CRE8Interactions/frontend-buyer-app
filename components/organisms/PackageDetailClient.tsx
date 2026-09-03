@@ -8,6 +8,7 @@ import Modal from "@/components/molecules/Modal";
 import BrandedActionButton from "@/components/atoms/BrandedActionButton";
 import SeatMapSelectionOverlay from "@/components/organisms/SeatMapSelectionOverlay";
 import { getPackageFE, placePackageIntoCart } from "@/lib/api";
+import { CHECKOUT_UNAVAILABLE_ERROR } from "@/lib/mapSelection";
 import {
   brandingToTicketingTheme,
   type BrandingOrganization,
@@ -70,6 +71,9 @@ type EventPackage = {
   end?: string;
   maxQuantity?: number;
   minQuantity?: number;
+  multipleOf?: number;
+  incrementsOf?: number;
+  limit?: number;
   pricingTiers?: { price?: number }[];
   package_tickets?: PackageTicket[];
   seatmap?: {
@@ -290,7 +294,7 @@ export default function PackageDetailClient({
         organization: pkg.organization,
         name: pkg.name,
       });
-      setEventTicketLimit(pkg.maxQuantity ?? null);
+      setEventTicketLimit(pkg.limit ?? pkg.maxQuantity ?? null);
 
       setData(mapping);
       setBackground(normalizeSeatmapBackground(inventory.seatmap?.background));
@@ -351,22 +355,9 @@ export default function PackageDetailClient({
         router.push(href);
         return;
       }
-      setError("Cart could not be created. Please try again.");
-    } catch (err: unknown) {
-      const message =
-        err &&
-        typeof err === "object" &&
-        "response" in err &&
-        (err as { response?: { data?: { error?: { message?: string } } } })
-          .response?.data?.error?.message
-          ? (err as { response: { data: { error: { message: string } } } })
-              .response.data.error.message
-          : "Selected seats are not available.";
-      setSeatedError({
-        title: "Selected tickets not available",
-        message,
-        buttonText: "Close",
-      });
+      setSeatedError({ ...CHECKOUT_UNAVAILABLE_ERROR });
+    } catch {
+      setSeatedError({ ...CHECKOUT_UNAVAILABLE_ERROR });
     }
     checkingOutRef.current = false;
     setCheckingOut(false);

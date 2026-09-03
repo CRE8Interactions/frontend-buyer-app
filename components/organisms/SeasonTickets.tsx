@@ -85,7 +85,10 @@ import {
 } from "@/lib/walletNav";
 import { notifyWalletShellReady } from "@/lib/routeTransition";
 import { Ticket } from "@/components/atoms/icons";
+import { ButtonBusyContents } from "@/components/atoms/BrandedActionButton";
+import { Ring } from "@/components/atoms/spinners";
 import { printTicketsPdf } from "@/lib/ticketPdf";
+import { googleMapsDirectionsUrl } from "@/lib/venueLocation";
 
 /* ---- brand tokens ---- */
 const CRIMSON = "#8c0b42";
@@ -1271,12 +1274,9 @@ export default function SeasonTickets({
     flexPacks.length === 0 &&
     accessPasses.length === 0 &&
     !eventsLoading;
-  const upcomingCount =
-    !eventsChecked || eventsLoading ? 0 : upcomingEvents.length;
-  const seasonCount =
-    !eventsChecked || eventsLoading
-      ? 0
-      : seasonPackages.length + (showDemoSchedule ? 1 : 0);
+  const listPending = !eventsChecked || eventsLoading;
+  const upcomingCount = upcomingEvents.length;
+  const seasonCount = seasonPackages.length + (showDemoSchedule ? 1 : 0);
   const tabDefs = [
     { id: "upcoming" as const, label: "Upcoming", n: upcomingCount },
     { id: "season" as const, label: "Packages", n: seasonCount },
@@ -1379,6 +1379,33 @@ export default function SeasonTickets({
   }, [activeOrderId, fullOrderChecked]);
 
   const TicketsLoader = () => <WalletListSkeleton />;
+  const DetailLoader = () => (
+    <div
+      style={{
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        minHeight: "50vh",
+        flex: 1,
+      }}
+    >
+      <Ring size={40} />
+    </div>
+  );
+  const pillCountStyle = (on: boolean): React.CSSProperties => ({
+    fontSize: 12,
+    fontWeight: 500,
+    fontVariantNumeric: "tabular-nums",
+    minWidth: "2ch",
+    textAlign: "center",
+    visibility: listPending ? "hidden" : "visible",
+    color: on ? "rgba(255,255,255,0.72)" : MUTE,
+  });
+  const pillCount = (n: number, on: boolean) => (
+    <span aria-hidden={listPending || undefined} style={pillCountStyle(on)}>
+      {listPending ? "" : n}
+    </span>
+  );
 
   const RoutedEventShell = (children: React.ReactNode) => (
     <div style={{ maxWidth: 1100, margin: "0 auto", boxSizing: "border-box", padding: mobile ? "24px 16px 128px" : "40px 32px 96px", display: "flex", flexDirection: "column", gap: 18 }}>
@@ -2227,7 +2254,7 @@ export default function SeasonTickets({
       <div className="st-noscroll" style={{ display: "flex", gap: 6, overflowX: "auto", paddingBottom: 2 }}>
         {tabDefs.map((t) => (
           <button key={t.id} onClick={() => setTab(t.id)} style={chip(tab === t.id)}>
-            {t.label}<span style={{ fontSize: 12, fontWeight: 500, fontVariantNumeric: "tabular-nums", color: tab === t.id ? "rgba(255,255,255,0.72)" : MUTE }}>{t.n}</span>
+            {t.label}{pillCount(t.n, tab === t.id)}
           </button>
         ))}
       </div>
@@ -2333,6 +2360,13 @@ export default function SeasonTickets({
         { k: "Total paid", v: formatCartOrderTotal(ev.cartTotal) },
         { k: "Delivery", v: "Mobile entry" },
       ];
+  const directionsHref =
+    googleMapsDirectionsUrl(ev.event?.venue?.address) ||
+    (ev.address || ev.venue
+      ? `https://google.com/maps?q=${encodeURIComponent(
+          [ev.venue, ev.address || ev.city].filter(Boolean).join(", "),
+        )}`
+      : "");
   const openTransfer = () => {
     setTf({ step: 1, sel: [], email: "", evId: activeEvId });
     setTfEmailErr(null);
@@ -2594,13 +2628,19 @@ export default function SeasonTickets({
                 <button
                   type="button"
                   disabled={ticketWalletSaving !== null}
+                  aria-busy={ticketWalletSaving === String(t.id || t.code) || undefined}
                   onClick={() => void addTicketCardToWallet(t)}
                   style={{ fontFamily: "inherit", width: "100%", display: "flex", alignItems: "center", justifyContent: "center", gap: 10, minHeight: 50, fontSize: 15, fontWeight: 600, color: "#fff", background: "#14161c", border: "none", borderRadius: 12, cursor: ticketWalletSaving ? "default" : "pointer", opacity: ticketWalletSaving ? 0.7 : 1 }}
                 >
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" style={{ width: 18, height: 18 }}><rect x="2" y="6" width="20" height="13" rx="3" /><path d="M2 11h20" /></svg>
-                  {ticketWalletSaving === String(t.id || t.code)
-                    ? "Adding…"
-                    : phoneWalletLabel(passWallet)}
+                  <ButtonBusyContents
+                    loading={ticketWalletSaving === String(t.id || t.code)}
+                    loadingLabel="Adding…"
+                    spinnerColor="#fff"
+                    trackColor="rgba(255,255,255,0.35)"
+                  >
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" style={{ width: 18, height: 18 }}><rect x="2" y="6" width="20" height="13" rx="3" /><path d="M2 11h20" /></svg>
+                    {phoneWalletLabel(passWallet)}
+                  </ButtonBusyContents>
                 </button>
               ) : null}
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
@@ -2683,10 +2723,28 @@ export default function SeasonTickets({
                   <button
                     type="button"
                     disabled={printing !== null}
+                    aria-busy={printing === String(t.id || t.code) || undefined}
                     onClick={() => void printTickets([t], "open")}
-                    style={{ ...ghostBtn, fontSize: 13, padding: "11px 18px" }}
+                    style={{
+                      ...ghostBtn,
+                      fontSize: 13,
+                      padding: "11px 18px",
+                      display: "inline-flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      gap: 8,
+                      cursor: printing !== null ? "default" : "pointer",
+                      opacity: printing !== null ? 0.55 : 1,
+                    }}
                   >
-                    {printing === String(t.id || t.code) ? "Preparing…" : "Print PDF"}
+                    <ButtonBusyContents
+                      loading={printing === String(t.id || t.code)}
+                      loadingLabel="Preparing…"
+                      spinnerColor={INK}
+                      trackColor="rgba(5,27,53,0.2)"
+                    >
+                      Print PDF
+                    </ButtonBusyContents>
                   </button>
                   <button onClick={() => { setDetail(t); setModal("details"); }} style={{ fontFamily: "inherit", fontSize: 13, fontWeight: 600, color: INK, background: "#f1f3f8", border: "none", borderRadius: 999, padding: "11px 18px", cursor: "pointer" }}>Details</button>
                 </div>
@@ -2708,10 +2766,34 @@ export default function SeasonTickets({
             <button
               type="button"
               disabled={printing !== null || ev.tickets.length === 0}
+              aria-busy={printing === "all" || undefined}
               onClick={() => void printTickets(ev.tickets, "download")}
-              style={{ fontFamily: "inherit", width: "100%", textAlign: "left", fontSize: 14, fontWeight: 600, color: INK, background: "#fff", border: "1px solid rgba(5,27,53,0.14)", borderRadius: 12, padding: "13px 16px", cursor: "pointer" }}
+              style={{
+                fontFamily: "inherit",
+                width: "100%",
+                display: "flex",
+                alignItems: "center",
+                gap: 8,
+                textAlign: "left",
+                fontSize: 14,
+                fontWeight: 600,
+                color: INK,
+                background: "#fff",
+                border: "1px solid rgba(5,27,53,0.14)",
+                borderRadius: 12,
+                padding: "13px 16px",
+                cursor: printing !== null || ev.tickets.length === 0 ? "default" : "pointer",
+                opacity: printing !== null || ev.tickets.length === 0 ? 0.55 : 1,
+              }}
             >
-              {printing === "all" ? "Preparing…" : "Print all"}
+              <ButtonBusyContents
+                loading={printing === "all"}
+                loadingLabel="Preparing…"
+                spinnerColor={INK}
+                trackColor="rgba(5,27,53,0.2)"
+              >
+                Print all
+              </ButtonBusyContents>
             </button>
             {printError ? <p role="alert" style={{ margin: 0, color: "#c2394a", fontSize: 13 }}>{printError}</p> : null}
           </div>
@@ -2719,9 +2801,16 @@ export default function SeasonTickets({
             <div style={eyebrow}>Getting there</div>
             <div style={{ fontSize: 15, fontWeight: 600 }}>{ev.venue}</div>
             <div style={{ fontSize: 13, lineHeight: 1.5, color: SUB }}>{ev.address}</div>
-            <button style={{ ...accentBtn, alignSelf: "flex-start", marginTop: 6, display: "flex", alignItems: "center", gap: 7, fontSize: 13, padding: "11px 18px" }}>
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" style={{ width: 14, height: 14 }}><polygon points="3 11 22 2 13 21 11 13 3 11" /></svg>Get directions
-            </button>
+            {directionsHref ? (
+              <a
+                href={directionsHref}
+                target="_blank"
+                rel="noopener noreferrer"
+                style={{ ...accentBtn, alignSelf: "flex-start", marginTop: 6, display: "flex", alignItems: "center", gap: 7, fontSize: 13, padding: "11px 18px", textDecoration: "none" }}
+              >
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" style={{ width: 14, height: 14 }}><polygon points="3 11 22 2 13 21 11 13 3 11" /></svg>Get directions
+              </a>
+            ) : null}
           </div>
           <div style={{ ...card, borderRadius: 20, padding: cardPad, display: "flex", flexDirection: "column" }}>
             <div style={{ ...eyebrow, paddingBottom: 10 }}>Order</div>
@@ -2939,7 +3028,7 @@ export default function SeasonTickets({
       <div style={{ display: "flex", gap: 6 }}>
         {[{ id: "active" as const, label: "Sent", n: sentList.length }, { id: "received" as const, label: "Received", n: received.length }].map((t) => (
           <button key={t.id} onClick={() => setListTab(t.id)} style={chip(listTab === t.id)}>
-            {t.label}<span style={{ fontSize: 12, fontWeight: 500, color: listTab === t.id ? "rgba(255,255,255,0.72)" : MUTE }}>{t.n}</span>
+            {t.label}{pillCount(t.n, listTab === t.id)}
           </button>
         ))}
       </div>
@@ -3248,10 +3337,18 @@ export default function SeasonTickets({
                   type="button"
                   onClick={addQrPassToPhoneWallet}
                   disabled={passWalletSaving}
+                  aria-busy={passWalletSaving || undefined}
                   style={{ fontFamily: "inherit", width: "100%", display: "flex", alignItems: "center", justifyContent: "center", gap: 10, minHeight: 50, fontSize: 15, fontWeight: 600, color: "#fff", background: INK, border: "none", borderRadius: 999, cursor: passWalletSaving ? "default" : "pointer", opacity: passWalletSaving ? 0.7 : 1 }}
                 >
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" style={{ width: 18, height: 18 }}><rect x="2" y="6" width="20" height="13" rx="3" /><path d="M2 11h20" /></svg>
-                  {passWalletSaving ? "Adding…" : phoneWalletLabel(passWallet)}
+                  <ButtonBusyContents
+                    loading={passWalletSaving}
+                    loadingLabel="Adding…"
+                    spinnerColor="#fff"
+                    trackColor="rgba(255,255,255,0.35)"
+                  >
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" style={{ width: 18, height: 18 }}><rect x="2" y="6" width="20" height="13" rx="3" /><path d="M2 11h20" /></svg>
+                    {phoneWalletLabel(passWallet)}
+                  </ButtonBusyContents>
                 </button>
                 {passWalletError ? (
                   <div role="alert" style={{ fontSize: 13, lineHeight: 1.5, color: DANGER, textAlign: "center" }}>
@@ -3566,9 +3663,17 @@ export default function SeasonTickets({
             form={tfStep === 2 ? "season-xfer" : undefined}
             onClick={tfStep === 2 ? undefined : () => doTfPrimary()}
             disabled={!tfCanNext}
-            style={{ fontFamily: "inherit", flex: 1, fontSize: 15, fontWeight: 600, color: tfCanNext ? INK : MUTE, background: tfCanNext ? ACCENT : "#d7dbe6", border: "none", borderRadius: 999, padding: 14, minHeight: 48, cursor: "pointer" }}
+            aria-busy={tfSaving || undefined}
+            style={{ fontFamily: "inherit", flex: 1, display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 8, fontSize: 15, fontWeight: 600, color: tfCanNext ? INK : MUTE, background: tfCanNext ? ACCENT : "#d7dbe6", border: "none", borderRadius: 999, padding: 14, minHeight: 48, cursor: "pointer" }}
           >
-            {tfSaving ? "Transferring…" : tfStep === 3 ? "Transfer" : tfStep === 4 ? "Close" : "Next"}
+            <ButtonBusyContents
+              loading={tfSaving}
+              loadingLabel="Transferring…"
+              spinnerColor={INK}
+              trackColor="rgba(5,27,53,0.2)"
+            >
+              {tfStep === 3 ? "Transfer" : tfStep === 4 ? "Close" : "Next"}
+            </ButtonBusyContents>
           </button>
         </div>
       </div>
@@ -3659,7 +3764,16 @@ export default function SeasonTickets({
             {step === "confirm" ? (
               <>
                 <button type="button" disabled={saving} onClick={() => setPassTransfer({ ...passTransfer, step: "email", error: "" })} style={{ fontFamily: "inherit", flex: 1, fontSize: 15, fontWeight: 600, color: INK, background: "#f1f3f8", border: "none", borderRadius: 999, padding: 14, minHeight: 48, cursor: "pointer" }}>Back</button>
-                <button type="button" disabled={saving} onClick={() => void submitPassTransfer()} style={{ fontFamily: "inherit", flex: 1, fontSize: 15, fontWeight: 600, color: INK, background: ACCENT, border: "none", borderRadius: 999, padding: 14, minHeight: 48, cursor: "pointer" }}>{saving ? "Transferring…" : "Transfer"}</button>
+                <button type="button" disabled={saving} aria-busy={saving || undefined} onClick={() => void submitPassTransfer()} style={{ fontFamily: "inherit", flex: 1, display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 8, fontSize: 15, fontWeight: 600, color: INK, background: ACCENT, border: "none", borderRadius: 999, padding: 14, minHeight: 48, cursor: "pointer" }}>
+                  <ButtonBusyContents
+                    loading={saving}
+                    loadingLabel="Transferring…"
+                    spinnerColor={INK}
+                    trackColor="rgba(5,27,53,0.2)"
+                  >
+                    Transfer
+                  </ButtonBusyContents>
+                </button>
               </>
             ) : null}
             {step === "success" ? (
@@ -3718,7 +3832,7 @@ export default function SeasonTickets({
 
       {showRoutedWallet ? (
         routedWalletPending
-          ? RoutedEventShell(TicketsLoader())
+          ? RoutedEventShell(DetailLoader())
           : routedWalletMissing
             ? RoutedEventMissing()
             : showingAccessPass
@@ -3733,7 +3847,7 @@ export default function SeasonTickets({
           {screen === "login" && Login()}
           {screen === "code" && CodeScreen()}
           {screen === "events" && Events()}
-          {screen === "event" && (eventOrderPending ? TicketsLoader() : EventDetail())}
+          {screen === "event" && (eventOrderPending ? DetailLoader() : EventDetail())}
           {screen === "seasonPackage" && SeasonPackage()}
           {screen === "package" && Package()}
           {screen === "listings" && Listings()}

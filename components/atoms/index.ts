@@ -8,7 +8,10 @@ export { default as Switch } from "./Switch";
 export { default as Reveal } from "./Reveal";
 export { default as RotatingWord } from "./RotatingWord";
 export { default as Spinner } from "./Spinner";
-export { default as BrandedActionButton } from "./BrandedActionButton";
+export {
+  default as BrandedActionButton,
+  ButtonBusyContents,
+} from "./BrandedActionButton";
 export {
   EmblemAssemble,
   SquareSpin,

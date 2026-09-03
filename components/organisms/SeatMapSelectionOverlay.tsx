@@ -8,7 +8,9 @@ import SectionLocatorThumb from "@/components/molecules/SectionLocatorThumb";
 import { InteractiveSeatmap } from "@/components/organisms/InteractiveSeatmap";
 import type { SeatmapBackground, SeatmapMapping } from "@/lib/seatmapLookups";
 import { getSeatViewImageCandidates } from "@/lib/seatView";
-import { selectionOfferName } from "@/lib/ticketSummary";
+import { selectionPaneTicketLimit } from "@/lib/ticketListings";
+import { selectionOfferName, selectionTicketCards } from "@/lib/ticketSummary";
+import useFiltersStore from "@/stores/filtersStore";
 import useSeatmapStore from "@/stores/seatmapStore";
 
 const NAVY = "#051b35";
@@ -175,7 +177,15 @@ export default function SeatMapSelectionOverlay({
   const storeBackground = useSeatmapStore((s) => s.background);
   const seatedError = useSeatmapStore((s) => s.seatedError);
   const setSeatedError = useSeatmapStore((s) => s.setSeatedError);
+  const eventTicketLimit = useFiltersStore((s) => s.eventTicketLimit);
+  const seatmapTicketLimit = useSeatmapStore((s) => s.eventTicketLimit);
   const [prepareExpired, setPrepareExpired] = useState(false);
+  const [dismissTooltipKey, setDismissTooltipKey] = useState(0);
+  const dismissMapTooltip = () => setDismissTooltipKey((key) => key + 1);
+  const paneTicketLimit = selectionPaneTicketLimit(
+    seatmapTicketLimit ?? eventTicketLimit,
+    selectedFromMap,
+  );
 
   const mapping = mapMapping || storeMapping;
   const background = mapBackground || storeBackground;
@@ -212,6 +222,7 @@ export default function SeatMapSelectionOverlay({
   );
   const mapDetailOffer = selectionOfferName(mapDetailGroup);
   const mapDetailQty = Number(mapDetailGroup?.quantity || 1);
+  const selectionCards = selectionTicketCards(selectedFromMap);
   const mapTicketCount = totalCount || selectedFromMap.length;
   const mapTicketLabel = subtotalCaption
     ? subtotalCaption(mapTicketCount)
@@ -230,6 +241,7 @@ export default function SeatMapSelectionOverlay({
     checkoutLoading || showOrgLoader || selectedFromMap.length === 0;
   const handleCheckout = () => {
     if (checkoutDisabled) return;
+    dismissMapTooltip();
     onCheckout();
   };
 
@@ -286,19 +298,22 @@ export default function SeatMapSelectionOverlay({
   const trustRows = (
     <div
       style={{
+        background: "#fff",
+        border: "1px solid rgba(5,27,53,0.10)",
+        boxShadow: "0 1px 2px rgba(5,27,53,0.05)",
+        borderRadius: 20,
+        padding: 20,
+        width: "100%",
+        boxSizing: "border-box",
         display: "flex",
         flexDirection: "column",
-        gap: 14,
-        background: "#f7f8fc",
-        border: "1px solid rgba(5,27,53,0.08)",
-        borderRadius: 14,
-        padding: 18,
+        gap: 16,
       }}
     >
       {[
         {
           t: "Mobile tickets.",
-          d: " Delivered to your account and scanned at the gate.",
+          d: " Securely stored in your account.",
           icon: (
             <>
               <rect x="5" y="2" width="14" height="20" rx="3" />
@@ -308,7 +323,7 @@ export default function SeatMapSelectionOverlay({
         },
         {
           t: "Buyer protection.",
-          d: " Every listing is verified inventory, safe from bots and scalpers.",
+          d: " Safe from bots and scalpers.",
           icon: (
             <>
               <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
@@ -318,16 +333,16 @@ export default function SeatMapSelectionOverlay({
         },
         {
           t: "Prices are all-in.",
-          d: " Taxes and fees included. No surprises at checkout.",
+          d: " Taxes and fees included.",
           icon: (
             <>
-              <path d="M20.59 13.41 13.4 20.6a2 2 0 0 1-2.82 0L3 13V4a1 1 0 0 1 1-1h9l7.59 7.59a2 2 0 0 1 0 2.82Z" />
-              <circle cx="7.5" cy="7.5" r="1.2" />
+              <path d="M20.6 13.4l-7.2 7.2a2 2 0 0 1-2.8 0l-7.2-7.2a2 2 0 0 1-.6-1.4V4a1 1 0 0 1 1-1h8a2 2 0 0 1 1.4.6l7.4 7.4a2 2 0 0 1 0 2.8z" />
+              <line x1="7.5" y1="7.5" x2="7.51" y2="7.5" />
             </>
           ),
         },
       ].map((r) => (
-        <div key={r.t} style={{ display: "flex", gap: 12 }}>
+        <div key={r.t} style={{ display: "flex", alignItems: "center", gap: 12, minWidth: 0 }}>
           <svg
             viewBox="0 0 24 24"
             fill="none"
@@ -335,11 +350,11 @@ export default function SeatMapSelectionOverlay({
             strokeWidth={2}
             strokeLinecap="round"
             strokeLinejoin="round"
-            style={{ width: 18, height: 18, flexShrink: 0, marginTop: 1 }}
+            style={{ width: 18, height: 18, flexShrink: 0 }}
           >
             {r.icon}
           </svg>
-          <div style={{ fontSize: 14, color: "#4a5567", lineHeight: 1.5 }}>
+          <div style={{ flex: 1, minWidth: 0, fontSize: 14, color: "#4a5567" }}>
             <span style={{ fontWeight: 600, color: NAVY }}>{r.t}</span>
             {r.d}
           </div>
@@ -357,7 +372,7 @@ export default function SeatMapSelectionOverlay({
         background: "rgba(5,27,53,0.45)",
         backdropFilter: "blur(4px)",
         display: "flex",
-        padding: mobile ? 10 : 16,
+        padding: mobile ? 0 : 16,
         boxSizing: "border-box",
       }}
       onClick={requestClose}
@@ -375,7 +390,7 @@ export default function SeatMapSelectionOverlay({
           color: NAVY,
           display: "flex",
           flexDirection: "column",
-          borderRadius: mobile ? 18 : 22,
+          borderRadius: mobile ? 0 : 22,
           overflow: "hidden",
           boxShadow: "0 24px 64px -20px rgba(5,27,53,0.45)",
         }}
@@ -529,6 +544,7 @@ export default function SeatMapSelectionOverlay({
               buttonTextColor={buttonTextColor}
               compactChrome={mobile}
               hideLoadingSpinner
+              dismissTooltipKey={dismissTooltipKey}
             />
             {showMobileMapBar ? (
               <div
@@ -579,7 +595,10 @@ export default function SeatMapSelectionOverlay({
                 <div style={{ display: "flex", gap: 10 }}>
                   <button
                     type="button"
-                    onClick={() => setMapSelectionOpen(true)}
+                    onClick={() => {
+                      dismissMapTooltip();
+                      setMapSelectionOpen(true);
+                    }}
                     style={{
                       fontFamily: "inherit",
                       flex: "0 1 42%",
@@ -677,9 +696,9 @@ export default function SeatMapSelectionOverlay({
                         style={{
                           flex: 1,
                           textAlign: "center",
-                          fontSize: 20,
+                          fontSize: 16,
                           fontWeight: 600,
-                          letterSpacing: "-0.02em",
+                          letterSpacing: "-0.015em",
                         }}
                       >
                         Ticket details
@@ -857,6 +876,8 @@ export default function SeatMapSelectionOverlay({
                           minWidth: 0,
                           maxWidth: "100%",
                           ...pill(accentSoft, accent, true),
+                          fontSize: 14,
+                          padding: "5px 10px",
                         }}
                       >
                         <Star s={14} /> {mapDetailOffer}
@@ -871,7 +892,7 @@ export default function SeatMapSelectionOverlay({
                       >
                         <div
                           style={{
-                            fontSize: 22,
+                            fontSize: 18,
                             fontWeight: 600,
                             letterSpacing: "-0.02em",
                           }}
@@ -880,7 +901,7 @@ export default function SeatMapSelectionOverlay({
                             ? `Sec ${mapDetailSection} · General admission`
                             : `Sec ${mapDetailSection} · Row ${mapDetailGroup.rowNumber || mapDetailGroup.rowName || "—"} · Seat ${mapDetailGroup.seatNumber ?? "—"}`}
                         </div>
-                        <div style={{ fontSize: 14, color: "#6e7180" }}>
+                        <div style={{ fontSize: 15, color: "#6e7180" }}>
                           {mapDetailQty === 1
                             ? "1 Ticket"
                             : `${mapDetailQty} Tickets`}
@@ -900,14 +921,15 @@ export default function SeatMapSelectionOverlay({
                     >
                       <span
                         style={{
-                          fontSize: 22,
+                          fontSize: 18,
                           fontWeight: 600,
                           fontVariantNumeric: "tabular-nums",
                           letterSpacing: "-0.02em",
                         }}
                       >
-                        {money(Number(mapDetailGroup.price || 0))} ea
+                        {money(Number(mapDetailGroup.price || 0))}
                       </span>
+                      <span style={{ fontSize: 15, fontWeight: 600 }}>ea</span>
                       <span style={{ fontSize: 14, color: "#6e7180" }}>
                         incl. fees
                       </span>
@@ -922,7 +944,7 @@ export default function SeatMapSelectionOverlay({
                     >
                       <div
                         style={{
-                          fontSize: 12,
+                          fontSize: 13,
                           fontWeight: 600,
                           letterSpacing: "0.12em",
                           textTransform: "uppercase",
@@ -933,7 +955,7 @@ export default function SeatMapSelectionOverlay({
                       </div>
                       <div
                         style={{
-                          fontSize: 14,
+                          fontSize: 16,
                           color: "#4a5567",
                           lineHeight: 1.6,
                         }}
@@ -993,9 +1015,9 @@ export default function SeatMapSelectionOverlay({
                           style={{
                             flex: 1,
                             textAlign: "center",
-                            fontSize: 20,
+                            fontSize: 16,
                             fontWeight: 600,
-                            letterSpacing: "-0.02em",
+                            letterSpacing: "-0.015em",
                           }}
                         >
                           Ticket details
@@ -1003,17 +1025,32 @@ export default function SeatMapSelectionOverlay({
                         <div style={{ width: 40, flexShrink: 0 }} />
                       </div>
                     ) : (
-                      <div
-                        style={{
-                          fontSize: 24,
-                          fontWeight: 700,
-                          textAlign: "center",
-                          letterSpacing: "-0.025em",
-                          marginBottom: 32,
-                        }}
-                      >
-                        Your selection
-                      </div>
+                      <>
+                        <div
+                          style={{
+                            fontSize: 24,
+                            fontWeight: 700,
+                            textAlign: "center",
+                            letterSpacing: "-0.025em",
+                            marginBottom: paneTicketLimit ? 8 : 32,
+                          }}
+                        >
+                          Your selection
+                        </div>
+                        {paneTicketLimit ? (
+                          <p
+                            style={{
+                              margin: "0 0 32px",
+                              fontSize: 14,
+                              fontWeight: 600,
+                              color: "#6e7180",
+                              textAlign: "center",
+                            }}
+                          >
+                            Ticket limit: {paneTicketLimit} per order
+                          </p>
+                        ) : null}
+                      </>
                     )}
                     {selectedFromMap.length === 0 ? (
                       <p
@@ -1039,20 +1076,16 @@ export default function SeatMapSelectionOverlay({
                           gap: 14,
                         }}
                       >
-                        {selectedFromMap.map((g, i) => {
+                        {selectionCards.map(({ group: g, groupIndex, unitIndex }) => {
                           const section =
                             g.sectionNumber || g.sectionName || "GA";
                           const row = g.rowNumber || g.rowName || "—";
-                          const seat = g.GA
-                            ? `× ${g.quantity || 1}`
-                            : g.seatNumber || "—";
+                          const seat = g.seatNumber || "—";
                           const offer = selectionOfferName(g);
-                          const itemPrice =
-                            Number(g.price || 0) *
-                            (g.GA ? Number(g.quantity || 1) : 1);
+                          const itemPrice = Number(g.price || 0);
                           return (
                             <li
-                              key={`${g.seatId ?? g.id}-${i}`}
+                              key={`${g.seatId ?? g.id}-${groupIndex}-${unitIndex}`}
                               style={{
                                 position: "relative",
                                 border: "1px solid #dfe3eb",
@@ -1064,7 +1097,10 @@ export default function SeatMapSelectionOverlay({
                                 type="button"
                                 aria-label="Remove ticket"
                                 onClick={() =>
-                                  unselectSeat(g.seatId ?? g.id ?? i, g)
+                                  unselectSeat(
+                                    g.seatId ?? g.id ?? groupIndex,
+                                    g,
+                                  )
                                 }
                                 style={{
                                   fontFamily: "inherit",
@@ -1168,7 +1204,7 @@ export default function SeatMapSelectionOverlay({
                                 <button
                                   type="button"
                                   onClick={() => {
-                                    setMapDetail(i);
+                                    setMapDetail(groupIndex);
                                     setMedia(0);
                                   }}
                                   style={{
@@ -1241,15 +1277,15 @@ export default function SeatMapSelectionOverlay({
                   }}
                 >
                   <div>
-                    <div style={{ fontSize: 14, fontWeight: 600 }}>Subtotal</div>
-                    <div style={{ marginTop: 4, fontSize: 12 }}>
+                    <div style={{ fontSize: 16, fontWeight: 600, letterSpacing: "-0.01em" }}>Subtotal</div>
+                    <div style={{ marginTop: 2, fontSize: 15, color: "#6e7180" }}>
                       {mapTicketLabel}
                     </div>
                   </div>
                   <div
                     style={{
-                      fontSize: 24,
-                      fontWeight: 700,
+                      fontSize: 22,
+                      fontWeight: 600,
                       letterSpacing: "-0.025em",
                     }}
                   >

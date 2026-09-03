@@ -8,6 +8,12 @@ import {
   quantityIsAllowed,
   quantityLimits,
   quantityRestrictionLabel,
+  selectionPaneTicketLimit,
+  selectionTicketLimit,
+  ticketQuantityCap,
+  ticketQuantityOptions,
+  DEFAULT_GA_TICKET_LIMIT,
+  DEFAULT_SEATED_TICKET_LIMIT,
   sellableCount,
 } from "@/lib/ticketListings";
 import { DEMO_SEATED_TICKET_GROUPS } from "@/lib/demo/fixtures";
@@ -58,17 +64,44 @@ describe("offer quantity restrictions", () => {
     expect(quantityRestrictionLabel(limits)).toBe(
       "4–8 per order · multiples of 2",
     );
+    expect(
+      quantityLimits(
+        { minQuantity: 3, maxQuantity: 10, incrementsOf: 2 },
+        { available: 9, defaultMax: 20 },
+      ),
+    ).toEqual(limits);
   });
 
-  it("applies the event's global limit before aligning to the offer multiple", () => {
+  it("uses the offer max when set and the event cap only when the offer has none", () => {
+    expect(
+      quantityLimits(
+        { ...offer, maxQuantity: 10, multipleOf: 2 },
+        { available: 20, defaultMax: 20, globalMax: 5 },
+      ),
+    ).toEqual({ min: 2, max: 10, step: 2, valid: true });
+    expect(
+      quantityLimits(
+        { ...offer, maxQuantity: null, multipleOf: 2 },
+        { available: 20, defaultMax: 20, globalMax: 5 },
+      ),
+    ).toEqual({ min: 2, max: 4, step: 2, valid: true });
+    expect(normalizeGlobalTicketLimit("19")).toBe(19);
+    expect(normalizeGlobalTicketLimit(0)).toBeNull();
+  });
+
+  it("treats offer.limit as the exact quantity and ignores min, max, and multipleOf", () => {
     const limits = quantityLimits(
-      { ...offer, maxQuantity: 10, multipleOf: 2 },
+      { ...offer, limit: 4, minQuantity: 2, maxQuantity: 8, multipleOf: 2 },
       { available: 20, defaultMax: 20, globalMax: 5 },
     );
 
-    expect(limits).toEqual({ min: 2, max: 4, step: 2, valid: true });
-    expect(normalizeGlobalTicketLimit("19")).toBe(19);
-    expect(normalizeGlobalTicketLimit(0)).toBeNull();
+    expect(limits).toEqual({ min: 4, max: 4, step: 1, valid: true });
+    expect(quantityIsAllowed(4, limits)).toBe(true);
+    expect(quantityIsAllowed(2, limits)).toBe(false);
+    expect(quantityRestrictionLabel(limits)).toBe("4 per order");
+    expect(
+      quantityLimits({ limit: 4 }, { available: 2, defaultMax: 20 }).valid,
+    ).toBe(false);
   });
 
   it("marks an offer unavailable when no permitted multiple fits", () => {
@@ -146,12 +179,72 @@ describe("groupsToListings", () => {
     });
   });
 
-  it("caps every seated offer at the event's global ticket limit", () => {
+  it("uses the selected offer max when it is set, not the event cap", () => {
+    const offer = DEMO_SEATED_TICKET_GROUPS[1];
+    expect(selectionTicketLimit(null, [offer])).toBe(
+      offer.offer?.maxQuantity,
+    );
+    expect(selectionTicketLimit(3, [offer])).toBe(offer.offer?.maxQuantity);
+    expect(selectionTicketLimit(10, [{ offer: { maxQuantity: null } }])).toBe(
+      10,
+    );
+    expect(selectionTicketLimit(10, [{ offer: { limit: 4 } }])).toBe(4);
+  });
+
+  it("lists the highest offer maxQuantity or limit, else the event limit, else the default", () => {
+    const fieldClub = DEMO_SEATED_TICKET_GROUPS[0];
+    const sectionAB = DEMO_SEATED_TICKET_GROUPS[1];
+    const sectionMN = DEMO_SEATED_TICKET_GROUPS[5];
+    expect(ticketQuantityCap(3, [sectionAB, sectionMN])).toBe(
+      sectionMN.offer?.maxQuantity,
+    );
+    expect(
+      ticketQuantityCap(3, [
+        { ...fieldClub, offer: { ...fieldClub.offer, limit: 10 } },
+        sectionAB,
+      ]),
+    ).toBe(10);
+    expect(ticketQuantityCap(3, [fieldClub])).toBe(3);
+    expect(ticketQuantityCap(null, [fieldClub], DEFAULT_SEATED_TICKET_LIMIT)).toBe(
+      DEFAULT_SEATED_TICKET_LIMIT,
+    );
+    expect(ticketQuantityCap(null, [sectionAB])).toBe(
+      sectionAB.offer?.maxQuantity,
+    );
+    expect(ticketQuantityOptions(3, [sectionAB, sectionMN])).toEqual([
+      1, 2, 3, 4, 5, 6, 7, 8,
+    ]);
+    expect(
+      ticketQuantityOptions(3, [
+        { ...fieldClub, offer: { ...fieldClub.offer, limit: 10 } },
+      ]),
+    ).toEqual(Array.from({ length: 10 }, (_, i) => i + 1));
+    expect(ticketQuantityOptions(3, [fieldClub])).toEqual([1, 2, 3]);
+    expect(ticketQuantityOptions(null, [fieldClub])).toEqual(
+      Array.from({ length: DEFAULT_SEATED_TICKET_LIMIT }, (_, i) => i + 1),
+    );
+    expect(selectionPaneTicketLimit(8, [sectionAB])).toBe(
+      sectionAB.offer?.maxQuantity,
+    );
+    expect(selectionPaneTicketLimit(8, [fieldClub])).toBe(8);
+    expect(selectionPaneTicketLimit(null, [sectionAB, sectionMN])).toBe(
+      sectionMN.offer?.maxQuantity,
+    );
+    expect(selectionPaneTicketLimit(null, [])).toBe(DEFAULT_SEATED_TICKET_LIMIT);
+    expect(
+      selectionPaneTicketLimit(null, [{ GA: true, offer: { maxQuantity: null } }]),
+    ).toBe(DEFAULT_GA_TICKET_LIMIT);
+  });
+
+  it("caps listings without an offer max at the event limit and keeps an offer max as-is", () => {
     const listings = groupsToListings(DEMO_SEATED_TICKET_GROUPS, {
       globalMax: 3,
     });
+    const fieldClub = listings.find((listing) => listing.zone === "Field Club");
+    const sectionAB = listings.find((listing) => listing.zone === "Section A-B");
 
-    expect(listings.every((listing) => listing.max <= 3)).toBe(true);
+    expect(fieldClub?.max).toBe(3);
+    expect(sectionAB?.max).toBe(DEMO_SEATED_TICKET_GROUPS[1].offer?.maxQuantity);
   });
 });
 
@@ -185,20 +278,20 @@ describe("offerChipNames", () => {
     expect(offerChipNames(offers, [])).toEqual(["Standard Admission"]);
   });
 
-  it("caps max at 20 and falls back to section labels when no offer name", () => {
+  it("caps max at the seated default and falls back to section labels when no offer name", () => {
     const listings = groupsToListings([
       {
         id: 9,
         sectionNumber: "C",
         rowNumber: "1",
         price: 10,
-        availableCount: 40,
-        maxContiguous: 40,
-        seatIds: Array.from({ length: 40 }, (_, i) => `s${i}`),
+        availableCount: 80,
+        maxContiguous: 80,
+        seatIds: Array.from({ length: 80 }, (_, i) => `s${i}`),
       },
     ]);
     expect(listings[0].zone).toBe("Section C");
-    expect(listings[0].max).toBe(20);
+    expect(listings[0].max).toBe(DEFAULT_SEATED_TICKET_LIMIT);
   });
 
   it("labels GA groups without an offer as General admission", () => {

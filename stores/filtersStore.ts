@@ -69,6 +69,8 @@ export type TicketGroup = {
     minQuantity?: number | null;
     maxQuantity?: number | null;
     multipleOf?: number | null;
+    incrementsOf?: number | null;
+    limit?: number | null;
   };
   package?: {
     id?: string | number;
@@ -76,6 +78,9 @@ export type TicketGroup = {
     freeOffer?: boolean;
     minQuantity?: number | null;
     maxQuantity?: number | null;
+    multipleOf?: number | null;
+    incrementsOf?: number | null;
+    limit?: number | null;
   };
   offerIds?: Array<string | number>;
   [key: string]: unknown;

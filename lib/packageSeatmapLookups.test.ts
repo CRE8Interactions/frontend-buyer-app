@@ -66,4 +66,60 @@ describe("createPackageLookupTables", () => {
       pkg.name,
     );
   });
+
+  it("copies package min, max, and incrementsOf onto reserved and GA seats", () => {
+    const ga = demoTicketGroups().ticketGroups.find((g) => g.GA);
+    if (!ga) throw new Error("demo fixtures need a GA ticket group");
+    const pkg = demoSeasonPackage({
+      minQuantity: 2,
+      maxQuantity: 6,
+      incrementsOf: 2,
+      package_tickets: [
+        { ...listing, seatId },
+        { ...ga, sectionId: DEMO_GA_SECTION_ID },
+      ],
+    });
+
+    const { seatLookupTable, sectionLookupTable } = createPackageLookupTables(
+      pkg,
+      null,
+      null,
+    );
+
+    expect(seatLookupTable[seatId]?.package).toMatchObject({
+      minQuantity: 2,
+      maxQuantity: 6,
+      incrementsOf: 2,
+      multipleOf: 2,
+    });
+    expect(sectionLookupTable[DEMO_GA_SECTION_ID]?.[0]?.package).toMatchObject({
+      minQuantity: 2,
+      maxQuantity: 6,
+      incrementsOf: 2,
+      multipleOf: 2,
+    });
+  });
+
+  it("copies a package limit onto reserved and GA seats", () => {
+    const ga = demoTicketGroups().ticketGroups.find((g) => g.GA);
+    if (!ga) throw new Error("demo fixtures need a GA ticket group");
+    const pkg = demoSeasonPackage({
+      limit: 4,
+      package_tickets: [
+        { ...listing, seatId },
+        { ...ga, sectionId: DEMO_GA_SECTION_ID },
+      ],
+    });
+
+    const { seatLookupTable, sectionLookupTable } = createPackageLookupTables(
+      pkg,
+      null,
+      null,
+    );
+
+    expect(seatLookupTable[seatId]?.package).toMatchObject({ limit: 4 });
+    expect(sectionLookupTable[DEMO_GA_SECTION_ID]?.[0]?.package).toMatchObject({
+      limit: 4,
+    });
+  });
 });

@@ -116,6 +116,7 @@ function toTicketingData(
   soldOut: boolean,
   scheduled: boolean,
   scheduledTime?: string | null,
+  catalogGroups: RawGroup[] = groups,
 ): TicketingData {
   const tz = ev.venue?.timezone;
   const doorsIso = eventDoorsIso(ev);
@@ -135,10 +136,12 @@ function toTicketingData(
   const orgLabel = ev.organization?.name || "Blocktickets";
   const lockedZones = lockedZonesFromGroups(groups);
   const globalMax = normalizeGlobalTicketLimit(ev.globalTicketLimit);
-  const listings = groupsToListings(groups, {
+  const listingOpts = {
     includeLocked: true,
     globalMax,
-  });
+  };
+  const listings = groupsToListings(groups, listingOpts);
+  const quantityCatalog = groupsToListings(catalogGroups, listingOpts);
   const theme = brandingToTicketingTheme(ev, ev.organization, imageOf(ev.image));
 
   return {
@@ -166,6 +169,7 @@ function toTicketingData(
     awayLabel: away?.name || "Visitor",
     awayShort: (away?.name || "AWAY").slice(0, 3).toUpperCase(),
     listings,
+    quantityCatalog,
     lockedZones,
     mapBackground: seatmap.background,
     seatmapMapping: seatmap.mapping,
@@ -276,6 +280,7 @@ function SeatedTickets() {
 
   const [ev, setEv] = useState<EventData | null>(null);
   const [groups, setGroups] = useState<RawGroup[]>([]);
+  const [baseline, setBaseline] = useState<RawGroup[]>([]);
   const [offers, setOffers] = useState<OfferSummary[]>([]);
   const [seatmap, setSeatmap] = useState<{
     background: SeatmapBackground | null;
@@ -355,6 +360,7 @@ function SeatedTickets() {
         const nextOffers = (groupsRes?.data?.offers || []) as OfferSummary[];
 
         setGroups(nextGroups);
+        setBaseline(nextGroups);
         baselineGroups.current = nextGroups;
         setSoldOut(Boolean(groupsRes?.data?.soldout));
         setScheduled(Boolean(groupsRes?.data?.isScheduled));
@@ -421,9 +427,10 @@ function SeatedTickets() {
             soldOut,
             scheduled,
             scheduledTime,
+            baseline.length ? baseline : groups,
           )
         : null,
-    [ev, groups, seatmap, offers, soldOut, scheduled, scheduledTime],
+    [ev, groups, baseline, seatmap, offers, soldOut, scheduled, scheduledTime],
   );
 
   const theme = ev ? brandingToTicketingTheme(ev, ev.organization) : null;

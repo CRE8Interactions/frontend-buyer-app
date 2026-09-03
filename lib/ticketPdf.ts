@@ -13,6 +13,7 @@ import QRCode from "qrcode";
 import { resolveBrandLogo, resolvePrimaryColor } from "@/lib/branding";
 import { formatEventWhen } from "@/lib/helpers";
 import type { EventLike } from "@/lib/cartEvents";
+import { formatVenueCityState } from "@/lib/venueLocation";
 
 type PrintableTicket = {
   id?: string | number;
@@ -248,10 +249,21 @@ async function embedLogo(pdf: PDFDocument, event: EventLike) {
   }
 }
 
-function venueLabel(event: EventLike) {
-  const name = event.venue?.name || "";
-  const city = event.venue?.address?.[0]?.city;
-  return city && name && !name.includes(city) ? `${name}, ${city}` : name;
+/** Venue line on Print PDF / Print all. City is title-cased (Las Cruces). */
+export function printedVenueLabel(event: EventLike) {
+  const name = String(event.venue?.name || "").trim();
+  const rawCity = String(event.venue?.address?.[0]?.city || "").trim();
+  const city = formatVenueCityState({ city: rawCity });
+  if (!name) return city;
+  if (!city) return name;
+  if (
+    name.toLowerCase().includes(city.toLowerCase()) ||
+    name.toLowerCase().includes(rawCity.toLowerCase())
+  ) {
+    const escaped = rawCity.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    return escaped ? name.replace(new RegExp(escaped, "ig"), city) : name;
+  }
+  return `${name}, ${city}`;
 }
 
 async function drawBrandedTicket(
@@ -385,7 +397,7 @@ async function drawBrandedTicket(
   const timezone = event.venue?.timezone;
   drawField("DATE", formatEventWhen(event.start, timezone, "ddd, MMM D, YYYY"), contentLeft, innerTop - 32);
   drawField("TIME", formatEventWhen(event.start, timezone, "h:mm A"), contentLeft, innerTop - 68);
-  drawField("VENUE", venueLabel(event), contentLeft, innerTop - 104);
+  drawField("VENUE", printedVenueLabel(event), contentLeft, innerTop - 104);
 
   const holderX = innerX + innerW / 2 + 8;
   page.drawText("TICKET HOLDER", {

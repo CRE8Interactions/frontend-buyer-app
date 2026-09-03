@@ -15,6 +15,7 @@ import {
   resolveFlexPackCheckoutTotals,
   resolvePackageCheckoutTotals,
   selectionOfferName,
+  selectionTicketCards,
   ticketSelectionSummary,
   withPackageCheckoutSeatPrices,
 } from "@/lib/ticketSummary";
@@ -41,6 +42,29 @@ describe("selectionOfferName", () => {
         offer: { data: { attributes: { name: listing.offer?.name } } },
       }),
     ).toBe(listing.offer?.name);
+  });
+});
+
+describe("selectionTicketCards", () => {
+  it("expands a GA quantity into one card per ticket", () => {
+    const cards = selectionTicketCards([
+      { ...listing, GA: true, quantity: 2 },
+    ]);
+    expect(cards).toHaveLength(2);
+    expect(cards[0].groupIndex).toBe(0);
+    expect(cards[1].unitIndex).toBe(1);
+  });
+
+  it("expands package quantity the same way and leaves reserved seats as one card", () => {
+    const pkg = demoSeasonPackage();
+    const reserved = { ...listing, GA: false, quantity: 1 };
+    expect(
+      selectionTicketCards([
+        { ...listing, GA: false, package: { name: pkg.name }, quantity: 3 },
+        reserved,
+      ]),
+    ).toHaveLength(4);
+    expect(selectionTicketCards([reserved])).toHaveLength(1);
   });
 });
 

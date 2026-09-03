@@ -5,6 +5,10 @@ export type QuantityRestrictionSource = {
   minQuantity?: number | null;
   maxQuantity?: number | null;
   multipleOf?: number | null;
+  /** Package API name for the same step as offer `multipleOf`. */
+  incrementsOf?: number | null;
+  /** Exact quantity. Mutually exclusive with min/max/step. */
+  limit?: number | null;
 };
 
 export type QuantityLimits = {
@@ -19,6 +23,8 @@ export type RawTicketGroup = TicketGroup & {
     minQuantity?: number | null;
     maxQuantity?: number | null;
     multipleOf?: number | null;
+    incrementsOf?: number | null;
+    limit?: number | null;
   };
 };
 
@@ -44,6 +50,95 @@ export function normalizeGlobalTicketLimit(value: unknown) {
   return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
 }
 
+type QuantityCapGroup = {
+  GA?: boolean;
+  generalAdmission?: boolean;
+  offer?: {
+    maxQuantity?: number | null;
+    limit?: number | null;
+  } | null;
+  package?: {
+    maxQuantity?: number | null;
+    limit?: number | null;
+  } | null;
+};
+
+function isGaGroup(group: QuantityCapGroup) {
+  return Boolean(group.GA || group.generalAdmission);
+}
+
+function groupMaxQuantity(group: QuantityCapGroup) {
+  return (
+    normalizeGlobalTicketLimit(group.offer?.limit) ??
+    normalizeGlobalTicketLimit(group.offer?.maxQuantity) ??
+    normalizeGlobalTicketLimit(group.package?.limit) ??
+    normalizeGlobalTicketLimit(group.package?.maxQuantity)
+  );
+}
+
+/** Offer/package max when set; otherwise the event/package cap. */
+export function selectionTicketLimit(
+  eventLimit: unknown,
+  groups: QuantityCapGroup[] = [],
+) {
+  const offerCaps = groups
+    .map(groupMaxQuantity)
+    .filter((n): n is number => n != null);
+  if (offerCaps.length) return Math.min(...offerCaps);
+  return normalizeGlobalTicketLimit(eventLimit);
+}
+
+function highestOfferMaxQuantity(groups: QuantityCapGroup[]) {
+  const offerCaps = groups
+    .map(groupMaxQuantity)
+    .filter((n): n is number => n != null);
+  return offerCaps.length ? Math.max(...offerCaps) : null;
+}
+
+/**
+ * All / quantity list cap: highest offer maxQuantity or limit if any, else the
+ * event global limit, else `defaultMax`.
+ */
+export function ticketQuantityCap(
+  eventLimit: unknown,
+  groups: QuantityCapGroup[] = [],
+  defaultMax?: number | null,
+) {
+  return (
+    highestOfferMaxQuantity(groups) ??
+    normalizeGlobalTicketLimit(eventLimit) ??
+    normalizeGlobalTicketLimit(defaultMax)
+  );
+}
+
+export const DEFAULT_SEATED_TICKET_LIMIT = 50;
+export const DEFAULT_GA_TICKET_LIMIT = 100;
+
+/** 1…highest offer max or limit, else 1…event limit, else 1…default. */
+export function ticketQuantityOptions(
+  eventLimit: unknown,
+  groups: QuantityCapGroup[] = [],
+  defaultMax: number = DEFAULT_SEATED_TICKET_LIMIT,
+) {
+  const cap = ticketQuantityCap(eventLimit, groups, defaultMax);
+  if (cap == null) return [];
+  return Array.from({ length: cap }, (_, i) => i + 1);
+}
+
+/** Event limit if set; otherwise the highest selected offer/package limit. */
+export function selectionPaneTicketLimit(
+  eventLimit: unknown,
+  selected: QuantityCapGroup[],
+) {
+  const gaOnly =
+    selected.length > 0 && selected.every(isGaGroup);
+  return ticketQuantityCap(
+    eventLimit,
+    selected,
+    gaOnly ? DEFAULT_GA_TICKET_LIMIT : DEFAULT_SEATED_TICKET_LIMIT,
+  );
+}
+
 /** Normalize offer restrictions into quantities the shopper can actually buy. */
 export function quantityLimits(
   source: QuantityRestrictionSource | null | undefined,
@@ -57,10 +152,21 @@ export function quantityLimits(
     globalMax?: number | null;
   },
 ): QuantityLimits {
-  const step = positiveInteger(source?.multipleOf, 1);
+  const exactLimit = normalizeGlobalTicketLimit(source?.limit);
+  if (exactLimit != null) {
+    const inventoryMax =
+      available == null
+        ? exactLimit
+        : Math.max(0, Math.floor(Number(available) || 0));
+    const max = Math.min(exactLimit, inventoryMax);
+    return { min: exactLimit, max, step: 1, valid: exactLimit <= max };
+  }
+
+  const step = positiveInteger(source?.multipleOf ?? source?.incrementsOf, 1);
   const configuredMin = positiveInteger(source?.minQuantity, 1);
-  const configuredMax = positiveInteger(source?.maxQuantity, defaultMax);
-  const eventMax = positiveInteger(globalMax, configuredMax);
+  const offerMax = normalizeGlobalTicketLimit(source?.maxQuantity);
+  const configuredMax = offerMax ?? defaultMax;
+  const eventMax = offerMax ?? normalizeGlobalTicketLimit(globalMax) ?? configuredMax;
   const inventoryMax =
     available == null
       ? configuredMax
@@ -173,7 +279,7 @@ export function groupsToListings(
           contiguous > 0 ? contiguous : available,
           available,
         ),
-        defaultMax: 20,
+        defaultMax: DEFAULT_SEATED_TICKET_LIMIT,
         globalMax,
       });
       const zone =

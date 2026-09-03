@@ -319,11 +319,43 @@ function buildTeams(ev?: EventLike | null, packageName?: string) {
   ];
 }
 
+function seatSortValue(value: unknown) {
+  if (value == null) return "";
+  return String(value).trim();
+}
+
+/** Empty / GA parts sort last so reserved seats stay grouped. */
+function compareSeatPart(a: unknown, b: unknown) {
+  const left = seatSortValue(a);
+  const right = seatSortValue(b);
+  if (!left && !right) return 0;
+  if (!left) return 1;
+  if (!right) return -1;
+  return left.localeCompare(right, undefined, {
+    numeric: true,
+    sensitivity: "base",
+  });
+}
+
+function compareWalletTickets(
+  a: Record<string, unknown>,
+  b: Record<string, unknown>,
+) {
+  return (
+    compareSeatPart(
+      a.sectionNumber ?? a.sectionName,
+      b.sectionNumber ?? b.sectionName,
+    ) ||
+    compareSeatPart(a.rowNumber ?? a.rowName, b.rowNumber ?? b.rowName) ||
+    compareSeatPart(a.seatNumber, b.seatNumber)
+  );
+}
+
 function mapEventTickets(
   tickets: Array<Record<string, unknown>>,
   holder: string,
 ): CartTicketDetail[] {
-  return tickets.map((t, i) => ({
+  return [...tickets].sort(compareWalletTickets).map((t, i) => ({
     id:
       typeof t.id === "number" || typeof t.id === "string"
         ? t.id

@@ -5,19 +5,50 @@ import { Ring } from "@/components/atoms/spinners";
 
 type Tone = "primary" | "secondary";
 
+export type ButtonBusyContentsProps = {
+  loading?: boolean;
+  /** Shown beside the spinner while loading. Omit for spinner only. */
+  loadingLabel?: ReactNode;
+  children?: ReactNode;
+  spinnerColor?: string;
+  trackColor?: string;
+};
+
+/** In-flight chrome: spinner always; label only when `loadingLabel` is set. */
+export function ButtonBusyContents({
+  loading = false,
+  loadingLabel,
+  children,
+  spinnerColor,
+  trackColor,
+}: ButtonBusyContentsProps) {
+  if (!loading) return <>{children}</>;
+  return (
+    <>
+      <Ring
+        size={18}
+        color={spinnerColor}
+        trackColor={trackColor}
+        strokeWidth={2.5}
+      />
+      {loadingLabel !== undefined ? loadingLabel : null}
+    </>
+  );
+}
+
 export type BrandedActionButtonProps = {
   primaryColor?: string;
   textColor?: string;
   tone?: Tone;
   loading?: boolean;
-  /** Shown in place of the label while loading; falls back to the label. */
+  /** Shown beside the spinner while loading. Omit for spinner only. */
   loadingLabel?: ReactNode;
   children: ReactNode;
   className?: string;
 } & Omit<ButtonHTMLAttributes<HTMLButtonElement>, "children">;
 
 /**
- * Org-branded CTA. While loading: compact spinner beside the label,
+ * Org-branded CTA. While loading: compact spinner, optional copy,
  * disabled + aria-busy.
  */
 export default function BrandedActionButton({
@@ -36,6 +67,10 @@ export default function BrandedActionButton({
   const isPrimary = tone === "primary";
   const busy = Boolean(loading);
   const isDisabled = Boolean(disabled || busy);
+  const spinnerColor = isPrimary ? textColor : "#051b35";
+  const spinnerTrack = isPrimary
+    ? "rgba(255,255,255,0.35)"
+    : "rgba(5,27,53,0.2)";
 
   const base =
     "inline-flex items-center justify-center gap-2.5 whitespace-nowrap rounded-full px-5 py-3 text-[15px] font-semibold transition-opacity disabled:cursor-default disabled:opacity-55";
@@ -56,17 +91,14 @@ export default function BrandedActionButton({
       disabled={isDisabled}
       aria-busy={busy || undefined}
     >
-      {busy ? (
-        <Ring
-          size={18}
-          color={isPrimary ? textColor : "#051b35"}
-          trackColor={
-            isPrimary ? "rgba(255,255,255,0.35)" : "rgba(5,27,53,0.2)"
-          }
-          strokeWidth={2.5}
-        />
-      ) : null}
-      {busy && loadingLabel !== undefined ? loadingLabel : children}
+      <ButtonBusyContents
+        loading={busy}
+        loadingLabel={loadingLabel}
+        spinnerColor={spinnerColor}
+        trackColor={spinnerTrack}
+      >
+        {children}
+      </ButtonBusyContents>
     </button>
   );
 }

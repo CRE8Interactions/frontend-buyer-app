@@ -14,9 +14,24 @@ export type PackageForSeatmap = {
   name?: string;
   minQuantity?: number;
   maxQuantity?: number;
+  multipleOf?: number;
+  incrementsOf?: number;
+  limit?: number;
   pricingTiers?: { price?: number }[];
   package_tickets?: TicketGroup[];
 };
+
+function packageQuantitySource(eventPackage: PackageForSeatmap) {
+  return {
+    id: eventPackage.id,
+    name: eventPackage.name,
+    minQuantity: eventPackage.minQuantity,
+    maxQuantity: eventPackage.maxQuantity,
+    multipleOf: eventPackage.multipleOf ?? eventPackage.incrementsOf,
+    incrementsOf: eventPackage.incrementsOf,
+    limit: eventPackage.limit,
+  };
+}
 
 /**
  * Build seat + section lookup tables for season packages.
@@ -66,6 +81,7 @@ function createPackageSeatLookupTable(
       GA: false,
       price: packageTierPrice ?? ticket.price,
       resale: false,
+      package: packageQuantitySource(eventPackage),
     };
   });
 
@@ -96,12 +112,7 @@ function createPackageSectionLookupTable(
           ...ticket,
           GA: true,
           price: packageTierPrice ?? ticket.price,
-          package: {
-            id: eventPackage.id,
-            name: eventPackage.name,
-            minQuantity: eventPackage.minQuantity,
-            maxQuantity: eventPackage.maxQuantity,
-          },
+          package: packageQuantitySource(eventPackage),
           availableCount: 1,
         },
       ];

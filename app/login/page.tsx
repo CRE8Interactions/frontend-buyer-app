@@ -10,6 +10,7 @@ import PhoneNumberInput, {
   phoneNumberError,
   type PhoneErrorType,
 } from "@/components/molecules/PhoneNumberInput";
+import { ButtonBusyContents } from "@/components/atoms/BrandedActionButton";
 import {
   verifyUser,
   verifyCode,
@@ -40,7 +41,7 @@ const DOB_INVALID_MESSAGE =
   "Date of birth is incorrect. Make sure it is in the correct format: MM/DD/YYYY";
 
 const greenBtnCls =
-  "w-full rounded-full bg-[#a6e773] px-5 py-4 text-[15px] font-semibold text-[#051b35] disabled:opacity-70";
+  "inline-flex w-full items-center justify-center gap-2.5 rounded-full bg-[#a6e773] px-5 py-4 text-[15px] font-semibold text-[#051b35] disabled:opacity-70";
 const cardCls =
   "rounded-[24px] border border-[rgba(5,27,53,0.10)] bg-white p-[22px] shadow-[0_1px_2px_rgba(5,27,53,0.05),0_20px_46px_-22px_rgba(5,27,53,0.35)]";
 const backBtnCls =
@@ -400,9 +401,17 @@ function LoginForm() {
               <button
                 type="submit"
                 disabled={isSaving}
+                aria-busy={isSaving || undefined}
                 className={greenBtnCls}
               >
-                {isSaving ? "Sending…" : "Send my code"}
+                <ButtonBusyContents
+                  loading={isSaving}
+                  loadingLabel="Sending…"
+                  spinnerColor="#051b35"
+                  trackColor="rgba(5,27,53,0.2)"
+                >
+                  Send my code
+                </ButtonBusyContents>
               </button>
               <p className="text-center text-[12px] leading-relaxed text-[#8a93a3]">
                 By continuing you agree to the Blocktickets{" "}
@@ -463,10 +472,18 @@ function LoginForm() {
                       <button
                         type="button"
                         disabled={isSaving}
+                        aria-busy={isSaving || undefined}
                         onClick={() => void resend()}
-                        className="font-semibold text-[#051b35]"
+                        className="inline-flex items-center gap-2 font-semibold text-[#051b35]"
                       >
-                        {isSaving ? "Sending…" : "Send a new code"}
+                        <ButtonBusyContents
+                          loading={isSaving}
+                          loadingLabel="Sending…"
+                          spinnerColor="#051b35"
+                          trackColor="rgba(5,27,53,0.2)"
+                        >
+                          Send a new code
+                        </ButtonBusyContents>
                       </button>
                     </>
                   )}
@@ -607,9 +624,17 @@ function LoginForm() {
               <button
                 type="submit"
                 disabled={isSaving || done}
+                aria-busy={isSaving || undefined}
                 className={greenBtnCls}
               >
-                {isSaving ? "Signing up…" : done ? "Signed up…" : "Sign up"}
+                <ButtonBusyContents
+                  loading={isSaving}
+                  loadingLabel="Signing up…"
+                  spinnerColor="#051b35"
+                  trackColor="rgba(5,27,53,0.2)"
+                >
+                  {done ? "Signed up…" : "Sign up"}
+                </ButtonBusyContents>
               </button>
             </form>
           </>

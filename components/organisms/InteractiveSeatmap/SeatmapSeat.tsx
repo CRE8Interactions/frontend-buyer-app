@@ -187,12 +187,7 @@ const SeatmapSeat = memo(function SeatmapSeat({
   };
 
   const handleMouseEnter = (event: React.MouseEvent) => {
-    if (
-      !ticketGroup ||
-      isMobileSeatmapViewport() ||
-      hasMultipleOffers ||
-      (ticketGroup.offer?.accessCode && !ticketGroup.offer?.unlocked)
-    ) {
+    if (!ticketGroup || isMobileSeatmapViewport()) {
       return;
     }
     hoverCoordsRef.current = { x: event.clientX, y: event.clientY };
@@ -215,7 +210,7 @@ const SeatmapSeat = memo(function SeatmapSeat({
   };
 
   const handleMouseLeave = () => {
-    if (isMobileSeatmapViewport() || hasMultipleOffers) return;
+    if (isMobileSeatmapViewport()) return;
     clearHover();
     onTooltip(null);
   };

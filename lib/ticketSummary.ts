@@ -49,6 +49,34 @@ export function selectionOfferName(
   return offerNameFromSource(group) || fallback;
 }
 
+type SelectionCardGroup = {
+  GA?: boolean;
+  generalAdmission?: boolean;
+  package?: unknown;
+  quantity?: number;
+};
+
+/**
+ * Your selection shows one card per ticket. GA and package qty groups are
+ * expanded; reserved seats stay one card each.
+ */
+export function selectionTicketCards<T extends SelectionCardGroup>(
+  selected: T[],
+) {
+  return selected.flatMap((group, groupIndex) => {
+    const qty = Math.max(1, Number(group.quantity || 1));
+    const perTicket = Boolean(
+      group.GA || group.generalAdmission || group.package,
+    );
+    const copies = perTicket ? qty : 1;
+    return Array.from({ length: copies }, (_, unitIndex) => ({
+      group,
+      groupIndex,
+      unitIndex,
+    }));
+  });
+}
+
 export function ticketSelectionSummary(
   tickets: Array<Record<string, unknown>>,
   options?: { defaultOffer?: string },

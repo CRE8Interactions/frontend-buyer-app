@@ -1,5 +1,6 @@
 export type VenueAddressLike = {
   address_1?: string;
+  line1?: string;
   city?: string;
   state?: string;
   country?: string;
@@ -67,7 +68,9 @@ function coalesceVenueAddress(
   venue?: VenueLocationLike | null,
 ): VenueAddressLike | undefined {
   const fromList = unwrapVenueAddressList(venue?.address)[0];
-  if (fromList?.city || fromList?.state || fromList?.address_1) return fromList;
+  if (fromList?.city || fromList?.state || fromList?.address_1 || fromList?.line1) {
+    return fromList;
+  }
   if (venue?.city || venue?.state) {
     return {
       city: venue.city ?? undefined,
@@ -102,7 +105,7 @@ export function formatVenueStreetAddress(
 ): string {
   const addr = venueAddressEntry(address);
   if (!addr) return "";
-  const line1 = String(addr.address_1 ?? "").trim();
+  const line1 = String(addr.address_1 ?? addr.line1 ?? "").trim();
   const city = formatCity(addr.city);
   const state = normalizeState(addr.state);
   const zip = String(addr.zipcode ?? "").trim();
@@ -144,7 +147,7 @@ export function googleMapsDirectionsUrl(
 ): string {
   const addr = venueAddressEntry(address);
   if (!addr) return "";
-  const street = String(addr.address_1 ?? "").trim();
+  const street = String(addr.address_1 ?? addr.line1 ?? "").trim();
   const city = String(addr.city ?? "").trim().toLowerCase();
   const state = String(addr.state ?? "").trim().toLowerCase();
   const query = [street, city, state].filter(Boolean).join("+");

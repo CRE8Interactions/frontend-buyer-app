@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { DEMO_EVENTS } from "@/lib/demo/fixtures";
 import {
+  printedVenueLabel,
   printTicketsPdf,
   resolveTicketTheme,
   type TicketPdfRequest,
@@ -49,6 +50,38 @@ describe("printed ticket branding", () => {
     expect(
       resolveTicketTheme({ ...nmState, category: { name: category } }).badgeLabel,
     ).toBe(badgeLabel);
+  });
+});
+
+describe("printedVenueLabel", () => {
+  it("title-cases a lowercase API city on print and print-all tickets", () => {
+    const city = nmState.venue.address[0].city.toLowerCase();
+
+    expect(
+      printedVenueLabel({
+        ...nmState,
+        venue: {
+          ...nmState.venue,
+          address: [{ ...nmState.venue.address[0], city }],
+        },
+      }),
+    ).toBe(`${nmState.venue.name}, ${nmState.venue.address[0].city}`);
+  });
+
+  it("does not repeat the city when the venue name already includes it", () => {
+    const city = nmState.venue.address[0].city;
+    const name = `${nmState.venue.name}, ${city.toLowerCase()}`;
+
+    expect(
+      printedVenueLabel({
+        ...nmState,
+        venue: {
+          ...nmState.venue,
+          name,
+          address: [{ ...nmState.venue.address[0], city: city.toLowerCase() }],
+        },
+      }),
+    ).toBe(`${nmState.venue.name}, ${city}`);
   });
 });
 

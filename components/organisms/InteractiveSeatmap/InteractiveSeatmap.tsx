@@ -97,6 +97,8 @@ type Props = {
   compactChrome?: boolean;
   /** Parent (seat-map modal) already shows the org loader. */
   hideLoadingSpinner?: boolean;
+  /** Increment to clear the seat/section tooltip (mobile View selection / Checkout). */
+  dismissTooltipKey?: number;
 };
 
 export default function InteractiveSeatmap({
@@ -108,6 +110,7 @@ export default function InteractiveSeatmap({
   lookupsMode = "auto",
   compactChrome = false,
   hideLoadingSpinner = false,
+  dismissTooltipKey = 0,
 }: Props) {
   const data = useSeatmapStore((s) => s.data);
   const background = useSeatmapStore((s) => s.background);
@@ -163,6 +166,10 @@ export default function InteractiveSeatmap({
   viewportRef.current = viewport;
   maxScaleRef.current = maxScale;
   const [tooltip, setTooltip] = useState<SeatmapTooltipTarget>(null);
+  useEffect(() => {
+    if (!dismissTooltipKey) return;
+    setTooltip(null);
+  }, [dismissTooltipKey]);
   const [focusedSectionId, setFocusedSectionId] = useState<string | null>(null);
   const [activeRowIds, setActiveRowIds] = useState<string[] | null>(null);
   const [lookupsReady, setLookupsReady] = useState(lookupsMode === "external");
@@ -878,6 +885,7 @@ export default function InteractiveSeatmap({
         target={tooltip}
         onClose={() => setTooltip(null)}
         onUnlock={onUnlockOffer}
+        accent={accent}
         buttonColor={buttonColor}
         buttonTextColor={buttonTextColor}
       />

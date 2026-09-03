@@ -71,6 +71,16 @@ describe("venueLocation", () => {
     ).toBe("Lindquist Field, Ogden, UT");
   });
 
+  it("builds a Google Maps query from a line1 street when address_1 is missing", () => {
+    expect(
+      googleMapsDirectionsUrl({
+        line1: "1810 E University Ave",
+        city: "las cruces",
+        state: "nm",
+      }),
+    ).toBe("https://google.com/maps?q=1810 E University Ave+las cruces+nm");
+  });
+
   it("builds a Google Maps query from street, city, and state", () => {
     const nmState = DEMO_ORGS.find((org) => org.slug === "nm-state")!;
     expect(googleMapsDirectionsUrl(nmState.homeVenue.address)).toBe(

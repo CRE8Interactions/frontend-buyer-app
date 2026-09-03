@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   DEMO_EVENTS,
+  DEMO_SEATED_TICKET_GROUPS,
   demoCheckoutCart,
   demoCompletedFlexPackOrder,
   demoCompletedPackageOrder,
@@ -134,6 +135,57 @@ describe("wallet order totals", () => {
     );
 
     expect(detail.event?.uuid).toBe(upcoming.uuid);
+  });
+});
+
+describe("wallet ticket seat order", () => {
+  const upcoming = DEMO_EVENTS.find((event) => event.shortCode === "NMST004")!;
+
+  it("lists seats in ascending order when the API returns them reversed", () => {
+    const [first, second] = demoCheckoutCart({ ticketCount: 2 }).tickets;
+    const detail = Object.values(
+      buildOrderEventDetails([
+        demoCompletedTicketOrder({
+          event: upcoming,
+          tickets: [second, first],
+        }),
+      ]),
+    )[0];
+
+    expect(detail.tickets.map((ticket) => ticket.seat)).toEqual([
+      `Sec ${first.sectionNumber} · Row ${first.rowNumber} · Seat ${first.seatNumber}`,
+      `Sec ${second.sectionNumber} · Row ${second.rowNumber} · Seat ${second.seatNumber}`,
+    ]);
+  });
+
+  it("lists the lower row first when seat numbers match", () => {
+    const [first, second] = demoCheckoutCart({ ticketCount: 2 }).tickets;
+    const lowerRow = DEMO_SEATED_TICKET_GROUPS[3].rowNumber;
+    const higherRow = DEMO_SEATED_TICKET_GROUPS[1].rowNumber;
+    const detail = Object.values(
+      buildOrderEventDetails([
+        demoCompletedTicketOrder({
+          event: upcoming,
+          tickets: [
+            {
+              ...second,
+              rowNumber: higherRow,
+              seatNumber: first.seatNumber,
+            },
+            {
+              ...first,
+              rowNumber: lowerRow,
+              seatNumber: first.seatNumber,
+            },
+          ],
+        }),
+      ]),
+    )[0];
+
+    expect(detail.tickets.map((ticket) => ticket.seat)).toEqual([
+      `Sec ${first.sectionNumber} · Row ${lowerRow} · Seat ${first.seatNumber}`,
+      `Sec ${first.sectionNumber} · Row ${higherRow} · Seat ${first.seatNumber}`,
+    ]);
   });
 });
 

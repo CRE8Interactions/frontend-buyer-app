@@ -51,6 +51,8 @@ type RawGroup = {
     minQuantity?: number | null;
     maxQuantity?: number | null;
     multipleOf?: number | null;
+    incrementsOf?: number | null;
+    limit?: number | null;
     accessCode?: string | null;
     freeOffer?: boolean | null;
   };

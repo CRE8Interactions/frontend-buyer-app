@@ -13,6 +13,8 @@ import {
   __resetInAppBackForTests,
   markInAppNavigation,
 } from "@/lib/inAppBack";
+import { CHECKOUT_UNAVAILABLE_ERROR, maxTicketLimitError } from "@/lib/mapSelection";
+import useFiltersStore from "@/stores/filtersStore";
 import useSeatmapStore from "@/stores/seatmapStore";
 import GlobalRouteTransitionLoader from "@/components/molecules/GlobalRouteTransitionLoader";
 import {
@@ -125,6 +127,7 @@ describe("Package detail (PackageDetailClient)", () => {
     routerMocks.push.mockReset();
     __resetInAppBackForTests();
     resetSeatmapBackgroundCache();
+    useFiltersStore.setState({ eventTicketLimit: null });
     useSeatmapStore.setState({
       selectedFromMap: [],
       totalCount: 0,
@@ -302,14 +305,78 @@ describe("Package detail (PackageDetailClient)", () => {
     await user.click(screen.getByRole("button", { name: /^checkout$/i }));
 
     expect(
-      await screen.findByText(/selected tickets not available/i),
+      await screen.findByRole("dialog", {
+        name: CHECKOUT_UNAVAILABLE_ERROR.title,
+      }),
     ).toBeInTheDocument();
     expect(
-      await screen.findByText(/selected seats are not available/i),
+      screen.getByText(CHECKOUT_UNAVAILABLE_ERROR.message),
     ).toBeInTheDocument();
+    expect(useSeatmapStore.getState().selectedFromMap).toHaveLength(1);
     await waitFor(() => {
       expect(mockedPlacePackage).toHaveBeenCalled();
     });
+
+    await user.click(screen.getByText(CHECKOUT_UNAVAILABLE_ERROR.buttonText));
+    expect(
+      screen.queryByRole("dialog", {
+        name: CHECKOUT_UNAVAILABLE_ERROR.title,
+      }),
+    ).not.toBeInTheDocument();
+    expect(useSeatmapStore.getState().selectedFromMap).toHaveLength(1);
+  });
+
+  it("shows the package ticket limit under Your selection", async () => {
+    const pkg = demoSeasonPackage();
+    const user = await renderPackage(pkg);
+    await screen.findByRole("heading", { name: pkg.name });
+    await user.click(screen.getByRole("button", { name: /choose your seats/i }));
+    await finishSeatmapBackgroundLoad();
+    await screen.findByTestId("interactive-seatmap");
+    seedMapSelection();
+    await screen.findByText(/your selection/i);
+
+    expect(
+      screen.getByText(`Ticket limit: ${pkg.maxQuantity} per order`),
+    ).toBeInTheDocument();
+  });
+
+  it("shows the package ticket limit from limit when maxQuantity is unset", async () => {
+    const pkg = demoSeasonPackage({ maxQuantity: undefined, limit: 3 });
+    const user = await renderPackage(pkg);
+    await screen.findByRole("heading", { name: pkg.name });
+    await user.click(screen.getByRole("button", { name: /choose your seats/i }));
+    await finishSeatmapBackgroundLoad();
+    await screen.findByTestId("interactive-seatmap");
+    seedMapSelection();
+    await screen.findByText(/your selection/i);
+
+    expect(screen.getByText("Ticket limit: 3 per order")).toBeInTheDocument();
+  });
+
+  it("opens the max-ticket popup when a reserved package seat exceeds the package max", async () => {
+    const pkg = demoSeasonPackage({ maxQuantity: 1 });
+    const user = await renderPackage(pkg);
+    await screen.findByRole("heading", { name: pkg.name });
+    await user.click(screen.getByRole("button", { name: /choose your seats/i }));
+    await finishSeatmapBackgroundLoad();
+    await screen.findByTestId("interactive-seatmap");
+    const selected = seedMapSelection({
+      package: { maxQuantity: 1 },
+      GA: false,
+    });
+    await screen.findByText(/your selection/i);
+
+    useSeatmapStore.getState().selectSpecificSeat("s2", {
+      ...selected,
+      seatId: "s2",
+    });
+
+    expect(
+      await screen.findByRole("dialog", { name: /max ticket limit reached/i }),
+    ).toBeInTheDocument();
+    expect(screen.getByText(maxTicketLimitError(1).message)).toBeInTheDocument();
+    expect(useSeatmapStore.getState().selectedFromMap).toHaveLength(1);
   });
 
   it("holds seats then opens checkout for the selected package", async () => {

@@ -1,4 +1,4 @@
-import { render, screen, waitFor, within } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ReactNode } from "react";
@@ -14,7 +14,11 @@ import {
   demoSeatmapMapping,
   demoTicketGroups,
 } from "@/lib/demo/fixtures";
-import { MIXED_MAP_SELECTION_ERROR } from "@/lib/mapSelection";
+import {
+  CHECKOUT_UNAVAILABLE_ERROR,
+  MIXED_MAP_SELECTION_ERROR,
+  maxTicketLimitError,
+} from "@/lib/mapSelection";
 import {
   finishSeatmapBackgroundLoad,
   resetSeatmapBackgroundCache,
@@ -155,7 +159,14 @@ async function renderReady(
     />,
   );
   const waitForListing = props.waitForListing ?? /sec m · row m3/i;
-  await screen.findByText(waitForListing, {}, { timeout: 3000 });
+  if (!props.waitForListing && window.innerWidth < 1120) {
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: /find on map/i })).toBeEnabled();
+    });
+    await screen.findByText(waitForListing, {}, { timeout: 3000 });
+  } else {
+    await screen.findByText(waitForListing, {}, { timeout: 3000 });
+  }
   return user;
 }
 
@@ -201,7 +212,7 @@ describe("Select tickets page (PremiumTicketing)", () => {
     mockedPlaceGaTickets.mockResolvedValue({
       data: { cartId: "cart-ga-1" },
     } as never);
-    useFiltersStore.setState({ loadingTicketGroups: false });
+    useFiltersStore.setState({ loadingTicketGroups: false, eventTicketLimit: null });
     resetSeatmapBackgroundCache();
     useSeatmapStore.setState({
       selectedFromMap: [],
@@ -339,6 +350,106 @@ describe("Select tickets page (PremiumTicketing)", () => {
     expect(await screen.findByText(/sec a · row 12/i)).toBeInTheDocument();
   });
 
+  it("lists ticket quantities up to the highest offer maxQuantity, else the event limit", async () => {
+    const sectionAB = DEMO_SEATED_TICKET_GROUPS.find(
+      (g) => g.offer?.name && g.seatIds?.includes("a1"),
+    );
+    const sectionMN = DEMO_SEATED_TICKET_GROUPS.find(
+      (g) => g.offer?.maxQuantity && g.seatIds?.includes("n1"),
+    );
+    if (!sectionAB?.offer?.name || !sectionAB.offer.maxQuantity) {
+      throw new Error("demo fixtures need Section A-B with a maxQuantity");
+    }
+    if (!sectionMN?.offer?.name || !sectionMN.offer.maxQuantity) {
+      throw new Error("demo fixtures need Section M-N with a maxQuantity");
+    }
+
+    const user = await renderReady();
+    await user.click(screen.getByRole("button", { name: /2 tickets/i }));
+    const allMenu = screen.getByRole("listbox", { name: /ticket quantity/i });
+    expect(
+      within(allMenu).getByRole("button", {
+        name: `${sectionMN.offer.maxQuantity} tickets`,
+      }),
+    ).toBeInTheDocument();
+    await user.click(within(allMenu).getByRole("button", { name: /^2 tickets$/i }));
+
+    await user.click(screen.getByRole("button", { name: sectionAB.offer.name }));
+    await user.click(screen.getByRole("button", { name: /2 tickets/i }));
+    const selectedMenu = screen.getByRole("listbox", { name: /ticket quantity/i });
+    expect(
+      within(selectedMenu).getByRole("button", {
+        name: `${sectionAB.offer.maxQuantity} tickets`,
+      }),
+    ).toBeInTheDocument();
+    expect(
+      within(selectedMenu).queryByRole("button", {
+        name: `${sectionMN.offer.maxQuantity} tickets`,
+      }),
+    ).not.toBeInTheDocument();
+    await user.click(
+      within(selectedMenu).getByRole("button", { name: /^2 tickets$/i }),
+    );
+
+    await user.click(screen.getByRole("button", { name: /^all$/i }));
+    useFiltersStore.setState({ eventTicketLimit: 3 });
+    await user.click(screen.getByRole("button", { name: /2 tickets/i }));
+    const allWithEvent = screen.getByRole("listbox", {
+      name: /ticket quantity/i,
+    });
+    expect(
+      within(allWithEvent).getByRole("button", {
+        name: `${sectionMN.offer.maxQuantity} tickets`,
+      }),
+    ).toBeInTheDocument();
+    expect(
+      within(allWithEvent).queryByRole("button", { name: "50 tickets" }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("keeps the selected quantity when a filter leaves no listings", async () => {
+    const sectionMN = DEMO_SEATED_TICKET_GROUPS.find(
+      (g) => g.offer?.maxQuantity && g.seatIds?.includes("n1"),
+    );
+    if (!sectionMN?.offer?.maxQuantity) {
+      throw new Error("demo fixtures need Section M-N with a maxQuantity");
+    }
+    const pick = sectionMN.offer.maxQuantity - 2;
+    const user = userEvent.setup();
+    const { rerender } = render(
+      <PremiumTicketing data={seatedTicketingFixture} />,
+    );
+    await screen.findByText(/sec m · row m3/i);
+
+    await user.click(screen.getByRole("button", { name: /2 tickets/i }));
+    await user.click(screen.getByRole("button", { name: `${pick} tickets` }));
+
+    rerender(
+      <PremiumTicketing
+        data={{
+          ...seatedTicketingFixture,
+          listings: [],
+          quantityCatalog: seatedTicketingFixture.listings,
+        }}
+      />,
+    );
+
+    expect(
+      screen.getByRole("button", { name: `${pick} tickets` }),
+    ).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: `${pick} tickets` }));
+    const emptyMenu = screen.getByRole("listbox", { name: /ticket quantity/i });
+    expect(
+      within(emptyMenu).getByRole("button", {
+        name: `${sectionMN.offer.maxQuantity} tickets`,
+      }),
+    ).toBeInTheDocument();
+    expect(
+      within(emptyMenu).getByRole("button", { name: `${pick} tickets` }),
+    ).toBeInTheDocument();
+  });
+
   it("calls onFiltersChange when quantity, ADA, and sort change", async () => {
     const onFiltersChange = vi.fn();
     const user = await renderReady(seatedTicketingFixture, { onFiltersChange });
@@ -373,6 +484,7 @@ describe("Select tickets page (PremiumTicketing)", () => {
       await screen.findByRole("status", { name: /loading listings/i }),
     ).toBeInTheDocument();
     expect(screen.queryByText(/sec m · row m3/i)).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /find on map/i })).toBeEnabled();
   });
 
   it("shows placeholder rows when an offer chip filters the list", async () => {
@@ -403,10 +515,10 @@ describe("Select tickets page (PremiumTicketing)", () => {
     expect(
       screen.queryByRole("button", { name: /^all$/i }),
     ).not.toBeInTheDocument();
-    // The waitlist stands alone: no listings chrome, seat map, or sort controls.
-    expect(screen.queryByTestId("ticketing-map")).not.toBeInTheDocument();
-    expect(screen.queryByText(/find on map/i)).not.toBeInTheDocument();
+    // Listings chrome stays gone; Find on map stays visible but locked.
     expect(screen.queryByText(/sort by price/i)).not.toBeInTheDocument();
+    expect(screen.getByTestId("ticketing-map")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /find on map/i })).toBeDisabled();
 
     const email = screen.getByLabelText(/email address/i);
     await user.type(email, "not-an-email");
@@ -449,21 +561,120 @@ describe("Select tickets page (PremiumTicketing)", () => {
     expect(
       screen.queryByRole("button", { name: /^all$/i }),
     ).not.toBeInTheDocument();
+    expect(screen.getByTestId("ticketing-map")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /find on map/i })).toBeDisabled();
+    expect(screen.getByText(/buyer protection/i)).toBeInTheDocument();
   });
 
-  it("does not offer quantities above a seated listing's maximum", async () => {
+  it.each([
+    [
+      "scheduled",
+      {
+        listings: [],
+        offerNames: [demoTicketGroups().offers[0].name],
+        scheduled: true,
+        scheduledAt: "Friday, August 28, 2026 at 10:00 AM",
+      },
+      /tickets will be on sale/i,
+    ],
+    ["sold out", { soldOut: true }, /we’re sorry, the event is sold out/i],
+  ] as const)(
+    "hides listing filters on mobile when the event is %s",
+    async (_label, extra, ready) => {
+      Object.defineProperty(window, "innerWidth", {
+        configurable: true,
+        writable: true,
+        value: 390,
+      });
+      render(
+        <PremiumTicketing data={{ ...seatedTicketingFixture, ...extra }} />,
+      );
+
+      expect(await screen.findByText(ready)).toBeInTheDocument();
+      expect(await screen.findByRole("button", { name: /back/i })).toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: /^all$/i })).not.toBeInTheDocument();
+      expect(screen.queryByText(/listings/i)).not.toBeInTheDocument();
+      expect(screen.queryByText(/sort by price/i)).not.toBeInTheDocument();
+      expect(
+        screen.queryByRole("button", { name: /\d+ tickets?/i }),
+      ).not.toBeInTheDocument();
+      expect(screen.getByText(/buyer protection/i)).toBeInTheDocument();
+      expect(screen.getByText(/prices are all-in/i)).toBeInTheDocument();
+      expect(
+        screen.queryByRole("button", { name: /select tickets/i }),
+      ).not.toBeInTheDocument();
+    },
+  );
+
+  it("shows the buyer-protection card on mobile listings", async () => {
+    Object.defineProperty(window, "innerWidth", {
+      configurable: true,
+      writable: true,
+      value: 390,
+    });
+    await renderReady();
+
+    expect(await screen.findByRole("button", { name: /back/i })).toBeInTheDocument();
+    const map = screen.getByTestId("ticketing-map");
+    const trust = screen.getByText(/buyer protection/i);
+    const offers = screen.getByTestId("ticketing-offers");
+    expect(map.compareDocumentPosition(trust) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(trust.compareDocumentPosition(offers) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(screen.getByText(/securely stored in your account/i)).toBeInTheDocument();
+    expect(screen.getByText(/safe from bots and scalpers/i)).toBeInTheDocument();
+    expect(screen.getByText(/taxes and fees included/i)).toBeInTheDocument();
+    expect(within(offers).getByText(/select tickets/i)).toBeInTheDocument();
+    expect(within(offers).getByText(/sort by price/i)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /find on map/i })).toBeEnabled();
+  });
+
+  it("opens the mobile Select tickets sheet under Find on map", async () => {
+    Object.defineProperty(window, "innerWidth", {
+      configurable: true,
+      writable: true,
+      value: 390,
+    });
+    const user = await renderReady();
+
+    expect(screen.getByRole("button", { name: /find on map/i })).toBeEnabled();
+    expect(screen.getByRole("button", { name: /close/i })).toBeInTheDocument();
+    expect(screen.getByText(/select tickets/i)).toBeInTheDocument();
+    expect(screen.getByText(/sec m · row m3/i)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /^all$/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /field club/i })).toBeInTheDocument();
+    expect(screen.getByText(/sort by price/i)).toBeInTheDocument();
+    expect(screen.getByText(/2 tickets/i)).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: /close/i }));
+
+    expect(screen.queryByRole("button", { name: /close/i })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /select tickets/i })).toBeInTheDocument();
+    expect(screen.queryByText(/sec m · row m3/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/sort by price/i)).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /find on map/i })).toBeEnabled();
+
+    await user.click(screen.getByRole("button", { name: /select tickets/i }));
+    expect(await screen.findByText(/sec m · row m3/i)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /find on map/i })).toBeEnabled();
+  });
+
+  it("does not offer quantities above the highest offer maxQuantity", async () => {
+    const fieldClub = DEMO_SEATED_TICKET_GROUPS[0];
     const user = await renderReady({
       ...seatedTicketingFixture,
       listings: [
         {
-          zone: "Field Club",
-          tier: "Field Club",
-          sec: "M",
-          row: "M3",
+          zone: fieldClub.offer?.name || "Field Club",
+          tier: fieldClub.offer?.name || "Field Club",
+          sec: String(fieldClub.sectionNumber),
+          row: String(fieldClub.rowNumber),
           min: 1,
           max: 2,
           price: "$33.59",
-          cartGroup: { id: 1, price: 33.59 },
+          cartGroup: {
+            ...fieldClub,
+            offer: { ...fieldClub.offer, maxQuantity: 2 },
+          },
         },
       ],
     });
@@ -651,6 +862,8 @@ describe("Select tickets page (PremiumTicketing)", () => {
     expect(
       await screen.findByText(/tickets will be on sale/i),
     ).toBeInTheDocument();
+    expect(screen.getByText(/friday, august 28, 2026 at 10:00 am/i)).toBeInTheDocument();
+    expect(screen.queryByText(/^get tickets$/i)).not.toBeInTheDocument();
     expect(screen.queryByText(scheduledOffer)).not.toBeInTheDocument();
     expect(
       screen.queryByRole("button", { name: /buy tickets|checkout/i }),
@@ -813,13 +1026,54 @@ describe("Select tickets page (PremiumTicketing)", () => {
     await user.click(screen.getByRole("button", { name: /^checkout$/i }));
 
     expect(
-      await screen.findByText(/unable to hold tickets/i),
+      await screen.findByRole("dialog", {
+        name: CHECKOUT_UNAVAILABLE_ERROR.title,
+      }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(CHECKOUT_UNAVAILABLE_ERROR.message),
     ).toBeInTheDocument();
     expect(routerMocks.push).not.toHaveBeenCalled();
+    expect(screen.queryByText(/getting payment ready/i)).not.toBeInTheDocument();
+
+    await user.click(screen.getByText(CHECKOUT_UNAVAILABLE_ERROR.buttonText));
+    expect(
+      screen.queryByRole("dialog", {
+        name: CHECKOUT_UNAVAILABLE_ERROR.title,
+      }),
+    ).not.toBeInTheDocument();
+    expect(screen.getByText("Ticket details")).toBeInTheDocument();
     expect(
       screen.getByRole("button", { name: /^checkout$/i }),
     ).toBeEnabled();
-    expect(screen.queryByText(/getting payment ready/i)).not.toBeInTheDocument();
+  });
+
+  it("shows the checkout-unavailable popup when map hold fails and keeps the selection", async () => {
+    mockedPlaceTickets.mockRejectedValue(new Error("hold rejected"));
+    seedMapSelection();
+    const user = await openLiveMap();
+
+    await user.click(screen.getByRole("button", { name: /^checkout$/i }));
+
+    expect(
+      await screen.findByRole("dialog", {
+        name: CHECKOUT_UNAVAILABLE_ERROR.title,
+      }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(CHECKOUT_UNAVAILABLE_ERROR.message),
+    ).toBeInTheDocument();
+    expect(routerMocks.push).not.toHaveBeenCalled();
+    expect(useSeatmapStore.getState().selectedFromMap).toHaveLength(1);
+
+    await user.click(screen.getByText(CHECKOUT_UNAVAILABLE_ERROR.buttonText));
+    expect(
+      screen.queryByRole("dialog", {
+        name: CHECKOUT_UNAVAILABLE_ERROR.title,
+      }),
+    ).not.toBeInTheDocument();
+    expect(screen.getByText(/select your seats/i)).toBeInTheDocument();
+    expect(useSeatmapStore.getState().selectedFromMap).toHaveLength(1);
   });
 
   it("places map seats and goes to checkout instead of wallet login", async () => {
@@ -834,12 +1088,20 @@ describe("Select tickets page (PremiumTicketing)", () => {
     });
   });
 
-  it("opens the seat map modal", async () => {
-    const user = await renderReady();
-    await user.click(screen.getAllByText(/find on map/i)[0]);
+  it("opens the seat map popup right away and shows the org loader until the map is ready", async () => {
+    await renderReady();
+    fireEvent.click(screen.getAllByRole("button", { name: /find on map/i })[0]);
 
-    expect(await screen.findByText(/select your seats/i)).toBeInTheDocument();
-    expect(screen.getByText(/legend/i)).toBeInTheDocument();
+    expect(
+      screen.getByRole("dialog", { name: /select your seats/i }),
+    ).toBeInTheDocument();
+    const orgLoader = document.querySelector("[data-bt-tenant-loader]");
+    expect(orgLoader).toBeTruthy();
+    expect(
+      within(orgLoader as HTMLElement).getByText(seatedTicketingFixture.orgLabel),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/legend/i)).not.toBeInTheDocument();
+    expect(screen.queryByTestId("interactive-seatmap")).not.toBeInTheDocument();
   });
 
   it("shows a mobile map selection bar and opens the selected tickets panel", async () => {
@@ -1005,12 +1267,106 @@ describe("Select tickets page (PremiumTicketing)", () => {
     ).toBeInTheDocument();
     expect(useSeatmapStore.getState().selectedFromMap).toHaveLength(1);
 
-    await user.click(
-      screen.getByRole("button", {
-        name: MIXED_MAP_SELECTION_ERROR.buttonText,
+    await user.click(screen.getByText(MIXED_MAP_SELECTION_ERROR.buttonText));
+    expect(
+      screen.queryByRole("dialog", {
+        name: MIXED_MAP_SELECTION_ERROR.title,
       }),
-    );
-    expect(screen.queryByText(/select your seats/i)).not.toBeInTheDocument();
+    ).not.toBeInTheDocument();
+    expect(screen.getByText(/select your seats/i)).toBeInTheDocument();
+    expect(useSeatmapStore.getState().selectedFromMap).toHaveLength(1);
+    expect(useSeatmapStore.getState().selectedFromMap[0]?.seatId).toBe("s1");
+  });
+
+  it("shows the event ticket limit under Your selection", async () => {
+    useFiltersStore.setState({ eventTicketLimit: 6 });
+    seedMapSelection();
+    await openLiveMap();
+
+    expect(screen.getByText(/your selection/i)).toBeInTheDocument();
+    expect(screen.getByText("Ticket limit: 6 per order")).toBeInTheDocument();
+  });
+
+  it("shows the highest offer maxQuantity on Your selection when one is set", async () => {
+    const group = DEMO_SEATED_TICKET_GROUPS.find((g) => g.seatIds?.includes("a1"));
+    if (!group?.offer?.maxQuantity) {
+      throw new Error("demo fixtures need a seated offer with maxQuantity");
+    }
+    useFiltersStore.setState({ eventTicketLimit: 3 });
+    useSeatmapStore.setState({
+      selectedFromMap: [{ ...group, seatId: "a1", seatNumber: 1, quantity: 1 }],
+      totalCount: 1,
+      totalPrice: Number(group.price || 0),
+    });
+    await openLiveMap();
+
+    expect(
+      screen.getByText(`Ticket limit: ${group.offer.maxQuantity} per order`),
+    ).toBeInTheDocument();
+    expect(screen.queryByText("Ticket limit: 3 per order")).not.toBeInTheDocument();
+  });
+
+  it("shows the offer max under Your selection when the event has no limit", async () => {
+    const group = DEMO_SEATED_TICKET_GROUPS.find((g) => g.seatIds?.includes("a1"));
+    if (!group?.offer?.maxQuantity) {
+      throw new Error("demo fixtures need a seated offer with maxQuantity");
+    }
+    useSeatmapStore.setState({
+      selectedFromMap: [{ ...group, seatId: "a1", seatNumber: 1, quantity: 1 }],
+      totalCount: 1,
+      totalPrice: Number(group.price || 0),
+    });
+    await openLiveMap();
+
+    expect(
+      screen.getByText(`Ticket limit: ${group.offer.maxQuantity} per order`),
+    ).toBeInTheDocument();
+  });
+
+  it("shows the seated default ticket limit when the event and offer have none", async () => {
+    seedMapSelection();
+    await openLiveMap();
+
+    expect(screen.getByText(/your selection/i)).toBeInTheDocument();
+    expect(screen.getByText("Ticket limit: 50 per order")).toBeInTheDocument();
+  });
+
+  it("shows the GA default ticket limit on Your selection for GA seats", async () => {
+    const ga = demoTicketGroups().ticketGroups.find((group) => group.GA);
+    if (!ga) throw new Error("demo fixtures need a GA ticket group");
+    useSeatmapStore.setState({
+      selectedFromMap: [{ ...ga, quantity: 1 }],
+      totalCount: 1,
+      totalPrice: Number(ga.price || 0),
+    });
+    await openLiveMap();
+
+    expect(screen.getByText(/your selection/i)).toBeInTheDocument();
+    expect(screen.getByText("Ticket limit: 100 per order")).toBeInTheDocument();
+  });
+
+  it("opens the max-ticket popup when a map seat would exceed the offer limit", async () => {
+    const group = DEMO_SEATED_TICKET_GROUPS.find((g) => g.seatIds?.includes("s1"));
+    if (!group) throw new Error("demo fixtures need a seated group holding seat s1");
+    const capped = {
+      ...group,
+      offer: { ...group.offer, maxQuantity: 1 },
+      GA: false,
+    };
+    useSeatmapStore.setState({
+      selectedFromMap: [{ ...capped, seatId: "s1", seatNumber: 1, quantity: 1 }],
+      totalCount: 1,
+      totalPrice: Number(group.price || 0),
+    });
+    await openLiveMap();
+
+    useSeatmapStore.getState().selectSpecificSeat("s2", capped);
+
+    expect(
+      await screen.findByRole("dialog", { name: /max ticket limit reached/i }),
+    ).toBeInTheDocument();
+    expect(screen.getByText(maxTicketLimitError(1).message)).toBeInTheDocument();
+    expect(useSeatmapStore.getState().selectedFromMap).toHaveLength(1);
   });
 
   it("goes back from ticket details to the map selection list", async () => {

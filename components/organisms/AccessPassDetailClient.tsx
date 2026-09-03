@@ -8,6 +8,7 @@ import EmptyState from "@/components/molecules/EmptyState";
 import PageLoader from "@/components/molecules/PageLoader";
 import { BrandedLoader } from "@/components/molecules/RouteLoader";
 import { cardCls } from "@/components/molecules/Card";
+import { ButtonBusyContents } from "@/components/atoms/BrandedActionButton";
 import Button from "@/components/atoms/Button";
 import { ArrowRight } from "@/components/atoms/icons";
 import { getAccessPassTemplate, placeAccessPassIntoCart } from "@/lib/api";
@@ -218,16 +219,20 @@ export default function AccessPassDetailClient({
               <Button
                 onClick={buy}
                 disabled={buying || accessPass.isSoldOut}
-                className="w-full sm:w-auto disabled:opacity-40"
+                aria-busy={buying || undefined}
+                className="inline-flex w-full items-center justify-center gap-2.5 sm:w-auto disabled:opacity-40"
               >
-                {buying
-                  ? "Adding…"
-                  : accessPass.isSoldOut
+                <ButtonBusyContents
+                  loading={buying}
+                  loadingLabel="Adding…"
+                >
+                  {accessPass.isSoldOut
                     ? "Sold out"
                     : isAuthenticated
                       ? "Checkout"
                       : "Log in to buy"}{" "}
-                {!accessPass.isSoldOut && <ArrowRight className="arrow" />}
+                  {!accessPass.isSoldOut && <ArrowRight className="arrow" />}
+                </ButtonBusyContents>
               </Button>
             </div>
 

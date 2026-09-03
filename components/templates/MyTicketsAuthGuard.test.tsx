@@ -77,7 +77,7 @@ describe("MyTicketsAuthGuard", () => {
     vi.unstubAllGlobals();
   });
 
-  it("shows the in-page tickets loader instead of the wallet while auth is resolving", () => {
+  it("shows the Blocktickets page loader instead of the wallet while auth is resolving", () => {
     mockedUseAuth.mockReturnValue(authState(false, false));
     render(
       <MyTicketsAuthGuard>
@@ -85,9 +85,10 @@ describe("MyTicketsAuthGuard", () => {
       </MyTicketsAuthGuard>,
     );
 
-    expect(screen.getByText("Loading your tickets…")).toBeInTheDocument();
-    expect(document.querySelector("[data-bt-platform-loader]")).toBeNull();
+    expect(document.querySelector("[data-bt-platform-loader]")).toBeTruthy();
     expect(document.querySelector("[data-bt-tenant-loader]")).toBeNull();
+    expect(screen.queryByText("Loading your tickets…")).not.toBeInTheDocument();
+    expect(screen.queryByText("Loading your wallet events.")).not.toBeInTheDocument();
     expect(screen.queryByText("Wallet content")).not.toBeInTheDocument();
     expect(routerMocks.replace).not.toHaveBeenCalled();
   });
@@ -100,10 +101,8 @@ describe("MyTicketsAuthGuard", () => {
       </MyTicketsAuthGuard>,
     );
 
-    // The in-page loader stays up through the hop, so the wallet never paints
-    // and the Blocktickets watermark never covers tickets / transfers / listings.
-    expect(screen.getByText("Loading your tickets…")).toBeInTheDocument();
-    expect(document.querySelector("[data-bt-platform-loader]")).toBeNull();
+    expect(document.querySelector("[data-bt-platform-loader]")).toBeTruthy();
+    expect(screen.queryByText("Loading your tickets…")).not.toBeInTheDocument();
     expect(screen.queryByText("Wallet content")).not.toBeInTheDocument();
     await waitFor(() => {
       expect(mockedSetLastKnown).toHaveBeenCalledWith("/wallet/my-tickets/?login");

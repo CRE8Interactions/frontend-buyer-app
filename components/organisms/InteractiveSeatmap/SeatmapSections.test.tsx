@@ -16,6 +16,7 @@ import useSeatmapStore from "@/stores/seatmapStore";
 import InteractiveSeatmap from "./InteractiveSeatmap";
 import SeatmapSeat from "./SeatmapSeat";
 import SeatmapSections from "./SeatmapSections";
+import SeatmapTooltip from "./SeatmapTooltip";
 
 const UNAVAILABLE_FILL = "#9DA2B3";
 const EXCLUSIVE_FILL = "#9757D7";
@@ -79,6 +80,7 @@ beforeEach(() => {
   useFiltersStore.setState({
     ticketGroups: DEMO_SEATED_TICKET_GROUPS,
     loadingTicketGroups: false,
+    eventTicketLimit: null,
     event: { venue: { slug: "lindquist-field" } },
   });
 });
@@ -289,6 +291,40 @@ describe("SeatmapSeat", () => {
 
     expect(container.querySelector("rect")).toHaveAttribute("fill", "#E6E8EC");
   });
+
+  it("shows the seat-number tooltip on desktop hover for a locked seat", async () => {
+    vi.useFakeTimers();
+    const coded = DEMO_SEATED_TICKET_GROUPS.find((item) => item.offer?.accessCode);
+    const seat = mapping.seats?.s1;
+    expect(coded).toBeTruthy();
+    expect(seat).toBeTruthy();
+    window.innerWidth = 1024;
+    useSeatmapStore.setState({
+      seatLookupTable: { s1: coded! },
+      seatOffersLookupTable: { s1: [coded!] },
+    });
+    const onTooltip = vi.fn();
+    const { container } = render(
+      <svg>
+        <SeatmapSeat
+          seat={seat!}
+          onTooltip={onTooltip}
+          isTooltipActive={false}
+        />
+      </svg>,
+    );
+
+    fireEvent.mouseEnter(container.querySelector("rect")!, {
+      clientX: 40,
+      clientY: 60,
+    });
+    await vi.advanceTimersByTimeAsync(500);
+
+    expect(onTooltip).toHaveBeenCalledWith(
+      expect.objectContaining({ kind: "seat", seatId: "s1", x: 40, y: 60 }),
+    );
+    vi.useRealTimers();
+  });
 });
 
 describe("InteractiveSeatmap canvas", () => {
@@ -372,5 +408,115 @@ describe("InteractiveSeatmap canvas", () => {
         disconnect() {}
       },
     );
+  });
+
+  it("clears the seat tooltip when dismissTooltipKey changes", async () => {
+    window.innerWidth = 390;
+    const { container, rerender } = render(
+      <InteractiveSeatmap lookupsMode="external" dismissTooltipKey={0} />,
+    );
+    const seat = container.querySelector("#s1");
+    expect(seat).toBeTruthy();
+    fireEvent.touchEnd(seat!, {
+      clientX: 80,
+      clientY: 120,
+      changedTouches: [{ clientX: 80, clientY: 120 }],
+    });
+
+    expect(await screen.findByText(/seat 1/i)).toBeInTheDocument();
+
+    rerender(<InteractiveSeatmap lookupsMode="external" dismissTooltipKey={1} />);
+    expect(screen.queryByText(/seat 1/i)).not.toBeInTheDocument();
+  });
+});
+
+describe("SeatmapTooltip GA stepper", () => {
+  const ga = demoTicketGroups().ticketGroups.find((group) => group.GA);
+  if (!ga) throw new Error("demo fixtures need a GA ticket group");
+
+  function renderGaTooltip(
+    source: {
+      minQuantity?: number;
+      maxQuantity?: number;
+      multipleOf?: number;
+      incrementsOf?: number;
+      limit?: number;
+    },
+    kind: "offer" | "package",
+    eventLimit: number | null = null,
+  ) {
+    const group = {
+      ...ga,
+      availableCount: 20,
+      offer: kind === "offer" ? { ...ga.offer, ...source } : ga.offer,
+      package: kind === "package" ? source : undefined,
+    };
+    useSeatmapStore.setState({
+      sectionLookupTable: { [DEMO_GA_SECTION_ID]: [group] },
+    });
+    useFiltersStore.setState({ eventTicketLimit: eventLimit });
+    render(
+      <SeatmapTooltip
+        target={{ kind: "section", sectionId: DEMO_GA_SECTION_ID, x: 20, y: 20 }}
+        onClose={() => {}}
+      />,
+    );
+  }
+
+  it("steps an offer by min, max, and multipleOf and disables +/- at the bounds", () => {
+    renderGaTooltip({ minQuantity: 2, maxQuantity: 6, multipleOf: 2 }, "offer");
+    const decrease = screen.getByRole("button", { name: /decrease quantity/i });
+    const increase = screen.getByRole("button", { name: /increase quantity/i });
+
+    expect(decrease).toBeDisabled();
+    expect(screen.getByLabelText(/ticket quantity/i)).toHaveTextContent("2");
+
+    fireEvent.click(increase);
+    expect(screen.getByLabelText(/ticket quantity/i)).toHaveTextContent("4");
+    expect(screen.queryByText("3")).not.toBeInTheDocument();
+    fireEvent.click(increase);
+    expect(screen.getByLabelText(/ticket quantity/i)).toHaveTextContent("6");
+    expect(increase).toBeDisabled();
+
+    fireEvent.click(decrease);
+    expect(screen.getByLabelText(/ticket quantity/i)).toHaveTextContent("4");
+    fireEvent.click(decrease);
+    expect(screen.getByLabelText(/ticket quantity/i)).toHaveTextContent("2");
+    expect(decrease).toBeDisabled();
+    expect(screen.getByText("Ticket limit: 6 per order")).toBeInTheDocument();
+  });
+
+  it("steps a package GA section by min, max, and incrementsOf", () => {
+    renderGaTooltip({ minQuantity: 2, maxQuantity: 6, incrementsOf: 2 }, "package");
+    const increase = screen.getByRole("button", { name: /increase quantity/i });
+
+    expect(screen.getByLabelText(/ticket quantity/i)).toHaveTextContent("2");
+    fireEvent.click(increase);
+    fireEvent.click(increase);
+    expect(screen.getByLabelText(/ticket quantity/i)).toHaveTextContent("6");
+    expect(increase).toBeDisabled();
+    expect(screen.getByText("Ticket limit: 6 per order")).toBeInTheDocument();
+  });
+
+  it("locks the GA stepper to the exact offer limit", () => {
+    renderGaTooltip({ limit: 4 }, "offer");
+    const decrease = screen.getByRole("button", { name: /decrease quantity/i });
+    const increase = screen.getByRole("button", { name: /increase quantity/i });
+
+    expect(screen.getByLabelText(/ticket quantity/i)).toHaveTextContent("4");
+    expect(increase).toBeDisabled();
+    expect(decrease).toBeDisabled();
+    expect(screen.getByText("Ticket limit: 4 per order")).toBeInTheDocument();
+  });
+
+  it("shows the event global limit when the GA offer has no max or limit", () => {
+    renderGaTooltip({}, "offer", 3);
+    expect(screen.getByText("Ticket limit: 3 per order")).toBeInTheDocument();
+  });
+
+  it("shows the GA default ticket limit when the event and offer have none", () => {
+    renderGaTooltip({}, "offer");
+    expect(screen.getByText("Ticket limit: 100 per order")).toBeInTheDocument();
+    expect(screen.getByLabelText(/ticket quantity/i)).toHaveTextContent("1");
   });
 });

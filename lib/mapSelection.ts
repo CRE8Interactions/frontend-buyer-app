@@ -3,10 +3,63 @@ import type { TicketGroup } from "@/stores/filtersStore";
 export const MIXED_MAP_SELECTION_ERROR = {
   title: "Selected tickets not available",
   message:
-    "You can only select tickets from one row or GA section at a time...",
-  buttonText: "Return to tickets list",
-  leaveMap: true,
+    "You can only select tickets from one row or GA section at a time... Please change your selection.",
+  buttonText: "Close",
+  leaveMap: false,
 } as const;
+
+export const CHECKOUT_UNAVAILABLE_ERROR = {
+  title: "Selected tickets not available",
+  message: "Tickets are no longer available. Please change your selection.",
+  buttonText: "Close",
+  leaveMap: false,
+} as const;
+
+export const CHECKOUT_EVENT_NOT_READY_ERROR = {
+  ...CHECKOUT_UNAVAILABLE_ERROR,
+  message: "This event is not ready for checkout yet.",
+} as const;
+
+export const CHECKOUT_DEMO_LISTINGS_ERROR = {
+  ...CHECKOUT_UNAVAILABLE_ERROR,
+  message:
+    "These listings are demo-only. Real inventory is required to checkout.",
+} as const;
+
+export const CHECKOUT_DEMO_TIERS_ERROR = {
+  ...CHECKOUT_UNAVAILABLE_ERROR,
+  message:
+    "These tiers are demo-only. Real inventory is required to checkout.",
+} as const;
+
+export const MAX_TICKET_LIMIT_ERROR = {
+  title: "Max ticket limit reached",
+  buttonText: "Close",
+} as const;
+
+export function maxTicketLimitError(limit: number) {
+  return {
+    title: MAX_TICKET_LIMIT_ERROR.title,
+    message: `Adding these tickets would exceed the ticket limit of ${limit}. Please change your selection.`,
+    buttonText: MAX_TICKET_LIMIT_ERROR.buttonText,
+  };
+}
+
+export function checkoutHoldError(err: unknown) {
+  const msg =
+    err instanceof Error
+      ? err.message
+      : typeof err === "object" &&
+          err &&
+          "message" in err &&
+          typeof (err as { message?: unknown }).message === "string"
+        ? (err as { message: string }).message
+        : "";
+  if (msg.includes("not ready for checkout")) {
+    return { ...CHECKOUT_EVENT_NOT_READY_ERROR };
+  }
+  return { ...CHECKOUT_UNAVAILABLE_ERROR };
+}
 
 function isGa(group: TicketGroup) {
   return Boolean(group.GA || group.generalAdmission);
