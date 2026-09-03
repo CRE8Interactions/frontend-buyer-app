@@ -5,17 +5,20 @@ import { useParams, useRouter, useSearchParams } from "next/navigation";
 import BrandedNotice from "@/components/molecules/BrandedNotice";
 import RouteLoader from "@/components/molecules/RouteLoader";
 import PremiumTicketing, {
-  type GATier,
   type TicketingData,
 } from "@/components/organisms/PremiumTicketing";
 import { getEventByShortCode, getTicketGroups } from "@/lib/api";
 import { brandingToTicketingTheme, type OrgBranding } from "@/lib/branding";
 import { cacheEventBranding } from "@/lib/orgBrandingCache";
+import { isSportingEvent } from "@/lib/eventCategory";
 import {
+  eventAboutText,
   eventDoorsIso,
   eventWhenShortWithDoors,
   eventWhenWithDoors,
   formatEventWhen,
+  imageUrl,
+  resolveEventMatchup,
   type ApiImage,
   type TimezoneLike,
 } from "@/lib/helpers";
@@ -24,9 +27,9 @@ import {
   formatVenueLocationLine,
 } from "@/lib/venueLocation";
 import {
+  groupsToGaTiers,
+  lockedZonesFromGroups,
   normalizeGlobalTicketLimit,
-  quantityLimits,
-  quantityRestrictionLabel,
 } from "@/lib/ticketListings";
 import useWaitingRoomHeartbeat from "@/hooks/useWaitingRoomHeartbeat";
 import {
@@ -42,11 +45,13 @@ type RawGroup = {
   price?: number;
   availableCount?: number;
   sectionName?: string;
+  sectionNumber?: string;
   ticketGroupUUID?: string;
   eventUUID?: string;
   offer?: {
     id?: string | number;
     name?: string;
+    description?: string | null;
     isDefaultOffer?: boolean;
     minQuantity?: number | null;
     maxQuantity?: number | null;
@@ -72,13 +77,22 @@ type EventData = {
   doorsOpen?: string;
   realDoorsOpen?: string;
   summary?: string;
+  description?: string;
   image?: ApiImage;
-  attractions?: Array<{ name?: string; primary?: boolean; artwork?: { url?: string } }>;
+  category?: { name?: string | null };
+  categoryName?: string | null;
+  attractions?: Array<{
+    name?: string;
+    primary?: boolean;
+    artwork?: { url?: string };
+    images?: ApiImage[];
+  }>;
   branding?: OrgBranding | null;
   organization?: {
     name?: string;
     slug?: string;
     branding?: OrgBranding | null;
+    category?: { name?: string | null };
     primaryColor?: string;
     accentColor?: string;
     brandColor?: string;
@@ -104,59 +118,6 @@ function imageOf(img: unknown): string | null {
   return o.url || o.formats?.small?.url || o.formats?.thumbnail?.url || null;
 }
 
-function money(n: number) {
-  return `$${n.toFixed(2)}`;
-}
-
-/** Map Strapi GA ticket groups into checkout-ready tier cards. */
-function groupsToGaTiers(
-  groups: RawGroup[],
-  globalMax?: number | null,
-): GATier[] {
-  const seen = new Set<string>();
-
-  return groups
-    .filter((g) => !g.offer?.accessCode)
-    .filter((g) => {
-      const key = `${g.id ?? g.ticketGroupUUID}-${g.offer?.id ?? "default"}`;
-      if (seen.has(key)) return false;
-      seen.add(key);
-      return true;
-    })
-    .map((g) => {
-      const available = Number(g.availableCount || 0);
-      const unit = Number(g.price || 0);
-      const offerName = g.offer?.name || g.sectionName || "Standard admission";
-      const limits = quantityLimits(g.offer, {
-        available,
-        defaultMax: 100,
-        globalMax,
-      });
-      // Drained inventory is what sells a tier out. An offer flagged sold out
-      // never reaches the page, so there is nothing else to read here.
-      const soldout = available <= 0;
-      const section = g.sectionName || "General admission";
-
-      return {
-        name: offerName,
-        sub: `${section} · unreserved seating`,
-        price: unit === 0 || g.offer?.freeOffer ? "Free" : money(unit),
-        unit,
-        note: `Ticket limit: ${quantityRestrictionLabel(limits)}`,
-        state: soldout ? "soldout" : "live",
-        min: limits.min,
-        max: limits.max,
-        multipleOf: limits.step,
-        cartGroup: g as Record<string, unknown>,
-      } satisfies GATier;
-    })
-    .filter((tier) => tier.state === "soldout" || tier.min <= tier.max)
-    .sort((a, b) => {
-      const rank = { live: 0, scheduled: 1, soldout: 2 };
-      return rank[a.state] - rank[b.state];
-    });
-}
-
 function toGaData(
   ev: EventData,
   groups: RawGroup[],
@@ -175,14 +136,20 @@ function toGaData(
   const venueLine = formatVenueLocationLine(venueName, ev.venue?.address);
   const venueCityState = formatVenueCityState(ev.venue?.address);
   const venueAddress = [addr?.address_1, city, state, addr?.zipcode].filter(Boolean).join(", ");
-  const home = ev.attractions?.find((a) => a.primary) || ev.attractions?.[0];
-  const away = ev.attractions?.find((a) => a !== home);
   const orgLabel = ev.organization?.name || "Blocktickets";
   const poster = imageOf(ev.image);
+  const matchup = resolveEventMatchup(ev.attractions, {
+    orgName: orgLabel,
+    sportingEvent: isSportingEvent(ev),
+  });
   const gaTiers = groupsToGaTiers(
     groups,
-    normalizeGlobalTicketLimit(ev.globalTicketLimit),
+    {
+      globalMax: normalizeGlobalTicketLimit(ev.globalTicketLimit),
+      includeLocked: true,
+    },
   );
+  const lockedZones = lockedZonesFromGroups(groups);
   const theme = brandingToTicketingTheme(ev, ev.organization, poster);
 
   return {
@@ -191,6 +158,7 @@ function toGaData(
     eventType: "ga",
     listings: [],
     gaTiers: gaTiers.length ? gaTiers : undefined,
+    lockedZones,
     soldOut,
     scheduled,
     scheduledAt: scheduledTime
@@ -206,17 +174,19 @@ function toGaData(
     venueAddress: venueAddress || venueLine,
     venueCityState,
     mapsQuery: `${venueName} ${city} ${state}`.trim(),
-    logoSrc: imageOf(home?.artwork) || theme.logoSrc,
+    logoSrc: matchup.homeLogoSrc || theme.logoSrc,
+    homeLogoSrc: matchup.homeLogoSrc,
+    awayLogoSrc: matchup.awayLogoSrc,
     posterSrc: poster || theme.brandLogoSrc,
-    venuePhotoSrc: imageOf(ev.venue?.image) || poster || undefined,
+    venuePhotoSrc: imageUrl(ev.venue?.image, "") || undefined,
     orgLabel,
     providerLabel: `Official ticketing marketplace for ${orgLabel}`,
-    aboutText:
-      ev.summary ||
-      `General admission for ${ev.name}. Gates open one hour before start — mobile tickets, verified inventory, all-in pricing.`,
-    homeLabel: home?.name || orgLabel,
-    awayLabel: away?.name || "Visitor",
-    awayShort: (away?.name || "AWAY").slice(0, 3).toUpperCase(),
+    aboutText: eventAboutText(ev),
+    homeLabel: matchup.homeLabel,
+    awayLabel: matchup.awayLabel,
+    awayShort: matchup.awayShort,
+    showMatchupSection: matchup.showMatchupSection,
+    showAwayTeam: matchup.showAwayTeam,
   };
 }
 
