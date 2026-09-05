@@ -2,8 +2,10 @@
 
 import { useEffect, useRef } from "react";
 import Link from "next/link";
-import { BLOCKTICKETS_GREEN, BLOCKTICKETS_NAVY } from "@/lib/branding";
+import { ShopperFluidTypeStyles } from "@/components/templates/ShopperFluidType";
+import { BLOCKTICKETS_GREEN, BLOCKTICKETS_NAVY, SHOPPER_PAGE_CLASS } from "@/lib/branding";
 import { useAuth } from "@/lib/auth";
+import { fluidSize } from "@/lib/shopperFluidType";
 
 const INK = BLOCKTICKETS_NAVY;
 const SUB = "#6e7180";
@@ -26,6 +28,7 @@ export default function SignOut() {
 
   return (
     <div
+      className={SHOPPER_PAGE_CLASS}
       style={{
         width: "100%",
         minHeight: "100vh",
@@ -41,6 +44,7 @@ export default function SignOut() {
         boxSizing: "border-box",
       }}
     >
+      <ShopperFluidTypeStyles />
       <div
         style={{
           width: "100%",
@@ -81,7 +85,7 @@ export default function SignOut() {
         <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
           <div
             style={{
-              fontSize: 10,
+              fontSize: fluidSize(10),
               fontWeight: 600,
               textTransform: "uppercase",
               letterSpacing: "0.12em",
@@ -93,7 +97,7 @@ export default function SignOut() {
           <h1
             style={{
               margin: 0,
-              fontSize: 42,
+              fontSize: fluidSize(42),
               fontWeight: 600,
               letterSpacing: "-0.03em",
               lineHeight: 1.05,
@@ -101,7 +105,14 @@ export default function SignOut() {
           >
             You&rsquo;re signed out
           </h1>
-          <p style={{ margin: 0, fontSize: 15, lineHeight: 1.6, color: SUB }}>
+          <p
+            style={{
+              margin: 0,
+              fontSize: fluidSize(15),
+              lineHeight: 1.6,
+              color: SUB,
+            }}
+          >
             Your tickets stay safe in your wallet. Sign in again any time to get
             back to them.
           </p>
@@ -127,7 +138,7 @@ export default function SignOut() {
               fontFamily: "inherit",
               width: "100%",
               boxSizing: "border-box",
-              fontSize: 15,
+              fontSize: fluidSize(15),
               fontWeight: 600,
               color: INK,
               background: BLOCKTICKETS_GREEN,
@@ -149,7 +160,7 @@ export default function SignOut() {
               fontFamily: "inherit",
               width: "100%",
               boxSizing: "border-box",
-              fontSize: 15,
+              fontSize: fluidSize(15),
               fontWeight: 600,
               color: INK,
               background: "#fff",

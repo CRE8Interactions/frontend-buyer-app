@@ -11,6 +11,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import InAppBackLink from "@/components/molecules/InAppBackLink";
 import RouteLoader from "@/components/molecules/RouteLoader";
+import { fluidSize, shopperPageTypeCss } from "@/lib/shopperFluidType";
 import {
   resolveBrandLogo,
   resolveButtonColor,
@@ -485,7 +486,7 @@ export default function VenueProfile({ slug }: { slug: string }) {
   const searchPill = (
     <div style={{ display: "flex", alignItems: "center", gap: 10, flex: "1 1 auto", maxWidth: 460, background: "rgba(255,255,255,0.10)", border: "1px solid rgba(158,182,216,0.22)", borderRadius: 999, padding: "10px 18px", color: "rgba(255,255,255,0.65)" }}>
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" style={{ width: 17, height: 17, flexShrink: 0 }}><circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" /></svg>
-      <span style={{ fontSize: 14, whiteSpace: "nowrap" }}>Search events, teams, venues</span>
+      <span style={{ fontSize: fluidSize(14), whiteSpace: "nowrap" }}>Search events, teams, venues</span>
     </div>
   );
 
@@ -547,8 +548,9 @@ export default function VenueProfile({ slug }: { slug: string }) {
   );
 
   return (
-    <div style={{ background: "#f7f8fc", color: NAVY, minHeight: "100vh", fontFamily: "'Geist', system-ui, -apple-system, sans-serif", WebkitFontSmoothing: "antialiased", ["--vp-accent"]: ACC } as CSSProperties}>
-      <style>{`.vp-row{transition:box-shadow 150ms ease,border-color 150ms ease}.vp-row:hover{box-shadow:0 8px 30px rgba(5,27,53,0.09);border-color:rgba(5,27,53,0.20)}.vp-action{outline:2px solid transparent;outline-offset:2px;transition:outline-color 140ms ease}.vp-action:hover,.vp-action:focus-visible{outline-color:var(--vp-accent)}`}</style>
+    <div className="shopper-page" style={{ background: "#f7f8fc", color: NAVY, minHeight: "100vh", fontFamily: "'Geist', system-ui, -apple-system, sans-serif", WebkitFontSmoothing: "antialiased", ["--vp-accent"]: ACC } as CSSProperties}>
+      <style>{`${shopperPageTypeCss()}
+.vp-row{transition:box-shadow 150ms ease,border-color 150ms ease}.vp-row:hover{box-shadow:0 8px 30px rgba(5,27,53,0.09);border-color:rgba(5,27,53,0.20)}.vp-action{outline:2px solid transparent;outline-offset:2px;transition:outline-color 140ms ease}.vp-action:hover,.vp-action:focus-visible{outline-color:var(--vp-accent)}`}</style>
 
       <header style={{ background: ACC, position: "sticky", top: 0, zIndex: 20 }}>
         <div style={{ maxWidth: 1320, margin: "0 auto", padding: mobile ? "12px 20px" : "16px 32px", display: "flex", alignItems: "center", gap: 16 }}>
@@ -560,7 +562,7 @@ export default function VenueProfile({ slug }: { slug: string }) {
             <img src={LOCKUP} alt="blocktickets" style={{ height: 19, width: "auto" }} />
           </Link>
           {!mobile && searchPill}
-          <Link href={walletSectionHref("events")} style={{ fontFamily: "inherit", marginLeft: "auto", fontSize: 14, fontWeight: 600, color: ACC, background: "#fff", border: "none", borderRadius: 999, padding: "11px 22px", cursor: "pointer", whiteSpace: "nowrap", textDecoration: "none", display: "inline-flex", alignItems: "center" }}>My wallet</Link>
+          <Link href={walletSectionHref("events")} style={{ fontFamily: "inherit", marginLeft: "auto", fontSize: fluidSize(14), fontWeight: 600, color: ACC, background: "#fff", border: "none", borderRadius: 999, padding: "11px 22px", cursor: "pointer", whiteSpace: "nowrap", textDecoration: "none", display: "inline-flex", alignItems: "center" }}>My wallet</Link>
         </div>
       </header>
 
@@ -574,9 +576,9 @@ export default function VenueProfile({ slug }: { slug: string }) {
                 <img src={photoSrc} alt={venueName} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
               </div>
               <div style={{ display: "flex", flexDirection: "column", gap: 8, alignItems: "center", textAlign: "center", minWidth: 0 }}>
-                <h1 style={{ margin: 0, fontSize: 32, fontWeight: 600, letterSpacing: "-0.03em", lineHeight: 1.08 }}>{venueName}</h1>
+                <h1 style={{ margin: 0, fontSize: fluidSize(32), fontWeight: 600, letterSpacing: "-0.03em", lineHeight: 1.08 }}>{venueName}</h1>
                 {city ? (
-                  <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13, color: "#6e7180", whiteSpace: "nowrap" }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: fluidSize(13), color: "#6e7180", whiteSpace: "nowrap" }}>
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" style={{ width: 13, height: 13, flexShrink: 0 }}><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z" /><circle cx="12" cy="10" r="3" /></svg>
                     {city}
                   </div>
@@ -584,7 +586,7 @@ export default function VenueProfile({ slug }: { slug: string }) {
               </div>
             </div>
 
-            <p style={{ margin: 0, paddingTop: 16, borderTop: "1px solid rgba(5,27,53,0.08)", fontSize: 13, lineHeight: 1.6, color: "#6e7180" }}>{description}</p>
+            <p style={{ margin: 0, paddingTop: 16, borderTop: "1px solid rgba(5,27,53,0.08)", fontSize: fluidSize(13), lineHeight: 1.6, color: "#6e7180" }}>{description}</p>
 
             {venueActions}
           </aside>
@@ -599,8 +601,8 @@ export default function VenueProfile({ slug }: { slug: string }) {
                   <img src={photoSrc} alt={venueName} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
                 </div>
                 <div style={{ display: "flex", flexDirection: "column", gap: 3, minWidth: 0 }}>
-                  <h1 style={{ margin: 0, fontSize: 21, fontWeight: 600, letterSpacing: "-0.025em", lineHeight: 1.15 }}>{venueName}</h1>
-                  <div style={{ fontSize: 13, color: "#6e7180" }}>
+                  <h1 style={{ margin: 0, fontSize: fluidSize(21), fontWeight: 600, letterSpacing: "-0.025em", lineHeight: 1.15 }}>{venueName}</h1>
+                  <div style={{ fontSize: fluidSize(13), color: "#6e7180" }}>
                     {[city, capacity ? `${capacity} capacity` : ""].filter(Boolean).join(" · ")}
                   </div>
                 </div>
@@ -609,18 +611,18 @@ export default function VenueProfile({ slug }: { slug: string }) {
             </div>
           )}
 
-          <h2 style={{ margin: 0, fontSize: mobile ? 20 : 26, fontWeight: 600, letterSpacing: "-0.025em" }}>Upcoming events</h2>
+          <h2 style={{ margin: 0, fontSize: fluidSize(mobile ? 20 : 26), fontWeight: 600, letterSpacing: "-0.025em" }}>Upcoming events</h2>
 
           {!groups.length ? (
-            <div style={{ background: "#fff", border: "1px solid rgba(5,27,53,0.10)", borderRadius: 18, padding: 28, color: "#6e7180", fontSize: 15 }}>
+            <div style={{ background: "#fff", border: "1px solid rgba(5,27,53,0.10)", borderRadius: 18, padding: 28, color: "#6e7180", fontSize: fluidSize(15) }}>
               No upcoming events for {venueName}.
             </div>
           ) : (
             groups.map((g) => (
               <div key={g.title} style={{ display: "flex", flexDirection: "column", gap: 10 }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "10px 2px 8px" }}>
-                  <div style={{ fontSize: 13, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.1em", color: accent || "#7fbe4d", whiteSpace: "nowrap" }}>{g.title}</div>
-                  <div style={{ fontSize: 12, color: "#8a93a3", whiteSpace: "nowrap" }}>{g.meta}</div>
+                  <div style={{ fontSize: fluidSize(13), fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.1em", color: accent || "#7fbe4d", whiteSpace: "nowrap" }}>{g.title}</div>
+                  <div style={{ fontSize: fluidSize(12), color: "#8a93a3", whiteSpace: "nowrap" }}>{g.meta}</div>
                   <div style={{ flex: 1, height: 1, background: "rgba(5,27,53,0.10)" }} />
                 </div>
                 {g.rows.map((e) => {
@@ -630,24 +632,24 @@ export default function VenueProfile({ slug }: { slug: string }) {
                   return (
                     <Link key={e.key} href={e.href} className="vp-row" style={{ background: "#fff", border: "1px solid rgba(5,27,53,0.10)", borderRadius: 18, boxShadow: "0 1px 2px rgba(5,27,53,0.05)", padding: mobile ? 14 : "16px 20px", display: "grid", gridTemplateColumns: stacked ? "64px minmax(0, 1fr)" : "76px minmax(0, 1fr) auto", gap: mobile ? 14 : 20, alignItems: "center", cursor: "pointer", color: NAVY, textDecoration: "none" }}>
                       <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 2, width: dateW, height: dateW, borderRadius: 14, background: "#f1f3f8", border: "1px solid rgba(5,27,53,0.08)", flexShrink: 0 }}>
-                        <div style={{ fontSize: 10, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.1em", color: "#6e7180" }}>{e.mon}</div>
-                        <div style={{ fontSize: 22, fontWeight: 600, letterSpacing: "-0.02em", fontVariantNumeric: "tabular-nums", lineHeight: 1 }}>{e.day}</div>
-                        <div style={{ fontSize: 10, color: "#8a93a3" }}>{e.dow}</div>
+                        <div style={{ fontSize: fluidSize(10), fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.1em", color: "#6e7180" }}>{e.mon}</div>
+                        <div style={{ fontSize: fluidSize(22), fontWeight: 600, letterSpacing: "-0.02em", fontVariantNumeric: "tabular-nums", lineHeight: 1 }}>{e.day}</div>
+                        <div style={{ fontSize: fluidSize(10), color: "#8a93a3" }}>{e.dow}</div>
                       </div>
                       <div style={{ display: "flex", flexDirection: "column", gap: 5, minWidth: 0 }}>
                         <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-                          <span style={{ fontSize: 12, color: "#6e7180" }}>{e.sport}{e.time ? ` · ${e.time}` : ""}</span>
+                          <span style={{ fontSize: fluidSize(12), color: "#6e7180" }}>{e.sport}{e.time ? ` · ${e.time}` : ""}</span>
                           {e.status !== "On sale" && (
-                            <span style={{ fontSize: 10, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.12em", color: tag.tagInk, background: tag.tagBg, borderRadius: 999, padding: "4px 9px" }}>{e.status}</span>
+                            <span style={{ fontSize: fluidSize(10), fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.12em", color: tag.tagInk, background: tag.tagBg, borderRadius: 999, padding: "4px 9px" }}>{e.status}</span>
                           )}
                         </div>
-                        <div style={{ fontSize: mobile ? 16 : 17, fontWeight: 600, letterSpacing: "-0.015em", lineHeight: 1.25 }}>{e.title}</div>
+                        <div style={{ fontSize: fluidSize(mobile ? 16 : 17), fontWeight: 600, letterSpacing: "-0.015em", lineHeight: 1.25 }}>{e.title}</div>
                         {e.host ? (
-                          <div style={{ fontSize: 13, color: "#6e7180", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{e.host}</div>
+                          <div style={{ fontSize: fluidSize(13), color: "#6e7180", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{e.host}</div>
                         ) : null}
                       </div>
                       <div style={{ gridColumn: stacked ? "1 / -1" : "auto", display: "flex", alignItems: "center", gap: 16, justifyContent: "flex-end", paddingTop: stacked ? 12 : 0, borderTop: stacked ? "1px solid rgba(5,27,53,0.08)" : "none" }}>
-                        <span style={{ fontFamily: "inherit", fontSize: 14, fontWeight: 600, color: soon ? NAVY : BTN_INK, background: soon ? "#fff" : BTN, border: `1px solid ${soon ? "rgba(5,27,53,0.14)" : BTN}`, borderRadius: 999, padding: "12px 22px", minHeight: 44, display: "inline-flex", alignItems: "center", cursor: "pointer", whiteSpace: "nowrap" }}>{soon ? "Remind me" : "Get tickets"}</span>
+                        <span style={{ fontFamily: "inherit", fontSize: fluidSize(14), fontWeight: 600, color: soon ? NAVY : BTN_INK, background: soon ? "#fff" : BTN, border: `1px solid ${soon ? "rgba(5,27,53,0.14)" : BTN}`, borderRadius: 999, padding: "12px 22px", minHeight: 44, display: "inline-flex", alignItems: "center", cursor: "pointer", whiteSpace: "nowrap" }}>{soon ? "Remind me" : "Get tickets"}</span>
                       </div>
                     </Link>
                   );

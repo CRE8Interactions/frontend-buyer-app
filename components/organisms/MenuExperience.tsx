@@ -10,9 +10,11 @@ import {
   useStripe,
 } from "@stripe/react-stripe-js";
 import BrandedActionButton from "@/components/atoms/BrandedActionButton";
+import MobileStickyFooter from "@/components/molecules/MobileStickyFooter";
 import PageLoader from "@/components/molecules/PageLoader";
 import { BrandedLoader } from "@/components/molecules/RouteLoader";
 import Modal from "@/components/molecules/Modal";
+import ShopperFluidPage from "@/components/templates/ShopperFluidType";
 import useAutoFocus from "@/hooks/useAutoFocus";
 import {
   createPublicMenuPaymentIntent,
@@ -473,8 +475,8 @@ export default function MenuExperience({
 
   if (showGate) {
     return (
-      <div className="mx-auto max-w-md pb-16">
-        <h1 className="text-[clamp(28px,4vw,36px)] font-semibold tracking-[-0.02em]">
+      <ShopperFluidPage className="mx-auto max-w-md pb-16">
+        <h1 className="text-[36px] font-semibold tracking-[-0.02em]">
           Where are you sitting?
         </h1>
         <p className={`mt-2 text-[15px] ${muted}`}>
@@ -546,16 +548,16 @@ export default function MenuExperience({
             Continue
           </BrandedActionButton>
         </form>
-      </div>
+      </ShopperFluidPage>
     );
   }
 
   return (
-    <div className="mx-auto max-w-2xl pb-28">
+    <ShopperFluidPage className="mx-auto max-w-2xl pb-28">
       <p className="text-[12px] font-semibold uppercase tracking-[0.12em] text-[#6e7180]">
         {isPickup ? "Pickup menu" : "Seat delivery"}
       </p>
-      <h1 className="mt-2 text-[clamp(28px,4vw,36px)] font-semibold tracking-[-0.02em]">
+      <h1 className="mt-2 text-[36px] font-semibold tracking-[-0.02em]">
         {locationName || menuKeyLabel}
       </h1>
       {!isPickup ? (
@@ -654,7 +656,7 @@ export default function MenuExperience({
       )}
 
       {cartCount > 0 ? (
-        <div className="fixed inset-x-0 bottom-0 z-40 border-t border-[rgba(5,27,53,0.10)] bg-white p-4">
+        <MobileStickyFooter innerPadding="16px">
           <div className="mx-auto flex max-w-2xl items-center justify-between gap-4">
             <div>
               <p className="text-[14px] font-semibold">
@@ -668,7 +670,7 @@ export default function MenuExperience({
               View cart
             </BrandedActionButton>
           </div>
-        </div>
+        </MobileStickyFooter>
       ) : null}
 
       {cartOpen ? (
@@ -778,7 +780,7 @@ export default function MenuExperience({
           )}
         </Modal>
       ) : null}
-    </div>
+    </ShopperFluidPage>
   );
 }
 

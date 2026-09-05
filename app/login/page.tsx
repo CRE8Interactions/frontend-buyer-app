@@ -11,6 +11,7 @@ import PhoneNumberInput, {
   phoneSubmitError,
   type PhoneErrorType,
 } from "@/components/molecules/PhoneNumberInput";
+import { ShopperFluidTypeStyles } from "@/components/templates/ShopperFluidType";
 import { ButtonBusyContents } from "@/components/atoms/BrandedActionButton";
 import {
   verifyUser,
@@ -609,6 +610,7 @@ function LoginForm() {
 function LoginShell({ children }: { children: React.ReactNode }) {
   return (
     <div className="shopper-page min-h-screen bg-[#f7f8fc] text-[#051b35]">
+      <ShopperFluidTypeStyles />
       <header
         className="sticky top-0 z-20"
         style={{ background: NAVY }}

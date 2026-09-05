@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import RouteLoader from "@/components/molecules/RouteLoader";
+import { ShopperFluidTypeStyles } from "@/components/templates/ShopperFluidType";
 import { shopperShellVars } from "@/lib/branding";
 import { CHECKOUT_HOLD_SECONDS, formatHoldClock } from "@/lib/checkoutBranding";
 
@@ -77,6 +78,7 @@ export default function BrandedCheckoutShell({
       className="shopper-page min-h-screen overflow-y-auto bg-[#f7f8fc]"
       style={{ color: NAVY, ...shopperShellVars(accent) }}
     >
+      <ShopperFluidTypeStyles />
       <header
         className="sticky top-0 z-[2] flex items-center gap-4 px-6 py-3.5 text-white"
         style={{ background: accent }}

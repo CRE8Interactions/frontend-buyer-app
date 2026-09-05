@@ -1,9 +1,12 @@
 "use client";
 
+import { fluidSize } from "@/lib/shopperFluidType";
+
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import BrandedActionButton from "@/components/atoms/BrandedActionButton";
 import MobileStickyFooter from "@/components/molecules/MobileStickyFooter";
+import { ShopperFluidTypeStyles } from "@/components/templates/ShopperFluidType";
 import InAppBackLink from "@/components/molecules/InAppBackLink";
 import RouteLoader from "@/components/molecules/RouteLoader";
 import { getFlexPack, placeFlexPackIntoCart } from "@/lib/api";
@@ -24,7 +27,6 @@ import {
 import { cacheOrgBranding } from "@/lib/orgBrandingCache";
 import { beginRouteTransition } from "@/lib/routeTransition";
 import { TICKETING_STICKY_GAP_PX } from "@/lib/ticketingSticky";
-import { fluidSize } from "@/lib/shopperFluidType";
 
 const NAVY = "#051b35";
 const MUTE = "#8a93a3";
@@ -184,6 +186,7 @@ export default function FlexPackDetailClient({
   if (!flexPack) {
     return (
       <div className="shopper-page" style={{ maxWidth: 720, margin: "0 auto", padding: "32px 20px" }}>
+        <ShopperFluidTypeStyles />
         <InAppBackLink
           href={backHref}
           aria-label="Back"
@@ -208,6 +211,7 @@ export default function FlexPackDetailClient({
 
   return (
     <div className="shopper-page" style={{ minHeight: "100vh", background: FIELD, color: NAVY }}>
+      <ShopperFluidTypeStyles />
       <div
         ref={heroRef}
         style={{
@@ -332,7 +336,7 @@ export default function FlexPackDetailClient({
               <h1
                 style={{
                   margin: 0,
-                  fontSize: mobile ? fluidSize(30) : fluidSize(42),
+                  fontSize: fluidSize(mobile ? 30 : 42),
                   fontWeight: 600,
                   letterSpacing: "-0.03em",
                   lineHeight: 1.06,

@@ -8,6 +8,7 @@ import BrandedActionButton, {
 } from "@/components/atoms/BrandedActionButton";
 import RouteLoader from "@/components/molecules/RouteLoader";
 import MobileStickyFooter from "@/components/molecules/MobileStickyFooter";
+import { ShopperFluidTypeStyles } from "@/components/templates/ShopperFluidType";
 import { useAuth } from "@/lib/auth";
 import { BLOCKTICKETS_NAVY, type BrandingOrganization } from "@/lib/branding";
 import {
@@ -466,6 +467,7 @@ function CheckoutSuccessPage() {
 
   return (
     <div className="shopper-page min-h-screen overflow-y-auto bg-[#f7f8fc]" style={{ color: NAVY }}>
+      <ShopperFluidTypeStyles />
       <header
         className="sticky top-0 z-[2] flex items-center gap-3.5 px-5 py-3 text-white"
         style={{ background: accent }}

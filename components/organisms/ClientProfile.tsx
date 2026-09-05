@@ -12,6 +12,7 @@ import { notFound } from "next/navigation";
 import InAppBackLink from "@/components/molecules/InAppBackLink";
 import NavAuthActions from "@/components/molecules/NavAuthActions";
 import RouteLoader from "@/components/molecules/RouteLoader";
+import { fluidSize, shopperPageTypeCss } from "@/lib/shopperFluidType";
 import { getOrganizationStorefront, getVenueUpcomingEvents } from "@/lib/api";
 import {
   monthEventCountLabel,
@@ -508,6 +509,7 @@ export default function ClientProfile({
 
   return (
     <div
+      className="shopper-page"
       style={{
         background: "#f7f8fc",
         color: NAVY,
@@ -517,7 +519,8 @@ export default function ClientProfile({
         ["--cp-accent"]: ACC,
       } as React.CSSProperties}
     >
-      <style>{`.cp-a{transition:background 140ms}.cp-row{transition:box-shadow 150ms ease}.cp-row:hover{box-shadow:0 8px 30px rgba(5,27,53,0.09)}.cp-action{outline:2px solid transparent;outline-offset:2px;transition:outline-color 140ms ease}.cp-action:hover,.cp-action:focus-visible{outline-color:var(--cp-accent)}`}</style>
+      <style>{`${shopperPageTypeCss()}
+.cp-a{transition:background 140ms}.cp-row{transition:box-shadow 150ms ease}.cp-row:hover{box-shadow:0 8px 30px rgba(5,27,53,0.09)}.cp-action{outline:2px solid transparent;outline-offset:2px;transition:outline-color 140ms ease}.cp-action:hover,.cp-action:focus-visible{outline-color:var(--cp-accent)}`}</style>
 
       <header style={{ background: ACC, position: "sticky", top: 0, zIndex: 20 }}>
         <div
@@ -562,7 +565,7 @@ export default function ClientProfile({
             <NavAuthActions
               buttonStyle={{
                 fontFamily: "inherit",
-                fontSize: 14,
+                fontSize: fluidSize(14),
                 fontWeight: 600,
                 color: ACC,
                 background: "#fff",
@@ -636,7 +639,7 @@ export default function ClientProfile({
                     display: "flex",
                     alignItems: "center",
                     gap: 8,
-                    fontSize: 10,
+                    fontSize: fluidSize(10),
                     fontWeight: 600,
                     textTransform: "uppercase",
                     letterSpacing: "0.12em",
@@ -647,11 +650,11 @@ export default function ClientProfile({
                   <span style={{ width: 5, height: 5, borderRadius: 999, background: ACC }} />
                   {categoryLabel(organization.category?.name) || "Organization"}
                 </div>
-                <h1 style={{ margin: 0, fontSize: 32, fontWeight: 600, letterSpacing: "-0.03em", lineHeight: 1.08 }}>
+                <h1 style={{ margin: 0, fontSize: fluidSize(32), fontWeight: 600, letterSpacing: "-0.03em", lineHeight: 1.08 }}>
                   {orgName}
                 </h1>
                 {location && (
-                  <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13, color: "#6e7180" }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: fluidSize(13), color: "#6e7180" }}>
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" style={{ width: 13, height: 13, flexShrink: 0 }}>
                       <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z" />
                       <circle cx="12" cy="10" r="3" />
@@ -664,7 +667,7 @@ export default function ClientProfile({
 
             {showFilters && (
               <div style={{ display: "flex", flexDirection: "column", gap: 8, borderTop: "1px solid rgba(5,27,53,0.08)" }}>
-                <div style={{ fontSize: 10, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.12em", color: "#8a93a3", paddingTop: 14 }}>
+                <div style={{ fontSize: fluidSize(10), fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.12em", color: "#8a93a3", paddingTop: 14 }}>
                   {filterHeading}
                 </div>
                 <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
@@ -680,7 +683,7 @@ export default function ClientProfile({
                         justifyContent: "space-between",
                         gap: 10,
                         textAlign: "left",
-                        fontSize: 14,
+                        fontSize: fluidSize(14),
                         fontWeight: 500,
                         whiteSpace: "nowrap",
                         background: f.on ? `${ACC}14` : "transparent",
@@ -692,7 +695,7 @@ export default function ClientProfile({
                       }}
                     >
                       <span style={{ minWidth: 0, overflow: "hidden", textOverflow: "ellipsis" }}>{f.label}</span>
-                      <span style={{ flexShrink: 0, fontSize: 12, color: "#8a93a3", fontVariantNumeric: "tabular-nums" }}>{f.n}</span>
+                      <span style={{ flexShrink: 0, fontSize: fluidSize(12), color: "#8a93a3", fontVariantNumeric: "tabular-nums" }}>{f.n}</span>
                     </button>
                   ))}
                 </div>
@@ -704,7 +707,7 @@ export default function ClientProfile({
                 margin: 0,
                 paddingTop: 16,
                 borderTop: "1px solid rgba(5,27,53,0.08)",
-                fontSize: 13,
+                fontSize: fluidSize(13),
                 lineHeight: 1.6,
                 color: "#6e7180",
               }}
@@ -798,10 +801,10 @@ export default function ClientProfile({
                 <img src={logoSrc} alt={orgName} style={{ maxWidth: "100%", maxHeight: "100%", objectFit: "contain" }} />
               </div>
               <div style={{ display: "flex", flexDirection: "column", gap: 4, minWidth: 0 }}>
-                <div style={{ fontSize: 10, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.12em", color: ACC }}>
+                <div style={{ fontSize: fluidSize(10), fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.12em", color: ACC }}>
                   {categoryLabel(organization.category?.name) || "Organization"}
                 </div>
-                <h1 style={{ margin: 0, fontSize: 21, fontWeight: 600, letterSpacing: "-0.03em", lineHeight: 1.1 }}>
+                <h1 style={{ margin: 0, fontSize: fluidSize(21), fontWeight: 600, letterSpacing: "-0.03em", lineHeight: 1.1 }}>
                   {orgName}
                 </h1>
               </div>
@@ -828,7 +831,7 @@ export default function ClientProfile({
                 style={{
                   fontFamily: "inherit",
                   flex: mobile ? "1 1 0" : "0 0 auto",
-                  fontSize: mobile ? 11 : 14,
+                  fontSize: fluidSize(mobile ? 11 : 14),
                   fontWeight: 600,
                   whiteSpace: "nowrap",
                   border: "none",
@@ -857,7 +860,7 @@ export default function ClientProfile({
                         display: "inline-flex",
                         alignItems: "center",
                         gap: 6,
-                        fontSize: 13,
+                        fontSize: fluidSize(13),
                         fontWeight: 600,
                         whiteSpace: "nowrap",
                         height: 34,
@@ -870,7 +873,7 @@ export default function ClientProfile({
                       }}
                     >
                       {f.label}
-                      <span style={{ fontSize: 11, fontWeight: 600, color: f.on ? `${ACC}99` : "#8a93a3", fontVariantNumeric: "tabular-nums" }}>
+                      <span style={{ fontSize: fluidSize(11), fontWeight: 600, color: f.on ? `${ACC}99` : "#8a93a3", fontVariantNumeric: "tabular-nums" }}>
                         {f.n}
                       </span>
                     </button>
@@ -879,7 +882,7 @@ export default function ClientProfile({
               )}
 
               {groups.length === 0 && (
-                <div style={{ ...card, padding: 28, textAlign: "center", color: "#6e7180", fontSize: 14 }}>
+                <div style={{ ...card, padding: 28, textAlign: "center", color: "#6e7180", fontSize: fluidSize(14) }}>
                   No upcoming events for {orgName}.
                 </div>
               )}
@@ -887,10 +890,10 @@ export default function ClientProfile({
               {groups.map((g) => (
                 <div key={g.title} style={{ display: "flex", flexDirection: "column", gap: 10 }}>
                   <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "10px 2px 8px" }}>
-                    <div style={{ fontSize: 13, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.1em", color: ACC, whiteSpace: "nowrap" }}>
+                    <div style={{ fontSize: fluidSize(13), fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.1em", color: ACC, whiteSpace: "nowrap" }}>
                       {g.title}
                     </div>
-                    <div style={{ fontSize: 12, color: "#8a93a3", whiteSpace: "nowrap" }}>{g.meta}</div>
+                    <div style={{ fontSize: fluidSize(12), color: "#8a93a3", whiteSpace: "nowrap" }}>{g.meta}</div>
                     <div style={{ flex: 1, height: 1, background: "rgba(5,27,53,0.10)" }} />
                   </div>
                   {g.rows.map((e) => {
@@ -928,24 +931,24 @@ export default function ClientProfile({
                             flexShrink: 0,
                           }}
                         >
-                          <div style={{ fontSize: 10, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.1em", color: "#6e7180" }}>
+                          <div style={{ fontSize: fluidSize(10), fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.1em", color: "#6e7180" }}>
                             {e.mon}
                           </div>
-                          <div style={{ fontSize: 22, fontWeight: 600, letterSpacing: "-0.02em", fontVariantNumeric: "tabular-nums", lineHeight: 1 }}>
+                          <div style={{ fontSize: fluidSize(22), fontWeight: 600, letterSpacing: "-0.02em", fontVariantNumeric: "tabular-nums", lineHeight: 1 }}>
                             {e.day}
                           </div>
-                          <div style={{ fontSize: 10, color: "#8a93a3" }}>{e.dow}</div>
+                          <div style={{ fontSize: fluidSize(10), color: "#8a93a3" }}>{e.dow}</div>
                         </div>
                         <div style={{ display: "flex", flexDirection: "column", gap: 5, minWidth: 0 }}>
                           <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-                            <span style={{ fontSize: 12, color: "#6e7180" }}>
+                            <span style={{ fontSize: fluidSize(12), color: "#6e7180" }}>
                               {e.sport}
                               {e.time ? ` · ${e.time}` : ""}
                             </span>
                             {e.status !== "On sale" && (
                               <span
                                 style={{
-                                  fontSize: 10,
+                                  fontSize: fluidSize(10),
                                   fontWeight: 600,
                                   textTransform: "uppercase",
                                   letterSpacing: "0.12em",
@@ -959,11 +962,11 @@ export default function ClientProfile({
                               </span>
                             )}
                           </div>
-                          <div style={{ fontSize: mobile ? 16 : 17, fontWeight: 600, letterSpacing: "-0.015em", lineHeight: 1.25 }}>
+                          <div style={{ fontSize: fluidSize(mobile ? 16 : 17), fontWeight: 600, letterSpacing: "-0.015em", lineHeight: 1.25 }}>
                             {e.title}
                           </div>
                           {e.venue && (
-                            <div style={{ fontSize: 13, color: "#6e7180", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                            <div style={{ fontSize: fluidSize(13), color: "#6e7180", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                               {e.venue}
                             </div>
                           )}
@@ -982,7 +985,7 @@ export default function ClientProfile({
                           <span
                             style={{
                               fontFamily: "inherit",
-                              fontSize: 14,
+                              fontSize: fluidSize(14),
                               fontWeight: 600,
                               color: soon ? NAVY : "#fff",
                               background: soon ? "#fff" : BTN,
@@ -1022,7 +1025,7 @@ export default function ClientProfile({
                         display: "inline-flex",
                         alignItems: "center",
                         gap: 6,
-                        fontSize: 13,
+                        fontSize: fluidSize(13),
                         fontWeight: 600,
                         whiteSpace: "nowrap",
                         height: 34,
@@ -1035,13 +1038,13 @@ export default function ClientProfile({
                       }}
                     >
                       {f.label}
-                      <span style={{ fontSize: 11, color: "#8a93a3" }}>{f.n}</span>
+                      <span style={{ fontSize: fluidSize(11), color: "#8a93a3" }}>{f.n}</span>
                     </button>
                   ))}
                 </div>
               )}
               {visiblePackages.length === 0 && (
-                <div style={{ ...card, padding: 28, textAlign: "center", color: "#6e7180", fontSize: 14 }}>
+                <div style={{ ...card, padding: 28, textAlign: "center", color: "#6e7180", fontSize: fluidSize(14) }}>
                   No season tickets
                   {sport !== ALL_FILTER ? ` for ${sport}` : ""} on sale right now.
                 </div>
@@ -1071,26 +1074,26 @@ export default function ClientProfile({
                     }}
                   >
                     <div style={{ display: "flex", flexDirection: "column", gap: 6, minWidth: 0 }}>
-                      <div style={{ fontSize: 10, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.12em", color: ACC }}>
+                      <div style={{ fontSize: fluidSize(10), fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.12em", color: ACC }}>
                         {categoryLabel(p.category?.name) || "Season"}
                       </div>
-                      <div style={{ fontSize: mobile ? 16 : 17, fontWeight: 600, letterSpacing: "-0.015em" }}>
+                      <div style={{ fontSize: fluidSize(mobile ? 16 : 17), fontWeight: 600, letterSpacing: "-0.015em" }}>
                         {p.name || "Season package"}
                       </div>
-                      {range && <div style={{ fontSize: 13, color: "#6e7180" }}>{range}</div>}
-                      {p.description && <div style={{ fontSize: 13, color: "#4a5567" }}>{p.description}</div>}
+                      {range && <div style={{ fontSize: fluidSize(13), color: "#6e7180" }}>{range}</div>}
+                      {p.description && <div style={{ fontSize: fluidSize(13), color: "#4a5567" }}>{p.description}</div>}
                     </div>
                     <div style={{ display: "flex", alignItems: "center", gap: mobile ? 12 : 18, justifyContent: mobile ? "space-between" : "flex-end" }}>
                       <div style={{ display: "flex", flexDirection: "column", gap: 1, alignItems: mobile ? "baseline" : "flex-end" }}>
-                        <span style={{ fontSize: 10, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.12em", color: "#8a93a3" }}>From</span>
-                        <span style={{ fontSize: 17, fontWeight: 600, fontVariantNumeric: "tabular-nums", letterSpacing: "-0.015em", color: price ? NAVY : "#8a93a3" }}>
+                        <span style={{ fontSize: fluidSize(10), fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.12em", color: "#8a93a3" }}>From</span>
+                        <span style={{ fontSize: fluidSize(17), fontWeight: 600, fontVariantNumeric: "tabular-nums", letterSpacing: "-0.015em", color: price ? NAVY : "#8a93a3" }}>
                           {price || "—"}
                         </span>
                       </div>
                       <span
                         style={{
                           fontFamily: "inherit",
-                          fontSize: 14,
+                          fontSize: fluidSize(14),
                           fontWeight: 600,
                           color: "#fff",
                           background: BTN,
@@ -1125,7 +1128,7 @@ export default function ClientProfile({
               }}
             >
               {flexPacks.length === 0 && (
-                <div style={{ ...card, padding: 28, textAlign: "center", color: "#6e7180", fontSize: 14, gridColumn: "1 / -1" }}>
+                <div style={{ ...card, padding: 28, textAlign: "center", color: "#6e7180", fontSize: fluidSize(14), gridColumn: "1 / -1" }}>
                   No flex packages on sale right now.
                 </div>
               )}
@@ -1181,7 +1184,7 @@ export default function ClientProfile({
                       ) : (
                         <span
                           style={{
-                            fontSize: 56,
+                            fontSize: fluidSize(56),
                             fontWeight: 700,
                             letterSpacing: "-0.04em",
                             color: tone.ink,
@@ -1200,20 +1203,20 @@ export default function ClientProfile({
                         gap: 10,
                       }}
                     >
-                      <div style={{ fontSize: 18, fontWeight: 600, letterSpacing: "-0.02em" }}>
+                      <div style={{ fontSize: fluidSize(18), fontWeight: 600, letterSpacing: "-0.02em" }}>
                         {f.name || (count ? `${count} vouchers` : "Flex pack")}
                       </div>
                       {count > 0 ? (
-                        <div style={{ fontSize: 14, color: "#6e7180" }}>
+                        <div style={{ fontSize: fluidSize(14), color: "#6e7180" }}>
                           {count} {count === 1 ? "voucher" : "vouchers"}
                         </div>
                       ) : null}
                       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
-                        <span style={{ fontSize: 20, fontWeight: 600, fontVariantNumeric: "tabular-nums", letterSpacing: "-0.02em" }}>
+                        <span style={{ fontSize: fluidSize(20), fontWeight: 600, fontVariantNumeric: "tabular-nums", letterSpacing: "-0.02em" }}>
                           {price}
                         </span>
                         {each != null && (
-                          <span style={{ fontSize: 13, fontWeight: 600, color: ACC, background: `${ACC}14`, borderRadius: 999, padding: "7px 14px", whiteSpace: "nowrap" }}>
+                          <span style={{ fontSize: fluidSize(13), fontWeight: 600, color: ACC, background: `${ACC}14`, borderRadius: 999, padding: "7px 14px", whiteSpace: "nowrap" }}>
                             {formatCurrency(each)} each
                           </span>
                         )}

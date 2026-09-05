@@ -95,6 +95,8 @@ describe("FundraisingCampaignClient donor fields", () => {
     );
 
     await screen.findByRole("heading", { name: "Demo fundraiser" });
+    expect(document.querySelector(".shopper-page")).toBeTruthy();
+    expect(document.querySelector("style")?.textContent).toContain("--t-36");
     await user.type(screen.getByLabelText(/email address/i), DEMO_USER.email);
     await user.click(
       screen.getByRole("button", { name: /continue to payment/i }),
