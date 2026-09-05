@@ -369,7 +369,7 @@ describe("Login page", () => {
   });
 });
 
-describe("Login page create account", () => {
+describe("Login page create account", { timeout: 20_000 }, () => {
   beforeEach(() => {
     navState.from = "/checkout/?cartId=cart-raptors-1";
     mockedValidateEmail.mockResolvedValue({

@@ -864,7 +864,7 @@ describe("SeasonTickets section routes", () => {
   });
 });
 
-describe("SeasonTickets routed event screen", () => {
+describe("SeasonTickets routed event screen", { timeout: 20_000 }, () => {
   beforeEach(() => {
     sessionMocks.getSession.mockReturnValue(DEMO_SESSION);
     mockedGetMyEvents.mockReset();

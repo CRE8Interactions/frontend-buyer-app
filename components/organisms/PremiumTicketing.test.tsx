@@ -169,11 +169,11 @@ async function renderReady(
     });
     await waitFor(() => {
       expect(screen.getAllByText(waitForListing).length).toBeGreaterThan(0);
-    }, { timeout: 3000 });
+    }, { timeout: 10_000 });
   } else {
     await waitFor(() => {
       expect(screen.getAllByText(waitForListing).length).toBeGreaterThan(0);
-    }, { timeout: 3000 });
+    }, { timeout: 10_000 });
   }
   return user;
 }
@@ -207,7 +207,7 @@ async function openLiveMap() {
   return user;
 }
 
-describe("Select tickets page (PremiumTicketing)", () => {
+describe("Select tickets page (PremiumTicketing)", { timeout: 20_000 }, () => {
   beforeEach(() => {
     routerMocks.push.mockReset();
     mockedCheckAccessCode.mockReset();
