@@ -11,6 +11,7 @@ import PhoneNumberInput, {
   phoneSubmitError,
   type PhoneErrorType,
 } from "@/components/molecules/PhoneNumberInput";
+import { ShopperFluidTypeStyles } from "@/components/templates/ShopperFluidType";
 import { ButtonBusyContents } from "@/components/atoms/BrandedActionButton";
 import {
   verifyUser,
@@ -333,7 +334,7 @@ function LoginForm() {
               <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-[#8a93a3]">
                 Sign in
               </p>
-              <h1 className="text-[28px] font-semibold leading-[1.05] tracking-[-0.03em] md:text-[34px]">
+              <h1 className="text-[34px] font-semibold leading-[1.05] tracking-[-0.03em]">
                 Your tickets, in one place
               </h1>
               <p className="text-[15px] leading-relaxed text-[#6e7180]">
@@ -401,7 +402,7 @@ function LoginForm() {
         {step === 1 && (
           <>
             <div className="flex flex-col gap-2">
-              <h1 className="text-[28px] font-semibold leading-[1.05] tracking-[-0.03em] md:text-[34px]">
+              <h1 className="text-[34px] font-semibold leading-[1.05] tracking-[-0.03em]">
                 Enter your code
               </h1>
               <p className="text-[15px] leading-relaxed text-[#6e7180]">
@@ -466,7 +467,7 @@ function LoginForm() {
         {step === 2 && (
           <>
             <div className="flex flex-col gap-2">
-              <h1 className="text-[28px] font-semibold leading-[1.05] tracking-[-0.03em] md:text-[34px]">
+              <h1 className="text-[34px] font-semibold leading-[1.05] tracking-[-0.03em]">
                 Let&apos;s set up your profile
               </h1>
             </div>
@@ -608,7 +609,8 @@ function LoginForm() {
 
 function LoginShell({ children }: { children: React.ReactNode }) {
   return (
-    <div className="min-h-screen bg-[#f7f8fc] text-[#051b35]">
+    <div className="shopper-page min-h-screen bg-[#f7f8fc] text-[#051b35]">
+      <ShopperFluidTypeStyles />
       <header
         className="sticky top-0 z-20"
         style={{ background: NAVY }}

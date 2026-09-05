@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { DEMO_SEATED_TICKET_GROUPS } from "@/lib/demo/fixtures";
 import { maxTicketLimitError } from "@/lib/mapSelection";
+import { selectionOfferName, selectionTicketCards } from "@/lib/ticketSummary";
 import useFiltersStore from "@/stores/filtersStore";
 import useSeatmapStore from "@/stores/seatmapStore";
 
@@ -97,5 +98,38 @@ describe("seatmap ticket limits", () => {
     expect(useSeatmapStore.getState().seatedError).toEqual(
       maxTicketLimitError(1),
     );
+  });
+
+  it("adds each GA offer from one multi-offer pick as separate selection rows", () => {
+    const daypass = {
+      id: "g-day",
+      sectionId: "sec-b",
+      sectionNumber: "B",
+      GA: true,
+      quantity: 1,
+      price: 45.58,
+      availableCount: 20,
+      offer: { id: "off-day", name: "Military Daypass" },
+    };
+    const prelims = {
+      id: "g-pre",
+      sectionId: "sec-b",
+      sectionNumber: "B",
+      GA: true,
+      quantity: 1,
+      price: 39.4,
+      availableCount: 20,
+      offer: { id: "off-pre", name: "Military Prelims" },
+    };
+
+    useSeatmapStore.getState().selectGASeats([daypass, prelims]);
+
+    const selected = useSeatmapStore.getState().selectedFromMap;
+    expect(selected).toHaveLength(2);
+    expect(selected.map((group) => selectionOfferName(group))).toEqual([
+      "Military Daypass",
+      "Military Prelims",
+    ]);
+    expect(selectionTicketCards(selected)).toHaveLength(2);
   });
 });

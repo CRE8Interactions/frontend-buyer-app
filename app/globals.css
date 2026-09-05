@@ -11,7 +11,7 @@
 
 /* Brand focus for every field: the field's own edge takes the brand colour, with
    no ring around it. Blocktickets lime by default; an org-branded surface sets
-   `--bt-field-focus` on its root so its fields focus in the org's colour.
+   `--bt-field-focus` / `--acc` on its root so its fields focus in the org's colour.
    Invalid fields are red only while idle — the error copy carries the failure,
    and focus always returns to brand so the shopper can see where they are typing.
    Marked !important so inline `outline: none` / `border: none`
@@ -30,14 +30,14 @@ textarea:focus,
 textarea:focus-visible,
 select:focus,
 select:focus-visible {
-  border-color: var(--bt-field-focus, var(--accent)) !important;
+  border-color: var(--bt-field-focus, var(--acc, var(--accent))) !important;
   outline: none !important;
 }
 
 /* Fields with no border of their own (phone pill, search pills) hand their edge
    to a wrapper, which paints the same brand colour while it holds the cursor. */
 .bt-focus-edge:focus-within {
-  border-color: var(--bt-field-focus, var(--accent)) !important;
+  border-color: var(--bt-field-focus, var(--acc, var(--accent))) !important;
 }
 
 /* react-phone-number-input — layout only; color is theme-scoped below */
@@ -582,4 +582,20 @@ body {
     opacity: 1;
     transform: none;
   }
+}
+
+/* Covers iOS overscroll so page content cannot peek below fixed mobile footers. */
+.mobile-sticky-footer-shell {
+  isolation: isolate;
+}
+
+.mobile-sticky-footer-shell::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 100%;
+  height: 100vh;
+  background: inherit;
+  pointer-events: none;
 }

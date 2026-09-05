@@ -1,11 +1,15 @@
 "use client";
 
+import { fluidSize } from "@/lib/shopperFluidType";
+
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import InAppBackLink from "@/components/molecules/InAppBackLink";
 import RouteLoader from "@/components/molecules/RouteLoader";
 import Modal from "@/components/molecules/Modal";
 import BrandedActionButton from "@/components/atoms/BrandedActionButton";
+import MobileStickyFooter from "@/components/molecules/MobileStickyFooter";
+import { ShopperFluidTypeStyles } from "@/components/templates/ShopperFluidType";
 import SeatMapSelectionOverlay from "@/components/organisms/SeatMapSelectionOverlay";
 import { getPackageFE, placePackageIntoCart } from "@/lib/api";
 import { CHECKOUT_UNAVAILABLE_ERROR } from "@/lib/mapSelection";
@@ -372,12 +376,14 @@ export default function PackageDetailClient({
 
   return (
     <div
+      className="shopper-page"
       style={{
         minHeight: "100vh",
         background: FIELD,
         color: NAVY,
       }}
     >
+      <ShopperFluidTypeStyles />
       {loading ? (
         <RouteLoader />
       ) : !pkg ? (
@@ -389,7 +395,7 @@ export default function PackageDetailClient({
               display: "inline-flex",
               alignItems: "center",
               gap: 8,
-              fontSize: 14,
+              fontSize: fluidSize(14),
               fontWeight: 600,
               color: NAVY,
               textDecoration: "none",
@@ -398,7 +404,7 @@ export default function PackageDetailClient({
             Back
           </InAppBackLink>
           <p
-            style={{ marginTop: 24, fontSize: 16, color: SUB }}
+            style={{ marginTop: 24, fontSize: fluidSize(16), color: SUB }}
             role="status"
           >
             {error || "Package not found."}
@@ -472,7 +478,7 @@ export default function PackageDetailClient({
                 </InAppBackLink>
                 <div
                   style={{
-                    fontSize: 10,
+                    fontSize: fluidSize(10),
                     fontWeight: 600,
                     textTransform: "uppercase",
                     letterSpacing: "0.14em",
@@ -530,7 +536,7 @@ export default function PackageDetailClient({
                   <h1
                     style={{
                       margin: 0,
-                      fontSize: mobile ? 30 : 46,
+                      fontSize: fluidSize(mobile ? 30 : 42),
                       fontWeight: 600,
                       letterSpacing: "-0.03em",
                       lineHeight: 1.06,
@@ -546,7 +552,7 @@ export default function PackageDetailClient({
                         <span
                           key={label}
                           style={{
-                            fontSize: 12,
+                            fontSize: fluidSize(12),
                             fontWeight: 600,
                             color: "#fff",
                             background: "rgba(255,255,255,0.14)",
@@ -607,7 +613,7 @@ export default function PackageDetailClient({
                   >
                     <div
                       style={{
-                        fontSize: 12,
+                        fontSize: fluidSize(12),
                         fontWeight: 600,
                         textTransform: "uppercase",
                         letterSpacing: "0.12em",
@@ -617,7 +623,7 @@ export default function PackageDetailClient({
                       {gameCount} game{gameCount === 1 ? "" : "s"} included
                     </div>
                     {dateRange ? (
-                      <div style={{ fontSize: 13, color: MUTE }}>{dateRange}</div>
+                      <div style={{ fontSize: fluidSize(13), color: MUTE }}>{dateRange}</div>
                     ) : null}
                   </div>
                   <div style={{ borderTop: "1px solid rgba(5,27,53,0.10)" }}>
@@ -649,7 +655,7 @@ export default function PackageDetailClient({
                           >
                             <div
                               style={{
-                                fontSize: 10,
+                                fontSize: fluidSize(10),
                                 fontWeight: 600,
                                 textTransform: "uppercase",
                                 letterSpacing: "0.08em",
@@ -660,7 +666,7 @@ export default function PackageDetailClient({
                             </div>
                             <div
                               style={{
-                                fontSize: 19,
+                                fontSize: fluidSize(19),
                                 fontWeight: 600,
                                 letterSpacing: "-0.02em",
                                 fontVariantNumeric: "tabular-nums",
@@ -680,7 +686,7 @@ export default function PackageDetailClient({
                           >
                             <div
                               style={{
-                                fontSize: 15,
+                                fontSize: fluidSize(15),
                                 fontWeight: 600,
                                 letterSpacing: "-0.01em",
                                 overflow: "hidden",
@@ -692,7 +698,7 @@ export default function PackageDetailClient({
                             {sub ? (
                               <div
                                 style={{
-                                  fontSize: 13,
+                                  fontSize: fluidSize(13),
                                   color: SUB,
                                   overflow: "hidden",
                                   textOverflow: "ellipsis",
@@ -710,7 +716,7 @@ export default function PackageDetailClient({
                 </div>
                 {error ? (
                   <p
-                    style={{ margin: 0, fontSize: 14, color: "#b91c1c" }}
+                    style={{ margin: 0, fontSize: fluidSize(14), color: "#b91c1c" }}
                     role="alert"
                   >
                     {error}
@@ -743,12 +749,12 @@ export default function PackageDetailClient({
                         gap: 4,
                       }}
                     >
-                      <span style={{ fontSize: 13, color: MUTE }}>
+                      <span style={{ fontSize: fluidSize(13), color: MUTE }}>
                         Season tickets
                       </span>
                       <span
                         style={{
-                          fontSize: 34,
+                          fontSize: fluidSize(34),
                           fontWeight: 600,
                           letterSpacing: "-0.03em",
                           lineHeight: 1,
@@ -769,7 +775,7 @@ export default function PackageDetailClient({
                     >
                       Choose your seats
                     </BrandedActionButton>
-                    <div style={{ fontSize: 13, color: SUB }}>
+                    <div style={{ fontSize: fluidSize(13), color: SUB }}>
                       Delivered to your wallet. Transfer any single game you
                       can&apos;t make.
                     </div>
@@ -780,30 +786,23 @@ export default function PackageDetailClient({
           </div>
 
           {mobile && (
-            <div
-              style={{
-                position: "fixed",
-                left: 0,
-                right: 0,
-                bottom: 0,
-                zIndex: 40,
-                background: "rgba(255,255,255,0.96)",
-                backdropFilter: "blur(10px)",
-                borderTop: "1px solid rgba(5,27,53,0.10)",
-                boxShadow: "0 -12px 30px -24px rgba(5,27,53,0.6)",
-                padding: "12px 16px calc(14px + env(safe-area-inset-bottom))",
+            <MobileStickyFooter
+              accentColor={theme.accent}
+              background="rgba(255,255,255,0.96)"
+              boxShadow="0 -12px 30px -24px rgba(5,27,53,0.6)"
+              innerPadding="12px 16px 14px"
+              shellStyle={{ backdropFilter: "blur(10px)" }}
+              innerStyle={{
                 display: "flex",
                 alignItems: "center",
                 justifyContent: "space-between",
                 gap: 12,
               }}
             >
-              <div
-                style={{ display: "flex", flexDirection: "column", gap: 1 }}
-              >
+              <div style={{ display: "flex", flexDirection: "column", gap: 1 }}>
                 <span
                   style={{
-                    fontSize: 18,
+                    fontSize: fluidSize(18),
                     fontWeight: 600,
                     letterSpacing: "-0.02em",
                     fontVariantNumeric: "tabular-nums",
@@ -828,7 +827,7 @@ export default function PackageDetailClient({
               >
                 Choose your seats
               </BrandedActionButton>
-            </div>
+            </MobileStickyFooter>
           )}
         </>
       )}

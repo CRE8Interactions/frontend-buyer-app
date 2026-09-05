@@ -7,6 +7,8 @@ import BrandedActionButton, {
   ButtonBusyContents,
 } from "@/components/atoms/BrandedActionButton";
 import RouteLoader from "@/components/molecules/RouteLoader";
+import MobileStickyFooter from "@/components/molecules/MobileStickyFooter";
+import { ShopperFluidTypeStyles } from "@/components/templates/ShopperFluidType";
 import { useAuth } from "@/lib/auth";
 import { BLOCKTICKETS_NAVY, type BrandingOrganization } from "@/lib/branding";
 import {
@@ -464,7 +466,8 @@ function CheckoutSuccessPage() {
   }
 
   return (
-    <div className="min-h-screen overflow-y-auto bg-[#f7f8fc]" style={{ color: NAVY }}>
+    <div className="shopper-page min-h-screen overflow-y-auto bg-[#f7f8fc]" style={{ color: NAVY }}>
+      <ShopperFluidTypeStyles />
       <header
         className="sticky top-0 z-[2] flex items-center gap-3.5 px-5 py-3 text-white"
         style={{ background: accent }}
@@ -520,7 +523,7 @@ function CheckoutSuccessPage() {
                 <polyline points="20 6 9 17 4 12" />
               </svg>
             </span>
-            <h1 className="text-[26px] font-semibold tracking-[-0.03em] md:text-[30px]">
+            <h1 className="text-[30px] font-semibold tracking-[-0.03em]">
               Order confirmation
             </h1>
           </div>
@@ -778,7 +781,7 @@ function CheckoutSuccessPage() {
       )}
 
       {showWalletCta && passWallet ? (
-        <div className="fixed inset-x-0 bottom-0 z-[3] border-t border-[rgba(5,27,53,0.10)] bg-white pb-[env(safe-area-inset-bottom)]">
+        <MobileStickyFooter zIndex={3} innerPadding="0" boxShadow="none">
           <div className="mx-auto max-w-[1140px] px-3.5 py-3">
             <button
               type="button"
@@ -796,7 +799,7 @@ function CheckoutSuccessPage() {
                 : phoneWalletLabel(passWallet)}
             </button>
           </div>
-        </div>
+        </MobileStickyFooter>
       ) : null}
 
       {showWalletCta && passWallet && walletSheetOpen ? (

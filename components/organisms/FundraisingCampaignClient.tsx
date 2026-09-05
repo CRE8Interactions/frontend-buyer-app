@@ -17,6 +17,7 @@ import {
   getPublicFundraisingCampaign,
 } from "@/lib/api";
 import AppShell from "@/components/templates/AppShell";
+import ShopperFluidPage from "@/components/templates/ShopperFluidType";
 import { BrandedLoader } from "@/components/molecules/RouteLoader";
 import useAutoFocus from "@/hooks/useAutoFocus";
 import useOrgBranding from "@/hooks/useOrgBranding";
@@ -313,7 +314,7 @@ export function FundraisingCampaignClient({
       }
       brandName={organizationSlug ? brandedOrg?.name || null : undefined}
     >
-      {body}
+      <ShopperFluidPage className="min-h-0">{body}</ShopperFluidPage>
     </AppShell>
   );
 
@@ -373,7 +374,7 @@ export function FundraisingCampaignClient({
           </div>
         ) : null}
         <div className="p-6">
-          <h1 className="text-[clamp(28px,4vw,36px)] font-semibold tracking-[-0.03em]">
+          <h1 className="text-[36px] font-semibold tracking-[-0.03em]">
             {campaign.title}
           </h1>
           {campaign.description ? (

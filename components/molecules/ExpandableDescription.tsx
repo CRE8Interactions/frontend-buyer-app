@@ -96,7 +96,7 @@ export default function ExpandableDescription({
           type="button"
           aria-expanded={expanded}
           onClick={() => setExpanded((open) => !open)}
-          className="mt-1 font-semibold underline decoration-solid underline-offset-[3px]"
+          className="mt-1 inline-flex items-center gap-1.5 font-semibold"
           style={{
             fontFamily: "inherit",
             fontSize: style?.fontSize ?? 14,
@@ -107,7 +107,25 @@ export default function ExpandableDescription({
             cursor: "pointer",
           }}
         >
-          {expanded ? "Less" : "More"}
+          {expanded ? "Show less" : "Show more"}
+          <svg
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth={2}
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            aria-hidden
+            style={{
+              width: 14,
+              height: 14,
+              flexShrink: 0,
+              transform: expanded ? "rotate(180deg)" : "none",
+              transition: "transform 180ms ease",
+            }}
+          >
+            <polyline points="6 9 12 15 18 9" />
+          </svg>
         </button>
       ) : null}
     </div>

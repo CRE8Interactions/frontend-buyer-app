@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import AppShell from "@/components/templates/AppShell";
+import ShopperFluidPage from "@/components/templates/ShopperFluidType";
 import BrandedActionButton from "@/components/atoms/BrandedActionButton";
 import { BrandedLoader } from "@/components/molecules/RouteLoader";
 import { fieldClass } from "@/lib/fieldValidation";
@@ -108,6 +109,7 @@ export default function GroupManagePage() {
 
   return (
     <AppShell variant="light" search={false}>
+      <ShopperFluidPage className="min-h-0">
       {error || !data ? (
         <div className={`${lightCard} mx-auto max-w-lg p-8 text-center`}>
           <h1 className="text-[22px] font-semibold">Group not found</h1>
@@ -118,7 +120,7 @@ export default function GroupManagePage() {
           <p className="text-[12px] font-semibold uppercase tracking-[0.12em] text-[#8a93a3]">
             Group purchase
           </p>
-          <h1 className="mt-2 text-[clamp(28px,4vw,36px)] font-semibold tracking-[-0.03em]">
+          <h1 className="mt-2 text-[36px] font-semibold tracking-[-0.03em]">
             Manage your group
           </h1>
           <p className={`mt-2 text-[15px] ${muted}`}>
@@ -213,6 +215,7 @@ export default function GroupManagePage() {
           </div>
         </div>
       )}
+      </ShopperFluidPage>
     </AppShell>
   );
 }

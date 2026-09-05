@@ -13,6 +13,7 @@ import {
 import BrandedCheckoutShell from "@/components/organisms/BrandedCheckoutShell";
 import GuestContact from "@/components/organisms/GuestContact";
 import BrandedActionButton from "@/components/atoms/BrandedActionButton";
+import MobileStickyFooter from "@/components/molecules/MobileStickyFooter";
 import Button from "@/components/atoms/Button";
 import Spinner from "@/components/atoms/Spinner";
 import Modal from "@/components/molecules/Modal";
@@ -567,7 +568,13 @@ function CheckoutPaymentForm({
         </div>
       </div>
 
-      <div className="fixed inset-x-0 bottom-0 z-[3] border-t border-[rgba(5,27,53,0.10)] bg-white md:bg-white/94 md:backdrop-blur">
+      <MobileStickyFooter
+        accentColor={accent}
+        zIndex={3}
+        innerPadding="0"
+        boxShadow="none"
+        shellClassName="md:bg-white/94 md:backdrop-blur"
+      >
         <div className="mx-auto flex max-w-[1140px] px-3.5 py-3 md:justify-end md:px-5">
           <BrandedActionButton
             primaryColor={buttonColor}
@@ -599,7 +606,7 @@ function CheckoutPaymentForm({
             Pay {formatCurrency(displayTotal)}
           </BrandedActionButton>
         </div>
-      </div>
+      </MobileStickyFooter>
     </div>
   );
 }

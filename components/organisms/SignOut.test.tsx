@@ -55,6 +55,8 @@ describe("SignOut", () => {
     expect(
       screen.getByRole("link", { name: /sign back in/i }),
     ).toHaveAttribute("href", expect.stringMatching(/^\/login\/?$/));
+    expect(document.querySelector(".shopper-page")).toBeTruthy();
+    expect(document.querySelector("style")?.textContent).toContain("--t-42");
     expect(screen.queryByText(/welcome aggie nation/i)).not.toBeInTheDocument();
   });
 });

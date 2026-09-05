@@ -125,6 +125,8 @@ describe("AccessPassDetailClient login redirect", () => {
     expect(
       await screen.findByRole("heading", { name: pass.name }),
     ).toBeInTheDocument();
+    expect(document.querySelector(".shopper-page")).toBeTruthy();
+    expect(document.querySelector("style")?.textContent).toContain("--t-36");
     await user.click(screen.getByRole("button", { name: /log in to buy/i }));
 
     expect(screen.queryByRole("heading", { name: pass.name })).not.toBeInTheDocument();

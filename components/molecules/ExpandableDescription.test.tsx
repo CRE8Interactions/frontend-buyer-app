@@ -4,13 +4,15 @@ import { describe, expect, it, vi } from "vitest";
 import ExpandableDescription from "@/components/molecules/ExpandableDescription";
 
 describe("ExpandableDescription", () => {
-  it("omits More when the copy fits within the clamp", () => {
+  it("omits Show more when the copy fits within the clamp", () => {
     render(<ExpandableDescription text="Short offer copy." mobile={false} />);
     expect(screen.getByText("Short offer copy.")).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: /more/i })).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: /show more/i }),
+    ).not.toBeInTheDocument();
   });
 
-  it("expands and collapses long copy with More and Less", async () => {
+  it("expands and collapses long copy with Show more and Show less", async () => {
     const user = userEvent.setup();
     const longText = Array.from({ length: 12 }, (_, i) => `Line ${i + 1}.`).join(
       " ",
@@ -21,14 +23,16 @@ describe("ExpandableDescription", () => {
 
     render(<ExpandableDescription text={longText} mobile={false} />);
 
-    expect(screen.getByRole("button", { name: /^more$/i })).toBeInTheDocument();
-    await user.click(screen.getByRole("button", { name: /^more$/i }));
-    expect(screen.getByRole("button", { name: /^less$/i })).toHaveAttribute(
+    expect(
+      screen.getByRole("button", { name: /show more/i }),
+    ).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: /show more/i }));
+    expect(screen.getByRole("button", { name: /show less/i })).toHaveAttribute(
       "aria-expanded",
       "true",
     );
-    await user.click(screen.getByRole("button", { name: /^less$/i }));
-    expect(screen.getByRole("button", { name: /^more$/i })).toHaveAttribute(
+    await user.click(screen.getByRole("button", { name: /show less/i }));
+    expect(screen.getByRole("button", { name: /show more/i })).toHaveAttribute(
       "aria-expanded",
       "false",
     );
