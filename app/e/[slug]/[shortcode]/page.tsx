@@ -17,6 +17,7 @@ import {
   eventWhenShortWithDoors,
   eventWhenWithDoors,
   formatEventWhen,
+  formatOnSaleWhen,
   imageUrl,
   resolveEventMatchup,
   type ApiImage,
@@ -138,7 +139,7 @@ function toGaData(
     soldOut,
     scheduled,
     scheduledAt: scheduledTime
-      ? formatEventWhen(scheduledTime, tz) || scheduledTime
+      ? formatOnSaleWhen(scheduledTime, tz) || scheduledTime
       : undefined,
     eventName: ev.name || "Event",
     whenLong: whenLong || when,

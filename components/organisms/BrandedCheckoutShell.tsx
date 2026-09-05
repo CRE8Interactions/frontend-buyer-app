@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import RouteLoader from "@/components/molecules/RouteLoader";
-import { fieldFocusVars } from "@/lib/branding";
+import { shopperShellVars } from "@/lib/branding";
 import { CHECKOUT_HOLD_SECONDS, formatHoldClock } from "@/lib/checkoutBranding";
 
 const NAVY = "#051b35";
@@ -74,8 +74,8 @@ export default function BrandedCheckoutShell({
 
   return (
     <div
-      className="min-h-screen overflow-y-auto bg-[#f7f8fc]"
-      style={{ color: NAVY, ...fieldFocusVars(accent) }}
+      className="shopper-page min-h-screen overflow-y-auto bg-[#f7f8fc]"
+      style={{ color: NAVY, ...shopperShellVars(accent) }}
     >
       <header
         className="sticky top-0 z-[2] flex items-center gap-4 px-6 py-3.5 text-white"

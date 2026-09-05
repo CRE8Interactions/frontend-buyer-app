@@ -22,6 +22,7 @@ import {
   eventWhenShortWithDoors,
   eventWhenWithDoors,
   formatEventWhen,
+  formatOnSaleWhen,
   imageUrl,
   resolveEventMatchup,
   type ApiImage,
@@ -190,7 +191,7 @@ function toTicketingData(
     soldOut,
     scheduled,
     scheduledAt: scheduledTime
-      ? formatEventWhen(scheduledTime, tz) || scheduledTime
+      ? formatOnSaleWhen(scheduledTime, tz) || scheduledTime
       : undefined,
   };
 }

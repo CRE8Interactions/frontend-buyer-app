@@ -11,6 +11,7 @@ import {
   createSeatLookupTables,
   createSectionLookupTable,
 } from "@/lib/seatmapLookups";
+import { selectionOfferName, selectionTicketCards } from "@/lib/ticketSummary";
 import useFiltersStore from "@/stores/filtersStore";
 import useSeatmapStore from "@/stores/seatmapStore";
 import InteractiveSeatmap from "./InteractiveSeatmap";
@@ -521,5 +522,54 @@ describe("SeatmapTooltip GA stepper", () => {
     renderGaTooltip({}, "offer");
     expect(screen.getByText("Ticket limit: 1–20 per order")).toBeInTheDocument();
     expect(screen.getByLabelText(/ticket quantity/i)).toHaveTextContent("1");
+  });
+
+  it("adds each multi-offer GA row as a separate selection ticket", () => {
+    const ga = demoTicketGroups().ticketGroups.find((group) => group.GA);
+    if (!ga) throw new Error("demo fixtures need a GA ticket group");
+    const group = {
+      ...ga,
+      availableCount: 20,
+      offer: {
+        ...ga.offer,
+        id: "off-day",
+        name: "Military Daypass",
+        connected_offers: [
+          {
+            id: "off-pre",
+            name: "Military Prelims",
+            isConnectedOffer: true,
+            am_pricing_objects: [{ name: ga.PLName, totalDue: 39.4 }],
+          },
+        ],
+      },
+    };
+    useSeatmapStore.setState({
+      sectionLookupTable: createSectionLookupTable([group]),
+      selectedFromMap: [],
+      seatedError: null,
+      totalCount: 0,
+      totalPrice: 0,
+    });
+    useFiltersStore.setState({ eventTicketLimit: null });
+
+    render(
+      <SeatmapTooltip
+        target={{ kind: "section", sectionId: DEMO_GA_SECTION_ID, x: 20, y: 20 }}
+        onClose={() => {}}
+      />,
+    );
+
+    expect(screen.getByText("Military Daypass")).toBeInTheDocument();
+    expect(screen.getByText("Military Prelims")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /add to selection/i }));
+
+    const selected = useSeatmapStore.getState().selectedFromMap;
+    expect(selected).toHaveLength(2);
+    expect(selected.map((entry) => selectionOfferName(entry))).toEqual([
+      "Military Daypass",
+      "Military Prelims",
+    ]);
+    expect(selectionTicketCards(selected)).toHaveLength(2);
   });
 });

@@ -46,6 +46,9 @@ export const BLOCKTICKETS_GREEN = "#a6e773";
 export const BLOCKTICKETS_LOGO = "/blocktickets-emblem-navy.svg";
 export const BLOCKTICKETS_LOCKUP = "/blocktickets-logo.svg";
 
+/** Root class for shopper route shells (focus tokens, scoped styling). */
+export const SHOPPER_PAGE_CLASS = "shopper-page";
+
 function mediaUrl(media?: ApiImage | null): string | null {
   if (!media) return null;
   if (typeof media === "string") return media;
@@ -213,6 +216,15 @@ export function brandingToTicketingTheme(
  */
 export function fieldFocusVars(accent?: string | null): CSSProperties {
   return accent ? ({ "--bt-field-focus": accent } as CSSProperties) : {};
+}
+
+/** Shopper shell tokens for branded pages and body portals (accent + focus ring). */
+export function shopperShellVars(accent?: string | null): CSSProperties {
+  if (!accent) return {};
+  return {
+    "--acc": accent,
+    ...fieldFocusVars(accent),
+  } as CSSProperties;
 }
 
 export function brandingCssVars(

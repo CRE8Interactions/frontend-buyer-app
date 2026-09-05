@@ -1,12 +1,11 @@
 "use client";
 
+import { fluidSize } from "@/lib/shopperFluidType";
+
 import type { CSSProperties, ReactNode } from "react";
 import Link from "next/link";
-import {
-  BLOCKTICKETS_GREEN,
-  BLOCKTICKETS_LOCKUP,
-  BLOCKTICKETS_NAVY,
-} from "@/lib/branding";
+import MobileStickyFooter from "@/components/molecules/MobileStickyFooter";
+import { BLOCKTICKETS_GREEN, BLOCKTICKETS_LOCKUP, BLOCKTICKETS_NAVY } from "@/lib/branding";
 
 export type WalletChromeItem = {
   id: string;
@@ -39,7 +38,7 @@ function itemStyle(active: boolean, where: "desktop" | "mobile"): CSSProperties 
   if (where === "desktop") {
     return {
       fontFamily: "inherit",
-      fontSize: 14,
+      fontSize: fluidSize(14),
       fontWeight: 600,
       color: active ? BLOCKTICKETS_NAVY : "rgba(255,255,255,0.78)",
       background: active ? BLOCKTICKETS_GREEN : "transparent",
@@ -58,7 +57,7 @@ function itemStyle(active: boolean, where: "desktop" | "mobile"): CSSProperties 
     display: "flex",
     alignItems: "center",
     justifyContent: "center",
-    fontSize: 13,
+    fontSize: fluidSize(13),
     fontWeight: 600,
     color: active ? BLOCKTICKETS_NAVY : "#8a93a3",
     background: active ? BLOCKTICKETS_GREEN : "transparent",
@@ -164,27 +163,27 @@ export default function WalletChrome({
         </header>
       ) : null}
       {mobileTabs ? (
-        <nav
-          className="wchrome-tabs"
-          aria-label="Wallet"
-          style={{
-            position: "fixed",
-            left: 0,
-            right: 0,
-            bottom: 0,
-            zIndex: 40,
-            background: "rgba(255,255,255,0.94)",
-            backdropFilter: "blur(12px)",
-            borderTop: "1px solid rgba(5,27,53,0.08)",
-            padding: "8px 10px calc(14px + env(safe-area-inset-bottom, 0px))",
-            gap: 4,
-            ...(compact === true ? { display: "flex" } : null),
-          }}
+        <MobileStickyFooter
+          background="rgba(255,255,255,0.94)"
+          borderTop="1px solid rgba(5,27,53,0.08)"
+          boxShadow="none"
+          innerPadding="0"
+          shellStyle={{ backdropFilter: "blur(12px)" }}
         >
-          {items.map((item) => (
-            <NavItem key={item.id} item={item} where="mobile" />
-          ))}
-        </nav>
+          <nav
+            className="wchrome-tabs"
+            aria-label="Wallet"
+            style={{
+              display: "flex",
+              gap: 4,
+              padding: "8px 10px 14px",
+            }}
+          >
+            {items.map((item) => (
+              <NavItem key={item.id} item={item} where="mobile" />
+            ))}
+          </nav>
+        </MobileStickyFooter>
       ) : null}
     </>
   );

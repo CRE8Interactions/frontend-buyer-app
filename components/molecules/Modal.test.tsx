@@ -40,6 +40,16 @@ describe("Modal", () => {
     expect(document.activeElement).toBe(document.body);
   });
 
+  it("renders as a bottom sheet when sheet mode is enabled", () => {
+    render(
+      <Modal title="Event information" onClose={vi.fn()} sheet>
+        <p>Details</p>
+      </Modal>,
+    );
+
+    expect(screen.getByRole("dialog")).toHaveClass("rounded-t-[26px]");
+  });
+
   it("opens on a phone with the cursor set but the keyboard down", () => {
     Object.defineProperty(window, "matchMedia", {
       configurable: true,

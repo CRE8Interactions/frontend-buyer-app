@@ -210,7 +210,7 @@ function eventStatus(ev: StoreEvent) {
   return raw.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
 }
 
-const ALL_FILTER = "All sports";
+const ALL_FILTER = "All";
 
 function matchesFilter(category: string | null | undefined, selected: string) {
   if (selected === ALL_FILTER) return true;
@@ -257,7 +257,7 @@ export default function ClientProfile({
   initialData?: StorefrontInitialData;
 }) {
   const [tab, setTab] = useState<"events" | "packages" | "flex">("events");
-  const [sport, setSport] = useState("All sports");
+  const [sport, setSport] = useState(ALL_FILTER);
   const [vw, setVw] = useState(1440);
 
   const [organization, setOrganization] = useState<Org | null>(
@@ -300,7 +300,7 @@ export default function ClientProfile({
   useEffect(() => {
     let cancelled = false;
     setMissing(false);
-    setSport("All sports");
+    setSport(ALL_FILTER);
     setTab("events");
 
     if (initialData?.organization) {

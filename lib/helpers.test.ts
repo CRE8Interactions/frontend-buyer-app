@@ -9,6 +9,7 @@ import {
   flexPackPurchasePath,
   formatDoorsTime,
   formatEventWhen,
+  formatOnSaleWhen,
   imageUrl,
   isBlockedEmail,
   isRequestCanceled,
@@ -48,6 +49,21 @@ describe("eventWhenWithDoors", () => {
     expect(
       eventWhenWithDoors(seated.start, undefined, seated.venue.timezone),
     ).toBe(formatEventWhen(seated.start, seated.venue.timezone));
+  });
+});
+
+describe("formatOnSaleWhen", () => {
+  it("matches blocktickets Countdown copy in the venue timezone", () => {
+    expect(
+      formatOnSaleWhen("2026-08-28T16:00:00.000Z", "America/Denver"),
+    ).toBe("Fri, Aug 28 at 10:00 AM MDT");
+    expect(
+      formatOnSaleWhen("2026-09-04T09:15:00.000Z", "America/New_York"),
+    ).toBe("Fri, Sep 4 at 5:15 AM EDT");
+  });
+
+  it("returns empty when the timestamp is missing", () => {
+    expect(formatOnSaleWhen(undefined, seated.venue.timezone)).toBe("");
   });
 });
 

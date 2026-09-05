@@ -3,16 +3,12 @@
 import { useEffect, useMemo, useState } from "react";
 import Button from "@/components/atoms/Button";
 import { formatOfferListPrice } from "@/lib/helpers";
-import { expandGroupsWithConnectedOffers } from "@/lib/connectedOffers";
+import { gaOfferSelectionKey } from "@/lib/connectedOffers";
 import {
-  DEFAULT_GA_TICKET_LIMIT,
-  DEFAULT_SEATED_TICKET_LIMIT,
-  inventoryCapForLimits,
   limitsFromTicketGroup,
   quantityRestrictionLabel,
-  validQuantityOptions,
 } from "@/lib/ticketListings";
-import type { RawTicketGroup } from "@/lib/ticketListings";
+import type { QuantityLimits, RawTicketGroup } from "@/lib/ticketListings";
 import { selectionOfferName } from "@/lib/ticketSummary";
 import useFiltersStore from "@/stores/filtersStore";
 import useSeatmapStore from "@/stores/seatmapStore";
@@ -47,6 +43,67 @@ function inkOn(hex: string) {
   const b = parseInt(full.slice(4, 6), 16);
   const luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
   return luminance > 0.55 ? "#051b35" : "#ffffff";
+}
+
+function resolvedOfferQuantity(
+  offerQtys: Record<string, number>,
+  key: string,
+  limits: QuantityLimits,
+) {
+  if (offerQtys[key] != null) return offerQtys[key];
+  return limits.valid ? limits.min : 0;
+}
+
+function TooltipQuantityStepper({
+  value,
+  limits,
+  ink,
+  onChange,
+}: {
+  value: number;
+  limits: QuantityLimits;
+  ink: string;
+  onChange: (next: number) => void;
+}) {
+  const qty = limits.valid
+    ? Math.min(Math.max(value || limits.min, limits.min), limits.max)
+    : limits.min;
+  const canDecrease = limits.valid && qty > limits.min;
+  const canIncrease = limits.valid && qty + limits.step <= limits.max;
+  const boxBg =
+    ink === "#ffffff" ? "rgba(255,255,255,0.16)" : "rgba(5,27,53,0.08)";
+
+  return (
+    <div className="flex shrink-0 items-center gap-2">
+      <button
+        type="button"
+        aria-label="Decrease quantity"
+        disabled={!canDecrease}
+        onClick={() => onChange(Math.max(limits.min, qty - limits.step))}
+        className="flex h-10 w-7 items-center justify-center border-0 bg-transparent text-[24px] font-light disabled:opacity-30"
+        style={{ color: ink }}
+      >
+        −
+      </button>
+      <output
+        aria-label="Ticket quantity"
+        className="flex h-10 min-w-10 items-center justify-center rounded-lg px-2 text-[16px] font-semibold tabular-nums"
+        style={{ background: boxBg, color: ink }}
+      >
+        {qty}
+      </output>
+      <button
+        type="button"
+        aria-label="Increase quantity"
+        disabled={!canIncrease}
+        onClick={() => onChange(Math.min(limits.max, qty + limits.step))}
+        className="flex h-10 w-7 items-center justify-center border-0 bg-transparent text-[24px] font-light disabled:opacity-30"
+        style={{ color: ink }}
+      >
+        +
+      </button>
+    </div>
+  );
 }
 
 export default function SeatmapTooltip({
@@ -86,25 +143,10 @@ export default function SeatmapTooltip({
           ? [seatLookupTable[target.seatId]]
           : [])
       : [];
-  const sectionGroups =
+  const sectionOffers =
     target?.kind === "section"
       ? sectionLookupTable[target.sectionId] || []
       : [];
-  const flattenedSeatOffers = useMemo(
-    () => expandGroupsWithConnectedOffers(seatOffers),
-    [seatOffers],
-  );
-  const flattenedSectionOffers = useMemo(
-    () => expandGroupsWithConnectedOffers(sectionGroups),
-    [sectionGroups],
-  );
-
-  const offerQuantityOptions = (group: TicketGroup, defaultMax: number) =>
-    validQuantityOptions(group.offer || group.package, {
-      available: inventoryCapForLimits(group as RawTicketGroup),
-      defaultMax,
-      globalMax: eventTicketLimit,
-    });
 
   const groupQuantityLimits = (
     group: TicketGroup,
@@ -144,14 +186,14 @@ export default function SeatmapTooltip({
   };
 
   if (target.kind === "seat") {
-    const primary = flattenedSeatOffers[0] || seatOffers[0];
+    const primary = seatOffers[0];
     const locked = Boolean(
       primary?.offer?.accessCode && !primary?.offer?.unlocked,
     );
     const alreadySelected = selectedFromMap.some(
       (g) => g.seatId === target.seatId,
     );
-    const multiOffer = flattenedSeatOffers.length > 1;
+    const multiOffer = seatOffers.length > 1;
 
     return (
       <div
@@ -205,14 +247,10 @@ export default function SeatmapTooltip({
           </>
         ) : multiOffer ? (
           <div className="mt-3 space-y-2">
-            {flattenedSeatOffers.map((offer) => {
-              const key = String(offer.offer?.id ?? offer.id);
+            {seatOffers.map((offer, index) => {
+              const key = gaOfferSelectionKey(offer, index);
               const limits = groupQuantityLimits(offer, 1);
-              const qtyOptions = offerQuantityOptions(
-                offer,
-                DEFAULT_SEATED_TICKET_LIMIT,
-              );
-              const selectedQty = offerQtys[key] ?? qtyOptions[0] ?? limits.min;
+              const selectedQty = resolvedOfferQuantity(offerQtys, key, limits);
               return (
                 <div
                   key={key}
@@ -232,27 +270,17 @@ export default function SeatmapTooltip({
                       </p>
                     ) : null}
                   </div>
-                  <select
-                    className="h-8 rounded-lg border px-2 text-[12px]"
-                    style={{
-                      borderColor: line,
-                      background: ink === "#ffffff" ? "rgba(0,0,0,0.18)" : "rgba(255,255,255,0.55)",
-                      color: ink,
-                    }}
+                  <TooltipQuantityStepper
                     value={selectedQty}
-                    onChange={(e) =>
+                    limits={limits}
+                    ink={ink}
+                    onChange={(next) =>
                       setOfferQtys((c) => ({
                         ...c,
-                        [key]: Number(e.target.value),
+                        [key]: next,
                       }))
                     }
-                  >
-                    {qtyOptions.map((n) => (
-                      <option key={n} value={n}>
-                        {n}
-                      </option>
-                    ))}
-                  </select>
+                  />
                 </div>
               );
             })}
@@ -261,10 +289,14 @@ export default function SeatmapTooltip({
                 className="mt-2 w-full"
                 style={{ background: actionBg, color: actionInk }}
                 onClick={() => {
-                  const picks = flattenedSeatOffers
-                    .map((offer) => {
-                      const key = String(offer.offer?.id ?? offer.id);
-                      return { ...offer, quantity: offerQtys[key] || 0 };
+                  const picks = seatOffers
+                    .map((offer, index) => {
+                      const key = gaOfferSelectionKey(offer, index);
+                      const limits = groupQuantityLimits(offer, 1);
+                      return {
+                        ...offer,
+                        quantity: resolvedOfferQuantity(offerQtys, key, limits),
+                      };
                     })
                     .filter((offer) => Number(offer.quantity) > 0);
                   if (!picks.length) return;
@@ -289,16 +321,13 @@ export default function SeatmapTooltip({
   }
 
   // GA section tooltip
-  const primary = flattenedSectionOffers[0] || sectionGroups[0];
+  const primary = sectionOffers[0];
   const gaLimits = groupQuantityLimits(primary ?? {});
   const selectedGaQty = gaLimits.valid
     ? Math.min(Math.max(gaQty || gaLimits.min, gaLimits.min), gaLimits.max)
     : 0;
-  const canIncrease =
-    gaLimits.valid && selectedGaQty + gaLimits.step <= gaLimits.max;
-  const canDecrease = gaLimits.valid && selectedGaQty > gaLimits.min;
   const packageOrOfferName = selectionOfferName(primary, "GA");
-  const multiGaOffers = flattenedSectionOffers.length > 1;
+  const multiGaOffers = sectionOffers.length > 1;
 
   return (
     <div
@@ -331,19 +360,15 @@ export default function SeatmapTooltip({
         </button>
       </div>
 
-      {sectionGroups.length === 0 ? (
+      {sectionOffers.length === 0 ? (
         <p className="mt-3 text-[14px]" style={{ color: muted }}>No tickets available.</p>
       ) : multiGaOffers ? (
         <>
           <div className="mt-3 space-y-2">
-            {flattenedSectionOffers.map((group) => {
-              const key = String(group.offer?.id ?? group.id);
+            {sectionOffers.map((group, index) => {
+              const key = gaOfferSelectionKey(group, index);
               const limits = groupQuantityLimits(group);
-              const qtyOptions = offerQuantityOptions(
-                group,
-                DEFAULT_GA_TICKET_LIMIT,
-              );
-              const selectedQty = offerQtys[key] ?? qtyOptions[0] ?? limits.min;
+              const selectedQty = resolvedOfferQuantity(offerQtys, key, limits);
               return (
                 <div
                   key={key}
@@ -363,27 +388,17 @@ export default function SeatmapTooltip({
                       </p>
                     ) : null}
                   </div>
-                  <select
-                    className="h-8 rounded-lg border px-2 text-[12px]"
-                    style={{
-                      borderColor: line,
-                      background: ink === "#ffffff" ? "rgba(0,0,0,0.18)" : "rgba(255,255,255,0.55)",
-                      color: ink,
-                    }}
+                  <TooltipQuantityStepper
                     value={selectedQty}
-                    onChange={(e) =>
+                    limits={limits}
+                    ink={ink}
+                    onChange={(next) =>
                       setOfferQtys((c) => ({
                         ...c,
-                        [key]: Number(e.target.value),
+                        [key]: next,
                       }))
                     }
-                  >
-                    {qtyOptions.map((n) => (
-                      <option key={n} value={n}>
-                        {n}
-                      </option>
-                    ))}
-                  </select>
+                  />
                 </div>
               );
             })}
@@ -392,10 +407,14 @@ export default function SeatmapTooltip({
             className="mt-4 w-full"
             style={{ background: actionBg, color: actionInk }}
             onClick={() => {
-              const picks = flattenedSectionOffers
-                .map((group) => {
-                  const key = String(group.offer?.id ?? group.id);
-                  return { ...group, quantity: offerQtys[key] || 0 };
+              const picks = sectionOffers
+                .map((group, index) => {
+                  const key = gaOfferSelectionKey(group, index);
+                  const limits = groupQuantityLimits(group);
+                  return {
+                    ...group,
+                    quantity: resolvedOfferQuantity(offerQtys, key, limits),
+                  };
                 })
                 .filter((group) => Number(group.quantity) > 0);
               if (!picks.length) return;
@@ -427,49 +446,12 @@ export default function SeatmapTooltip({
                 </p>
               ) : null}
             </div>
-            <div className="flex shrink-0 items-center gap-3">
-              <button
-                type="button"
-                aria-label="Decrease quantity"
-                disabled={!canDecrease}
-                onClick={() =>
-                  setGaQty((qty) =>
-                    Math.max(gaLimits.min, (qty || gaLimits.min) - gaLimits.step),
-                  )
-                }
-                className="flex h-10 w-8 items-center justify-center border-0 bg-transparent text-[28px] font-light disabled:opacity-30"
-                style={{ color: ink }}
-              >
-                −
-              </button>
-              <output
-                aria-label="Ticket quantity"
-                className="flex h-10 min-w-10 items-center justify-center rounded-lg px-3 text-[16px] font-semibold"
-                style={{
-                  background: ink === "#ffffff" ? "rgba(255,255,255,0.16)" : "rgba(5,27,53,0.08)",
-                  color: ink,
-                }}
-              >
-                {selectedGaQty}
-              </output>
-              <button
-                type="button"
-                aria-label="Increase quantity"
-                disabled={!canIncrease}
-                onClick={() =>
-                  setGaQty((qty) =>
-                    Math.min(
-                      gaLimits.max,
-                      (qty || gaLimits.min) + gaLimits.step,
-                    ),
-                  )
-                }
-                className="flex h-10 w-8 items-center justify-center border-0 bg-transparent text-[28px] font-light disabled:opacity-30"
-                style={{ color: ink }}
-              >
-                +
-              </button>
-            </div>
+            <TooltipQuantityStepper
+              value={selectedGaQty}
+              limits={gaLimits}
+              ink={ink}
+              onChange={setGaQty}
+            />
           </div>
           <Button
             className="mt-4 w-full"
@@ -478,7 +460,7 @@ export default function SeatmapTooltip({
             onClick={() => {
               if (selectedGaQty < gaLimits.min) return;
               selectGASeats(
-                sectionGroups.map((g) => ({ ...g, quantity: selectedGaQty })),
+                sectionOffers.map((g) => ({ ...g, quantity: selectedGaQty })),
               );
               onClose();
             }}

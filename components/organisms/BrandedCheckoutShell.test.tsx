@@ -54,6 +54,9 @@ describe("BrandedCheckoutShell", () => {
         "--bt-field-focus",
       ),
     ).toBe(raptors.branding.primaryColor);
+    expect(
+      (container.firstChild as HTMLElement).style.getPropertyValue("--acc"),
+    ).toBe(raptors.branding.primaryColor);
   });
 
   it("hides the seat-hold clock when remaining seconds are missing", () => {

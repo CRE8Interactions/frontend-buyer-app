@@ -82,3 +82,15 @@ export function expandGroupsWithConnectedOffers<
 
   return expanded;
 }
+
+/** Stable key for GA / map tooltip quantity state and cart dedupe. */
+export function gaOfferSelectionKey(
+  group: GroupWithConnectedOffers & { id?: string | number; sectionId?: string | number },
+  index = 0,
+) {
+  const offerId = group.offer?.id;
+  const connected = group.offer?.isConnectedOffer ? "c" : "p";
+  const sectionId = String(group.sectionId ?? "");
+  if (offerId != null) return `${sectionId}:${offerId}:${connected}`;
+  return `${sectionId}:${group.id ?? index}:${connected}:${index}`;
+}

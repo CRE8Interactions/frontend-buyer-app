@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import BrandedActionButton from "@/components/atoms/BrandedActionButton";
+import MobileStickyFooter from "@/components/molecules/MobileStickyFooter";
 import InAppBackLink from "@/components/molecules/InAppBackLink";
 import RouteLoader from "@/components/molecules/RouteLoader";
 import { getFlexPack, placeFlexPackIntoCart } from "@/lib/api";
@@ -23,6 +24,7 @@ import {
 import { cacheOrgBranding } from "@/lib/orgBrandingCache";
 import { beginRouteTransition } from "@/lib/routeTransition";
 import { TICKETING_STICKY_GAP_PX } from "@/lib/ticketingSticky";
+import { fluidSize } from "@/lib/shopperFluidType";
 
 const NAVY = "#051b35";
 const MUTE = "#8a93a3";
@@ -181,7 +183,7 @@ export default function FlexPackDetailClient({
 
   if (!flexPack) {
     return (
-      <div style={{ maxWidth: 720, margin: "0 auto", padding: "32px 20px" }}>
+      <div className="shopper-page" style={{ maxWidth: 720, margin: "0 auto", padding: "32px 20px" }}>
         <InAppBackLink
           href={backHref}
           aria-label="Back"
@@ -189,7 +191,7 @@ export default function FlexPackDetailClient({
             display: "inline-flex",
             alignItems: "center",
             gap: 8,
-            fontSize: 14,
+            fontSize: fluidSize(14),
             fontWeight: 600,
             color: NAVY,
             textDecoration: "none",
@@ -197,7 +199,7 @@ export default function FlexPackDetailClient({
         >
           Back
         </InAppBackLink>
-        <p style={{ marginTop: 24, fontSize: 16, color: SUB }} role="status">
+        <p style={{ marginTop: 24, fontSize: fluidSize(16), color: SUB }} role="status">
           {error || "Flex pack not found."}
         </p>
       </div>
@@ -205,7 +207,7 @@ export default function FlexPackDetailClient({
   }
 
   return (
-    <div style={{ minHeight: "100vh", background: FIELD, color: NAVY }}>
+    <div className="shopper-page" style={{ minHeight: "100vh", background: FIELD, color: NAVY }}>
       <div
         ref={heroRef}
         style={{
@@ -272,7 +274,7 @@ export default function FlexPackDetailClient({
             </InAppBackLink>
             <div
               style={{
-                fontSize: 10,
+                fontSize: fluidSize(10),
                 fontWeight: 600,
                 textTransform: "uppercase",
                 letterSpacing: "0.14em",
@@ -330,7 +332,7 @@ export default function FlexPackDetailClient({
               <h1
                 style={{
                   margin: 0,
-                  fontSize: mobile ? 30 : 42,
+                  fontSize: mobile ? fluidSize(30) : fluidSize(42),
                   fontWeight: 600,
                   letterSpacing: "-0.03em",
                   lineHeight: 1.06,
@@ -343,7 +345,7 @@ export default function FlexPackDetailClient({
                   <span
                     key={label}
                     style={{
-                      fontSize: 12,
+                      fontSize: fluidSize(12),
                       fontWeight: 600,
                       color: "#fff",
                       background: "rgba(255,255,255,0.14)",
@@ -387,7 +389,7 @@ export default function FlexPackDetailClient({
           >
             <div
               style={{
-                fontSize: 12,
+                fontSize: fluidSize(12),
                 fontWeight: 600,
                 textTransform: "uppercase",
                 letterSpacing: "0.12em",
@@ -426,7 +428,7 @@ export default function FlexPackDetailClient({
                       borderRadius: 999,
                       background: theme.accent,
                       color: "#fff",
-                      fontSize: 13,
+                      fontSize: fluidSize(13),
                       fontWeight: 600,
                       display: "flex",
                       alignItems: "center",
@@ -435,8 +437,8 @@ export default function FlexPackDetailClient({
                   >
                     {st.n}
                   </div>
-                  <div style={{ fontSize: 14, fontWeight: 600 }}>{st.title}</div>
-                  <div style={{ fontSize: 13, color: SUB, lineHeight: 1.55 }}>
+                  <div style={{ fontSize: fluidSize(14), fontWeight: 600 }}>{st.title}</div>
+                  <div style={{ fontSize: fluidSize(13), color: SUB, lineHeight: 1.55 }}>
                     {st.body}
                   </div>
                 </div>
@@ -454,7 +456,7 @@ export default function FlexPackDetailClient({
               >
                 <div
                   style={{
-                    fontSize: 12,
+                    fontSize: fluidSize(12),
                     fontWeight: 600,
                     textTransform: "uppercase",
                     letterSpacing: "0.12em",
@@ -463,13 +465,13 @@ export default function FlexPackDetailClient({
                 >
                   More info
                 </div>
-                <p style={{ margin: 0, fontSize: 15, lineHeight: 1.65, color: "#4a5567" }}>
+                <p style={{ margin: 0, fontSize: fluidSize(15), lineHeight: 1.65, color: "#4a5567" }}>
                   {flexPack.description}
                 </p>
               </div>
             ) : null}
             {error ? (
-              <p style={{ margin: 0, fontSize: 14, color: "#b91c1c" }} role="alert">
+              <p style={{ margin: 0, fontSize: fluidSize(14), color: "#b91c1c" }} role="alert">
                 {error}
               </p>
             ) : null}
@@ -494,13 +496,13 @@ export default function FlexPackDetailClient({
                 }}
               >
                 <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-                  <span style={{ fontSize: 13, color: MUTE }}>
+                  <span style={{ fontSize: fluidSize(13), color: MUTE }}>
                     Flex pack · {voucherCount}{" "}
                     {getSingularOrPluralWord(voucherCount, "voucher").toLowerCase()}
                   </span>
                   <span
                     style={{
-                      fontSize: 34,
+                      fontSize: fluidSize(34),
                       fontWeight: 600,
                       letterSpacing: "-0.03em",
                       lineHeight: 1,
@@ -522,7 +524,7 @@ export default function FlexPackDetailClient({
                 >
                   {buyLabel}
                 </BrandedActionButton>
-                <div style={{ fontSize: 13, color: SUB }}>
+                <div style={{ fontSize: fluidSize(13), color: SUB }}>
                   One voucher, one ticket to any home game. Pick your seat when
                   you redeem.
                 </div>
@@ -533,18 +535,13 @@ export default function FlexPackDetailClient({
       </div>
 
       {mobile && (
-        <div
-          style={{
-            position: "fixed",
-            left: 0,
-            right: 0,
-            bottom: 0,
-            zIndex: 40,
-            background: "rgba(255,255,255,0.96)",
-            backdropFilter: "blur(10px)",
-            borderTop: "1px solid rgba(5,27,53,0.10)",
-            boxShadow: "0 -12px 30px -24px rgba(5,27,53,0.6)",
-            padding: "12px 16px calc(14px + env(safe-area-inset-bottom))",
+        <MobileStickyFooter
+          accentColor={theme.accent}
+          background="rgba(255,255,255,0.96)"
+          boxShadow="0 -12px 30px -24px rgba(5,27,53,0.6)"
+          innerPadding="12px 16px 14px"
+          shellStyle={{ backdropFilter: "blur(10px)" }}
+          innerStyle={{
             display: "flex",
             alignItems: "center",
             justifyContent: "space-between",
@@ -554,7 +551,7 @@ export default function FlexPackDetailClient({
           <div style={{ display: "flex", flexDirection: "column", gap: 1 }}>
             <span
               style={{
-                fontSize: 18,
+                fontSize: fluidSize(18),
                 fontWeight: 600,
                 letterSpacing: "-0.02em",
                 fontVariantNumeric: "tabular-nums",
@@ -580,7 +577,7 @@ export default function FlexPackDetailClient({
           >
             {buyLabel}
           </BrandedActionButton>
-        </div>
+        </MobileStickyFooter>
       )}
     </div>
   );

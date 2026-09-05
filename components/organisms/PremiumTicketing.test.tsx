@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ReactNode } from "react";
@@ -510,39 +510,54 @@ describe("Select tickets page (PremiumTicketing)", () => {
     ).not.toBeInTheDocument();
   });
 
-  it("replaces the listings with a waitlist when the event is sold out", async () => {
+  it("replaces the listings with the sold-out body card when the event is sold out", async () => {
     const user = userEvent.setup();
     render(
       <PremiumTicketing data={{ ...seatedTicketingFixture, soldOut: true }} />,
     );
 
+    const body = await screen.findByTestId("ticketing-soldout-body");
+    expect(body).toBeInTheDocument();
     expect(
-      await screen.findByText(/we’re sorry, the event is sold out/i),
+      screen.getByText(/get notified if tickets become available/i),
+    ).toBeInTheDocument();
+    expect(
+      within(body).getByRole("button", { name: /notify me/i }),
     ).toBeInTheDocument();
     expect(screen.queryByText(/sec m · row m3/i)).not.toBeInTheDocument();
     expect(
       screen.queryByRole("button", { name: /^all$/i }),
     ).not.toBeInTheDocument();
-    // Listings chrome stays gone; Find on map stays visible but locked.
     expect(screen.queryByText(/sort by price/i)).not.toBeInTheDocument();
-    expect(screen.getByTestId("ticketing-map")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /find on map/i })).toBeDisabled();
+    expect(screen.queryByTestId("ticketing-map")).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: /find on map/i }),
+    ).not.toBeInTheDocument();
+    expect(screen.queryByText(/mobile tickets/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/buyer protection/i)).not.toBeInTheDocument();
+    expect(screen.queryByTestId("ticketing-soldout-sticky")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("ticketing-offers")).not.toBeInTheDocument();
+    expect(
+      screen.queryByText(/we’re sorry, the event is sold out/i),
+    ).not.toBeInTheDocument();
+    expect(screen.queryByLabelText(/email address/i)).not.toBeInTheDocument();
 
-    const email = screen.getByLabelText(/email address/i);
-    await user.type(email, "not-an-email");
+    await user.click(screen.getByRole("button", { name: /notify me/i }));
+
+    const dialog = screen.getByRole("dialog", { name: /get the first email/i });
+    await user.type(within(dialog).getByLabelText(/email address/i), "fan@example.com");
     await user.click(
-      screen.getByRole("button", { name: /get notified/i }),
+      within(dialog).getByRole("button", {
+        name: /notify me when tickets become available/i,
+      }),
     );
-    expect(screen.getByText(/email is invalid/i)).toBeInTheDocument();
-
-    await user.clear(email);
-    await user.type(email, "fan@example.com");
-    await user.click(screen.getByRole("button", { name: /get notified/i }));
 
     expect(
-      await screen.findByText(/you’re on the waiting list/i),
+      await within(dialog).findByText(/you.re on the list/i),
     ).toBeInTheDocument();
-    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(
+      await screen.findByRole("button", { name: /reminder set/i }),
+    ).toBeDisabled();
   });
 
   it("hides scheduled seated offers and shows the event on-sale time", async () => {
@@ -554,24 +569,57 @@ describe("Select tickets page (PremiumTicketing)", () => {
           listings: [],
           offerNames: [scheduledOffer],
           scheduled: true,
-          scheduledAt: "Friday, August 28, 2026 at 10:00 AM",
+          scheduledAt: "Fri, Aug 28 at 10:00 AM MDT",
         }}
       />,
     );
 
     expect(
-      await screen.findByText(/tickets will be on sale/i),
+      await screen.findByText(/on sale soon/i),
     ).toBeInTheDocument();
     expect(
-      screen.getByText(/friday, august 28, 2026 at 10:00 am/i),
+      screen.getByText(/fri, aug 28 at 10:00 am mdt/i),
     ).toBeInTheDocument();
     expect(screen.queryByText(scheduledOffer)).not.toBeInTheDocument();
     expect(
       screen.queryByRole("button", { name: /^all$/i }),
     ).not.toBeInTheDocument();
-    expect(screen.getByTestId("ticketing-map")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /find on map/i })).toBeDisabled();
-    expect(screen.getByText(/buyer protection/i)).toBeInTheDocument();
+    expect(screen.getByTestId("ticketing-scheduled-body")).toBeInTheDocument();
+    expect(screen.queryByTestId("ticketing-map")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /find on map/i })).not.toBeInTheDocument();
+    expect(screen.queryByText(/buyer protection/i)).not.toBeInTheDocument();
+    expect(screen.queryByTestId("ticketing-scheduled-sticky")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("ticketing-offers")).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: /select tickets/i }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("hides the Select tickets footer on tablet when the event is scheduled", async () => {
+    Object.defineProperty(window, "innerWidth", {
+      configurable: true,
+      writable: true,
+      value: 1024,
+    });
+    render(
+      <PremiumTicketing
+        data={{
+          ...seatedTicketingFixture,
+          listings: [],
+          scheduled: true,
+          scheduledAt: "Fri, Aug 28 at 10:00 AM MDT",
+        }}
+      />,
+    );
+
+    expect(await screen.findByText(/on sale soon/i)).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: /select tickets/i }),
+    ).not.toBeInTheDocument();
+    expect(screen.queryByTestId("ticketing-scheduled-sticky")).not.toBeInTheDocument();
+    expect(screen.getByTestId("ticketing-scheduled-body")).toBeInTheDocument();
+    expect(screen.queryByTestId("ticketing-offers")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("ticketing-map")).not.toBeInTheDocument();
   });
 
   it.each([
@@ -581,11 +629,11 @@ describe("Select tickets page (PremiumTicketing)", () => {
         listings: [],
         offerNames: [demoTicketGroups().offers[0].name],
         scheduled: true,
-        scheduledAt: "Friday, August 28, 2026 at 10:00 AM",
+        scheduledAt: "Fri, Aug 28 at 10:00 AM MDT",
       },
-      /tickets will be on sale/i,
+      /on sale soon/i,
     ],
-    ["sold out", { soldOut: true }, /we’re sorry, the event is sold out/i],
+    ["sold out", { soldOut: true }, /get notified if tickets become available/i],
   ] as const)(
     "hides listing filters on mobile when the event is %s",
     async (_label, extra, ready) => {
@@ -599,6 +647,14 @@ describe("Select tickets page (PremiumTicketing)", () => {
       );
 
       expect(await screen.findByText(ready)).toBeInTheDocument();
+      if (_label === "scheduled") {
+        expect(screen.getByTestId("ticketing-scheduled-body")).toBeInTheDocument();
+        expect(screen.queryByTestId("ticketing-offers")).not.toBeInTheDocument();
+        expect(screen.queryByText(/buyer protection/i)).not.toBeInTheDocument();
+        expect(
+          screen.queryByRole("button", { name: /select tickets/i }),
+        ).not.toBeInTheDocument();
+      }
       expect(await screen.findByRole("button", { name: /back/i })).toBeInTheDocument();
       expect(screen.queryByRole("button", { name: /^all$/i })).not.toBeInTheDocument();
       expect(screen.queryByText(/listings/i)).not.toBeInTheDocument();
@@ -606,8 +662,17 @@ describe("Select tickets page (PremiumTicketing)", () => {
       expect(
         screen.queryByRole("button", { name: /\d+ tickets?/i }),
       ).not.toBeInTheDocument();
-      expect(screen.getByText(/buyer protection/i)).toBeInTheDocument();
-      expect(screen.getByText(/prices are all-in/i)).toBeInTheDocument();
+      if (_label === "sold out") {
+        const body = screen.getByTestId("ticketing-soldout-body");
+        expect(body).toBeInTheDocument();
+        expect(within(body).getByRole("button", { name: /notify me/i })).toBeInTheDocument();
+        expect(screen.queryByTestId("ticketing-soldout-sticky")).not.toBeInTheDocument();
+        expect(screen.queryByText(/mobile tickets/i)).not.toBeInTheDocument();
+        expect(screen.queryByText(/buyer protection/i)).not.toBeInTheDocument();
+        expect(screen.queryByText(/prices are all-in/i)).not.toBeInTheDocument();
+        expect(screen.queryByTestId("ticketing-map")).not.toBeInTheDocument();
+        expect(screen.queryByTestId("ticketing-offers")).not.toBeInTheDocument();
+      }
       expect(
         screen.queryByRole("button", { name: /select tickets/i }),
       ).not.toBeInTheDocument();
@@ -825,7 +890,7 @@ describe("Select tickets page (PremiumTicketing)", () => {
     ).not.toBeInTheDocument();
   });
 
-  it("offers only the waitlist when a GA event is sold out with no inventory", async () => {
+  it("offers only the notify bar when a GA event is sold out with no inventory", async () => {
     render(
       <PremiumTicketing
         data={{
@@ -837,13 +902,20 @@ describe("Select tickets page (PremiumTicketing)", () => {
       />,
     );
 
+    expect(await screen.findByTestId("ticketing-soldout-sticky")).toBeInTheDocument();
     expect(
-      await screen.findByText(/we’re sorry, the event is sold out/i),
+      screen.getByText(/get notified if tickets become available/i),
     ).toBeInTheDocument();
     expect(
-      screen.getByRole("button", { name: /get notified/i }),
+      screen.getByRole("button", { name: /notify me/i }),
     ).toBeInTheDocument();
-    expect(screen.getByLabelText(/email address/i)).toBeInTheDocument();
+    expect(
+      screen.queryByText(/we’re sorry, the event is sold out/i),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: /get notified/i }),
+    ).not.toBeInTheDocument();
+    expect(screen.queryByLabelText(/email address/i)).not.toBeInTheDocument();
     // The waitlist stands alone — no "Get tickets" heading over a sold-out event.
     expect(screen.queryByText(/^get tickets$/i)).not.toBeInTheDocument();
     // Never the placeholder tiers that stand in for an unwired GA page.
@@ -851,6 +923,101 @@ describe("Select tickets page (PremiumTicketing)", () => {
     expect(
       screen.queryByRole("button", { name: /checkout/i }),
     ).not.toBeInTheDocument();
+  });
+
+  it("shows a sticky sold-out bar and notify sheet on mobile GA sold-out events", async () => {
+    Object.defineProperty(window, "innerWidth", {
+      configurable: true,
+      writable: true,
+      value: 390,
+    });
+    const user = userEvent.setup();
+    render(
+      <PremiumTicketing
+        data={{
+          ...seatedTicketingFixture,
+          eventType: "ga",
+          gaTiers: undefined,
+          soldOut: true,
+        }}
+      />,
+    );
+
+    expect(await screen.findByTestId("ticketing-soldout-sticky")).toBeInTheDocument();
+    expect(
+      screen.getByText(/get notified if tickets become available/i),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: /get notified/i }),
+    ).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: /notify me/i }));
+
+    const dialog = screen.getByRole("dialog", { name: /get the first email/i });
+    expect(
+      within(dialog).getByText(
+        /enter your email below to get notified in case a ticket becomes available/i,
+      ),
+    ).toBeInTheDocument();
+    expect(
+      within(dialog).getByRole("button", {
+        name: /notify me when tickets become available/i,
+      }),
+    ).toBeInTheDocument();
+
+    await user.type(within(dialog).getByLabelText(/email address/i), "fan@example.com");
+    await user.click(
+      within(dialog).getByRole("button", {
+        name: /notify me when tickets become available/i,
+      }),
+    );
+
+    expect(
+      await within(dialog).findByText(/you.re on the list/i),
+    ).toBeInTheDocument();
+    expect(
+      within(dialog).getByText(/the moment a ticket is posted for this event/i),
+    ).toBeInTheDocument();
+    expect(
+      within(dialog).getByRole("link", { name: /browse all events/i }),
+    ).toHaveAttribute("href", "/browse/");
+    expect(
+      await screen.findByRole("button", { name: /reminder set/i }),
+    ).toBeDisabled();
+  });
+
+  it("shows the sold-out sticky bar on desktop GA sold-out events", async () => {
+    Object.defineProperty(window, "innerWidth", {
+      configurable: true,
+      writable: true,
+      value: 1200,
+    });
+    const user = userEvent.setup();
+    render(
+      <PremiumTicketing
+        data={{
+          ...seatedTicketingFixture,
+          eventType: "ga",
+          gaTiers: undefined,
+          soldOut: true,
+        }}
+      />,
+    );
+
+    const bar = await screen.findByTestId("ticketing-soldout-sticky");
+    expect(bar).toBeInTheDocument();
+    expect(bar).not.toHaveStyle({ position: "fixed" });
+    expect(
+      screen.getByRole("button", { name: /notify me/i }),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: /get notified/i }),
+    ).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: /notify me/i }));
+    expect(
+      screen.getByRole("dialog", { name: /get the first email/i }),
+    ).toBeInTheDocument();
   });
 
   it("hides scheduled GA offers until their on-sale time", async () => {
@@ -871,19 +1038,190 @@ describe("Select tickets page (PremiumTicketing)", () => {
             },
           ],
           scheduled: true,
-          scheduledAt: "Friday, August 28, 2026 at 10:00 AM",
+          scheduledAt: "Fri, Aug 28 at 10:00 AM MDT",
         }}
       />,
     );
 
     expect(
-      await screen.findByText(/tickets will be on sale/i),
+      await screen.findByText(/on sale soon/i),
     ).toBeInTheDocument();
-    expect(screen.getByText(/friday, august 28, 2026 at 10:00 am/i)).toBeInTheDocument();
+    expect(screen.getByText(/fri, aug 28 at 10:00 am mdt/i)).toBeInTheDocument();
     expect(screen.queryByText(/^get tickets$/i)).not.toBeInTheDocument();
     expect(screen.queryByText(scheduledOffer)).not.toBeInTheDocument();
     expect(
       screen.queryByRole("button", { name: /buy tickets|checkout/i }),
+    ).not.toBeInTheDocument();
+    expect(screen.getByText(/buyer protection/i)).toBeInTheDocument();
+    expect(screen.queryByTestId("ticketing-scheduled-sticky")).not.toBeInTheDocument();
+  });
+
+  it("shows a sticky on-sale bar on mobile when all GA offers are scheduled", async () => {
+    Object.defineProperty(window, "innerWidth", {
+      configurable: true,
+      writable: true,
+      value: 390,
+    });
+    render(
+      <PremiumTicketing
+        data={{
+          ...seatedTicketingFixture,
+          eventType: "ga",
+          scheduled: true,
+          scheduledAt: "Fri, Aug 28 at 10:00 AM MDT",
+        }}
+      />,
+    );
+
+    expect(await screen.findByTestId("ticketing-scheduled-sticky")).toBeInTheDocument();
+    expect(screen.getByText(/on sale soon/i)).toBeInTheDocument();
+    expect(
+      screen.getByText(/fri, aug 28 • 10:00 am mdt/i),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        /this event does not have any tickets on sale yet\. check back in later\./i,
+      ),
+    ).toBeInTheDocument();
+    expect(screen.queryByTestId("ticketing-scheduled")).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: /remind me/i }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("uses the same poster sizing for single-column GA layouts", async () => {
+    Object.defineProperty(window, "innerWidth", {
+      configurable: true,
+      writable: true,
+      value: 390,
+    });
+
+    render(
+      <PremiumTicketing
+        data={{
+          ...seatedTicketingFixture,
+          eventType: "ga",
+          gaTiers: seatedTicketingFixture.gaTiers,
+        }}
+      />,
+    );
+
+    await screen.findByText(seatedTicketingFixture.eventName);
+    expect(screen.getByTestId("ga-event-poster")).toHaveStyle({
+      width: "100%",
+      padding: "12px",
+    });
+    expect(screen.getByTestId("ga-event-poster-image")).toHaveStyle({
+      aspectRatio: "16 / 9",
+    });
+    cleanup();
+
+    Object.defineProperty(window, "innerWidth", {
+      configurable: true,
+      writable: true,
+      value: 912,
+    });
+    render(
+      <PremiumTicketing
+        data={{
+          ...seatedTicketingFixture,
+          eventType: "ga",
+          gaTiers: seatedTicketingFixture.gaTiers,
+        }}
+      />,
+    );
+
+    await screen.findByText(seatedTicketingFixture.eventName);
+    expect(screen.getByTestId("ga-event-poster-image")).toHaveStyle({
+      aspectRatio: "16 / 9",
+    });
+    cleanup();
+
+    Object.defineProperty(window, "innerWidth", {
+      configurable: true,
+      writable: true,
+      value: 1280,
+    });
+    render(
+      <PremiumTicketing
+        data={{
+          ...seatedTicketingFixture,
+          eventType: "ga",
+          gaTiers: seatedTicketingFixture.gaTiers,
+        }}
+      />,
+    );
+
+    await screen.findByText(seatedTicketingFixture.eventName);
+    expect(screen.getByTestId("ga-event-poster-image")).toHaveStyle({
+      aspectRatio: "1 / 1",
+    });
+  });
+
+  it("uses the same poster sizing for scheduled single-column GA layouts", async () => {
+    Object.defineProperty(window, "innerWidth", {
+      configurable: true,
+      writable: true,
+      value: 390,
+    });
+
+    render(
+      <PremiumTicketing
+        data={{
+          ...seatedTicketingFixture,
+          eventType: "ga",
+          scheduled: true,
+          scheduledAt: "Fri, Aug 28 at 10:00 AM MDT",
+        }}
+      />,
+    );
+
+    expect(await screen.findByText(/on sale soon/i)).toBeInTheDocument();
+    expect(screen.getByTestId("ga-event-poster")).toHaveStyle({
+      width: "100%",
+      padding: "12px",
+    });
+    expect(screen.getByTestId("ga-event-poster-image")).toHaveStyle({
+      aspectRatio: "16 / 9",
+    });
+  });
+
+  it("keeps GA page content and shows on-sale copy when all offers are scheduled on mobile", async () => {
+    Object.defineProperty(window, "innerWidth", {
+      configurable: true,
+      writable: true,
+      value: 390,
+    });
+    render(
+      <PremiumTicketing
+        data={{
+          ...seatedTicketingFixture,
+          eventType: "ga",
+          scheduled: true,
+          scheduledAt: "Fri, Aug 28 at 10:00 AM MDT",
+        }}
+      />,
+    );
+
+    expect(await screen.findByText(/on sale soon/i)).toBeInTheDocument();
+    expect(screen.getByText(seatedTicketingFixture.eventName)).toBeInTheDocument();
+    expect(screen.getByText(/buyer protection/i)).toBeInTheDocument();
+    expect(screen.getByText(/about this event/i)).toBeInTheDocument();
+    expect(screen.queryByTestId("ticketing-scheduled-body")).not.toBeInTheDocument();
+    expect(screen.getByTestId("ticketing-scheduled-sticky")).toBeInTheDocument();
+    expect(screen.queryByTestId("ticketing-scheduled")).not.toBeInTheDocument();
+    const posterCard = screen.getByTestId("ga-event-poster");
+    expect(posterCard).toHaveStyle({
+      width: "100%",
+      padding: "12px",
+      background: "rgb(255, 255, 255)",
+    });
+    expect(posterCard).not.toHaveStyle({ maxWidth: "100vw" });
+    expect(screen.getByTestId("ga-event-poster-image")).toHaveStyle({
+      aspectRatio: "16 / 9",
+    });
+    expect(
+      screen.queryByRole("button", { name: /buy tickets/i }),
     ).not.toBeInTheDocument();
   });
 
@@ -1669,7 +2007,7 @@ describe("Select tickets page (PremiumTicketing)", () => {
     expect(within(dialog).queryByText(/about this event/i)).not.toBeInTheDocument();
   });
 
-  it("truncates long event descriptions with More and Less in event information", async () => {
+  it("truncates long event descriptions with Show more and Show less in event information", async () => {
     const longAbout = Array.from(
       { length: 12 },
       (_, i) => `Event detail paragraph ${i + 1}.`,
@@ -1685,11 +2023,11 @@ describe("Select tickets page (PremiumTicketing)", () => {
 
     const dialog = screen.getByRole("dialog", { name: /event information/i });
     expect(
-      within(dialog).getByRole("button", { name: /^more$/i }),
+      within(dialog).getByRole("button", { name: /show more/i }),
     ).toBeInTheDocument();
-    await user.click(within(dialog).getByRole("button", { name: /^more$/i }));
+    await user.click(within(dialog).getByRole("button", { name: /show more/i }));
     expect(
-      within(dialog).getByRole("button", { name: /^less$/i }),
+      within(dialog).getByRole("button", { name: /show less/i }),
     ).toBeInTheDocument();
 
     vi.restoreAllMocks();
