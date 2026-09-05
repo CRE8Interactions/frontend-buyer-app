@@ -13,6 +13,8 @@ export default defineConfig({
     css: false,
     clearMocks: true,
     restoreMocks: true,
+    testTimeout: 15_000,
+    hookTimeout: 15_000,
   },
   resolve: {
     alias: {

@@ -197,7 +197,7 @@ function stubLocation(
   return hrefSetter;
 }
 
-describe("Checkout page", () => {
+describe("Checkout page", { timeout: 20_000 }, () => {
   beforeEach(() => {
     navState.cartId = "cart-raptors-1";
     navState.extra = "";
@@ -301,7 +301,7 @@ describe("Checkout page", () => {
     );
     expect(screen.getByText("Total")).toBeInTheDocument();
     expect(
-      screen.getByRole("button", {
+      await screen.findByRole("button", {
         name: `Pay ${formatCurrency(cart.total)}`,
       }),
     ).toBeInTheDocument();

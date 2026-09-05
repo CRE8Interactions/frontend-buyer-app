@@ -1,7 +1,7 @@
 "use client";
 
 import { createPortal } from "react-dom";
-import { useEffect, useState, type CSSProperties, type ReactNode } from "react";
+import { useLayoutEffect, useState, type CSSProperties, type ReactNode } from "react";
 import { shopperShellVars } from "@/lib/branding";
 import { ShopperFluidTypeStyles } from "@/components/templates/ShopperFluidType";
 
@@ -39,7 +39,7 @@ export default function MobileStickyFooter({
   shellClassName = "",
 }: MobileStickyFooterProps) {
   const [mounted, setMounted] = useState(false);
-  useEffect(() => setMounted(true), []);
+  useLayoutEffect(() => setMounted(true), []);
 
   if (!mounted) return null;
 
