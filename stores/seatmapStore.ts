@@ -219,11 +219,15 @@ const useSeatmapStore = create<SeatmapState>((set, get) => ({
       set({ seatedError: maxTicketLimitError(limit ?? totalNew) });
       return;
     }
+    const organization = useFiltersStore.getState().event
+      ?.organization as TrackingOrganization | undefined;
+    set((state) => ({
+      selectedFromMap: [...state.selectedFromMap, ...selectedGroups],
+    }));
+    get()._calculateTotals();
     selectedGroups.forEach((group) => {
-      get()._addToSeats(group);
       trackSelectTicket({
-        organization: useFiltersStore.getState().event
-          ?.organization as TrackingOrganization | undefined,
+        organization,
         ticket: group,
         quantity: group?.quantity || 1,
       });
@@ -341,19 +345,22 @@ const useSeatmapStore = create<SeatmapState>((set, get) => ({
 
     const organization = useFiltersStore.getState().event
       ?.organization as TrackingOrganization | undefined;
-    groups.forEach((group) => {
-      const selectedTicket = {
-        seatId,
-        seatNumber: get().data?.seats?.[String(seatId)]?.seatNumber,
-        ...group,
-        offer: group.offer,
-        offerIds: group.offer?.id ? [group.offer.id] : group.offerIds,
-      };
-      get()._addToSeats(selectedTicket);
+    const selectedTickets = groups.map((group) => ({
+      seatId,
+      seatNumber: get().data?.seats?.[String(seatId)]?.seatNumber,
+      ...group,
+      offer: group.offer,
+      offerIds: group.offer?.id ? [group.offer.id] : group.offerIds,
+    }));
+    set((state) => ({
+      selectedFromMap: [...state.selectedFromMap, ...selectedTickets],
+    }));
+    get()._calculateTotals();
+    selectedTickets.forEach((selectedTicket) => {
       trackSelectTicket({
         organization,
         ticket: selectedTicket,
-        quantity: group.quantity || 1,
+        quantity: selectedTicket.quantity || 1,
       });
     });
   },

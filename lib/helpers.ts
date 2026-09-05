@@ -264,6 +264,20 @@ export const formatEventWhen = (
   return m.format(format);
 };
 
+/** "Fri, Aug 28 at 10:00 AM MDT" — matches blocktickets Countdown on-sale copy. */
+export const formatOnSaleWhen = (
+  start?: string,
+  timezone?: TimezoneLike,
+) => {
+  if (!start) return "";
+  const tz = toIanaTimezone(timezone);
+  const m = tz ? moment.tz(start, tz) : moment(start);
+  if (!m.isValid()) return "";
+  const abbr = m.zoneAbbr();
+  const when = `${m.format("ddd, MMM D")} at ${m.format("h:mm A")}`;
+  return abbr ? `${when} ${abbr}` : when;
+};
+
 /** Prefer the scheduled doors time the API stores separately from `doorsOpen`. */
 export const eventDoorsIso = (ev?: {
   doorsOpen?: string;
