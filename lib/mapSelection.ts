@@ -3,7 +3,7 @@ import type { TicketGroup } from "@/stores/filtersStore";
 export const MIXED_MAP_SELECTION_ERROR = {
   title: "Selected tickets not available",
   message:
-    "You can only select tickets from one row or GA section at a time... Please change your selection.",
+    "You can only select tickets from one row or GA section at a time.",
   buttonText: "Close",
   leaveMap: false,
 } as const;
@@ -40,7 +40,7 @@ export const MAX_TICKET_LIMIT_ERROR = {
 export function maxTicketLimitError(limit: number) {
   return {
     title: MAX_TICKET_LIMIT_ERROR.title,
-    message: `Adding these tickets would exceed the ticket limit of ${limit}. Please change your selection.`,
+    message: `Adding these tickets would exceed the ticket limit of ${limit}.`,
     buttonText: MAX_TICKET_LIMIT_ERROR.buttonText,
   };
 }

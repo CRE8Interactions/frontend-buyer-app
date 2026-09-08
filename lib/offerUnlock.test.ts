@@ -6,7 +6,7 @@ vi.mock("@/lib/api", () => ({
 }));
 
 import { checkAccessCode } from "@/lib/api";
-import { verifyOfferAccessCode } from "@/lib/offerUnlock";
+import { verifyOfferAccessCode, unlockOfferInTicketGroups, seatmapLookupsFromTicketGroups } from "@/lib/offerUnlock";
 
 const mockedCheckAccessCode = vi.mocked(checkAccessCode);
 
@@ -54,5 +54,53 @@ describe("verifyOfferAccessCode", () => {
       verifyOfferAccessCode({ eventId: 1, code: "  ", expected: EXPECTED }),
     ).resolves.toBe(false);
     expect(mockedCheckAccessCode).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("unlockOfferInTicketGroups", () => {
+  it("marks matching access-coded rows as unlocked", () => {
+    const coded = DEMO_SEATED_TICKET_GROUPS.find((g) => g.offer?.accessCode);
+    if (!coded?.offer?.name) {
+      throw new Error("demo fixtures need a coded seated offer");
+    }
+
+    const updated = unlockOfferInTicketGroups(
+      DEMO_SEATED_TICKET_GROUPS as never,
+      coded.offer.name,
+    );
+
+    expect(
+      updated.filter(
+        (group) =>
+          group.offer?.name === coded.offer?.name && group.offer?.unlocked,
+      ).length,
+    ).toBeGreaterThan(0);
+    expect(
+      updated.find((group) => group.offer?.name !== coded.offer?.name)?.offer
+        ?.unlocked,
+    ).not.toBe(true);
+  });
+
+  it("rebuilds seat lookups so unlocked seats become selectable on the map", () => {
+    const groups = [
+      {
+        id: "locked-row",
+        seatIds: ["s9"],
+        GA: false,
+        offer: {
+          id: "off-coded",
+          name: "Niagara Falls Paramedic Association",
+          accessCode: "NFPA",
+        },
+      },
+    ] as never;
+
+    const updated = unlockOfferInTicketGroups(
+      groups,
+      "Niagara Falls Paramedic Association",
+    );
+    const { seatLookupTable } = seatmapLookupsFromTicketGroups(updated);
+
+    expect(seatLookupTable.s9?.offer?.unlocked).toBe(true);
   });
 });

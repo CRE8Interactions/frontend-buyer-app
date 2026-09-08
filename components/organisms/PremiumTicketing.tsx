@@ -28,7 +28,7 @@ import { placeGATicketsIntoCart, placeTicketsIntoCart } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { isStandaloneCatalogOffer } from "@/lib/connectedOffers";
 import { goBack } from "@/lib/inAppBack";
-import { verifyOfferAccessCode } from "@/lib/offerUnlock";
+import { verifyOfferAccessCode, unlockOfferInTicketGroups, seatmapLookupsFromTicketGroups } from "@/lib/offerUnlock";
 import {
   CHECKOUT_DEMO_LISTINGS_ERROR,
   CHECKOUT_DEMO_TIERS_ERROR,
@@ -312,6 +312,11 @@ export default function PremiumTicketing({
   const seatedError = useSeatmapStore((s) => s.seatedError);
   const setSeatedError = useSeatmapStore((s) => s.setSeatedError);
   const resetMapState = useSeatmapStore((s) => s.resetMapState);
+  const setSeatLookupTable = useSeatmapStore((s) => s.setSeatLookupTable);
+  const setSeatOffersLookupTable = useSeatmapStore(
+    (s) => s.setSeatOffersLookupTable,
+  );
+  const setSectionLookupTable = useSeatmapStore((s) => s.setSectionLookupTable);
   const getTicketImage = useSeatmapStore((s) => s.getTicketImage);
   const bucket = useSeatmapStore((s) => s.bucket);
   const storeMapping = useSeatmapStore((s) => s.data);
@@ -698,6 +703,16 @@ export default function PremiumTicketing({
     }
     setUnlockFieldError(null);
     setUnlocked((u) => (u.includes(zone) ? u : [...u, zone]));
+    const filtersState = useFiltersStore.getState();
+    const updatedGroups = unlockOfferInTicketGroups(filtersState.ticketGroups, zone);
+    filtersState.setTicketGroups(updatedGroups);
+    const lookups = seatmapLookupsFromTicketGroups(
+      updatedGroups,
+      filtersState.filters.selectedOfferIds,
+    );
+    setSeatLookupTable(lookups.seatLookupTable);
+    setSeatOffersLookupTable(lookups.seatOffersLookupTable);
+    setSectionLookupTable(lookups.sectionLookupTable);
     filterByZones((prev) => (prev.includes(zone) ? prev : [...prev, zone]));
     setUnlockZone(null);
   };
@@ -2282,6 +2297,12 @@ export default function PremiumTicketing({
           preparing={!hasLiveSeatmap}
           orgName={d.orgLabel}
           logoSrc={d.brandLogoSrc || d.logoSrc}
+          onUnlockOffer={(offerName) => {
+            setUnlockZone(offerName);
+            setUnlockInput("");
+            setUnlockFieldError(null);
+          }}
+          keepTooltipOpen={unlockZone !== null}
         />
       )}
 

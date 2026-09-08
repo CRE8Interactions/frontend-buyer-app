@@ -11,6 +11,7 @@ import { selectionOfferName } from "@/lib/ticketSummary";
 import type { SeatmapBackground } from "@/lib/seatmapLookups";
 import { resetSeatmapBackgroundCache } from "@/tests/seatmap";
 import useSeatmapStore from "@/stores/seatmapStore";
+import useFiltersStore from "@/stores/filtersStore";
 
 const icedogs = DEMO_ORGS.find((org) => org.slug === "niagara-icedogs")!;
 
@@ -65,8 +66,23 @@ function overlay(props: MapProps) {
   );
 }
 
-function renderOverlay(props: MapProps = {}) {
-  return render(overlay(props));
+function renderOverlay(props: MapProps = {}, mobile = false) {
+  return render(
+    <SeatMapSelectionOverlay
+      title="IceDogs vs Raptors"
+      accent={icedogs.branding.primaryColor}
+      accentSoft="#fbe9ec"
+      buttonColor={icedogs.branding.buttonColor}
+      buttonTextColor="#ffffff"
+      mobile={mobile}
+      onClose={() => {}}
+      onCheckout={() => {}}
+      orgName={icedogs.name}
+      logoSrc={icedogs.branding.logo.url}
+      venueSlug={icedogs.venue.slug}
+      {...props}
+    />,
+  );
 }
 
 function loaderShowing() {
@@ -202,6 +218,30 @@ describe("SeatMapSelectionOverlay map readiness", () => {
     expect(
       screen.getAllByText(`$${Number(group.price).toFixed(2)}`),
     ).toHaveLength(2);
+  });
+
+  it("shows Your selection with the ticket limit when View selection opens on mobile", () => {
+    const group = DEMO_SEATED_TICKET_GROUPS[0];
+    useFiltersStore.setState({ eventTicketLimit: 6 });
+    useSeatmapStore.setState({
+      selectedFromMap: [{ ...group, seatId: "s1", seatNumber: 1, quantity: 1 }],
+      totalCount: 1,
+      totalPrice: Number(group.price || 0),
+    });
+    renderOverlay(
+      {
+        mapMapping: demoSeatmapMapping(),
+        mapBackground: BACKGROUND,
+      },
+      true,
+    );
+    fireEvent.load(backgroundPreload()!);
+
+    fireEvent.click(screen.getByRole("button", { name: /view selection/i }));
+
+    expect(screen.getByText("Your selection")).toBeInTheDocument();
+    expect(screen.getByText("Ticket limit: 1–6 per order")).toBeInTheDocument();
+    expect(screen.queryByText("Ticket details")).not.toBeInTheDocument();
   });
 
   it("shows one ticket in GA ticket details even when the group quantity is higher", () => {
