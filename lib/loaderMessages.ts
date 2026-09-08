@@ -1,5 +1,6 @@
 /** Caption under every tenant loader. Never use Blocktickets in this line. */
 export const LOADER_MESSAGE = "loading tickets";
+export const SEARCH_LOADER_MESSAGE = "searching events";
 export const CHECKOUT_LOADER_MESSAGE = "getting payment ready";
 export const CHECKOUT_SUCCESS_LOADER_MESSAGE = "retrieving payment details";
 export const GROUP_LOADER_MESSAGE = "loading group";
@@ -25,6 +26,9 @@ export function loaderMessageForPath(pathname = "") {
   }
   if (path === "/menu" || path.startsWith("/menu/")) {
     return MENU_LOADER_MESSAGE;
+  }
+  if (path === "/search" || path.startsWith("/search/")) {
+    return SEARCH_LOADER_MESSAGE;
   }
   return LOADER_MESSAGE;
 }

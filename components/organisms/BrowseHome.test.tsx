@@ -42,6 +42,7 @@ vi.mock("@/lib/api", () => ({
   getOrganizationsOnSale: vi.fn(),
   getVenues: vi.fn(),
   getVenueUpcomingEvents: vi.fn(),
+  searchEvents: vi.fn(),
 }));
 
 import {
@@ -50,6 +51,7 @@ import {
   getOrganizationsOnSale,
   getVenueUpcomingEvents,
   getVenues,
+  searchEvents,
 } from "@/lib/api";
 import BrowseHome, {
   __resetBrowseCacheForTests,
@@ -60,6 +62,7 @@ const mockedGetEventsByIds = vi.mocked(getEventsByIds);
 const mockedGetOrgs = vi.mocked(getOrganizationsOnSale);
 const mockedGetVenues = vi.mocked(getVenues);
 const mockedGetUpcoming = vi.mocked(getVenueUpcomingEvents);
+const mockedSearchEvents = vi.mocked(searchEvents);
 
 function mockBrowseApis(overrides?: {
   events?: unknown[];
@@ -84,6 +87,7 @@ function mockBrowseApis(overrides?: {
   } as never);
   mockedGetUpcoming.mockResolvedValue({ data: { allEvents: [] } } as never);
   mockedGetEventsByIds.mockResolvedValue({ data: [] } as never);
+  mockedSearchEvents.mockResolvedValue({ data: [] } as never);
 }
 
 describe("Browse page", () => {
@@ -288,30 +292,31 @@ describe("Browse page", () => {
     expect(venueLink).toHaveTextContent(monthEventCountLabel(0));
   });
 
-  it("filters the events grid by search while leaving featured events intact", async () => {
+  it("keeps the events grid intact while search suggestions load from the API", async () => {
     const user = userEvent.setup();
+    mockedSearchEvents.mockResolvedValue({
+      data: DEMO_EVENTS.filter((event) => /raptors/i.test(event.name)),
+    } as never);
     render(<BrowseHome />);
 
     await screen.findByText(DEMO_EVENTS[1].name);
 
-    const search = screen.getByPlaceholderText(/search events, teams, venues/i);
-    await user.clear(search);
-    await user.type(search, "raptors");
+    const search = screen.getByPlaceholderText(/search for events/i);
+    await user.type(search, "rap");
 
     await waitFor(() => {
-      expect(screen.getByText(/2 events/i)).toBeInTheDocument();
+      expect(mockedSearchEvents).toHaveBeenCalledWith({ data: "rap" });
     });
     expect(
-      screen.getAllByText(/raptors vs\./i).length,
-    ).toBeGreaterThan(0);
-    expect(screen.queryByText(DEMO_EVENTS[1].name)).not.toBeInTheDocument();
-
-    // Featured carousel still uses the unfiltered first DEMO event.
-    expect(screen.getByText(/featured · hockey/i)).toBeInTheDocument();
+      await screen.findByRole("link", { name: /see all results/i }),
+    ).toHaveAttribute("href", "/search/?query=rap");
+    expect(screen.getByText(DEMO_EVENTS[1].name)).toBeInTheDocument();
+    expect(screen.getAllByText(/6 events/i).length).toBeGreaterThan(0);
   });
 
-  it("shows an empty search state when nothing matches", async () => {
+  it("shows search no-match copy without emptying the browse grid", async () => {
     const user = userEvent.setup();
+    mockedSearchEvents.mockResolvedValue({ data: [] } as never);
     render(<BrowseHome />);
 
     expect(
@@ -319,14 +324,17 @@ describe("Browse page", () => {
     ).toBeGreaterThan(0);
 
     await user.type(
-      screen.getByPlaceholderText(/search events, teams, venues/i),
-      "zzzz-no-match",
+      screen.getByPlaceholderText(/search for events/i),
+      "zzz",
     );
 
-    expect(await screen.findByText(/no events match/i)).toBeInTheDocument();
     expect(
-      screen.getAllByText(/try a team, venue or city name/i).length,
+      await screen.findByText(/sorry, there are no results matching your search/i),
+    ).toBeInTheDocument();
+    expect(
+      screen.getAllByText(DEMO_EVENTS[0].name).length,
     ).toBeGreaterThan(0);
+    expect(screen.queryByText(/no events match/i)).not.toBeInTheDocument();
   });
 
   it("switches the featured carousel when a dot is clicked", async () => {

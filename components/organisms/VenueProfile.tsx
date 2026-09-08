@@ -11,8 +11,13 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import InAppBackLink from "@/components/molecules/InAppBackLink";
 import RouteLoader from "@/components/molecules/RouteLoader";
+import {
+  ShopperSearchField,
+  ShopperSearchProvider,
+} from "@/components/molecules/ShopperSearchBar";
 import { fluidSize, shopperPageTypeCss } from "@/lib/shopperFluidType";
 import {
+  fieldFocusVars,
   resolveBrandLogo,
   resolveButtonColor,
   resolveButtonTextColor,
@@ -484,10 +489,9 @@ export default function VenueProfile({ slug }: { slug: string }) {
   }
 
   const searchPill = (
-    <div style={{ display: "flex", alignItems: "center", gap: 10, flex: "1 1 auto", maxWidth: 460, background: "rgba(255,255,255,0.10)", border: "1px solid rgba(158,182,216,0.22)", borderRadius: 999, padding: "10px 18px", color: "rgba(255,255,255,0.65)" }}>
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" style={{ width: 17, height: 17, flexShrink: 0 }}><circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" /></svg>
-      <span style={{ fontSize: fluidSize(14), whiteSpace: "nowrap" }}>Search events, teams, venues</span>
-    </div>
+    <ShopperSearchProvider placeholder="Search events, teams, venues">
+      <ShopperSearchField style={{ flex: "1 1 auto", maxWidth: 460 }} />
+    </ShopperSearchProvider>
   );
 
   const iconBtn = {
@@ -548,7 +552,7 @@ export default function VenueProfile({ slug }: { slug: string }) {
   );
 
   return (
-    <div className="shopper-page" style={{ background: "#f7f8fc", color: NAVY, minHeight: "100vh", fontFamily: "'Geist', system-ui, -apple-system, sans-serif", WebkitFontSmoothing: "antialiased", ["--vp-accent"]: ACC } as CSSProperties}>
+    <div className="shopper-page" style={{ background: "#f7f8fc", color: NAVY, minHeight: "100vh", fontFamily: "'Geist', system-ui, -apple-system, sans-serif", WebkitFontSmoothing: "antialiased", ["--vp-accent"]: ACC, ...fieldFocusVars(accent) } as CSSProperties}>
       <style>{`${shopperPageTypeCss()}
 .vp-row{transition:box-shadow 150ms ease,border-color 150ms ease}.vp-row:hover{box-shadow:0 8px 30px rgba(5,27,53,0.09);border-color:rgba(5,27,53,0.20)}.vp-action{outline:2px solid transparent;outline-offset:2px;transition:outline-color 140ms ease}.vp-action:hover,.vp-action:focus-visible{outline-color:var(--vp-accent)}`}</style>
 

@@ -1,11 +1,16 @@
 "use client";
 
-import { useEffect, useState, type CSSProperties, type FormEvent, type ReactNode } from "react";
+import { useEffect, type CSSProperties, type ReactNode } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import CartButton from "@/components/organisms/CartButton";
 import NavAuthActions from "@/components/molecules/NavAuthActions";
 import PageLoader from "@/components/molecules/PageLoader";
+import {
+  ShopperSearchField,
+  ShopperSearchMobile,
+  ShopperSearchProvider,
+} from "@/components/molecules/ShopperSearchBar";
 import { useAuth, setLastKnown } from "@/lib/auth";
 import {
   BLOCKTICKETS_GREEN,
@@ -55,7 +60,6 @@ export default function AppShell({
 }) {
   const { ready, isAuthenticated } = useAuth();
   const router = useRouter();
-  const [query, setQuery] = useState("");
   const isLight = variant === "light";
   const headerAccent = accent || BLOCKTICKETS_NAVY;
   const branded = Boolean(brandLogoSrc);
@@ -76,14 +80,7 @@ export default function AppShell({
     }
   }, [ready, requireAuth, isAuthenticated, router]);
 
-  const onSearch = (e: FormEvent) => {
-    e.preventDefault();
-    const q = query.trim();
-    if (!q) return;
-    router.push(`/search/?query=${encodeURIComponent(q)}`);
-  };
-
-  return (
+  const shell = (
     <div
       className={
         isLight
@@ -127,22 +124,9 @@ export default function AppShell({
               </Link>
             )}
             {search && (
-              <form onSubmit={onSearch} className="hidden max-w-[520px] flex-1 md:block">
-                <div className="bt-focus-edge flex h-11 items-center gap-3 rounded-xl border border-white/15 bg-[#051B35] px-4 transition-colors">
-                  <input
-                    data-seamless-focus
-                    value={query}
-                    onChange={(e) => setQuery(e.target.value)}
-                    placeholder="Search for events"
-                    className="w-full bg-transparent text-[14px] text-white outline-none placeholder-[#7c88a3]"
-                  />
-                  <button type="submit" aria-label="Search" className="text-[#9DA2B3]">
-                    <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden>
-                      <circle cx="11" cy="11" r="7" /><path d="m20 20-3.5-3.5" />
-                    </svg>
-                  </button>
-                </div>
-              </form>
+              <div className="ssb-desktop max-w-[520px] flex-1">
+                <ShopperSearchField variant="shell" />
+              </div>
             )}
             <div className="flex shrink-0 items-center gap-3">
               <CartButton />
@@ -151,6 +135,7 @@ export default function AppShell({
           </div>
         </header>
       )}
+      {search && !hideHeader ? <ShopperSearchMobile /> : null}
       <main className={`container-x relative pb-24 pt-10 lg:pt-12 ${hideHeader ? "pt-6" : ""}`}>
         {requireAuth && (!ready || !isAuthenticated) ? (
           <PageLoader label={ready ? "Redirecting" : "Loading"} />
@@ -160,4 +145,8 @@ export default function AppShell({
       </main>
     </div>
   );
+
+  if (!search) return shell;
+
+  return <ShopperSearchProvider>{shell}</ShopperSearchProvider>;
 }

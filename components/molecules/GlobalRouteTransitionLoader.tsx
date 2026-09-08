@@ -18,6 +18,18 @@ import {
 
 const MAX_VISIBLE_MS = 15000;
 
+/**
+ * How long a committed route gets to paint its own loader before this cover
+ * drops. A committed route still needs a render — and, for session-cached
+ * branding, a layout effect — before its loader is up, so uncovering on commit
+ * alone flashes a bare page. Short enough to go unnoticed when the destination
+ * has its content ready and paints no loader at all.
+ */
+const LOADER_HANDOFF_MS = 150;
+
+const DESTINATION_LOADER_SELECTOR =
+  "[data-bt-tenant-loader],[data-bt-platform-loader]";
+
 function isPlatformLinkOrigin(pathname: string) {
   const path = pathname.replace(/\/+$/, "") || "/";
   return path === "/" || path === "/our-story";
@@ -45,11 +57,16 @@ export default function GlobalRouteTransitionLoader() {
   const pollRef = useRef<number | null>(null);
   const timeoutRef = useRef<number | null>(null);
   const routeCommittedRef = useRef<((event: Event) => void) | null>(null);
+  const overlayRef = useRef<HTMLDivElement>(null);
+  const handoffRef = useRef<number | null>(null);
+  /** The destination route has committed and may still be bare. */
+  const committedRef = useRef(false);
 
   useEffect(() => {
     const clearTimers = () => {
       if (pollRef.current != null) window.clearInterval(pollRef.current);
       if (timeoutRef.current != null) window.clearTimeout(timeoutRef.current);
+      if (handoffRef.current != null) window.clearTimeout(handoffRef.current);
       if (routeCommittedRef.current) {
         window.removeEventListener(
           ROUTE_COMMITTED_EVENT,
@@ -59,11 +76,21 @@ export default function GlobalRouteTransitionLoader() {
       }
       pollRef.current = null;
       timeoutRef.current = null;
+      handoffRef.current = null;
     };
 
     const finish = () => {
       clearTimers();
+      committedRef.current = false;
       setVisible(false);
+    };
+
+    /** A loader that belongs to the destination, not the cover we are showing. */
+    const destinationLoaderPainting = () => {
+      const own = overlayRef.current;
+      return Array.from(
+        document.querySelectorAll(DESTINATION_LOADER_SELECTOR),
+      ).some((el) => !own?.contains(el));
     };
 
     const startTransition = (
@@ -107,6 +134,7 @@ export default function GlobalRouteTransitionLoader() {
       }
 
       clearTimers();
+      committedRef.current = false;
       setBranding(destinationBranding);
       setFallback(nextFallback);
       setMessage(loaderMessageForPath(destination.pathname));
@@ -115,14 +143,24 @@ export default function GlobalRouteTransitionLoader() {
       const tryFinish = () => {
         if (routePathKey(window.location.pathname) !== routePathKey(toPath)) {
           finish();
+          return;
         }
+        // Once the destination is showing its own loader, the two covers are
+        // interchangeable and this one can drop away unnoticed.
+        if (committedRef.current && destinationLoaderPainting()) finish();
       };
 
       const onRouteCommitted = (event: Event) => {
         const path = (event as CustomEvent<{ path?: string }>).detail?.path;
-        if (path && routePathKey(path) === routePathKey(toPath)) {
+        if (!path || routePathKey(path) !== routePathKey(toPath)) return;
+        committedRef.current = true;
+        if (destinationLoaderPainting()) {
           finish();
+          return;
         }
+        // Nothing painting yet: give the destination a beat to render its own
+        // loader, then uncover whatever it has rather than holding the page.
+        handoffRef.current = window.setTimeout(finish, LOADER_HANDOFF_MS);
       };
 
       routeCommittedRef.current = onRouteCommitted;
@@ -189,10 +227,12 @@ export default function GlobalRouteTransitionLoader() {
   if (!visible) return null;
 
   return (
-    <BrandedLoader
-      branding={branding}
-      fallback={fallback}
-      message={message}
-    />
+    <div ref={overlayRef}>
+      <BrandedLoader
+        branding={branding}
+        fallback={fallback}
+        message={message}
+      />
+    </div>
   );
 }

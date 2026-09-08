@@ -1,17 +1,26 @@
 // The loader intercepts native anchor clicks in a document-level capture
 // listener, so these fixtures must be plain anchors rather than next/link.
 /* eslint-disable @next/next/no-html-link-for-pages */
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { afterEach, describe, expect, it } from "vitest";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import GlobalRouteTransitionLoader from "@/components/molecules/GlobalRouteTransitionLoader";
-import { DEMO_ORGS } from "@/lib/demo/fixtures";
+import { DEMO_EVENTS, DEMO_ORGS } from "@/lib/demo/fixtures";
 import { cacheOrgBranding } from "@/lib/orgBrandingCache";
 import { notifyRouteCommitted } from "@/lib/routeTransition";
 
+vi.mock("@/lib/api", () => ({ searchEvents: vi.fn() }));
+
+import { fetchSearchEvents, eventSearchName } from "@/lib/searchEvents";
+import { searchEvents } from "@/lib/api";
+import { eventPurchasePath } from "@/lib/helpers";
+
 const raptors = DEMO_ORGS.find((org) => org.slug === "ogden-raptors")!;
+const icedogs = DEMO_ORGS.find((org) => org.slug === "niagara-icedogs")!;
 
 afterEach(() => {
   window.history.replaceState({}, "", "/");
+  sessionStorage.clear();
+  vi.mocked(searchEvents).mockReset();
 });
 
 describe("GlobalRouteTransitionLoader platform links", () => {
@@ -44,6 +53,47 @@ describe("GlobalRouteTransitionLoader platform links", () => {
     expect(window.location.pathname).toBe(`/${raptors.slug}/`);
     expect(document.querySelector("[data-bt-platform-loader]")).toBeTruthy();
     expect(document.querySelector("[data-bt-tenant-loader]")).toBeNull();
+  });
+
+  it("keeps covering a committed route until it paints its own loader", async () => {
+    cacheOrgBranding(raptors);
+    window.history.replaceState({}, "", "/");
+    render(
+      <>
+        <GlobalRouteTransitionLoader />
+        <a href={`/${raptors.slug}/`}>Partner tickets</a>
+      </>,
+    );
+
+    fireEvent.click(screen.getByRole("link", { name: "Partner tickets" }));
+    act(() => notifyRouteCommitted(`/${raptors.slug}/`));
+
+    // Committed but bare: uncovering here is what flashed an empty page.
+    expect(document.querySelector("[data-bt-platform-loader]")).toBeTruthy();
+
+    await waitFor(() => {
+      expect(document.querySelector("[data-bt-platform-loader]")).toBeNull();
+    });
+  });
+
+  it("uncovers as soon as the destination's own loader is on screen", () => {
+    cacheOrgBranding(raptors);
+    window.history.replaceState({}, "", "/");
+    render(
+      <>
+        <GlobalRouteTransitionLoader />
+        <a href={`/${raptors.slug}/`}>Partner tickets</a>
+        {/* Stands in for the destination page painting its own loader. */}
+        <div data-bt-tenant-loader />
+      </>,
+    );
+
+    fireEvent.click(screen.getByRole("link", { name: "Partner tickets" }));
+    expect(document.querySelector("[data-bt-platform-loader]")).toBeTruthy();
+
+    act(() => notifyRouteCommitted(`/${raptors.slug}/`));
+
+    expect(document.querySelector("[data-bt-platform-loader]")).toBeNull();
   });
 
   it("keeps the loader up until the destination route commits", async () => {
@@ -85,6 +135,28 @@ describe("GlobalRouteTransitionLoader platform links", () => {
     expect(window.location.pathname).toBe(`/${raptors.slug}/`);
     expect(document.querySelector("[data-bt-tenant-loader]")).toBeTruthy();
     expect(screen.getByText(raptors.name)).toBeInTheDocument();
+  });
+
+  it("paints the team loader the moment a search result is opened", async () => {
+    const hits = DEMO_EVENTS.filter(
+      (event) => event.organization.slug === icedogs.slug,
+    );
+    vi.mocked(searchEvents).mockResolvedValue({ data: hits } as never);
+    window.history.replaceState({}, "", "/search/?query=icedogs");
+
+    const [event] = await fetchSearchEvents("icedogs");
+    const label = eventSearchName(event);
+    render(
+      <>
+        <GlobalRouteTransitionLoader />
+        <a href={eventPurchasePath(event)}>{label}</a>
+      </>,
+    );
+
+    fireEvent.click(screen.getByRole("link", { name: label }));
+
+    expect(document.querySelector("[data-bt-tenant-loader]")).toBeTruthy();
+    expect(screen.getByText(icedogs.name)).toBeInTheDocument();
   });
 
   it.each([

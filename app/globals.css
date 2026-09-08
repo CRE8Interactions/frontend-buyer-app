@@ -599,3 +599,25 @@ body {
   background: inherit;
   pointer-events: none;
 }
+
+/* Shopper search: desktop field vs mobile trigger + fullscreen sheet. */
+.ssb-input::placeholder {
+  color: var(--ssb-ph, rgba(255, 255, 255, 0.65));
+  opacity: 1;
+}
+.ssb-mobile {
+  display: none;
+}
+@media (max-width: 900px) {
+  .ssb-desktop {
+    display: none !important;
+  }
+  .ssb-mobile {
+    display: block;
+  }
+}
+@media (min-width: 901px) {
+  .ssb-sheet {
+    display: none;
+  }
+}

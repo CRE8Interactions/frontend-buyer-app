@@ -23,6 +23,10 @@ import OnSaleSoonCard from "@/components/molecules/OnSaleSoonCard";
 import ShopperBodyPortal from "@/components/templates/ShopperBodyPortal";
 import RedemptionCodeField from "@/components/molecules/RedemptionCodeField";
 import SectionLocatorThumb from "@/components/molecules/SectionLocatorThumb";
+import {
+  ShopperSearchField,
+  ShopperSearchProvider,
+} from "@/components/molecules/ShopperSearchBar";
 import SeatMapSelectionOverlay from "@/components/organisms/SeatMapSelectionOverlay";
 import { placeGATicketsIntoCart, placeTicketsIntoCart } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
@@ -1466,10 +1470,13 @@ export default function PremiumTicketing({
                 </>
               )}
             </div>
-            <div style={{ display: "flex", alignItems: "center", gap: 10, flexShrink: 0, background: navFieldBg, border: `1px solid ${navFieldLine}`, borderRadius: 999, padding: "12px 20px", width: 300, color: navFieldInk }}>
-              <span style={{ fontSize: fluidSize(14), whiteSpace: "nowrap", flex: 1 }}>Search for events</span>
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" style={{ width: 18, height: 18 }}><circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" /></svg>
-            </div>
+            <ShopperSearchProvider>
+              <ShopperSearchField
+                iconSide="right"
+                style={{ width: 300, flexShrink: 0 }}
+                theme={{ bg: navFieldBg, line: navFieldLine, ink: isGa ? "#051b35" : "#fff", muted: navFieldInk }}
+              />
+            </ShopperSearchProvider>
             <div style={{ display: "flex", alignItems: "center", gap: 16, flexShrink: 0 }}>
               {isAuthenticated ? (
                 <Link href={walletSectionHref("events")} className="nmt-primary" style={navBtnStyle}>My wallet</Link>

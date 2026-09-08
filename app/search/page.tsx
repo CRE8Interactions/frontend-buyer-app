@@ -2,37 +2,51 @@
 
 import { Suspense, useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
-import AppShell from "@/components/templates/AppShell";
-import EmptyState from "@/components/molecules/EmptyState";
-import PageLoader from "@/components/molecules/PageLoader";
-import EventCard, { type EventCardEvent } from "@/components/organisms/EventCard";
-import { searchEvents } from "@/lib/api";
-import { getSingularOrPluralWord, sortByDate } from "@/lib/helpers";
+import Nav from "@/components/organisms/Nav";
+import SearchEventList from "@/components/organisms/SearchEventList";
+import { BrandBlocks } from "@/components/molecules/BrandLoader";
+import { fetchSearchEvents, type ShopperSearchEvent } from "@/lib/searchEvents";
+import { getSingularOrPluralWord } from "@/lib/helpers";
 
-function asList<T>(data: unknown): T[] {
-  if (Array.isArray(data)) return data as T[];
-  if (data && typeof data === "object" && Array.isArray((data as { data?: unknown }).data)) {
-    return (data as { data: T[] }).data;
-  }
-  return [];
+function SearchLoading({ label }: { label: string }) {
+  return (
+    <div
+      role="status"
+      aria-label={label}
+      aria-busy="true"
+      className="mt-10 flex min-h-[30vh] items-center justify-center"
+    >
+      <BrandBlocks />
+    </div>
+  );
+}
+
+function SearchNotice({ title, detail }: { title: string; detail: string }) {
+  return (
+    <div className="mt-10 flex flex-col items-center gap-2 rounded-[20px] border border-dashed border-[rgba(5,27,53,0.18)] bg-white px-6 py-11 text-center">
+      <p className="text-[17px] font-semibold tracking-[-0.015em]">{title}</p>
+      <p className="text-[14px] text-[#6e7180]">{detail}</p>
+    </div>
+  );
 }
 
 function SearchResultsInner({ query }: { query: string }) {
-  const [results, setResults] = useState<EventCardEvent[]>([]);
-  const [loading, setLoading] = useState(Boolean(query));
+  const [results, setResults] = useState<ShopperSearchEvent[]>([]);
+  const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
   useEffect(() => {
-    if (!query) return;
-
+    // The parent keys this component by query, so each search starts from the
+    // loading state below rather than resetting it here.
     let cancelled = false;
-    searchEvents({ data: query })
-      .then((res) => {
+    fetchSearchEvents(query)
+      .then((events) => {
         if (cancelled) return;
-        setResults(sortByDate(asList<EventCardEvent>(res.data)));
+        setResults(events);
       })
       .catch(() => {
-        if (!cancelled) setError("Search failed. Please try again.");
+        if (cancelled) return;
+        setError("Search failed. Please try again.");
       })
       .finally(() => {
         if (!cancelled) setLoading(false);
@@ -43,60 +57,34 @@ function SearchResultsInner({ query }: { query: string }) {
     };
   }, [query]);
 
+  if (loading) {
+    return <SearchLoading label="Searching" />;
+  }
+
   return (
     <div className="pb-16">
-      {!query ? (
-        <h1 className="text-[clamp(28px,3.5vw,40px)] font-semibold tracking-[-0.02em]">
-          Search for events using the bar above.
-        </h1>
-      ) : (
-        <h1 className="text-[clamp(28px,3.5vw,40px)] font-semibold tracking-[-0.02em]">
-          We found {loading ? "…" : results.length}{" "}
-          {!loading && results.length > 0
-            ? getSingularOrPluralWord(results.length, "result")
-            : "results"}{" "}
-          for &ldquo;{query}&rdquo;
-        </h1>
-      )}
+      <h1 className="text-[clamp(28px,3.5vw,40px)] font-semibold tracking-[-0.02em]">
+        {`We found ${results.length} ${getSingularOrPluralWord(
+          results.length,
+          "result",
+        )} for “${query}”`}
+      </h1>
 
-      {loading ? (
-        <PageLoader message="Searching…" label="Searching" className="mt-10 min-h-[30vh]" />
-      ) : error ? (
-        <div className="mt-10">
-          <EmptyState
-            icon={
-              <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden>
-                <circle cx="12" cy="12" r="9" />
-                <path d="M12 8v5M12 16h.01" />
-              </svg>
-            }
-          >
-            {error}
-          </EmptyState>
+      {error ? (
+        <SearchNotice
+          title={error}
+          detail="Check your connection, then search again."
+        />
+      ) : results.length === 0 ? (
+        <SearchNotice
+          title={`No events matched “${query}”`}
+          detail="Try a team, venue or city name."
+        />
+      ) : results.length > 0 ? (
+        <div className="mt-10 rounded-[20px] border border-[rgba(5,27,53,0.10)] bg-white p-3">
+          <SearchEventList events={results} query={query} />
         </div>
-      ) : query && results.length === 0 ? (
-        <div className="mt-10">
-          <EmptyState
-            icon={
-              <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden>
-                <circle cx="11" cy="11" r="7" />
-                <path d="m20 20-3-3" />
-              </svg>
-            }
-          >
-            No events matched &ldquo;{query}&rdquo;. Try a different search.
-          </EmptyState>
-        </div>
-      ) : (
-        <div className="mt-10 grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
-          {results.map((event) => (
-            <EventCard
-              key={String(event.uuid || event.id || event.slug || event.name)}
-              event={event}
-            />
-          ))}
-        </div>
-      )}
+      ) : null}
     </div>
   );
 }
@@ -104,17 +92,22 @@ function SearchResultsInner({ query }: { query: string }) {
 function SearchResults() {
   const searchParams = useSearchParams();
   const query = (searchParams.get("query") || "").trim();
+  // Opening a result swaps the search params for the destination route while
+  // this page is still mounted, so an empty query means "on the way out" as
+  // often as it means "landed here bare" — either way there is nothing to say.
+  if (!query) return null;
   return <SearchResultsInner key={query} query={query} />;
 }
 
 export default function SearchPage() {
   return (
-    <AppShell>
-      <Suspense
-        fallback={<PageLoader message="Loading search…" label="Loading search" />}
-      >
-        <SearchResults />
-      </Suspense>
-    </AppShell>
+    <div className="min-h-screen bg-[#f7f8fc] text-[#051b35]">
+      <Nav />
+      <main className="mx-auto max-w-[1320px] px-5 pt-4 md:px-8 md:pt-7">
+        <Suspense fallback={<SearchLoading label="Loading search" />}>
+          <SearchResults />
+        </Suspense>
+      </main>
+    </div>
   );
 }
