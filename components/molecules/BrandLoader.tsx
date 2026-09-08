@@ -39,6 +39,21 @@ function motionPhase<T extends { style: CSSStyleDeclaration }>(
   };
 }
 
+/**
+ * The stacking blocks from the platform loader, on their own. Pages that wait
+ * on their own fetch reuse them so the motion carries on from the route loader
+ * instead of swapping in a different spinner.
+ */
+export function BrandBlocks() {
+  return (
+    <div style={{ position: "relative", display: "flex", alignItems: "flex-end", gap: 7, height: 34 }}>
+      {[GREEN, GREEN, GREEN, GREEN_D, GREEN_D].map((c, i) => (
+        <span key={i} ref={motionPhase(1500, { staggerMs: i * 120 })} style={{ width: 12, height: 12, borderRadius: 3, background: c, animation: "bt-stack 1.5s ease-in-out infinite", animationDelay: `${i * 120}ms` }} />
+      ))}
+    </div>
+  );
+}
+
 type Props = {
   variant?: "blocktickets" | "tenant";
   /** Tenant background/accent colour (tenant variant). */
@@ -120,11 +135,7 @@ export default function BrandLoader({
         <>
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img ref={motionPhase(500, { loop: false })} src={LOCKUP} alt="Blocktickets" style={{ position: "relative", width: 196, animation: "bt-rise 500ms ease-out both" }} />
-          <div style={{ position: "relative", display: "flex", alignItems: "flex-end", gap: 7, height: 34 }}>
-            {[GREEN, GREEN, GREEN, GREEN_D, GREEN_D].map((c, i) => (
-              <span key={i} ref={motionPhase(1500, { staggerMs: i * 120 })} style={{ width: 12, height: 12, borderRadius: 3, background: c, animation: "bt-stack 1.5s ease-in-out infinite", animationDelay: `${i * 120}ms` }} />
-            ))}
-          </div>
+          <BrandBlocks />
           <div style={{ position: "absolute", bottom: 28, left: 0, right: 0, display: "flex", flexDirection: "column", alignItems: "center", gap: 14 }}>
             <div style={{ fontSize: 12, fontWeight: 500, letterSpacing: "0.02em", color: "rgba(255,255,255,0.55)" }}>{message}</div>
             <div style={{ width: 148, height: 3, borderRadius: 999, background: "rgba(255,255,255,0.12)", overflow: "hidden" }}>

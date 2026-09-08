@@ -23,12 +23,16 @@ import OnSaleSoonCard from "@/components/molecules/OnSaleSoonCard";
 import ShopperBodyPortal from "@/components/templates/ShopperBodyPortal";
 import RedemptionCodeField from "@/components/molecules/RedemptionCodeField";
 import SectionLocatorThumb from "@/components/molecules/SectionLocatorThumb";
+import {
+  ShopperSearchField,
+  ShopperSearchProvider,
+} from "@/components/molecules/ShopperSearchBar";
 import SeatMapSelectionOverlay from "@/components/organisms/SeatMapSelectionOverlay";
 import { placeGATicketsIntoCart, placeTicketsIntoCart } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { isStandaloneCatalogOffer } from "@/lib/connectedOffers";
 import { goBack } from "@/lib/inAppBack";
-import { verifyOfferAccessCode } from "@/lib/offerUnlock";
+import { verifyOfferAccessCode, unlockOfferInTicketGroups, seatmapLookupsFromTicketGroups } from "@/lib/offerUnlock";
 import {
   CHECKOUT_DEMO_LISTINGS_ERROR,
   CHECKOUT_DEMO_TIERS_ERROR,
@@ -312,6 +316,11 @@ export default function PremiumTicketing({
   const seatedError = useSeatmapStore((s) => s.seatedError);
   const setSeatedError = useSeatmapStore((s) => s.setSeatedError);
   const resetMapState = useSeatmapStore((s) => s.resetMapState);
+  const setSeatLookupTable = useSeatmapStore((s) => s.setSeatLookupTable);
+  const setSeatOffersLookupTable = useSeatmapStore(
+    (s) => s.setSeatOffersLookupTable,
+  );
+  const setSectionLookupTable = useSeatmapStore((s) => s.setSectionLookupTable);
   const getTicketImage = useSeatmapStore((s) => s.getTicketImage);
   const bucket = useSeatmapStore((s) => s.bucket);
   const storeMapping = useSeatmapStore((s) => s.data);
@@ -698,6 +707,16 @@ export default function PremiumTicketing({
     }
     setUnlockFieldError(null);
     setUnlocked((u) => (u.includes(zone) ? u : [...u, zone]));
+    const filtersState = useFiltersStore.getState();
+    const updatedGroups = unlockOfferInTicketGroups(filtersState.ticketGroups, zone);
+    filtersState.setTicketGroups(updatedGroups);
+    const lookups = seatmapLookupsFromTicketGroups(
+      updatedGroups,
+      filtersState.filters.selectedOfferIds,
+    );
+    setSeatLookupTable(lookups.seatLookupTable);
+    setSeatOffersLookupTable(lookups.seatOffersLookupTable);
+    setSectionLookupTable(lookups.sectionLookupTable);
     filterByZones((prev) => (prev.includes(zone) ? prev : [...prev, zone]));
     setUnlockZone(null);
   };
@@ -1451,10 +1470,13 @@ export default function PremiumTicketing({
                 </>
               )}
             </div>
-            <div style={{ display: "flex", alignItems: "center", gap: 10, flexShrink: 0, background: navFieldBg, border: `1px solid ${navFieldLine}`, borderRadius: 999, padding: "12px 20px", width: 300, color: navFieldInk }}>
-              <span style={{ fontSize: fluidSize(14), whiteSpace: "nowrap", flex: 1 }}>Search for events</span>
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" style={{ width: 18, height: 18 }}><circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" /></svg>
-            </div>
+            <ShopperSearchProvider>
+              <ShopperSearchField
+                iconSide="right"
+                style={{ width: 300, flexShrink: 0 }}
+                theme={{ bg: navFieldBg, line: navFieldLine, ink: isGa ? "#051b35" : "#fff", muted: navFieldInk }}
+              />
+            </ShopperSearchProvider>
             <div style={{ display: "flex", alignItems: "center", gap: 16, flexShrink: 0 }}>
               {isAuthenticated ? (
                 <Link href={walletSectionHref("events")} className="nmt-primary" style={navBtnStyle}>My wallet</Link>
@@ -2282,6 +2304,12 @@ export default function PremiumTicketing({
           preparing={!hasLiveSeatmap}
           orgName={d.orgLabel}
           logoSrc={d.brandLogoSrc || d.logoSrc}
+          onUnlockOffer={(offerName) => {
+            setUnlockZone(offerName);
+            setUnlockInput("");
+            setUnlockFieldError(null);
+          }}
+          keepTooltipOpen={unlockZone !== null}
         />
       )}
 

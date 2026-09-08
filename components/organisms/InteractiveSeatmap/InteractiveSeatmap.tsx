@@ -16,11 +16,13 @@ import {
   isSectionCoverVenue,
   mappingStageSize,
 } from "@/lib/seatmapLookups";
+import { panDeltaToRevealPopup, type PopupRect } from "@/lib/seatmapPopup";
 import useFiltersStore from "@/stores/filtersStore";
 import useSeatmapStore from "@/stores/seatmapStore";
-import type { TicketGroup } from "@/stores/filtersStore";
 import SeatmapIcons from "./SeatmapIcons";
-import SeatmapSeat from "./SeatmapSeat";
+import SeatmapSeat, {
+  TOOLTIP_DISMISS_DELAY_MS,
+} from "./SeatmapSeat";
 import SeatmapSections from "./SeatmapSections";
 import SeatmapTooltip, { type SeatmapTooltipTarget } from "./SeatmapTooltip";
 
@@ -84,7 +86,6 @@ function runViewportAnimation(
 
 type Props = {
   className?: string;
-  onUnlockOffer?: (offer: TicketGroup["offer"]) => void;
   accent?: string;
   buttonColor?: string;
   buttonTextColor?: string;
@@ -99,11 +100,14 @@ type Props = {
   hideLoadingSpinner?: boolean;
   /** Increment to clear the seat/section tooltip (mobile View selection / Checkout). */
   dismissTooltipKey?: number;
+  /** Opens the parent unlock-offer modal for access-coded inventory. */
+  onUnlockOffer?: (offerName: string) => void;
+  /** Keep the seat tooltip open while the unlock modal is visible. */
+  keepTooltipOpen?: boolean;
 };
 
 export default function InteractiveSeatmap({
   className = "",
-  onUnlockOffer,
   accent = "#3E8BF7",
   buttonColor = accent,
   buttonTextColor = "#fff",
@@ -111,6 +115,8 @@ export default function InteractiveSeatmap({
   compactChrome = false,
   hideLoadingSpinner = false,
   dismissTooltipKey = 0,
+  onUnlockOffer,
+  keepTooltipOpen = false,
 }: Props) {
   const data = useSeatmapStore((s) => s.data);
   const background = useSeatmapStore((s) => s.background);
@@ -166,10 +172,134 @@ export default function InteractiveSeatmap({
   viewportRef.current = viewport;
   maxScaleRef.current = maxScale;
   const [tooltip, setTooltip] = useState<SeatmapTooltipTarget>(null);
+  const tooltipHoveredRef = useRef(false);
+  /** Seat id of the pinned card, or null while the tooltip is a hover preview. */
+  const tooltipPinnedRef = useRef<string | null>(null);
+  const dismissTooltipTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
+    null,
+  );
+
+  const clearDismissTooltipTimer = useCallback(() => {
+    if (dismissTooltipTimerRef.current) {
+      clearTimeout(dismissTooltipTimerRef.current);
+      dismissTooltipTimerRef.current = null;
+    }
+  }, []);
+
+  const dismissTooltipNow = useCallback(() => {
+    clearDismissTooltipTimer();
+    tooltipHoveredRef.current = false;
+    tooltipPinnedRef.current = null;
+    setTooltip(null);
+  }, [clearDismissTooltipTimer]);
+
+  const scheduleDismissTooltip = useCallback(() => {
+    clearDismissTooltipTimer();
+    dismissTooltipTimerRef.current = setTimeout(() => {
+      if (!tooltipHoveredRef.current) setTooltip(null);
+    }, TOOLTIP_DISMISS_DELAY_MS);
+  }, [clearDismissTooltipTimer]);
+
+  const openTooltip = useCallback(
+    (target: SeatmapTooltipTarget) => {
+      clearDismissTooltipTimer();
+      tooltipPinnedRef.current =
+        target?.kind === "seat" && target.pinned === true
+          ? String(target.seatId)
+          : null;
+      setTooltip(target);
+    },
+    [clearDismissTooltipTimer],
+  );
+
+  const handleSeatTooltip = useCallback(
+    (target: SeatmapTooltipTarget | null) => {
+      if (target) {
+        // A pinned seat card stays put until Add seats, close, or another seat
+        // takes over; hovering the pinned seat must not downgrade it.
+        const pinning = target.kind === "seat" && target.pinned === true;
+        const pinnedSeatId = tooltipPinnedRef.current;
+        if (
+          pinnedSeatId &&
+          !pinning &&
+          target.kind === "seat" &&
+          String(target.seatId) === pinnedSeatId
+        ) {
+          return;
+        }
+        openTooltip(target);
+        return;
+      }
+      dismissTooltipNow();
+    },
+    [dismissTooltipNow, openTooltip],
+  );
+
+  // A seat popup that would spill past the map edge pans the map instead of
+  // clamping itself off the seat, so the caret keeps pointing at the dot.
+  const handleRevealTooltip = useCallback((rect: PopupRect) => {
+    const el = containerRef.current;
+    if (!el) return;
+    const box = el.getBoundingClientRect();
+    if (!box.width || !box.height) return;
+    const { dx, dy } = panDeltaToRevealPopup(rect, {
+      left: Math.max(box.left, 0),
+      top: Math.max(box.top, 0),
+      right: Math.min(box.right, window.innerWidth),
+      bottom: Math.min(box.bottom, window.innerHeight),
+    });
+    if (!dx && !dy) return;
+    // Panning slides the seat out from under the cursor, so the mouseleave it
+    // triggers must not close the popup we just made room for.
+    tooltipHoveredRef.current = true;
+    clearDismissTooltipTimer();
+    setViewport((prev) => ({
+      ...prev,
+      posX: prev.posX + dx,
+      posY: prev.posY + dy,
+    }));
+    setTooltip((prev) =>
+      prev ? { ...prev, x: prev.x + dx, y: prev.y + dy } : prev,
+    );
+  }, [clearDismissTooltipTimer]);
+
+  const handleTooltipHoverStart = useCallback(() => {
+    tooltipHoveredRef.current = true;
+    clearDismissTooltipTimer();
+  }, [clearDismissTooltipTimer]);
+
+  const scheduleDismissTooltipIfAllowed = useCallback(() => {
+    if (keepTooltipOpen || tooltipPinnedRef.current) return;
+    scheduleDismissTooltip();
+  }, [keepTooltipOpen, scheduleDismissTooltip]);
+
+  const handleTooltipHoverEnd = useCallback(() => {
+    if (keepTooltipOpen || tooltipPinnedRef.current) return;
+    tooltipHoveredRef.current = false;
+    scheduleDismissTooltip();
+  }, [keepTooltipOpen, scheduleDismissTooltip]);
+
+  const handleUnlockOffer = useCallback(
+    (offerName: string) => {
+      tooltipHoveredRef.current = true;
+      clearDismissTooltipTimer();
+      onUnlockOffer?.(offerName);
+    },
+    [clearDismissTooltipTimer, onUnlockOffer],
+  );
+
+  useEffect(() => {
+    if (!keepTooltipOpen) return;
+    tooltipHoveredRef.current = true;
+    clearDismissTooltipTimer();
+  }, [clearDismissTooltipTimer, keepTooltipOpen]);
+
   useEffect(() => {
     if (!dismissTooltipKey) return;
-    setTooltip(null);
-  }, [dismissTooltipKey]);
+    dismissTooltipNow();
+  }, [dismissTooltipKey, dismissTooltipNow]);
+
+  useEffect(() => () => clearDismissTooltipTimer(), [clearDismissTooltipTimer]);
   const [focusedSectionId, setFocusedSectionId] = useState<string | null>(null);
   const [activeRowIds, setActiveRowIds] = useState<string[] | null>(null);
   const [lookupsReady, setLookupsReady] = useState(lookupsMode === "external");
@@ -405,7 +535,7 @@ export default function InteractiveSeatmap({
         clearPan();
         dragStoppedRef.current = true;
         transitionTouchInfo.current = null;
-        setTooltip(null);
+        dismissTooltipNow();
         const p1 = toLocal(e.touches[0].clientX, e.touches[0].clientY);
         const p2 = toLocal(e.touches[1].clientX, e.touches[1].clientY);
         pinchRef.current = {
@@ -516,7 +646,7 @@ export default function InteractiveSeatmap({
         e.preventDefault();
         if (!pan.active) {
           pan.active = true;
-          setTooltip(null);
+          dismissTooltipNow();
         }
         setViewport((prev) => ({
           ...prev,
@@ -586,7 +716,7 @@ export default function InteractiveSeatmap({
     if (!pan.active && Math.hypot(dx, dy) < PAN_THRESHOLD_PX) return;
     if (!pan.active) {
       pan.active = true;
-      setTooltip(null);
+      dismissTooltipNow();
       (e.currentTarget as HTMLElement).setPointerCapture?.(e.pointerId);
     }
     setViewport((prev) => ({
@@ -686,7 +816,7 @@ export default function InteractiveSeatmap({
           if ((event.target as Element | null)?.closest?.("[data-interactive-seat]")) {
             return;
           }
-          setTooltip(null);
+          dismissTooltipNow();
         }}
       >
         {showLoading && !hideLoadingSpinner ? (
@@ -730,7 +860,7 @@ export default function InteractiveSeatmap({
                   showCovers={!focusedSectionId}
                   focusedSectionId={focusedSectionId}
                   onZoomableSectionClick={focusSection}
-                  onTooltip={setTooltip}
+                  onTooltip={openTooltip}
                 />
                 <g className="seats">
                   <SeatmapIcons />
@@ -748,7 +878,8 @@ export default function InteractiveSeatmap({
                             <SeatmapSeat
                               key={sid}
                               seat={seat}
-                              onTooltip={setTooltip}
+                              onTooltip={handleSeatTooltip}
+                              onTooltipLeave={scheduleDismissTooltipIfAllowed}
                               isTooltipActive={
                                 tooltip?.kind === "seat" &&
                                 String(tooltip.seatId) === sid
@@ -862,6 +993,7 @@ export default function InteractiveSeatmap({
                 { label: "Unavailable", color: "#E6E8EC" },
                 { label: "Available", color: "#3E8BF7" },
                 { label: "Selected", color: accent },
+                { label: "Locked", color: "#353945" },
                 { label: "Exclusive", color: "#9757D7" },
                 { label: "Accessibility", color: "#F4BC16" },
               ].map((item) => (
@@ -883,8 +1015,11 @@ export default function InteractiveSeatmap({
 
       <SeatmapTooltip
         target={tooltip}
-        onClose={() => setTooltip(null)}
-        onUnlock={onUnlockOffer}
+        onClose={dismissTooltipNow}
+        onHoverStart={handleTooltipHoverStart}
+        onHoverEnd={handleTooltipHoverEnd}
+        onUnlockOffer={handleUnlockOffer}
+        onRequestReveal={handleRevealTooltip}
         accent={accent}
         buttonColor={buttonColor}
         buttonTextColor={buttonTextColor}

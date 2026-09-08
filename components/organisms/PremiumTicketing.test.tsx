@@ -1596,7 +1596,7 @@ describe("Select tickets page (PremiumTicketing)", { timeout: 20_000 }, () => {
 
     await user.click(screen.getByRole("button", { name: /view selection/i }));
 
-    expect(screen.getByText("Ticket details")).toBeInTheDocument();
+    expect(screen.getByText("Your selection")).toBeInTheDocument();
     expect(screen.getByText(String(selected.sectionNumber))).toBeInTheDocument();
     expect(screen.getByText(String(selected.rowNumber))).toBeInTheDocument();
     expect(screen.getByText(String(selected.seatNumber))).toBeInTheDocument();

@@ -3,6 +3,12 @@ import {
   groupsToGaTiers,
   groupsToListings,
   limitsFromTicketGroup,
+  limitsFromSeatedOfferRow,
+  offerAllowedOnSeatedMap,
+  hasSeatedMapSelectableOffers,
+  seatedMapSelectableOffers,
+  shouldShowSeatedMapOfferRow,
+  offerRestrictionLabelForSeatedRow,
   lockedZonesFromGroups,
   offerChipNames,
   validQuantityOptions,
@@ -12,6 +18,7 @@ import {
   clampQuantity,
   quantityIsAllowed,
   quantityLimits,
+  offerRestrictionLabel,
   quantityRestrictionLabel,
   selectionPaneTicketLimit,
   selectionPaneRestrictionLabel,
@@ -108,6 +115,22 @@ describe("offer quantity restrictions", () => {
     expect(
       quantityLimits({ limit: 4 }, { available: 2, defaultMax: 20 }).valid,
     ).toBe(false);
+    expect(
+      offerRestrictionLabel({ limit: 4 }, {
+        min: 4,
+        max: 2,
+        step: 1,
+        valid: false,
+      }),
+    ).toBe("4 per order");
+    expect(
+      offerRestrictionLabel({ maxQuantity: 1 }, {
+        min: 1,
+        max: 1,
+        step: 1,
+        valid: true,
+      }),
+    ).toBe("1 per order");
   });
 
   it("marks an offer unavailable when no permitted multiple fits", () => {
@@ -531,6 +554,374 @@ describe("limitsFromTicketGroup", () => {
       null,
     );
     expect(companionLimits).toMatchObject({ min: 1, max: 2, step: 1, valid: true });
+  });
+});
+
+describe("limitsFromSeatedOfferRow", () => {
+  it("blocks exact-limit offers that need more than one seat on the map", () => {
+    const parent = DEMO_SEATED_TICKET_GROUPS.find((g) => g.seatIds?.includes("a1"));
+    expect(parent).toBeTruthy();
+
+    expect(
+      limitsFromSeatedOfferRow(
+        {
+          ...parent!,
+          offer: { id: "off-scheduled", name: "scheduled", limit: 3 },
+        },
+        null,
+      ),
+    ).toMatchObject({ min: 3, max: 3, step: 1, valid: false });
+  });
+
+  it("caps selectable seated offers at one ticket per seat", () => {
+    const parent = DEMO_SEATED_TICKET_GROUPS.find((g) => g.seatIds?.includes("a1"));
+    expect(parent).toBeTruthy();
+
+    expect(
+      limitsFromSeatedOfferRow(
+        {
+          ...parent!,
+          offer: {
+            id: "off-standard",
+            name: "Standard Admission",
+            maxQuantity: 1,
+          },
+        },
+        null,
+      ),
+    ).toMatchObject({ min: 1, max: 1, step: 1, valid: true });
+  });
+
+  it("blocks seated offers whose minimum or step require more than one ticket", () => {
+    const parent = DEMO_SEATED_TICKET_GROUPS.find((g) => g.seatIds?.includes("a1"));
+    expect(parent).toBeTruthy();
+
+    expect(
+      limitsFromSeatedOfferRow(
+        {
+          ...parent!,
+          offer: {
+            id: "off-min-2",
+            name: "Pair required",
+            minQuantity: 2,
+            maxQuantity: 6,
+          },
+        },
+        null,
+      ).valid,
+    ).toBe(false);
+
+    expect(
+      limitsFromSeatedOfferRow(
+        {
+          ...parent!,
+          offer: {
+            id: "off-step-2",
+            name: "Even lots",
+            multipleOf: 2,
+            maxQuantity: 10,
+          },
+        },
+        null,
+      ).valid,
+    ).toBe(false);
+  });
+});
+
+describe("shouldShowSeatedMapOfferRow", () => {
+  it("hides seated offers that cannot be bought one ticket at a time on the map", () => {
+    const parent = DEMO_SEATED_TICKET_GROUPS.find((g) => g.seatIds?.includes("a1"));
+    expect(parent).toBeTruthy();
+
+    expect(
+      shouldShowSeatedMapOfferRow(
+        {
+          ...parent!,
+          offer: { id: "off-scheduled", name: "scheduled", limit: 3 },
+        },
+        null,
+      ),
+    ).toBe(false);
+
+    expect(
+      shouldShowSeatedMapOfferRow(
+        {
+          ...parent!,
+          offer: {
+            id: "off-min-2",
+            name: "Pair required",
+            minQuantity: 2,
+            maxQuantity: 6,
+          },
+        },
+        null,
+      ),
+    ).toBe(false);
+
+    expect(
+      shouldShowSeatedMapOfferRow(
+        {
+          ...parent!,
+          offer: {
+            id: "off-scheduled-range",
+            name: "scheduled",
+            minQuantity: 1,
+            maxQuantity: 2,
+          },
+        },
+        null,
+      ),
+    ).toBe(false);
+
+    expect(
+      shouldShowSeatedMapOfferRow(
+        {
+          ...parent!,
+          offer: {
+            id: "off-max-only",
+            name: "scheduled",
+            maxQuantity: 2,
+          },
+        },
+        null,
+      ),
+    ).toBe(false);
+
+    expect(
+      shouldShowSeatedMapOfferRow(
+        {
+          ...parent!,
+          offer: {
+            id: "off-step-1",
+            name: "scheduled",
+            multipleOf: 1,
+          },
+        },
+        null,
+      ),
+    ).toBe(true);
+
+    expect(
+      shouldShowSeatedMapOfferRow(
+        {
+          ...parent!,
+          offer: {
+            id: "off-scheduled-single",
+            name: "scheduled",
+            minQuantity: 1,
+            maxQuantity: 1,
+            multipleOf: 1,
+          },
+        },
+        null,
+      ),
+    ).toBe(true);
+
+    expect(
+      shouldShowSeatedMapOfferRow(
+        {
+          ...parent!,
+          offer: {
+            id: "off-exact-one",
+            name: "scheduled",
+            limit: 1,
+          },
+        },
+        null,
+      ),
+    ).toBe(true);
+
+    expect(
+      shouldShowSeatedMapOfferRow(
+        {
+          ...parent!,
+          offer: {
+            id: "off-increment-one",
+            name: "scheduled",
+            incrementsOf: 1,
+          },
+        },
+        null,
+      ),
+    ).toBe(true);
+  });
+
+  it("still shows locked offers and one-ticket seated rows", () => {
+    const parent = DEMO_SEATED_TICKET_GROUPS.find((g) => g.seatIds?.includes("a1"));
+    expect(parent).toBeTruthy();
+
+    expect(
+      shouldShowSeatedMapOfferRow(
+        {
+          ...parent!,
+          offer: {
+            id: "off-coded",
+            name: "VIP Coded",
+            accessCode: "SECRET",
+          },
+        },
+        null,
+      ),
+    ).toBe(true);
+
+    expect(
+      shouldShowSeatedMapOfferRow(
+        {
+          ...parent!,
+          offer: {
+            id: "off-standard",
+            name: "Standard Admission",
+            maxQuantity: 1,
+          },
+        },
+        null,
+      ),
+    ).toBe(true);
+  });
+
+  it("hides locked offers that still require more than one ticket on the map", () => {
+    const parent = DEMO_SEATED_TICKET_GROUPS.find((g) => g.seatIds?.includes("a1"));
+    expect(parent).toBeTruthy();
+
+    expect(
+      shouldShowSeatedMapOfferRow(
+        {
+          ...parent!,
+          offer: {
+            id: "off-coded-bundle",
+            name: "scheduled",
+            accessCode: "SECRET",
+            limit: 3,
+          },
+        },
+        null,
+      ),
+    ).toBe(false);
+
+    expect(
+      shouldShowSeatedMapOfferRow(
+        {
+          ...parent!,
+          offer: {
+            id: "off-coded-range",
+            name: "scheduled",
+            accessCode: "NPA26",
+            minQuantity: 1,
+            maxQuantity: 2,
+          },
+        },
+        null,
+      ),
+    ).toBe(false);
+
+    expect(
+      shouldShowSeatedMapOfferRow(
+        {
+          ...parent!,
+          offer: {
+            id: "off-coded-single",
+            name: "scheduled",
+            accessCode: "NPA26",
+            minQuantity: 1,
+            maxQuantity: 1,
+            multipleOf: 1,
+          },
+        },
+        null,
+      ),
+    ).toBe(true);
+  });
+});
+
+describe("offerAllowedOnSeatedMap", () => {
+  it("allows one-ticket limits and hides any min, max, step, or exact limit above 1", () => {
+    expect(offerAllowedOnSeatedMap(null)).toBe(true);
+    expect(offerAllowedOnSeatedMap({ maxQuantity: 1 })).toBe(true);
+    expect(offerAllowedOnSeatedMap({ minQuantity: 1, multipleOf: 1 })).toBe(
+      true,
+    );
+    expect(offerAllowedOnSeatedMap({ limit: 1 })).toBe(true);
+
+    expect(offerAllowedOnSeatedMap({ maxQuantity: 2 })).toBe(false);
+    expect(offerAllowedOnSeatedMap({ minQuantity: 2 })).toBe(false);
+    expect(offerAllowedOnSeatedMap({ multipleOf: 2 })).toBe(false);
+    expect(offerAllowedOnSeatedMap({ incrementsOf: 2 })).toBe(false);
+    expect(offerAllowedOnSeatedMap({ limit: 3 })).toBe(false);
+  });
+});
+
+describe("hasSeatedMapSelectableOffers", () => {
+  it("returns false when every offer fails seated map limit rules", () => {
+    const parent = DEMO_SEATED_TICKET_GROUPS.find((g) => g.seatIds?.includes("a1"));
+    expect(parent).toBeTruthy();
+
+    expect(
+      hasSeatedMapSelectableOffers([
+        {
+          ...parent!,
+          offer: { id: "off-scheduled", name: "scheduled", limit: 3 },
+        },
+      ]),
+    ).toBe(false);
+  });
+
+  it("returns true when at least one offer can be picked on the map", () => {
+    const parent = DEMO_SEATED_TICKET_GROUPS.find((g) => g.seatIds?.includes("a1"));
+    expect(parent).toBeTruthy();
+
+    expect(
+      hasSeatedMapSelectableOffers([
+        {
+          ...parent!,
+          offer: { id: "off-scheduled", name: "scheduled", limit: 3 },
+        },
+        {
+          ...parent!,
+          offer: {
+            id: "off-standard",
+            name: "Standard Admission",
+            maxQuantity: 1,
+          },
+        },
+      ]),
+    ).toBe(true);
+
+    expect(
+      seatedMapSelectableOffers([
+        {
+          ...parent!,
+          offer: { id: "off-scheduled", name: "scheduled", limit: 3 },
+        },
+        {
+          ...parent!,
+          offer: {
+            id: "off-standard",
+            name: "Standard Admission",
+            maxQuantity: 1,
+          },
+        },
+      ]),
+    ).toHaveLength(1);
+  });
+});
+
+describe("offerRestrictionLabelForSeatedRow", () => {
+  it("shows configured exact limits when the offer cannot be picked on one seat", () => {
+    expect(
+      offerRestrictionLabelForSeatedRow(
+        { limit: 3 },
+        { min: 3, max: 3, step: 1, valid: false },
+      ),
+    ).toBe("3 per order");
+  });
+
+  it("shows one per order for selectable seated rows even when the offer allows more elsewhere", () => {
+    expect(
+      offerRestrictionLabelForSeatedRow(
+        { maxQuantity: 19 },
+        { min: 1, max: 1, step: 1, valid: true },
+      ),
+    ).toBe("1 per order");
   });
 });
 

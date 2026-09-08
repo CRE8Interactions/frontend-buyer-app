@@ -8,7 +8,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import Nav, { type SearchGroup } from "@/components/organisms/Nav";
+import Nav from "@/components/organisms/Nav";
 import SiteFooter from "@/components/organisms/SiteFooter";
 import { BrandedLoader } from "@/components/molecules/RouteLoader";
 import {
@@ -121,17 +121,6 @@ type BrowseVenue = {
   allEvents?: unknown[];
   address?: VenueAddress;
 };
-
-const RECENT_SEARCHES = ["NM State", "IceDogs", "Raptors"];
-
-const initials2 = (t: string) =>
-  t
-    .split(" ")
-    .filter(Boolean)
-    .slice(0, 2)
-    .map((w) => w[0])
-    .join("")
-    .toUpperCase();
 
 const monogram = (name: string) =>
   name
@@ -353,7 +342,6 @@ function loadBrowseSnapshot(force = false): Promise<BrowseSnapshot> {
 
 export default function BrowseHome() {
   // Seed from the module snapshot so a remount (back button) paints instantly.
-  const [query, setQuery] = useState("");
   const [feat, setFeat] = useState(0);
   const [vw, setVw] = useState(1440);
   const [events, setEvents] = useState<BrowseEvent[]>(
@@ -406,90 +394,7 @@ export default function BrowseHome() {
   const mobile = vw < 900;
   const narrow = !mobile && vw < 1160;
 
-  const filteredEvents = useMemo(() => {
-    const q = query.trim().toLowerCase();
-    if (!q) return events;
-    return events.filter((e) => {
-      const hay = [
-        eventTitle(e),
-        e.venue?.name,
-        cityState(e.venue?.address),
-        e.organization?.name,
-      ]
-        .filter(Boolean)
-        .join(" ")
-        .toLowerCase();
-      return hay.includes(q);
-    });
-  }, [events, query]);
-
   const featIndex = featured.length ? feat % featured.length : 0;
-
-  const searchGroups = useMemo<SearchGroup[]>(() => {
-    const q = query.trim().toLowerCase();
-    if (!q) {
-      return [
-        {
-          title: "Recent searches",
-          items: RECENT_SEARCHES.map((r) => ({
-            title: r,
-            sub: "Search again",
-            meta: "",
-            initials: initials2(r),
-            iconBg: "#f1f3f8",
-            iconInk: "#6e7180",
-            href: "/browse",
-          })),
-        },
-      ];
-    }
-    const match = (s: string) => s.toLowerCase().includes(q);
-    const evHits = events
-      .filter((e) =>
-        match(
-          `${eventTitle(e)} ${e.venue?.name || ""} ${cityState(e.venue?.address)}`,
-        ),
-      )
-      .slice(0, 4)
-      .map((e) => ({
-        title: eventTitle(e),
-        sub: [eventWhen(e), e.venue?.name].filter(Boolean).join(" · "),
-        meta: "Event",
-        initials: initials2(eventTitle(e)),
-        iconBg: "#eef1f6",
-        iconInk: NAVY,
-        href: eventPurchasePath(e),
-      }));
-    const tmHits = orgs
-      .filter((t) => match(`${t.name || ""}`))
-      .slice(0, 3)
-      .map((t) => ({
-        title: t.name || "Team",
-        sub: `${t.upcomingEventsCount ?? 0} upcoming events`,
-        meta: "Team",
-        initials: initials2(t.name || "T"),
-        iconBg: GREEN,
-        iconInk: NAVY,
-        href: t.slug ? `/${t.slug}` : "/browse",
-      }));
-    const vnHits = venues
-      .filter((v) => match(`${v.name || ""} ${cityState(v.address)}`))
-      .slice(0, 3)
-      .map((v) => ({
-        title: v.name || "Venue",
-        sub: cityState(v.address) || "Venue",
-        meta: "Venue",
-        initials: initials2(v.name || "V"),
-        iconBg: NAVY,
-        iconInk: GREEN,
-        href: v.slug ? `/venue/${v.slug}` : "/browse",
-      }));
-    const groups: SearchGroup[] = [];
-    if (evHits.length) groups.push({ title: "Events", items: evHits });
-    if (tmHits.length) groups.push({ title: "Teams", items: tmHits });
-    if (vnHits.length) groups.push({ title: "Venues", items: vnHits });
-    return groups;
-  }, [query, events, orgs, venues]);
 
   const hero = featured[featIndex];
   const cardCols = mobile
@@ -542,14 +447,7 @@ export default function BrowseHome() {
     >
       <style>{`.bh-ev,.bh-av{transition:box-shadow 160ms ease,transform 160ms ease}.bh-ev:hover{box-shadow:0 8px 30px rgba(5,27,53,0.10);transform:translateY(-2px);border-color:rgba(5,27,53,0.22)}.bh-av:hover{box-shadow:0 12px 28px -8px rgba(5,27,53,0.30);transform:scale(1.04)}`}</style>
 
-      <Nav
-        search={{
-          value: query,
-          onChange: setQuery,
-          groups: searchGroups,
-          seeAllHref: "/browse",
-        }}
-      />
+      <Nav />
 
       {/* hero */}
       <section
@@ -897,14 +795,14 @@ export default function BrowseHome() {
             Events
           </h2>
           <span style={{ fontSize: 13, color: "#6e7180" }}>
-            {`${filteredEvents.length} ${filteredEvents.length === 1 ? "event" : "events"}`}
+            {`${events.length} ${events.length === 1 ? "event" : "events"}`}
           </span>
         </div>
 
         <div
           style={{ display: "grid", gridTemplateColumns: cardCols, gap: 16 }}
         >
-          {filteredEvents.map((e, i) => {
+          {events.map((e, i) => {
             const status = eventStatus(e);
             const soon = status.toLowerCase() === "presale";
             const tag = tagFor(status);
@@ -1051,7 +949,7 @@ export default function BrowseHome() {
           })}
         </div>
 
-        {filteredEvents.length === 0 && (
+        {events.length === 0 && (
           <div
             style={{
               background: "#fff",
@@ -1072,14 +970,10 @@ export default function BrowseHome() {
                 letterSpacing: "-0.015em",
               }}
             >
-              {query
-                ? `No events match “${query}”`
-                : error || "No events on sale right now"}
+              {error || "No events on sale right now"}
             </div>
             <div style={{ fontSize: 14, color: "#6e7180" }}>
-              {query
-                ? "Try a team, venue or city name."
-                : "Check back soon or browse a team storefront."}
+              Check back soon or browse a team storefront.
             </div>
           </div>
         )}

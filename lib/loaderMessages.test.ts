@@ -6,6 +6,7 @@ import {
   GROUP_LOADER_MESSAGE,
   LOADER_MESSAGE,
   MENU_LOADER_MESSAGE,
+  SEARCH_LOADER_MESSAGE,
   loaderMessageForPath,
 } from "@/lib/loaderMessages";
 
@@ -39,6 +40,9 @@ describe("loaderMessageForPath", () => {
     );
     expect(loaderMessageForPath("/menu/org-raptors/section/")).toBe(
       MENU_LOADER_MESSAGE,
+    );
+    expect(loaderMessageForPath("/search/?query=raptors")).toBe(
+      SEARCH_LOADER_MESSAGE,
     );
   });
 });

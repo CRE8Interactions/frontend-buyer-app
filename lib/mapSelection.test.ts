@@ -20,8 +20,8 @@ const vip = gaGroups.find((group) => group.GA && group.offer)!;
 describe("mixed and checkout map errors", () => {
   it("closes mixed-row picks and asks the shopper to change the selection", () => {
     expect(MIXED_MAP_SELECTION_ERROR.buttonText).toBe("Close");
-    expect(MIXED_MAP_SELECTION_ERROR.message).toMatch(
-      /one row or GA section at a time\.\.\. Please change your selection\.$/,
+    expect(MIXED_MAP_SELECTION_ERROR.message).toBe(
+      "You can only select tickets from one row or GA section at a time.",
     );
     expect(MIXED_MAP_SELECTION_ERROR.leaveMap).toBe(false);
   });
@@ -33,7 +33,9 @@ describe("mixed and checkout map errors", () => {
     expect(
       checkoutHoldError(new Error("This event is not ready for checkout yet.")).message,
     ).toBe("This event is not ready for checkout yet.");
-    expect(maxTicketLimitError(4).message).toMatch(/ticket limit of 4/);
+    expect(maxTicketLimitError(4).message).toBe(
+      "Adding these tickets would exceed the ticket limit of 4.",
+    );
   });
 });
 

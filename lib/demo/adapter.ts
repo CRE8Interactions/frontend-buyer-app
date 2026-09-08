@@ -11,6 +11,7 @@
 import type { AxiosResponse, InternalAxiosRequestConfig } from "axios";
 import {
   DEMO_SESSION,
+  DEMO_EVENTS,
   demoAccessPass,
   demoCart,
   demoCompletedFlexPackOrder,
@@ -100,6 +101,20 @@ const routes: Route[] = [
   // ---- Browse / discovery (real snapshots) ----
   { methods: ["get"], match: endsWith("/organizations/on-sale"), handle: async () => ({ data: await snap("organizations-on-sale.json") }) },
   { methods: ["get"], match: endsWith("/events/on-sale"), handle: async () => ({ data: await snap("browse-events.json") }) },
+  {
+    methods: ["post"],
+    match: endsWith("/events/search"),
+    handle: (_path, config) => {
+      const query = String(parseBody(config).data || "");
+      const hits = DEMO_EVENTS.filter((event) =>
+        event.name.toLowerCase().includes(query.trim().toLowerCase()),
+      ).sort(
+        (a, b) =>
+          new Date(a.start).getTime() - new Date(b.start).getTime(),
+      );
+      return { data: query.trim() ? hits : [] };
+    },
+  },
 
   // ---- Shopper wallet ----
   {

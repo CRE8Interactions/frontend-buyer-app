@@ -277,6 +277,98 @@ export function limitsFromTicketGroup(
   });
 }
 
+/** Exact-limit offers that require more tickets than a single seated map pick allows. */
+export function offerRequiresMultipleSeats(
+  source: QuantityRestrictionSource | null | undefined,
+) {
+  const exactLimit = normalizeGlobalTicketLimit(source?.limit);
+  return exactLimit != null && exactLimit > 1;
+}
+
+function configuredQuantityAboveOne(value: unknown) {
+  const parsed = normalizeGlobalTicketLimit(value);
+  return parsed != null && parsed > 1;
+}
+
+function configuredStepAboveOne(
+  source: QuantityRestrictionSource | null | undefined,
+) {
+  const raw = source?.multipleOf ?? source?.incrementsOf;
+  if (raw == null) return false;
+  return positiveInteger(raw, 1) > 1;
+}
+
+/**
+ * Seated map rows only list offers that can be bought one ticket at a time:
+ * no exact limit, min, max, or step/increment above 1.
+ */
+export function offerAllowedOnSeatedMap(
+  source: QuantityRestrictionSource | null | undefined,
+) {
+  if (offerRequiresMultipleSeats(source)) return false;
+  if (configuredQuantityAboveOne(source?.maxQuantity)) return false;
+  if (configuredQuantityAboveOne(source?.minQuantity)) return false;
+  if (configuredStepAboveOne(source)) return false;
+  return true;
+}
+
+/** Seated map multi-offer rows: one seat, qty 0 or 1; exact limits above 1 are not selectable. */
+export function limitsFromSeatedOfferRow(
+  group: QuantityCapGroup & RawTicketGroup,
+  globalMax?: number | null,
+): QuantityLimits {
+  const source = restrictionSourceFromGroup(group);
+  if (!offerAllowedOnSeatedMap(source)) {
+    if (offerRequiresMultipleSeats(source)) {
+      const exactLimit = normalizeGlobalTicketLimit(source?.limit)!;
+      return { min: exactLimit, max: exactLimit, step: 1, valid: false };
+    }
+
+    const base = quantityLimits(source, {
+      available: 1,
+      defaultMax: 1,
+      globalMax,
+    });
+    return { ...base, valid: false };
+  }
+
+  return { min: 1, max: 1, step: 1, valid: true };
+}
+
+/** Whether a seated map tooltip should list this offer row. */
+export function shouldShowSeatedMapOfferRow(
+  group: QuantityCapGroup & RawTicketGroup,
+  globalMax?: number | null,
+): boolean {
+  return limitsFromSeatedOfferRow(group, globalMax).valid;
+}
+
+/** Offers on a seat that shoppers can pick from the seated map. */
+export function seatedMapSelectableOffers(
+  groups: RawTicketGroup[],
+  globalMax?: number | null,
+) {
+  return groups.filter((group) => shouldShowSeatedMapOfferRow(group, globalMax));
+}
+
+export function hasSeatedMapSelectableOffers(
+  groups: RawTicketGroup[],
+  globalMax?: number | null,
+) {
+  return seatedMapSelectableOffers(groups, globalMax).length > 0;
+}
+
+/** Limit copy for a seated map offer row (one ticket per seat). */
+export function offerRestrictionLabelForSeatedRow(
+  source: QuantityRestrictionSource | null | undefined,
+  limits: QuantityLimits,
+): string | null {
+  if (!limits.valid) {
+    return offerRestrictionLabel(source, limits);
+  }
+  return "1 per order";
+}
+
 export function limitsFromListing(
   listing: {
     min: number;
@@ -387,6 +479,43 @@ function quantityStepSuffix(step: number) {
 export function quantityRestrictionLabel(limits: QuantityLimits) {
   const range = quantityRestrictionRangeLabel(limits);
   return `${range}${quantityStepSuffix(limits.step)}`;
+}
+
+/**
+ * Shopper-facing limit copy for an offer row. Configured exact limits stay
+ * visible even when inventory makes the offer temporarily unpurchasable.
+ */
+export function offerRestrictionLabel(
+  source: QuantityRestrictionSource | null | undefined,
+  limits: QuantityLimits,
+): string | null {
+  const exactLimit = normalizeGlobalTicketLimit(source?.limit);
+  if (exactLimit != null) {
+    return quantityRestrictionLabel({
+      min: exactLimit,
+      max: exactLimit,
+      step: 1,
+      valid: true,
+    });
+  }
+
+  const offerMax = normalizeGlobalTicketLimit(source?.maxQuantity);
+  const offerMin = positiveInteger(source?.minQuantity, 1);
+  if (offerMax != null && offerMin === offerMax) {
+    const step = positiveInteger(
+      source?.multipleOf ?? source?.incrementsOf,
+      1,
+    );
+    return quantityRestrictionLabel({
+      min: offerMax,
+      max: offerMax,
+      step,
+      valid: true,
+    });
+  }
+
+  if (!limits.valid) return null;
+  return quantityRestrictionLabel(limits);
 }
 
 /** Listing row copy: `2 – 20 Tickets`. */

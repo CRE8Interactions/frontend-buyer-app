@@ -155,6 +155,8 @@ export default function SeatMapSelectionOverlay({
   orgName,
   logoSrc,
   orderQuantitySource,
+  onUnlockOffer,
+  keepTooltipOpen = false,
 }: {
   title: string;
   accent: string;
@@ -175,6 +177,8 @@ export default function SeatMapSelectionOverlay({
   orgName?: string | null;
   logoSrc?: string | null;
   orderQuantitySource?: QuantityRestrictionSource | null;
+  onUnlockOffer?: (offerName: string) => void;
+  keepTooltipOpen?: boolean;
 }) {
   const selectedFromMap = useSeatmapStore((s) => s.selectedFromMap);
   const totalCount = useSeatmapStore((s) => s.totalCount);
@@ -555,6 +559,8 @@ export default function SeatMapSelectionOverlay({
               compactChrome={mobile}
               hideLoadingSpinner
               dismissTooltipKey={dismissTooltipKey}
+              onUnlockOffer={onUnlockOffer}
+              keepTooltipOpen={keepTooltipOpen}
             />
             {showMobileMapBar ? (
               <div
@@ -987,61 +993,76 @@ export default function SeatMapSelectionOverlay({
                 ) : (
                   <>
                     {mobile ? (
-                      <div
-                        style={{
-                          display: "flex",
-                          alignItems: "center",
-                          gap: 10,
-                          marginBottom: 18,
-                        }}
-                      >
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setMapSelectionOpen(false);
-                            setMapDetail(null);
-                          }}
-                          aria-label="Back to map"
-                          style={{
-                            fontFamily: "inherit",
-                            width: 40,
-                            height: 40,
-                            flexShrink: 0,
-                            display: "flex",
-                            alignItems: "center",
-                            justifyContent: "center",
-                            background: "#f1f3f8",
-                            border: "none",
-                            borderRadius: 12,
-                            color: NAVY,
-                            cursor: "pointer",
-                          }}
-                        >
-                          <svg
-                            viewBox="0 0 24 24"
-                            fill="none"
-                            stroke="currentColor"
-                            strokeWidth={2}
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                            style={{ width: 18, height: 18 }}
-                          >
-                            <polyline points="15 18 9 12 15 6" />
-                          </svg>
-                        </button>
+                      <>
                         <div
                           style={{
-                            flex: 1,
-                            textAlign: "center",
-                            fontSize: fluidSize(16),
-                            fontWeight: 600,
-                            letterSpacing: "-0.015em",
+                            display: "flex",
+                            alignItems: "center",
+                            gap: 10,
+                            marginBottom: paneRestrictionLabel ? 8 : 18,
                           }}
                         >
-                          Ticket details
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setMapSelectionOpen(false);
+                              setMapDetail(null);
+                            }}
+                            aria-label="Back to map"
+                            style={{
+                              fontFamily: "inherit",
+                              width: 40,
+                              height: 40,
+                              flexShrink: 0,
+                              display: "flex",
+                              alignItems: "center",
+                              justifyContent: "center",
+                              background: "#f1f3f8",
+                              border: "none",
+                              borderRadius: 12,
+                              color: NAVY,
+                              cursor: "pointer",
+                            }}
+                          >
+                            <svg
+                              viewBox="0 0 24 24"
+                              fill="none"
+                              stroke="currentColor"
+                              strokeWidth={2}
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                              style={{ width: 18, height: 18 }}
+                            >
+                              <polyline points="15 18 9 12 15 6" />
+                            </svg>
+                          </button>
+                          <div
+                            style={{
+                              flex: 1,
+                              textAlign: "center",
+                              fontSize: fluidSize(16),
+                              fontWeight: 600,
+                              letterSpacing: "-0.015em",
+                            }}
+                          >
+                            Your selection
+                          </div>
+                          <div style={{ width: 40, flexShrink: 0 }} />
                         </div>
-                        <div style={{ width: 40, flexShrink: 0 }} />
-                      </div>
+                        {paneRestrictionLabel ? (
+                          <p
+                            style={{
+                              margin: "0 0 18px",
+                              fontSize: fluidSize(14),
+                              fontWeight: 600,
+                              color: "#6e7180",
+                              textAlign: "center",
+                            }}
+                          >
+                            Ticket limit: {paneRestrictionLabel}
+                          </p>
+                        ) : null}
+                      </>
                     ) : (
                       <>
                         <div

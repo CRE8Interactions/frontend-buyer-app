@@ -467,6 +467,7 @@ export function hasLoginRedirect(search = "") {
 export const PLATFORM_PAGE_PATHS = [
   "/",
   "/browse",
+  "/search",
   "/our-story",
   "/purchase-policy",
   "/terms-conditions",

@@ -117,6 +117,7 @@ describe("org switch loader branding", () => {
 
     expect(isPlatformLoaderPath("/")).toBe(true);
     expect(isPlatformLoaderPath("/browse/")).toBe(true);
+    expect(isPlatformLoaderPath("/search/")).toBe(true);
     expect(isPlatformLoaderPath("/our-story")).toBe(true);
     expect(isPlatformLoaderPath("/purchase-policy/")).toBe(true);
     expect(isPlatformLoaderPath("/terms-conditions/")).toBe(true);
@@ -126,6 +127,7 @@ describe("org switch loader branding", () => {
     expect(isPlatformLoaderPath("/sign-out/")).toBe(true);
     expect(getLoaderBranding("/")).toBeNull();
     expect(getLoaderBranding("/browse/")).toBeNull();
+    expect(getLoaderBranding("/search/")).toBeNull();
     expect(getLoaderBranding("/our-story/")).toBeNull();
     expect(getLoaderBranding("/purchase-policy/")).toBeNull();
     expect(getLoaderBranding("/checkout/")).toMatchObject({
