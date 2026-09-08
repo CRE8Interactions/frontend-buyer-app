@@ -12,7 +12,8 @@ import type { SeatmapTooltipTarget } from "./SeatmapTooltip";
 const TOOLTIP_TIMEOUT = 500;
 export const TOOLTIP_DISMISS_DELAY_MS = 200;
 const SEAT_SCALE = 0.95;
-const MOBILE_MAX_PX = 768;
+/** Matches the `vw < 900` layout breakpoint that swaps in the mobile selection footer. */
+const MOBILE_MAX_PX = 899;
 
 export function isMobileSeatmapViewport() {
   return typeof window !== "undefined" && window.innerWidth <= MOBILE_MAX_PX;
@@ -30,6 +31,13 @@ function eventPoint(event: {
 
 function isLockedOffer(group: TicketGroup) {
   return Boolean(group.offer?.accessCode && !group.offer?.unlocked);
+}
+
+function isExclusiveOffer(group?: TicketGroup | null) {
+  return (
+    (group?.offer as { inventoryType?: string } | undefined)?.inventoryType ===
+    "exclusive"
+  );
 }
 
 /** Tap/click a sellable seat: select it, and on mobile also open the details panel. */
@@ -146,7 +154,13 @@ const SeatmapSeat = memo(function SeatmapSeat({
   const hasLimitBlockedLockedOnly =
     limitBlockedLockedOffers.length > 0 && !hasMapSelectableOffers;
   const hasMultipleOffers = selectableOffers.length > 1;
-  const activeTicketGroup = selectableOffers[0] ?? ticketGroup;
+  // Prefer a public offer (no access code) so mixed seats stay available-blue
+  // even after a coded offer is unlocked.
+  const activeTicketGroup =
+    selectableOffers.find((offer) => !offer.offer?.accessCode) ??
+    selectableOffers.find((offer) => !isLockedOffer(offer)) ??
+    selectableOffers[0] ??
+    ticketGroup;
   const displayTicketGroup = hasLimitBlockedLockedOnly
     ? limitBlockedLockedOffers[0] ?? ticketGroup
     : activeTicketGroup ?? ticketGroup;
@@ -192,18 +206,11 @@ const SeatmapSeat = memo(function SeatmapSeat({
     if (!ticketGroup) return "#E6E8EC";
     if (!hasMapSelectableOffers && !hasLimitBlockedLockedOnly) return "#E6E8EC";
     if (isAccessible && hasMapSelectableOffers) return accessibleColor(accessibleType);
-    if (
-      displayTicketGroup?.offer?.accessCode &&
-      !displayTicketGroup.offer?.unlocked
-    ) {
-      return "#353945";
-    }
+    if (displayTicketGroup && isLockedOffer(displayTicketGroup)) return "#353945";
     if (displayTicketGroup?.resale) return "#E06C35";
-    if (
-      (displayTicketGroup?.offer as { inventoryType?: string } | undefined)
-        ?.inventoryType === "exclusive"
-    ) {
-      return "#9757D7";
+    if (isExclusiveOffer(displayTicketGroup)) return "#9757D7";
+    if (displayTicketGroup?.offer?.accessCode) {
+      return "var(--seatmap-accent, #3E8BF7)";
     }
     const inventoryColor = offerColor(displayTicketGroup?.offer?.color);
     if (inventoryColor) return inventoryColor;
@@ -330,12 +337,11 @@ const SeatmapSeat = memo(function SeatmapSeat({
     if (!hasMapSelectableOffers && !hasLimitBlockedLockedOnly) return null;
     if (displayTicketGroup?.resale) return "icon-resale";
     if (isAccessible && hasMapSelectableOffers) return "icon-accessible";
-    if (displayTicketGroup?.offer?.unlocked) return "icon-unlocked";
-    if (displayTicketGroup?.offer?.accessCode) return "icon-locked";
-    if (
-      (displayTicketGroup?.offer as { inventoryType?: string } | undefined)
-        ?.inventoryType === "exclusive"
-    ) {
+    if (displayTicketGroup && isLockedOffer(displayTicketGroup)) {
+      return "icon-locked";
+    }
+    if (isExclusiveOffer(displayTicketGroup)) {
+      if (displayTicketGroup?.offer?.unlocked) return "icon-unlocked";
       return "icon-vip";
     }
     return null;

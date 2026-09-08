@@ -16,6 +16,7 @@ import {
   isSectionCoverVenue,
   mappingStageSize,
 } from "@/lib/seatmapLookups";
+import { panDeltaToRevealPopup, type PopupRect } from "@/lib/seatmapPopup";
 import useFiltersStore from "@/stores/filtersStore";
 import useSeatmapStore from "@/stores/seatmapStore";
 import SeatmapIcons from "./SeatmapIcons";
@@ -172,6 +173,8 @@ export default function InteractiveSeatmap({
   maxScaleRef.current = maxScale;
   const [tooltip, setTooltip] = useState<SeatmapTooltipTarget>(null);
   const tooltipHoveredRef = useRef(false);
+  /** Seat id of the pinned card, or null while the tooltip is a hover preview. */
+  const tooltipPinnedRef = useRef<string | null>(null);
   const dismissTooltipTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
     null,
   );
@@ -186,6 +189,7 @@ export default function InteractiveSeatmap({
   const dismissTooltipNow = useCallback(() => {
     clearDismissTooltipTimer();
     tooltipHoveredRef.current = false;
+    tooltipPinnedRef.current = null;
     setTooltip(null);
   }, [clearDismissTooltipTimer]);
 
@@ -199,6 +203,10 @@ export default function InteractiveSeatmap({
   const openTooltip = useCallback(
     (target: SeatmapTooltipTarget) => {
       clearDismissTooltipTimer();
+      tooltipPinnedRef.current =
+        target?.kind === "seat" && target.pinned === true
+          ? String(target.seatId)
+          : null;
       setTooltip(target);
     },
     [clearDismissTooltipTimer],
@@ -207,6 +215,18 @@ export default function InteractiveSeatmap({
   const handleSeatTooltip = useCallback(
     (target: SeatmapTooltipTarget | null) => {
       if (target) {
+        // A pinned seat card stays put until Add seats, close, or another seat
+        // takes over; hovering the pinned seat must not downgrade it.
+        const pinning = target.kind === "seat" && target.pinned === true;
+        const pinnedSeatId = tooltipPinnedRef.current;
+        if (
+          pinnedSeatId &&
+          !pinning &&
+          target.kind === "seat" &&
+          String(target.seatId) === pinnedSeatId
+        ) {
+          return;
+        }
         openTooltip(target);
         return;
       }
@@ -215,18 +235,46 @@ export default function InteractiveSeatmap({
     [dismissTooltipNow, openTooltip],
   );
 
+  // A seat popup that would spill past the map edge pans the map instead of
+  // clamping itself off the seat, so the caret keeps pointing at the dot.
+  const handleRevealTooltip = useCallback((rect: PopupRect) => {
+    const el = containerRef.current;
+    if (!el) return;
+    const box = el.getBoundingClientRect();
+    if (!box.width || !box.height) return;
+    const { dx, dy } = panDeltaToRevealPopup(rect, {
+      left: Math.max(box.left, 0),
+      top: Math.max(box.top, 0),
+      right: Math.min(box.right, window.innerWidth),
+      bottom: Math.min(box.bottom, window.innerHeight),
+    });
+    if (!dx && !dy) return;
+    // Panning slides the seat out from under the cursor, so the mouseleave it
+    // triggers must not close the popup we just made room for.
+    tooltipHoveredRef.current = true;
+    clearDismissTooltipTimer();
+    setViewport((prev) => ({
+      ...prev,
+      posX: prev.posX + dx,
+      posY: prev.posY + dy,
+    }));
+    setTooltip((prev) =>
+      prev ? { ...prev, x: prev.x + dx, y: prev.y + dy } : prev,
+    );
+  }, [clearDismissTooltipTimer]);
+
   const handleTooltipHoverStart = useCallback(() => {
     tooltipHoveredRef.current = true;
     clearDismissTooltipTimer();
   }, [clearDismissTooltipTimer]);
 
   const scheduleDismissTooltipIfAllowed = useCallback(() => {
-    if (keepTooltipOpen) return;
+    if (keepTooltipOpen || tooltipPinnedRef.current) return;
     scheduleDismissTooltip();
   }, [keepTooltipOpen, scheduleDismissTooltip]);
 
   const handleTooltipHoverEnd = useCallback(() => {
-    if (keepTooltipOpen) return;
+    if (keepTooltipOpen || tooltipPinnedRef.current) return;
     tooltipHoveredRef.current = false;
     scheduleDismissTooltip();
   }, [keepTooltipOpen, scheduleDismissTooltip]);
@@ -971,6 +1019,7 @@ export default function InteractiveSeatmap({
         onHoverStart={handleTooltipHoverStart}
         onHoverEnd={handleTooltipHoverEnd}
         onUnlockOffer={handleUnlockOffer}
+        onRequestReveal={handleRevealTooltip}
         accent={accent}
         buttonColor={buttonColor}
         buttonTextColor={buttonTextColor}

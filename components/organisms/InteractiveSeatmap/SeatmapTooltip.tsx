@@ -17,6 +17,7 @@ import useFiltersStore from "@/stores/filtersStore";
 import useSeatmapStore from "@/stores/seatmapStore";
 import type { TicketGroup } from "@/stores/filtersStore";
 import { isMobileSeatmapViewport } from "./SeatmapSeat";
+import type { PopupRect } from "@/lib/seatmapPopup";
 import type { SeatmapSeat as SeatmapSeatData } from "@/lib/seatmapLookups";
 
 export type SeatmapTooltipTarget =
@@ -30,6 +31,8 @@ type Props = {
   onHoverStart?: () => void;
   onHoverEnd?: () => void;
   onUnlockOffer?: (offerName: string) => void;
+  /** Asks the map to pan so the seat popup fits without being clipped. */
+  onRequestReveal?: (rect: PopupRect) => void;
   accent?: string;
   buttonColor?: string;
   buttonTextColor?: string;
@@ -165,19 +168,21 @@ export function mobileSeatPopupPosition(
   cardWidth: number,
   cardHeight: number,
 ) {
+  // Where the popup wants to sit so its caret lands on the seat; the clamped
+  // values below keep it on screen, the desired ones tell the map how far to
+  // pan so no clamping is needed.
+  const desiredLeft = target.x - cardWidth / 2;
+  const desiredTop = target.y - cardHeight - MOBILE_SEAT_CARET_SIZE;
   const left = Math.min(
-    Math.max(target.x - cardWidth / 2, 16),
+    Math.max(desiredLeft, 16),
     window.innerWidth - cardWidth - 16,
   );
   const caretLeft = Math.min(
     Math.max(target.x - left - MOBILE_SEAT_CARET_SIZE, 20),
     cardWidth - 20,
   );
-  const top = Math.max(
-    target.y - cardHeight - MOBILE_SEAT_CARET_SIZE,
-    16,
-  );
-  return { left, top, caretLeft, cardWidth, cardHeight };
+  const top = Math.max(desiredTop, 16);
+  return { left, top, caretLeft, cardWidth, cardHeight, desiredLeft, desiredTop };
 }
 
 function SeatPopupCaret({ left, color }: { left: number; color: string }) {
@@ -203,6 +208,7 @@ function MobileSeatAnchoredPopup({
   caretColor,
   children,
   hoverProps,
+  onRequestReveal,
 }: {
   target: { x: number; y: number };
   width: number;
@@ -210,21 +216,35 @@ function MobileSeatAnchoredPopup({
   caretColor?: string;
   children: React.ReactNode;
   hoverProps?: React.HTMLAttributes<HTMLDivElement>;
+  onRequestReveal?: (rect: PopupRect) => void;
 }) {
   const cardRef = useRef<HTMLDivElement>(null);
   const [cardHeight, setCardHeight] = useState(MOBILE_SEAT_POPUP_ESTIMATED_HEIGHT);
-  const { left, top, caretLeft } = mobileSeatPopupPosition(
-    target,
-    width,
-    cardHeight,
-  );
+  const { left, top, caretLeft, desiredLeft, desiredTop } =
+    mobileSeatPopupPosition(target, width, cardHeight);
 
   useLayoutEffect(() => {
     const nextHeight = cardRef.current?.offsetHeight;
     if (nextHeight && nextHeight !== cardHeight) {
       setCardHeight(nextHeight);
+      return;
     }
-  }, [cardHeight, children, target.x, target.y, width]);
+    onRequestReveal?.({
+      left: desiredLeft,
+      top: desiredTop,
+      width,
+      height: cardHeight,
+    });
+  }, [
+    cardHeight,
+    children,
+    desiredLeft,
+    desiredTop,
+    onRequestReveal,
+    target.x,
+    target.y,
+    width,
+  ]);
 
   return (
     <div
@@ -258,16 +278,19 @@ function MobileSingleOfferSeatPopup({
   primary,
   accent,
   onAdd,
+  onRequestReveal,
 }: {
   target: { x: number; y: number };
   seat: SeatmapSeatData | null | undefined;
   primary: TicketGroup;
   accent: string;
   onAdd: () => void;
+  onRequestReveal?: (rect: PopupRect) => void;
 }) {
   const cardRef = useRef<HTMLDivElement>(null);
   const [cardHeight, setCardHeight] = useState(260);
-  const { left, top, caretLeft } = mobileSeatCardPosition(target, cardHeight);
+  const { left, top, caretLeft, desiredLeft, desiredTop } =
+    mobileSeatCardPosition(target, cardHeight);
   const offerName = selectionOfferName(primary, "Standard");
   const price = formatOfferListPrice(primary?.price ?? 0, primary?.offer);
   const section =
@@ -282,8 +305,25 @@ function MobileSingleOfferSeatPopup({
     const nextHeight = cardRef.current?.offsetHeight;
     if (nextHeight && nextHeight !== cardHeight) {
       setCardHeight(nextHeight);
+      return;
     }
-  }, [cardHeight, offerName, price, section, row, seatNumber]);
+    onRequestReveal?.({
+      left: desiredLeft,
+      top: desiredTop,
+      width: MOBILE_SEAT_CARD_WIDTH,
+      height: cardHeight,
+    });
+  }, [
+    cardHeight,
+    desiredLeft,
+    desiredTop,
+    offerName,
+    onRequestReveal,
+    price,
+    section,
+    row,
+    seatNumber,
+  ]);
 
   return (
     <div
@@ -338,6 +378,7 @@ export default function SeatmapTooltip({
   onHoverStart,
   onHoverEnd,
   onUnlockOffer,
+  onRequestReveal,
   accent = "#0a2747",
   buttonColor = "#A6E773",
   buttonTextColor = "#051B35",
@@ -474,6 +515,7 @@ export default function SeatmapTooltip({
           seat={seat}
           primary={primary}
           accent={accent}
+          onRequestReveal={onRequestReveal}
           onAdd={() => {
             selectSpecificSeat(target.seatId, primary);
             onClose();
@@ -481,6 +523,29 @@ export default function SeatmapTooltip({
         />
       );
     }
+
+    const seatedOfferPicks = () =>
+      seatOffers
+        .map((offer, index) => {
+          if (
+            !shouldShowSeatedMapOfferRow(
+              offer as RawTicketGroup,
+              eventTicketLimit,
+            ) ||
+            isLockedOffer(offer)
+          ) {
+            return null;
+          }
+          const key = gaOfferSelectionKey(offer, index);
+          return {
+            ...offer,
+            quantity: seatedResolvedOfferQuantity(offerQtys, key),
+          };
+        })
+        .filter(
+          (offer): offer is TicketGroup & { quantity: number } =>
+            offer != null && Number(offer.quantity) > 0,
+        );
 
     const seatPopupBody = (
       <>
@@ -593,30 +658,11 @@ export default function SeatmapTooltip({
             })()}
             {!alreadySelected && showSeatActions ? (
               <Button
-                className="mt-2 w-full"
+                className="mt-2 w-full disabled:opacity-50"
                 style={{ background: actionBg, color: actionInk }}
+                disabled={seatedOfferPicks().length !== 1}
                 onClick={() => {
-                  const picks = seatOffers
-                    .map((offer, index) => {
-                      if (
-                        !shouldShowSeatedMapOfferRow(
-                          offer as RawTicketGroup,
-                          eventTicketLimit,
-                        ) ||
-                        isLockedOffer(offer)
-                      ) {
-                        return null;
-                      }
-                      const key = gaOfferSelectionKey(offer, index);
-                      return {
-                        ...offer,
-                        quantity: seatedResolvedOfferQuantity(offerQtys, key),
-                      };
-                    })
-                    .filter(
-                      (offer): offer is TicketGroup & { quantity: number } =>
-                        offer != null && Number(offer.quantity) > 0,
-                    );
+                  const picks = seatedOfferPicks();
                   if (picks.length !== 1) return;
                   selectSeatedOffers(target.seatId, picks);
                   onClose();
@@ -674,6 +720,7 @@ export default function SeatmapTooltip({
         width={MOBILE_SEAT_POPUP_WIDTH}
         accent={accent}
         hoverProps={hoverProps}
+        onRequestReveal={onRequestReveal}
       >
         <div style={{ color: ink }}>{seatPopupBody}</div>
       </MobileSeatAnchoredPopup>

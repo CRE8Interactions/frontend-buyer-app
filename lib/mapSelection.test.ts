@@ -20,8 +20,8 @@ const vip = gaGroups.find((group) => group.GA && group.offer)!;
 describe("mixed and checkout map errors", () => {
   it("closes mixed-row picks and asks the shopper to change the selection", () => {
     expect(MIXED_MAP_SELECTION_ERROR.buttonText).toBe("Close");
-    expect(MIXED_MAP_SELECTION_ERROR.message).toMatch(
-      /one row or GA section at a time\.\.\.$/,
+    expect(MIXED_MAP_SELECTION_ERROR.message).toBe(
+      "You can only select tickets from one row or GA section at a time.",
     );
     expect(MIXED_MAP_SELECTION_ERROR.leaveMap).toBe(false);
   });
