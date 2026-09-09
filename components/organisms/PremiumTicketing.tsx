@@ -1376,7 +1376,7 @@ export default function PremiumTicketing({
   })();
 
   return (
-    <div className="shopper-page" data-theme="light" style={{ position: "relative", ...(gaDesktop ? {} : { display: "flex", flexDirection: "column" }), background: "#f7f8fc", color: NAVY, width: "100%", minHeight: "100dvh", fontFamily: "'Geist', system-ui, -apple-system, sans-serif", WebkitFontSmoothing: "antialiased", ...shopperShellVars(ACC), ...(isGa ? { minHeight: mobile ? "100vh" : "100dvh" } : { height: "100dvh", overflowY: listingsSheet ? "hidden" : "auto" }) }}>
+    <div className="shopper-page" data-theme="light" style={{ position: "relative", ...(gaDesktop ? {} : { display: "flex", flexDirection: "column" }), background: "#f7f8fc", color: NAVY, width: "100%", minHeight: isGa && mobile ? "100vh" : "100dvh", fontFamily: "'Geist', system-ui, -apple-system, sans-serif", WebkitFontSmoothing: "antialiased", ...shopperShellVars(ACC), ...(isGa ? {} : { height: "100dvh", overflowY: listingsSheet ? "hidden" : "auto" }) }}>
       <style>{`
         ${shopperPageTypeCss()}
         @keyframes nmt-shimmer { 0% { background-position: -420px 0 } 100% { background-position: 420px 0 } }
