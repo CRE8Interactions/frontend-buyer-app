@@ -54,6 +54,8 @@ export default function MobileStickyFooter({
     borderTop,
     boxShadow,
     paddingBottom: "env(safe-area-inset-bottom, 0px)",
+    // Portaled to document.body, which uses light `--fg`; pin black on white footers.
+    color: "#000",
     ...shopperShellVars(accentColor),
     ...shellStyle,
   };
