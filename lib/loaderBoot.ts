@@ -106,7 +106,9 @@ export const LOADER_BOOT_SCRIPT = `(function(){
     if (ev) {
       try {
         var em = JSON.parse(read("bt_org_branding_events") || "{}");
-        b = forSlug(em[(ev[1] + "/" + ev[2]).toLowerCase()]);
+        var entry = em[(ev[1] + "/" + ev[2]).toLowerCase()];
+        if (entry && typeof entry === "object" && typeof entry.primaryColor === "string") b = entry;
+        else b = forSlug(entry);
       } catch (e) {}
     } else if (vn) {
       try {

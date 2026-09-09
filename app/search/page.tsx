@@ -5,8 +5,10 @@ import { useSearchParams } from "next/navigation";
 import Nav from "@/components/organisms/Nav";
 import SearchEventList from "@/components/organisms/SearchEventList";
 import { BrandBlocks } from "@/components/molecules/BrandLoader";
+import { ShopperFluidTypeStyles } from "@/components/templates/ShopperFluidType";
 import { fetchSearchEvents, type ShopperSearchEvent } from "@/lib/searchEvents";
 import { getSingularOrPluralWord } from "@/lib/helpers";
+import { fluidSize } from "@/lib/shopperFluidType";
 
 function SearchLoading({ label }: { label: string }) {
   return (
@@ -14,6 +16,7 @@ function SearchLoading({ label }: { label: string }) {
       role="status"
       aria-label={label}
       aria-busy="true"
+      data-bt-destination-loader=""
       className="mt-10 flex min-h-[30vh] items-center justify-center"
     >
       <BrandBlocks />
@@ -63,7 +66,10 @@ function SearchResultsInner({ query }: { query: string }) {
 
   return (
     <div className="pb-16">
-      <h1 className="text-[clamp(28px,3.5vw,40px)] font-semibold tracking-[-0.02em]">
+      <h1
+        className="font-semibold tracking-[-0.02em]"
+        style={{ fontSize: fluidSize(40) }}
+      >
         {`We found ${results.length} ${getSingularOrPluralWord(
           results.length,
           "result",
@@ -78,7 +84,7 @@ function SearchResultsInner({ query }: { query: string }) {
       ) : results.length === 0 ? (
         <SearchNotice
           title={`No events matched “${query}”`}
-          detail="Try a team, venue or city name."
+          detail="Try searching for another event."
         />
       ) : results.length > 0 ? (
         <div className="mt-10 rounded-[20px] border border-[rgba(5,27,53,0.10)] bg-white p-3">
@@ -101,7 +107,8 @@ function SearchResults() {
 
 export default function SearchPage() {
   return (
-    <div className="min-h-screen bg-[#f7f8fc] text-[#051b35]">
+    <div className="shopper-page min-h-screen bg-[#f7f8fc] text-[#051b35]">
+      <ShopperFluidTypeStyles />
       <Nav />
       <main className="mx-auto max-w-[1320px] px-5 pt-4 md:px-8 md:pt-7">
         <Suspense fallback={<SearchLoading label="Loading search" />}>

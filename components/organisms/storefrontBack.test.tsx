@@ -323,10 +323,13 @@ describe("team and venue back buttons", () => {
     expect(
       await screen.findByRole("link", { name: /back to browse/i }),
     ).toHaveAttribute("href", "/browse/");
-    expect(screen.getByRole("link", { name: /blocktickets/i })).toHaveAttribute(
+    expect(screen.getByRole("link", { name: /^log in$/i })).toHaveAttribute(
       "href",
-      "/browse",
+      `/login/?from=${encodeURIComponent(`/venue/${venue.slug}/`)}`,
     );
+    expect(
+      screen.queryByPlaceholderText(/search events, teams, venues/i),
+    ).not.toBeInTheDocument();
     expect(screen.getByText(venue.name)).toBeInTheDocument();
   });
 

@@ -1,8 +1,8 @@
 import { beforeEach, describe, expect, it } from "vitest";
-import { DEMO_ORGS } from "@/lib/demo/fixtures";
+import { DEMO_EVENTS, DEMO_ORGS } from "@/lib/demo/fixtures";
 import { LOADER_BOOT_SCRIPT } from "@/lib/loaderBoot";
 import { CHECKOUT_SUCCESS_LOADER_MESSAGE } from "@/lib/loaderMessages";
-import { cacheOrgBranding } from "@/lib/orgBrandingCache";
+import { cacheEventBranding, cacheOrgBranding } from "@/lib/orgBrandingCache";
 
 const RAPTORS = DEMO_ORGS.find((org) => org.slug === "ogden-raptors")!;
 
@@ -102,6 +102,26 @@ describe("boot splash", () => {
       "Blocktickets",
     );
     expect(splash?.textContent).not.toContain(RAPTORS.name);
+  });
+
+  it("paints inline event branding when the org has no slug", () => {
+    const icedogs = DEMO_ORGS.find((org) => org.slug === "niagara-icedogs")!;
+    const event = DEMO_EVENTS.find(
+      (hit) => hit.organization.slug === icedogs.slug,
+    )!;
+    cacheEventBranding(
+      { seoUrl: event.seoUrl, shortcode: event.shortcode },
+      { name: icedogs.name, branding: icedogs.branding },
+      { touchLast: false },
+    );
+
+    const splash = paintBootSplash(`/e/${event.seoUrl}/${event.shortcode}/tickets/`);
+
+    expect(splash?.querySelector("img")).toHaveAttribute(
+      "src",
+      icedogs.branding.logo.url,
+    );
+    expect(splash?.textContent).toContain(icedogs.name);
   });
 
   it("paints nothing when no org branding is known", () => {

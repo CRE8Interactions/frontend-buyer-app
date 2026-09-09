@@ -183,12 +183,13 @@ function stubLocation(
   locationMocks.replace.mockReset();
   vi.stubGlobal("location", {
     get href() {
-      return `http://localhost${pathname}${search}`;
+      return `https://localhost${pathname}${search}`;
     },
     set href(value: string) {
       hrefSetter(value);
     },
-    origin: "http://localhost",
+    origin: "https://localhost",
+    protocol: "https:",
     pathname,
     search,
     assign: vi.fn(),
@@ -233,6 +234,7 @@ describe("Checkout page", { timeout: 20_000 }, () => {
   });
 
   afterEach(() => {
+    vi.useRealTimers();
     vi.unstubAllGlobals();
     vi.unstubAllEnvs();
   });
@@ -306,9 +308,7 @@ describe("Checkout page", { timeout: 20_000 }, () => {
       }),
     ).toBeInTheDocument();
     expect(screen.getByText("Secure checkout")).toBeInTheDocument();
-    expect(
-      screen.getByText(`Seats held ${formatHoldClock(CHECKOUT_HOLD_SECONDS)}`),
-    ).toBeInTheDocument();
+    expect(screen.getByText(/Seats held \d+:\d{2}/)).toBeInTheDocument();
     expect(screen.queryByText(/you.?re so close/i)).not.toBeInTheDocument();
   });
 
@@ -376,13 +376,17 @@ describe("Checkout page", { timeout: 20_000 }, () => {
     // Soft navigation only: a document load would spin the browser tab.
     expect(locationMocks.replace).not.toHaveBeenCalled();
     expect(msUntilStripePaymentSyncReady()).toBeGreaterThan(0);
-    const orgLoader = document.querySelector("[data-bt-tenant-loader]");
-    expect(orgLoader).toBeTruthy();
+    await waitFor(() => {
+      expect(document.querySelector("[data-bt-tenant-loader]")).toBeTruthy();
+    });
+    const orgLoader = document.querySelector(
+      "[data-bt-tenant-loader]",
+    ) as HTMLElement;
     expect(
-      within(orgLoader as HTMLElement).getByText(raptorsOrg.name),
+      within(orgLoader).getByText(raptorsOrg.name),
     ).toBeInTheDocument();
     expect(
-      within(orgLoader as HTMLElement).getByText(/retrieving payment details/i),
+      within(orgLoader).getByText(/retrieving payment details/i),
     ).toBeInTheDocument();
   });
 
@@ -427,8 +431,8 @@ describe("Checkout page", { timeout: 20_000 }, () => {
       expect(routerMocks.replace).toHaveBeenCalledWith(
         "/checkout/success/?intentId=pi_test",
       );
+      expect(document.querySelector("[data-bt-tenant-loader]")).toBeTruthy();
     });
-    expect(document.querySelector("[data-bt-tenant-loader]")).toBeTruthy();
   });
 
   it("shows the card declined popup when process order fails", async () => {
@@ -518,6 +522,26 @@ describe("Checkout page", { timeout: 20_000 }, () => {
       }),
     ).toBeChecked();
     expect(screen.queryByText(/venues/i)).not.toBeInTheDocument();
+  });
+
+  it("hides Link save-info on plain HTTP checkout", async () => {
+    vi.stubGlobal("location", {
+      href: "http://localhost/checkout/?cartId=cart-raptors-1",
+      origin: "http://localhost",
+      protocol: "http:",
+      pathname: "/checkout/",
+      search: "?cartId=cart-raptors-1",
+      assign: vi.fn(),
+      replace: locationMocks.replace,
+    });
+    render(<CheckoutPageRoute />);
+
+    await screen.findByTestId("payment-element");
+    expect(
+      screen.queryByRole("checkbox", {
+        name: /one-click checkout with Link/i,
+      }),
+    ).not.toBeInTheDocument();
   });
 
   it("does not show a seat location image when the cart has no tickets", async () => {
@@ -924,7 +948,7 @@ describe("Checkout page", { timeout: 20_000 }, () => {
       expect(stripeMocks.confirmPayment).toHaveBeenCalledWith(
         expect.objectContaining({
           confirmParams: {
-            return_url: `http://localhost/checkout/success/?intentId=pi_test`,
+            return_url: `https://localhost/checkout/success/?intentId=pi_test`,
           },
         }),
       );

@@ -33,6 +33,7 @@ import {
   cacheOrgEventBranding,
   getCachedOrgBranding,
 } from "@/lib/orgBrandingCache";
+import { useClientReady } from "@/lib/useClientReady";
 import { flexPackCardTone, flexPackEachPrice } from "@/lib/flexPackDisplay";
 import {
   firstVenueWebsiteHref,
@@ -257,6 +258,7 @@ export default function ClientProfile({
   slug: string;
   initialData?: StorefrontInitialData;
 }) {
+  const clientReady = useClientReady();
   const [tab, setTab] = useState<"events" | "packages" | "flex">("events");
   const [sport, setSport] = useState(ALL_FILTER);
   const [vw, setVw] = useState(1440);
@@ -367,7 +369,7 @@ export default function ClientProfile({
   const mobile = vw < 900;
   const narrow = !mobile && vw < 1160;
 
-  const cachedBranding = getCachedOrgBranding(slug);
+  const cachedBranding = clientReady ? getCachedOrgBranding(slug) : null;
   const ACC = organization
     ? resolvePrimaryColor(null, organization)
     : cachedBranding?.primaryColor || BLOCKTICKETS_NAVY;

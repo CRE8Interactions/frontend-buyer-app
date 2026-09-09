@@ -68,6 +68,8 @@ type Props = {
   poweredBy?: boolean;
   /** Fill a parent (e.g. seat-map modal) instead of covering the viewport. */
   embedded?: boolean;
+  /** Full-screen loader for the route that is now loading or loaded. */
+  routeDestination?: boolean;
 };
 
 export default function BrandLoader({
@@ -78,6 +80,7 @@ export default function BrandLoader({
   message = LOADER_MESSAGE,
   poweredBy = false,
   embedded = false,
+  routeDestination = false,
 }: Props) {
   const tenant = variant === "tenant";
   const onLight = embedded;
@@ -102,6 +105,9 @@ export default function BrandLoader({
       data-bt-tenant-loader={tenant ? "" : undefined}
       data-bt-platform-loader={tenant ? undefined : ""}
       data-bt-embedded-loader={embedded ? "" : undefined}
+      data-bt-destination-loader={
+        routeDestination && !embedded ? "" : undefined
+      }
       suppressHydrationWarning
     >
       {onLight ? null : (

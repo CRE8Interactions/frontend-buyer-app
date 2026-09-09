@@ -35,6 +35,9 @@ const LEGACY_EVENT_KEY = /^bt_org_branding_event:/i;
 const LEGACY_VENUE_KEY = /^bt_org_branding_venue:/i;
 
 type SlugMap = Record<string, string>;
+/** Org slug, or the branding itself when the API never sent a slug. */
+type EventMapValue = string | CachedBranding;
+type EventMap = Record<string, EventMapValue>;
 
 let migrated = false;
 
@@ -151,12 +154,31 @@ function readMap(key: string): SlugMap {
   return readJson<SlugMap>(key) || {};
 }
 
-function writeMap(key: string, map: SlugMap) {
+function readEventMap(): EventMap {
+  return readJson<EventMap>(EVENTS_MAP_KEY) || {};
+}
+
+function writeMap(key: string, map: SlugMap | EventMap) {
   writeJson(key, map);
 }
 
 function eventMapKey(eventSlug: string, shortcode: string) {
   return `${String(eventSlug).toLowerCase()}/${String(shortcode).toLowerCase()}`;
+}
+
+function eventShortcode(
+  event?: { shortCode?: string; shortcode?: string } | null,
+) {
+  return event?.shortCode || event?.shortcode;
+}
+
+function brandingFromEventMapValue(
+  entry: EventMapValue | undefined,
+): CachedBranding | null {
+  if (!entry) return null;
+  if (typeof entry === "object" && entry.primaryColor) return entry;
+  if (typeof entry === "string") return brandingForOrgSlug(entry);
+  return null;
 }
 
 /**
@@ -168,7 +190,7 @@ function migrateLegacyKeys() {
   migrated = true;
 
   try {
-    const events = readMap(EVENTS_MAP_KEY);
+    const events = readEventMap();
     const venues = readMap(VENUES_MAP_KEY);
     const toRemove: string[] = [];
 
@@ -179,7 +201,9 @@ function migrateLegacyKeys() {
       if (LEGACY_EVENT_KEY.test(key)) {
         const payload = readJson<CachedBranding>(key);
         const path = key.slice("bt_org_branding_event:".length);
-        if (payload?.slug && path) events[path.toLowerCase()] = payload.slug;
+        if (payload && path) {
+          events[path.toLowerCase()] = payload.slug || payload;
+        }
         toRemove.push(key);
       } else if (LEGACY_VENUE_KEY.test(key)) {
         const payload = readJson<CachedBranding>(key);
@@ -224,17 +248,25 @@ function brandingPayload(
 }
 
 function rememberEvent(
-  event: { seoUrl?: string; slug?: string; shortCode?: string } | null | undefined,
-  orgSlug: string | null | undefined,
+  event:
+    | {
+        seoUrl?: string;
+        slug?: string;
+        shortCode?: string;
+        shortcode?: string;
+      }
+    | null
+    | undefined,
+  payload: CachedBranding | string | null | undefined,
 ) {
-  if (!orgSlug) return;
   const eventSlug = event?.seoUrl || event?.slug;
-  const shortcode = event?.shortCode;
-  if (!eventSlug || !shortcode) return;
+  const shortcode = eventShortcode(event);
+  if (!eventSlug || !shortcode || !payload) return;
 
   migrateLegacyKeys();
-  const map = readMap(EVENTS_MAP_KEY);
-  map[eventMapKey(eventSlug, shortcode)] = orgSlug;
+  const map = readEventMap();
+  map[eventMapKey(eventSlug, shortcode)] =
+    typeof payload === "string" ? payload : payload.slug || payload;
   writeMap(EVENTS_MAP_KEY, map);
 }
 
@@ -279,7 +311,15 @@ export function cacheOrgBranding(organization?: BrandingOrganization | null) {
  * team is not overwritten by every row in the list.
  */
 export function cacheEventBranding(
-  event: { seoUrl?: string; slug?: string; shortCode?: string } | null | undefined,
+  event:
+    | {
+        seoUrl?: string;
+        slug?: string;
+        shortCode?: string;
+        shortcode?: string;
+      }
+    | null
+    | undefined,
   organization?: BrandingOrganization | null,
   opts: { touchLast?: boolean } = {},
 ) {
@@ -295,21 +335,26 @@ export function cacheEventBranding(
       if (payload.uuid) writeJson(uuidKey(payload.uuid), payload);
     }
   }
-  rememberEvent(event, payload?.slug);
+  rememberEvent(event, payload);
   return payload;
 }
 
 /** Seed branding for every event on an organization's storefront. */
 export function cacheOrgEventBranding(
   events:
-    | Array<{ seoUrl?: string; slug?: string; shortCode?: string }>
+    | Array<{
+        seoUrl?: string;
+        slug?: string;
+        shortCode?: string;
+        shortcode?: string;
+      }>
     | null
     | undefined,
   organization?: BrandingOrganization | null,
 ) {
   const payload = cacheOrgBranding(organization);
-  if (!payload?.slug) return null;
-  (events || []).forEach((event) => rememberEvent(event, payload.slug));
+  if (!payload) return null;
+  (events || []).forEach((event) => rememberEvent(event, payload));
   return payload;
 }
 
@@ -386,10 +431,9 @@ export function getCachedBrandingForPath(
 
   const eventMatch = pathname.match(EVENT_PATH);
   if (eventMatch) {
-    const orgSlug = readMap(EVENTS_MAP_KEY)[
-      eventMapKey(eventMatch[1], eventMatch[2])
-    ];
-    const exact = brandingForOrgSlug(orgSlug);
+    const exact = brandingFromEventMapValue(
+      readEventMap()[eventMapKey(eventMatch[1], eventMatch[2])],
+    );
     if (exact) return exact;
 
     // A missing/expired event may fail before it can seed the exact event map.
@@ -459,6 +503,25 @@ export function hasLoginRedirect(search = "") {
   return Boolean(new URLSearchParams(query).get("from")?.trim());
 }
 
+/** Decoded pathname from login's `from` query param. */
+export function loginReturnPath(search = "") {
+  const query = search.startsWith("?") ? search.slice(1) : search;
+  const from = new URLSearchParams(query).get("from")?.trim();
+  if (!from) return "";
+  try {
+    return decodeURIComponent(from).split("?")[0].replace(/\/+$/, "") || "/";
+  } catch {
+    return from.split("?")[0].replace(/\/+$/, "") || "/";
+  }
+}
+
+/** Checkout, success, and wallet returns use Blocktickets — not the last team. */
+export function isBlockticketsLoginReturn(returnPath = "") {
+  const path = returnPath.replace(/\/+$/, "") || "/";
+  if (isWalletAccountPath(path)) return true;
+  return path === "/checkout" || path.startsWith("/checkout/");
+}
+
 /**
  * Home, browse, Our Story, and footer legal pages use the Blocktickets spinner
  * — never a team. Login joins them unless it is returning the shopper to a
@@ -490,7 +553,11 @@ export function isPlatformLoaderPath(
   if (isPlatformPagePath(path)) return true;
   if (/^\/(?:fundraise|group|menu)(\/|$)/.test(path)) return true;
   if (isWalletAccountPath(path)) return true;
-  return isLoginLoaderPath(path) && !hasLoginRedirect(search);
+  if (isLoginLoaderPath(path)) {
+    if (!hasLoginRedirect(search)) return true;
+    return isBlockticketsLoginReturn(loginReturnPath(search));
+  }
+  return false;
 }
 
 /**

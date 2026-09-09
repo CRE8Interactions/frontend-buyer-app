@@ -3,6 +3,8 @@ import {
   buildAccessPassSummaries,
   formatTicketHolderName,
   isMobileDevice,
+  isPhoneDevice,
+  isTabletDevice,
   isToday,
   unwrapOrder,
 } from "@/lib/wallet";
@@ -93,5 +95,79 @@ describe("isMobileDevice", () => {
     stubPointer({ "(pointer: coarse)": false, "(hover: hover)": true }, 10);
 
     expect(isMobileDevice()).toBe(false);
+  });
+});
+
+describe("isPhoneDevice", () => {
+  function setUserAgent(userAgent: string, maxTouchPoints = 0) {
+    Object.defineProperty(navigator, "userAgent", {
+      configurable: true,
+      writable: true,
+      value: userAgent,
+    });
+    Object.defineProperty(navigator, "maxTouchPoints", {
+      configurable: true,
+      writable: true,
+      value: maxTouchPoints,
+    });
+  }
+
+  function stubPointer(matches: Record<string, boolean>, width: number, height: number) {
+    Object.defineProperty(window, "matchMedia", {
+      configurable: true,
+      writable: true,
+      value: (query: string) =>
+        ({ matches: Boolean(matches[query]) }) as MediaQueryList,
+    });
+    Object.defineProperty(window, "innerWidth", {
+      configurable: true,
+      writable: true,
+      value: width,
+    });
+    Object.defineProperty(window, "innerHeight", {
+      configurable: true,
+      writable: true,
+      value: height,
+    });
+  }
+
+  afterEach(() => {
+    Reflect.deleteProperty(navigator, "userAgent");
+    Reflect.deleteProperty(navigator, "maxTouchPoints");
+    Reflect.deleteProperty(window, "matchMedia");
+    Reflect.deleteProperty(window, "innerWidth");
+    Reflect.deleteProperty(window, "innerHeight");
+  });
+
+  it("reads phones but not tablets", () => {
+    setUserAgent("Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X)");
+    expect(isPhoneDevice()).toBe(true);
+    expect(isTabletDevice()).toBe(false);
+
+    setUserAgent(
+      "Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Mobile Safari/537.36",
+    );
+    expect(isPhoneDevice()).toBe(true);
+    expect(isTabletDevice()).toBe(false);
+
+    setUserAgent("Mozilla/5.0 (iPad; CPU OS 17_0 like Mac OS X)");
+    expect(isPhoneDevice()).toBe(false);
+    expect(isTabletDevice()).toBe(true);
+
+    setUserAgent(
+      "Mozilla/5.0 (Linux; Android 13; SM-X900) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36",
+    );
+    expect(isPhoneDevice()).toBe(false);
+    expect(isTabletDevice()).toBe(true);
+
+    setUserAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64)");
+    stubPointer({ "(pointer: coarse)": true, "(hover: hover)": false }, 820, 1180);
+    expect(isTabletDevice()).toBe(true);
+    expect(isPhoneDevice()).toBe(false);
+
+    setUserAgent("Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X)");
+    stubPointer({ "(pointer: coarse)": true, "(hover: hover)": false }, 390, 844);
+    expect(isTabletDevice()).toBe(false);
+    expect(isPhoneDevice()).toBe(true);
   });
 });

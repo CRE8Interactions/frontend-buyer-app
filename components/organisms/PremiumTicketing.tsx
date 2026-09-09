@@ -72,9 +72,11 @@ import { getSeatViewImageCandidates } from "@/lib/seatView";
 import {
   stickyOffsetBelowHeader,
   ticketingChromeReservePx,
+  TICKETING_HEADER_FALLBACK_PX,
   TICKETING_LISTINGS_MIN_PX,
   TICKETING_MAIN_PAD_BOTTOM_PX,
   TICKETING_MAIN_PAD_TOP_PX,
+  TICKETING_STICKY_GAP_PX,
 } from "@/lib/ticketingSticky";
 import { mobileStickyFooterReservePx } from "@/lib/mobileStickyFooter";
 import {
@@ -377,7 +379,7 @@ export default function PremiumTicketing({
   const sticky = useRef<HTMLDivElement | null>(null);
   const listingsScroll = useRef<HTMLDivElement | null>(null);
   const qtyBtn = useRef<HTMLButtonElement | null>(null);
-  const [headerH, setHeaderH] = useState(93);
+  const [headerH, setHeaderH] = useState(TICKETING_HEADER_FALLBACK_PX);
   const loadTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => setMounted(true), []);
@@ -414,8 +416,8 @@ export default function PremiumTicketing({
     const el = headerRef.current;
     if (!el || typeof ResizeObserver === "undefined") return;
     const apply = () => {
-      const h = el.getBoundingClientRect().height;
-      if (h > 1) setHeaderH(h);
+      const h = Math.round(el.getBoundingClientRect().height);
+      if (h > 1) setHeaderH((prev) => (prev === h ? prev : h));
     };
     apply();
     const ro = new ResizeObserver(apply);
@@ -453,6 +455,7 @@ export default function PremiumTicketing({
   const mobile = vw < 900;
   const narrow = mobile || vw < 1120;
   const wide = !narrow;
+  const gaDesktop = isGa && !narrow;
   const listingsSheet =
     !isGa && narrow && !d.soldOut && !eventScheduled && d.listings.length > 0;
 
@@ -478,7 +481,7 @@ export default function PremiumTicketing({
     };
   }, [listingsSheet, vw, headerH]);
 
-  const stickTop = stickyOffsetBelowHeader(headerH);
+  const stickTop = Math.round(stickyOffsetBelowHeader(headerH));
   const chromeReserve = ticketingChromeReservePx(headerH);
   const offersViewportMax = `calc(100dvh - ${chromeReserve}px)`;
   const listingsSheetTop = mapTop || headerH + 12 + (mobile ? 140 : 260) + 8;
@@ -1373,7 +1376,7 @@ export default function PremiumTicketing({
   })();
 
   return (
-    <div className="shopper-page" data-theme="light" style={{ position: "relative", display: "flex", flexDirection: "column", background: "#f7f8fc", color: NAVY, width: "100%", minHeight: "100dvh", fontFamily: "'Geist', system-ui, -apple-system, sans-serif", WebkitFontSmoothing: "antialiased", ...shopperShellVars(ACC), ...(!isGa ? { height: "100dvh", overflowY: listingsSheet ? "hidden" : "auto" } : { minHeight: "100vh" }) }}>
+    <div className="shopper-page" data-theme="light" style={{ position: "relative", ...(gaDesktop ? {} : { display: "flex", flexDirection: "column" }), background: "#f7f8fc", color: NAVY, width: "100%", minHeight: isGa && mobile ? "100vh" : "100dvh", fontFamily: "'Geist', system-ui, -apple-system, sans-serif", WebkitFontSmoothing: "antialiased", ...shopperShellVars(ACC), ...(isGa ? {} : { height: "100dvh", overflowY: listingsSheet ? "hidden" : "auto" }) }}>
       <style>{`
         ${shopperPageTypeCss()}
         @keyframes nmt-shimmer { 0% { background-position: -420px 0 } 100% { background-position: 420px 0 } }
@@ -1438,7 +1441,8 @@ export default function PremiumTicketing({
 
       {/* HEADER (desktop) */}
       {!mobile && (
-        <header ref={headerRef} style={{ background: navBg, borderBottom: `1px solid ${navLine}`, color: navInk, position: "sticky", top: 0, zIndex: 12 }}>
+        <>
+        <header ref={headerRef} style={{ background: navBg, borderBottom: `1px solid ${navLine}`, color: navInk, position: gaDesktop ? "fixed" : "sticky", top: 0, left: gaDesktop ? 0 : undefined, right: gaDesktop ? 0 : undefined, zIndex: 12 }}>
           <div style={{ maxWidth: 1320, margin: "0 auto", padding: "14px 32px", display: "flex", alignItems: "center", gap: 32 }}>
             <div style={{ display: "flex", alignItems: "center", gap: 16, minWidth: 0, flex: "1 1 auto" }}>
               {isGa ? (
@@ -1486,6 +1490,10 @@ export default function PremiumTicketing({
             </div>
           </div>
         </header>
+        {gaDesktop ? (
+          <div aria-hidden style={{ height: stickTop, flexShrink: 0 }} />
+        ) : null}
+        </>
       )}
 
       {/* HEADER (mobile) */}
@@ -1767,40 +1775,57 @@ export default function PremiumTicketing({
 
       {/* MAIN (GA / general-admission flow) */}
       {isGa && (
-        <main style={{ flex: 1, width: "100%", maxWidth: 1320, margin: "0 auto", padding: mobile ? `14px 14px ${mobileStickyFooterReservePx()}` : "24px 32px 120px", boxSizing: "border-box", display: "grid", gridTemplateColumns: narrow ? "minmax(0, 1fr)" : "minmax(300px, 360px) minmax(0, 1fr)", gap: 20, alignItems: "start" }}>
+        <main style={{ ...(gaDesktop ? {} : { flex: 1 }), width: "100%", maxWidth: 1320, margin: "0 auto", padding: mobile ? `14px 14px ${mobileStickyFooterReservePx()}` : gaDesktop ? `0 32px 120px` : `${TICKETING_STICKY_GAP_PX}px 32px 120px`, boxSizing: "border-box", display: "grid", gridTemplateColumns: narrow ? "minmax(0, 1fr)" : "minmax(300px, 360px) minmax(0, 1fr)", gap: 20, ...(narrow ? { alignItems: "start" } : { alignItems: "stretch" }) }}>
           {/* left: poster + info — pinned while the right column scrolls (desktop). */}
-          <div style={{ display: "flex", flexDirection: "column", gap: 16, minWidth: 0, ...(narrow ? {} : { position: "sticky", top: 92, alignSelf: "start" }) }}>
+          <div style={{ minWidth: 0, ...(narrow ? {} : { alignSelf: "stretch" }) }}>
             <div
-              data-testid="ga-event-poster"
+              data-testid="ga-event-sidebar"
               style={{
-                ...card,
-                borderRadius: 20,
-                padding: narrow ? 12 : 16,
-                width: "100%",
-                boxSizing: "border-box",
+                display: "flex",
+                flexDirection: "column",
+                gap: 16,
+                minWidth: 0,
+                ...(narrow
+                  ? {}
+                  : {
+                      position: "sticky",
+                      top: stickTop,
+                      zIndex: 2,
+                    }),
               }}
             >
               <div
-                data-testid="ga-event-poster-image"
+                data-testid="ga-event-poster"
                 style={{
-                  position: "relative",
+                  ...card,
+                  borderRadius: 20,
+                  padding: narrow ? 12 : 16,
                   width: "100%",
-                  aspectRatio: narrow ? "16 / 9" : "1 / 1",
-                  borderRadius: 14,
-                  overflow: "hidden",
-                  background: "#f1f3f8",
-                  border: "1px solid rgba(5,27,53,0.08)",
+                  boxSizing: "border-box",
                 }}
               >
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img src={POSTER} alt="" style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
+                <div
+                  data-testid="ga-event-poster-image"
+                  style={{
+                    position: "relative",
+                    width: "100%",
+                    aspectRatio: narrow ? "16 / 9" : "1 / 1",
+                    borderRadius: 14,
+                    overflow: "hidden",
+                    background: "#f1f3f8",
+                    border: "1px solid rgba(5,27,53,0.08)",
+                  }}
+                >
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img src={POSTER} alt="" style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
+                </div>
               </div>
+              {compactTrustCard}
             </div>
-            {compactTrustCard}
           </div>
 
           {/* right: title + tiers + about + who + venue */}
-          <div style={{ display: "flex", flexDirection: "column", gap: 16, minWidth: 0 }}>
+          <div style={{ display: "flex", flexDirection: "column", gap: 16, minWidth: 0, ...(narrow ? {} : { alignSelf: "start" }) }}>
             <div style={{ ...card, borderRadius: 20, padding: mobile ? 18 : 24, display: "flex", flexDirection: "column", gap: 12 }}>
               <h1 style={{ margin: 0, fontSize: fluidSize(42), fontWeight: 600, letterSpacing: "-0.035em", lineHeight: 1.08 }}>{d.eventName}</h1>
               <span style={{ alignSelf: "flex-start", fontSize: fluidSize(17), fontWeight: 600, color: ACC }}>{d.venueLine}</span>
@@ -1907,7 +1932,7 @@ export default function PremiumTicketing({
         >
           <div style={{ display: "flex", flexDirection: "column", gap: 1, minWidth: 0, flexShrink: 0 }}>
             <div style={{ fontSize: fluidSize(12), color: "#6e7180" }}>From</div>
-            <div style={{ fontSize: fluidSize(20), fontWeight: 600, letterSpacing: "-0.02em", fontVariantNumeric: "tabular-nums" }}>{money(gaFromNum)}</div>
+            <div style={{ fontSize: fluidSize(26), fontWeight: 600, letterSpacing: "-0.02em", fontVariantNumeric: "tabular-nums", color: "#000" }}>{money(gaFromNum)}</div>
           </div>
           <button className="nmt-primary" onClick={() => setGaSheet(true)} style={{ ...primaryBtn, marginLeft: "auto", flex: 1, maxWidth: 280, fontSize: fluidSize(16), padding: "16px 24px" }}>Buy tickets</button>
         </MobileStickyFooter>

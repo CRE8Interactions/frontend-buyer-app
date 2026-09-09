@@ -4,6 +4,7 @@ import { useEffect, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import RouteLoader from "@/components/molecules/RouteLoader";
 import { setLastKnown, useAuth } from "@/lib/auth";
+import { beginRouteTransition } from "@/lib/routeTransition";
 
 /** Production wallet: send logged-out shoppers to login with a return path. */
 export default function MyTicketsAuthGuard({
@@ -19,9 +20,11 @@ export default function MyTicketsAuthGuard({
     if (typeof window === "undefined") return;
     const returnTo = window.location.pathname + window.location.search;
     setLastKnown(returnTo);
+    const href = `/login/?from=${encodeURIComponent(returnTo)}`;
     // Soft navigation: the browser keeps this document, so the tab does not
     // spin and the destination's loader paints instead of a reload.
-    router.replace(`/login/?from=${encodeURIComponent(returnTo)}`);
+    beginRouteTransition(href, { replace: true });
+    router.replace(href);
   }, [ready, isAuthenticated, router]);
 
   // Blocktickets splash covers resolving auth and the hop to login.

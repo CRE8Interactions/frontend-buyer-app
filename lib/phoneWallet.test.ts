@@ -11,6 +11,7 @@ import {
   addAccessPassToPhoneWallet,
   addTicketToPhoneWallet,
   phoneWalletKind,
+  phoneWalletTheme,
   walletPassEvent,
 } from "@/lib/phoneWallet";
 import {
@@ -23,11 +24,16 @@ const mockedApplePass = vi.mocked(downloadApplePass);
 const mockedGooglePass = vi.mocked(downloadGooglePass);
 const open = vi.fn();
 
-function setUserAgent(userAgent: string) {
+function setUserAgent(userAgent: string, maxTouchPoints = 0) {
   Object.defineProperty(navigator, "userAgent", {
     configurable: true,
     writable: true,
     value: userAgent,
+  });
+  Object.defineProperty(navigator, "maxTouchPoints", {
+    configurable: true,
+    writable: true,
+    value: maxTouchPoints,
   });
 }
 
@@ -60,15 +66,49 @@ afterEach(() => {
   Reflect.deleteProperty(navigator, "userAgent");
 });
 
+describe("phoneWalletTheme", () => {
+  it("uses Apple platform colors for Apple Wallet", () => {
+    expect(phoneWalletTheme("apple").buttonBg).toBe("#14161c");
+    expect(phoneWalletTheme("apple").selectedBorder).toBe("#14161c");
+  });
+
+  it("uses Google platform colors for Google Wallet", () => {
+    expect(phoneWalletTheme("google").buttonBg).toBe("#1f1f1f");
+    expect(phoneWalletTheme("google").selectedBorder).toBe("#1f1f1f");
+  });
+});
+
 describe("phoneWalletKind", () => {
+  afterEach(() => {
+    Reflect.deleteProperty(navigator, "maxTouchPoints");
+  });
+
   it("offers a wallet only on the phone that gets scanned", () => {
     setUserAgent("Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X)");
     expect(phoneWalletKind()).toBe("apple");
 
-    setUserAgent("Mozilla/5.0 (Linux; Android 14; Pixel 8)");
+    setUserAgent(
+      "Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Mobile Safari/537.36",
+    );
     expect(phoneWalletKind()).toBe("google");
 
     setUserAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64)");
+    expect(phoneWalletKind()).toBeNull();
+  });
+
+  it("does not offer a wallet on tablets", () => {
+    setUserAgent("Mozilla/5.0 (iPad; CPU OS 17_0 like Mac OS X)");
+    expect(phoneWalletKind()).toBeNull();
+
+    setUserAgent(
+      "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Safari/605.1.15",
+      5,
+    );
+    expect(phoneWalletKind()).toBeNull();
+
+    setUserAgent(
+      "Mozilla/5.0 (Linux; Android 13; SM-X900) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36",
+    );
     expect(phoneWalletKind()).toBeNull();
   });
 });

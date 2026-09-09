@@ -1981,11 +1981,68 @@ describe("SeatmapTooltip GA stepper", () => {
     );
     expect(quantities[0]).toHaveTextContent("0");
 
-    fireEvent.click(screen.getByRole("button", { name: /add to selection/i }));
+    fireEvent.click(screen.getByRole("button", { name: /add seats/i }));
 
     const selected = useSeatmapStore.getState().selectedFromMap;
     expect(selected).toHaveLength(1);
     expect(selectionOfferName(selected[0])).toBe("Standard Admission");
+  });
+
+  it("disables Add seats while every multi-offer GA quantity is 0", () => {
+    const ga = demoTicketGroups().ticketGroups.find((group) => group.GA);
+    if (!ga) throw new Error("demo fixtures need a GA ticket group");
+    const groups = [
+      {
+        ...ga,
+        id: "grp-scheduled",
+        price: 37.34,
+        availableCount: 20,
+        offer: {
+          id: "off-scheduled",
+          name: "scheduled",
+          limit: 3,
+          connected_offers: [],
+        },
+      },
+      {
+        ...ga,
+        id: "grp-standard",
+        price: 38.37,
+        availableCount: 20,
+        offer: {
+          id: "off-standard",
+          name: "Standard Admission",
+          maxQuantity: 1,
+          connected_offers: [],
+        },
+      },
+    ];
+    useSeatmapStore.setState({
+      sectionLookupTable: createSectionLookupTable(groups),
+      selectedFromMap: [],
+      seatedError: null,
+      totalCount: 0,
+      totalPrice: 0,
+    });
+    useFiltersStore.setState({ eventTicketLimit: null });
+
+    render(
+      <SeatmapTooltip
+        target={{ kind: "section", sectionId: DEMO_GA_SECTION_ID, x: 20, y: 20 }}
+        onClose={() => {}}
+      />,
+    );
+
+    const addSeats = screen.getByRole("button", { name: /add seats/i });
+    expect(addSeats).toBeEnabled();
+
+    fireEvent.click(
+      screen.getAllByRole("button", { name: /decrease quantity/i })[0],
+    );
+    fireEvent.click(
+      screen.getAllByRole("button", { name: /decrease quantity/i })[1],
+    );
+    expect(addSeats).toBeDisabled();
   });
 
   it("adds each multi-offer GA row as a separate selection ticket", () => {
@@ -2026,7 +2083,7 @@ describe("SeatmapTooltip GA stepper", () => {
 
     expect(screen.getByText("Military Daypass")).toBeInTheDocument();
     expect(screen.getByText("Military Prelims")).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: /add to selection/i }));
+    fireEvent.click(screen.getByRole("button", { name: /add seats/i }));
 
     const selected = useSeatmapStore.getState().selectedFromMap;
     expect(selected).toHaveLength(2);

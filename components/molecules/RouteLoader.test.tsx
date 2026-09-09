@@ -1,10 +1,13 @@
 import { render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { DEMO_ORGS } from "@/lib/demo/fixtures";
+import { DEMO_EVENTS, DEMO_ORGS } from "@/lib/demo/fixtures";
 import RouteLoader, {
   BrandedLoader,
 } from "@/components/molecules/RouteLoader";
-import { cacheOrgBranding } from "@/lib/orgBrandingCache";
+import {
+  cacheEventBranding,
+  cacheOrgBranding,
+} from "@/lib/orgBrandingCache";
 
 let mockPathname = "/";
 
@@ -17,6 +20,7 @@ const raptors = DEMO_ORGS.find((org) => org.slug === "ogden-raptors")!;
 
 beforeEach(() => {
   mockPathname = "/";
+  sessionStorage.clear();
 });
 
 afterEach(() => {
@@ -127,6 +131,23 @@ describe("RouteLoader", () => {
     expect(screen.getByText(raptors.name)).toBeInTheDocument();
     expect(screen.getByText("retrieving payment details")).toBeInTheDocument();
     expect(screen.queryByText(/loading tickets/i)).not.toBeInTheDocument();
+  });
+
+  it("paints an event's team even when the API sent no org slug", () => {
+    const event = DEMO_EVENTS.find(
+      (item) => item.organization.slug === raptors.slug,
+    )!;
+    // Search hits carry branding without a slug to key it under, so the event
+    // itself is the only thing tying this route to a team.
+    cacheEventBranding(event, {
+      name: raptors.name,
+      branding: raptors.branding,
+    });
+    mockPathname = `/e/${event.seoUrl}/${event.shortCode}/tickets/`;
+    render(<RouteLoader />);
+
+    expect(screen.getByText(raptors.name)).toBeInTheDocument();
+    expect(screen.getByText("loading tickets")).toBeInTheDocument();
   });
 
   it("shows the Blocktickets spinner on login instead of the last team", () => {

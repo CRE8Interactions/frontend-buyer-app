@@ -53,9 +53,13 @@ export function initGrowthBook(attributes: Record<string, unknown> = {}) {
   const clientKey = process.env.NEXT_PUBLIC_GROWTHBOOK_API_KEY;
 
   if (!apiHost || !clientKey) {
-    console.warn(
-      "GrowthBook is not configured. Set NEXT_PUBLIC_GROWTHBOOK_API_HOST and NEXT_PUBLIC_GROWTHBOOK_API_KEY to enable feature flags.",
-    );
+    const message =
+      "GrowthBook is not configured. Set NEXT_PUBLIC_GROWTHBOOK_API_HOST and NEXT_PUBLIC_GROWTHBOOK_API_KEY to enable feature flags.";
+    if (process.env.NODE_ENV === "development") {
+      console.debug(message);
+    } else {
+      console.warn(message);
+    }
     started = true;
     return instance;
   }

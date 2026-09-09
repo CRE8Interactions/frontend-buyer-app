@@ -1,4 +1,5 @@
 import type { CSSProperties } from "react";
+import { BrandBlocks } from "@/components/molecules/BrandLoader";
 
 const SHIMMER: CSSProperties = {
   background: "linear-gradient(90deg,#eef0f6 0%,#f7f8fc 50%,#eef0f6 100%)",
@@ -6,7 +7,27 @@ const SHIMMER: CSSProperties = {
   animation: "st-shimmer 1.4s linear infinite",
 };
 
-/** Placeholder rows while wallet lists (tickets, transfers, listings) load. */
+/** Centered Blocktickets blocks while my-tickets loads (matches /search). */
+export function WalletTicketsBlocksLoading({
+  routeDestination = false,
+}: {
+  /** Hands off from the global transition cover into wallet. */
+  routeDestination?: boolean;
+}) {
+  return (
+    <div
+      role="status"
+      aria-busy="true"
+      aria-label="Loading tickets"
+      data-bt-destination-loader={routeDestination ? "" : undefined}
+      className="flex min-h-[30vh] items-center justify-center"
+    >
+      <BrandBlocks />
+    </div>
+  );
+}
+
+/** Placeholder rows while wallet lists (transfers, listings) load. */
 export function WalletListSkeleton() {
   const label = "Loading tickets";
   return (

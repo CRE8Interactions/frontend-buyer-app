@@ -738,6 +738,17 @@ export default function SeatmapTooltip({
   const primaryGaRestrictionLabel = primary
     ? groupRestrictionLabel(primary, gaLimits)
     : null;
+  const gaOfferPicks = () =>
+    sectionOffers
+      .map((group, index) => {
+        const key = gaOfferSelectionKey(group, index);
+        const limits = groupQuantityLimits(group);
+        return {
+          ...group,
+          quantity: resolvedOfferQuantity(offerQtys, key, limits),
+        };
+      })
+      .filter((group) => Number(group.quantity) > 0);
 
   return (
     <div
@@ -817,25 +828,17 @@ export default function SeatmapTooltip({
             })}
           </div>
           <Button
-            className="mt-4 w-full"
+            className="mt-4 w-full disabled:opacity-50"
             style={{ background: actionBg, color: actionInk }}
+            disabled={gaOfferPicks().length === 0}
             onClick={() => {
-              const picks = sectionOffers
-                .map((group, index) => {
-                  const key = gaOfferSelectionKey(group, index);
-                  const limits = groupQuantityLimits(group);
-                  return {
-                    ...group,
-                    quantity: resolvedOfferQuantity(offerQtys, key, limits),
-                  };
-                })
-                .filter((group) => Number(group.quantity) > 0);
+              const picks = gaOfferPicks();
               if (!picks.length) return;
               selectGASeats(picks);
               onClose();
             }}
           >
-            Add to selection
+            Add seats
           </Button>
         </>
       ) : !gaLimits.valid ? (
@@ -867,7 +870,7 @@ export default function SeatmapTooltip({
             />
           </div>
           <Button
-            className="mt-4 w-full"
+            className="mt-4 w-full disabled:opacity-50"
             style={{ background: actionBg, color: actionInk }}
             disabled={!gaLimits.valid || selectedGaQty < gaLimits.min}
             onClick={() => {
@@ -878,7 +881,7 @@ export default function SeatmapTooltip({
               onClose();
             }}
           >
-            Add to selection
+            Add seats
           </Button>
         </>
       )}

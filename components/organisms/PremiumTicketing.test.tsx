@@ -1156,6 +1156,9 @@ describe("Select tickets page (PremiumTicketing)", { timeout: 20_000 }, () => {
     expect(screen.getByTestId("ga-event-poster-image")).toHaveStyle({
       aspectRatio: "1 / 1",
     });
+    expect(screen.getByTestId("ga-event-sidebar")).toHaveStyle({
+      position: "sticky",
+    });
   });
 
   it("uses the same poster sizing for scheduled single-column GA layouts", async () => {

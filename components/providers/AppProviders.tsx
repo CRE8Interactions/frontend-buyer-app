@@ -109,7 +109,7 @@ export default function AppProviders({ children }: { children: ReactNode }) {
       // match itself and never be removed.
       if (
         document.querySelector(
-          "[data-bt-tenant-loader]:not(#bt-boot-loader),[data-bt-platform-loader]:not(#bt-boot-loader)",
+          "[data-bt-route-transition],[data-bt-destination-loader],[data-bt-tenant-loader]:not(#bt-boot-loader),[data-bt-platform-loader]:not(#bt-boot-loader)",
         )
       ) {
         return;
