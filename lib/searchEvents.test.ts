@@ -73,6 +73,35 @@ describe("searchEvents helpers", () => {
     expect(getCachedOrgBranding()?.slug).toBe(raptors.slug);
   });
 
+  it("seeds a slugless search hit so the tickets loader still finds that team", async () => {
+    const raptors = DEMO_ORGS.find((org) => org.slug === "ogden-raptors")!;
+    const icedogs = DEMO_ORGS.find((org) => org.slug === "niagara-icedogs")!;
+    const source = DEMO_EVENTS.find(
+      (event) => event.organization.slug === icedogs.slug,
+    )!;
+    const hits = [
+      {
+        ...source,
+        shortCode: undefined,
+        shortcode: source.shortcode,
+        organization: {
+          name: icedogs.name,
+          branding: icedogs.branding,
+        },
+      },
+    ];
+    cacheOrgBranding(raptors);
+    vi.mocked(searchEvents).mockResolvedValue({ data: hits } as never);
+
+    await fetchSearchEvents("icedogs");
+
+    expect(getLoaderBranding(eventPurchasePath(source))).toMatchObject({
+      name: icedogs.name,
+      primaryColor: icedogs.branding.primaryColor,
+    });
+    expect(getCachedOrgBranding()?.slug).toBe(raptors.slug);
+  });
+
   it("skips the API and seeds nothing for an empty query", async () => {
     expect(await fetchSearchEvents("   ")).toEqual([]);
     expect(searchEvents).not.toHaveBeenCalled();

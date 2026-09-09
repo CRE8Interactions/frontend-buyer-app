@@ -80,13 +80,14 @@ export default function BrandedCheckoutShell({
     >
       <ShopperFluidTypeStyles />
       <header
-        className="sticky top-0 z-[2] flex items-center gap-4 px-6 py-3.5 text-white"
+        className="relative sticky top-0 z-[2] flex min-w-0 items-center gap-2 px-3.5 py-3.5 text-white md:gap-4 md:px-6"
         style={{ background: accent }}
       >
         <button
           type="button"
           onClick={onBack}
-          className="inline-flex items-center gap-2 rounded-full border border-white/22 bg-white/12 px-[18px] py-2.5 text-[14px] font-medium text-white"
+          aria-label="Back"
+          className="relative z-[1] inline-flex shrink-0 items-center gap-2 rounded-full border border-white/22 bg-white/12 px-3 py-2.5 text-[14px] font-medium text-white md:px-[18px]"
         >
           <svg
             viewBox="0 0 24 24"
@@ -101,11 +102,11 @@ export default function BrandedCheckoutShell({
             <line x1="19" y1="12" x2="5" y2="12" />
             <polyline points="12 19 5 12 12 5" />
           </svg>
-          Back
+          <span className="hidden sm:inline">Back</span>
         </button>
-        <div className="flex-1" />
+        <div className="hidden flex-1 md:block" aria-hidden />
         {hold ? (
-          <span className="inline-flex items-center gap-1.5 whitespace-nowrap rounded-full border border-white/22 bg-white/14 px-3.5 py-2 text-[13px] font-medium tabular-nums text-white">
+          <span className="pointer-events-none absolute left-1/2 top-1/2 inline-flex max-w-[calc(100%-11.5rem)] -translate-x-1/2 -translate-y-1/2 items-center gap-1.5 truncate rounded-full border border-white/22 bg-white/14 px-2.5 py-2 text-[12px] font-medium tabular-nums text-white md:static md:max-w-none md:translate-x-0 md:translate-y-0 md:px-3.5 md:text-[13px]">
             <svg
               viewBox="0 0 24 24"
               fill="none"
@@ -113,7 +114,7 @@ export default function BrandedCheckoutShell({
               strokeWidth={2}
               strokeLinecap="round"
               strokeLinejoin="round"
-              className="h-3.5 w-3.5"
+              className="h-3.5 w-3.5 shrink-0"
               aria-hidden
             >
               <circle cx="12" cy="12" r="9" />
@@ -122,7 +123,7 @@ export default function BrandedCheckoutShell({
             Seats held {hold}
           </span>
         ) : null}
-        <div className="flex items-center gap-2 text-[13px] text-white/80">
+        <div className="relative z-[1] ml-auto flex shrink-0 items-center gap-1.5 whitespace-nowrap text-[11px] text-white/80 md:ml-0 md:gap-2 md:text-[13px]">
           <svg
             viewBox="0 0 24 24"
             fill="none"
@@ -130,7 +131,7 @@ export default function BrandedCheckoutShell({
             strokeWidth={2}
             strokeLinecap="round"
             strokeLinejoin="round"
-            className="h-4 w-4"
+            className="h-3.5 w-3.5 shrink-0 md:h-4 md:w-4"
             aria-hidden
           >
             <rect x="3" y="11" width="18" height="11" rx="2" />

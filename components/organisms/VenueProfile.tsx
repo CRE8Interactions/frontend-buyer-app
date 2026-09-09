@@ -10,11 +10,8 @@ import { useEffect, useMemo, useState, type CSSProperties } from "react";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import InAppBackLink from "@/components/molecules/InAppBackLink";
+import NavAuthActions from "@/components/molecules/NavAuthActions";
 import RouteLoader from "@/components/molecules/RouteLoader";
-import {
-  ShopperSearchField,
-  ShopperSearchProvider,
-} from "@/components/molecules/ShopperSearchBar";
 import { fluidSize, shopperPageTypeCss } from "@/lib/shopperFluidType";
 import {
   fieldFocusVars,
@@ -55,11 +52,10 @@ import {
   venueWebsiteHref,
 } from "@/lib/venueWebsite";
 import { categoryLabel, eventTypeLabel } from "@/lib/eventType";
-import { walletSectionHref } from "@/lib/walletNav";
+import { useClientReady } from "@/lib/useClientReady";
 
 const NAVY = "#051b35";
 const GREEN = "#a6e773";
-const LOCKUP = "/nmstate/blocktickets-lockup-white.svg";
 
 type VenueAddress =
   | { city?: string; state?: string; address_1?: string }
@@ -257,6 +253,7 @@ function toRow(
 }
 
 export default function VenueProfile({ slug }: { slug: string }) {
+  const clientReady = useClientReady();
   const [vw, setVw] = useState(1440);
   const [loading, setLoading] = useState(true);
   const [missing, setMissing] = useState(false);
@@ -464,7 +461,9 @@ export default function VenueProfile({ slug }: { slug: string }) {
 
   if (missing) notFound();
 
-  const cachedVenueBranding = getCachedBrandingForPath(`/venue/${slug}/`);
+  const cachedVenueBranding = clientReady
+    ? getCachedBrandingForPath(`/venue/${slug}/`)
+    : null;
   const loaderName = organization?.name || cachedVenueBranding?.name || "";
   const loaderAccent = organization
     ? resolvePrimaryColor(null, organization)
@@ -487,12 +486,6 @@ export default function VenueProfile({ slug }: { slug: string }) {
       />
     );
   }
-
-  const searchPill = (
-    <ShopperSearchProvider placeholder="Search events, teams, venues">
-      <ShopperSearchField style={{ flex: "1 1 auto", maxWidth: 460 }} />
-    </ShopperSearchProvider>
-  );
 
   const iconBtn = {
     fontFamily: "inherit",
@@ -557,16 +550,63 @@ export default function VenueProfile({ slug }: { slug: string }) {
 .vp-row{transition:box-shadow 150ms ease,border-color 150ms ease}.vp-row:hover{box-shadow:0 8px 30px rgba(5,27,53,0.09);border-color:rgba(5,27,53,0.20)}.vp-action{outline:2px solid transparent;outline-offset:2px;transition:outline-color 140ms ease}.vp-action:hover,.vp-action:focus-visible{outline-color:var(--vp-accent)}`}</style>
 
       <header style={{ background: ACC, position: "sticky", top: 0, zIndex: 20 }}>
-        <div style={{ maxWidth: 1320, margin: "0 auto", padding: mobile ? "12px 20px" : "16px 32px", display: "flex", alignItems: "center", gap: 16 }}>
-          <InAppBackLink href="/browse/" aria-label="Back to browse" style={{ width: 40, height: 40, borderRadius: 999, background: "rgba(255,255,255,0.12)", color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, textDecoration: "none" }}>
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" style={{ width: 19, height: 19 }}><polyline points="15 18 9 12 15 6" /></svg>
+        <div
+          style={{
+            maxWidth: 1320,
+            margin: "0 auto",
+            padding: mobile ? "12px 20px" : "16px 32px",
+            display: "flex",
+            alignItems: "center",
+            gap: 16,
+          }}
+        >
+          <InAppBackLink
+            href="/browse/"
+            aria-label="Back to browse"
+            style={{
+              width: 40,
+              height: 40,
+              borderRadius: 999,
+              background: "rgba(255,255,255,0.14)",
+              color: "#fff",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              flexShrink: 0,
+              textDecoration: "none",
+            }}
+          >
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" style={{ width: 19, height: 19 }}>
+              <polyline points="15 18 9 12 15 6" />
+            </svg>
           </InAppBackLink>
-          <Link href="/browse" aria-label="Blocktickets home" style={{ display: "flex", alignItems: "center", flexShrink: 0, textDecoration: "none" }}>
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src={LOCKUP} alt="blocktickets" style={{ height: 19, width: "auto" }} />
-          </Link>
-          {!mobile && searchPill}
-          <Link href={walletSectionHref("events")} style={{ fontFamily: "inherit", marginLeft: "auto", fontSize: fluidSize(14), fontWeight: 600, color: ACC, background: "#fff", border: "none", borderRadius: 999, padding: "11px 22px", cursor: "pointer", whiteSpace: "nowrap", textDecoration: "none", display: "inline-flex", alignItems: "center" }}>My wallet</Link>
+          <div
+            style={{
+              marginLeft: "auto",
+              display: "flex",
+              alignItems: "center",
+              gap: 16,
+              flexShrink: 0,
+            }}
+          >
+            <NavAuthActions
+              buttonStyle={{
+                fontFamily: "inherit",
+                fontSize: fluidSize(14),
+                fontWeight: 600,
+                color: ACC,
+                background: "#fff",
+                border: "none",
+                borderRadius: 999,
+                padding: "11px 22px",
+                cursor: "pointer",
+                whiteSpace: "nowrap",
+                textDecoration: "none",
+                display: "inline-flex",
+                alignItems: "center",
+              }}
+            />
+          </div>
         </div>
       </header>
 

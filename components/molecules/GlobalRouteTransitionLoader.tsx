@@ -15,39 +15,32 @@ import {
   ROUTE_TRANSITION_EVENT,
   routePathKey,
 } from "@/lib/routeTransition";
+import { beginWalletNavigation } from "@/lib/walletTransition";
 
 const MAX_VISIBLE_MS = 15000;
 
-/**
- * How long a committed route gets to paint its own loader before this cover
- * drops. A committed route still needs a render — and, for session-cached
- * branding, a layout effect — before its loader is up, so uncovering on commit
- * alone flashes a bare page. Short enough to go unnoticed when the destination
- * has its content ready and paints no loader at all.
- */
-const LOADER_HANDOFF_MS = 150;
+/** Destination loader polls before the cover hands off (~3 × 40 ms). */
+const LOADER_HANDOFF_STABLE_POLLS = 3;
 
-const DESTINATION_LOADER_SELECTOR =
-  "[data-bt-tenant-loader],[data-bt-platform-loader]";
+/** Full-screen loader owned by the route that is loading — not this cover. */
+const DESTINATION_LOADER_SELECTOR = "[data-bt-destination-loader]";
 
 function isPlatformLinkOrigin(pathname: string) {
   const path = pathname.replace(/\/+$/, "") || "/";
   return path === "/" || path === "/our-story";
 }
 
-function locationKey() {
-  return `${window.location.pathname}${window.location.search}`;
-}
-
-function destinationKey(destination: URL) {
-  return `${destination.pathname}${destination.search}${destination.hash}`;
+function setTransitionCover(active: boolean) {
+  if (typeof document === "undefined") return;
+  if (active) document.body.dataset.btRouteTransition = "";
+  else delete document.body.dataset.btRouteTransition;
 }
 
 /**
- * Immediate feedback for internal link transitions. The address bar updates
- * first, then the branded loader covers the outgoing page until Next.js
- * commits the destination. Wallet hops skip this overlay so tickets,
- * transfers, and listings can show their in-page loader instead.
+ * Immediate feedback for internal link transitions. Next.js owns the URL and
+ * route swap; this cover stays up until the destination route paints its own
+ * full-screen loader. Wallet hops skip this overlay so tickets, transfers,
+ * and listings can show their in-page loader instead.
  */
 export default function GlobalRouteTransitionLoader() {
   const [branding, setBranding] = useState<CachedBranding | null>(null);
@@ -58,15 +51,14 @@ export default function GlobalRouteTransitionLoader() {
   const timeoutRef = useRef<number | null>(null);
   const routeCommittedRef = useRef<((event: Event) => void) | null>(null);
   const overlayRef = useRef<HTMLDivElement>(null);
-  const handoffRef = useRef<number | null>(null);
   /** The destination route has committed and may still be bare. */
   const committedRef = useRef(false);
+  const destinationLoaderPollsRef = useRef(0);
 
   useEffect(() => {
     const clearTimers = () => {
       if (pollRef.current != null) window.clearInterval(pollRef.current);
       if (timeoutRef.current != null) window.clearTimeout(timeoutRef.current);
-      if (handoffRef.current != null) window.clearTimeout(handoffRef.current);
       if (routeCommittedRef.current) {
         window.removeEventListener(
           ROUTE_COMMITTED_EVENT,
@@ -76,21 +68,31 @@ export default function GlobalRouteTransitionLoader() {
       }
       pollRef.current = null;
       timeoutRef.current = null;
-      handoffRef.current = null;
     };
 
     const finish = () => {
       clearTimers();
       committedRef.current = false;
+      destinationLoaderPollsRef.current = 0;
+      setTransitionCover(false);
       setVisible(false);
     };
 
-    /** A loader that belongs to the destination, not the cover we are showing. */
+    /** A loader that belongs to the destination route, not the cover we are showing. */
     const destinationLoaderPainting = () => {
       const own = overlayRef.current;
       return Array.from(
         document.querySelectorAll(DESTINATION_LOADER_SELECTOR),
       ).some((el) => !own?.contains(el));
+    };
+
+    const destinationLoaderReady = () => {
+      if (!destinationLoaderPainting()) {
+        destinationLoaderPollsRef.current = 0;
+        return false;
+      }
+      destinationLoaderPollsRef.current += 1;
+      return destinationLoaderPollsRef.current >= LOADER_HANDOFF_STABLE_POLLS;
     };
 
     const startTransition = (
@@ -107,17 +109,15 @@ export default function GlobalRouteTransitionLoader() {
       }
 
       const toPath = destination.pathname;
-      const dest = destinationKey(destination);
 
-      // Wallet pages own their in-page spinner — do not cover them with the
-      // Blocktickets watermark, including hops in from a team or checkout.
-      if (isWalletAccountPath(toPath)) {
+      // In-wallet hops use immediate blocks feedback. Entering wallet from
+      // checkout, a team page, or anywhere else keeps the Blocktickets cover.
+      if (
+        isWalletAccountPath(toPath) &&
+        isWalletAccountPath(window.location.pathname)
+      ) {
+        beginWalletNavigation(href);
         return;
-      }
-
-      if (locationKey() !== dest) {
-        if (options.replace) window.history.replaceState({}, "", dest);
-        else window.history.pushState({}, "", dest);
       }
 
       let destinationBranding = getLoaderBranding(toPath);
@@ -135,32 +135,31 @@ export default function GlobalRouteTransitionLoader() {
 
       clearTimers();
       committedRef.current = false;
+      destinationLoaderPollsRef.current = 0;
       setBranding(destinationBranding);
       setFallback(nextFallback);
       setMessage(loaderMessageForPath(destination.pathname));
+      setTransitionCover(true);
       setVisible(true);
 
       const tryFinish = () => {
-        if (routePathKey(window.location.pathname) !== routePathKey(toPath)) {
+        const current = routePathKey(window.location.pathname);
+        const dest = routePathKey(toPath);
+
+        // The shopper navigated somewhere other than the link they clicked.
+        if (committedRef.current && current !== dest) {
           finish();
           return;
         }
-        // Once the destination is showing its own loader, the two covers are
-        // interchangeable and this one can drop away unnoticed.
-        if (committedRef.current && destinationLoaderPainting()) finish();
+        if (!committedRef.current) return;
+        if (destinationLoaderReady()) finish();
       };
 
       const onRouteCommitted = (event: Event) => {
         const path = (event as CustomEvent<{ path?: string }>).detail?.path;
         if (!path || routePathKey(path) !== routePathKey(toPath)) return;
         committedRef.current = true;
-        if (destinationLoaderPainting()) {
-          finish();
-          return;
-        }
-        // Nothing painting yet: give the destination a beat to render its own
-        // loader, then uncover whatever it has rather than holding the page.
-        handoffRef.current = window.setTimeout(finish, LOADER_HANDOFF_MS);
+        if (destinationLoaderReady()) finish();
       };
 
       routeCommittedRef.current = onRouteCommitted;
@@ -203,13 +202,24 @@ export default function GlobalRouteTransitionLoader() {
     const onProgrammaticNav = (event: Event) => {
       const detail = (event as CustomEvent<{ href?: string; replace?: boolean }>)
         .detail;
-      if (detail?.href) {
-        startTransition(detail.href, { replace: detail.replace });
+      if (!detail?.href) return;
+      const destination = new URL(detail.href, window.location.href);
+      if (
+        destination.origin === window.location.origin &&
+        isWalletAccountPath(destination.pathname) &&
+        isWalletAccountPath(window.location.pathname)
+      ) {
+        beginWalletNavigation(detail.href);
+        return;
       }
+      startTransition(detail.href, { replace: detail.replace });
     };
 
     const onPopState = () => {
       clearTimers();
+      committedRef.current = false;
+      destinationLoaderPollsRef.current = 0;
+      setTransitionCover(false);
       setVisible(false);
     };
 
@@ -221,13 +231,23 @@ export default function GlobalRouteTransitionLoader() {
       window.removeEventListener(ROUTE_TRANSITION_EVENT, onProgrammaticNav);
       window.removeEventListener("popstate", onPopState);
       clearTimers();
+      setTransitionCover(false);
     };
   }, []);
 
   if (!visible) return null;
 
   return (
-    <div ref={overlayRef}>
+    <div
+      ref={overlayRef}
+      data-bt-route-transition=""
+      style={{
+        position: "fixed",
+        inset: 0,
+        zIndex: 2147483646,
+        pointerEvents: "all",
+      }}
+    >
       <BrandedLoader
         branding={branding}
         fallback={fallback}

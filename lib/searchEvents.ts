@@ -94,7 +94,15 @@ export async function fetchSearchEvents(query: string) {
   // result paints that org's loader instead of an empty screen. Searching is
   // not picking a team, so the last-used org stays put.
   events.forEach((event) =>
-    cacheEventBranding(event, event.organization, { touchLast: false }),
+    cacheEventBranding(
+      {
+        seoUrl: event.seoUrl,
+        slug: event.slug,
+        shortCode: event.shortCode || event.shortcode,
+      },
+      event.organization,
+      { touchLast: false },
+    ),
   );
   return events;
 }

@@ -9,6 +9,7 @@ import {
   useState,
   type CSSProperties,
   type FormEvent,
+  type MouseEvent as ReactMouseEvent,
   type ReactNode,
 } from "react";
 import { usePathname, useRouter } from "next/navigation";
@@ -23,6 +24,7 @@ import {
   searchResultsHref,
   type ShopperSearchEvent,
 } from "@/lib/searchEvents";
+import { beginRouteTransition } from "@/lib/routeTransition";
 
 type SearchApi = {
   query: string;
@@ -80,7 +82,9 @@ function useShopperSearch(placeholder: string): SearchApi {
     const trimmed = query.trim();
     if (!trimmed) return;
     close();
-    router.push(searchResultsHref(trimmed));
+    const href = searchResultsHref(trimmed);
+    beginRouteTransition(href);
+    router.push(href);
   }, [close, query, router]);
 
   useEffect(() => {
@@ -249,8 +253,16 @@ export function ShopperSearchField({
     placeholder,
   } = useSearchApi();
   const rootRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
   const isNav = variant === "nav";
   const hasQuery = query.trim().length > 0;
+
+  /** The whole bar reads as the field, so its padding types too. */
+  const focusField = (event: ReactMouseEvent) => {
+    setOpen(true);
+    if ((event.target as HTMLElement).closest("button")) return;
+    inputRef.current?.focus();
+  };
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
@@ -286,10 +298,11 @@ export function ShopperSearchField({
           <div
             className="bt-focus-edge flex cursor-text items-center gap-2.5 rounded-full px-[18px] py-2.5 transition-colors"
             style={{ background: searchBg, border: `1px solid ${searchLine}` }}
-            onClick={() => setOpen(true)}
+            onClick={focusField}
           >
             {iconSide === "left" ? <SearchIcon stroke={palette.muted} /> : null}
             <input
+              ref={inputRef}
               data-seamless-focus
               value={query}
               onChange={(event) => setQuery(event.target.value)}
@@ -328,8 +341,12 @@ export function ShopperSearchField({
             ) : null}
           </div>
         ) : (
-          <div className="bt-focus-edge flex h-11 items-center gap-3 rounded-xl border border-white/15 bg-[#051B35] px-4">
+          <div
+            className="bt-focus-edge flex h-11 cursor-text items-center gap-3 rounded-xl border border-white/15 bg-[#051B35] px-4"
+            onClick={focusField}
+          >
             <input
+              ref={inputRef}
               data-seamless-focus
               value={query}
               onChange={(event) => setQuery(event.target.value)}

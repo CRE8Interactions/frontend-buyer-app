@@ -165,13 +165,58 @@ describe("org switch loader branding", () => {
     expect(getLoaderBranding("/login/")).toBeNull();
   });
 
-  it("does not borrow the last team on login that returns to checkout", () => {
+  it("uses Blocktickets on login that returns to checkout or wallet", () => {
     cacheOrgBranding(raptors);
 
     expect(
       isPlatformLoaderPath("/login/", "?from=%2Fcheckout%2F%3FcartId%3Dc1"),
-    ).toBe(false);
+    ).toBe(true);
+    expect(
+      isPlatformLoaderPath(
+        "/login/",
+        "?from=%2Fcheckout%2Fsuccess%2F%3FintentId%3Dpi_1",
+      ),
+    ).toBe(true);
+    expect(
+      isPlatformLoaderPath("/login/", "?from=%2Fwallet%2Fmy-tickets%2F"),
+    ).toBe(true);
     expect(getLoaderBranding("/login/")).toBeNull();
+  });
+
+  it("still uses the tenant loader on login that returns to a team page", () => {
+    cacheOrgBranding(raptors);
+
+    expect(
+      isPlatformLoaderPath("/login/", "?from=%2Fniagara-icedogs%2F"),
+    ).toBe(false);
+  });
+});
+
+describe("slugless event branding", () => {
+  it("stores inline branding when the org has no slug and the hit only has shortcode", () => {
+    cacheOrgBranding(raptors);
+    const searchHit = {
+      seoUrl: icedogsEvent.seoUrl,
+      slug: icedogsEvent.slug,
+      shortcode: icedogsEvent.shortcode,
+      organization: {
+        name: icedogs.name,
+        branding: icedogs.branding,
+      },
+    };
+
+    cacheEventBranding(searchHit, searchHit.organization, { touchLast: false });
+
+    expect(
+      getLoaderBranding(
+        `/e/${icedogsEvent.seoUrl}/${icedogsEvent.shortcode}/tickets/`,
+      ),
+    ).toMatchObject({
+      name: icedogs.name,
+      primaryColor: icedogs.branding.primaryColor,
+      slug: null,
+    });
+    expect(getCachedOrgBranding()?.slug).toBe(raptors.slug);
   });
 });
 

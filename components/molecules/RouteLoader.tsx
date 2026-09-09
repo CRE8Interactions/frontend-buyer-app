@@ -1,6 +1,6 @@
 "use client";
 
-import { useLayoutEffect, useState } from "react";
+import { useLayoutEffect } from "react";
 import { useParams, usePathname } from "next/navigation";
 import BrandLoader from "@/components/molecules/BrandLoader";
 import {
@@ -12,6 +12,7 @@ import {
   LOADER_MESSAGE,
   loaderMessageForPath,
 } from "@/lib/loaderMessages";
+import { useClientReady } from "@/lib/useClientReady";
 
 export { LOADER_MESSAGE };
 
@@ -43,11 +44,14 @@ export function BrandedLoader({
   branding,
   fallback = "none",
   embedded = false,
+  routeDestination = false,
   message,
 }: {
   branding?: LoaderBranding | null;
   fallback?: "none" | "blocktickets";
   embedded?: boolean;
+  /** Marks a full-screen loader owned by the active route (not the transition cover). */
+  routeDestination?: boolean;
   message?: string;
 }) {
   const showPlatform = fallback === "blocktickets" && !hasTenantBranding(branding);
@@ -71,6 +75,7 @@ export function BrandedLoader({
         message={caption}
         poweredBy={!embedded}
         embedded={embedded}
+        routeDestination={routeDestination}
       />
     );
   }
@@ -81,6 +86,7 @@ export function BrandedLoader({
         variant="blocktickets"
         message={caption}
         embedded={embedded}
+        routeDestination={routeDestination}
       />
     );
   }
@@ -102,14 +108,12 @@ export default function RouteLoader({
 }) {
   const pathname = usePathname();
   const params = useParams<{ slug?: string }>();
-  const [allowClientCache, setAllowClientCache] = useState(false);
-  const [search, setSearch] = useState("");
+  // Only the hydrating page has to hold off on sessionStorage. A loader that
+  // mounts on a client-side navigation reads it during its first render, so the
+  // route never commits a bare frame while it waits for an effect.
+  const allowClientCache = useClientReady();
+  const search = allowClientCache ? window.location.search : "";
   const platform = isPlatformLoaderPath(pathname || "", search);
-
-  useLayoutEffect(() => {
-    setAllowClientCache(true);
-    setSearch(window.location.search);
-  }, []);
 
   const resolved = resolveLoaderBrandingForRender(pathname || "", {
     branding,
@@ -123,6 +127,7 @@ export default function RouteLoader({
       branding={resolved}
       fallback={platform ? "blocktickets" : "none"}
       message={loaderMessageForPath(pathname || "")}
+      routeDestination
     />
   );
 }

@@ -621,3 +621,8 @@ body {
     display: none;
   }
 }
+
+/* Route-transition cover: keep the outgoing page from scrolling underneath. */
+body[data-bt-route-transition] {
+  overflow: hidden;
+}

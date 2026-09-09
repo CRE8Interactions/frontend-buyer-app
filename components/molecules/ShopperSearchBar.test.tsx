@@ -11,6 +11,11 @@ import { DEMO_EVENTS } from "@/lib/demo/fixtures";
 import { eventPurchasePath } from "@/lib/helpers";
 
 const push = vi.fn();
+const beginRouteTransition = vi.fn();
+
+vi.mock("@/lib/routeTransition", () => ({
+  beginRouteTransition: (...args: unknown[]) => beginRouteTransition(...args),
+}));
 
 vi.mock("next/link", () => ({
   default: ({
@@ -52,6 +57,7 @@ function renderSearch() {
 describe("ShopperSearchBar", () => {
   beforeEach(() => {
     push.mockReset();
+    beginRouteTransition.mockReset();
     mockedSearch.mockReset();
     mockedSearch.mockResolvedValue({ data: DEMO_EVENTS } as never);
     Object.defineProperty(window, "innerWidth", {
@@ -88,6 +94,18 @@ describe("ShopperSearchBar", () => {
     );
   });
 
+  it("types into the field when the bar's padding is clicked", async () => {
+    const user = userEvent.setup();
+    renderSearch();
+
+    const field = screen.getByRole("textbox", { name: /search for events/i });
+    await user.click(field.parentElement!);
+    await user.keyboard("icedogs");
+
+    expect(field).toHaveFocus();
+    expect(field).toHaveValue("icedogs");
+  });
+
   it("navigates to the search page on Enter", async () => {
     const user = userEvent.setup();
     renderSearch();
@@ -95,6 +113,7 @@ describe("ShopperSearchBar", () => {
     const field = screen.getByRole("textbox", { name: /search for events/i });
     await user.type(field, "icedogs{Enter}");
 
+    expect(beginRouteTransition).toHaveBeenCalledWith("/search/?query=icedogs");
     expect(push).toHaveBeenCalledWith("/search/?query=icedogs");
   });
 
