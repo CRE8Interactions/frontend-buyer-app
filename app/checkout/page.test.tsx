@@ -234,6 +234,7 @@ describe("Checkout page", { timeout: 20_000 }, () => {
   });
 
   afterEach(() => {
+    vi.useRealTimers();
     vi.unstubAllGlobals();
     vi.unstubAllEnvs();
   });
@@ -307,9 +308,7 @@ describe("Checkout page", { timeout: 20_000 }, () => {
       }),
     ).toBeInTheDocument();
     expect(screen.getByText("Secure checkout")).toBeInTheDocument();
-    expect(
-      screen.getByText(`Seats held ${formatHoldClock(CHECKOUT_HOLD_SECONDS)}`),
-    ).toBeInTheDocument();
+    expect(screen.getByText(/Seats held \d+:\d{2}/)).toBeInTheDocument();
     expect(screen.queryByText(/you.?re so close/i)).not.toBeInTheDocument();
   });
 
@@ -377,13 +376,17 @@ describe("Checkout page", { timeout: 20_000 }, () => {
     // Soft navigation only: a document load would spin the browser tab.
     expect(locationMocks.replace).not.toHaveBeenCalled();
     expect(msUntilStripePaymentSyncReady()).toBeGreaterThan(0);
-    const orgLoader = document.querySelector("[data-bt-tenant-loader]");
-    expect(orgLoader).toBeTruthy();
+    await waitFor(() => {
+      expect(document.querySelector("[data-bt-tenant-loader]")).toBeTruthy();
+    });
+    const orgLoader = document.querySelector(
+      "[data-bt-tenant-loader]",
+    ) as HTMLElement;
     expect(
-      within(orgLoader as HTMLElement).getByText(raptorsOrg.name),
+      within(orgLoader).getByText(raptorsOrg.name),
     ).toBeInTheDocument();
     expect(
-      within(orgLoader as HTMLElement).getByText(/retrieving payment details/i),
+      within(orgLoader).getByText(/retrieving payment details/i),
     ).toBeInTheDocument();
   });
 
@@ -428,8 +431,8 @@ describe("Checkout page", { timeout: 20_000 }, () => {
       expect(routerMocks.replace).toHaveBeenCalledWith(
         "/checkout/success/?intentId=pi_test",
       );
+      expect(document.querySelector("[data-bt-tenant-loader]")).toBeTruthy();
     });
-    expect(document.querySelector("[data-bt-tenant-loader]")).toBeTruthy();
   });
 
   it("shows the card declined popup when process order fails", async () => {

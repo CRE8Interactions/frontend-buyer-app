@@ -356,6 +356,8 @@ export function isTabletDevice() {
   }
 
   // DevTools tablet presets can keep a desktop UA while emulating touch.
+  if (/iPhone|iPod/i.test(ua)) return false;
+  if (/Android/i.test(ua) && /Mobile/i.test(ua)) return false;
   if (typeof window !== "undefined" && typeof window.matchMedia === "function") {
     const coarse = window.matchMedia("(pointer: coarse)").matches;
     const hover = window.matchMedia("(hover: hover)").matches;

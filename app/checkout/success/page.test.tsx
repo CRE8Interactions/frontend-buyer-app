@@ -648,6 +648,16 @@ describe("Checkout success guest wallet", () => {
     "Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Mobile Safari/537.36";
 
   function stubPhone(userAgent: string, maxTouchPoints = 0) {
+    Object.defineProperty(window, "innerWidth", {
+      configurable: true,
+      writable: true,
+      value: 390,
+    });
+    Object.defineProperty(window, "innerHeight", {
+      configurable: true,
+      writable: true,
+      value: 844,
+    });
     Object.defineProperty(window, "matchMedia", {
       configurable: true,
       writable: true,
@@ -694,6 +704,8 @@ describe("Checkout success guest wallet", () => {
 
   afterEach(() => {
     Reflect.deleteProperty(window, "matchMedia");
+    Reflect.deleteProperty(window, "innerWidth");
+    Reflect.deleteProperty(window, "innerHeight");
     Reflect.deleteProperty(navigator, "userAgent");
     Reflect.deleteProperty(navigator, "maxTouchPoints");
   });

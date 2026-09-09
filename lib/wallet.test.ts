@@ -164,5 +164,10 @@ describe("isPhoneDevice", () => {
     stubPointer({ "(pointer: coarse)": true, "(hover: hover)": false }, 820, 1180);
     expect(isTabletDevice()).toBe(true);
     expect(isPhoneDevice()).toBe(false);
+
+    setUserAgent("Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X)");
+    stubPointer({ "(pointer: coarse)": true, "(hover: hover)": false }, 390, 844);
+    expect(isTabletDevice()).toBe(false);
+    expect(isPhoneDevice()).toBe(true);
   });
 });
