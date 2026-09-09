@@ -8,8 +8,7 @@ import { downloadApplePass, downloadGooglePass } from "@/lib/api";
 import { toIanaTimezone } from "@/lib/helpers";
 import {
   downloadBlobPass,
-  isAndroid,
-  isIos,
+  isPhoneDevice,
   type AccessPassSummary,
   type EventLike,
 } from "@/lib/wallet";
@@ -146,15 +145,49 @@ export function walletPassEvent(
   };
 }
 
-/** The wallet this device can hold a pass in; desktops get none. */
+/** The wallet this phone can hold a pass in; tablets and desktops get none. */
 export function phoneWalletKind(): PhoneWalletKind | null {
-  if (isIos()) return "apple";
-  if (isAndroid()) return "google";
+  if (!isPhoneDevice()) return null;
+  const ua = navigator.userAgent;
+  if (/iPhone|iPod/i.test(ua)) return "apple";
+  if (/Android/i.test(ua)) return "google";
   return null;
 }
 
 export function phoneWalletLabel(kind: PhoneWalletKind): string {
   return kind === "apple" ? "Add to Apple Wallet" : "Add to Google Wallet";
+}
+
+/** Platform wallet CTAs use neutral dark styling, not org accent. */
+export type PhoneWalletTheme = {
+  buttonBg: string;
+  buttonColor: string;
+  selectedBorder: string;
+  selectedBackground: string;
+  selectedIndicator: string;
+  addedLabel: string;
+};
+
+const APPLE_WALLET_THEME: PhoneWalletTheme = {
+  buttonBg: "#14161c",
+  buttonColor: "#ffffff",
+  selectedBorder: "#14161c",
+  selectedBackground: "color-mix(in srgb, #14161c 8%, white)",
+  selectedIndicator: "#14161c",
+  addedLabel: "#14161c",
+};
+
+const GOOGLE_WALLET_THEME: PhoneWalletTheme = {
+  buttonBg: "#1f1f1f",
+  buttonColor: "#ffffff",
+  selectedBorder: "#1f1f1f",
+  selectedBackground: "color-mix(in srgb, #1f1f1f 8%, white)",
+  selectedIndicator: "#1f1f1f",
+  addedLabel: "#1f1f1f",
+};
+
+export function phoneWalletTheme(kind: PhoneWalletKind): PhoneWalletTheme {
+  return kind === "google" ? GOOGLE_WALLET_THEME : APPLE_WALLET_THEME;
 }
 
 /** The pass rides along as the ticket, against its first event. */

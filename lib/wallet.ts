@@ -338,6 +338,53 @@ export function isAndroid() {
   return /android/i.test(navigator.userAgent);
 }
 
+/** iPads and Android tablets lack Apple/Google Wallet on device. */
+export function isTabletDevice() {
+  if (typeof navigator === "undefined") return false;
+  const ua = navigator.userAgent;
+
+  if (/iPad/i.test(ua)) return true;
+  // iPadOS 13+ can report as Mac with touch.
+  if (/Macintosh/i.test(ua) && (navigator.maxTouchPoints ?? 0) > 1) return true;
+
+  if (/Android/i.test(ua) && !/Mobile/i.test(ua)) {
+    const hints = (
+      navigator as Navigator & { userAgentData?: { mobile?: boolean } }
+    ).userAgentData;
+    if (hints?.mobile) return false;
+    return true;
+  }
+
+  // DevTools tablet presets can keep a desktop UA while emulating touch.
+  if (typeof window !== "undefined" && typeof window.matchMedia === "function") {
+    const coarse = window.matchMedia("(pointer: coarse)").matches;
+    const hover = window.matchMedia("(hover: hover)").matches;
+    const minSide = Math.min(window.innerWidth, window.innerHeight);
+    if (coarse && !hover && minSide >= 600) return true;
+  }
+
+  return false;
+}
+
+/** Phones that can hold a scannable Apple or Google Wallet pass. */
+export function isPhoneDevice() {
+  if (typeof navigator === "undefined") return false;
+  if (isTabletDevice()) return false;
+
+  const ua = navigator.userAgent;
+  if (/iPhone|iPod/i.test(ua)) return true;
+
+  if (/Android/i.test(ua)) {
+    if (/Mobile/i.test(ua)) return true;
+    const hints = (
+      navigator as Navigator & { userAgentData?: { mobile?: boolean } }
+    ).userAgentData;
+    if (hints?.mobile) return true;
+  }
+
+  return false;
+}
+
 /**
  * Phone layouts belong to phones, so they ask the device rather than
  * `window.innerWidth` — a narrow desktop window keeps the desktop layout.

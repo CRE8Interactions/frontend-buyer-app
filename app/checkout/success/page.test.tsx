@@ -644,7 +644,10 @@ describe("Checkout success guest wallet", () => {
     });
   }
 
-  function stubPhone(userAgent: string) {
+  const ANDROID_PHONE_UA =
+    "Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Mobile Safari/537.36";
+
+  function stubPhone(userAgent: string, maxTouchPoints = 0) {
     Object.defineProperty(window, "matchMedia", {
       configurable: true,
       writable: true,
@@ -655,6 +658,11 @@ describe("Checkout success guest wallet", () => {
       configurable: true,
       writable: true,
       value: userAgent,
+    });
+    Object.defineProperty(navigator, "maxTouchPoints", {
+      configurable: true,
+      writable: true,
+      value: maxTouchPoints,
     });
   }
 
@@ -687,6 +695,7 @@ describe("Checkout success guest wallet", () => {
   afterEach(() => {
     Reflect.deleteProperty(window, "matchMedia");
     Reflect.deleteProperty(navigator, "userAgent");
+    Reflect.deleteProperty(navigator, "maxTouchPoints");
   });
 
   it("offers Apple Wallet to a guest on iPhone", async () => {
@@ -698,7 +707,7 @@ describe("Checkout success guest wallet", () => {
   });
 
   it("offers Google Wallet to a guest on Android", async () => {
-    stubPhone("Mozilla/5.0 (Linux; Android 14; Pixel 8)");
+    stubPhone(ANDROID_PHONE_UA);
     render(<CheckoutSuccessPageRoute />);
 
     expect(
@@ -728,6 +737,18 @@ describe("Checkout success guest wallet", () => {
 
   it("does not offer a phone wallet to a guest on desktop", async () => {
     stubPhone("Mozilla/5.0 (Windows NT 10.0; Win64; x64)");
+    render(<CheckoutSuccessPageRoute />);
+
+    expect(
+      await screen.findByRole("link", { name: /go to my wallet/i }),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: /Add to (Apple|Google) Wallet/ }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("does not offer a phone wallet to a guest on iPad", async () => {
+    stubPhone("Mozilla/5.0 (iPad; CPU OS 17_0 like Mac OS X)");
     render(<CheckoutSuccessPageRoute />);
 
     expect(

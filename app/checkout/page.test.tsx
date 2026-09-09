@@ -183,12 +183,13 @@ function stubLocation(
   locationMocks.replace.mockReset();
   vi.stubGlobal("location", {
     get href() {
-      return `http://localhost${pathname}${search}`;
+      return `https://localhost${pathname}${search}`;
     },
     set href(value: string) {
       hrefSetter(value);
     },
-    origin: "http://localhost",
+    origin: "https://localhost",
+    protocol: "https:",
     pathname,
     search,
     assign: vi.fn(),
@@ -518,6 +519,26 @@ describe("Checkout page", { timeout: 20_000 }, () => {
       }),
     ).toBeChecked();
     expect(screen.queryByText(/venues/i)).not.toBeInTheDocument();
+  });
+
+  it("hides Link save-info on plain HTTP checkout", async () => {
+    vi.stubGlobal("location", {
+      href: "http://localhost/checkout/?cartId=cart-raptors-1",
+      origin: "http://localhost",
+      protocol: "http:",
+      pathname: "/checkout/",
+      search: "?cartId=cart-raptors-1",
+      assign: vi.fn(),
+      replace: locationMocks.replace,
+    });
+    render(<CheckoutPageRoute />);
+
+    await screen.findByTestId("payment-element");
+    expect(
+      screen.queryByRole("checkbox", {
+        name: /one-click checkout with Link/i,
+      }),
+    ).not.toBeInTheDocument();
   });
 
   it("does not show a seat location image when the cart has no tickets", async () => {
@@ -924,7 +945,7 @@ describe("Checkout page", { timeout: 20_000 }, () => {
       expect(stripeMocks.confirmPayment).toHaveBeenCalledWith(
         expect.objectContaining({
           confirmParams: {
-            return_url: `http://localhost/checkout/success/?intentId=pi_test`,
+            return_url: `https://localhost/checkout/success/?intentId=pi_test`,
           },
         }),
       );

@@ -28,6 +28,12 @@ export const paymentElementWallets = {
   link: "auto" as const,
 };
 
+const paymentElementWalletsOff = {
+  applePay: "never" as const,
+  googlePay: "never" as const,
+  link: "never" as const,
+};
+
 /** Stripe's logo variables take "light" | "dark", not a color value. */
 function logoVariantOn(color: string): "light" | "dark" {
   const raw = color.replace("#", "").trim();
@@ -119,3 +125,21 @@ export const checkoutPaymentElementOptions = {
   fields: paymentElementBillingFields,
   paymentMethodOrder: checkoutPaymentMethodOrder,
 };
+
+/** Apple Pay, Google Pay, and Link need HTTPS; skip them on plain HTTP dev. */
+export function paymentElementWalletsForProtocol(protocol: string) {
+  return protocol === "https:" ? paymentElementWallets : paymentElementWalletsOff;
+}
+
+export function checkoutPaymentElementOptionsForProtocol(protocol: string) {
+  return {
+    ...checkoutPaymentElementOptions,
+    wallets: paymentElementWalletsForProtocol(protocol),
+  };
+}
+
+/** Client checkout: card-only on HTTP localhost, full wallets on HTTPS. */
+export function checkoutPaymentElementOptionsForPage() {
+  if (typeof window === "undefined") return checkoutPaymentElementOptions;
+  return checkoutPaymentElementOptionsForProtocol(window.location.protocol);
+}

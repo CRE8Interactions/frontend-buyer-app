@@ -74,9 +74,10 @@ import {
   addTicketToPhoneWallet,
   phoneWalletKind,
   phoneWalletLabel,
+  phoneWalletTheme,
   type PhoneWalletKind,
 } from "@/lib/phoneWallet";
-import { isMobileDevice, seatLabel, type TicketLike } from "@/lib/wallet";
+import { seatLabel, type TicketLike } from "@/lib/wallet";
 
 const NAVY = "#051b35";
 const MUTED = "#6e7180";
@@ -165,7 +166,7 @@ function CheckoutSuccessPage() {
   }, []);
 
   useEffect(() => {
-    setPassWallet(isMobileDevice() ? phoneWalletKind() : null);
+    setPassWallet(phoneWalletKind());
   }, []);
 
   useEffect(() => {
@@ -391,6 +392,7 @@ function CheckoutSuccessPage() {
   const walletHref = isAuthenticated ? accessPassHref : ticketsHref;
   const walletLabel =
     isAuthenticated && isAccessPass ? "View access pass" : "Go to my wallet";
+  const walletTheme = passWallet ? phoneWalletTheme(passWallet) : null;
 
   const openWalletSheet = () => {
     if (allWalletTicketsAdded) return;
@@ -789,8 +791,8 @@ function CheckoutSuccessPage() {
               onClick={openWalletSheet}
               className="flex w-full items-center justify-center gap-2.5 rounded-full px-[26px] py-4 text-[16px] font-semibold disabled:opacity-80"
               style={{
-                background: accent,
-                color: branding.theme.buttonTextColor,
+                background: walletTheme?.buttonBg,
+                color: walletTheme?.buttonColor,
               }}
             >
               {allWalletTicketsAdded ? <WalletAddedCheckIcon /> : <WalletPassIcon />}
@@ -870,22 +872,29 @@ function CheckoutSuccessPage() {
                     onClick={() => setSelectedWalletTicket(index)}
                     className="flex w-full items-center gap-3 rounded-[18px] border px-3.5 py-3.5 text-left disabled:opacity-100"
                     style={{
-                      borderColor: added || selected ? accent : "rgba(5,27,53,0.12)",
+                      borderColor:
+                        added || selected
+                          ? walletTheme?.selectedBorder
+                          : "rgba(5,27,53,0.12)",
                       background:
                         selected && !added
-                          ? `color-mix(in srgb, ${accent} 8%, white)`
+                          ? walletTheme?.selectedBackground
                           : "#fff",
                     }}
                   >
                     {added ? null : (
                       <span
                         className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full border-2"
-                        style={{ borderColor: selected ? accent : "rgba(5,27,53,0.22)" }}
+                        style={{
+                          borderColor: selected
+                            ? walletTheme?.selectedIndicator
+                            : "rgba(5,27,53,0.22)",
+                        }}
                       >
                         {selected ? (
                           <span
                             className="h-2.5 w-2.5 rounded-full"
-                            style={{ background: accent }}
+                            style={{ background: walletTheme?.selectedIndicator }}
                           />
                         ) : null}
                       </span>
@@ -896,7 +905,7 @@ function CheckoutSuccessPage() {
                     {added ? (
                       <span
                         className="shrink-0 text-[11px] font-semibold uppercase tracking-[0.12em]"
-                        style={{ color: accent }}
+                        style={{ color: walletTheme?.addedLabel }}
                       >
                         ADDED
                       </span>
@@ -913,15 +922,15 @@ function CheckoutSuccessPage() {
                 onClick={() => void addSelectedTicketToWallet()}
                 className="flex w-full items-center justify-center gap-2.5 rounded-full px-[26px] py-4 text-[16px] font-semibold disabled:opacity-70"
                 style={{
-                  background: accent,
-                  color: branding.theme.buttonTextColor,
+                  background: walletTheme?.buttonBg,
+                  color: walletTheme?.buttonColor,
                 }}
               >
                 <ButtonBusyContents
                   loading={walletSaving}
                   loadingLabel="Adding…"
-                  spinnerColor={branding.theme.buttonTextColor}
-                  trackColor="rgba(5,27,53,0.2)"
+                  spinnerColor={walletTheme?.buttonColor}
+                  trackColor="rgba(255,255,255,0.35)"
                 >
                   <WalletPassIcon />
                   {phoneWalletLabel(passWallet)}

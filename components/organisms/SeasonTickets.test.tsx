@@ -1,4 +1,4 @@
-import { render, screen, waitFor, within } from "@testing-library/react";
+import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
@@ -71,6 +71,10 @@ import {
   getMyEvents,
   getOrder,
 } from "@/lib/api";
+import {
+  beginWalletNavigation,
+  clearWalletNavigation,
+} from "@/lib/walletTransition";
 
 const mockedDownloadApplePass = vi.mocked(downloadApplePass);
 const mockedDownloadGooglePass = vi.mocked(downloadGooglePass);
@@ -114,6 +118,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  clearWalletNavigation();
   vi.unstubAllGlobals();
 });
 
@@ -814,6 +819,19 @@ describe("SeasonTickets section routes", () => {
     expect(document.activeElement).toBe(document.body);
   });
 
+  it("shows the blocks loader immediately while an in-wallet route is committing", async () => {
+    render(<SeasonTickets />);
+
+    expect(await screen.findByText(icedogs.name)).toBeInTheDocument();
+
+    act(() => {
+      beginWalletNavigation(`/wallet/my-tickets/order/${ticketOrderId}/`);
+    });
+
+    expect(screen.getByLabelText("Loading tickets")).toBeInTheDocument();
+    expect(screen.queryByText(icedogs.name)).not.toBeInTheDocument();
+  });
+
   it("filters listings by Active, Sold, and Expired", async () => {
     navigationMocks.pathname = "/wallet/my-listings/";
     const user = userEvent.setup();
@@ -966,7 +984,7 @@ describe("SeasonTickets routed event screen", { timeout: 20_000 }, () => {
     );
 
     expect(await screen.findByRole("link", { name: /All tickets/i })).toBeInTheDocument();
-    expect(screen.getByLabelText("Loading")).toBeInTheDocument();
+    expect(screen.getByLabelText("Loading tickets")).toBeInTheDocument();
     expect(
       screen.queryByRole("heading", { name: splitHeroEvent.name }),
     ).not.toBeInTheDocument();
@@ -977,7 +995,7 @@ describe("SeasonTickets routed event screen", { timeout: 20_000 }, () => {
     expect(
       await screen.findByRole("heading", { name: splitHeroEvent.name }),
     ).toBeInTheDocument();
-    expect(screen.queryByLabelText("Loading")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("Loading tickets")).not.toBeInTheDocument();
   });
 
   it("holds the event page until the order total is ready", async () => {
@@ -999,8 +1017,7 @@ describe("SeasonTickets routed event screen", { timeout: 20_000 }, () => {
     );
 
     expect(await screen.findByRole("link", { name: /All tickets/i })).toBeInTheDocument();
-    expect(screen.getByLabelText("Loading")).toBeInTheDocument();
-    expect(screen.queryByLabelText("Loading tickets")).not.toBeInTheDocument();
+    expect(screen.getByLabelText("Loading tickets")).toBeInTheDocument();
     expect(screen.queryByText("Total paid")).not.toBeInTheDocument();
     expect(screen.queryByText("$0.00")).not.toBeInTheDocument();
 
@@ -1596,6 +1613,11 @@ describe("SeasonTickets ticket screen responsive layout", () => {
       value: (query: string) =>
         ({ matches: query === "(pointer: coarse)" }) as MediaQueryList,
     });
+    Object.defineProperty(navigator, "userAgent", {
+      configurable: true,
+      writable: true,
+      value: "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X)",
+    });
 
     render(<SeasonTickets />);
 
@@ -1605,6 +1627,59 @@ describe("SeasonTickets ticket screen responsive layout", () => {
     expect(
       screen.queryByRole("link", { name: /All tickets/i }),
     ).not.toBeInTheDocument();
+
+    Reflect.deleteProperty(navigator, "userAgent");
+  });
+
+  it("keeps the stacked ticket screen on a tablet", async () => {
+    Object.defineProperty(window, "matchMedia", {
+      configurable: true,
+      writable: true,
+      value: (query: string) =>
+        ({ matches: query === "(pointer: coarse)" }) as MediaQueryList,
+    });
+    Object.defineProperty(navigator, "userAgent", {
+      configurable: true,
+      writable: true,
+      value: "Mozilla/5.0 (iPad; CPU OS 17_0 like Mac OS X)",
+    });
+
+    render(<SeasonTickets />);
+
+    expect(
+      await screen.findByRole("link", { name: /All tickets/i }),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "View QR-Code" }),
+    ).not.toBeInTheDocument();
+
+    Reflect.deleteProperty(navigator, "userAgent");
+  });
+
+  it("keeps the stacked ticket screen at iPad Air width even with a phone UA", async () => {
+    setWidth(820);
+    Object.defineProperty(window, "matchMedia", {
+      configurable: true,
+      writable: true,
+      value: (query: string) =>
+        ({ matches: query === "(pointer: coarse)" }) as MediaQueryList,
+    });
+    Object.defineProperty(navigator, "userAgent", {
+      configurable: true,
+      writable: true,
+      value: "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X)",
+    });
+
+    render(<SeasonTickets />);
+
+    expect(
+      await screen.findByRole("link", { name: /All tickets/i }),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "View QR-Code" }),
+    ).not.toBeInTheDocument();
+
+    Reflect.deleteProperty(navigator, "userAgent");
   });
 });
 
@@ -1612,7 +1687,10 @@ describe("SeasonTickets mobile ticket actions", () => {
   const order = demoCompletedTicketOrder({ event: icedogs });
   const ticket = order.tickets[0];
 
-  function stubPhone(userAgent: string) {
+  const ANDROID_PHONE_UA =
+    "Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Mobile Safari/537.36";
+
+  function stubPhone(userAgent: string, maxTouchPoints = 0) {
     Object.defineProperty(window, "innerWidth", {
       configurable: true,
       writable: true,
@@ -1628,6 +1706,11 @@ describe("SeasonTickets mobile ticket actions", () => {
       configurable: true,
       writable: true,
       value: userAgent,
+    });
+    Object.defineProperty(navigator, "maxTouchPoints", {
+      configurable: true,
+      writable: true,
+      value: maxTouchPoints,
     });
   }
 
@@ -1660,6 +1743,7 @@ describe("SeasonTickets mobile ticket actions", () => {
   afterEach(() => {
     Reflect.deleteProperty(window, "matchMedia");
     Reflect.deleteProperty(navigator, "userAgent");
+    Reflect.deleteProperty(navigator, "maxTouchPoints");
     Object.defineProperty(window, "innerWidth", {
       configurable: true,
       writable: true,
@@ -1745,7 +1829,7 @@ describe("SeasonTickets mobile ticket actions", () => {
   });
 
   it("offers Google Wallet on Android", async () => {
-    stubPhone("Mozilla/5.0 (Linux; Android 14; Pixel 8)");
+    stubPhone(ANDROID_PHONE_UA);
     const user = userEvent.setup();
     render(<SeasonTickets />);
 
@@ -1762,5 +1846,17 @@ describe("SeasonTickets mobile ticket actions", () => {
         }),
       );
     });
+  });
+
+  it("does not offer Apple or Google Wallet on iPad", async () => {
+    stubPhone("Mozilla/5.0 (iPad; CPU OS 17_0 like Mac OS X)");
+    render(<SeasonTickets />);
+
+    expect(
+      await screen.findByRole("link", { name: /All tickets/i }),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: /Add to (Apple|Google) Wallet/ }),
+    ).not.toBeInTheDocument();
   });
 });

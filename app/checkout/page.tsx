@@ -28,6 +28,7 @@ import {
   type CheckoutCartBrandingSource,
 } from "@/lib/checkoutBranding";
 import { cacheOrgBranding, orgSlugFromPathname } from "@/lib/orgBrandingCache";
+import { beginRouteTransition } from "@/lib/routeTransition";
 import { useClientReady } from "@/lib/useClientReady";
 import { formString, promoCodeRejectedMessage, redemptionCodeBlurFieldError, redemptionCodeSubmitError, type RedemptionCodeFieldError } from "@/lib/fieldValidation";
 import RedemptionCodeField from "@/components/molecules/RedemptionCodeField";
@@ -113,7 +114,8 @@ import {
 } from "@/lib/tracking";
 import {
   STRIPE_PAYMENT_ELEMENT_FONTS,
-  checkoutPaymentElementOptions,
+  checkoutPaymentElementOptionsForPage,
+  paymentElementWalletsForProtocol,
   stripePaymentElementAppearance,
 } from "@/lib/stripePaymentElement";
 
@@ -285,6 +287,8 @@ function CheckoutPaymentForm({
   const [purchasing, setPurchasing] = useState(false);
   const [paymentReady, setPaymentReady] = useState(false);
   const hasTrackedPaymentInfoRef = useRef(false);
+  const linkWalletEnabled =
+    paymentElementWalletsForProtocol(window.location.protocol).link !== "never";
 
   const flexPackTotals = cart.flex_pack
     ? resolveFlexPackCheckoutTotals(cart)
@@ -435,29 +439,36 @@ function CheckoutPaymentForm({
     }
   };
 
+  const paymentElementOptions = useMemo(
+    () => checkoutPaymentElementOptionsForPage(),
+    [],
+  );
+
   return (
     <div>
-      <PaymentElement
-        onChange={(e) => {
-          setPaymentReady(Boolean(e.complete));
-          if (e.complete && !hasTrackedPaymentInfoRef.current) {
-            const organization = (cart?.event?.organization ||
-              cart?.package?.organization ||
-              cart?.flex_pack?.organization ||
-              cart?.access_pass_template?.organization) as
-              | TrackingOrganization
-              | undefined;
-            trackAddPaymentInfo({ organization, cart });
-            trackCheckoutStage(
-              "payment",
-              { payment_info_entered: true },
-              cart?.id,
-            );
-            hasTrackedPaymentInfoRef.current = true;
-          }
-        }}
-        options={checkoutPaymentElementOptions}
-      />
+      <div className="min-h-[280px]">
+        <PaymentElement
+          onChange={(e) => {
+            setPaymentReady(Boolean(e.complete));
+            if (e.complete && !hasTrackedPaymentInfoRef.current) {
+              const organization = (cart?.event?.organization ||
+                cart?.package?.organization ||
+                cart?.flex_pack?.organization ||
+                cart?.access_pass_template?.organization) as
+                | TrackingOrganization
+                | undefined;
+              trackAddPaymentInfo({ organization, cart });
+              trackCheckoutStage(
+                "payment",
+                { payment_info_entered: true },
+                cart?.id,
+              );
+              hasTrackedPaymentInfoRef.current = true;
+            }
+          }}
+          options={paymentElementOptions}
+        />
+      </div>
 
       {!cart.flex_pack && !cart.package && !cart.access_pass_template ? (
         <div className="mt-6">
@@ -523,21 +534,23 @@ function CheckoutPaymentForm({
         </div>
       ) : null}
 
-      <label className="mt-6 flex cursor-pointer items-start gap-2.5">
-        <input
-          type="checkbox"
-          defaultChecked
-          className="mt-0.5 h-[19px] w-[19px] shrink-0 rounded-[5px] border-[1.5px]"
-          style={{ accentColor: accent }}
-        />
-        <span className="text-[13px] text-[#4a5567]">
-          Save my info for one-click checkout with Link
-          {orgLabel && orgLabel !== "Blocktickets"
-            ? ` at ${orgLabel} venues`
-            : ""}
-          .
-        </span>
-      </label>
+      {linkWalletEnabled ? (
+        <label className="mt-6 flex cursor-pointer items-start gap-2.5">
+          <input
+            type="checkbox"
+            defaultChecked
+            className="mt-0.5 h-[19px] w-[19px] shrink-0 rounded-[5px] border-[1.5px]"
+            style={{ accentColor: accent }}
+          />
+          <span className="text-[13px] text-[#4a5567]">
+            Save my info for one-click checkout with Link
+            {orgLabel && orgLabel !== "Blocktickets"
+              ? ` at ${orgLabel} venues`
+              : ""}
+            .
+          </span>
+        </label>
+      ) : null}
       <div className="mt-4 flex flex-wrap items-center justify-between gap-3.5">
         <p className="max-w-[380px] text-[12px] leading-relaxed text-[#8a93a3]">
           By paying you agree to the Blocktickets{" "}
@@ -679,7 +692,9 @@ function CheckoutPage() {
     const returnTo = `${window.location.pathname}${window.location.search}`;
     setLastKnown(returnTo);
     markCheckoutLoginDetour();
-    router.replace(`/login/?from=${encodeURIComponent(returnTo)}`);
+    const href = `/login/?from=${encodeURIComponent(returnTo)}`;
+    beginRouteTransition(href, { replace: true });
+    router.replace(href);
   }, [router]);
 
   const expiredRef = useRef(false);
@@ -1195,8 +1210,12 @@ function CheckoutPage() {
 
   // Hold the tenant loader here until the destination route commits, so leaving
   // checkout never flashes an empty page.
-  if (leaving || leavingForLogin) {
-    return <BrandedLoader branding={loaderBranding} />;
+  if (leavingForLogin) {
+    return <BrandedLoader fallback="blocktickets" routeDestination />;
+  }
+
+  if (leaving) {
+    return <BrandedLoader branding={loaderBranding} routeDestination />;
   }
 
   return (
@@ -1231,8 +1250,8 @@ function CheckoutPage() {
           </div>
         </div>
       ) : (
-        <div className="mx-auto grid max-w-[1140px] grid-cols-1 gap-5 px-3.5 pb-28 pt-3.5 md:grid-cols-[minmax(0,1fr)_372px] md:px-5 md:pt-6">
-          <div className="order-2 flex min-w-0 flex-col gap-3.5 md:order-1 md:col-start-1 md:row-start-1">
+        <div className="mx-auto grid max-w-[1140px] grid-cols-1 gap-5 px-3.5 pb-28 pt-3.5 min-[900px]:grid-cols-[minmax(0,1fr)_372px] min-[900px]:px-5 min-[900px]:pt-6">
+          <div className="order-2 flex min-w-0 flex-col gap-3.5 min-[900px]:order-1 min-[900px]:col-start-1 min-[900px]:row-start-1">
             <div className={`${lightCard} flex flex-col gap-5 p-[22px]`}>
               {needsGuestContact ? null : (
               <div>
@@ -1322,8 +1341,8 @@ function CheckoutPage() {
             </div>
           </div>
 
-          <div className="order-1 flex min-w-0 flex-col gap-3 md:order-none md:col-start-2 md:row-start-1">
-            <div className="md:sticky md:top-[84px]">
+          <div className="order-1 flex min-w-0 flex-col gap-3 min-[900px]:order-none min-[900px]:col-start-2 min-[900px]:row-start-1">
+            <div className="min-[900px]:sticky min-[900px]:top-[84px]">
             <div className={`${lightCard} flex flex-col gap-4 p-[18px]`}>
               <div className="flex items-center gap-3.5">
                 <div className="h-[52px] w-[52px] shrink-0 overflow-hidden rounded-xl border border-[rgba(5,27,53,0.08)] bg-[#f1f3f8]">

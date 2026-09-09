@@ -18,7 +18,10 @@ import Link from "next/link";
 import { useParams, usePathname, useSearchParams } from "next/navigation";
 import { QRCodeSVG } from "qrcode.react";
 import WalletChrome from "@/components/organisms/WalletChrome";
-import { WalletListSkeleton } from "@/components/organisms/WalletTicketsLoader";
+import {
+  WalletListSkeleton,
+  WalletTicketsBlocksLoading,
+} from "@/components/organisms/WalletTicketsLoader";
 import { BLOCKTICKETS_GREEN, BLOCKTICKETS_NAVY } from "@/lib/branding";
 import EmailField from "@/components/molecules/EmailField";
 import useAutoFocus from "@/hooks/useAutoFocus";
@@ -65,7 +68,7 @@ import {
 import {
   buildAccessPassSummaries,
   eventWhenLabel,
-  isMobileDevice,
+  isPhoneDevice,
   isUpcomingEvent,
   unwrapList,
   unwrapOrder,
@@ -78,6 +81,7 @@ import {
   addTicketToPhoneWallet,
   phoneWalletKind,
   phoneWalletLabel,
+  phoneWalletTheme,
   type PhoneWalletKind,
 } from "@/lib/phoneWallet";
 import {
@@ -86,9 +90,10 @@ import {
   walletSectionHref,
 } from "@/lib/walletNav";
 import { notifyWalletShellReady } from "@/lib/routeTransition";
+import { isWalletNavigationPending } from "@/lib/walletTransition";
+import { useWalletNavigationPending } from "@/hooks/useWalletNavigationPending";
 import { Ticket } from "@/components/atoms/icons";
 import { ButtonBusyContents } from "@/components/atoms/BrandedActionButton";
-import { Ring } from "@/components/atoms/spinners";
 import { printTicketsPdf } from "@/lib/ticketPdf";
 import { googleMapsDirectionsUrl } from "@/lib/venueLocation";
 
@@ -732,6 +737,7 @@ export default function SeasonTickets({
     accessPassUUID?: string | string[];
   }>();
   const pathname = usePathname() || "";
+  const pendingNavPath = useWalletNavigationPending();
   const searchParams = useSearchParams();
   const route = walletRouteFromPath(pathname, params);
   const routedOrderId = route.orderId;
@@ -740,6 +746,8 @@ export default function SeasonTickets({
   const routedPackageUUID = route.packageUUID;
   const routedAccessPassUUID = route.accessPassUUID;
   const section = walletSectionFromPath(pathname);
+  const displaySection = walletSectionFromPath(pendingNavPath || pathname);
+  const walletNavPending = isWalletNavigationPending(pathname, pendingNavPath);
   const resolvedInitialScreen =
     initialScreen !== "events"
       ? initialScreen
@@ -806,7 +814,8 @@ export default function SeasonTickets({
   const [eventDetails, setEventDetails] = useState<Record<string, CartEventDetail>>({});
   const [eventsChecked, setEventsChecked] = useState(false);
   const [eventsLoading, setEventsLoading] = useState(false);
-  const [mobileDevice, setMobileDevice] = useState(false);
+  const [phoneDevice, setPhoneDevice] = useState(false);
+  const passWalletTheme = passWallet ? phoneWalletTheme(passWallet) : null;
   const codeBoxes = useRef<(HTMLInputElement | null)[]>([]);
   const autoFocusField = useAutoFocus<HTMLInputElement>(true);
   const setCodeRef = useMemo(
@@ -850,7 +859,7 @@ export default function SeasonTickets({
 
   useEffect(() => {
     setVw(window.innerWidth);
-    setMobileDevice(isMobileDevice());
+    setPhoneDevice(isPhoneDevice());
     setPassWallet(phoneWalletKind());
     const onR = () => setVw(window.innerWidth);
     window.addEventListener("resize", onR);
@@ -991,9 +1000,8 @@ export default function SeasonTickets({
   ]);
 
   const mobile = vw < 900;
-  // Keep the wallet's original width-based responsive layout everywhere else.
-  // Only the swipeable ticket presentation is exclusive to a real mobile device.
-  const mobileTicketView = mobile && mobileDevice;
+  // Swipeable cards are phone-only: narrow width plus a phone UA (not tablet / DevTools iPad).
+  const mobileTicketView = vw <= 767 && phoneDevice;
   const isHolder = email.trim().toLowerCase() === "harrison.cogan@gmail.com";
   const events = useMemo(buildEvents, []);
   const showRoutedWallet = Boolean(
@@ -1275,19 +1283,28 @@ export default function SeasonTickets({
   const accentBtn: React.CSSProperties = { fontFamily: "inherit", fontSize: fluidSize(14), fontWeight: 600, color: INK, background: ACCENT, border: "none", borderRadius: 999, padding: "13px 20px", cursor: "pointer" };
   const ghostBtn: React.CSSProperties = { fontFamily: "inherit", fontSize: fluidSize(14), fontWeight: 600, color: INK, background: "#fff", border: "1px solid rgba(5,27,53,0.14)", borderRadius: 999, padding: "13px 20px", cursor: "pointer" };
   const backBtn: React.CSSProperties = { fontFamily: "inherit", alignSelf: "flex-start", display: "flex", alignItems: "center", gap: 8, fontSize: fluidSize(14), fontWeight: 600, color: INK, background: "#fff", border: "1px solid rgba(5,27,53,0.12)", borderRadius: 999, padding: "9px 16px 9px 12px", cursor: "pointer" };
+  const mobileEventBackBtn: React.CSSProperties = {
+    fontFamily: "inherit",
+    flexShrink: 0,
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    width: 40,
+    height: 40,
+    borderRadius: 999,
+    background: "rgba(255,255,255,0.12)",
+    border: "1px solid rgba(255,255,255,0.22)",
+    color: "#fff",
+    cursor: "pointer",
+  };
   const BackArrow = () => (<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" style={{ width: 16, height: 16 }}><line x1="19" y1="12" x2="5" y2="12" /><polyline points="12 19 5 12 12 5" /></svg>);
 
 
   /* ---------- header ---------- */
-  const onTickets =
-    screen === "events" ||
-    screen === "event" ||
-    screen === "package" ||
-    screen === "seasonPackage" ||
-    showRoutedWallet;
+  const onTickets = displaySection === "events";
   const navDefs = WALLET_NAV.map((item) => ({
     ...item,
-    on: item.id === "events" ? onTickets : screen === item.id,
+    on: item.id === "events" ? onTickets : displaySection === item.id,
   }));
   const authed = screen !== "login" && screen !== "code";
   const showHeader = !(mobileTicketView && showingEventDetail);
@@ -1487,19 +1504,7 @@ export default function SeasonTickets({
   }, [activeOrderId, fullOrderChecked]);
 
   const TicketsLoader = () => <WalletListSkeleton />;
-  const DetailLoader = () => (
-    <div
-      style={{
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        minHeight: "50vh",
-        flex: 1,
-      }}
-    >
-      <Ring size={40} />
-    </div>
-  );
+  const DetailLoader = () => <WalletTicketsBlocksLoading routeDestination />;
   const pillCountStyle = (on: boolean): React.CSSProperties => ({
     fontSize: fluidSize(12),
     fontWeight: 500,
@@ -2367,7 +2372,7 @@ export default function SeasonTickets({
         ))}
       </div>
       {!eventsChecked || eventsLoading ? (
-        <TicketsLoader />
+        <WalletTicketsBlocksLoading routeDestination />
       ) : (
           <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
             {tab === "upcoming" ? (
@@ -2684,16 +2689,12 @@ export default function SeasonTickets({
 
   const MobileEvent = () => (
     <div style={{ boxSizing: "border-box", padding: "calc(env(safe-area-inset-top) + 74px) 12px 28px", display: "flex", flexDirection: "column", gap: 16 }}>
-      {/* dark top bar */}
-      <div style={{ position: "fixed", left: 0, right: 0, top: 0, zIndex: 45, boxSizing: "border-box", background: "#14161c", padding: "calc(env(safe-area-inset-top) + 12px) 16px 12px", display: "flex", alignItems: "center", gap: 12 }}>
-        {EventBackControl(
-          { fontFamily: "inherit", flexShrink: 0, width: 36, height: 36, borderRadius: 999, background: "transparent", border: "none", color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" },
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" style={{ width: 20, height: 20 }}><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>,
-          "Close",
-        )}
+      {/* Blocktickets mobile event bar */}
+      <div style={{ position: "fixed", left: 0, right: 0, top: 0, zIndex: 45, boxSizing: "border-box", background: INK, boxShadow: "0 12px 30px -18px rgba(3,16,31,0.9)", padding: "calc(env(safe-area-inset-top) + 12px) 16px 12px", display: "flex", alignItems: "center", gap: 12 }}>
+        {EventBackControl(mobileEventBackBtn, <BackArrow />, "Back")}
         <div style={{ minWidth: 0, display: "flex", flexDirection: "column", gap: 2 }}>
           <div style={{ fontSize: fluidSize(16), fontWeight: 600, color: "#fff", letterSpacing: "-0.015em", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{ev.title}</div>
-          <div style={{ fontSize: fluidSize(12), color: "rgba(255,255,255,0.66)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{ev.when} · {ev.venue}</div>
+          <div style={{ fontSize: fluidSize(12), color: "rgba(255,255,255,0.78)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{ev.when} · {ev.venue}</div>
         </div>
       </div>
 
@@ -2738,12 +2739,12 @@ export default function SeasonTickets({
                   disabled={ticketWalletSaving !== null}
                   aria-busy={ticketWalletSaving === String(t.id || t.code) || undefined}
                   onClick={() => void addTicketCardToWallet(t)}
-                  style={{ fontFamily: "inherit", width: "100%", display: "flex", alignItems: "center", justifyContent: "center", gap: 10, minHeight: 50, fontSize: fluidSize(15), fontWeight: 600, color: "#fff", background: "#14161c", border: "none", borderRadius: 12, cursor: ticketWalletSaving ? "default" : "pointer", opacity: ticketWalletSaving ? 0.7 : 1 }}
+                  style={{ fontFamily: "inherit", width: "100%", display: "flex", alignItems: "center", justifyContent: "center", gap: 10, minHeight: 50, fontSize: fluidSize(15), fontWeight: 600, color: passWalletTheme?.buttonColor, background: passWalletTheme?.buttonBg, border: "none", borderRadius: 12, cursor: ticketWalletSaving ? "default" : "pointer", opacity: ticketWalletSaving ? 0.7 : 1 }}
                 >
                   <ButtonBusyContents
                     loading={ticketWalletSaving === String(t.id || t.code)}
                     loadingLabel="Adding…"
-                    spinnerColor="#fff"
+                    spinnerColor={passWalletTheme?.buttonColor}
                     trackColor="rgba(255,255,255,0.35)"
                   >
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" style={{ width: 18, height: 18 }}><rect x="2" y="6" width="20" height="13" rx="3" /><path d="M2 11h20" /></svg>
@@ -3446,12 +3447,12 @@ export default function SeasonTickets({
                   onClick={addQrPassToPhoneWallet}
                   disabled={passWalletSaving}
                   aria-busy={passWalletSaving || undefined}
-                  style={{ fontFamily: "inherit", width: "100%", display: "flex", alignItems: "center", justifyContent: "center", gap: 10, minHeight: 50, fontSize: fluidSize(15), fontWeight: 600, color: "#fff", background: INK, border: "none", borderRadius: 999, cursor: passWalletSaving ? "default" : "pointer", opacity: passWalletSaving ? 0.7 : 1 }}
+                  style={{ fontFamily: "inherit", width: "100%", display: "flex", alignItems: "center", justifyContent: "center", gap: 10, minHeight: 50, fontSize: fluidSize(15), fontWeight: 600, color: passWalletTheme?.buttonColor, background: passWalletTheme?.buttonBg, border: "none", borderRadius: 999, cursor: passWalletSaving ? "default" : "pointer", opacity: passWalletSaving ? 0.7 : 1 }}
                 >
                   <ButtonBusyContents
                     loading={passWalletSaving}
                     loadingLabel="Adding…"
-                    spinnerColor="#fff"
+                    spinnerColor={passWalletTheme?.buttonColor}
                     trackColor="rgba(255,255,255,0.35)"
                   >
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" style={{ width: 18, height: 18 }}><rect x="2" y="6" width="20" height="13" rx="3" /><path d="M2 11h20" /></svg>
@@ -3938,7 +3939,9 @@ export default function SeasonTickets({
       <style>{`${shopperPageTypeCss()}\n.st-noscroll::-webkit-scrollbar{width:0;height:0;display:none}.st-noscroll{-ms-overflow-style:none;scrollbar-width:none}.st-sheet-up{animation:stUp .3s cubic-bezier(.22,.61,.36,1)}@keyframes stUp{from{transform:translateY(100%)}to{transform:translateY(0)}}${EVENT_CSS}`}</style>
       {showHeader && Header()}
 
-      {showRoutedWallet ? (
+      {walletNavPending ? (
+        <WalletTicketsBlocksLoading routeDestination />
+      ) : showRoutedWallet ? (
         routedWalletPending
           ? RoutedEventShell(DetailLoader())
           : routedWalletMissing
@@ -3954,14 +3957,14 @@ export default function SeasonTickets({
         <>
           {screen === "login" && Login()}
           {screen === "code" && CodeScreen()}
-          {screen === "events" && Events()}
-          {screen === "event" && (eventDetailPending ? DetailLoader() : EventDetail())}
-          {screen === "seasonPackage" && SeasonPackage()}
-          {screen === "package" && Package()}
-          {screen === "listings" && Listings()}
-          {screen === "resale" && Resale()}
-          {screen === "giving" && Giving()}
-          {screen === "profile" && Profile()}
+          {displaySection === "events" && screen === "events" && Events()}
+          {displaySection === "events" && screen === "event" && (eventDetailPending ? DetailLoader() : EventDetail())}
+          {displaySection === "events" && screen === "seasonPackage" && SeasonPackage()}
+          {displaySection === "events" && screen === "package" && Package()}
+          {displaySection === "listings" && Listings()}
+          {displaySection === "resale" && Resale()}
+          {displaySection === "giving" && Giving()}
+          {displaySection === "profile" && Profile()}
         </>
       )}
 
