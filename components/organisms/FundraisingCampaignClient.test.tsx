@@ -48,6 +48,7 @@ vi.mock("@/lib/api", () => ({
   createLandingPageDonationIntent: vi.fn(),
   confirmLandingPageDonation: vi.fn(),
   getPublicOrganizationBranding: vi.fn(),
+  validateEmail: vi.fn(async () => ({ data: { verdict: "Valid" } })),
 }));
 
 import { FundraisingCampaignClient } from "@/components/organisms/FundraisingCampaignClient";

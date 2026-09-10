@@ -6,6 +6,7 @@ import {
   FIELD_COPY,
   fieldClass,
   fieldErrorTextClass,
+  fieldShowsError,
   normalizeOtp,
   type FieldVariant,
 } from "@/lib/fieldValidation";
@@ -21,6 +22,7 @@ export default function CodeField({
   onChange,
   onComplete,
   error = null,
+  errorMessage = null,
   disabled = false,
   variant = "light",
   layout = "boxes",
@@ -33,6 +35,7 @@ export default function CodeField({
   onChange: (value: string) => void;
   onComplete?: (value: string) => void;
   error?: CodeError;
+  errorMessage?: string | null;
   disabled?: boolean;
   variant?: FieldVariant;
   layout?: "boxes" | "input";
@@ -92,7 +95,7 @@ export default function CodeField({
   };
 
   if (layout === "input") {
-    const invalid = Boolean(error);
+    const invalid = fieldShowsError(Boolean(error), errorMessage);
     return (
       <div>
         {label ? (
@@ -127,12 +130,18 @@ export default function CodeField({
           <p className={fieldErrorTextClass(variant)}>
             {FIELD_COPY.codeIncorrect}
           </p>
+        ) : errorMessage ? (
+          <p className={fieldErrorTextClass(variant)} role="alert">
+            {errorMessage}
+          </p>
         ) : error === "network" ? (
           <p className={fieldErrorTextClass(variant)}>{FIELD_COPY.network}</p>
         ) : null}
       </div>
     );
   }
+
+  const boxInvalid = fieldShowsError(Boolean(error), errorMessage);
 
   return (
     <div>
@@ -146,13 +155,13 @@ export default function CodeField({
             inputMode="numeric"
             autoComplete="one-time-code"
             aria-label={i === 0 ? "Six-digit code" : `Digit ${i + 1} of 6`}
-            aria-invalid={Boolean(error)}
+            aria-invalid={boxInvalid}
             disabled={disabled}
             onChange={(e) => typeInBox(i, e.target.value)}
             onKeyDown={(e) => moveInBoxes(i, e)}
             onFocus={(e) => e.currentTarget.select()}
             className={`h-[54px] w-full rounded-[14px] border text-center text-[22px] font-semibold tabular-nums text-[#051b35] md:h-[60px] ${
-              error
+              boxInvalid
                 ? "border-[#c2394a]"
                 : "border-[rgba(5,27,53,0.12)] focus:border-[#a6e773]"
             } ${value[i] ? "bg-white" : "bg-[#f7f8fc] focus:bg-white"}`}
@@ -164,6 +173,10 @@ export default function CodeField({
       {error === "code" ? (
         <p className="mt-2 text-center text-[13px] text-[#c2394a]">
           {FIELD_COPY.codeIncorrect}
+        </p>
+      ) : errorMessage ? (
+        <p className="mt-2 text-center text-[13px] text-[#c2394a]" role="alert">
+          {errorMessage}
         </p>
       ) : error === "network" ? (
         <p className="mt-2 text-center text-[13px] text-[#c2394a]">

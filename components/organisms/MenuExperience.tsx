@@ -505,6 +505,7 @@ export default function MenuExperience({
               ref={autoFocusField}
               id="row"
               name="row"
+              aria-invalid={Boolean(gateError) && !gateRow.trim()}
               className={`mt-2 ${fieldClass("light", Boolean(gateError) && !gateRow.trim())}`}
               value={gateRow}
               onChange={(e) => {
@@ -520,6 +521,7 @@ export default function MenuExperience({
             <input
               id="seat"
               name="seat"
+              aria-invalid={Boolean(gateError) && !gateSeat.trim()}
               className={`mt-2 ${fieldClass("light", Boolean(gateError) && !gateSeat.trim())}`}
               value={gateSeat}
               onChange={(e) => {

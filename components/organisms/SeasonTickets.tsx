@@ -27,18 +27,20 @@ import EmailField from "@/components/molecules/EmailField";
 import useAutoFocus from "@/hooks/useAutoFocus";
 import {
   emailBlurInvalid,
-  emailSubmitError,
-  emailSubmitInvalid,
+  FIELD_COPY,
   normalizeEmail,
   submittedEmail,
   type EmailFieldError,
 } from "@/lib/fieldValidation";
+import { validateSubmittedEmail } from "@/lib/submitEmailValidation";
 import {
   createTicketTransfer,
   getAccessPassesByOrder,
   getMyAccessPass,
   getMyAccessPasses,
   getMyEvents,
+  getMyReceivedTransfers,
+  getMySentTransfers,
   getOrder,
 } from "@/lib/api";
 import { getSession } from "@/lib/auth";
@@ -48,7 +50,12 @@ import {
   buildFlexPackSummaries,
   buildSeasonPackageEventDetails,
   buildSeasonPackageSummaries,
+  markTicketsPendingTransferInDetails,
+  mergePendingTransferWalletDetails,
+  reconcilePendingSentTransfers,
+  sortSeasonPackageSummaries,
   summarizeEventDetails,
+  type PendingSentTransfer,
   formatCartOrderTotal,
   ticketEntryLine,
   walletAccessPassPath,
@@ -65,6 +72,12 @@ import {
   type FlexPackSummary,
   type SeasonPackageSummary,
 } from "@/lib/cartEvents";
+import {
+  mapReceivedTransferRows,
+  mapSentTransferRows,
+  mergeWalletTransferRows,
+  type WalletTransferRow,
+} from "@/lib/ticketTransfers";
 import {
   buildAccessPassSummaries,
   eventWhenLabel,
@@ -710,7 +723,7 @@ const EVENT_CSS = `
 `;
 
 type Screen = "login" | "code" | "events" | "event" | "seasonPackage" | "package" | "listings" | "resale" | "giving" | "profile";
-type Sent = { id: string; to?: string; from?: string; title: string; seat: string; on: string; status: string };
+type Sent = WalletTransferRow;
 type PassTransfer = {
   pass: AccessPassSummary;
   kind: "season pass" | "access pass";
@@ -786,6 +799,7 @@ export default function SeasonTickets({
   const [ticketWalletError, setTicketWalletError] = useState("");
   const [confirmCancel, setConfirmCancel] = useState<Sent | null>(null);
   const [sent, setSent] = useState<Sent[] | null>(null);
+  const [received, setReceived] = useState<Sent[] | null>(null);
   const [toast, setToast] = useState<string | null>(null);
   const [upcomingEvents, setUpcomingEvents] = useState<CartEventSummary[]>([]);
   const [seasonPackages, setSeasonPackages] = useState<SeasonPackageSummary[]>([]);
@@ -906,21 +920,46 @@ export default function SeasonTickets({
 
       setEventsLoading(true);
       try {
-        const [res, accessPassRes] = await Promise.all([
-          getMyEvents(),
-          getMyAccessPasses("organizer").catch(() => null),
-        ]);
+        const holderEmail = String(session.user?.email || email);
+        const [res, accessPassRes, sentTransfersRes, receivedTransfersRes] =
+          await Promise.all([
+            getMyEvents(),
+            getMyAccessPasses("organizer").catch(() => null),
+            getMySentTransfers(holderEmail, 1).catch(() => null),
+            getMyReceivedTransfers(holderEmail, 1).catch(() => null),
+          ]);
         if (cancelled) return;
         const orders = unwrapList<OrderLike>(res.data);
         const passes = accessPassRes
           ? unwrapList<AccessPassLike>(accessPassRes.data)
           : [];
-        const holderEmail = String(session.user?.email || email);
-        const details = buildOrderEventDetails(orders, holderEmail);
+        const sentTransfers = sentTransfersRes
+          ? unwrapList<PendingSentTransfer>(sentTransfersRes.data)
+          : [];
+        let details = buildOrderEventDetails(orders, holderEmail);
+        details = reconcilePendingSentTransfers(
+          details,
+          sentTransfers,
+          holderEmail,
+        );
         const packageDetails = buildSeasonPackageEventDetails(orders, holderEmail);
-        setEventDetails({ ...details, ...packageDetails });
+        const allDetails = { ...details, ...packageDetails };
+        setEventDetails(allDetails);
         setUpcomingEvents(summarizeEventDetails(details));
-        setSeasonPackages(buildSeasonPackageSummaries(orders));
+        setSeasonPackages(
+          sortSeasonPackageSummaries(
+            buildSeasonPackageSummaries(orders),
+            allDetails,
+          ),
+        );
+        setSent(mapSentTransferRows(sentTransfers));
+        setReceived(
+          mapReceivedTransferRows(
+            receivedTransfersRes
+              ? unwrapList(receivedTransfersRes.data)
+              : [],
+          ),
+        );
         setFlexPacks(buildFlexPackSummaries(orders));
         setAccessPasses(buildAccessPassSummaries(passes));
       } catch {
@@ -1260,13 +1299,8 @@ export default function SeasonTickets({
     toastT.current = setTimeout(() => setToast(null), 2400);
   };
 
-  const sentDefault: Sent[] = isHolder
-    ? [{ id: "d2", to: "d.salas@gmail.com", title: "New Mexico State vs. Mercyhurst", seat: "Sec G · Row 25 · Seat 23", on: "Jul 30, 2026", status: "claimed" }]
-    : [];
-  const sentList = (sent ?? sentDefault).filter((t) => t.status !== "cancelled");
-  const received: Sent[] = isHolder
-    ? [{ id: "r1", from: "aggieclub@nmsu.edu", title: "New Mexico State vs. Liberty", seat: "Sec G · Row 25 · Seat 24", on: "Jul 18, 2026", status: "claimed" }]
-    : [];
+  const sentList = (sent ?? []).filter((t) => t.status !== "cancelled");
+  const receivedList = received ?? [];
 
   const padX = mobile ? 18 : 22;
   const cardPad = mobile ? "14px 16px" : "16px 20px";
@@ -1425,6 +1459,7 @@ export default function SeasonTickets({
                 : key.startsWith(`${activePackageKey}:`)),
           ),
         ),
+        "schedule",
       )
     : [];
   const selectedPackagePasses = activePackageKey
@@ -1520,9 +1555,14 @@ export default function SeasonTickets({
     </span>
   );
 
-  const RoutedEventShell = (children: React.ReactNode) => (
+  const RoutedEventShell = (
+    children: React.ReactNode,
+    { showBack = true }: { showBack?: boolean } = {},
+  ) => (
     <div style={{ maxWidth: 1100, margin: "0 auto", boxSizing: "border-box", padding: mobile ? "24px 16px 128px" : "40px 32px 96px", display: "flex", flexDirection: "column", gap: 18 }}>
-      <Link href={walletSectionHref("events")} style={{ ...backBtn, textDecoration: "none" }}><BackArrow />All tickets</Link>
+      {showBack ? (
+        <Link href={walletSectionHref("events")} style={{ ...backBtn, textDecoration: "none" }}><BackArrow />All tickets</Link>
+      ) : null}
       {children}
     </div>
   );
@@ -2007,15 +2047,21 @@ export default function SeasonTickets({
 
   const submitPassTransfer = async (rawEmail?: string) => {
     if (!passTransfer) return;
-    const normalizedEmail = normalizeEmail(rawEmail ?? passTransfer.email);
-    if (emailSubmitInvalid(normalizedEmail)) {
+    const result = await validateSubmittedEmail(rawEmail ?? passTransfer.email);
+    if (!result.ok) {
       setPassTransfer({
         ...passTransfer,
-        email: normalizedEmail,
-        error: "Enter a valid email address.",
+        email: result.email,
+        error:
+          result.error === "network"
+            ? FIELD_COPY.network
+            : result.error === "required"
+              ? FIELD_COPY.emailRequired
+              : FIELD_COPY.invalidEmail,
       });
       return;
     }
+    const normalizedEmail = result.email;
     if (normalizedEmail === normalizeEmail(email)) {
       setPassTransfer({
         ...passTransfer,
@@ -2049,9 +2095,10 @@ export default function SeasonTickets({
         title: passTransfer.pass.name,
         seat: passTransfer.kind === "season pass" ? "1 Season pass" : "1 Access pass",
         on: "Just now",
+        createdAt: new Date().toISOString(),
         status: "pending",
       };
-      setSent([entry, ...sentList]);
+      setSent((current) => mergeWalletTransferRows([entry], current ?? []));
       setPassTransfer({
         ...passTransfer,
         email: normalizedEmail,
@@ -3130,12 +3177,12 @@ export default function SeasonTickets({
   );
 
   /* ---------- transfers (listings) ---------- */
-  const listData = listTab === "received" ? received : sentList;
+  const listData = listTab === "received" ? receivedList : sentList;
   const Listings = () => (
     <div style={{ maxWidth: 1100, margin: "0 auto", padding: bodyPad, display: "flex", flexDirection: "column", gap: 18 }}>
       <h1 style={{ margin: 0, fontSize: fluidSize(42), fontWeight: 600, letterSpacing: "-0.03em", lineHeight: 1 }}>Transfers</h1>
       <div style={{ display: "flex", gap: 6 }}>
-        {[{ id: "active" as const, label: "Sent", n: sentList.length }, { id: "received" as const, label: "Received", n: received.length }].map((t) => (
+        {[{ id: "active" as const, label: "Sent", n: sentList.length }, { id: "received" as const, label: "Received", n: receivedList.length }].map((t) => (
           <button key={t.id} onClick={() => setListTab(t.id)} style={chip(listTab === t.id)}>
             {t.label}{pillCount(t.n, listTab === t.id)}
           </button>
@@ -3622,27 +3669,48 @@ export default function SeasonTickets({
           title: tfEv?.title || "",
           seat: tfSelectedTickets.map(({ ticket }) => ticket.seat).join(", "),
           on: "Just now",
+          createdAt: new Date().toISOString(),
           status: "pending",
         };
-        setSent([entry, ...sentList]);
-        setTf({ ...tf, step: 4 });
+        setSent((current) => mergeWalletTransferRows([entry], current ?? []));
 
         try {
+          const pendingTicketIds = tfSelectedTickets.map(({ ticket }) => ticket.id);
+          setEventDetails((current) =>
+            markTicketsPendingTransferInDetails(current, pendingTicketIds),
+          );
+
           const res = await getMyEvents();
           const orders = unwrapList<OrderLike>(res.data);
           const holderEmail = String(getSession()?.user?.email || email);
-          const details = buildOrderEventDetails(orders, holderEmail);
-          const packageDetails = buildSeasonPackageEventDetails(
+          const refreshedDetails = buildOrderEventDetails(orders, holderEmail);
+          const refreshedPackageDetails = buildSeasonPackageEventDetails(
             orders,
             holderEmail,
           );
-          setEventDetails({ ...details, ...packageDetails });
-          setUpcomingEvents(summarizeEventDetails(details));
-          setSeasonPackages(buildSeasonPackageSummaries(orders));
+          const refreshedAllDetails = {
+            ...refreshedDetails,
+            ...refreshedPackageDetails,
+          };
+          setEventDetails((markedDetails) =>
+            mergePendingTransferWalletDetails(
+              refreshedAllDetails,
+              markedDetails,
+            ),
+          );
+          setUpcomingEvents(summarizeEventDetails(refreshedDetails));
+          setSeasonPackages(
+            sortSeasonPackageSummaries(
+              buildSeasonPackageSummaries(orders),
+              refreshedAllDetails,
+            ),
+          );
           setFlexPacks(buildFlexPackSummaries(orders));
         } catch {
           // The transfer succeeded; stale wallet data can refresh next visit.
         }
+
+        setTf({ ...tf, step: 4 });
       } catch {
         setTfError("We couldn't transfer those tickets. Please try again.");
       } finally {
@@ -3651,19 +3719,24 @@ export default function SeasonTickets({
       return;
     }
     if (tfStep === 2) {
-      const next = normalizeEmail(rawEmail ?? tf.email);
-      if (emailSubmitInvalid(next)) {
-        setTfEmailErr(emailSubmitError(next));
+      setTfSaving(true);
+      setTfEmailErr(null);
+      setTfError("");
+      const result = await validateSubmittedEmail(rawEmail ?? tf.email);
+      setTfSaving(false);
+      if (!result.ok) {
+        if (result.error === "network") {
+          setTfError(FIELD_COPY.network);
+        } else {
+          setTfEmailErr(result.error);
+        }
         return;
       }
-      if (next === normalizeEmail(email)) {
-        setTfEmailErr(null);
+      if (result.email === normalizeEmail(email)) {
         setTfError("You cannot transfer tickets to yourself.");
         return;
       }
-      setTfEmailErr(null);
-      setTfError("");
-      setTf({ ...tf, email: next, step: 3 });
+      setTf({ ...tf, email: result.email, step: 3 });
       return;
     }
     setTfError("");
@@ -3675,7 +3748,7 @@ export default function SeasonTickets({
       <div className={mobile ? "st-sheet-up" : undefined} onClick={(e) => e.stopPropagation()} style={{ ...sheet, maxWidth: mobile ? "100%" : 460, width: "100%", maxHeight: mobile ? "92vh" : "88vh", overflowY: "auto", borderRadius: mobile ? "26px 26px 0 0" : 26, paddingBottom: mobile ? "calc(22px + env(safe-area-inset-bottom))" : 22 }}>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, paddingBottom: 16, borderBottom: "1px solid rgba(5,27,53,0.08)" }}>
           <h2 style={{ margin: 0, fontSize: fluidSize(22), fontWeight: 600, letterSpacing: "-0.02em" }}>Transfer</h2>
-          {closeX(() => setTf(null))}
+          {tfSaving ? null : closeX(() => setTf(null))}
         </div>
 
         {tfStep === 1 && (
@@ -3717,6 +3790,8 @@ export default function SeasonTickets({
               placeholder="name@email.com"
               value={tf?.email || ""}
               error={tfEmailErr}
+              errorMessage={tfError || null}
+              disabled={tfSaving}
               onChange={(value) => {
                 setTf({ ...tf!, email: value });
                 setTfEmailErr(null);
@@ -3728,7 +3803,17 @@ export default function SeasonTickets({
             />
           </form>
         )}
-        {tfStep === 3 && (
+        {tfStep === 3 && tfSaving ? (
+          <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 14, padding: "18px 0 8px" }}>
+            <div style={{ fontSize: fluidSize(17), fontWeight: 600, letterSpacing: "-0.015em", textAlign: "center" }}>
+              Transferring your {tfSelectedTickets.length === 1 ? "ticket" : "tickets"}…
+            </div>
+            <p style={{ margin: 0, fontSize: fluidSize(14), lineHeight: 1.55, color: SUB, textAlign: "center" }}>
+              Stay on this screen until the transfer finishes.
+            </p>
+          </div>
+        ) : null}
+        {tfStep === 3 && !tfSaving ? (
           <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
             <div style={{ fontSize: fluidSize(17), fontWeight: 600, letterSpacing: "-0.015em" }}>You are about to transfer {tfSelectedTickets.length} {tfSelectedTickets.length === 1 ? "ticket" : "tickets"}</div>
             <div style={{ display: "flex", flexWrap: "wrap", gap: 10 }}>
@@ -3744,13 +3829,13 @@ export default function SeasonTickets({
               <div style={{ fontSize: fluidSize(15), fontWeight: 600, overflowWrap: "anywhere" }}>{tf?.email}</div>
             </div>
           </div>
-        )}
-        {tfError ? (
+        ) : null}
+        {tfError && tfStep !== 2 ? (
           <div role="alert" style={{ fontSize: fluidSize(13), color: DANGER }}>
             {tfError}
           </div>
         ) : null}
-        {tfStep === 4 && (
+        {tfStep === 4 && !tfSaving && (
           <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 14, padding: "6px 0 2px" }}>
             <div style={{ width: 78, height: 78, borderRadius: 999, background: GREEN, display: "flex", alignItems: "center", justifyContent: "center" }}>
               <svg viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth={2.6} strokeLinecap="round" strokeLinejoin="round" style={{ width: 38, height: 38 }}><polyline points="20 6 9 17 4 12" /></svg>
@@ -3761,23 +3846,23 @@ export default function SeasonTickets({
         )}
 
         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-          {(tfStep === 2 || tfStep === 3) && (
+          {(tfStep === 2 || (tfStep === 3 && !tfSaving)) && (
             <button type="button" onClick={() => { setTfEmailErr(null); setTfError(""); setTf({ ...tf!, step: tfStep - 1 }); }} style={{ fontFamily: "inherit", flexShrink: 0, display: "flex", alignItems: "center", gap: 8, fontSize: fluidSize(15), fontWeight: 600, color: INK, background: "#fff", border: "none", padding: "14px 12px", minHeight: 48, cursor: "pointer" }}><BackArrow />Back</button>
           )}
-          {tfStep === 4 && (
+          {tfStep === 4 && !tfSaving && (
             <Link href={walletSectionHref("listings")} onClick={() => { setTf(null); setListTab("active"); }} style={{ fontFamily: "inherit", flex: 1, display: "flex", alignItems: "center", justifyContent: "center", fontSize: fluidSize(15), fontWeight: 600, color: INK, background: "#f1f3f8", borderRadius: 999, padding: 14, minHeight: 48, textDecoration: "none", cursor: "pointer" }}>My transfers</Link>
           )}
           <button
             type={tfStep === 2 ? "submit" : "button"}
             form={tfStep === 2 ? "season-xfer" : undefined}
             onClick={tfStep === 2 ? undefined : () => doTfPrimary()}
-            disabled={!tfCanNext}
+            disabled={!tfCanNext || tfSaving}
             aria-busy={tfSaving || undefined}
             style={{ fontFamily: "inherit", flex: 1, display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 8, fontSize: fluidSize(15), fontWeight: 600, color: tfCanNext ? INK : MUTE, background: tfCanNext ? ACCENT : "#d7dbe6", border: "none", borderRadius: 999, padding: 14, minHeight: 48, cursor: "pointer" }}
           >
             <ButtonBusyContents
               loading={tfSaving}
-              loadingLabel="Transferring…"
+              loadingLabel={tfStep === 2 ? "Checking email…" : "Transferring…"}
               spinnerColor={INK}
               trackColor="rgba(5,27,53,0.2)"
             >
@@ -3830,6 +3915,7 @@ export default function SeasonTickets({
                 value={passTransfer.email}
                 placeholder="mail@example.com"
                 disabled={saving}
+                errorMessage={error || null}
                 onChange={(value) =>
                   setPassTransfer({ ...passTransfer, email: value, error: "" })
                 }
@@ -3857,7 +3943,7 @@ export default function SeasonTickets({
             </div>
           ) : null}
 
-          {error ? (
+          {error && step !== "email" ? (
             <div role="alert" style={{ fontSize: fluidSize(13), color: DANGER }}>
               {error}
             </div>
@@ -3943,7 +4029,7 @@ export default function SeasonTickets({
         <WalletTicketsBlocksLoading routeDestination />
       ) : showRoutedWallet ? (
         routedWalletPending
-          ? RoutedEventShell(DetailLoader())
+          ? RoutedEventShell(DetailLoader(), { showBack: false })
           : routedWalletMissing
             ? RoutedEventMissing()
             : showingAccessPass

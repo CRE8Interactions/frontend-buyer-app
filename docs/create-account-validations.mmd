@@ -1,31 +1,44 @@
 %% Step 2: create account
-%% Source: app/login/page.tsx and lib/fieldValidation.ts
-%% Email is shown disabled (from Step 0) and is not validated on this form
+%% Source: app/login/page.tsx, lib/fieldValidation.ts
+%% Email: disabled — set in Step 0, not validated on this form
+%% First / last name required: First name is required. / Last name is required.
+%% Name pattern: Letters only — no digits.
+%% Phone required: Phone number is required.
+%% Phone invalid: Phone number is not valid. Please try again
+%% Phone exists: An account with this phone number already exists.
+%% DOB required: Date of birth is required.
+%% DOB invalid: Date of birth is incorrect. Make sure it is in the correct format: MM/DD/YYYY
 %% Network: We're experiencing technical difficulties. Please try again later.
 
 flowchart TD
-  profileStep[Step 2: create account] --> liveNames[NameField onChange]
+  profileStep[Step 2: create account] --> liveNames[Type first / last name]
   liveNames --> nameFilter{Matches letters, space, apostrophe, hyphen?}
-  nameFilter -->|no| ignoreKey[Do not update state]
-  nameFilter -->|yes| namesOk[Update first / last name]
+  nameFilter -->|no| ignoreKey[Reject input]
+  nameFilter -->|yes| namesOk[Accept input]
 
-  profileStep --> blurHint[Leave a filled name, phone, or DOB]
-  blurHint --> blurCheck{Value is non-empty and invalid?}
-  blurCheck -->|yes| showHint[Show field copy]
-  blurCheck -->|empty| stayQuiet[No error yet]
+  profileStep --> blurHint[Blur a filled field]
+  blurHint --> nameBlur{nameBlurError — non-empty only}
+  nameBlur -->|pattern fail| namePatBlur[Letters only — no digits.]
+  nameBlur -->|empty| stayQuiet[No error]
+  blurHint --> phoneBlur{phoneBlurError — non-empty only}
+  phoneBlur -->|invalid| phoneBadBlur[Phone number is not valid. Please try again]
+  blurHint --> dobBlur{dobBlurError — non-empty only}
+  dobBlur -->|invalid| dobBadBlur["Date of birth is incorrect. Make sure it is in the correct format: MM/DD/YYYY"]
 
-  profileStep --> submit[Click Sign up or press Enter]
-  submit --> checkNames{nameFieldError on submitted values?}
+  profileStep --> submit[Submit form]
+  submit --> readDom[Read submitted values — email from Step 0, not re-validated]
+  readDom --> checkNames{nameFieldError?}
+
   checkNames -->|required| nameReq[First name is required. / Last name is required.]
   checkNames -->|pattern| namePat[Letters only — no digits.]
-  checkNames -->|ok| checkPhone{phoneNumberError?}
+  checkNames -->|ok| checkPhone{phoneSubmitError?}
 
   checkPhone -->|required| phoneReq[Phone number is required.]
   checkPhone -->|invalid| phoneBad[Phone number is not valid. Please try again]
-  checkPhone -->|ok| checkDob{DOB complete and not in the future?}
+  checkPhone -->|ok| checkDob{dobSubmitError?}
 
-  checkDob -->|empty| dobReq[Date of birth is required.]
-  checkDob -->|bad / future| dobBad[DOB format MM/DD/YYYY]
+  checkDob -->|required| dobReq[Date of birth is required.]
+  checkDob -->|invalid| dobBad["Date of birth is incorrect. Make sure it is in the correct format: MM/DD/YYYY"]
   checkDob -->|ok| createUser[createNewUser]
 
   createUser --> createNet{Network error?}

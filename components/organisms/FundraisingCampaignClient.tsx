@@ -31,7 +31,6 @@ import { cacheOrgBranding } from "@/lib/orgBrandingCache";
 import {
   FIELD_COPY,
   emailBlurInvalid,
-  emailSubmitError,
   fieldClass,
   fieldErrorTextClass,
   formString,
@@ -39,10 +38,13 @@ import {
   normalizeEmail,
   submittedEmail,
 } from "@/lib/fieldValidation";
+import { validateSubmittedEmail } from "@/lib/submitEmailValidation";
 import {
   stripePaymentElementAppearance,
   STRIPE_PAYMENT_ELEMENT_FONTS,
 } from "@/lib/stripePaymentElement";
+
+const AMOUNT_ERROR = "Select or enter a donation amount.";
 import { FUNDRAISER_LOADER_MESSAGE } from "@/lib/loaderMessages";
 
 const lightCard =
@@ -243,17 +245,19 @@ export function FundraisingCampaignClient({
       setDonorMessage(nextMessage);
     }
     if (donationAmount <= 0) {
-      setError("Select or enter a donation amount.");
+      setError(AMOUNT_ERROR);
       return;
     }
     if (!anonymous) {
-      const emailKind = emailSubmitError(nextEmail);
-      if (emailKind === "required") {
-        setError(FIELD_COPY.emailRequired);
-        return;
-      }
-      if (emailKind === "invalid") {
-        setError(FIELD_COPY.invalidEmail);
+      const emailResult = await validateSubmittedEmail(nextEmail);
+      if (!emailResult.ok) {
+        setError(
+          emailResult.error === "network"
+            ? FIELD_COPY.network
+            : emailResult.error === "required"
+              ? FIELD_COPY.emailRequired
+              : FIELD_COPY.invalidEmail,
+        );
         return;
       }
       if (!nameAllows(nextName)) {
@@ -390,7 +394,10 @@ export function FundraisingCampaignClient({
           <h2 className="text-[16px] font-semibold">Donate</h2>
           {error &&
           error !== FIELD_COPY.emailRequired &&
-          error !== FIELD_COPY.invalidEmail ? (
+          error !== FIELD_COPY.invalidEmail &&
+          error !== FIELD_COPY.network &&
+          error !== FIELD_COPY.namePattern &&
+          error !== AMOUNT_ERROR ? (
             <p className={`mt-3 text-[14px] ${fieldErrorTextClass("light")}`}>{error}</p>
           ) : null}
 
@@ -462,11 +469,20 @@ export function FundraisingCampaignClient({
                   ref={autoFocusField}
                   id="amount"
                   name="amount"
-                  className={`mt-2 ${fieldClass("light", false)}`}
+                  aria-invalid={error === AMOUNT_ERROR}
+                  className={`mt-2 ${fieldClass("light", error === AMOUNT_ERROR)}`}
                   value={amount}
-                  onChange={(e) => setAmount(e.target.value)}
+                  onChange={(e) => {
+                    setAmount(e.target.value);
+                    if (error === AMOUNT_ERROR) setError("");
+                  }}
                   placeholder="25"
                 />
+                {error === AMOUNT_ERROR ? (
+                  <p className={fieldErrorTextClass("light")} role="alert">
+                    {error}
+                  </p>
+                ) : null}
               </div>
 
               <label className={`flex items-center gap-2 text-[14px] ${muted}`}>
@@ -486,7 +502,13 @@ export function FundraisingCampaignClient({
                     label="Name"
                     required={false}
                     value={donorName}
-                    onChange={setDonorName}
+                    errorMessage={
+                      error === FIELD_COPY.namePattern ? error : null
+                    }
+                    onChange={(value) => {
+                      setDonorName(value);
+                      if (error === FIELD_COPY.namePattern) setError("");
+                    }}
                   />
                   <EmailField
                     id="donor-email"
@@ -500,11 +522,13 @@ export function FundraisingCampaignClient({
                           ? "invalid"
                           : null
                     }
+                    networkError={error === FIELD_COPY.network}
                     onChange={(value) => {
                       setDonorEmail(value);
                       if (
                         error === FIELD_COPY.invalidEmail ||
-                        error === FIELD_COPY.emailRequired
+                        error === FIELD_COPY.emailRequired ||
+                        error === FIELD_COPY.network
                       ) {
                         setError("");
                       }
@@ -513,7 +537,8 @@ export function FundraisingCampaignClient({
                       if (emailBlurInvalid(value)) setError(FIELD_COPY.invalidEmail);
                       else if (
                         error === FIELD_COPY.invalidEmail ||
-                        error === FIELD_COPY.emailRequired
+                        error === FIELD_COPY.emailRequired ||
+                        error === FIELD_COPY.network
                       ) {
                         setError("");
                       }

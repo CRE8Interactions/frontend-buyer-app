@@ -4,6 +4,7 @@ import {
   FIELD_COPY,
   fieldClass,
   fieldErrorTextClass,
+  fieldShowsError,
   nameAllows,
   namePatternMatch,
   requiredCopy,
@@ -20,6 +21,7 @@ export default function NameField({
   onChange,
   onBlur,
   error = null,
+  errorMessage = null,
   autoComplete,
   variant = "light",
   placeholder,
@@ -33,6 +35,7 @@ export default function NameField({
   onChange: (value: string) => void;
   onBlur?: (value: string) => void;
   error?: NameFieldError;
+  errorMessage?: string | null;
   autoComplete?: string;
   variant?: FieldVariant;
   placeholder?: string;
@@ -40,6 +43,7 @@ export default function NameField({
   autoFocus?: boolean;
 }) {
   const focusRef = useAutoFocus<HTMLInputElement>(autoFocus);
+  const showError = fieldShowsError(Boolean(error), errorMessage);
   const sync = (next: string) => {
     if (nameAllows(next)) onChange(next);
   };
@@ -64,17 +68,21 @@ export default function NameField({
         title={FIELD_COPY.namePattern}
         autoComplete={autoComplete}
         ref={focusRef}
-        aria-invalid={Boolean(error)}
+        aria-invalid={showError}
         placeholder={placeholder}
         onChange={(e) => sync(e.target.value)}
         onInput={(e) => sync(e.currentTarget.value)}
         onBlur={(e) => onBlur?.(e.currentTarget.value)}
-        className={`mt-2 ${fieldClass(variant, Boolean(error))}`}
+        className={`mt-2 ${fieldClass(variant, showError)}`}
       />
       {error === "required" ? (
         <p className={fieldErrorTextClass(variant)}>{requiredCopy(label)}</p>
       ) : error === "pattern" ? (
         <p className={fieldErrorTextClass(variant)}>{FIELD_COPY.namePattern}</p>
+      ) : errorMessage ? (
+        <p className={fieldErrorTextClass(variant)} role="alert">
+          {errorMessage}
+        </p>
       ) : null}
     </div>
   );

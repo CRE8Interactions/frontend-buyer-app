@@ -34,6 +34,14 @@ export type CodeFieldError = "code" | "network" | null;
 export type RedemptionCodeFieldError = "required" | "rejected" | "network" | null;
 export type FieldVariant = "light" | "dark";
 
+/** True when a field should show the idle error border and message. */
+export function fieldShowsError(
+  invalid: boolean,
+  message?: string | null,
+) {
+  return invalid || Boolean(message?.trim());
+}
+
 export const DOB_REQUIRED_MESSAGE = "Date of birth is required.";
 export const DOB_INVALID_MESSAGE =
   "Date of birth is incorrect. Make sure it is in the correct format: MM/DD/YYYY";
@@ -251,6 +259,19 @@ export function emailSubmitError(value: string): EmailFieldError {
 
 export function emailSubmitInvalid(value: string) {
   return emailSubmitError(value) !== null;
+}
+
+export type SendGridEmailVerdict = {
+  verdict?: string;
+  suggestion?: string;
+};
+
+/** Matches login: Invalid, or Risky when SendGrid suggests a correction. */
+export function sendgridEmailInvalid(data: SendGridEmailVerdict) {
+  return (
+    (data.verdict === "Risky" && Boolean(data.suggestion)) ||
+    data.verdict === "Invalid"
+  );
 }
 
 /** Trim access/promo codes before submit or API calls. */

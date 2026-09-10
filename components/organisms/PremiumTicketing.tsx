@@ -55,8 +55,6 @@ import {
 import { checkoutHref, rememberCheckoutReturnPath, setStoredCart } from "@/lib/cart";
 import {
   emailBlurInvalid,
-  emailSubmitError,
-  emailSubmitInvalid,
   formString,
   normalizeRedemptionCode,
   redemptionCodeBlurFieldError,
@@ -65,6 +63,7 @@ import {
   type EmailFieldError,
   type RedemptionCodeFieldError,
 } from "@/lib/fieldValidation";
+import { validateSubmittedEmail } from "@/lib/submitEmailValidation";
 import { beginRouteTransition } from "@/lib/routeTransition";
 import { walletSectionHref } from "@/lib/walletNav";
 import type { SeatmapBackground, SeatmapMapping } from "@/lib/seatmapLookups";
@@ -354,6 +353,8 @@ export default function PremiumTicketing({
   const [loading, setLoading] = useState(true);
   const [pinned, setPinned] = useState(false);
   const [map, setMap] = useState(false);
+  const [mapReady, setMapReady] = useState(false);
+  const [preparingMap, setPreparingMap] = useState(false);
   const [mapExitConfirm, setMapExitConfirm] = useState(false);
   const [zoom, setZoom] = useState(100);
   const [legendOpen, setLegendOpen] = useState(false);
@@ -368,6 +369,8 @@ export default function PremiumTicketing({
   const [notifySubject, setNotifySubject] = useState<NotifySubject | null>(null);
   const [notifyEmail, setNotifyEmail] = useState("");
   const [notifyEmailError, setNotifyEmailError] = useState<EmailFieldError>(null);
+  const [notifyEmailNetworkError, setNotifyEmailNetworkError] = useState(false);
+  const [notifyEmailChecking, setNotifyEmailChecking] = useState(false);
   const [notifySms, setNotifySms] = useState(false);
   const [notifySent, setNotifySent] = useState(false);
   const [notified, setNotified] = useState<Record<string, boolean>>({});
@@ -561,15 +564,24 @@ export default function PremiumTicketing({
     setNotifySent(false);
   };
 
-  const submitEventWaitlist = (
+  const submitEventWaitlist = async (
     email: string,
     onSuccess?: () => void,
-  ): boolean => {
-    if (emailSubmitInvalid(email)) {
-      setNotifyEmailError(emailSubmitError(email));
+  ): Promise<boolean> => {
+    setNotifyEmailNetworkError(false);
+    setNotifyEmailChecking(true);
+    const result = await validateSubmittedEmail(email);
+    setNotifyEmailChecking(false);
+    if (!result.ok) {
+      if (result.error === "network") {
+        setNotifyEmailError(null);
+        setNotifyEmailNetworkError(true);
+      } else {
+        setNotifyEmailError(result.error);
+      }
       return false;
     }
-    setNotifyEmail(email);
+    setNotifyEmail(result.email);
     setNotifyEmailError(null);
     setNotified((current) => ({ ...current, [d.eventName]: true }));
     onSuccess?.();
@@ -669,6 +681,14 @@ export default function PremiumTicketing({
   const addPick = (z: (typeof ZONES)[number]) => setPicks((list) => [...list, { sec: z.sec, row: z.row, seat: String(21 + list.length), zone: z.zone, tier: z.tier, unit: z.unit, price: "$" + z.unit.toFixed(2) }]);
   const flip = () => setMedia((m) => (m === 0 ? 1 : 0));
 
+  const closeMap = () => {
+    setMap(false);
+    setMapReady(false);
+    setPreparingMap(false);
+    resetMapState();
+    setPicks([]);
+  };
+
   /** Closing with seats selected needs confirm so the shopper does not lose them by accident. */
   const requestCloseMap = () => {
     if (selectedFromMap.length > 0 || picks.length > 0) {
@@ -676,16 +696,43 @@ export default function PremiumTicketing({
       return;
     }
     setMapExitConfirm(false);
-    setMap(false);
-    resetMapState();
-    setPicks([]);
+    closeMap();
   };
 
   const confirmExitMap = () => {
     setMapExitConfirm(false);
-    setMap(false);
-    resetMapState();
-    setPicks([]);
+    closeMap();
+  };
+
+  const openMap = () => {
+    if (mapLocked) return;
+
+    setMapReady(false);
+    if (hasLiveSeatmap) setPreparingMap(true);
+    setMap(true);
+
+    if (!hasLiveSeatmap) return;
+
+    const hydrate = () => {
+      const filtersState = useFiltersStore.getState();
+      filtersState.setLoadingTicketGroups(false);
+
+      if (mapMapping) setStoreMapping(mapMapping);
+      if (mapBackground) setStoreBackground(mapBackground);
+
+      const lookups = seatmapLookupsFromTicketGroups(
+        filtersState.ticketGroups,
+        filtersState.filters.selectedOfferIds,
+      );
+      setSeatLookupTable(lookups.seatLookupTable);
+      setSeatOffersLookupTable(lookups.seatOffersLookupTable);
+      setSectionLookupTable(lookups.sectionLookupTable);
+
+      setMapReady(true);
+      setPreparingMap(false);
+    };
+
+    window.setTimeout(hydrate, 50);
   };
 
   const submitUnlockCode = async (code = unlockInput) => {
@@ -846,7 +893,7 @@ export default function PremiumTicketing({
       className="nmt-map-btn"
       type="button"
       disabled={mapLocked}
-      onClick={() => setMap(true)}
+      onClick={openMap}
       style={{
         fontFamily: "inherit",
         position: "relative",
@@ -2149,7 +2196,7 @@ export default function PremiumTicketing({
                     noValidate
                     onSubmit={(event) => {
                       event.preventDefault();
-                      submitEventWaitlist(
+                      void submitEventWaitlist(
                         submittedEmail(new FormData(event.currentTarget)),
                         () => setNotifySent(true),
                       );
@@ -2164,9 +2211,12 @@ export default function PremiumTicketing({
                       placeholder="you@example.com"
                       value={notifyEmail}
                       error={notifyEmailError}
+                      networkError={notifyEmailNetworkError}
+                      disabled={notifyEmailChecking}
                       onChange={(value) => {
                         setNotifyEmail(value);
                         setNotifyEmailError(null);
+                        setNotifyEmailNetworkError(false);
                       }}
                       onBlur={(value) =>
                         setNotifyEmailError(emailBlurInvalid(value) ? "invalid" : null)
@@ -2178,6 +2228,9 @@ export default function PremiumTicketing({
                       textColor={BTN_INK}
                       className="ga-soldout-notify-submit w-full"
                       style={{ padding: "16px 24px" }}
+                      loading={notifyEmailChecking}
+                      loadingLabel="Checking email…"
+                      disabled={notifyEmailChecking}
                     >
                       Notify me when tickets become available
                     </BrandedActionButton>
@@ -2217,14 +2270,26 @@ export default function PremiumTicketing({
                 className="mt-5 flex flex-col gap-3.5"
                 onSubmit={(event) => {
                   event.preventDefault();
-                  const next = submittedEmail(new FormData(event.currentTarget));
-                  if (emailSubmitInvalid(next)) {
-                    setNotifyEmailError(emailSubmitError(next));
-                    return;
-                  }
-                  setNotifyEmail(next);
-                  setNotifySent(true);
-                  setNotified((m) => ({ ...m, [t.name]: true }));
+                  void (async () => {
+                    const next = submittedEmail(new FormData(event.currentTarget));
+                    setNotifyEmailNetworkError(false);
+                    setNotifyEmailChecking(true);
+                    const result = await validateSubmittedEmail(next);
+                    setNotifyEmailChecking(false);
+                    if (!result.ok) {
+                      if (result.error === "network") {
+                        setNotifyEmailError(null);
+                        setNotifyEmailNetworkError(true);
+                      } else {
+                        setNotifyEmailError(result.error);
+                      }
+                      return;
+                    }
+                    setNotifyEmail(result.email);
+                    setNotifyEmailError(null);
+                    setNotifySent(true);
+                    setNotified((m) => ({ ...m, [t.name]: true }));
+                  })();
                 }}
               >
                 <EmailField
@@ -2234,9 +2299,12 @@ export default function PremiumTicketing({
                   placeholder="you@example.com"
                   value={notifyEmail}
                   error={notifyEmailError}
+                  networkError={notifyEmailNetworkError}
+                  disabled={notifyEmailChecking}
                   onChange={(value) => {
                     setNotifyEmail(value);
                     setNotifyEmailError(null);
+                    setNotifyEmailNetworkError(false);
                   }}
                   onBlur={(value) =>
                     setNotifyEmailError(emailBlurInvalid(value) ? "invalid" : null)
@@ -2315,18 +2383,14 @@ export default function PremiumTicketing({
           buttonColor={BTN}
           buttonTextColor={BTN_INK}
           mobile={mobile}
-          onClose={() => {
-            setMap(false);
-            resetMapState();
-            setPicks([]);
-          }}
+          onClose={closeMap}
           onCheckout={() => void startHoldFromMap()}
           checkoutLoading={holding}
           checkoutError=""
           mapBackground={mapBackground}
           mapMapping={mapMapping}
           venueSlug={d.venueSlug}
-          preparing={!hasLiveSeatmap}
+          preparing={preparingMap || !mapReady || !hasLiveSeatmap}
           orgName={d.orgLabel}
           logoSrc={d.brandLogoSrc || d.logoSrc}
           onUnlockOffer={(offerName) => {

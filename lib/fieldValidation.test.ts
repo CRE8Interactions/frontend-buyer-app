@@ -10,6 +10,7 @@ import {
   emailSubmitInvalid,
   formString,
   isBlockedEmail,
+  sendgridEmailInvalid,
   isValidDob,
   nameAllows,
   nameBlurError,
@@ -52,6 +53,18 @@ describe("email order", () => {
     expect(emailSubmitError("not-an-email")).toBe("invalid");
     expect(emailSubmitInvalid(DEMO_USER.email)).toBe(false);
     expect(emailSubmitError(DEMO_USER.email)).toBeNull();
+  });
+
+  it("matches login SendGrid rejection rules", () => {
+    expect(sendgridEmailInvalid({ verdict: "Valid" })).toBe(false);
+    expect(sendgridEmailInvalid({ verdict: "Invalid" })).toBe(true);
+    expect(
+      sendgridEmailInvalid({
+        verdict: "Risky",
+        suggestion: "fan@blocktickets.xyz",
+      }),
+    ).toBe(true);
+    expect(sendgridEmailInvalid({ verdict: "Risky" })).toBe(false);
   });
 
   it("reads a submitted email from FormData even when state would be empty", () => {

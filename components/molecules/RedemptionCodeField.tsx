@@ -6,6 +6,7 @@ import {
   FIELD_COPY,
   fieldClass,
   fieldErrorTextClass,
+  fieldShowsError,
   requiredCopy,
   type FieldVariant,
   type RedemptionCodeFieldError,
@@ -19,6 +20,7 @@ export default function RedemptionCodeField({
   onChange,
   onBlur,
   error = null,
+  errorMessage = null,
   rejectedMessage,
   disabled = false,
   variant = "light",
@@ -36,6 +38,7 @@ export default function RedemptionCodeField({
   onChange: (value: string) => void;
   onBlur?: (value: string) => void;
   error?: RedemptionCodeFieldError;
+  errorMessage?: string | null;
   rejectedMessage?: string;
   disabled?: boolean;
   variant?: FieldVariant;
@@ -49,7 +52,7 @@ export default function RedemptionCodeField({
   "id" | "name" | "value" | "onChange" | "onBlur" | "onInput"
 >) {
   const focusRef = useAutoFocus<HTMLInputElement>(autoFocus);
-  const invalid = Boolean(error);
+  const invalid = fieldShowsError(Boolean(error), errorMessage);
   const sync = (next: string) => onChange(next);
 
   return (
@@ -94,6 +97,10 @@ export default function RedemptionCodeField({
         </p>
       ) : error === "network" ? (
         <p className={fieldErrorTextClass(variant)}>{FIELD_COPY.network}</p>
+      ) : errorMessage ? (
+        <p className={fieldErrorTextClass(variant)} role="alert">
+          {errorMessage}
+        </p>
       ) : null}
     </div>
   );

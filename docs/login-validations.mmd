@@ -1,34 +1,43 @@
 %% Step 0: login (email)
-%% Source: app/login/page.tsx and lib/fieldValidation.ts
+%% Source: app/login/page.tsx, lib/submitEmailValidation.ts, lib/fieldValidation.ts
 %% Email required: Email address is required.
 %% Email invalid: Email is invalid. Please try again.
 %% Network: We're experiencing technical difficulties. Please try again later.
 
 flowchart TD
-  start[Shopper opens /login] --> emailStep[Step 0: email]
+  start[Step 0: email] --> typeEmail[Type email]
+  typeEmail --> blurEmail{Blur a non-empty field?}
+  blurEmail -->|yes| localBlur{emailBlurInvalid — blocked or bad syntax?}
+  localBlur -->|yes| emailInvalid["Email is invalid. Please try again."]
+  localBlur -->|no| noBlurErr[No error]
+  blurEmail -->|empty| noBlurErr
 
-  emailStep --> typeEmail[Type email]
-  typeEmail --> blurEmail{Leave a non-empty field?}
-  blurEmail -->|yes| localEmail{Blocked or bad syntax?}
-  localEmail -->|yes| emailInvalid["Email is invalid. Please try again."]
-  localEmail -->|no| readySend[Send my code stays clickable]
-  blurEmail -->|empty or still focused| readySend
+  noBlurErr --> sendClick[Submit email]
+  sendClick --> readDom[Read submitted email]
+  readDom --> validate[validateSubmittedEmail]
 
-  readySend --> sendClick[Click Send my code or press Enter]
-  sendClick --> readDom[Read the value currently in the field]
-  readDom --> normalize[Trim and lowercase]
+  validate --> valFail{Result?}
+  valFail -->|required| emailRequired["Email address is required."]
+  valFail -->|invalid| emailInvalid
+  valFail -->|network| network["We're experiencing technical difficulties. Please try again later."]
+  valFail -->|ok| verifyUser[verifyUser send OTP]
 
-  normalize --> emptyCheck{Empty?}
-  emptyCheck -->|yes| emailRequired["Email address is required."]
-  emptyCheck -->|no| syntaxCheck{Blocked or bad syntax?}
-  syntaxCheck -->|yes| emailInvalid
-  syntaxCheck -->|no| sendgrid[POST validateEmail]
-
-  sendgrid --> sgFail{Network error?}
-  sgFail -->|yes| network["We're experiencing technical difficulties. Please try again later."]
-  sgFail -->|no| sgVerdict{Invalid or Risky with suggestion?}
-  sgVerdict -->|yes| emailInvalid
-  sgVerdict -->|no| verifyUser[verifyUser send OTP]
   verifyUser --> verifyFail{Network error?}
   verifyFail -->|yes| network
   verifyFail -->|no| nextStep[Continue to Step 1: 6-digit code]
+
+  subgraph validateSubmittedEmail [validateSubmittedEmail]
+    vNorm[Trim and lowercase]
+    vNorm --> vEmpty{Empty?}
+    vEmpty -->|yes| vRequired[required]
+    vEmpty -->|no| vBlocked{Blocked domain or bad syntax?}
+    vBlocked -->|yes| vInvalid[invalid — SendGrid not called]
+    vBlocked -->|no| vSendgrid[POST validateEmail]
+    vSendgrid --> vSgNet{Network error?}
+    vSgNet -->|yes| vNetwork[network]
+    vSgNet -->|no| vSgVerdict{Invalid or Risky with suggestion?}
+    vSgVerdict -->|yes| vInvalid
+    vSgVerdict -->|no| vOk[ok]
+  end
+
+  validate -.-> validateSubmittedEmail

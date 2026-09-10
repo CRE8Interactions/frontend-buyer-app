@@ -15,7 +15,8 @@ shared helpers and field components.
 
 | Need | Import |
 |------|--------|
-| Rules and copy | `lib/fieldValidation.ts` (`normalizeEmail`, `isBlockedEmail`, `emailPatternMatch`, `emailLooksInvalid`, `emailBlurInvalid`, `emailSubmitError`, `emailSubmitInvalid`, `formString`, `submittedEmail`, `nameAllows`, `nameFieldError`, `namePatternMatch`, `phoneNumberError`, `normalizeOtp`, `codeSubmitError`, `requiredCopy`, `FIELD_COPY`) |
+| Rules and copy | `lib/fieldValidation.ts` (`normalizeEmail`, `isBlockedEmail`, `emailPatternMatch`, `emailLooksInvalid`, `emailBlurInvalid`, `emailSubmitError`, `emailSubmitInvalid`, `sendgridEmailInvalid`, `formString`, `submittedEmail`, `nameAllows`, `nameFieldError`, `namePatternMatch`, `phoneNumberError`, `normalizeOtp`, `codeSubmitError`, `requiredCopy`, `FIELD_COPY`) |
+| Submit-time email (local + SendGrid) | `lib/submitEmailValidation.ts` (`validateSubmittedEmail`) |
 | Email input | `components/molecules/EmailField.tsx` |
 | Name input | `components/molecules/NameField.tsx` |
 | OTP / verify code | `components/molecules/CodeField.tsx` |
@@ -48,9 +49,9 @@ code should import from `lib/fieldValidation.ts`.
 1. Read the submitted/DOM value, then trim and lowercase with `normalizeEmail`.
 2. `isBlockedEmail` first (disposable domains and `.ru` / `.ua`).
 3. Then syntax via `emailPatternMatch` / `emailLooksInvalid`.
-4. Then SendGrid `validateEmail` **only** on send-code paths (login / wallet).
-   Waitlist, transfer, donate, and personal-details stay local unless that
-   flow already called SendGrid.
+4. Then SendGrid `validateEmail` on every shopper email submit via
+   `validateSubmittedEmail` in `lib/submitEmailValidation.ts` (login, guest
+   checkout, transfer, waitlist, donate). Blocked domains never reach the API.
 
 Invalid/blocked copy is `FIELD_COPY.invalidEmail`. Empty email copy is
 `FIELD_COPY.emailRequired`. Network copy is `FIELD_COPY.network`. Do not invent

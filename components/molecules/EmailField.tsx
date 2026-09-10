@@ -6,6 +6,7 @@ import {
   FIELD_COPY,
   fieldClass,
   fieldErrorTextClass,
+  fieldShowsError,
   requiredCopy,
   type EmailFieldError,
   type FieldVariant,
@@ -19,6 +20,7 @@ export default function EmailField({
   onChange,
   onBlur,
   error = null,
+  errorMessage = null,
   invalid = false,
   networkError = false,
   disabled = false,
@@ -35,6 +37,7 @@ export default function EmailField({
   onChange: (value: string) => void;
   onBlur?: (value: string) => void;
   error?: EmailFieldError;
+  errorMessage?: string | null;
   invalid?: boolean;
   networkError?: boolean;
   disabled?: boolean;
@@ -49,6 +52,7 @@ export default function EmailField({
   const kind: EmailFieldError = error ?? (invalid ? "invalid" : null);
   const showInvalid = Boolean(kind);
   const showNetwork = !showInvalid && networkError;
+  const showError = fieldShowsError(showInvalid || showNetwork, errorMessage);
   const sync = (next: string) => onChange(next);
   return (
     <div className={className}>
@@ -73,8 +77,8 @@ export default function EmailField({
         value={value}
         disabled={disabled}
         readOnly={readOnly}
-        aria-invalid={showInvalid || showNetwork}
-        className={`${label ? "mt-2" : ""} ${fieldClass(variant, showInvalid || showNetwork)} ${
+        aria-invalid={showError}
+        className={`${label ? "mt-2" : ""} ${fieldClass(variant, showError)} ${
           disabled || readOnly ? "cursor-default disabled:cursor-default opacity-70" : ""
         }`}
         {...rest}
@@ -88,6 +92,10 @@ export default function EmailField({
         </p>
       ) : kind === "invalid" ? (
         <p className={fieldErrorTextClass(variant)}>{FIELD_COPY.invalidEmail}</p>
+      ) : errorMessage ? (
+        <p className={fieldErrorTextClass(variant)} role="alert">
+          {errorMessage}
+        </p>
       ) : showNetwork ? (
         <p className={fieldErrorTextClass(variant)}>{FIELD_COPY.network}</p>
       ) : null}

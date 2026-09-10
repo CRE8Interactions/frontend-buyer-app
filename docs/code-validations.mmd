@@ -1,21 +1,29 @@
 %% Step 1: code (OTP)
-%% Source: app/login/page.tsx and lib/fieldValidation.ts
-%% Code: Code is incorrect. Please try again
+%% Source: app/login/page.tsx, lib/fieldValidation.ts
+%% Code incorrect: Code is incorrect. Please try again
 %% Network: We're experiencing technical difficulties. Please try again later.
 
 flowchart TD
-  codeStep[Step 1: 6-digit code] --> typeCode[CodeField: digits only, max 6]
+  codeStep[Step 1: 6-digit code] --> typeCode[Enter digits only, max 6]
   typeCode --> len6{Length is 6?}
-  len6 -->|no| waitCode[Wait — no submit button]
+  len6 -->|no| waitCode[Wait for 6 digits]
   waitCode --> typeCode
   len6 -->|yes| verifyCode[verifyCode automatically]
 
-  verifyCode --> answered{Did the API answer on the code?}
-  answered -->|"no: offline, timeout 408, rate limit 429, 5xx"| codeNetwork[Show network copy]
+  verifyCode --> catchPath{Request failed?}
+  catchPath -->|yes| codeSubmitErr[codeSubmitError]
+  codeSubmitErr -->|"4xx except 408 and 429"| badCode["Code is incorrect. Please try again"]
+  codeSubmitErr -->|"408, 429, 5xx, or no status"| codeNetwork["We're experiencing technical difficulties. Please try again later."]
+  badCode --> codeStep
   codeNetwork --> codeStep
-  answered -->|yes| codeStatus{HTTP status}
 
+  catchPath -->|no| codeStatus{HTTP status}
   codeStatus -->|200 existing user| sessionOk[setSession and redirect]
   codeStatus -->|203 new user| nextStep[Continue to Step 2: create account]
-  codeStatus -->|"any other 4xx, e.g. 400 Code provided is incorrect"| badCode["Code is incorrect. Please try again"]
-  badCode --> codeStep
+  codeStatus -->|other| badCode
+
+  codeStep --> resendClick[Send a new code]
+  resendClick --> resendApi[verifyUser resend OTP]
+  resendApi --> resendFail{Network error?}
+  resendFail -->|yes| codeNetwork
+  resendFail -->|no| resentOk[Success — no error message]

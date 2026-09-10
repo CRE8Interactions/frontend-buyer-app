@@ -78,13 +78,10 @@ export default function PhoneNumberInput({
     <div>
       <div
         ref={fieldRef}
-        className={`phone-field mt-2 rounded-[14px] border px-3 ${
+        aria-invalid={invalid}
+        className={`phone-field bt-focus-edge mt-2 rounded-[14px] border px-3 ${
           dark ? "bg-[#051B35]" : "bg-[#f7f8fc]"
-        } ${
-          invalid
-            ? "bt-focus-edge border-[#c2394a]"
-            : `bt-focus-edge ${dark ? "border-white/15" : "border-[rgba(5,27,53,0.12)]"}`
-        }`}
+        } ${dark ? "border-white/15" : "border-[rgba(5,27,53,0.12)]"}`}
       >
         <PhoneInput
           id={id}

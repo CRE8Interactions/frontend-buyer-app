@@ -6,6 +6,10 @@ import GuestContact from "@/components/organisms/GuestContact";
 import { DEMO_USER } from "@/lib/demo/fixtures";
 import { FIELD_COPY } from "@/lib/fieldValidation";
 
+vi.mock("@/lib/api", () => ({
+  validateEmail: vi.fn(async () => ({ data: { verdict: "Valid" } })),
+}));
+
 vi.mock("next/link", () => ({
   default: ({
     href,

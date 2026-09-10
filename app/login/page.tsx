@@ -17,9 +17,9 @@ import {
   verifyUser,
   verifyCode,
   createNewUser,
-  validateEmail,
 } from "@/lib/api";
 import { setSession, getLastKnown, type AuthSession } from "@/lib/auth";
+import { validateSubmittedEmail } from "@/lib/submitEmailValidation";
 import {
   FIELD_COPY,
   codeSubmitError,
@@ -156,27 +156,19 @@ function LoginForm() {
   };
 
   const submitEmailStep = async (rawEmail?: string) => {
-    const nextEmail = normalizeEmail(rawEmail ?? email);
-    setEmail(nextEmail);
-    const kind = emailSubmitError(nextEmail);
-    if (kind) {
-      setEmailError(kind);
+    setIsSaving(true);
+    setHasError(false);
+    const result = await validateSubmittedEmail(rawEmail ?? email);
+    setEmail(result.email);
+    if (!result.ok) {
+      if (result.error === "network") setHasError(true);
+      else setEmailError(result.error);
+      setIsSaving(false);
       return;
     }
     setEmailError(null);
-    setIsSaving(true);
-    setHasError(false);
     try {
-      const res = await validateEmail({ email: nextEmail });
-      const data = res.data as { verdict?: string; suggestion?: string };
-      if (
-        (data.verdict === "Risky" && data.suggestion) ||
-        data.verdict === "Invalid"
-      ) {
-        setEmailError("invalid");
-        return;
-      }
-      await sendCode(nextEmail);
+      await sendCode(result.email);
     } catch {
       setHasError(true);
     } finally {
