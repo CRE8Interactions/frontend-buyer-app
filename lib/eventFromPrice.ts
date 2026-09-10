@@ -154,11 +154,16 @@ export function packageFromPriceLabel(
   return amount == null ? null : formatCurrency(amount);
 }
 
+/** Package detail price line — integer amounts skip cents, like blocktickets. */
+export function formatPackageFromPriceAmount(amount: number): string {
+  const n = Number(amount) || 0;
+  if (n % 1 === 0) return `$${n.toLocaleString("en-US")}`;
+  return formatCurrency(n);
+}
+
 /** Package detail FROM copy — integer amounts skip cents, like blocktickets. */
 export function formatPackageFromPrice(amount: number): string {
-  const n = Number(amount) || 0;
-  if (n % 1 === 0) return `From $${n.toLocaleString("en-US")}`;
-  return `From ${formatCurrency(n)}`;
+  return `From ${formatPackageFromPriceAmount(amount)}`;
 }
 
 /** "$45.00" for the first pricing level, or null when none is published. */

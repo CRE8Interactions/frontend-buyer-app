@@ -14,6 +14,9 @@ export type RevealBounds = {
 
 const REVEAL_MARGIN_PX = 12;
 
+/** Shared with seat taps and map pan so a click is not treated as a drag. */
+export const SEATMAP_TAP_THRESHOLD_PX = 5;
+
 /**
  * How far the map has to pan for a seat-anchored popup to fit inside the map
  * area. The popup keeps pointing at its seat because the seat moves with the

@@ -36,12 +36,22 @@ export function markInAppNavigation() {
 }
 
 export function goBack(fallbackHref: string, router?: AppRouterLike) {
+  const dest = backFallbackHref(fallbackHref);
+  // Team, venue, and event headers label this as Back to browse — never walk
+  // browser history or another org can appear after checkout detours.
+  if (dest === BACK_FALLBACK_HREF) {
+    if (router) {
+      router.push(dest);
+      return;
+    }
+    window.location.assign(dest);
+    return;
+  }
   if (canGoBackInApp()) {
     if (router) router.back();
     else window.history.back();
     return;
   }
-  const dest = backFallbackHref(fallbackHref);
   if (router) {
     router.push(dest);
     return;

@@ -185,7 +185,7 @@ export function buildAccessPassSummaries(
         checkInCode: String(pass.checkInCode || ""),
         seat: seatLabel(pass),
         eventCount: events.length,
-        attendedCount: events.filter((event) => event.status === "complete").length,
+        attendedCount: events.filter((event) => isEventComplete(event)).length,
         season: events[0]?.start ? moment(events[0].start).format("YYYY") : "",
         status: pass.status
           ? `${pass.status.charAt(0).toUpperCase()}${pass.status.slice(1)}`
@@ -196,8 +196,8 @@ export function buildAccessPassSummaries(
         events,
         nextEvent:
           events.find(
-            (event) => event.status !== "complete" && isUpcomingEvent(event),
-          ) || events.find((event) => event.status !== "complete"),
+            (event) => isWalletListedEvent(event),
+          ) || events.find((event) => !isEventComplete(event)),
         artwork: pass.artwork ? imageUrl(pass.artwork, "") : undefined,
         backgroundColor: pass.backgroundColor || pass.primaryColor,
         fontColor: pass.fontColor,
@@ -225,10 +225,119 @@ export function formatTicketHolderName(source?: {
   return String(source?.email ?? "").trim() || "Guest";
 }
 
+export function isGenericGeneralAdmissionLabel(value: unknown): boolean {
+  return /^general\s+admission$/i.test(String(value ?? "").trim());
+}
+
+/** Prefer concrete section/row values over generic GA placeholder labels. */
+export function ticketFieldValue(...candidates: unknown[]): string {
+  for (const candidate of candidates) {
+    const text = String(candidate ?? "").trim();
+    if (text && !isGenericGeneralAdmissionLabel(text)) return text;
+  }
+  for (const candidate of candidates) {
+    const text = String(candidate ?? "").trim();
+    if (text) return text;
+  }
+  return "";
+}
+
+export function ticketSectionValue(
+  ticket?: TicketLike | Record<string, unknown> | null,
+): string {
+  if (!ticket) return "";
+  for (const candidate of [
+    ticket.sectionNumber,
+    ticket.sectionName,
+    ticket.section_number,
+    ticket.section_name,
+  ]) {
+    const text = String(candidate ?? "").trim();
+    if (text && !isGenericGeneralAdmissionLabel(text)) return text;
+  }
+  return "";
+}
+
+export function ticketRowValue(
+  ticket?: TicketLike | Record<string, unknown> | null,
+): string {
+  if (!ticket) return "";
+  for (const candidate of [
+    ticket.rowNumber,
+    ticket.rowName,
+    ticket.row_number,
+    ticket.row_name,
+  ]) {
+    const text = String(candidate ?? "").trim();
+    if (text && !isGenericGeneralAdmissionLabel(text)) return text;
+  }
+  return "";
+}
+
+/** Actual seat number/name only — never invent GA for general admission tickets. */
+export function ticketSeatValue(
+  ticket?: TicketLike | Record<string, unknown> | null,
+): string {
+  if (!ticket) return "";
+  for (const candidate of [
+    ticket.seatNumber,
+    ticket.seat_number,
+    ticket.seatName,
+    ticket.seat_name,
+  ]) {
+    const text = String(candidate ?? "").trim();
+    if (text && !/^GA$/i.test(text) && !isGenericGeneralAdmissionLabel(text)) {
+      return text;
+    }
+  }
+  return "";
+}
+
+export function gaTicketSeatLine(
+  ticket?: TicketLike | Record<string, unknown> | null,
+): string {
+  const sec = ticketSectionValue(ticket);
+  const row = ticketRowValue(ticket);
+  const seat = ticketSeatValue(ticket);
+  const parts: string[] = [];
+  if (sec) parts.push(`Sec ${sec}`);
+  if (row) parts.push(`Row ${row}`);
+  if (seat) parts.push(`Seat ${seat}`);
+  if (!parts.length) return "GA";
+  return parts.join(" · ");
+}
+
+function seatTokenFromSeatLine(seatLine: string): string {
+  const seatMatch = seatLine.match(/Seat\s+([^·]+)/i);
+  if (seatMatch?.[1]) return seatMatch[1].trim();
+  const parts = seatLine
+    .split("·")
+    .map((part) => part.trim())
+    .filter(Boolean);
+  const last = parts[parts.length - 1] ?? seatLine.trim();
+  if (/^GA$/i.test(last) || isGenericGeneralAdmissionLabel(last)) return "GA";
+  if (parts.length === 1) return parts[0];
+  return last;
+}
+
+/** GA wallet lines like "Sec ga" or "GA" without row/seat parts. */
+function isGaSeatLine(seatLine?: string | null): boolean {
+  const normalized = String(seatLine ?? "").trim();
+  if (!normalized) return false;
+  if (/^GA$/i.test(normalized) || isGenericGeneralAdmissionLabel(normalized)) {
+    return true;
+  }
+  return (
+    /^Sec\s+.+/i.test(normalized) &&
+    !/\bRow\b/i.test(normalized) &&
+    !/\bSeat\b/i.test(normalized)
+  );
+}
+
 export function seatLabel(ticket?: TicketLike | null): string {
   if (!ticket) return "Ticket";
-  if (ticket.generalAdmission) {
-    return ticket.sectionNumber != null ? `GA ${ticket.sectionNumber}` : "GA";
+  if (ticket.generalAdmission || ticket.GA) {
+    return gaTicketSeatLine(ticket);
   }
   return [
     ticket.sectionNumber != null ? `Sec ${ticket.sectionNumber}` : null,
@@ -237,6 +346,84 @@ export function seatLabel(ticket?: TicketLike | null): string {
   ]
     .filter(Boolean)
     .join(" · ");
+}
+
+function transferGroupSectionValue(
+  ticket: TicketLike | Record<string, unknown>,
+): string {
+  const fromFields = ticketSectionValue(ticket);
+  if (fromFields) return fromFields;
+  for (const candidate of [
+    ticket.sectionNumber,
+    ticket.section_number,
+    ticket.sectionName,
+    ticket.section_name,
+  ]) {
+    const text = String(candidate ?? "").trim();
+    if (text && !isGenericGeneralAdmissionLabel(text)) return text;
+  }
+  return "";
+}
+
+function isTransferGroupGeneralAdmission(
+  ticket: TicketLike | Record<string, unknown>,
+): boolean {
+  if (ticket.generalAdmission || ticket.GA) return true;
+  if (ticketRowValue(ticket) || ticketSeatValue(ticket)) return false;
+  const section = transferGroupSectionValue(ticket);
+  if (/^ga$/i.test(section)) return true;
+  return [
+    ticket.offerName,
+    ticket.offer_name,
+    ticket.sectionName,
+    ticket.section_name,
+  ].some((candidate) => isGenericGeneralAdmissionLabel(candidate));
+}
+
+/** Transfer modal group label: Sec/Row for reserved seats; Sec only for GA. */
+export function transferGroupLabel(
+  ticket?: TicketLike | Record<string, unknown> | null,
+): string {
+  if (!ticket) return "";
+  const section = transferGroupSectionValue(ticket);
+  const row = ticketRowValue(ticket);
+  const isGA = isTransferGroupGeneralAdmission(ticket);
+
+  if (isGA) {
+    return section ? `Sec ${section}` : "Sec";
+  }
+
+  const parts: string[] = [];
+  if (section) parts.push(`Sec ${section}`);
+  if (row) parts.push(`Row ${row}`);
+  return parts.join(" · ");
+}
+
+/** Transfer modal seat chip: GA tickets show "GA" with no "Seat" prefix. */
+export function transferSeatChip(
+  ticket?: TicketLike | null,
+  seatLine?: string,
+): { seatNo: string; isGA: boolean; ariaLabel: string } {
+  const actualSeat = ticketSeatValue(ticket);
+  const parsed =
+    seatLine != null
+      ? seatTokenFromSeatLine(seatLine)
+      : actualSeat || "—";
+  const isGA =
+    Boolean(ticket?.generalAdmission || ticket?.GA) ||
+    isGaSeatLine(seatLine) ||
+    /^GA$/i.test(parsed) ||
+    isGenericGeneralAdmissionLabel(parsed) ||
+    (ticket?.seatNumber != null &&
+      isGenericGeneralAdmissionLabel(String(ticket.seatNumber).trim()));
+  const seatNo = isGA
+    ? actualSeat || "GA"
+    : actualSeat || parsed || "—";
+  return {
+    seatNo,
+    isGA,
+    ariaLabel: isGA ? (actualSeat || "GA") : `Seat ${seatNo}`,
+  };
 }
 
 export function eventTimezone(event?: EventLike | null, fallback?: string) {
@@ -263,11 +450,39 @@ export function venueImage(venue?: VenueLike | null, fallback = "/hero-bg-stadiu
   return imageUrl(img as ApiImage, fallback);
 }
 
+function eventStatusValue(event?: EventLike | null) {
+  if (!event) return "";
+  const status = event.status;
+  if (typeof status === "string") return status.trim().toLowerCase();
+  if (status && typeof status === "object" && "name" in status) {
+    return String((status as { name?: string }).name || "")
+      .trim()
+      .toLowerCase();
+  }
+  return "";
+}
+
+/** Blocktickets drops completed games from wallet lists once the API marks them. */
+export function isEventComplete(event?: EventLike | null) {
+  const status = eventStatusValue(event);
+  return status === "complete" || status === "completed";
+}
+
+/** Wallet lists only include games that have not ended yet (venue-local time). */
 export function isUpcomingEvent(event?: EventLike | null) {
-  if (!event) return false;
-  if (event.status === "complete") return false;
+  if (!event || isEventComplete(event)) return false;
   if (!event.start) return true;
-  return moment(event.start).isAfter(moment().subtract(6, "hours"));
+  const tz = toIanaTimezone(event.venue?.timezone);
+  const start = tz ? moment.tz(event.start, tz) : moment(event.start);
+  const cutoff = tz
+    ? moment.tz(tz).subtract(6, "hours")
+    : moment().subtract(6, "hours");
+  return start.isAfter(cutoff);
+}
+
+/** Wallet my-tickets rows match Blocktickets: status is not complete and still upcoming. */
+export function isWalletListedEvent(event?: EventLike | null) {
+  return isUpcomingEvent(event);
 }
 
 export function isToday(start?: string, timezone?: string) {

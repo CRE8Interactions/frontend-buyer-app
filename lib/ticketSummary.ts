@@ -3,6 +3,11 @@
 import { packageFromPrice } from "@/lib/eventFromPrice";
 import { flexPackVoucherFee } from "@/lib/flexPackDisplay";
 import { formatEventWhen, type TimezoneLike } from "@/lib/helpers";
+import {
+  gaTicketSeatLine,
+  ticketRowValue,
+  ticketSectionValue,
+} from "@/lib/wallet";
 
 export type TicketSelectionSummary = {
   count: number;
@@ -148,13 +153,13 @@ export function ticketSelectionSummary(
 ): TicketSelectionSummary {
   const count = tickets.length;
   const first = tickets[0] || {};
-  const section = String(first.sectionName || first.sectionNumber || "");
-  const row = String(first.rowNumber || "");
-  const ga = Boolean(first.generalAdmission);
+  const section = ticketSectionValue(first);
+  const row = ticketRowValue(first);
+  const ga = Boolean(first.generalAdmission || first.GA);
   const sameBlock = tickets.every(
     (ticket) =>
-      String(ticket.sectionName || ticket.sectionNumber || "") === section &&
-      String(ticket.rowNumber || "") === row,
+      ticketSectionValue(ticket) === section &&
+      ticketRowValue(ticket) === row,
   );
   const offerName = options?.defaultOffer
     ? selectionOfferName(first, options.defaultOffer)
@@ -165,7 +170,7 @@ export function ticketSelectionSummary(
     0,
   );
   const seatLine = ga
-    ? String(first.sectionName || first.offerName || "GA")
+    ? gaTicketSeatLine(first)
     : count === 1
       ? `Sec ${section} · Row ${row} · Seat ${first.seatNumber}`
       : sameBlock
@@ -473,8 +478,8 @@ export function packageSeatLines(
   const seenSeat = new Set<string>();
 
   tickets.forEach((ticket, index) => {
-    const section = String(ticket.sectionName || ticket.sectionNumber || "GA");
-    const row = String(ticket.rowNumber || ticket.rowName || "—");
+    const section = ticketSectionValue(ticket) || "GA";
+    const row = ticketRowValue(ticket) || "—";
     const seatNumber =
       (ticket.seatNumber as string | number | null | undefined) ?? "—";
     const ga = Boolean(ticket.GA || ticket.generalAdmission);
@@ -518,7 +523,7 @@ export function packageSeatLines(
     const uniqueSeats = new Set(group.seatNumbers.map((seat) => String(seat))).size || 1;
     return {
       seatLine: group.ga
-        ? `Sec ${group.section} · General admission`
+        ? gaTicketSeatLine({ sectionNumber: group.section, rowNumber: group.row, generalAdmission: true })
         : `Sec ${group.section} · Row ${group.row} · ${formatSeatNumbers(group.seatNumbers)}`,
       context: group.context,
       price: group.amount > 0 ? group.amount : unitPrice * uniqueSeats,

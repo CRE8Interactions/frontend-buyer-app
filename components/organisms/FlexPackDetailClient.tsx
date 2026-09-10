@@ -552,13 +552,22 @@ export default function FlexPackDetailClient({
             gap: 12,
           }}
         >
-          <div style={{ display: "flex", flexDirection: "column", gap: 1 }}>
+          <div
+            style={{
+              display: "flex",
+              flexDirection: "column",
+              gap: 1,
+              minWidth: 0,
+              flexShrink: 0,
+            }}
+          >
             <span
               style={{
-                fontSize: fluidSize(18),
+                fontSize: fluidSize(26),
                 fontWeight: 600,
                 letterSpacing: "-0.02em",
                 fontVariantNumeric: "tabular-nums",
+                color: "#000",
               }}
             >
               {formatCurrency(flexPack.price)}

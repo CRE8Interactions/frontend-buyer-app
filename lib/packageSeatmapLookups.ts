@@ -68,6 +68,15 @@ export function createPackageLookupTables(
   };
 }
 
+function packageTicketSeatIds(ticket: TicketGroup): string[] {
+  const ids = new Set<string>();
+  if (ticket.seatId != null) ids.add(String(ticket.seatId));
+  for (const seatId of (ticket.seatIds as Array<string | number> | undefined) || []) {
+    ids.add(String(seatId));
+  }
+  return [...ids];
+}
+
 function createPackageSeatLookupTable(
   seatedTickets: TicketGroup[],
   eventPackage: PackageForSeatmap,
@@ -77,14 +86,18 @@ function createPackageSeatLookupTable(
   const lookupTable: Record<string, TicketGroup> = {};
 
   seatedTickets.forEach((ticket) => {
-    if (ticket.seatId == null) return;
-    lookupTable[String(ticket.seatId)] = {
-      ...ticket,
-      GA: false,
-      price: packageTierPrice ?? ticket.price,
-      resale: false,
-      package: packageQuantitySource(eventPackage),
-    };
+    const seatIds = packageTicketSeatIds(ticket);
+    if (!seatIds.length) return;
+    seatIds.forEach((seatId) => {
+      lookupTable[seatId] = {
+        ...ticket,
+        seatId,
+        GA: false,
+        price: packageTierPrice ?? ticket.price,
+        resale: false,
+        package: packageQuantitySource(eventPackage),
+      };
+    });
   });
 
   (purchaseLog?.sold_package_tickets || []).forEach((soldSeatId) => {

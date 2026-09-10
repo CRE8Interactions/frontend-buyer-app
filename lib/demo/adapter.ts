@@ -21,6 +21,7 @@ import {
   demoGroupInvitation,
   demoPackageAccessPass,
   demoPublicMenu,
+  demoSeasonPackage,
 } from "./fixtures";
 
 type DemoResult = { data: unknown; status?: number };
@@ -81,21 +82,53 @@ function parseBody(config: InternalAxiosRequestConfig): Record<string, unknown> 
   return d as Record<string, unknown>;
 }
 
-const walletOrders = () => [
-  demoCompletedTicketOrder({ source: "website" }),
-  demoCompletedTicketOrder({
-    id: 128186,
-    orderId: "1474-145929-3863",
-    source: "box_office",
-  }),
-  demoCompletedTicketOrder({
-    id: 128187,
-    orderId: "1474-145929-3864",
-    source: "ticket_assignment",
-  }),
-  demoCompletedPackageOrder({ source: "ticket_assignment" }),
-  demoCompletedFlexPackOrder({ source: "website" }),
-];
+type DemoWalletOrder = ReturnType<typeof demoCompletedTicketOrder>;
+type DemoSentTransfer = {
+  id: string;
+  status: "pending";
+  orderId?: string | number;
+  email?: string;
+  emailAddressToUser?: string;
+  fromUserEmail?: string;
+  event?: DemoWalletOrder["event"];
+  tickets?: DemoWalletOrder["tickets"];
+};
+
+function initialWalletOrders(): DemoWalletOrder[] {
+  return [
+    demoCompletedTicketOrder({ source: "website" }),
+    demoCompletedTicketOrder({
+      id: 128186,
+      orderId: "1474-145929-3863",
+      source: "box_office",
+    }),
+    demoCompletedTicketOrder({
+      id: 128187,
+      orderId: "1474-145929-3864",
+      source: "ticket_assignment",
+    }),
+    demoCompletedPackageOrder({ source: "ticket_assignment" }),
+    demoCompletedFlexPackOrder({ source: "website" }),
+  ];
+}
+
+let demoWalletOrdersState: DemoWalletOrder[] | null = null;
+const demoSentTransfers: DemoSentTransfer[] = [];
+const demoReceivedTransfers: DemoSentTransfer[] = [];
+
+function walletOrders() {
+  if (!demoWalletOrdersState) {
+    demoWalletOrdersState = initialWalletOrders();
+  }
+  return demoWalletOrdersState;
+}
+
+function findDemoWalletOrder(orderId: unknown) {
+  const target = String(orderId ?? "");
+  return walletOrders().find(
+    (row) => String(row.id) === target || String(row.orderId) === target,
+  );
+}
 
 const routes: Route[] = [
   // ---- Browse / discovery (real snapshots) ----
@@ -163,6 +196,23 @@ const routes: Route[] = [
             : [],
       },
     }),
+  },
+
+  // ---- Season packages ----
+  {
+    methods: ["get"],
+    match: (p) => /\/packages\/get-package-fe/.test(p),
+    handle: async (p) => {
+      const uuid =
+        new URLSearchParams(p.split("?")[1] || "").get("uuid") ||
+        "pkg-nms-level-a";
+      return {
+        data: {
+          eventPackage: demoSeasonPackage({ uuid, id: uuid }),
+          purchaseLog: null,
+        },
+      };
+    },
   },
 
   // ---- Seatmap (must come before the event route) ----
@@ -272,15 +322,95 @@ const routes: Route[] = [
   { methods: ["post"], match: endsWith("/events/place-tickets-into-cart"), handle: () => ({ data: demoCart() }) },
   { methods: ["post"], match: endsWith("/tickets/checkAccessCode"), handle: () => ({ data: true }) },
   {
+    methods: ["get"],
+    match: (path) => path.includes("/ticket-transfers?filters[fromUserEmail]"),
+    handle: () => ({ data: demoSentTransfers }),
+  },
+  {
+    methods: ["get"],
+    match: endsWith("/ticket-transfers/incoming"),
+    handle: () => ({
+      data: demoReceivedTransfers.filter((row) => row.status === "pending"),
+    }),
+  },
+  {
+    methods: ["get"],
+    match: (path) =>
+      path.includes("/ticket-transfers?") &&
+      path.includes("filters[emailAddressToUser]"),
+    handle: (path) => {
+      const match = path.match(/filters\[emailAddressToUser\]\[\$eq\]=([^&]+)/i);
+      const email = decodeURIComponent(match?.[1] || "")
+        .trim()
+        .toLowerCase();
+      return {
+        data: demoReceivedTransfers.filter(
+          (row) =>
+            String(row.emailAddressToUser || row.email || "")
+              .trim()
+              .toLowerCase() === email,
+        ),
+      };
+    },
+  },
+  {
+    methods: ["post"],
+    match: endsWith("/ticket-transfers/accept"),
+    handle: (_path, config) => {
+      const body = parseBody(config);
+      const transferId = String(body.transferId || "");
+      const index = demoReceivedTransfers.findIndex(
+        (row) => String(row.id) === transferId,
+      );
+      if (index >= 0) {
+        demoReceivedTransfers.splice(index, 1);
+      }
+      return { data: { status: "claimed", transferId } };
+    },
+  },
+  {
     methods: ["post"],
     match: endsWith("/ticket-transfers"),
-    handle: (_path, config) => ({
-      data: {
-        id: "demo-ticket-transfer",
-        status: "pending",
-        ...parseBody(config),
-      },
-    }),
+    handle: (_path, config) => {
+      const body = parseBody(config);
+      const ticketIds = Array.isArray(body.ticketIds)
+        ? body.ticketIds.map((value) => String(value))
+        : [];
+      const order = findDemoWalletOrder(body.orderId);
+      const transferredTickets =
+        order?.tickets?.filter((ticket) =>
+          ticketIds.includes(String(ticket.id)),
+        ) ?? [];
+      if (order && transferredTickets.length) {
+        order.tickets = order.tickets.filter(
+          (ticket) => !ticketIds.includes(String(ticket.id)),
+        );
+        const recipientEmail = String(body.email || "");
+        const transferRecord = {
+          id: `demo-ticket-transfer-${demoSentTransfers.length + 1}`,
+          status: "pending" as const,
+          orderId: order.id ?? order.orderId,
+          email: recipientEmail,
+          emailAddressToUser: recipientEmail,
+          fromUserEmail: DEMO_SESSION.user.email,
+          event: order.event,
+          tickets: transferredTickets.map((ticket) => ({
+            ...ticket,
+            transferStatus: "pending",
+            ticketTransfer: { status: "pending" },
+          })),
+        };
+        demoSentTransfers.unshift(transferRecord);
+        demoReceivedTransfers.unshift(transferRecord);
+      }
+      return {
+        data: {
+          id: "demo-ticket-transfer",
+          status: "pending",
+          ...body,
+        },
+      };
+    },
   },
 
   // ---- Login (any code works) ----

@@ -253,7 +253,41 @@ describe("team and venue back buttons", () => {
     });
   });
 
-  it("restores the previous page from the circular back control after in-app navigation", async () => {
+  it("pins the team profile sidebar while scrolling on desktop", () => {
+    Object.defineProperty(window, "innerWidth", {
+      configurable: true,
+      writable: true,
+      value: 1280,
+    });
+    render(
+      <ClientProfile
+        slug={nmState.slug}
+        initialData={{
+          organization: nmState,
+          events: nmStateEvents,
+          venues: nmState.venues,
+        }}
+      />,
+    );
+
+    const sidebar = screen.getByTestId("team-profile-sidebar");
+    expect(sidebar).toHaveStyle({
+      position: "sticky",
+    });
+    expect(sidebar).toHaveTextContent(nmState.name);
+    expect(
+      screen.getByText(
+        teamStorefrontDescription(nmState.name, nmState.venues),
+      ),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        teamStorefrontDescription(nmState.name, nmState.venues),
+      ).closest("[data-testid='team-profile-sidebar']"),
+    ).toBe(sidebar);
+  });
+
+  it("always sends the team page back button to browse after in-app navigation", async () => {
     markInAppNavigation();
     render(
       <ClientProfile
@@ -267,8 +301,8 @@ describe("team and venue back buttons", () => {
     );
 
     await userEvent.click(screen.getByRole("link", { name: /back to browse/i }));
-    expect(routerMocks.back).toHaveBeenCalledTimes(1);
-    expect(routerMocks.push).not.toHaveBeenCalled();
+    expect(routerMocks.push).toHaveBeenCalledWith("/browse/");
+    expect(routerMocks.back).not.toHaveBeenCalled();
   });
 
   it("falls back to browse when the circular back control has no in-app history", async () => {
@@ -308,6 +342,49 @@ describe("team and venue back buttons", () => {
     expect(screen.queryByText(/see tickets/i)).not.toBeInTheDocument();
     expect(screen.queryByText("—")).not.toBeInTheDocument();
     expect(screen.queryByRole("status", { name: /loading/i })).not.toBeInTheDocument();
+  });
+
+  it("pins the venue profile sidebar while scrolling on desktop", async () => {
+    Object.defineProperty(window, "innerWidth", {
+      configurable: true,
+      writable: true,
+      value: 1280,
+    });
+    const venue = demoBrowseVenues().find(
+      (row) => row.slug === nmState.homeVenue.slug,
+    )!;
+    mockedGetVenue.mockResolvedValue({ data: [venue] } as never);
+    mockedGetVenues.mockResolvedValue({ data: [venue] } as never);
+    mockedGetUpcoming.mockResolvedValue({ data: [] } as never);
+
+    render(<VenueProfile slug={venue.slug} />);
+
+    expect(await screen.findByTestId("venue-profile-sidebar")).toHaveStyle({
+      position: "sticky",
+    });
+  });
+
+  it("shows venue capacity in the desktop sidebar", async () => {
+    Object.defineProperty(window, "innerWidth", {
+      configurable: true,
+      writable: true,
+      value: 1280,
+    });
+    const venue = {
+      ...demoBrowseVenues().find(
+        (row) => row.slug === nmState.homeVenue.slug,
+      )!,
+      capacity: 1000,
+    };
+    mockedGetVenue.mockResolvedValue({ data: [venue] } as never);
+    mockedGetVenues.mockResolvedValue({ data: [venue] } as never);
+    mockedGetUpcoming.mockResolvedValue({ data: [] } as never);
+
+    render(<VenueProfile slug={venue.slug} />);
+
+    expect(await screen.findByTestId("venue-profile-sidebar")).toHaveTextContent(
+      "1,000 capacity",
+    );
   });
 
   it("sends the venue page back button to browse", async () => {
@@ -405,6 +482,68 @@ describe("venue page actions", () => {
     expect(
       await screen.findByRole("link", { name: /visit venue website/i }),
     ).toHaveAttribute("href", venue.website);
+  });
+
+  it("shows the venue description with Show more on mobile", async () => {
+    Object.defineProperty(window, "innerWidth", {
+      configurable: true,
+      writable: true,
+      value: 390,
+    });
+    const venueDescription =
+      "Pan American Center is a multi-purpose arena in Las Cruces, New Mexico, located on the campus of New Mexico State University. The arena has a current seating capacity of 12,515 people. The arena serves as home of the New Mexico State Aggies men's and women's basketball and women's volleyball teams.";
+    const panAm = nmState.venues.find((row) => row.slug === "pan-american-center")!;
+    const venue = {
+      ...panAm,
+      description: venueDescription,
+      capacity: 12080,
+    };
+    mockedGetVenue.mockResolvedValue({ data: [venue] } as never);
+    mockedGetVenues.mockResolvedValue({ data: [venue] } as never);
+    mockedGetUpcoming.mockResolvedValue({ data: { allEvents: [] } } as never);
+
+    vi.spyOn(HTMLElement.prototype, "scrollHeight", "get").mockReturnValue(240);
+    vi.spyOn(HTMLElement.prototype, "clientHeight", "get").mockReturnValue(80);
+
+    render(<VenueProfile slug={venue.slug} />);
+
+    expect(await screen.findByTestId("venue-profile-mobile-card")).toBeInTheDocument();
+    expect(screen.getByText(venueDescription)).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: /show more/i }),
+    ).toBeInTheDocument();
+
+    vi.restoreAllMocks();
+  });
+
+  it("shows the team description with Show more on mobile", async () => {
+    Object.defineProperty(window, "innerWidth", {
+      configurable: true,
+      writable: true,
+      value: 390,
+    });
+    const about = teamStorefrontDescription(nmState.name, nmState.venues);
+    vi.spyOn(HTMLElement.prototype, "scrollHeight", "get").mockReturnValue(240);
+    vi.spyOn(HTMLElement.prototype, "clientHeight", "get").mockReturnValue(80);
+
+    render(
+      <ClientProfile
+        slug={nmState.slug}
+        initialData={{
+          organization: nmState,
+          events: nmStateEvents,
+          venues: nmState.venues,
+        }}
+      />,
+    );
+
+    expect(screen.getByTestId("team-profile-mobile-card")).toBeInTheDocument();
+    expect(screen.getByText(about)).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: /show more/i }),
+    ).toBeInTheDocument();
+
+    vi.restoreAllMocks();
   });
 
   it("hides website and directions when the venue has neither", async () => {

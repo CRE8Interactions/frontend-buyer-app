@@ -20,14 +20,26 @@ vi.mock("next/navigation", () => ({
   useParams: () => ({ slug: icedogs.slug }),
 }));
 
-vi.mock("@/components/organisms/InteractiveSeatmap", () => ({
-  InteractiveSeatmap: () => (
-    <div data-testid="interactive-seatmap">Interactive seat map</div>
-  ),
-  InteractiveSeatmapMemo: () => (
-    <div data-testid="interactive-seatmap">Interactive seat map</div>
-  ),
-}));
+vi.mock("@/components/organisms/InteractiveSeatmap", async () => {
+  const { useEffect } = await import("react");
+  return {
+    InteractiveSeatmap: ({
+      onPaintReady,
+    }: {
+      onPaintReady?: () => void;
+    }) => {
+      useEffect(() => {
+        onPaintReady?.();
+      }, [onPaintReady]);
+      return (
+        <div data-testid="interactive-seatmap">Interactive seat map</div>
+      );
+    },
+    InteractiveSeatmapMemo: () => (
+      <div data-testid="interactive-seatmap">Interactive seat map</div>
+    ),
+  };
+});
 
 vi.mock("@/components/molecules/SectionLocatorThumb", () => ({
   default: () => <div data-testid="section-thumb">Thumb</div>,
@@ -119,7 +131,7 @@ describe("SeatMapSelectionOverlay map readiness", () => {
     // Painting the map with only half its data reads as a flash.
     expect(loaderShowing()).toBe(true);
     expect(screen.getByText(icedogs.name)).toBeInTheDocument();
-    expect(screen.queryByTestId("interactive-seatmap")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("interactive-seatmap")).not.toBeVisible();
 
     rerender(
       overlay({
@@ -131,7 +143,7 @@ describe("SeatMapSelectionOverlay map readiness", () => {
     // The URL alone is not the artwork: the seatmap draws its seats at full
     // opacity while the image downloads, so seats would appear on a blank stage.
     expect(loaderShowing()).toBe(true);
-    expect(screen.queryByTestId("interactive-seatmap")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("interactive-seatmap")).not.toBeVisible();
 
     fireEvent.load(backgroundPreload()!);
 
@@ -261,7 +273,7 @@ describe("SeatMapSelectionOverlay map readiness", () => {
     fireEvent.click(screen.getAllByRole("button", { name: /details/i })[0]);
 
     expect(screen.getByText("Ticket details")).toBeInTheDocument();
-    const detailHeading = screen.getByText(/general admission/i);
+    const detailHeading = screen.getByText(/Sec GA/);
     expect(within(detailHeading.parentElement!).getByText("1 Ticket")).toBeInTheDocument();
     expect(within(detailHeading.parentElement!).queryByText("6 Tickets")).not.toBeInTheDocument();
   });
@@ -290,7 +302,11 @@ describe("SeatMapSelectionOverlay map readiness", () => {
 
   it("keeps the org loader up when the geometry never arrives", () => {
     vi.useFakeTimers();
-    renderOverlay({ mapMapping: null, mapBackground: BACKGROUND });
+    renderOverlay({
+      mapMapping: null,
+      mapBackground: BACKGROUND,
+      preparing: true,
+    });
 
     act(() => {
       vi.advanceTimersByTime(6000);

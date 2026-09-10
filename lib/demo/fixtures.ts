@@ -1063,10 +1063,9 @@ export function demoSeasonPackage(
         height: 800,
       },
     },
-    package_tickets: [
-      { id: "pt-ga-family", price: 175, quantity: 4, availableCount: 4 },
-      { id: "pt-club", price: 200, quantity: 4, availableCount: 4 },
-    ] as Array<Record<string, unknown>>,
+    package_tickets: DEMO_SEATED_TICKET_GROUPS.filter(
+      (group) => !group.GA && (group.seatIds?.length || group.seatId),
+    ) as Array<Record<string, unknown>>,
     ...overrides,
   };
 }

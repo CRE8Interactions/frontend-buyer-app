@@ -25,7 +25,11 @@ import {
 import { beginRouteTransition } from "@/lib/routeTransition";
 import { hideIntercomLauncher } from "@/lib/intercom";
 import { cacheOrgBranding } from "@/lib/orgBrandingCache";
-import { formatPackageFromPrice, packageFromPrice } from "@/lib/eventFromPrice";
+import {
+  formatPackageFromPrice,
+  formatPackageFromPriceAmount,
+  packageFromPrice,
+} from "@/lib/eventFromPrice";
 import {
   createPackageLookupTables,
   packageQuantitySource,
@@ -319,6 +323,16 @@ export default function PackageDetailClient({
         inventory.purchaseLog,
         mapping,
       );
+      const hasInventory =
+        Object.keys(lookups.seatLookupTable).length > 0 ||
+        Object.keys(lookups.sectionLookupTable).length > 0;
+      if (!hasInventory) {
+        setSeatmapOpen(false);
+        setPreparingMap(false);
+        setMapReady(false);
+        setError("No seats are available for this package right now.");
+        return;
+      }
       setSeatLookupTable(lookups.seatLookupTable);
       setSeatOffersLookupTable(lookups.seatOffersLookupTable);
       setSectionLookupTable(lookups.sectionLookupTable);
@@ -785,7 +799,7 @@ export default function PackageDetailClient({
             </div>
           </div>
 
-          {mobile && (
+          {mobile && !seatmapOpen && (
             <MobileStickyFooter
               accentColor={theme.accent}
               background="rgba(255,255,255,0.96)"
@@ -799,19 +813,43 @@ export default function PackageDetailClient({
                 gap: 12,
               }}
             >
-              <div style={{ display: "flex", flexDirection: "column", gap: 1 }}>
-                <span
-                  style={{
-                    fontSize: fluidSize(18),
-                    fontWeight: 600,
-                    letterSpacing: "-0.02em",
-                    fontVariantNumeric: "tabular-nums",
-                  }}
-                >
-                  {fromPrice != null
-                    ? formatPackageFromPrice(fromPrice)
-                    : "See tickets"}
-                </span>
+              <div
+                style={{
+                  display: "flex",
+                  flexDirection: "column",
+                  gap: 1,
+                  minWidth: 0,
+                  flexShrink: 0,
+                }}
+              >
+                {fromPrice != null ? (
+                  <>
+                    <div style={{ fontSize: fluidSize(12), color: SUB }}>
+                      From
+                    </div>
+                    <div
+                      style={{
+                        fontSize: fluidSize(26),
+                        fontWeight: 600,
+                        letterSpacing: "-0.02em",
+                        fontVariantNumeric: "tabular-nums",
+                        color: "#000",
+                      }}
+                    >
+                      {formatPackageFromPriceAmount(fromPrice)}
+                    </div>
+                  </>
+                ) : (
+                  <div
+                    style={{
+                      fontSize: fluidSize(18),
+                      fontWeight: 600,
+                      letterSpacing: "-0.02em",
+                    }}
+                  >
+                    See tickets
+                  </div>
+                )}
               </div>
               <BrandedActionButton
                 primaryColor={theme.buttonColor}
@@ -854,6 +892,7 @@ export default function PackageDetailClient({
           orgName={pkg.organization?.name}
           logoSrc={theme.brandLogoSrc || theme.logoSrc}
           orderQuantitySource={packageQuantitySource(pkg)}
+          mapLegend="package"
         />
       ) : null}
 

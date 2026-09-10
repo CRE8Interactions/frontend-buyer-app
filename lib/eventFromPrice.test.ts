@@ -13,6 +13,7 @@ import {
   eventsNeedPriceEnrichment,
   firstPricingLevel,
   formatPackageFromPrice,
+  formatPackageFromPriceAmount,
   lowestPricingLevel,
   mergeEventDetails,
   monthEventCountLabel,
@@ -120,7 +121,16 @@ describe("packageFromPrice", () => {
       `From $${Number(pkg.pricingTiers[0].price).toLocaleString("en-US")}`,
     );
     expect(formatPackageFromPrice(pkg.pricingTiers[0].price)).not.toContain(".00");
-    expect(formatPackageFromPrice(199.5)).toBe(formatCurrency(199.5).replace(/^/, "From "));
+    expect(formatPackageFromPrice(199.5)).toBe(
+      `From ${formatCurrency(199.5)}`,
+    );
+  });
+
+  it("formats the package from-price amount without the From prefix", () => {
+    expect(formatPackageFromPriceAmount(pkg.pricingTiers[0].price)).toBe(
+      `$${Number(pkg.pricingTiers[0].price).toLocaleString("en-US")}`,
+    );
+    expect(formatPackageFromPriceAmount(199.5)).toBe(formatCurrency(199.5));
   });
 });
 

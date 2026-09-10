@@ -15,13 +15,21 @@ describe("inAppBack", () => {
     vi.unstubAllGlobals();
   });
 
-  it("uses history back after an in-app navigation", () => {
+  it("uses history back after an in-app navigation when the fallback is not browse", () => {
     const router = { back: vi.fn(), push: vi.fn() };
     markInAppNavigation();
     expect(canGoBackInApp()).toBe(true);
-    goBack("/browse/", router);
+    goBack("/nm-state/", router);
     expect(router.back).toHaveBeenCalledTimes(1);
     expect(router.push).not.toHaveBeenCalled();
+  });
+
+  it("always pushes browse instead of using history back", () => {
+    const router = { back: vi.fn(), push: vi.fn() };
+    markInAppNavigation();
+    goBack("/browse/", router);
+    expect(router.push).toHaveBeenCalledWith("/browse/");
+    expect(router.back).not.toHaveBeenCalled();
   });
 
   it("falls back to the href when this session has no in-app history", () => {

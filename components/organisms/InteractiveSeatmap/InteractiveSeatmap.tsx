@@ -8,7 +8,6 @@ import {
   useRef,
   useState,
 } from "react";
-import Button from "@/components/atoms/Button";
 import Spinner from "@/components/atoms/Spinner";
 import {
   createSeatLookupTables,
@@ -16,7 +15,11 @@ import {
   isSectionCoverVenue,
   mappingStageSize,
 } from "@/lib/seatmapLookups";
-import { panDeltaToRevealPopup, type PopupRect } from "@/lib/seatmapPopup";
+import {
+  panDeltaToRevealPopup,
+  SEATMAP_TAP_THRESHOLD_PX,
+  type PopupRect,
+} from "@/lib/seatmapPopup";
 import useFiltersStore from "@/stores/filtersStore";
 import useSeatmapStore from "@/stores/seatmapStore";
 import SeatmapIcons from "./SeatmapIcons";
@@ -26,7 +29,7 @@ import SeatmapSeat, {
 import SeatmapSections from "./SeatmapSections";
 import SeatmapTooltip, { type SeatmapTooltipTarget } from "./SeatmapTooltip";
 
-const PAN_THRESHOLD_PX = 5;
+const PAN_THRESHOLD_PX = SEATMAP_TAP_THRESHOLD_PX;
 /** Softens pinch scale changes so zoom feels less jumpy on iOS. */
 const PINCH_ZOOM_DAMPING = 0.7;
 
@@ -96,6 +99,8 @@ type Props = {
   lookupsMode?: "auto" | "external";
   /** Mobile find-on-map: collapsed legend + zoom pill, no pinch hint. */
   compactChrome?: boolean;
+  /** Package seatmaps omit locked/exclusive legend rows; events show the full set. */
+  mapLegend?: "event" | "package";
   /** Parent (seat-map modal) already shows the org loader. */
   hideLoadingSpinner?: boolean;
   /** Increment to clear the seat/section tooltip (mobile View selection / Checkout). */
@@ -104,6 +109,8 @@ type Props = {
   onUnlockOffer?: (offerName: string) => void;
   /** Keep the seat tooltip open while the unlock modal is visible. */
   keepTooltipOpen?: boolean;
+  /** Fires once geometry, inventory, viewport fit, and artwork are ready to paint. */
+  onPaintReady?: () => void;
 };
 
 export default function InteractiveSeatmap({
@@ -113,10 +120,12 @@ export default function InteractiveSeatmap({
   buttonTextColor = "#fff",
   lookupsMode = "auto",
   compactChrome = false,
+  mapLegend = "event",
   hideLoadingSpinner = false,
   dismissTooltipKey = 0,
   onUnlockOffer,
   keepTooltipOpen = false,
+  onPaintReady,
 }: Props) {
   const data = useSeatmapStore((s) => s.data);
   const background = useSeatmapStore((s) => s.background);
@@ -215,7 +224,7 @@ export default function InteractiveSeatmap({
   const handleSeatTooltip = useCallback(
     (target: SeatmapTooltipTarget | null) => {
       if (target) {
-        // A pinned seat card stays put until Add seats, close, or another seat
+        // A pinned seat card stays put until Add now, close, or another seat
         // takes over; hovering the pinned seat must not downgrade it.
         const pinning = target.kind === "seat" && target.pinned === true;
         const pinnedSeatId = tooltipPinnedRef.current;
@@ -646,7 +655,7 @@ export default function InteractiveSeatmap({
         e.preventDefault();
         if (!pan.active) {
           pan.active = true;
-          dismissTooltipNow();
+          if (!tooltipPinnedRef.current) dismissTooltipNow();
         }
         setViewport((prev) => ({
           ...prev,
@@ -716,7 +725,7 @@ export default function InteractiveSeatmap({
     if (!pan.active && Math.hypot(dx, dy) < PAN_THRESHOLD_PX) return;
     if (!pan.active) {
       pan.active = true;
-      dismissTooltipNow();
+      if (!tooltipPinnedRef.current) dismissTooltipNow();
       (e.currentTarget as HTMLElement).setPointerCapture?.(e.pointerId);
     }
     setViewport((prev) => ({
@@ -783,6 +792,15 @@ export default function InteractiveSeatmap({
   // background artwork are ready — including when the parent hydrates lookups.
   const showLoading =
     !ready || !fitted || loadingTicketGroups || !backgroundReady;
+
+  useEffect(() => {
+    if (!stage) {
+      onPaintReady?.();
+      return;
+    }
+    if (showLoading) return;
+    onPaintReady?.();
+  }, [stage, showLoading, onPaintReady]);
 
   // Only give up when there is nothing to draw — a missing background image is
   // survivable as long as the mapping has geometry.
@@ -940,18 +958,13 @@ export default function InteractiveSeatmap({
               +
             </button>
             {showReset ? (
-              <Button
-                size="sm"
-                className="!h-9 border-0 backdrop-blur"
-                style={{
-                  background: buttonColor,
-                  color: buttonTextColor,
-                  borderColor: buttonColor,
-                }}
+              <button
+                type="button"
                 onClick={resetView}
+                className="flex h-9 items-center justify-center rounded-xl border border-[#D9DEE7] bg-white/95 px-3 text-[13px] font-semibold text-[#051B35] shadow-sm backdrop-blur hover:bg-[#F4F5F7]"
               >
                 Back to map
-              </Button>
+              </button>
             ) : null}
           </div>
         )}
@@ -989,14 +1002,23 @@ export default function InteractiveSeatmap({
           </button>
           {legendOpen ? (
             <div className="space-y-3 px-4 pb-4">
-              {[
-                { label: "Unavailable", color: "#E6E8EC" },
-                { label: "Available", color: "#3E8BF7" },
-                { label: "Selected", color: accent },
-                { label: "Locked", color: "#353945" },
-                { label: "Exclusive", color: "#9757D7" },
-                { label: "Accessibility", color: "#F4BC16" },
-              ].map((item) => (
+              {(
+                mapLegend === "package"
+                  ? [
+                      { label: "Unavailable", color: "#E6E8EC" },
+                      { label: "Available", color: "#3E8BF7" },
+                      { label: "Selected", color: accent },
+                      { label: "Accessibility", color: "#F4BC16" },
+                    ]
+                  : [
+                      { label: "Unavailable", color: "#E6E8EC" },
+                      { label: "Available", color: "#3E8BF7" },
+                      { label: "Selected", color: accent },
+                      { label: "Locked", color: "#353945" },
+                      { label: "Exclusive", color: "#9757D7" },
+                      { label: "Accessibility", color: "#F4BC16" },
+                    ]
+              ).map((item) => (
                 <div
                   key={item.label}
                   className="flex items-center gap-2 text-[13px]"

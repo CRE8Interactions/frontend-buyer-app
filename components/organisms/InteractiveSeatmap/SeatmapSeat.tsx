@@ -2,6 +2,7 @@
 
 import { memo, useMemo, useRef } from "react";
 import type { SeatmapSeat } from "@/lib/seatmapLookups";
+import { SEATMAP_TAP_THRESHOLD_PX } from "@/lib/seatmapPopup";
 import type { TicketGroup } from "@/stores/filtersStore";
 import useFiltersStore from "@/stores/filtersStore";
 import { seatedMapSelectableOffers, shouldShowSeatedMapOfferRow } from "@/lib/ticketListings";
@@ -176,7 +177,8 @@ const SeatmapSeat = memo(function SeatmapSeat({
 
   const hoverTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const hoverCoordsRef = useRef({ x: 0, y: 0 });
-  const touchHandledRef = useRef(false);
+  const pointerStartRef = useRef<{ x: number; y: number } | null>(null);
+  const suppressClickRef = useRef(false);
   const seatRectRef = useRef<SVGRectElement>(null);
 
   const tooltipAnchor = (fallback: { x: number; y: number }) => {
@@ -255,10 +257,52 @@ const SeatmapSeat = memo(function SeatmapSeat({
     });
   };
 
+  const handlePointerDown = (event: React.PointerEvent) => {
+    if (!canActivate && !canMobileTapPreview) return;
+    event.stopPropagation();
+    pointerStartRef.current = { x: event.clientX, y: event.clientY };
+  };
+
+  const finishPointerTap = (event: React.PointerEvent) => {
+    event.stopPropagation();
+    const start = pointerStartRef.current;
+    pointerStartRef.current = null;
+    if (!start) return;
+    const dx = event.clientX - start.x;
+    const dy = event.clientY - start.y;
+    if (Math.hypot(dx, dy) > SEATMAP_TAP_THRESHOLD_PX) return;
+
+    suppressClickRef.current = true;
+    if (canMobileTapPreview) {
+      clearHover();
+      const anchor = tooltipAnchor({ x: event.clientX, y: event.clientY });
+      onTooltip({
+        kind: "seat",
+        seatId: seat.seatId,
+        x: anchor.x,
+        y: anchor.y,
+        pinned: true,
+      });
+      return;
+    }
+    activate(event);
+  };
+
+  const handlePointerUp = (event: React.PointerEvent) => {
+    if (event.pointerType === "touch") {
+      event.preventDefault();
+    }
+    finishPointerTap(event);
+  };
+
+  const handlePointerCancel = () => {
+    pointerStartRef.current = null;
+  };
+
   const handleSeatClick = (event: React.MouseEvent) => {
-    if (touchHandledRef.current) {
+    if (suppressClickRef.current) {
       event.stopPropagation();
-      touchHandledRef.current = false;
+      suppressClickRef.current = false;
       return;
     }
     activate(event);
@@ -266,7 +310,9 @@ const SeatmapSeat = memo(function SeatmapSeat({
 
   const handleSeatTouchEnd = (event: React.TouchEvent) => {
     event.preventDefault();
-    touchHandledRef.current = true;
+    event.stopPropagation();
+    suppressClickRef.current = true;
+    pointerStartRef.current = null;
     if (canMobileTapPreview) {
       clearHover();
       const anchor = tooltipAnchor(eventPoint(event));
@@ -360,8 +406,19 @@ const SeatmapSeat = memo(function SeatmapSeat({
         width={width}
         height={height}
         fill={seatColor}
-        onClick={canActivate ? handleSeatClick : undefined}
-        onTouchEnd={canActivate || canMobileTapPreview ? handleSeatTouchEnd : undefined}
+        onPointerDown={
+          canActivate || canMobileTapPreview ? handlePointerDown : undefined
+        }
+        onPointerUp={
+          canActivate || canMobileTapPreview ? handlePointerUp : undefined
+        }
+        onPointerCancel={
+          canActivate || canMobileTapPreview ? handlePointerCancel : undefined
+        }
+        onClick={canActivate || canMobileTapPreview ? handleSeatClick : undefined}
+        onTouchEnd={
+          canActivate || canMobileTapPreview ? handleSeatTouchEnd : undefined
+        }
         onMouseEnter={canHoverPreview ? handleMouseEnter : undefined}
         onMouseMove={canHoverPreview ? handleMouseMove : undefined}
         onMouseLeave={canHoverPreview ? handleMouseLeave : undefined}

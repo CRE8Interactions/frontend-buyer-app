@@ -65,10 +65,18 @@ vi.mock("next/navigation", () => ({
 }));
 
 vi.mock("@/components/organisms/InteractiveSeatmap", async () => {
+  const { useEffect } = await import("react");
   const { default: useFiltersStore } = await import("@/stores/filtersStore");
   return {
-    InteractiveSeatmap: () => {
+    InteractiveSeatmap: ({
+      onPaintReady,
+    }: {
+      onPaintReady?: () => void;
+    }) => {
       const loading = useFiltersStore.getState().loadingTicketGroups;
+      useEffect(() => {
+        if (!loading) onPaintReady?.();
+      }, [loading, onPaintReady]);
       return loading ? (
         <div role="status" aria-label="Loading seat map">
           Loading seat map
@@ -203,7 +211,9 @@ async function openLiveMap() {
   });
   await user.click(screen.getAllByText(/find on map/i)[0]);
   await finishSeatmapBackgroundLoad();
-  await screen.findByTestId("interactive-seatmap");
+  await waitFor(() => {
+    expect(screen.getByTestId("interactive-seatmap")).toBeVisible();
+  });
   return user;
 }
 
@@ -1669,10 +1679,10 @@ describe("Select tickets page (PremiumTicketing)", { timeout: 20_000 }, () => {
     expect(
       within(loader).getByText(seatedTicketingFixture.orgLabel),
     ).toBeInTheDocument();
-    expect(screen.queryByTestId("interactive-seatmap")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("interactive-seatmap")).not.toBeVisible();
   });
 
-  it("does not show the org loader in Find on map when the map is already loaded", async () => {
+  it("keeps the org loader up in Find on map while ticket groups are still loading", async () => {
     useFiltersStore.setState({ loadingTicketGroups: true });
     const user = await renderReady({
       ...seatedTicketingFixture,
@@ -1685,10 +1695,9 @@ describe("Select tickets page (PremiumTicketing)", { timeout: 20_000 }, () => {
     });
 
     await user.click(screen.getAllByText(/find on map/i)[0]);
-    await finishSeatmapBackgroundLoad();
-    expect(await screen.findByLabelText(/loading seat map/i)).toBeInTheDocument();
-    expect(document.querySelector("[data-bt-tenant-loader]")).toBeNull();
-    expect(screen.queryByTestId("interactive-seatmap")).not.toBeInTheDocument();
+    const loader = await screen.findByRole("status", { name: /loading/i });
+    expect(within(loader).getByText(/loading tickets/i)).toBeInTheDocument();
+    expect(screen.queryByTestId("interactive-seatmap")).not.toBeVisible();
   });
 
   it("opens ticket details with the seat location and no quantity stepper", async () => {

@@ -58,10 +58,9 @@ function inkOn(hex: string) {
 function resolvedOfferQuantity(
   offerQtys: Record<string, number>,
   key: string,
-  limits: QuantityLimits,
 ) {
   if (offerQtys[key] != null) return offerQtys[key];
-  return limits.valid ? limits.min : 0;
+  return 0;
 }
 
 function seatedResolvedOfferQuantity(
@@ -668,7 +667,7 @@ export default function SeatmapTooltip({
                   onClose();
                 }}
               >
-                Add seats
+                Add now
               </Button>
             ) : null}
           </div>
@@ -706,7 +705,7 @@ export default function SeatmapTooltip({
                   onClose();
                 }}
               >
-                Add seats
+                Add now
               </Button>
             ) : null}
           </>
@@ -731,7 +730,7 @@ export default function SeatmapTooltip({
   const primary = sectionOffers[0];
   const gaLimits = groupQuantityLimits(primary ?? {});
   const selectedGaQty = gaLimits.valid
-    ? Math.min(Math.max(gaQty || gaLimits.min, gaLimits.min), gaLimits.max)
+    ? Math.min(Math.max(gaQty, 0), gaLimits.max)
     : 0;
   const packageOrOfferName = selectionOfferName(primary, "GA");
   const multiGaOffers = sectionOffers.length > 1;
@@ -745,7 +744,7 @@ export default function SeatmapTooltip({
         const limits = groupQuantityLimits(group);
         return {
           ...group,
-          quantity: resolvedOfferQuantity(offerQtys, key, limits),
+          quantity: resolvedOfferQuantity(offerQtys, key),
         };
       })
       .filter((group) => Number(group.quantity) > 0);
@@ -790,7 +789,7 @@ export default function SeatmapTooltip({
             {sectionOffers.map((group, index) => {
               const key = gaOfferSelectionKey(group, index);
               const limits = groupQuantityLimits(group);
-              const selectedQty = resolvedOfferQuantity(offerQtys, key, limits);
+              const selectedQty = resolvedOfferQuantity(offerQtys, key);
               const restrictionLabel = groupRestrictionLabel(group, limits);
               return (
                 <div
@@ -866,6 +865,7 @@ export default function SeatmapTooltip({
               value={selectedGaQty}
               limits={gaLimits}
               ink={ink}
+              allowZero
               onChange={setGaQty}
             />
           </div>

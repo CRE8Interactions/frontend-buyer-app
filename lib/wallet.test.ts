@@ -2,10 +2,17 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   buildAccessPassSummaries,
   formatTicketHolderName,
+  gaTicketSeatLine,
+  seatLabel,
+  transferGroupLabel,
+  transferSeatChip,
   isMobileDevice,
   isPhoneDevice,
   isTabletDevice,
+  isEventComplete,
   isToday,
+  isUpcomingEvent,
+  isWalletListedEvent,
   unwrapOrder,
 } from "@/lib/wallet";
 import { demoAccessPass } from "@/lib/demo/fixtures";
@@ -29,6 +36,170 @@ describe("buildAccessPassSummaries", () => {
   it("keeps the purchase order id on the pass", () => {
     const pass = demoAccessPass();
     expect(buildAccessPassSummaries([pass])[0].orderId).toBe(pass.orderId);
+  });
+});
+
+describe("gaTicketSeatLine", () => {
+  it("uses sectionNumber when sectionName is General Admission", () => {
+    expect(
+      gaTicketSeatLine({
+        generalAdmission: true,
+        sectionName: "General Admission",
+        sectionNumber: "Club",
+        offerName: "General admission",
+      }),
+    ).toBe("Sec Club");
+  });
+
+  it("includes the row when present", () => {
+    expect(
+      gaTicketSeatLine({
+        generalAdmission: true,
+        sectionNumber: "N",
+        rowNumber: "I",
+      }),
+    ).toBe("Sec N · Row I");
+  });
+
+  it("includes an actual seat number when present", () => {
+    expect(
+      gaTicketSeatLine({
+        generalAdmission: true,
+        sectionNumber: "N",
+        seatNumber: 12,
+      }),
+    ).toBe("Sec N · Seat 12");
+  });
+
+  it("falls back to GA when no concrete section or row exists", () => {
+    expect(
+      gaTicketSeatLine({
+        generalAdmission: true,
+        sectionName: "General Admission",
+        offerName: "General admission",
+      }),
+    ).toBe("GA");
+  });
+});
+
+describe("seatLabel", () => {
+  it("builds GA wallet lines from concrete section and row values", () => {
+    expect(
+      seatLabel({
+        generalAdmission: true,
+        sectionName: "General Admission",
+        sectionNumber: "Club",
+        rowNumber: "A",
+      }),
+    ).toBe("Sec Club · Row A");
+  });
+});
+
+describe("transferGroupLabel", () => {
+  it("shows Sec and Row for reserved tickets", () => {
+    expect(
+      transferGroupLabel({
+        sectionNumber: "G",
+        rowNumber: 25,
+      }),
+    ).toBe("Sec G · Row 25");
+  });
+
+  it("shows Sec only for general admission tickets", () => {
+    expect(
+      transferGroupLabel({
+        generalAdmission: true,
+        sectionNumber: "ga",
+        sectionName: "General Admission",
+      }),
+    ).toBe("Sec ga");
+  });
+
+  it("shows Sec only for GA tickets even when a row is present", () => {
+    expect(
+      transferGroupLabel({
+        generalAdmission: true,
+        sectionNumber: "Club",
+        sectionName: "General Admission",
+        rowNumber: "A",
+      }),
+    ).toBe("Sec Club");
+  });
+
+  it("detects GA from offer metadata when row and seat are missing", () => {
+    expect(
+      transferGroupLabel({
+        sectionNumber: "ga",
+        sectionName: "General Admission",
+        offerName: "General admission",
+      }),
+    ).toBe("Sec ga");
+  });
+
+  it("falls back to sectionName when sectionNumber is missing", () => {
+    expect(
+      transferGroupLabel({ sectionName: "Club Level", rowNumber: 3 }),
+    ).toBe("Sec Club Level · Row 3");
+  });
+
+  it("does not derive the label from unrelated fields", () => {
+    expect(transferGroupLabel(undefined)).toBe("");
+    expect(
+      transferGroupLabel({ offerName: "General admission" }),
+    ).toBe("Sec");
+  });
+});
+
+describe("transferSeatChip", () => {
+  it("shows GA without a Seat label for general admission tickets", () => {
+    expect(
+      transferSeatChip(
+        { generalAdmission: true, offerName: "General admission" },
+        "General admission",
+      ),
+    ).toEqual({ seatNo: "GA", isGA: true, ariaLabel: "GA" });
+  });
+
+  it("reads GA from a structured seat line", () => {
+    expect(
+      transferSeatChip(
+        {
+          generalAdmission: true,
+          sectionNumber: "Club",
+        },
+        "Sec Club · GA",
+      ),
+    ).toEqual({ seatNo: "GA", isGA: true, ariaLabel: "GA" });
+  });
+
+  it("shows GA in the chip for Sec-only GA lines without a generalAdmission flag", () => {
+    expect(
+      transferSeatChip({ sectionNumber: "ga" }, "Sec ga"),
+    ).toEqual({ seatNo: "GA", isGA: true, ariaLabel: "GA" });
+  });
+
+  it("keeps numbered seats under a Seat label", () => {
+    expect(
+      transferSeatChip(
+        { sectionNumber: "G", rowNumber: 20, seatNumber: 21 },
+        "Sec G · Row 20 · Seat 21",
+      ),
+    ).toEqual({ seatNo: "21", isGA: false, ariaLabel: "Seat 21" });
+  });
+
+  it("treats a general admission seat number as GA", () => {
+    expect(
+      transferSeatChip({ seatNumber: "General admission" }, "General admission"),
+    ).toEqual({ seatNo: "GA", isGA: true, ariaLabel: "GA" });
+  });
+
+  it("keeps a real seat number on GA tickets", () => {
+    expect(
+      transferSeatChip(
+        { generalAdmission: true, sectionNumber: "N", seatNumber: 12 },
+        "Sec N · Seat 12",
+      ),
+    ).toEqual({ seatNo: "12", isGA: true, ariaLabel: "12" });
   });
 });
 
@@ -169,5 +340,48 @@ describe("isPhoneDevice", () => {
     stubPointer({ "(pointer: coarse)": true, "(hover: hover)": false }, 390, 844);
     expect(isTabletDevice()).toBe(false);
     expect(isPhoneDevice()).toBe(true);
+  });
+});
+
+describe("isEventComplete", () => {
+  it.each(["complete", "Complete", "completed", "Completed"])(
+    "treats %s as a completed event",
+    (status) => {
+      expect(isEventComplete({ status })).toBe(true);
+      expect(isWalletListedEvent({ status, start: "2099-01-01T23:00:00.000Z" })).toBe(
+        false,
+      );
+    },
+  );
+});
+
+describe("isUpcomingEvent", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("treats a completed game as past in the venue timezone", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-09-11T06:00:00.000Z"));
+
+    expect(
+      isUpcomingEvent({
+        status: "complete",
+        start: "2026-09-10T23:00:00.000Z",
+        venue: { timezone: "America/Denver" },
+      }),
+    ).toBe(false);
+  });
+
+  it("keeps tonight's game upcoming until six hours after start", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-09-11T03:30:00.000Z"));
+
+    expect(
+      isUpcomingEvent({
+        start: "2026-09-10T23:00:00.000Z",
+        venue: { timezone: "America/Denver" },
+      }),
+    ).toBe(true);
   });
 });

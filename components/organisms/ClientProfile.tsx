@@ -6,9 +6,10 @@
  * from GET /organizations/storefront/:slug so each org URL shows that org.
  */
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import ExpandableDescription from "@/components/molecules/ExpandableDescription";
 import InAppBackLink from "@/components/molecules/InAppBackLink";
 import NavAuthActions from "@/components/molecules/NavAuthActions";
 import RouteLoader from "@/components/molecules/RouteLoader";
@@ -35,6 +36,11 @@ import {
 } from "@/lib/orgBrandingCache";
 import { useClientReady } from "@/lib/useClientReady";
 import { flexPackCardTone, flexPackEachPrice } from "@/lib/flexPackDisplay";
+import {
+  stickyOffsetBelowHeader,
+  TICKETING_HEADER_FALLBACK_PX,
+  TICKETING_STICKY_GAP_PX,
+} from "@/lib/ticketingSticky";
 import {
   firstVenueWebsiteHref,
   venueWebsiteFromUpcomingEvents,
@@ -181,13 +187,6 @@ export type StorefrontInitialData = {
 function teamVenues(org?: Org | null, venues: VenueItem[] = []) {
   return [org?.homeVenue, ...(org?.venues || []), ...venues];
 }
-
-const tagFor = (st: string) =>
-  st === "Few left"
-    ? { tagBg: "#fbf1de", tagInk: "#b5791e" }
-    : st === "Presale"
-      ? { tagBg: "#f1f3f8", tagInk: "#4a5567" }
-      : { tagBg: "#e6f4eb", tagInk: "#2f8f4e" };
 
 function firstAddress(address?: VenueAddress) {
   if (!address) return undefined;
@@ -368,6 +367,24 @@ export default function ClientProfile({
 
   const mobile = vw < 900;
   const narrow = !mobile && vw < 1160;
+  const wide = !mobile && !narrow;
+  const headerRef = useRef<HTMLElement | null>(null);
+  const [headerH, setHeaderH] = useState(TICKETING_HEADER_FALLBACK_PX);
+
+  useEffect(() => {
+    const el = headerRef.current;
+    if (!el || typeof ResizeObserver === "undefined") return;
+    const apply = () => {
+      const h = Math.round(el.getBoundingClientRect().height);
+      if (h > 1) setHeaderH((prev) => (prev === h ? prev : h));
+    };
+    apply();
+    const ro = new ResizeObserver(apply);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [vw]);
+
+  const stickTop = Math.round(stickyOffsetBelowHeader(headerH));
 
   const cachedBranding = clientReady ? getCachedOrgBranding(slug) : null;
   const ACC = organization
@@ -509,6 +526,76 @@ export default function ClientProfile({
     notFound();
   }
 
+  const teamActions = (
+    <div
+      style={{
+        display: "flex",
+        alignItems: "center",
+        gap: 8,
+        justifyContent: mobile ? "flex-start" : "center",
+      }}
+    >
+      {venueWebsite ? (
+        <a
+          className="cp-action"
+          href={venueWebsite}
+          target="_blank"
+          rel="noopener noreferrer"
+          aria-label="Visit venue website"
+          style={{
+            width: 44,
+            height: 44,
+            borderRadius: 999,
+            background: "#fff",
+            border: "1px solid rgba(5,27,53,0.14)",
+            color: NAVY,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            cursor: "pointer",
+          }}
+        >
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" style={{ width: 18, height: 18 }}>
+            <circle cx="12" cy="12" r="10" />
+            <line x1="2" y1="12" x2="22" y2="12" />
+            <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z" />
+          </svg>
+        </a>
+      ) : null}
+      <button
+        type="button"
+        className="cp-action"
+        aria-label="Share"
+        onClick={() => {
+          if (typeof navigator !== "undefined" && navigator.share) {
+            void navigator.share({ title: orgName, url: window.location.href });
+          } else if (typeof navigator !== "undefined" && navigator.clipboard) {
+            void navigator.clipboard.writeText(window.location.href);
+          }
+        }}
+        style={{
+          fontFamily: "inherit",
+          width: 44,
+          height: 44,
+          borderRadius: 999,
+          background: "#fff",
+          border: "1px solid rgba(5,27,53,0.14)",
+          color: NAVY,
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          cursor: "pointer",
+        }}
+      >
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" style={{ width: 17, height: 17 }}>
+          <path d="M4 12v7a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-7" />
+          <polyline points="16 6 12 2 8 6" />
+          <line x1="12" y1="2" x2="12" y2="15" />
+        </svg>
+      </button>
+    </div>
+  );
+
   return (
     <div
       className="shopper-page"
@@ -524,7 +611,17 @@ export default function ClientProfile({
       <style>{`${shopperPageTypeCss()}
 .cp-a{transition:background 140ms}.cp-row{transition:box-shadow 150ms ease}.cp-row:hover{box-shadow:0 8px 30px rgba(5,27,53,0.09)}.cp-action{outline:2px solid transparent;outline-offset:2px;transition:outline-color 140ms ease}.cp-action:hover,.cp-action:focus-visible{outline-color:var(--cp-accent)}`}</style>
 
-      <header style={{ background: ACC, position: "sticky", top: 0, zIndex: 20 }}>
+      <header
+        ref={headerRef}
+        style={{
+          background: ACC,
+          position: wide ? "fixed" : "sticky",
+          top: 0,
+          left: wide ? 0 : undefined,
+          right: wide ? 0 : undefined,
+          zIndex: 20,
+        }}
+      >
         <div
           style={{
             maxWidth: 1320,
@@ -585,36 +682,62 @@ export default function ClientProfile({
         </div>
       </header>
 
-      <div
+      {wide ? (
+        <div aria-hidden style={{ height: stickTop, flexShrink: 0 }} />
+      ) : null}
+
+      <main
         style={{
+          width: "100%",
           maxWidth: 1320,
           margin: "0 auto",
-          padding: mobile ? "20px 20px 40px" : "32px 32px 48px",
+          padding: mobile
+            ? "20px 20px 40px"
+            : wide
+              ? "0 32px 120px"
+              : `${TICKETING_STICKY_GAP_PX}px 32px 120px`,
+          boxSizing: "border-box",
           display: "grid",
           gridTemplateColumns: mobile
             ? "1fr"
             : narrow
               ? "300px minmax(0, 1fr)"
-              : "344px minmax(0, 1fr)",
+              : "minmax(300px, 360px) minmax(0, 1fr)",
           gap: mobile ? 20 : 28,
-          alignItems: "start",
+          alignItems: mobile || narrow ? "start" : "stretch",
         }}
       >
         {!mobile && (
-          <aside
-            style={{
-              ...card,
-              borderRadius: 24,
-              boxShadow: "0 8px 30px rgba(5,27,53,0.08)",
-              padding: 24,
-              display: "flex",
-              flexDirection: "column",
-              gap: 18,
-              position: "sticky",
-              top: 84,
-              zIndex: 5,
-            }}
-          >
+          <div style={{ minWidth: 0, ...(wide ? { alignSelf: "stretch" } : {}) }}>
+            <div
+              data-testid="team-profile-sidebar"
+              style={{
+                display: "flex",
+                flexDirection: "column",
+                gap: 16,
+                minWidth: 0,
+                ...(wide
+                  ? {
+                      position: "sticky",
+                      top: stickTop,
+                      zIndex: 5,
+                    }
+                  : {}),
+              }}
+            >
+              <aside
+                style={{
+                  ...card,
+                  borderRadius: 24,
+                  boxShadow: "0 8px 30px rgba(5,27,53,0.08)",
+                  padding: 24,
+                  display: "flex",
+                  flexDirection: "column",
+                  gap: 18,
+                  width: "100%",
+                  boxSizing: "border-box",
+                }}
+              >
             <div style={{ display: "flex", flexDirection: "column", gap: 14, alignItems: "center" }}>
               <div
                 style={{
@@ -717,99 +840,82 @@ export default function ClientProfile({
               {about}
             </p>
 
-            <div style={{ display: "flex", alignItems: "center", gap: 8, justifyContent: "center" }}>
-              {venueWebsite && (
-                <a
-                  className="cp-action"
-                  href={venueWebsite}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  aria-label="Visit venue website"
+            {teamActions}
+              </aside>
+            </div>
+          </div>
+        )}
+
+        <div
+          style={{
+            display: "flex",
+            flexDirection: "column",
+            gap: 16,
+            minWidth: 0,
+            ...(mobile || narrow ? {} : { alignSelf: "start" }),
+          }}
+        >
+          {mobile && (
+            <div
+              data-testid="team-profile-mobile-card"
+              style={{
+                ...card,
+                padding: 14,
+                display: "flex",
+                flexDirection: "column",
+                gap: 14,
+                width: "100%",
+                boxSizing: "border-box",
+              }}
+            >
+              <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
+                <div
                   style={{
-                    width: 44,
-                    height: 44,
+                    width: 64,
+                    height: 64,
                     borderRadius: 999,
                     background: "#fff",
-                    border: "1px solid rgba(5,27,53,0.14)",
-                    color: NAVY,
+                    border: "1px solid rgba(5,27,53,0.08)",
+                    boxShadow: "0 8px 30px rgba(5,27,53,0.10)",
                     display: "flex",
                     alignItems: "center",
                     justifyContent: "center",
-                    cursor: "pointer",
+                    padding: 9,
+                    boxSizing: "border-box",
+                    flexShrink: 0,
                   }}
                 >
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" style={{ width: 18, height: 18 }}>
-                    <circle cx="12" cy="12" r="10" />
-                    <line x1="2" y1="12" x2="22" y2="12" />
-                    <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z" />
-                  </svg>
-                </a>
-              )}
-              <button
-                type="button"
-                className="cp-action"
-                aria-label="Share"
-                onClick={() => {
-                  if (typeof navigator !== "undefined" && navigator.share) {
-                    void navigator.share({ title: orgName, url: window.location.href });
-                  } else if (typeof navigator !== "undefined" && navigator.clipboard) {
-                    void navigator.clipboard.writeText(window.location.href);
-                  }
-                }}
-                style={{
-                  fontFamily: "inherit",
-                  width: 44,
-                  height: 44,
-                  borderRadius: 999,
-                  background: "#fff",
-                  border: "1px solid rgba(5,27,53,0.14)",
-                  color: NAVY,
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  cursor: "pointer",
-                }}
-              >
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" style={{ width: 17, height: 17 }}>
-                  <path d="M4 12v7a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-7" />
-                  <polyline points="16 6 12 2 8 6" />
-                  <line x1="12" y1="2" x2="12" y2="15" />
-                </svg>
-              </button>
-            </div>
-          </aside>
-        )}
-
-        <main style={{ display: "flex", flexDirection: "column", gap: 16, minWidth: 0 }}>
-          {mobile && (
-            <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
-              <div
-                style={{
-                  width: 64,
-                  height: 64,
-                  borderRadius: 999,
-                  background: "#fff",
-                  border: "1px solid rgba(5,27,53,0.08)",
-                  boxShadow: "0 8px 30px rgba(5,27,53,0.10)",
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  padding: 9,
-                  boxSizing: "border-box",
-                  flexShrink: 0,
-                }}
-              >
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img src={logoSrc} alt={orgName} style={{ maxWidth: "100%", maxHeight: "100%", objectFit: "contain" }} />
-              </div>
-              <div style={{ display: "flex", flexDirection: "column", gap: 4, minWidth: 0 }}>
-                <div style={{ fontSize: fluidSize(10), fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.12em", color: ACC }}>
-                  {categoryLabel(organization.category?.name) || "Organization"}
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img src={logoSrc} alt={orgName} style={{ maxWidth: "100%", maxHeight: "100%", objectFit: "contain" }} />
                 </div>
-                <h1 style={{ margin: 0, fontSize: fluidSize(21), fontWeight: 600, letterSpacing: "-0.03em", lineHeight: 1.1 }}>
-                  {orgName}
-                </h1>
+                <div style={{ display: "flex", flexDirection: "column", gap: 3, minWidth: 0 }}>
+                  <div style={{ fontSize: fluidSize(10), fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.12em", color: ACC }}>
+                    {categoryLabel(organization.category?.name) || "Organization"}
+                  </div>
+                  <h1 style={{ margin: 0, fontSize: fluidSize(21), fontWeight: 600, letterSpacing: "-0.03em", lineHeight: 1.15 }}>
+                    {orgName}
+                  </h1>
+                  {location ? (
+                    <div style={{ fontSize: fluidSize(13), color: "#6e7180" }}>{location}</div>
+                  ) : null}
+                </div>
               </div>
+
+              <div style={{ paddingTop: 14, borderTop: "1px solid rgba(5,27,53,0.08)" }}>
+                <ExpandableDescription
+                  text={about}
+                  mobile
+                  toggleColor={ACC}
+                  style={{
+                    margin: 0,
+                    fontSize: fluidSize(13),
+                    lineHeight: 1.6,
+                    color: "#6e7180",
+                  }}
+                />
+              </div>
+
+              {teamActions}
             </div>
           )}
 
@@ -900,7 +1006,6 @@ export default function ClientProfile({
                   </div>
                   {g.rows.map((e) => {
                     const soon = e.status === "Presale";
-                    const tag = tagFor(e.status);
                     return (
                       <Link
                         key={e.key}
@@ -947,22 +1052,6 @@ export default function ClientProfile({
                               {e.sport}
                               {e.time ? ` · ${e.time}` : ""}
                             </span>
-                            {e.status !== "On sale" && (
-                              <span
-                                style={{
-                                  fontSize: fluidSize(10),
-                                  fontWeight: 600,
-                                  textTransform: "uppercase",
-                                  letterSpacing: "0.12em",
-                                  color: tag.tagInk,
-                                  background: tag.tagBg,
-                                  borderRadius: 999,
-                                  padding: "4px 9px",
-                                }}
-                              >
-                                {e.status}
-                              </span>
-                            )}
                           </div>
                           <div style={{ fontSize: fluidSize(mobile ? 16 : 17), fontWeight: 600, letterSpacing: "-0.015em", lineHeight: 1.25 }}>
                             {e.title}
@@ -1229,8 +1318,8 @@ export default function ClientProfile({
               })}
             </div>
           )}
-        </main>
-      </div>
+        </div>
+      </main>
     </div>
   );
 }
