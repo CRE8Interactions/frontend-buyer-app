@@ -85,7 +85,7 @@ function parseBody(config: InternalAxiosRequestConfig): Record<string, unknown> 
 type DemoWalletOrder = ReturnType<typeof demoCompletedTicketOrder>;
 type DemoSentTransfer = {
   id: string;
-  status: "pending";
+  status: "pending" | "claimed";
   orderId?: string | number;
   email?: string;
   emailAddressToUser?: string;
@@ -364,6 +364,15 @@ const routes: Route[] = [
       );
       if (index >= 0) {
         demoReceivedTransfers.splice(index, 1);
+      }
+      const sentIndex = demoSentTransfers.findIndex(
+        (row) => String(row.id) === transferId,
+      );
+      if (sentIndex >= 0) {
+        demoSentTransfers[sentIndex] = {
+          ...demoSentTransfers[sentIndex]!,
+          status: "claimed",
+        };
       }
       return { data: { status: "claimed", transferId } };
     },

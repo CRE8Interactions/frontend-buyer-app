@@ -15,10 +15,14 @@ import {
   formatVenueCityState,
   formatVenueLocationLine,
 } from "@/lib/venueLocation";
+import { formatTransferSenderLabel } from "@/lib/ticketTransfers";
 import {
   formatTicketHolderName,
+  gaTicketSeatLine,
+  isEventComplete,
   isToday,
   isUpcomingEvent,
+  isWalletListedEvent,
   type OrderLike,
   type TicketLike,
 } from "@/lib/wallet";
@@ -99,6 +103,10 @@ export type CartEventSummary = {
   eventUUID?: string;
   orderId?: string;
   availability: "available" | "past" | "transferred";
+  pendingIncomingTransfer?: boolean;
+  incomingTransferId?: string | number;
+  incomingTransferFrom?: string;
+  ticketSeats?: string[];
 };
 
 export type SeasonPackageSummary = {
@@ -149,6 +157,9 @@ export type CartEventDetail = {
   event: EventLike;
   transfersEnabled: boolean;
   availability: CartEventSummary["availability"];
+  pendingIncomingTransfer?: boolean;
+  incomingTransferId?: string | number;
+  incomingTransferFrom?: string;
   attractions: AttractionCard[];
   teams: {
     name: string;
@@ -198,8 +209,8 @@ export function ticketEntryLine(
 }
 
 function ticketSeatLabel(t: Record<string, unknown>) {
-  if (t.generalAdmission) {
-    return String(t.sectionName || t.offerName || "General admission");
+  if (t.generalAdmission || t.GA) {
+    return gaTicketSeatLine(t);
   }
   const sec = t.sectionName || t.sectionNumber;
   const row = t.rowNumber;
@@ -410,14 +421,19 @@ function mapEventTickets(
   }));
 }
 
-const TRANSFERRED_TICKET_STATUSES = new Set([
-  "accepted",
-  "assigned",
-  "complete",
-  "completed",
+/** Transfer still in the sender's wallet until the recipient claims it. */
+const PENDING_TRANSFER_STATUSES = new Set([
   "pending",
   "pending_transfer",
   "transfer_pending",
+  "assigned",
+]);
+
+/** Ticket has left the sender's wallet after a completed transfer. */
+const COMPLETED_TRANSFER_STATUSES = new Set([
+  "accepted",
+  "complete",
+  "completed",
   "transferred",
 ]);
 
@@ -425,29 +441,85 @@ function normalizedStatus(value: unknown) {
   return String(value || "").trim().toLowerCase().replace(/[\s-]+/g, "_");
 }
 
-function activeTransferRelation(value: unknown): boolean {
-  if (Array.isArray(value)) return value.some(activeTransferRelation);
+function isPendingTransferStatus(status: string) {
+  return PENDING_TRANSFER_STATUSES.has(status);
+}
+
+function isCompletedTransferStatus(status: string) {
+  return COMPLETED_TRANSFER_STATUSES.has(status);
+}
+
+function activeCompletedTransferRelation(value: unknown): boolean {
+  if (Array.isArray(value)) return value.some(activeCompletedTransferRelation);
   if (!value || typeof value !== "object") return false;
   const row = value as {
-    id?: unknown;
     status?: unknown;
     attributes?: unknown;
     data?: unknown;
   };
-  if ("data" in row) return activeTransferRelation(row.data);
-  if (row.attributes) return activeTransferRelation(row.attributes);
+  if ("data" in row) return activeCompletedTransferRelation(row.data);
+  if (row.attributes) return activeCompletedTransferRelation(row.attributes);
   const status = normalizedStatus(row.status);
-  if (status === "cancelled" || status === "canceled" || status === "rejected") {
+  if (
+    !status ||
+    status === "cancelled" ||
+    status === "canceled" ||
+    status === "rejected" ||
+    isPendingTransferStatus(status)
+  ) {
     return false;
   }
-  return status
-    ? TRANSFERRED_TICKET_STATUSES.has(status)
-    : row.id != null;
+  return isCompletedTransferStatus(status);
+}
+
+function activePendingTransferRelation(value: unknown): boolean {
+  if (Array.isArray(value)) return value.some(activePendingTransferRelation);
+  if (!value || typeof value !== "object") return false;
+  const row = value as {
+    status?: unknown;
+    attributes?: unknown;
+    data?: unknown;
+  };
+  if ("data" in row) return activePendingTransferRelation(row.data);
+  if (row.attributes) return activePendingTransferRelation(row.attributes);
+  const status = normalizedStatus(row.status);
+  return Boolean(status && isPendingTransferStatus(status));
+}
+
+function ticketTransferRelations(ticket: TicketLike) {
+  return (
+    ticket.ticketTransfer ||
+    ticket.ticket_transfer ||
+    ticket.ticketTransfers ||
+    ticket.ticket_transfers ||
+    ticket.transfer
+  );
+}
+
+/** Outbound transfer started but not yet claimed by the recipient. */
+export function isPendingTransferTicket(ticket?: TicketLike | null): boolean {
+  if (!ticket) return false;
+
+  const directStatuses = [
+    ticket.status,
+    ticket.transferStatus,
+    ticket.transfer_status,
+    ticket.on_sale_status,
+  ];
+  if (
+    directStatuses.some((status) =>
+      isPendingTransferStatus(normalizedStatus(status)),
+    )
+  ) {
+    return true;
+  }
+
+  return activePendingTransferRelation(ticketTransferRelations(ticket));
 }
 
 /** Ticket transfer payloads differ between API versions, so accept each known shape. */
 export function isTransferredTicket(ticket?: TicketLike | null): boolean {
-  if (!ticket) return false;
+  if (!ticket || isPendingTransferTicket(ticket)) return false;
   if (
     ticket.isTransferred === true ||
     ticket.transferred === true ||
@@ -462,27 +534,615 @@ export function isTransferredTicket(ticket?: TicketLike | null): boolean {
     ticket.transfer_status,
   ];
   if (
-    directStatuses.some((status) =>
-      TRANSFERRED_TICKET_STATUSES.has(normalizedStatus(status)),
-    )
+    directStatuses.some((status) => {
+      const normalized = normalizedStatus(status);
+      return (
+        normalized &&
+        !isPendingTransferStatus(normalized) &&
+        isCompletedTransferStatus(normalized)
+      );
+    })
   ) {
     return true;
   }
-  if (
-    ["assigned", "pending_transfer", "transfer_pending", "transferred"].includes(
-      normalizedStatus(ticket.on_sale_status),
-    )
-  ) {
+  if (normalizedStatus(ticket.on_sale_status) === "transferred") {
     return true;
   }
 
-  return activeTransferRelation(
-    ticket.ticketTransfer ||
-    ticket.ticket_transfer ||
-    ticket.ticketTransfers ||
-    ticket.ticket_transfers ||
-    ticket.transfer,
+  return activeCompletedTransferRelation(ticketTransferRelations(ticket));
+}
+
+function mergeTicketDetailLists(
+  existing: CartTicketDetail[],
+  additions: CartTicketDetail[],
+): CartTicketDetail[] {
+  const seen = new Set(existing.map((ticket) => String(ticket.id ?? ticket.code)));
+  const merged = [...existing];
+  for (const ticket of additions) {
+    const key = String(ticket.id ?? ticket.code);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    merged.push(ticket);
+  }
+  const holder = existing[0]?.holder || additions[0]?.holder || "";
+  return mapEventTickets(
+    merged.map((ticket) => ticket.raw || {}),
+    holder,
   );
+}
+
+/** Mark selected tickets as pending transfer before the wallet refresh returns. */
+export function markTicketsPendingTransferInDetails(
+  details: Record<string, CartEventDetail>,
+  ticketIds: Array<number | string | undefined | null>,
+): Record<string, CartEventDetail> {
+  const idSet = new Set(
+    ticketIds
+      .filter((value) => value != null && value !== "")
+      .map((value) => String(value)),
+  );
+  if (!idSet.size) return details;
+
+  const out: Record<string, CartEventDetail> = {};
+  for (const [key, detail] of Object.entries(details)) {
+    let changed = false;
+    const tickets = detail.tickets.map((ticket) => {
+      if (!idSet.has(String(ticket.id ?? ""))) return ticket;
+      changed = true;
+      return {
+        ...ticket,
+        raw: {
+          ...(ticket.raw || {}),
+          transferStatus: "pending",
+          ticketTransfer: { status: "pending" },
+        },
+      };
+    });
+    out[key] = changed
+      ? {
+          ...detail,
+          tickets,
+          availability:
+            detail.availability === "transferred" ? "available" : detail.availability,
+        }
+      : detail;
+  }
+  return out;
+}
+
+/**
+ * Keep pending-transfer tickets visible after the wallet list refresh drops them.
+ * Blocktickets leaves them in the sender wallet until the recipient claims them.
+ */
+export function mergePendingTransferWalletDetails(
+  next: Record<string, CartEventDetail>,
+  previous: Record<string, CartEventDetail>,
+): Record<string, CartEventDetail> {
+  const merged = { ...next };
+
+  for (const [key, prev] of Object.entries(previous)) {
+    const pendingTickets = prev.tickets.filter((ticket) =>
+      isPendingTransferTicket(ticket.raw as TicketLike),
+    );
+    if (!pendingTickets.length) continue;
+
+    const existing = merged[key];
+    if (!existing) {
+      merged[key] = {
+        ...prev,
+        tickets: pendingTickets,
+        availability: "available",
+      };
+      continue;
+    }
+
+    const additions = pendingTickets.filter(
+      (ticket) =>
+        !existing.tickets.some(
+          (row) => String(row.id ?? row.code) === String(ticket.id ?? ticket.code),
+        ),
+    );
+    if (!additions.length) continue;
+
+    const tickets = mergeTicketDetailLists(existing.tickets, additions);
+    merged[key] = {
+      ...existing,
+      tickets,
+      availability: "available",
+    };
+  }
+
+  return merged;
+}
+
+export type PendingSentTransfer = {
+  status?: string;
+  orderId?: string | number;
+  event?: EventLike | null;
+  tickets?: TicketLike[];
+};
+
+export type PendingReceivedTransfer = PendingSentTransfer & {
+  id?: string | number;
+  fromUserEmail?: string;
+};
+
+function incomingTransferDetailKey(
+  eventUUID: string,
+  transferId?: string | number,
+) {
+  const event = String(eventUUID || "").trim();
+  if (event) return `incoming:${event}`;
+  const id = String(transferId ?? "").trim();
+  return id ? `incoming:transfer:${id}` : "incoming:transfer:unknown";
+}
+
+function dedupePendingReceivedTransfers(transfers: PendingReceivedTransfer[]) {
+  const seen = new Set<string>();
+  const out: PendingReceivedTransfer[] = [];
+  for (const transfer of transfers) {
+    const id = String(transfer.id ?? "").trim();
+    if (id) {
+      if (seen.has(id)) continue;
+      seen.add(id);
+    }
+    out.push(transfer);
+  }
+  return out;
+}
+
+function findReceivedTransferDetailKey(
+  details: Record<string, CartEventDetail>,
+  eventUUID: string,
+  transferId?: string | number,
+  transferOrderId?: string,
+  incomingTicketIds: string[] = [],
+) {
+  const ticketIdSet = new Set(incomingTicketIds.map(String).filter(Boolean));
+  const matchesEvent = (row: CartEventDetail) =>
+    Boolean(eventUUID) && row.eventUUID === eventUUID;
+  const matchesTicket = (row: CartEventDetail) =>
+    ticketIdSet.size > 0 &&
+    row.tickets.some((ticket) =>
+      ticketIdSet.has(String(ticket.id ?? ticket.code)),
+    );
+
+  const incoming =
+    Object.entries(details).find(
+      ([key, row]) =>
+        key.startsWith("incoming:") &&
+        (matchesEvent(row) || matchesTicket(row)),
+    )?.[0] ?? null;
+  if (incoming) return incoming;
+
+  return incomingTransferDetailKey(eventUUID, transferId);
+}
+
+/** One pending incoming row per event — drop duplicate wallet/my-events rows. */
+function collapseDuplicateIncomingEventDetails(
+  details: Record<string, CartEventDetail>,
+): Record<string, CartEventDetail> {
+  const out = { ...details };
+  const pendingByEvent = new Map<string, string[]>();
+
+  for (const [key, detail] of Object.entries(out)) {
+    if (!detail.pendingIncomingTransfer) continue;
+    const eventUUID = String(detail.eventUUID || "").trim();
+    if (!eventUUID) continue;
+    pendingByEvent.set(eventUUID, [...(pendingByEvent.get(eventUUID) ?? []), key]);
+  }
+
+  for (const [, pendingKeys] of pendingByEvent) {
+    const keyList = pendingKeys.filter((key) => key.startsWith("incoming:"));
+    if (keyList.length <= 1) continue;
+
+    const preferred = keyList[0]!;
+    const pendingDetails = keyList
+      .map((key) => out[key])
+      .filter((detail): detail is CartEventDetail => Boolean(detail?.pendingIncomingTransfer));
+    const tickets = pendingDetails.reduce(
+      (acc, detail) => mergeTicketDetailLists(acc, detail.tickets),
+      [] as CartTicketDetail[],
+    );
+    const pendingMeta = pendingDetails[pendingDetails.length - 1];
+
+    out[preferred] = {
+      ...(out[preferred] ?? pendingMeta!),
+      ...pendingMeta,
+      key: preferred,
+      tickets,
+      pendingIncomingTransfer: true,
+      availability: "available",
+      transfersEnabled: false,
+    };
+
+    for (const key of keyList) {
+      if (key !== preferred) delete out[key];
+    }
+  }
+
+  return out;
+}
+
+/** Surface pending incoming transfers in the recipient's upcoming wallet. */
+export function reconcilePendingReceivedTransfers(
+  details: Record<string, CartEventDetail>,
+  transfers: PendingReceivedTransfer[],
+  recipientEmail = "",
+): Record<string, CartEventDetail> {
+  let merged = { ...details };
+  const holder = formatTicketHolderName({ email: recipientEmail });
+
+  for (const transfer of dedupePendingReceivedTransfers(transfers)) {
+    if (!isPendingTransferStatus(normalizedStatus(transfer.status))) continue;
+    const event = transfer.event;
+    const tickets = transfer.tickets ?? [];
+    if (!event || !tickets.length || isEventComplete(event)) continue;
+
+    const eventUUID = String(event.uuid || "").trim();
+    const orderId = String(transfer.orderId || "").trim() || undefined;
+    const incomingTicketIds = tickets.map((ticket) => String(ticket.id ?? ""));
+    const key = findReceivedTransferDetailKey(
+      merged,
+      eventUUID,
+      transfer.id,
+      orderId,
+      incomingTicketIds,
+    );
+    const incomingRaw = tickets.map((ticket) => ({
+      ...ticket,
+      transferStatus: "pending",
+      ticketTransfer: {
+        status: "pending",
+        direction: "incoming",
+        fromUserEmail: transfer.fromUserEmail,
+      },
+    }));
+    const incomingTickets = mapEventTickets(incomingRaw, holder);
+    const existing = merged[key];
+    const nextTickets = existing?.pendingIncomingTransfer
+      ? mergeTicketDetailLists(existing.tickets, incomingTickets)
+      : incomingTickets;
+    const incomingMeta = {
+      pendingIncomingTransfer: true,
+      incomingTransferId: transfer.id,
+      incomingTransferFrom: formatTransferSenderLabel(transfer),
+      transfersEnabled: false,
+    };
+    const patch: CartEventDetail = existing
+      ? {
+          ...existing,
+          tickets: nextTickets,
+          availability: "available",
+          ...incomingMeta,
+        }
+      : {
+          ...detailFromEvent(
+            event,
+            key,
+            incomingRaw,
+            key,
+            undefined,
+            holder,
+            "Tickets",
+          ),
+          availability: "available",
+          ...(orderId ? { orderId } : {}),
+          ...incomingMeta,
+        };
+
+    merged = { ...merged, [key]: patch };
+  }
+
+  return collapseDuplicateIncomingEventDetails(merged);
+}
+
+function dedupePendingSentTransfers(transfers: PendingSentTransfer[]) {
+  const seen = new Set<string>();
+  const out: PendingSentTransfer[] = [];
+  for (const transfer of transfers) {
+    const id = String(transfer.id ?? "").trim();
+    if (id) {
+      if (seen.has(id)) continue;
+      seen.add(id);
+    }
+    out.push(transfer);
+  }
+  return out;
+}
+
+function findRichestDetailForEvent(
+  details: Record<string, CartEventDetail>,
+  eventUUID: string,
+) {
+  return (
+    Object.values(details).find(
+      (row) =>
+        row.eventUUID === eventUUID &&
+        (row.heroImage || row.posterSrc || row.venueLine),
+    ) ?? null
+  );
+}
+
+function enrichDetailFromSibling(
+  detail: CartEventDetail,
+  sibling?: CartEventDetail | null,
+): CartEventDetail {
+  if (!sibling) return detail;
+  const event =
+    sibling.event &&
+    (sibling.event.image ||
+      sibling.event.venue?.name ||
+      sibling.event.attractions?.length)
+      ? { ...detail.event, ...sibling.event }
+      : detail.event;
+  const matchup = refreshEventMatchupFields(event, detail.packageName);
+  return {
+    ...detail,
+    event,
+    ...matchup,
+    heroImage:
+      detail.heroImage || sibling.heroImage || imageUrl(event?.image, ""),
+    venue: detail.venue || sibling.venue,
+    venueLine: detail.venueLine || sibling.venueLine,
+    when: detail.when || sibling.when,
+    doors: detail.doors || sibling.doors,
+    startTime: detail.startTime || sibling.startTime,
+    today: detail.today || sibling.today,
+  };
+}
+
+function findSentTransferDetailKey(
+  details: Record<string, CartEventDetail>,
+  eventUUID: string,
+  transferId?: string | number,
+  transferOrderId?: string,
+  ticketIds: string[] = [],
+) {
+  const ticketIdSet = new Set(ticketIds.map(String).filter(Boolean));
+  const matchesEvent = (row: CartEventDetail) =>
+    Boolean(eventUUID) && row.eventUUID === eventUUID;
+  const matchesTicket = (row: CartEventDetail) =>
+    ticketIdSet.size > 0 &&
+    row.tickets.some((ticket) =>
+      ticketIdSet.has(String(ticket.id ?? ticket.code)),
+    );
+  const sent =
+    Object.entries(details).find(
+      ([key, row]) =>
+        key.startsWith("sent:") &&
+        (matchesEvent(row) || matchesTicket(row)),
+    )?.[0] ?? null;
+  if (sent) return sent;
+
+  const event = String(eventUUID || "").trim();
+  if (event) return `sent:${event}`;
+  const id = String(transferId ?? transferOrderId ?? "").trim();
+  return id ? `sent:transfer:${id}` : "sent:transfer:unknown";
+}
+
+/** Merge duplicate pending-outgoing rows and borrow artwork from real orders. */
+function collapseDuplicateSentEventDetails(
+  details: Record<string, CartEventDetail>,
+): Record<string, CartEventDetail> {
+  const out = { ...details };
+
+  for (const sentKey of Object.keys(out)) {
+    if (!sentKey.startsWith("sent:")) continue;
+    const sentDetail = out[sentKey];
+    if (!sentDetail) continue;
+    const eventUUID = String(sentDetail.eventUUID || "").trim();
+    if (!eventUUID) continue;
+
+    out[sentKey] = enrichDetailFromSibling(
+      sentDetail,
+      findRichestDetailForEvent(out, eventUUID),
+    );
+  }
+
+  const sentByEvent = new Map<string, string[]>();
+  for (const [key, detail] of Object.entries(out)) {
+    if (!key.startsWith("sent:")) continue;
+    const eventUUID = String(detail.eventUUID || "").trim();
+    if (!eventUUID) continue;
+    sentByEvent.set(eventUUID, [...(sentByEvent.get(eventUUID) ?? []), key]);
+  }
+
+  for (const [eventUUID, keys] of sentByEvent) {
+    if (keys.length <= 1) continue;
+    const preferred = keys[0]!;
+    const mergedDetail = keys.slice(1).reduce((acc, key) => {
+      const detail = out[key];
+      if (!detail) return acc;
+      return {
+        ...acc,
+        tickets: mergeTicketDetailLists(acc.tickets, detail.tickets),
+      };
+    }, out[preferred]!);
+    out[preferred] = enrichDetailFromSibling(
+      mergedDetail,
+      findRichestDetailForEvent(out, eventUUID),
+    );
+    for (const key of keys) {
+      if (key !== preferred) delete out[key];
+    }
+  }
+
+  return out;
+}
+
+/** Drop completed transfers from the sender wallet once they are no longer pending. */
+export function pruneTransferredWalletDetails(
+  details: Record<string, CartEventDetail>,
+): Record<string, CartEventDetail> {
+  const out: Record<string, CartEventDetail> = {};
+
+  for (const [key, detail] of Object.entries(details)) {
+    if (detail.pendingIncomingTransfer) {
+      out[key] = detail;
+      continue;
+    }
+
+    const tickets = detail.tickets.filter((ticket) => {
+      const raw = (ticket.raw ?? ticket) as TicketLike;
+      if (isPendingTransferTicket(raw)) return true;
+      return !isTransferredTicket(raw);
+    });
+
+    if (!tickets.length) continue;
+
+    const rawTickets = tickets.map(
+      (ticket) => (ticket.raw ?? ticket) as Record<string, unknown>,
+    );
+    out[key] = {
+      ...detail,
+      tickets,
+      availability: eventAvailability(detail.event, rawTickets),
+    };
+  }
+
+  return out;
+}
+
+function ownedEventMergeKey(detail: CartEventDetail): string | null {
+  const name = String(detail.title || detail.event?.name || "")
+    .trim()
+    .toLowerCase();
+  const start = String(detail.event?.start || "").trim();
+  if (!name || !start) return null;
+  return `${name}|${start}`;
+}
+
+function isStandaloneOwnedWalletDetail(
+  key: string,
+  detail: CartEventDetail,
+): boolean {
+  if (key.startsWith("incoming:") || key.startsWith("sent:")) return false;
+  if (key.includes(":")) return false;
+  if (detail.pendingIncomingTransfer) return false;
+  if (
+    detail.tickets.some((ticket) =>
+      isPendingTransferTicket(ticket.raw as TicketLike),
+    )
+  ) {
+    return false;
+  }
+  return true;
+}
+
+/** Merge duplicate purchased rows for the same event name and start time. */
+export function mergeDuplicateOwnedEventDetails(
+  details: Record<string, CartEventDetail>,
+): Record<string, CartEventDetail> {
+  const out = { ...details };
+  const groups = new Map<string, string[]>();
+
+  for (const [key, detail] of Object.entries(out)) {
+    if (!isStandaloneOwnedWalletDetail(key, detail)) continue;
+    const mergeKey = ownedEventMergeKey(detail);
+    if (!mergeKey) continue;
+    groups.set(mergeKey, [...(groups.get(mergeKey) ?? []), key]);
+  }
+
+  for (const keys of groups.values()) {
+    if (keys.length <= 1) continue;
+
+    const preferred =
+      keys.find((key) => out[key]?.heroImage || out[key]?.posterSrc) ??
+      keys.find((key) => out[key]?.venueLine) ??
+      keys[0]!;
+
+    let mergedDetail = out[preferred]!;
+    for (const key of keys) {
+      if (key === preferred) continue;
+      const detail = out[key];
+      if (!detail) continue;
+      mergedDetail = enrichDetailFromSibling(
+        {
+          ...mergedDetail,
+          tickets: mergeTicketDetailLists(mergedDetail.tickets, detail.tickets),
+        },
+        detail,
+      );
+    }
+
+    out[preferred] = { ...mergedDetail, key: preferred };
+    for (const key of keys) {
+      if (key !== preferred) delete out[key];
+    }
+  }
+
+  return out;
+}
+
+/** Rehydrate tickets from pending sent transfers after a full wallet reload. */
+export function reconcilePendingSentTransfers(
+  details: Record<string, CartEventDetail>,
+  transfers: PendingSentTransfer[],
+  holderEmail = "",
+): Record<string, CartEventDetail> {
+  let merged = { ...details };
+
+  for (const transfer of dedupePendingSentTransfers(transfers)) {
+    if (!isPendingTransferStatus(normalizedStatus(transfer.status))) continue;
+    const tickets = transfer.tickets ?? [];
+    if (!tickets.length) continue;
+
+    const eventUUID = String(transfer.event?.uuid || "").trim();
+    const orderId = String(transfer.orderId || "").trim() || undefined;
+    const ticketIds = tickets.map((ticket) => String(ticket.id ?? ""));
+    const key = findSentTransferDetailKey(
+      merged,
+      eventUUID,
+      transfer.id,
+      orderId,
+      ticketIds,
+    );
+    const holder = formatTicketHolderName({ email: holderEmail });
+    const pendingRaw = tickets.map((ticket) => ({
+      ...ticket,
+      transferStatus: "pending",
+      ticketTransfer: { status: "pending" },
+    }));
+    const pendingTickets = mapEventTickets(pendingRaw, holder);
+    const existing = merged[key];
+
+    if (!existing) {
+      if (!transfer.event) continue;
+      const created = {
+        ...detailFromEvent(
+          transfer.event,
+          key,
+          pendingRaw,
+          orderId || key,
+          undefined,
+          holder,
+          "Tickets",
+        ),
+        ...(orderId ? { orderId } : {}),
+        availability: "available" as const,
+        tickets: pendingTickets,
+      };
+      merged = {
+        ...merged,
+        [key]: enrichDetailFromSibling(
+          created,
+          findRichestDetailForEvent(merged, eventUUID),
+        ),
+      };
+      continue;
+    }
+
+    merged = mergePendingTransferWalletDetails(merged, {
+      [key]: {
+        ...existing,
+        tickets: pendingTickets,
+        availability: "available",
+      },
+    });
+  }
+
+  return collapseDuplicateSentEventDetails(merged);
 }
 
 function eventAvailability(
@@ -708,23 +1368,108 @@ export function buildCartEventDetails(
   return out;
 }
 
-export function summarizeEventDetails(
+function walletEventStartMs(detail?: CartEventDetail | null) {
+  const start = detail?.event?.start;
+  if (!start) return Number.MAX_SAFE_INTEGER;
+  return new Date(start).getTime();
+}
+
+function availabilityRank(availability: CartEventSummary["availability"]) {
+  if (availability === "available") return 0;
+  if (availability === "past") return 1;
+  return 2;
+}
+
+/** Upcoming wallet events: today first, then soonest start time. */
+export function sortWalletUpcomingEvents(
+  summaries: CartEventSummary[],
   details: Record<string, CartEventDetail>,
 ): CartEventSummary[] {
-  return Object.values(details).map((d) => ({
-    key: d.key,
-    name: d.title,
-    when: d.when,
-    venueLine: d.venueLine || d.venue,
-    ticketCount: d.tickets.length,
-    thumb: d.heroImage || d.posterSrc,
-    today: d.today,
-    doorsTime: d.doors,
-    startTime: d.startTime,
-    eventUUID: d.eventUUID,
-    orderId: d.orderId,
-    availability: d.availability,
-  }));
+  return [...summaries].sort((a, b) => {
+    if (a.today !== b.today) return a.today ? -1 : 1;
+    const startDiff =
+      walletEventStartMs(details[a.key]) - walletEventStartMs(details[b.key]);
+    if (startDiff !== 0) return startDiff;
+    return a.name.localeCompare(b.name);
+  });
+}
+
+/** Season package games and schedules: earliest event first. */
+export function sortWalletEventSchedule(
+  summaries: CartEventSummary[],
+  details: Record<string, CartEventDetail>,
+): CartEventSummary[] {
+  return [...summaries].sort((a, b) => {
+    const startDiff =
+      walletEventStartMs(details[a.key]) - walletEventStartMs(details[b.key]);
+    if (startDiff !== 0) return startDiff;
+    const availabilityDiff =
+      availabilityRank(a.availability) - availabilityRank(b.availability);
+    if (availabilityDiff !== 0) return availabilityDiff;
+    return a.name.localeCompare(b.name);
+  });
+}
+
+/** Season packages tab: next upcoming game in the package. */
+export function sortSeasonPackageSummaries(
+  packages: SeasonPackageSummary[],
+  details: Record<string, CartEventDetail>,
+): SeasonPackageSummary[] {
+  const nextEventMs = (pkg: SeasonPackageSummary) => {
+    const prefix = pkg.packageUUID
+      ? `${pkg.packageUUID}:`
+      : `${pkg.key}:`;
+    const games = Object.entries(details)
+      .filter(
+        ([key, detail]) =>
+          key.startsWith(prefix) &&
+          (!pkg.orderId || detail.orderId === pkg.orderId) &&
+          detail.availability === "available",
+      )
+      .map(([, detail]) => detail);
+    if (!games.length) return Number.MAX_SAFE_INTEGER;
+    return Math.min(...games.map((detail) => walletEventStartMs(detail)));
+  };
+
+  return [...packages].sort((a, b) => {
+    const diff = nextEventMs(a) - nextEventMs(b);
+    if (diff !== 0) return diff;
+    return a.name.localeCompare(b.name);
+  });
+}
+
+export function summarizeEventDetails(
+  details: Record<string, CartEventDetail>,
+  mode: "upcoming" | "schedule" = "upcoming",
+): CartEventSummary[] {
+  const listed =
+    mode === "schedule"
+      ? Object.values(details)
+      : Object.values(details).filter(
+          (detail) =>
+            !isEventComplete(detail.event) && detail.availability !== "past",
+        );
+  const summaries = listed.map((d) => ({
+      key: d.key,
+      name: d.title,
+      when: d.when,
+      venueLine: d.venueLine || d.venue,
+      ticketCount: d.tickets.length,
+      thumb: d.heroImage || d.posterSrc,
+      today: d.today,
+      doorsTime: d.doors,
+      startTime: d.startTime,
+      eventUUID: d.eventUUID,
+      orderId: d.orderId,
+      availability: d.availability,
+      pendingIncomingTransfer: d.pendingIncomingTransfer,
+      incomingTransferId: d.incomingTransferId,
+      incomingTransferFrom: d.incomingTransferFrom,
+      ticketSeats: d.tickets.map((ticket) => ticket.seat).filter(Boolean),
+    }));
+  return mode === "schedule"
+    ? sortWalletEventSchedule(summaries, details)
+    : sortWalletUpcomingEvents(summaries, details);
 }
 
 function firstRouteParam(value?: string | string[] | null) {
@@ -862,7 +1607,10 @@ function attachOrderEventDetail(
   packageName?: string,
   includeUnavailable = false,
 ) {
-  if (!tickets.length || (!includeUnavailable && !isUpcomingEvent(ev))) return;
+  if (!tickets.length) return;
+  if (!includeUnavailable) {
+    if (isEventComplete(ev) || !isWalletListedEvent(ev)) return;
+  }
   const orderId = orderIdOf(order);
   const total = orderTotal(order.total);
   const holder = formatTicketHolderName({
