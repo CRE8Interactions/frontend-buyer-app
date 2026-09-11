@@ -194,14 +194,24 @@ function rejectionStatus(cause: unknown): number | undefined {
  * request that never got a verdict — offline, timed out, rate limited, or a
  * server fault — is a connection problem.
  */
-export function codeSubmitError(cause: unknown): Exclude<CodeFieldError, null> {
-  const status = rejectionStatus(cause);
+function codeStatusError(status: number): Exclude<CodeFieldError, null> {
   const rejected =
-    status !== undefined &&
     status >= 400 &&
     status < 500 &&
     !CODE_UNANSWERED_STATUSES.has(status);
   return rejected ? "code" : "network";
+}
+
+export function codeResponseError(
+  status: number,
+): Exclude<CodeFieldError, null> {
+  return codeStatusError(status);
+}
+
+export function codeSubmitError(cause: unknown): Exclude<CodeFieldError, null> {
+  const status = rejectionStatus(cause);
+  if (status === undefined) return "network";
+  return codeStatusError(status);
 }
 
 export function lightFieldClass(invalid: boolean) {

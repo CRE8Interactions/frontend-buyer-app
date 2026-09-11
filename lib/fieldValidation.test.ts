@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { DEMO_USER } from "@/lib/demo/fixtures";
 import {
+  codeResponseError,
   codeSubmitError,
   dobBlurError,
   dobSubmitError,
@@ -144,6 +145,19 @@ describe("redemption codes", () => {
     expect(promoCodeRejectedMessage("Promo code not found")).toBe(
       "Promo code not found. Please try again.",
     );
+  });
+});
+
+describe("codeResponseError", () => {
+  it("reads a rejected code as a wrong code", () => {
+    expect(codeResponseError(400)).toBe("code");
+    expect(codeResponseError(401)).toBe("code");
+  });
+
+  it("keeps network copy for a code that never got a verdict", () => {
+    expect(codeResponseError(408)).toBe("network");
+    expect(codeResponseError(429)).toBe("network");
+    expect(codeResponseError(500)).toBe("network");
   });
 });
 

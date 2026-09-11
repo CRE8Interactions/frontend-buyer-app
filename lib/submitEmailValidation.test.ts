@@ -35,9 +35,9 @@ describe("validateSubmittedEmail", () => {
     expect(mockedValidateEmail).not.toHaveBeenCalled();
   });
 
-  it("rejects a SendGrid Invalid verdict", async () => {
+  it("rejects a SendGrid Invalid verdict on 200", async () => {
     mockedValidateEmail.mockResolvedValue({
-      data: { verdict: "Invalid" },
+      data: { verdict: "Invalid", score: 0 },
     } as never);
 
     const result = await validateSubmittedEmail(DEMO_USER.email);
@@ -50,7 +50,21 @@ describe("validateSubmittedEmail", () => {
     expect(mockedValidateEmail).toHaveBeenCalledWith({ email: DEMO_USER.email });
   });
 
-  it("accepts a valid local email when SendGrid passes", async () => {
+  it("rejects a SendGrid Risky verdict with a suggestion on 200", async () => {
+    mockedValidateEmail.mockResolvedValue({
+      data: { verdict: "Risky", suggestion: "fan@blocktickets.xyz" },
+    } as never);
+
+    const result = await validateSubmittedEmail(DEMO_USER.email);
+
+    expect(result).toEqual({
+      ok: false,
+      email: DEMO_USER.email,
+      error: "invalid",
+    });
+  });
+
+  it("accepts a valid local email when validate-email returns 200 Valid", async () => {
     const result = await validateSubmittedEmail(DEMO_USER.email);
 
     expect(result).toEqual({ ok: true, email: DEMO_USER.email });
@@ -65,6 +79,20 @@ describe("validateSubmittedEmail", () => {
       ok: false,
       email: DEMO_USER.email,
       error: "network",
+    });
+  });
+
+  it("returns invalid when validate-email responds with 402 Bad email", async () => {
+    mockedValidateEmail.mockRejectedValue({
+      response: { status: 402, data: "Bad email" },
+    });
+
+    const result = await validateSubmittedEmail(DEMO_USER.email);
+
+    expect(result).toEqual({
+      ok: false,
+      email: DEMO_USER.email,
+      error: "invalid",
     });
   });
 

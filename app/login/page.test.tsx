@@ -254,10 +254,10 @@ describe("Login page", () => {
     expect(mockedVerifyUser).not.toHaveBeenCalled();
   });
 
-  it("rejects a SendGrid Invalid or Risky email without sending a code", async () => {
+  it("rejects a SendGrid Invalid verdict on 200 without sending a code", async () => {
     const user = userEvent.setup();
     mockedValidateEmail.mockResolvedValue({
-      data: { verdict: "Risky", suggestion: "fan@blocktickets.xyz" },
+      data: { verdict: "Invalid", score: 0 },
     } as never);
     render(<LoginPage />);
 
@@ -271,6 +271,42 @@ describe("Login page", () => {
       await screen.findByText(FIELD_COPY.invalidEmail),
     ).toBeInTheDocument();
     expect(mockedVerifyUser).not.toHaveBeenCalled();
+  });
+
+  it("rejects a validate-email 402 without sending a code", async () => {
+    const user = userEvent.setup();
+    mockedValidateEmail.mockRejectedValue({
+      response: { status: 402, data: "Bad email" },
+    });
+    render(<LoginPage />);
+
+    await user.type(
+      screen.getByLabelText(/email address/i),
+      DEMO_USER.email,
+    );
+    await user.click(screen.getByRole("button", { name: /send my code/i }));
+
+    expect(
+      await screen.findByText(FIELD_COPY.invalidEmail),
+    ).toBeInTheDocument();
+    expect(mockedVerifyUser).not.toHaveBeenCalled();
+  });
+
+  it("shows a network error when verifyUser fails after email validation passes", async () => {
+    const user = userEvent.setup();
+    mockedVerifyUser.mockRejectedValueOnce(new Error("offline"));
+    render(<LoginPage />);
+
+    await user.type(
+      screen.getByLabelText(/email address/i),
+      DEMO_USER.email,
+    );
+    await user.click(screen.getByRole("button", { name: /send my code/i }));
+
+    expect(
+      await screen.findByText(/experiencing technical difficulties/i),
+    ).toBeInTheDocument();
+    expect(screen.queryByLabelText(/six-digit code/i)).not.toBeInTheDocument();
   });
 
   it("sends a mixed-case email to the backend as lowercase", async () => {
@@ -336,6 +372,24 @@ describe("Login page", () => {
       screen.queryByText(/experiencing technical difficulties/i),
     ).not.toBeInTheDocument();
     expect(screen.getByLabelText(/six-digit code/i)).toHaveValue("1");
+  });
+
+  it("shows the incorrect-code message when verifyCode returns 400 without throwing", async () => {
+    const user = userEvent.setup();
+    mockedVerifyCode.mockResolvedValue({
+      status: 400,
+      data: { error: { message: "Code provided is incorrect" } },
+    } as never);
+    await sendCodeForDemoUser(user);
+
+    await user.type(screen.getByLabelText(/six-digit code/i), "111111");
+
+    expect(
+      await screen.findByText(FIELD_COPY.codeIncorrect),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByText(/experiencing technical difficulties/i),
+    ).not.toBeInTheDocument();
   });
 
   it("shows a network error when verifying the code fails, not an incorrect-code message", async () => {
@@ -459,6 +513,22 @@ describe("Login page create account", { timeout: 20_000 }, () => {
     expect(screen.queryByText(/date of birth is required/i)).not.toBeInTheDocument();
   });
 
+  it("shows invalid name copy on blur of a non-empty bad first name", async () => {
+    const user = userEvent.setup();
+    await openCreateAccount(user);
+
+    const field = screen.getByLabelText(/first name/i);
+    const setter = Object.getOwnPropertyDescriptor(
+      window.HTMLInputElement.prototype,
+      "value",
+    )?.set;
+    setter?.call(field, "John@");
+    fireEvent.blur(field);
+
+    expect(screen.getByText(FIELD_COPY.namePattern)).toBeInTheDocument();
+    expect(mockedCreateNewUser).not.toHaveBeenCalled();
+  });
+
   it("shows invalid phone copy on blur of a partial number without calling the API", async () => {
     const user = userEvent.setup();
     await openCreateAccount(user);
@@ -553,6 +623,23 @@ describe("Login page create account", { timeout: 20_000 }, () => {
     await user.click(screen.getByRole("button", { name: /sign up/i }));
 
     expect(await screen.findByText(PHONE_ERROR.exists)).toBeInTheDocument();
+    expect(mockedSetSession).not.toHaveBeenCalled();
+  });
+
+  it("shows a network error when createNewUser returns 500 without throwing", async () => {
+    const user = userEvent.setup();
+    mockedCreateNewUser.mockResolvedValue({ status: 500, data: {} } as never);
+    await openCreateAccount(user);
+
+    await user.type(screen.getByLabelText(/first name/i), DEMO_USER.firstName);
+    await user.type(screen.getByLabelText(/last name/i), DEMO_USER.lastName);
+    await fillMobile(user, DEMO_USER.phoneNumber);
+    await user.type(screen.getByLabelText(/birth date/i), DEMO_USER.dob);
+    await user.click(screen.getByRole("button", { name: /sign up/i }));
+
+    expect(
+      await screen.findByText(/experiencing technical difficulties/i),
+    ).toBeInTheDocument();
     expect(mockedSetSession).not.toHaveBeenCalled();
   });
 

@@ -22,6 +22,7 @@ import { setSession, getLastKnown, type AuthSession } from "@/lib/auth";
 import { validateSubmittedEmail } from "@/lib/submitEmailValidation";
 import {
   FIELD_COPY,
+  codeResponseError,
   codeSubmitError,
   dobBlurError,
   dobSubmitError,
@@ -188,7 +189,7 @@ function LoginForm() {
       } else if (res.status === 203) {
         setStep(2);
       } else {
-        setCodeError("code");
+        setCodeError(codeResponseError(res.status));
       }
     } catch (cause) {
       setCodeError(codeSubmitError(cause));

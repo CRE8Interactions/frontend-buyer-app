@@ -1,29 +1,93 @@
 %% Step 1: code (OTP)
+
 %% Source: app/login/page.tsx, lib/fieldValidation.ts
+
+%% API:    blocktickets/tickets/src/api/verify/controllers/verify.js (byPhoneOrEmail → POST /verifies/by-phone-or-email)
+
+%%         blocktickets/tickets/src/api/verify/controllers/verify.js (create → POST /verifies resend)
+
+%%
+
+%% --- Client-only ---
+
 %% Code incorrect: Code is incorrect. Please try again
+
 %% Network: We're experiencing technical difficulties. Please try again later.
 
+%%
+
+%% --- POST /verifies/by-phone-or-email (verifyCode) ---
+
+%% | Status | API message / body | Displayed copy |
+
+%% | 200 | JWT session (existing user) | setSession and redirect |
+
+%% | 203 | { phone } (new user) | Continue to Step 2: create account |
+
+%% | 400 | Code provided is incorrect | Code is incorrect. Please try again |
+
+%% | 401–499 except 408 and 429 | (any other 4xx) | Code is incorrect. Please try again |
+
+%% | 408, 429, 500 / other | (no usable verdict) | We're experiencing technical difficulties. Please try again later. |
+
+%%
+
+%% --- POST /verifies (verifyUser resend OTP) ---
+
+%% | Status | API message / body | Displayed copy |
+
+%% | 200 | verify record created | Verification code has been resent. |
+
+%% | 500 / other | (any other) | We're experiencing technical difficulties. Please try again later. |
+
+
+
 flowchart TD
+
   codeStep[Step 1: 6-digit code] --> typeCode[Enter digits only, max 6]
+
   typeCode --> len6{Length is 6?}
+
   len6 -->|no| waitCode[Wait for 6 digits]
+
   waitCode --> typeCode
-  len6 -->|yes| verifyCode[verifyCode automatically]
+
+  len6 -->|yes| verifyCode[POST /verifies/by-phone-or-email verifyCode]
+
+
 
   verifyCode --> catchPath{Request failed?}
+
   catchPath -->|yes| codeSubmitErr[codeSubmitError]
-  codeSubmitErr -->|"4xx except 408 and 429"| badCode["Code is incorrect. Please try again"]
-  codeSubmitErr -->|"408, 429, 5xx, or no status"| codeNetwork["We're experiencing technical difficulties. Please try again later."]
+
+  codeSubmitErr -->|400| badCode["Code is incorrect. Please try again"]
+
+  codeSubmitErr -->|500| codeNetwork["We're experiencing technical difficulties. Please try again later."]
+
   badCode --> codeStep
+
   codeNetwork --> codeStep
 
+
+
   catchPath -->|no| codeStatus{HTTP status}
+
   codeStatus -->|200 existing user| sessionOk[setSession and redirect]
+
   codeStatus -->|203 new user| nextStep[Continue to Step 2: create account]
-  codeStatus -->|other| badCode
+
+  codeStatus -->|400| badCode
+
+
 
   codeStep --> resendClick[Send a new code]
-  resendClick --> resendApi[verifyUser resend OTP]
-  resendApi --> resendFail{Network error?}
-  resendFail -->|yes| codeNetwork
-  resendFail -->|no| resentOk[Success — no error message]
+
+  resendClick --> resendApi[POST /verifies verifyUser resend]
+
+  resendApi --> resendFail{API response?}
+
+  resendFail -->|200| resentOk[Verification code has been resent.]
+
+  resendFail -->|500| codeNetwork
+
+

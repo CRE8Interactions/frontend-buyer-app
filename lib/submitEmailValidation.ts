@@ -27,7 +27,13 @@ export async function validateSubmittedEmail(
       return { ok: false, email, error: "invalid" };
     }
     return { ok: true, email };
-  } catch {
-    return { ok: false, email, error: "network" };
+  } catch (error) {
+    const status = (error as { response?: { status?: number } }).response
+      ?.status;
+    return {
+      ok: false,
+      email,
+      error: status === 402 ? "invalid" : "network",
+    };
   }
 }
