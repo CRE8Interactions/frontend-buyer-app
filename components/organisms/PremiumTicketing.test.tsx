@@ -711,6 +711,25 @@ describe("Select tickets page (PremiumTicketing)", { timeout: 20_000 }, () => {
     expect(screen.getByRole("button", { name: /find on map/i })).toBeEnabled();
   });
 
+  it("keeps the org loader until the mobile select tickets panel is ready", async () => {
+    Object.defineProperty(window, "innerWidth", {
+      configurable: true,
+      writable: true,
+      value: 390,
+    });
+    const { rerender } = render(
+      <PremiumTicketing data={seatedTicketingFixture} refreshing />,
+    );
+
+    expect(document.querySelector("[data-bt-destination-loader]")).toBeTruthy();
+    expect(screen.queryByText(/sec m · row m3/i)).not.toBeInTheDocument();
+
+    rerender(<PremiumTicketing data={seatedTicketingFixture} refreshing={false} />);
+
+    expect(await screen.findByText(/sec m · row m3/i)).toBeInTheDocument();
+    expect(document.querySelector("[data-bt-destination-loader]")).toBeNull();
+  });
+
   it("opens the mobile Select tickets sheet under Find on map", async () => {
     Object.defineProperty(window, "innerWidth", {
       configurable: true,

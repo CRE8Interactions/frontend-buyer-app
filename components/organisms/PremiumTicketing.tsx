@@ -8,11 +8,12 @@
  * prop, so any event can use it. See NM_STATE_DATA for the reference content.
  */
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import BrandedActionButton from "@/components/atoms/BrandedActionButton";
+import { BrandedLoader } from "@/components/molecules/RouteLoader";
 import { Ticket } from "@/components/atoms/icons";
 import EmailField from "@/components/molecules/EmailField";
 import ExpandableDescription from "@/components/molecules/ExpandableDescription";
@@ -64,6 +65,7 @@ import {
   type RedemptionCodeFieldError,
 } from "@/lib/fieldValidation";
 import { validateSubmittedEmail } from "@/lib/submitEmailValidation";
+import { LOADER_MESSAGE } from "@/lib/loaderMessages";
 import { beginRouteTransition } from "@/lib/routeTransition";
 import { walletSectionHref } from "@/lib/walletNav";
 import type { SeatmapBackground, SeatmapMapping } from "@/lib/seatmapLookups";
@@ -208,6 +210,20 @@ const LIST_SHIMMER_MS = 420;
 /** Bottom bar height reserved so the map fills the locked mobile viewport. */
 const LISTINGS_SHEET_BAR_PX = 88;
 
+function initialViewportWidth() {
+  return typeof window !== "undefined" ? window.innerWidth : 1440;
+}
+
+function usesListingsSheet(
+  viewportWidth: number,
+  data: Pick<TicketingData, "eventType" | "soldOut" | "scheduled" | "listings">,
+) {
+  if (data.eventType === "ga") return false;
+  const seatedScheduled = !!data.scheduled && data.listings.length === 0;
+  if (seatedScheduled || data.soldOut) return false;
+  return viewportWidth < 1120 && data.listings.length > 0;
+}
+
 const DEFAULT_GA_TIERS: GATier[] = [
   { name: "Standard admission", sub: "General admission · unreserved seating", price: "$10.08", unit: 10.08, note: "Ticket limit: 100 per order", state: "live" },
   { name: "Aggie student", sub: "Valid NMSU student ID required at the gate", price: "Free", unit: 0, note: "All 800 student tickets claimed", state: "soldout" },
@@ -338,7 +354,10 @@ export default function PremiumTicketing({
   const hasLiveSeatmap = Boolean(mapMapping?.sections || mapMapping?.seats);
 
   const [mounted, setMounted] = useState(false);
-  const [vw, setVw] = useState(1440);
+  const [vw, setVw] = useState(initialViewportWidth);
+  const [listingsShellReady, setListingsShellReady] = useState(
+    () => !usesListingsSheet(initialViewportWidth(), d),
+  );
   const [want, setWant] = useState(() => initialTicketQuantity(d.listings));
   const [zoneFilter, setZoneFilter] = useState<string[]>([]);
   const [unlocked, setUnlocked] = useState<string[]>([]);
@@ -350,7 +369,7 @@ export default function PremiumTicketing({
   const [qtyMenu, setQtyMenu] = useState(false);
   const [ada, setAda] = useState(false);
   const [sortDir, setSortDir] = useState<"price" | "-price">("price");
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
   const [pinned, setPinned] = useState(false);
   const [map, setMap] = useState(false);
   const [mapReady, setMapReady] = useState(false);
@@ -376,7 +395,9 @@ export default function PremiumTicketing({
   const [notified, setNotified] = useState<Record<string, boolean>>({});
   const [gaSheet, setGaSheet] = useState(false);
   const [eventSoldOutSheet, setEventSoldOutSheet] = useState(false);
-  const [listingsExpanded, setListingsExpanded] = useState(false);
+  const [listingsExpanded, setListingsExpanded] = useState(
+    () => usesListingsSheet(initialViewportWidth(), d),
+  );
   const [mapTop, setMapTop] = useState(0);
   const headerRef = useRef<HTMLElement | null>(null);
   const sticky = useRef<HTMLDivElement | null>(null);
@@ -406,11 +427,8 @@ export default function PremiumTicketing({
     setVw(window.innerWidth);
     const onResize = () => setVw(window.innerWidth);
     window.addEventListener("resize", onResize);
-    setLoading(true);
-    const t = setTimeout(() => setLoading(false), 700);
     return () => {
       window.removeEventListener("resize", onResize);
-      clearTimeout(t);
       if (loadTimer.current) clearTimeout(loadTimer.current);
     };
   }, []);
@@ -464,6 +482,7 @@ export default function PremiumTicketing({
 
   useEffect(() => {
     setListingsExpanded(listingsSheet);
+    if (!listingsSheet) setListingsShellReady(true);
   }, [listingsSheet]);
 
   useEffect(() => {
@@ -599,6 +618,17 @@ export default function PremiumTicketing({
   const gaTierQtyLimits = (t: GATier) => limitsFromGaTier(t, eventTicketLimit);
   const isLocked = (zone: string) => !!lockedMap[zone] && !unlocked.includes(zone);
   const busy = loading || refreshing;
+
+  useLayoutEffect(() => {
+    if (!listingsSheet) {
+      setListingsShellReady(true);
+      return;
+    }
+    if (listingsExpanded && !busy) {
+      setListingsShellReady(true);
+    }
+  }, [busy, listingsExpanded, listingsSheet]);
+
   const mapLocked = Boolean(d.soldOut) || eventScheduled;
   const priceOf = (l: TicketingListing) =>
     parseFloat(l.price.replace(/[^0-9.]/g, "")) || 0;
@@ -1422,7 +1452,21 @@ export default function PremiumTicketing({
     );
   })();
 
+  const showListingsShellLoader = listingsSheet && !listingsShellReady;
+
   return (
+    <>
+      {showListingsShellLoader ? (
+        <BrandedLoader
+          branding={{
+            primaryColor: ACC,
+            logoSrc: d.brandLogoSrc || d.logoSrc,
+            name: d.orgLabel,
+          }}
+          routeDestination
+          message={LOADER_MESSAGE}
+        />
+      ) : null}
     <div className="shopper-page" data-theme="light" style={{ position: "relative", ...(gaDesktop ? {} : { display: "flex", flexDirection: "column" }), background: "#f7f8fc", color: NAVY, width: "100%", minHeight: isGa && mobile ? "100vh" : "100dvh", fontFamily: "'Geist', system-ui, -apple-system, sans-serif", WebkitFontSmoothing: "antialiased", ...shopperShellVars(ACC), ...(isGa ? {} : { height: "100dvh", overflowY: listingsSheet ? "hidden" : "auto" }) }}>
       <style>{`
         ${shopperPageTypeCss()}
@@ -2720,6 +2764,7 @@ export default function PremiumTicketing({
         </Modal>
       )}
     </div>
+    </>
   );
 }
 
