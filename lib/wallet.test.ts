@@ -1,8 +1,12 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   buildAccessPassSummaries,
+  formatPassDateRange,
+  formatSeatNumberRanges,
   formatTicketHolderName,
   gaTicketSeatLine,
+  groupedWalletSeatLines,
+  isScannedTicket,
   seatLabel,
   transferGroupLabel,
   transferSeatChip,
@@ -79,6 +83,97 @@ describe("gaTicketSeatLine", () => {
         offerName: "General admission",
       }),
     ).toBe("GA");
+  });
+});
+
+describe("formatSeatNumberRanges", () => {
+  it("collapses consecutive seat numbers", () => {
+    expect(formatSeatNumberRanges([6, 7, 8, 9, 10])).toBe("6-10");
+  });
+
+  it("lists non-consecutive seat numbers", () => {
+    expect(formatSeatNumberRanges([6, 10, 11])).toBe("6, 10-11");
+  });
+
+  it("returns a single seat number", () => {
+    expect(formatSeatNumberRanges([6])).toBe("6");
+  });
+});
+
+describe("groupedWalletSeatLines", () => {
+  it("groups reserved seats by section and row", () => {
+    expect(
+      groupedWalletSeatLines([
+        { sectionNumber: "G", rowNumber: 25, seatNumber: 6 },
+        { sectionNumber: "G", rowNumber: 25, seatNumber: 7 },
+      ]),
+    ).toEqual(["Sec G · Row 25 · Seats 6-7"]);
+  });
+
+  it("returns separate lines for different sections", () => {
+    expect(
+      groupedWalletSeatLines([
+        { sectionNumber: "G", rowNumber: 25, seatNumber: 6 },
+        { sectionNumber: "H", rowNumber: 1, seatNumber: 5 },
+      ]),
+    ).toEqual([
+      "Sec G · Row 25 · Seat 6",
+      "Sec H · Row 1 · Seat 5",
+    ]);
+  });
+
+  it("shows GA section only when row and seat are missing", () => {
+    expect(
+      groupedWalletSeatLines([
+        {
+          generalAdmission: true,
+          sectionNumber: "Club",
+          sectionName: "General Admission",
+        },
+      ]),
+    ).toEqual(["Sec Club"]);
+  });
+
+  it("includes GA row and seat when present", () => {
+    expect(
+      groupedWalletSeatLines([
+        {
+          generalAdmission: true,
+          sectionNumber: "Club",
+          rowNumber: "A",
+        },
+      ]),
+    ).toEqual(["Sec Club · Row A"]);
+  });
+});
+
+describe("formatPassDateRange", () => {
+  it("formats a start and end date range", () => {
+    const range = formatPassDateRange(
+      "2026-08-30T19:00:00.000Z",
+      "2026-12-06T19:00:00.000Z",
+      "America/Denver",
+    );
+    expect(range).toContain("2026");
+    expect(range).toContain("–");
+  });
+
+  it("returns a single date when start and end match", () => {
+    expect(
+      formatPassDateRange(
+        "2026-08-30T19:00:00.000Z",
+        "2026-08-30T19:00:00.000Z",
+        "America/Denver",
+      ),
+    ).toMatch(/Aug 30, 2026/);
+  });
+});
+
+describe("isScannedTicket", () => {
+  it("detects scanned ticket statuses", () => {
+    expect(isScannedTicket({ scanned: true })).toBe(true);
+    expect(isScannedTicket({ status: "scanned" })).toBe(true);
+    expect(isScannedTicket({ status: "active" })).toBe(false);
   });
 });
 

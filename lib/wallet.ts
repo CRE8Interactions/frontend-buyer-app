@@ -348,6 +348,202 @@ export function seatLabel(ticket?: TicketLike | null): string {
     .join(" · ");
 }
 
+/** Collapse seat numbers: `6-10` consecutive, `6, 10, 11` otherwise. */
+export function formatSeatNumberRanges(
+  seats: Array<string | number>,
+): string {
+  const unique = [
+    ...new Set(
+      seats.map((seat) => String(seat).trim()).filter(Boolean),
+    ),
+  ];
+  const nums = unique
+    .map((seat) => Number(seat))
+    .filter((seat) => Number.isFinite(seat));
+  if (nums.length !== unique.length) {
+    return unique.join(", ");
+  }
+
+  const sorted = [...new Set(nums)].sort((a, b) => a - b);
+  if (sorted.length === 1) return String(sorted[0]);
+
+  const parts: string[] = [];
+  let start = sorted[0]!;
+  let end = start;
+  for (let i = 1; i < sorted.length; i += 1) {
+    if (sorted[i] === end + 1) {
+      end = sorted[i]!;
+      continue;
+    }
+    parts.push(start === end ? String(start) : `${start}-${end}`);
+    start = end = sorted[i]!;
+  }
+  parts.push(start === end ? String(start) : `${start}-${end}`);
+  return parts.join(", ");
+}
+
+function formatRowSeatsLabel(seats: Array<string | number>): string {
+  const cleaned = seats
+    .map((seat) => String(seat ?? "").trim())
+    .filter((seat) => seat && seat !== "undefined");
+  const ranges = formatSeatNumberRanges(cleaned);
+  if (!ranges) return "";
+  const multi =
+    seats.length > 1 || ranges.includes(",") || ranges.includes("-");
+  return multi ? `Seats ${ranges}` : `Seat ${ranges}`;
+}
+
+type SectionSeatGroup = {
+  sectionDisplay: string;
+  isGA: boolean;
+  rows: Map<string, Array<string | number>>;
+  bareGA: boolean;
+  tickets: Array<TicketLike | Record<string, unknown>>;
+};
+
+function sectionGroupKey(ticket: TicketLike | Record<string, unknown>) {
+  const section = transferGroupSectionValue(ticket);
+  return (section || "GA").trim().toLowerCase();
+}
+
+/** One line per section; multiple rows on the same line; GA shows Sec only unless row/seat exist. */
+export function groupedWalletSeatLines(
+  tickets: Array<TicketLike | Record<string, unknown>>,
+): string[] {
+  if (!tickets.length) return [];
+
+  const groups = new Map<string, SectionSeatGroup>();
+
+  for (const ticket of tickets) {
+    const isGA = isTransferGroupGeneralAdmission(ticket);
+    const section = transferGroupSectionValue(ticket);
+    const key = sectionGroupKey(ticket);
+    if (!groups.has(key)) {
+      groups.set(key, {
+        sectionDisplay: section || "GA",
+        isGA,
+        rows: new Map(),
+        bareGA: false,
+        tickets: [],
+      });
+    }
+    const group = groups.get(key)!;
+    group.isGA = group.isGA && isGA;
+    group.tickets.push(ticket);
+
+    const row = ticketRowValue(ticket);
+    const seatRaw = ticketSeatValue(ticket);
+    const seat =
+      seatRaw && seatRaw !== "undefined" && seatRaw !== "null" ? seatRaw : "";
+    if (isGA && !row && !seat) {
+      group.bareGA = true;
+      continue;
+    }
+
+    const rowKey = String(row || "—");
+    if (!group.rows.has(rowKey)) group.rows.set(rowKey, []);
+    if (seat) group.rows.get(rowKey)!.push(seat);
+  }
+
+  const lines: string[] = [];
+  for (const group of groups.values()) {
+    if (group.isGA) {
+      if (group.tickets.length === 1) {
+        lines.push(gaTicketSeatLine(group.tickets[0]));
+        continue;
+      }
+      const seats = group.tickets
+        .map((ticket) => ticketSeatValue(ticket))
+        .filter(Boolean);
+      const base = gaTicketSeatLine({
+        ...group.tickets[0],
+        seatNumber: undefined,
+        seat_number: undefined,
+        seatName: undefined,
+        seat_name: undefined,
+      });
+      if (seats.length) {
+        const seatLabelPart = formatRowSeatsLabel(seats);
+        lines.push(seatLabelPart ? `${base} · ${seatLabelPart}` : base);
+      } else {
+        lines.push(base);
+      }
+      continue;
+    }
+
+    if (group.bareGA && group.rows.size === 0) {
+      lines.push(
+        group.sectionDisplay && group.sectionDisplay !== "GA"
+          ? `Sec ${group.sectionDisplay}`
+          : "GA",
+      );
+      continue;
+    }
+
+    const rowParts: string[] = [];
+    for (const [row, seats] of group.rows) {
+      const seatLabelPart = formatRowSeatsLabel(seats);
+      if (row !== "—") {
+        rowParts.push(
+          seatLabelPart ? `Row ${row} · ${seatLabelPart}` : `Row ${row}`,
+        );
+      } else if (seatLabelPart) {
+        rowParts.push(seatLabelPart);
+      }
+    }
+
+    if (rowParts.length) {
+      lines.push(
+        `Sec ${group.sectionDisplay} · ${rowParts.join(" · ")}`,
+      );
+    } else if (group.bareGA) {
+      lines.push(
+        group.sectionDisplay && group.sectionDisplay !== "GA"
+          ? `Sec ${group.sectionDisplay}`
+          : "GA",
+      );
+    }
+  }
+
+  return lines;
+}
+
+/** Pass validity window for transfer cards. */
+export function formatPassDateRange(
+  start?: string,
+  end?: string,
+  timezone?: string,
+): string {
+  const startLabel = start
+    ? formatEventWhen(start, timezone, "MMM D, YYYY")
+    : "";
+  const endLabel = end ? formatEventWhen(end, timezone, "MMM D, YYYY") : "";
+  if (startLabel && endLabel && startLabel !== endLabel) {
+    return `${startLabel} – ${endLabel}`;
+  }
+  return startLabel || endLabel || "";
+}
+
+/** Whether a ticket was scanned at the gate (Blocktickets scan payloads vary). */
+export function isScannedTicket(
+  ticket?: TicketLike | Record<string, unknown> | null,
+): boolean {
+  if (!ticket) return false;
+  if (ticket.scanned === true || ticket.checkedIn === true) return true;
+  const status = String(
+    ticket.status || ticket.checkInStatus || ticket.on_sale_status || "",
+  )
+    .trim()
+    .toLowerCase();
+  return (
+    status === "scanned" ||
+    status === "checked_in" ||
+    status === "checked-in" ||
+    status === "redeemed" ||
+    status === "used"
+  );
+}
+
 function transferGroupSectionValue(
   ticket: TicketLike | Record<string, unknown>,
 ): string {

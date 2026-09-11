@@ -1,0 +1,154 @@
+%% Ticket transfer — single event or package game
+
+%% Source: components/organisms/SeasonTickets.tsx, lib/submitEmailValidation.ts, lib/fieldValidation.ts
+
+%% API:    blocktickets/tickets/src/api/registration/controllers/registration.js (validateEmail)
+
+%%         blocktickets/tickets/src/api/ticket-transfer/controllers/ticket-transfer.js (create, ticketIds)
+
+%%
+
+%% Blur: optional hint on a non-empty email only. Empty blur is quiet. SendGrid is not called.
+
+%% Submit: validateSubmittedEmail — trim, empty, blocked/syntax, then POST /registration/validate-email.
+
+%%
+
+%% --- Blur — client hint (non-empty only) ---
+
+%% | Field | Empty blur | Non-empty invalid |
+
+%% | Email | (no error) | Email is invalid. Please try again. |
+
+%%
+
+%% --- Submit — validateSubmittedEmail (before self-transfer check) ---
+
+%% | Step | Empty | Non-empty invalid | API |
+
+%% | Client | Email address is required. | Email is invalid. Please try again. | — |
+
+%% | POST /registration/validate-email | — | 402 → Email is invalid. Please try again. | 200 → ok |
+
+%%
+
+%% --- Client-only (after validateSubmittedEmail ok) ---
+
+%% Self-transfer (tickets): You cannot transfer tickets to yourself.
+
+%%
+
+%% --- POST /registration/validate-email ---
+
+%% | Status | API message / body | Displayed copy |
+
+%% | 200 | SendGrid verdict Valid | (continue to Step 3: confirm) |
+
+%% | 402 | Bad email | Email is invalid. Please try again. |
+
+%%
+
+%% --- POST /ticket-transfers (ticketIds, no accessPassId) ---
+
+%% | Status | API message | Displayed copy |
+
+%% | 200 | Transfer created | Step 4: success |
+
+%% | 402 | Cannot transfer tickets that have already been scanned | We couldn't transfer those tickets. Please try again. |
+
+%% | 402 | TICKETS ARE ALREADY ASSIGNED TO THIS EMAIL ADDRESS | We couldn't transfer those tickets. Please try again. |
+
+%% | 500 / other | (any other) | We're experiencing technical difficulties. Please try again later. |
+
+
+
+flowchart TD
+
+  start[Step 1: select tickets] --> step2[Step 2: recipient email]
+
+  step2 --> typeEmail[Type email]
+
+  typeEmail --> blurField[Blur field]
+
+  blurField --> blurValidate[emailBlurInvalid]
+
+  blurValidate --> blurHint[Show inline hint if non-empty invalid]
+
+  blurHint --> typeEmail
+
+  typeEmail --> sendClick[Submit email]
+
+  sendClick --> readDom[Read submitted email]
+
+  readDom --> validate[validateSubmittedEmail]
+
+
+
+  validate --> valFail{Result?}
+
+  valFail -->|ok| selfCheck{Same as signed-in email?}
+
+  valFail -->|500| network["We're experiencing technical difficulties. Please try again later."]
+
+  selfCheck -->|yes| selfError["You cannot transfer tickets to yourself."]
+
+  selfCheck -->|no| step3[Step 3: confirm]
+
+
+
+  step3 --> transferApi[POST /ticket-transfers ticketIds]
+
+  transferApi --> apiFail{API response?}
+
+  apiFail -->|200| step4[Step 4: success]
+
+  apiFail -->|402| transferError["We couldn't transfer those tickets. Please try again."]
+
+  apiFail -->|500| network
+
+
+
+  subgraph blurClientChecks [blur — client check]
+
+    bNonEmpty{Email non-empty on blur?}
+
+    bNonEmpty -->|no| bQuiet[No error]
+
+    bNonEmpty -->|yes| bBlocked{Blocked domain or bad syntax?}
+
+    bBlocked -->|yes| bInvalid["Email is invalid. Please try again."]
+
+    bBlocked -->|no| bQuiet
+
+  end
+
+
+
+  subgraph validateSubmittedEmail [submit — validateSubmittedEmail]
+
+    vNorm[Trim and lowercase]
+
+    vNorm --> vEmpty{Empty?}
+
+    vEmpty -->|yes| vEmailRequired["Email address is required."]
+
+    vEmpty -->|no| vBlocked{Blocked domain or bad syntax?}
+
+    vBlocked -->|yes| vEmailInvalid["Email is invalid. Please try again."]
+
+    vBlocked -->|no| vSendgrid[POST /registration/validate-email]
+
+    vSendgrid --> vSgStatus{HTTP status?}
+
+    vSgStatus -->|200| vOk[ok]
+
+    vSgStatus -->|402| vEmailInvalid
+
+  end
+
+
+
+  blurValidate -.-> blurClientChecks
+
+  validate -.-> validateSubmittedEmail
+

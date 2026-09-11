@@ -16,19 +16,27 @@ import {
   buildOrderEventDetails,
   buildSeasonPackageEventDetails,
   buildSeasonPackageSummaries,
+  buildWalletEventDetails,
   countFlexPacks,
   countSeasonPackages,
   formatCartOrderTotal,
+  isIncomingTransferTicket,
   isPendingTransferTicket,
+  isTransferReceivedDetail,
+  isTransferReceivedOrder,
   isTransferredTicket,
+  orderAcquiredLabel,
   markTicketsPendingTransferInDetails,
   mergePendingTransferWalletDetails,
+  packageOrderHasTicketTransfers,
+  removeTicketsFromWalletDetails,
   reconcilePendingReceivedTransfers,
   reconcilePendingSentTransfers,
   pruneTransferredWalletDetails,
-  mergeDuplicateOwnedEventDetails,
+  walletEventAvailabilityBadge,
   sortWalletEventSchedule,
   sortWalletUpcomingEvents,
+  summarizeUpcomingWalletEvents,
   ticketEntryLine,
   summarizeCartEvents,
   summarizeEventDetails,
@@ -374,7 +382,7 @@ describe("wallet season-package orders", () => {
     ).toBe("past");
   });
 
-  it("keeps package events available while a transfer is pending", () => {
+  it("marks package events transferred when all tickets are pending transfer", () => {
     const order = demoCompletedPackageOrder();
     const activeEvent = pkg.events[1];
     const tickets = order.tickets.map((ticket) => ({
@@ -388,11 +396,14 @@ describe("wallet season-package orders", () => {
     });
 
     const rows = summarizeEventDetails(
-      buildSeasonPackageEventDetails([packageOrder]),
+      pruneTransferredWalletDetails(
+        buildSeasonPackageEventDetails([packageOrder]),
+      ),
+      "schedule",
     );
 
     expect(rows).toHaveLength(1);
-    expect(rows[0]?.availability).toBe("available");
+    expect(rows[0]?.availability).toBe("transferred");
   });
 
   it("marks past and fully transferred package events as unavailable", () => {
@@ -510,6 +521,38 @@ describe("wallet season-package orders", () => {
     );
   });
 
+  it("labels ticket-assignment orders and incoming transfer details as Transferred", () => {
+    const order = demoCompletedTicketOrder({ source: "ticket_assignment" });
+    const purchased = demoCompletedTicketOrder({ source: "website" });
+    const incomingDetail = {
+      key: "incoming:test",
+      tickets: order.tickets.map((ticket) => ({
+        id: ticket.id,
+        seat: "Sec A · Row 1 · Seat 1",
+        holder: "recipient@example.com",
+        code: String(ticket.checkInCode || ticket.id),
+        raw: {
+          ...ticket,
+          ticketTransfer: { direction: "incoming", status: "pending" },
+        },
+      })),
+      pendingIncomingTransfer: true,
+      incomingTransferId: "incoming-1",
+    };
+    const purchasedDetail = Object.values(buildOrderEventDetails([purchased]))[0]!;
+
+    expect(isTransferReceivedOrder(order)).toBe(true);
+    expect(isTransferReceivedOrder(purchased)).toBe(false);
+    expect(isTransferReceivedDetail(incomingDetail)).toBe(true);
+    expect(orderAcquiredLabel(incomingDetail, order)).toBe("Transferred");
+    expect(orderAcquiredLabel(purchasedDetail, purchased)).toBe("Purchased");
+    expect(
+      isIncomingTransferTicket({
+        ticketTransfer: { direction: "incoming", status: "claimed" },
+      }),
+    ).toBe(true);
+  });
+
   it("treats transferred flags as pending while a transfer is still open", () => {
     const ticket = {
       id: 9001,
@@ -522,7 +565,7 @@ describe("wallet season-package orders", () => {
     expect(isTransferredTicket(ticket)).toBe(false);
   });
 
-  it("restores pending-transfer tickets dropped from a wallet refresh", () => {
+  it("drops pending-transfer tickets from the sender wallet after refresh", () => {
     const event = DEMO_EVENTS.find((row) => row.shortCode === "NMST004")!;
     const order = demoCompletedTicketOrder({ event });
     const [transferredTicket, remainingTicket] = order.tickets;
@@ -534,16 +577,14 @@ describe("wallet season-package orders", () => {
         tickets: order.tickets.slice(1),
       },
     ]);
-    const marked = markTicketsPendingTransferInDetails(previous, [
+    const removed = removeTicketsFromWalletDetails(previous, [
       transferredTicket.id,
     ]);
 
-    const merged = mergePendingTransferWalletDetails(refreshed, marked);
+    const merged = mergePendingTransferWalletDetails(refreshed, removed);
     const seats = merged[key]?.tickets.map((ticket) => ticket.id);
 
-    expect(seats).toEqual(
-      expect.arrayContaining([transferredTicket.id, remainingTicket.id]),
-    );
+    expect(seats).toEqual(order.tickets.slice(1).map((ticket) => ticket.id));
     expect(merged[key]?.availability).toBe("available");
   });
 
@@ -578,6 +619,88 @@ describe("wallet season-package orders", () => {
     expect(upcoming[0]?.incomingTransferFrom).toBe("M. Rivera");
   });
 
+  it("adds pending package event transfers to upcoming wallet details", () => {
+    const order = demoCompletedPackageOrder();
+    const activeEvent = pkg.events[1];
+    const [ticket] = order.tickets.map((row) => ({
+      ...row,
+      eventUUID: activeEvent.uuid,
+    }));
+    const packageOrder = demoCompletedPackageOrder({
+      package: { ...order.package, events: [activeEvent] },
+      tickets: [ticket],
+    });
+
+    const wallet = buildWalletEventDetails([packageOrder], "sender@example.com", {
+      incomingTransfers: [
+        {
+          id: "incoming-package-1",
+          status: "pending",
+          fromUserEmail: "m.rivera@example.com",
+          tickets: [ticket],
+        },
+      ],
+    });
+
+    expect(wallet.upcomingEvents).toHaveLength(1);
+    expect(wallet.upcomingEvents[0]?.name).toBe(activeEvent.name);
+    expect(wallet.upcomingEvents[0]?.pendingIncomingTransfer).toBe(true);
+    expect(wallet.upcomingEvents[0]?.incomingTransferFrom).toBe("M. Rivera");
+  });
+
+  it("does not surface cancelled incoming transfers in upcoming", () => {
+    const event = DEMO_EVENTS.find((row) => row.shortCode === "NMST004")!;
+    const order = demoCompletedTicketOrder({ event });
+    const [ticket] = order.tickets;
+
+    const wallet = buildWalletEventDetails([], "recipient@example.com", {
+      incomingTransfers: [
+        {
+          id: "incoming-cancelled",
+          status: "cancelled",
+          fromUserEmail: "m.rivera@example.com",
+          event: order.event,
+          tickets: [ticket],
+        },
+      ],
+    });
+
+    expect(wallet.upcomingEvents).toEqual([]);
+    expect(Object.keys(wallet.allDetails)).toEqual([]);
+  });
+
+  it("keeps owned package games off upcoming while reconciling transfers", () => {
+    const order = demoCompletedPackageOrder();
+    const activeEvent = pkg.events[1];
+    const [ownedTicket, incomingTicket] = order.tickets.map((row, index) => ({
+      ...row,
+      id: row.id + index,
+      eventUUID: activeEvent.uuid,
+    }));
+    const packageOrder = demoCompletedPackageOrder({
+      package: { ...order.package, events: [activeEvent] },
+      tickets: [ownedTicket],
+    });
+
+    const wallet = buildWalletEventDetails([packageOrder], "holder@example.com", {
+      incomingTransfers: [
+        {
+          id: "incoming-package-2",
+          status: "pending",
+          fromUserEmail: "m.rivera@example.com",
+          event: activeEvent,
+          tickets: [incomingTicket],
+        },
+      ],
+    });
+
+    expect(wallet.upcomingEvents).toHaveLength(1);
+    expect(wallet.upcomingEvents[0]?.pendingIncomingTransfer).toBe(true);
+    expect(
+      wallet.upcomingEvents.some((row) => row.name === activeEvent.name && !row.pendingIncomingTransfer),
+    ).toBe(false);
+  });
+
   it("does not duplicate a single pending incoming transfer in upcoming", () => {
     const event = DEMO_EVENTS.find((row) => row.shortCode === "NMST004")!;
     const order = demoCompletedTicketOrder({ event });
@@ -599,6 +722,67 @@ describe("wallet season-package orders", () => {
 
     expect(upcoming).toHaveLength(1);
     expect(upcoming[0]?.ticketCount).toBe(1);
+  });
+
+  it("sorts pending transfers before normal upcoming events", () => {
+    const event = DEMO_EVENTS.find((row) => row.shortCode === "NMST004")!;
+    const order = demoCompletedTicketOrder({ event });
+    const [ownedTicket, incomingTicket] = order.tickets;
+    const walletDetails = buildOrderEventDetails(
+      [{ ...order, tickets: [ownedTicket] }],
+      "recipient@example.com",
+    );
+
+    const merged = reconcilePendingReceivedTransfers(
+      walletDetails,
+      [
+        {
+          id: "incoming-1",
+          status: "pending",
+          fromUserEmail: "m.rivera@example.com",
+          event: order.event,
+          tickets: [incomingTicket],
+        },
+      ],
+      "recipient@example.com",
+    );
+    const upcoming = summarizeEventDetails(merged);
+    const pendingIndex = upcoming.findIndex((row) => row.pendingIncomingTransfer);
+    const normalIndex = upcoming.findIndex((row) => !row.pendingIncomingTransfer);
+
+    expect(pendingIndex).toBeGreaterThanOrEqual(0);
+    expect(normalIndex).toBeGreaterThanOrEqual(0);
+    expect(pendingIndex).toBeLessThan(normalIndex);
+  });
+
+  it("sorts pending sent transfer stubs with normal upcoming events by date", () => {
+    const event = DEMO_EVENTS.find((row) => row.shortCode === "NMST004")!;
+    const order = demoCompletedTicketOrder({ event });
+    const [transferredTicket, remainingTicket] = order.tickets;
+    const wallet = buildOrderEventDetails([
+      { ...order, tickets: [remainingTicket] },
+    ]);
+
+    const merged = reconcilePendingSentTransfers(
+      wallet,
+      [
+        {
+          status: "pending",
+          orderId: order.orderId,
+          event: order.event,
+          tickets: [transferredTicket],
+        },
+      ],
+      order.email,
+    );
+    const upcoming = summarizeEventDetails(merged);
+    const sentIndex = upcoming.findIndex((row) => row.key.startsWith("sent:"));
+    const ownedIndex = upcoming.findIndex((row) => !row.key.startsWith("sent:"));
+
+    expect(sentIndex).toBeGreaterThanOrEqual(0);
+    expect(ownedIndex).toBeGreaterThanOrEqual(0);
+    expect(upcoming[sentIndex]?.pendingIncomingTransfer).toBeFalsy();
+    expect(upcoming[ownedIndex]?.pendingIncomingTransfer).toBeFalsy();
   });
 
   it("keeps owned events separate from incoming pending transfers for the same event", () => {
@@ -696,7 +880,56 @@ describe("wallet season-package orders", () => {
     expect(upcoming[0]?.ticketCount).toBe(1);
   });
 
-  it("keeps pending sent stubs separate from the matching owned event row", () => {
+  it("removes a fully transferred single event from upcoming", () => {
+    const event = DEMO_EVENTS.find((row) => row.shortCode === "NMST004")!;
+    const order = demoCompletedTicketOrder({ event });
+    const [transferredTicket] = order.tickets;
+    const wallet = buildWalletEventDetails(
+      [{ ...order, tickets: [transferredTicket] }],
+      order.email,
+      {
+        sentTransfers: [
+          {
+            status: "pending",
+            orderId: order.orderId,
+            event: order.event,
+            tickets: [{ ...transferredTicket, transferStatus: "pending" }],
+          },
+        ],
+      },
+    );
+
+    expect(wallet.upcomingEvents).toHaveLength(0);
+    expect(
+      Object.keys(wallet.allDetails).some((key) => key.startsWith("sent:")),
+    ).toBe(false);
+  });
+
+  it("keeps only remaining tickets after a partial transfer reload", () => {
+    const event = DEMO_EVENTS.find((row) => row.shortCode === "NMST004")!;
+    const order = demoCompletedTicketOrder({ event });
+    const [transferredTicket, remainingTicket] = order.tickets;
+    const wallet = buildWalletEventDetails(
+      [{ ...order, tickets: [remainingTicket] }],
+      order.email,
+      {
+        sentTransfers: [
+          {
+            status: "pending",
+            orderId: order.orderId,
+            event: order.event,
+            tickets: [transferredTicket],
+          },
+        ],
+      },
+    );
+
+    expect(wallet.upcomingEvents).toHaveLength(1);
+    expect(wallet.upcomingEvents[0]?.ticketCount).toBe(1);
+    expect(wallet.upcomingEvents[0]?.key.startsWith("sent:")).toBe(false);
+  });
+
+  it("removes pending sent tickets from the owned upcoming row", () => {
     const event = DEMO_EVENTS.find((row) => row.shortCode === "NMST004")!;
     const order = demoCompletedTicketOrder({ event });
     const [transferredTicket, remainingTicket] = order.tickets;
@@ -717,74 +950,187 @@ describe("wallet season-package orders", () => {
       ],
       order.email,
     );
-    const upcoming = summarizeEventDetails(merged);
+    const upcoming = summarizeUpcomingWalletEvents(merged);
     const sentKey = `sent:${event.uuid}`;
 
     expect(Object.keys(merged).sort()).toEqual([ownedKey, sentKey].sort());
-    expect(upcoming).toHaveLength(2);
-    expect(merged[ownedKey]?.tickets).toHaveLength(1);
-    expect(merged[sentKey]?.tickets).toHaveLength(1);
+    expect(upcoming).toHaveLength(1);
+    expect(upcoming[0]?.key).toBe(ownedKey);
+    expect(upcoming[0]?.ticketCount).toBe(1);
+    expect(merged[ownedKey]?.tickets.map((ticket) => ticket.id)).toEqual([
+      remainingTicket.id,
+    ]);
     expect(merged[sentKey]?.heroImage || merged[sentKey]?.posterSrc).toBeTruthy();
     expect(merged[sentKey]?.venueLine).toBeTruthy();
   });
 
-  it("rehydrates pending sent transfers after a wallet reload", () => {
+  it("keeps a fully transferred package game on the schedule", () => {
+    const order = demoCompletedPackageOrder();
+    const activeEvent = pkg.events[1];
+    const tickets = order.tickets.map((ticket) => ({
+      ...ticket,
+      eventUUID: activeEvent.uuid,
+    }));
+    const packageOrder = demoCompletedPackageOrder({
+      package: { ...order.package, events: [activeEvent] },
+      tickets,
+    });
+    const packageKey = `${String(packageOrder.package?.uuid || packageOrder.orderId)}:${activeEvent.uuid}`;
+    const wallet = buildWalletEventDetails(
+      [packageOrder],
+      packageOrder.email,
+      {
+        sentTransfers: [
+          {
+            status: "pending",
+            orderId: packageOrder.orderId,
+            event: activeEvent,
+            tickets,
+          },
+        ],
+      },
+    );
+    const schedule = summarizeEventDetails(wallet.allDetails, "schedule");
+
+    expect(wallet.allDetails[packageKey]?.tickets).toHaveLength(0);
+    expect(wallet.allDetails[packageKey]?.availability).toBe("transferred");
+    expect(
+      schedule.find((row) => row.key === packageKey)?.availability,
+    ).toBe("transferred");
+  });
+
+  it("blocks season pass transfer when package tickets are in transfer", () => {
+    const order = demoCompletedPackageOrder();
+    const activeEvent = pkg.events[1];
+    const [ticket] = order.tickets.map((row) => ({
+      ...row,
+      eventUUID: activeEvent.uuid,
+    }));
+    const wallet = buildWalletEventDetails(
+      [
+        demoCompletedPackageOrder({
+          package: { ...order.package, events: [activeEvent] },
+          tickets: [ticket],
+        }),
+      ],
+      order.email,
+      {
+        sentTransfers: [
+          {
+            status: "pending",
+            orderId: order.orderId,
+            tickets: [ticket],
+          },
+        ],
+      },
+    );
+
+    expect(
+      packageOrderHasTicketTransfers(
+        wallet.allDetails,
+        [
+          {
+            status: "pending",
+            orderId: order.orderId,
+            tickets: [ticket],
+          },
+        ],
+        String(order.orderId),
+      ),
+    ).toBe(true);
+  });
+
+  it("emits grouped section seat lines in upcoming summaries", () => {
     const event = DEMO_EVENTS.find((row) => row.shortCode === "NMST004")!;
     const order = demoCompletedTicketOrder({ event });
-    const [transferredTicket] = order.tickets;
-    const remainingTickets = order.tickets.slice(1);
+    const [first, second] = order.tickets;
     const details = buildOrderEventDetails([
       {
         ...order,
-        tickets: remainingTickets,
+        tickets: [
+          { ...first, sectionNumber: "G", rowNumber: 25, seatNumber: 6 },
+          { ...second, sectionNumber: "G", rowNumber: 25, seatNumber: 7 },
+          { ...first, id: 9001, sectionNumber: "H", rowNumber: 1, seatNumber: 5 },
+        ],
       },
     ]);
-    const ownedKey = Object.keys(details)[0]!;
+    const [summary] = summarizeEventDetails(details);
 
-    const merged = reconcilePendingSentTransfers(
-      details,
-      [
-        {
-          status: "pending",
-          orderId: order.orderId,
-          event: order.event,
-          tickets: [transferredTicket],
-        },
-      ],
-      order.email,
-    );
-    const sentKey = `sent:${event.uuid}`;
-
-    expect(merged[ownedKey]?.tickets.map((ticket) => ticket.id)).toEqual(
-      remainingTickets.map((ticket) => ticket.id),
-    );
-    expect(merged[sentKey]?.tickets.map((ticket) => ticket.id)).toEqual([
-      transferredTicket.id,
+    expect(summary?.ticketSeats).toEqual([
+      "Sec G · Row 25 · Seats 6-7",
+      "Sec H · Row 1 · Seat 5",
     ]);
   });
 
-  it("merges duplicate owned purchases for the same event name and date", () => {
-    const event = DEMO_EVENTS.find((row) => row.shortCode === "NMST004")!;
-    const order = demoCompletedTicketOrder({ event });
-    const orderA = demoCompletedTicketOrder({
-      orderId: "order-a",
-      event,
-      tickets: [order.tickets[0]],
+  it("keeps a claimed sender package game on the schedule as transferred", () => {
+    const order = demoCompletedPackageOrder();
+    const activeEvent = pkg.events[1];
+    const [ticket] = order.tickets.map((row) => ({
+      ...row,
+      eventUUID: activeEvent.uuid,
+      transferStatus: "transferred",
+    }));
+    const packageOrder = demoCompletedPackageOrder({
+      package: { ...order.package, events: [activeEvent] },
+      tickets: [ticket],
     });
-    const orderB = demoCompletedTicketOrder({
-      orderId: "order-b",
-      event,
-      tickets: [order.tickets[1]],
-    });
-    const details = mergeDuplicateOwnedEventDetails(
-      buildOrderEventDetails([orderA, orderB], order.email),
-    );
-    const upcoming = summarizeEventDetails(details);
+    const wallet = buildSeasonPackageEventDetails([packageOrder]);
+    const afterClaim = pruneTransferredWalletDetails(wallet);
+    const schedule = summarizeEventDetails(afterClaim, "schedule");
+    const packageKey = `${String(packageOrder.package?.uuid || packageOrder.orderId)}:${activeEvent.uuid}`;
 
-    expect(Object.keys(details)).toHaveLength(1);
-    expect(upcoming).toHaveLength(1);
-    expect(upcoming[0]?.ticketCount).toBe(2);
-    expect(upcoming[0]?.name).toBe(event.name);
+    expect(afterClaim[packageKey]?.availability).toBe("transferred");
+    expect(schedule.some((row) => row.key === packageKey)).toBe(true);
+    expect(summarizeUpcomingWalletEvents(afterClaim)).toHaveLength(0);
+  });
+
+  it("keeps a claimed recipient package game on upcoming", () => {
+    const order = demoCompletedPackageOrder();
+    const activeEvent = pkg.events[1];
+    const [ticket] = order.tickets.map((row) => ({
+      ...row,
+      eventUUID: activeEvent.uuid,
+    }));
+    const recipientOrder = demoCompletedPackageOrder({
+      package: order.package,
+      tickets: [ticket],
+    });
+    const wallet = buildWalletEventDetails([recipientOrder], "recipient@example.com");
+    const incomingKey = `incoming:${activeEvent.uuid}`;
+
+    expect(wallet.upcomingEvents.some((row) => row.name === activeEvent.name)).toBe(
+      true,
+    );
+    expect(wallet.allDetails[incomingKey]?.showInUpcomingTab).toBe(true);
+    expect(wallet.upcomingEvents[0]?.pendingIncomingTransfer).toBeFalsy();
+  });
+
+  it("shows attended for scanned past package games", () => {
+    const event = DEMO_EVENTS.find((row) => row.shortCode === "NMST004")!;
+    const pastEvent = {
+      ...event,
+      start: demoDate({ days: -30 }, "19:00"),
+    };
+    const order = demoCompletedTicketOrder({ event: pastEvent });
+    const [ticket] = order.tickets;
+    const details = buildSeasonPackageEventDetails([
+      {
+        ...order,
+        package: {
+          uuid: "pkg-attended-test",
+          name: "Test package",
+          events: [pastEvent],
+        },
+        tickets: [{ ...ticket, scanned: true, eventUUID: pastEvent.uuid }],
+      },
+    ]);
+    const detail = Object.values(details)[0]!;
+
+    expect(detail.availability).toBe("past");
+    expect(walletEventAvailabilityBadge(detail)).toBe("attended");
+    expect(summarizeEventDetails(details, "schedule")[0]?.availabilityBadge).toBe(
+      "attended",
+    );
   });
 
   it("does not build a wallet event path without an order id", () => {

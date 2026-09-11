@@ -4,6 +4,10 @@ import { getToken, isLoggedIn } from "@/lib/auth";
 import { demoAdapter } from "@/lib/demo/adapter";
 import { createInflightCache } from "@/lib/inflightCache";
 import {
+  buildCancelTransferRequestBody,
+  resolveCancelTransferId,
+} from "@/lib/ticketTransfers";
+import {
   clearWaitingRoomToken,
   getCurrentWaitingRoomEventUuid,
   getQueueSessionId,
@@ -349,8 +353,17 @@ export const getMyReceivedTransfers = (userEmail: string, page: number) =>
     `/ticket-transfers?filters[emailAddressToUser][$eq]=${userEmail}&populate=*&sort[0]=createdAt:desc&pagination[page]=${page}&pagination[pageSize]=50`,
   );
 
-export const cancelMyTransfers = (data: unknown) =>
-  instance.post("/ticket-transfers/cancel", data);
+export const cancelMyTransfers = (data: unknown) => {
+  const payload = buildCancelTransferRequestBody(resolveCancelTransferId(data));
+  if (!payload) {
+    return Promise.reject(
+      Object.assign(new Error("Invalid transfer id"), {
+        code: "INVALID_TRANSFER_ID",
+      }),
+    );
+  }
+  return instance.post("/ticket-transfers/cancel", payload);
+};
 
 export const getIncomingTransfers = () =>
   instance.get("/ticket-transfers/incoming");

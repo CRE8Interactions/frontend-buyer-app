@@ -1,0 +1,190 @@
+%% Pass transfer — access pass or season pass
+
+%% Source: components/organisms/SeasonTickets.tsx, lib/submitEmailValidation.ts, lib/fieldValidation.ts
+
+%% API:    blocktickets/tickets/src/api/registration/controllers/registration.js (validateEmail)
+
+%%         blocktickets/tickets/src/api/ticket-transfer/controllers/ticket-transfer.js (create, accessPassId)
+
+%%
+
+%% Blur: same rules as login (emailBlurInvalid). Ticket transfer modal wires blur; pass form uses submit-only today.
+
+%% Submit: validateSubmittedEmail — trim, empty, blocked/syntax, then POST /registration/validate-email.
+
+%%
+
+%% --- Blur — client hint (non-empty only) ---
+
+%% | Field | Empty blur | Non-empty invalid |
+
+%% | Email | (no error) | Email is invalid. Please try again. |
+
+%%
+
+%% --- Submit — validateSubmittedEmail (before self-transfer check) ---
+
+%% | Step | Empty | Non-empty invalid | API |
+
+%% | Client | Email address is required. | Email is invalid. Please try again. | — |
+
+%% | POST /registration/validate-email | — | 402 → Email is invalid. Please try again. | 200 → ok |
+
+%%
+
+%% --- Client-only (before / after validateSubmittedEmail) ---
+
+%% Season pass guard: This season pass can't be transferred while tickets from it are in transfer.
+
+%% Self-transfer (pass): This {season pass|access pass} is already assigned to your email.
+
+%%
+
+%% --- POST /registration/validate-email ---
+
+%% | Status | API message / body | Displayed copy |
+
+%% | 200 | SendGrid verdict Valid | (continue to confirm step) |
+
+%% | 402 | Bad email | Email is invalid. Please try again. |
+
+%%
+
+%% --- POST /ticket-transfers (accessPassId) — access pass ---
+
+%% | Status | API message | Displayed copy |
+
+%% | 200 | Transfer created | Step: success |
+
+%% | 400 | Recipient email is required | Unable to transfer this access pass. Please try again. |
+
+%% | 402 | ACCESS PASS IS ALREADY ASSIGNED TO THIS EMAIL ADDRESS | Unable to transfer this access pass. Please try again. |
+
+%% | 404 | Access pass not found | Unable to transfer this access pass. Please try again. |
+
+%% | 400 | This access pass already has a pending transfer | Unable to transfer this access pass. Please try again. |
+
+%% | 500 / other | (any other) | We're experiencing technical difficulties. Please try again later. |
+
+%%
+
+%% --- POST /ticket-transfers (accessPassId) — season pass (type season_seat) ---
+
+%% | Status | API message | Displayed copy |
+
+%% | 200 | Transfer created | Step: success |
+
+%% | 400 | Recipient email is required | Unable to transfer this season pass. Please try again. |
+
+%% | 402 | ACCESS PASS IS ALREADY ASSIGNED TO THIS EMAIL ADDRESS | Unable to transfer this season pass. Please try again. |
+
+%% | 404 | Access pass not found | Unable to transfer this season pass. Please try again. |
+
+%% | 400 | This access pass already has a pending transfer | Unable to transfer this season pass. Please try again. |
+
+%% | 400 | This season pass cannot be transferred because one or more included game tickets are unavailable | Unable to transfer this season pass. Please try again. |
+
+%% | 402 | Cannot transfer tickets that have already been scanned | Unable to transfer this season pass. Please try again. |
+
+%% | 500 / other | (any other) | We're experiencing technical difficulties. Please try again later. |
+
+
+
+flowchart TD
+
+  open[Open transfer] --> seasonGuard{Season pass with package tickets in transfer?}
+
+  seasonGuard -->|yes| clientBlock["This season pass can't be transferred while tickets from it are in transfer."]
+
+  seasonGuard -->|no| start[Step: recipient email]
+
+  start --> typeEmail[Type email]
+
+  typeEmail --> blurField[Blur field]
+
+  blurField --> blurValidate[emailBlurInvalid]
+
+  blurValidate --> blurHint[Show inline hint if non-empty invalid]
+
+  blurHint --> typeEmail
+
+  typeEmail --> sendClick[Submit email]
+
+  sendClick --> readDom[Read submitted email]
+
+  readDom --> validate[validateSubmittedEmail]
+
+
+
+  validate --> valFail{Result?}
+
+  valFail -->|ok| selfCheck{Same as signed-in email?}
+
+  valFail -->|network| network["We're experiencing technical difficulties. Please try again later."]
+
+  selfCheck -->|yes| selfError["This pass is already assigned to your email."]
+
+  selfCheck -->|no| confirm[Step: confirm]
+
+
+
+  confirm --> transferApi[POST /ticket-transfers accessPassId]
+
+  transferApi --> apiFail{API response?}
+
+  apiFail -->|200| success[Step: success]
+
+  apiFail -->|400| passError["Unable to transfer this pass. Please try again."]
+
+  apiFail -->|402| passError
+
+  apiFail -->|404| passError
+
+  apiFail -->|500| network
+
+
+
+  subgraph blurClientChecks [blur — client check]
+
+    bNonEmpty{Email non-empty on blur?}
+
+    bNonEmpty -->|no| bQuiet[No error]
+
+    bNonEmpty -->|yes| bBlocked{Blocked domain or bad syntax?}
+
+    bBlocked -->|yes| bInvalid["Email is invalid. Please try again."]
+
+    bBlocked -->|no| bQuiet
+
+  end
+
+
+
+  subgraph validateSubmittedEmail [submit — validateSubmittedEmail]
+
+    vNorm[Trim and lowercase]
+
+    vNorm --> vEmpty{Empty?}
+
+    vEmpty -->|yes| vEmailRequired["Email address is required."]
+
+    vEmpty -->|no| vBlocked{Blocked domain or bad syntax?}
+
+    vBlocked -->|yes| vEmailInvalid["Email is invalid. Please try again."]
+
+    vBlocked -->|no| vSendgrid[POST /registration/validate-email]
+
+    vSendgrid --> vSgStatus{HTTP status?}
+
+    vSgStatus -->|200| vOk[ok]
+
+    vSgStatus -->|402| vEmailInvalid
+
+  end
+
+
+
+  blurValidate -.-> blurClientChecks
+
+  validate -.-> validateSubmittedEmail
+

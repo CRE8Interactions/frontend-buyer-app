@@ -1,0 +1,25 @@
+%% Cancel outgoing transfer — Blocktickets API errors
+%% Source: components/organisms/SeasonTickets.tsx, lib/cancelTransferErrors.ts, lib/fieldValidation.ts
+%% API:    blocktickets/tickets/src/api/ticket-transfer/controllers/ticket-transfer.js (cancelTransfer)
+%%
+%% Response shape: 400/403 → { error: { message } } | 200 → success body
+%%
+%% --- Blocktickets POST /ticket-transfers/cancel API responses ---
+%% | Status | API message | Displayed copy |
+%% | 200 | (success) | Close popup + "Transfer cancelled" toast |
+%% | 400 | Transfer has been claimed | Transfer has been claimed |
+%% | 403 | You cannot cancel this transfer | We're experiencing technical difficulties. Please try again later. |
+%% | 500 / other | (any other) | We're experiencing technical difficulties. Please try again later. |
+
+flowchart TD
+  open[Sent tab: Cancel transfer] --> confirm[Confirm cancel popup]
+  confirm --> submit[POST /ticket-transfers/cancel]
+  submit --> parse[parseCancelTransferApiError]
+  parse --> apiFail{API response?}
+  apiFail -->|200| success[Close popup + Transfer cancelled toast]
+  apiFail -->|"Transfer has been claimed"| claimed["Transfer has been claimed"]
+  apiFail -->|"We're experiencing technical difficulties. Please try again later."| apiNetwork["We're experiencing technical difficulties. Please try again later."]
+
+  claimed --> showError[Show error in popup]
+  apiNetwork --> showError
+
