@@ -165,12 +165,19 @@ export type AccessPassSummary = {
   fontColor?: string;
 };
 
-/** Fan-visible access passes returned by GET /events/myAccessPasses. */
+/**
+ * Fan-visible access passes returned by GET /events/myAccessPasses.
+ * Package screens pass `includeInactive` so a revoked or expired season pass
+ * still shows with its real status instead of disappearing.
+ */
 export function buildAccessPassSummaries(
   passes: AccessPassLike[],
+  { includeInactive = false }: { includeInactive?: boolean } = {},
 ): AccessPassSummary[] {
   return passes
-    .filter((pass) => !pass.status || pass.status === "active")
+    .filter(
+      (pass) => includeInactive || !pass.status || pass.status === "active",
+    )
     .map((pass, index) => {
       const events = [...(pass.events ?? [])].sort((a, b) =>
         String(a.start || "").localeCompare(String(b.start || "")),

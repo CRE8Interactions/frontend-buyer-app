@@ -122,9 +122,9 @@ function initialWalletOrders(): DemoWalletOrder[] {
     demoCompletedTicketOrder({
       id: 128187,
       orderId: "1474-145929-3864",
-      source: "ticket_assignment",
+      source: "transfer",
     }),
-    demoCompletedPackageOrder({ source: "ticket_assignment" }),
+    demoCompletedPackageOrder({ source: "transfer" }),
     demoCompletedFlexPackOrder({ source: "website" }),
   ];
 }

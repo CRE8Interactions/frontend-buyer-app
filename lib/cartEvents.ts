@@ -632,13 +632,13 @@ export function isIncomingTransferTicket(ticket?: TicketLike | null): boolean {
   return transferRelationDirectionIncoming(ticketTransferRelations(ticket));
 }
 
-/** Transferred-in orders use Blocktickets `ticket_assignment` as purchase origin. */
+/** Transferred-in orders use `transfer` as the purchase origin. */
 export function isTransferReceivedOrder(order?: OrderLike | null): boolean {
   return (
     String(order?.source || "")
       .trim()
       .toLowerCase()
-      .replace(/[\s-]+/g, "_") === "ticket_assignment"
+      .replace(/[\s-]+/g, "_") === "transfer"
   );
 }
 
@@ -1056,9 +1056,6 @@ export function promoteRecipientPackageUpcomingRows(
         packageName: undefined,
         ...(orderId ? { orderId } : {}),
       };
-      if (packageDetailKey && out[packageDetailKey]) {
-        delete out[packageDetailKey];
-      }
     }
   }
 
@@ -1236,7 +1233,7 @@ export function pruneTransferredWalletDetails(
         out[key] = {
           ...detail,
           tickets: [],
-          availability: "transferred",
+          availability: isUpcomingEvent(detail.event) ? "transferred" : "past",
         };
       }
       continue;
@@ -1828,7 +1825,9 @@ function attachOrderEventDetail(
   packageName?: string,
   includeUnavailable = false,
 ) {
-  if (!tickets.length) return;
+  // Package screens list every included event, even ones whose tickets are
+  // gone, so a ticketless row can still be attached there.
+  if (!tickets.length && !includeUnavailable) return;
   if (!includeUnavailable) {
     if (isEventComplete(ev) || !isWalletListedEvent(ev)) return;
   }
@@ -1933,7 +1932,6 @@ export function buildSeasonPackageEventDetails(
       const uuid = String(ev.uuid || ev.name || "");
       if (!uuid || seen.has(uuid)) continue;
       const tickets = ticketsForPackageEvent(order, ev);
-      if (!tickets.length) continue;
       seen.add(uuid);
       attachOrderEventDetail(
         out,
@@ -1969,7 +1967,8 @@ export function buildSeasonPackageSummaries(
       orderId,
       name: pkg.name || "Season tickets",
       venueLine: formatCartVenueLine(pkg.venue, pkg.organization?.name),
-      eventCount: (pkg.events ?? []).filter((ev) => isUpcomingEvent(ev)).length,
+      // Every game in the package counts, matching the package screen's rows.
+      eventCount: (pkg.events ?? []).length,
       ticketCount: uniqueSeatCount(tickets) || tickets.length,
       thumb: pkg.image ? imageUrl(pkg.image, "") : undefined,
       packageUUID,

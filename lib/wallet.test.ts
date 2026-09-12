@@ -41,6 +41,15 @@ describe("buildAccessPassSummaries", () => {
     const pass = demoAccessPass();
     expect(buildAccessPassSummaries([pass])[0].orderId).toBe(pass.orderId);
   });
+
+  it("only keeps a revoked pass when inactive passes are included", () => {
+    const revoked = { ...demoAccessPass(), status: "revoked" };
+
+    expect(buildAccessPassSummaries([revoked])).toEqual([]);
+    expect(
+      buildAccessPassSummaries([revoked], { includeInactive: true })[0].status,
+    ).toBe("Revoked");
+  });
 });
 
 describe("gaTicketSeatLine", () => {

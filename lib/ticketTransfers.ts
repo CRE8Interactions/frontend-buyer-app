@@ -24,6 +24,7 @@ export type WalletTransferRow = {
   seatLines: string[];
   schedule?: string;
   on: string;
+  claimedOn?: string;
   status: string;
   createdAt?: string;
   accessPassId?: string;
@@ -43,6 +44,7 @@ export type TransferLike = {
   id?: number | string;
   status?: string;
   createdAt?: string;
+  transferedOn?: string;
   accessPassId?: string | number;
   orderId?: string | number;
   emailAddressToUser?: string;
@@ -121,6 +123,7 @@ export function normalizeTransferRecord(raw: unknown): TransferLike | null {
     id: id as number | string,
     status: String(row.status || ""),
     createdAt: String(row.createdAt || ""),
+    transferedOn: String(row.transferedOn || row.transferredOn || ""),
     orderId: orderId as string | number | undefined,
     emailAddressToUser: String(row.emailAddressToUser || row.email || ""),
     fromUserEmail: String(row.fromUserEmail || fromUser?.email || ""),
@@ -148,6 +151,9 @@ export function filterWalletAccessPassesBySentTransfers<
   const hiddenIds = new Set<string>();
   for (const transfer of sentTransfers) {
     if (!(transfer.access_pass || transfer.accessPass)) continue;
+    // Ticket transfers out of a season package carry the pass relation as well;
+    // only transferring the pass itself removes it from the wallet.
+    if (transfer.tickets?.length) continue;
     const passId = transferAccessPassId(transfer);
     if (!passId) continue;
     const status = transferStatusLabel(transfer.status);
@@ -223,6 +229,7 @@ function mergeTransferRecord(
     accessPass,
     status: primary.status || secondary.status,
     createdAt: primary.createdAt || secondary.createdAt,
+    transferedOn: primary.transferedOn || secondary.transferedOn,
   };
 }
 
@@ -250,6 +257,15 @@ function titleCaseWord(value: string) {
   return word.charAt(0).toUpperCase() + word.slice(1).toLowerCase();
 }
 
+function transferSenderEmail(transfer?: {
+  fromUser?: TransferLike["fromUser"];
+  fromUserEmail?: string;
+} | null): string {
+  return String(
+    transfer?.fromUserEmail || transfer?.fromUser?.email || "",
+  ).trim();
+}
+
 /** Wallet copy uses "M. Rivera" when only an email or partial name is available. */
 export function formatTransferSenderLabel(transfer?: {
   fromUser?: TransferLike["fromUser"];
@@ -262,9 +278,7 @@ export function formatTransferSenderLabel(transfer?: {
   }
   if (lastName) return titleCaseWord(lastName);
 
-  const email = String(
-    transfer?.fromUserEmail || transfer?.fromUser?.email || "",
-  ).trim();
+  const email = transferSenderEmail(transfer);
   if (!email) return "Someone";
 
   const local = email.split("@")[0] || "";
@@ -490,14 +504,31 @@ function transferScheduleLine(transfer: TransferLike): string {
   return eventWhenLabel(event as EventLike, eventTimezone(event as EventLike));
 }
 
-function transferWhen(transfer: TransferLike) {
-  const createdAt = String(transfer.createdAt || "").trim();
-  if (!createdAt) return "";
-  const timezone = transfer.event?.venue?.timezone;
-  const when = formatEventWhen(createdAt, timezone, "MMM D, YYYY");
+function formatTransferTimestamp(
+  value: string | undefined,
+  timezone: string | undefined,
+) {
+  const iso = String(value || "").trim();
+  if (!iso) return "";
+  const when = formatEventWhen(iso, timezone, "MMM D, YYYY");
   if (when) return when;
-  const parsed = moment(createdAt);
-  return parsed.isValid() ? parsed.format("MMM D, YYYY") : createdAt;
+  const parsed = moment(iso);
+  return parsed.isValid() ? parsed.format("MMM D, YYYY") : iso;
+}
+
+function transferEventTimezone(transfer: TransferLike) {
+  return transfer.event?.venue?.timezone;
+}
+
+function transferWhen(transfer: TransferLike) {
+  return formatTransferTimestamp(transfer.createdAt, transferEventTimezone(transfer));
+}
+
+function transferClaimedWhen(transfer: TransferLike) {
+  return formatTransferTimestamp(
+    transfer.transferedOn,
+    transferEventTimezone(transfer),
+  );
 }
 
 function mapTransferRow(
@@ -512,13 +543,14 @@ function mapTransferRow(
     to: direction === "sent" ? transfer.emailAddressToUser : undefined,
     from:
       direction === "received"
-        ? formatTransferSenderLabel(transfer)
+        ? transferSenderEmail(transfer) || "Someone"
         : undefined,
     title: transferTitle(transfer),
     seatLines: transferSeatLines(transfer),
     seat: transferSeatLines(transfer).join(" · "),
     schedule: transferScheduleLine(transfer) || undefined,
     on: transferWhen(transfer),
+    claimedOn: transferClaimedWhen(transfer) || undefined,
     status,
     createdAt: transfer.createdAt,
     accessPassId: transferAccessPassId(transfer) || undefined,

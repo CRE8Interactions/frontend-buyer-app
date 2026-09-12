@@ -466,6 +466,55 @@ describe("wallet season-package orders", () => {
     ).toBe("available");
   });
 
+  it("counts played package games on the wallet card", () => {
+    const order = demoCompletedPackageOrder();
+    const events = [
+      { ...pkg.events[0], start: "2020-08-15T23:00:00.000Z", status: "complete" },
+      ...pkg.events.slice(1),
+    ];
+    const packageOrder = demoCompletedPackageOrder({
+      package: { ...order.package, events },
+    });
+
+    expect(buildSeasonPackageSummaries([packageOrder])[0]?.eventCount).toBe(
+      events.length,
+    );
+  });
+
+  it("keeps package events with no tickets left on the schedule only", () => {
+    const order = demoCompletedPackageOrder();
+    const [, ticketedEvent, transferredEvent] = pkg.events;
+    const endedEvent = {
+      ...pkg.events[3],
+      start: "2020-08-15T23:00:00.000Z",
+      status: "complete",
+    };
+    const packageOrder = demoCompletedPackageOrder({
+      package: {
+        ...order.package,
+        events: [ticketedEvent, transferredEvent, endedEvent],
+      },
+      tickets: order.tickets.map((ticket) => ({
+        ...ticket,
+        eventUUID: ticketedEvent.uuid,
+      })),
+    });
+    const details = pruneTransferredWalletDetails(
+      buildSeasonPackageEventDetails([packageOrder]),
+    );
+
+    const rows = summarizeEventDetails(details, "schedule");
+    const rowFor = (uuid?: string) =>
+      rows.find((row) => row.eventUUID === uuid);
+
+    expect(rows).toHaveLength(3);
+    expect(rowFor(ticketedEvent.uuid)?.availability).toBe("available");
+    expect(rowFor(transferredEvent.uuid)?.availability).toBe("transferred");
+    expect(rowFor(transferredEvent.uuid)?.ticketCount).toBe(0);
+    expect(rowFor(endedEvent.uuid)?.availability).toBe("past");
+    expect(summarizeUpcomingWalletEvents(details)).toEqual([]);
+  });
+
   it("sorts upcoming wallet events with today first, then soonest start", () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-08-15T18:00:00.000Z"));
@@ -522,8 +571,8 @@ describe("wallet season-package orders", () => {
     );
   });
 
-  it("labels ticket-assignment orders and incoming transfer details as Transferred", () => {
-    const order = demoCompletedTicketOrder({ source: "ticket_assignment" });
+  it("labels transfer-sourced orders and incoming transfer details as Transferred", () => {
+    const order = demoCompletedTicketOrder({ source: "transfer" });
     const purchased = demoCompletedTicketOrder({ source: "website" });
     const incomingDetail = {
       key: "incoming:test",
@@ -543,6 +592,11 @@ describe("wallet season-package orders", () => {
     const purchasedDetail = Object.values(buildOrderEventDetails([purchased]))[0]!;
 
     expect(isTransferReceivedOrder(order)).toBe(true);
+    expect(
+      isTransferReceivedOrder(
+        demoCompletedTicketOrder({ source: "ticket_assignment" }),
+      ),
+    ).toBe(false);
     expect(isTransferReceivedOrder(purchased)).toBe(false);
     expect(isTransferReceivedDetail(incomingDetail)).toBe(true);
     expect(orderAcquiredLabel(incomingDetail, order)).toBe("Transferred");

@@ -6,6 +6,7 @@ import {
   demoPackageAccessPass,
   demoSeasonPackage,
 } from "@/lib/demo/fixtures";
+import { formatEventWhen } from "@/lib/helpers";
 import {
   buildWalletReceivedTransferRows,
   buildWalletSentTransferRows,
@@ -155,6 +156,7 @@ describe("ticketTransfers", () => {
           attributes: {
             status: "pending",
             createdAt: "2026-09-10T18:00:00.000Z",
+            transferedOn: "2026-09-10T18:05:00.000Z",
             fromUserEmail: "m.rivera@example.com",
             emailAddressToUser: "recipient@example.com",
             event: { data: { id: 1, attributes: order.event } },
@@ -168,6 +170,7 @@ describe("ticketTransfers", () => {
 
     expect(rows).toHaveLength(1);
     expect(rows[0]?.status).toBe("pending");
+    expect(rows[0]?.transferedOn).toBe("2026-09-10T18:05:00.000Z");
     expect(rows[0]?.event?.name).toBe(order.event?.name);
     expect(rows[0]?.tickets?.[0]?.seatNumber).toBe(ticket.seatNumber);
     expect(normalizeTransferRecord(rows[0])?.id).toBe(9);
@@ -179,13 +182,20 @@ describe("ticketTransfers", () => {
         id: "incoming-1",
         status: "accepted",
         createdAt: "2026-08-01T18:00:00.000Z",
+        transferedOn: "2026-08-02T18:00:00.000Z",
         fromUserEmail: "m.rivera@example.com",
         event: { name: "Home Opener" },
         tickets: [],
       },
     ]);
 
-    expect(rows[0]?.from).toBe("M. Rivera");
+    expect(rows[0]?.from).toBe("m.rivera@example.com");
+    expect(rows[0]?.on).toBe(
+      formatEventWhen("2026-08-01T18:00:00.000Z", undefined, "MMM D, YYYY"),
+    );
+    expect(rows[0]?.claimedOn).toBe(
+      formatEventWhen("2026-08-02T18:00:00.000Z", undefined, "MMM D, YYYY"),
+    );
     expect(rows[0]?.status).toBe("claimed");
   });
 
@@ -509,5 +519,28 @@ describe("ticketTransfers", () => {
 
     expect(claimed).toHaveLength(0);
     expect(pending).toHaveLength(0);
+  });
+
+  it("keeps a pass when a package ticket transfer carries the pass relation", () => {
+    const pass = demoAccessPass();
+
+    expect(
+      filterWalletAccessPassesBySentTransfers([pass], [
+        {
+          id: "pending-game-tickets",
+          status: "pending",
+          accessPassId: pass.uuid,
+          access_pass: { uuid: pass.uuid, name: pass.name, type: "package" },
+          tickets: [
+            {
+              id: 9001,
+              sectionNumber: "R",
+              rowNumber: "25",
+              seatNumber: 11,
+            },
+          ],
+        },
+      ]),
+    ).toHaveLength(1);
   });
 });
