@@ -2,11 +2,13 @@
 %% Source: components/organisms/SeasonTickets.tsx, lib/cancelTransferErrors.ts, lib/fieldValidation.ts
 %% API:    blocktickets/tickets/src/api/ticket-transfer/controllers/ticket-transfer.js (cancelTransfer)
 %%
-%% Response shape: 400/403 → { error: { message } } | 200 → success body
+%% Response shape: 226/400/403 → { error: { message } } | 200 → success body
+%% 226 is HTTP IM Used (2xx), so axios resolves it; treat it as claimed, not success.
 %%
 %% --- Blocktickets POST /ticket-transfers/cancel API responses ---
 %% | Status | API message | Displayed copy |
 %% | 200 | (success) | Close popup + "Transfer cancelled" toast |
+%% | 226 | Transfer has been claimed | Transfer has been claimed |
 %% | 400 | Transfer has been claimed | Transfer has been claimed |
 %% | 403 | You cannot cancel this transfer | We're experiencing technical difficulties. Please try again later. |
 %% | 500 / other | (any other) | We're experiencing technical difficulties. Please try again later. |
@@ -17,8 +19,9 @@ flowchart TD
   submit --> parse[parseCancelTransferApiError]
   parse --> apiFail{API response?}
   apiFail -->|200| success[Close popup + Transfer cancelled toast]
-  apiFail -->|"Transfer has been claimed"| claimed["Transfer has been claimed"]
-  apiFail -->|"We're experiencing technical difficulties. Please try again later."| apiNetwork["We're experiencing technical difficulties. Please try again later."]
+  apiFail -->|226| claimed["Transfer has been claimed"]
+  apiFail -->|400| claimed
+  apiFail -->|other| apiNetwork["We're experiencing technical difficulties. Please try again later."]
 
   claimed --> showError[Show error in popup]
   apiNetwork --> showError

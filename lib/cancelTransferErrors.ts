@@ -2,12 +2,16 @@ import { FIELD_COPY } from "@/lib/fieldValidation";
 
 /**
  * Blocktickets POST /ticket-transfers/cancel (cancelTransfer).
- * 400: ctx.badRequest('Transfer has been claimed', …)
+ * 226 IM Used and 400 both mean the recipient already claimed the transfer.
  */
 
 export const CANCEL_TRANSFER_API_ERROR_MESSAGES = {
   transferClaimed: "Transfer has been claimed",
 } as const;
+
+export function isCancelTransferClaimedStatus(status?: number): boolean {
+  return status === 226 || status === 400;
+}
 
 function extractCancelApiMessage(error: unknown): string | undefined {
   if (!error || typeof error !== "object") return undefined;
@@ -26,9 +30,13 @@ function extractCancelApiMessage(error: unknown): string | undefined {
 
 /** Maps cancel-transfer API errors for the confirm-cancel popup. */
 export function parseCancelTransferApiError(error: unknown): string {
+  const status = (error as { response?: { status?: number } }).response?.status;
   const raw = extractCancelApiMessage(error);
-  if (raw === CANCEL_TRANSFER_API_ERROR_MESSAGES.transferClaimed) {
-    return raw;
+  if (
+    isCancelTransferClaimedStatus(status) ||
+    raw === CANCEL_TRANSFER_API_ERROR_MESSAGES.transferClaimed
+  ) {
+    return CANCEL_TRANSFER_API_ERROR_MESSAGES.transferClaimed;
   }
   return FIELD_COPY.network;
 }

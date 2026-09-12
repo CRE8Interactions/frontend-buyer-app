@@ -70,6 +70,10 @@ import SeasonTickets, {
 import { FIELD_COPY } from "@/lib/fieldValidation";
 import { CANCEL_TRANSFER_API_ERROR_MESSAGES } from "@/lib/cancelTransferErrors";
 import {
+  TICKET_TRANSFER_API_ERROR_MESSAGES,
+  TICKET_TRANSFER_DISPLAY_COPY,
+} from "@/lib/ticketTransferErrors";
+import {
   acceptIncomingTransfers,
   cancelMyTransfers,
   createTicketTransfer,
@@ -575,8 +579,6 @@ describe("SeasonTickets package tab", () => {
       screen.getByRole("textbox", { name: "Email address" }),
       "recipient@example.com",
     );
-    await user.click(screen.getByRole("button", { name: "Next" }));
-    expect(screen.getByText("recipient@example.com")).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Transfer" }));
 
     expect(
@@ -611,12 +613,52 @@ describe("SeasonTickets package tab", () => {
       screen.getByRole("textbox", { name: "Email address" }),
       DEMO_SESSION.user.email,
     );
-    await user.click(screen.getByRole("button", { name: "Next" }));
+    await user.click(screen.getByRole("button", { name: "Transfer" }));
 
     expect(screen.getByRole("alert")).toHaveTextContent(
-      "This season pass is already assigned to your email.",
+      "This pass is already assigned to that email address.",
     );
     expect(mockedCreateTicketTransfer).not.toHaveBeenCalled();
+  });
+
+  it("shows a season pass transfer error when included tickets were already transferred", async () => {
+    const user = userEvent.setup();
+    const order = demoCompletedPackageOrder();
+    const pass = demoPackageAccessPass();
+    navigationMocks.pathname = `/wallet/my-tickets/order/${packageOrderId}/package/${pkg.uuid}/`;
+    mockedGetMyEvents.mockResolvedValue({ data: [order] } as never);
+    mockedGetAccessPassesByOrder.mockResolvedValue({
+      data: { data: [pass] },
+    } as never);
+    mockedCreateTicketTransfer.mockRejectedValue({
+      response: {
+        status: 400,
+        data: {
+          error: {
+            message:
+              "This season pass cannot be transferred because one or more included game tickets are unavailable",
+          },
+        },
+      },
+    });
+
+    render(<SeasonTickets />);
+
+    await user.click(
+      await screen.findByRole("button", { name: "Transfer season pass" }),
+    );
+    await user.type(
+      screen.getByRole("textbox", { name: "Email address" }),
+      "recipient@example.com",
+    );
+    await user.click(screen.getByRole("button", { name: "Transfer" }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "This season pass can't be transferred because one or more included game tickets have already been transferred.",
+    );
+    expect(
+      screen.queryByText("Season pass transfer pending"),
+    ).not.toBeInTheDocument();
   });
 
   it("shows website, box office, and ticket-assignment event orders", async () => {
@@ -833,7 +875,6 @@ describe("SeasonTickets package tab", () => {
       screen.getByRole("textbox", { name: "Email address" }),
       "recipient@example.com",
     );
-    await user.click(screen.getByRole("button", { name: "Next" }));
     await user.click(screen.getByRole("button", { name: "Transfer" }));
 
     expect(
@@ -854,7 +895,12 @@ describe("SeasonTickets package tab", () => {
     mockedGetMyAccessPass.mockResolvedValue({
       data: { data: pass },
     } as never);
-    mockedCreateTicketTransfer.mockRejectedValue(new Error("offline"));
+    mockedCreateTicketTransfer.mockRejectedValue({
+      response: {
+        status: 404,
+        data: { error: { message: "Access pass not found" } },
+      },
+    });
 
     render(<SeasonTickets />);
 
@@ -865,7 +911,6 @@ describe("SeasonTickets package tab", () => {
       screen.getByRole("textbox", { name: "Email address" }),
       "recipient@example.com",
     );
-    await user.click(screen.getByRole("button", { name: "Next" }));
     await user.click(screen.getByRole("button", { name: "Transfer" }));
 
     expect(await screen.findByRole("alert")).toHaveTextContent(
@@ -1218,6 +1263,51 @@ describe("SeasonTickets section routes", () => {
     expect(
       screen.getByRole("heading", { name: "Cancel this transfer?" }),
     ).toBeInTheDocument();
+  });
+
+  it("shows Transfer has been claimed when cancel returns 226", async () => {
+    sessionMocks.getSession.mockReturnValue(DEMO_SESSION);
+    const user = userEvent.setup();
+    const order = demoCompletedTicketOrder({ event: icedogs });
+    const [ticket] = order.tickets;
+    navigationMocks.pathname = "/wallet/my-transfers/";
+    mockedGetMyEvents.mockResolvedValue({ data: [order] } as never);
+    mockedGetMySentTransfers.mockResolvedValue({
+      data: [
+        {
+          id: "sent-1",
+          status: "pending",
+          emailAddressToUser: "recipient@example.com",
+          orderId: order.orderId,
+          event: order.event,
+          tickets: [ticket],
+          createdAt: "2026-01-01T12:00:00.000Z",
+        },
+      ],
+    } as never);
+    mockedCancelMyTransfers.mockResolvedValue({
+      status: 226,
+      data: {
+        error: { message: CANCEL_TRANSFER_API_ERROR_MESSAGES.transferClaimed },
+      },
+    } as never);
+
+    render(<SeasonTickets />);
+
+    await user.click(
+      (await screen.findAllByRole("button", { name: "Cancel transfer" }))[0]!,
+    );
+    await user.click(
+      screen.getAllByRole("button", { name: "Cancel transfer" }).at(-1)!,
+    );
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      CANCEL_TRANSFER_API_ERROR_MESSAGES.transferClaimed,
+    );
+    expect(
+      screen.getByRole("heading", { name: "Cancel this transfer?" }),
+    ).toBeInTheDocument();
+    expect(screen.queryByText("Transfer cancelled")).not.toBeInTheDocument();
   });
 
   it("shows the network error in the cancel popup when cancel fails with a server error", async () => {
@@ -1917,7 +2007,7 @@ describe("SeasonTickets routed event screen", { timeout: 20_000 }, () => {
     );
 
     expect(
-      await screen.findByText("Your ticket has been transferred"),
+      await screen.findByText("Transfer sent"),
     ).toBeInTheDocument();
     expect(mockedCreateTicketTransfer).toHaveBeenCalledWith({
       email: "recipient@example.com",
@@ -1967,7 +2057,7 @@ describe("SeasonTickets routed event screen", { timeout: 20_000 }, () => {
     );
 
     expect(
-      await screen.findByText("Your ticket has been transferred"),
+      await screen.findByText("Transfer sent"),
     ).toBeInTheDocument();
     expect(screen.getByText(seatLabel(ticket))).toBeInTheDocument();
   });
@@ -1997,13 +2087,51 @@ describe("SeasonTickets routed event screen", { timeout: 20_000 }, () => {
 
     expect(
       await screen.findByRole("alert"),
-    ).toHaveTextContent("We couldn't transfer those tickets. Please try again.");
+    ).toHaveTextContent(FIELD_COPY.network);
     expect(
-      screen.queryByText("Your ticket has been transferred"),
+      screen.queryByText("Transfer sent"),
     ).not.toBeInTheDocument();
     expect(
       screen.getByText("You are about to transfer 1 ticket"),
     ).toBeInTheDocument();
+  });
+
+  it("shows scanned copy when ticket transfer is rejected because tickets were scanned", async () => {
+    const user = userEvent.setup();
+    const order = demoCompletedTicketOrder({ event: icedogs });
+    const ticket = order.tickets[0];
+    mockedGetMyEvents.mockResolvedValue({ data: [order] } as never);
+    mockedCreateTicketTransfer.mockRejectedValue({
+      response: {
+        status: 402,
+        data: {
+          error: {
+            message: TICKET_TRANSFER_API_ERROR_MESSAGES.alreadyScanned,
+          },
+        },
+      },
+    });
+
+    render(<SeasonTickets initialScreen="event" eventUUID={icedogs.uuid} />);
+
+    await user.click(await screen.findByRole("button", { name: "Transfer" }));
+    await user.click(
+      screen.getByRole("button", { name: `Seat ${ticket.seatNumber}` }),
+    );
+    await user.click(screen.getByRole("button", { name: "Next" }));
+    await user.type(
+      screen.getByRole("textbox", { name: "Email address" }),
+      "recipient@example.com",
+    );
+    await user.click(screen.getByRole("button", { name: "Next" }));
+    await user.click(
+      screen.getAllByRole("button", { name: "Transfer" }).at(-1)!,
+    );
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      TICKET_TRANSFER_DISPLAY_COPY.scanned,
+    );
+    expect(screen.queryByText("Transfer sent")).not.toBeInTheDocument();
   });
 
   it("does not transfer a single ticket back to its owner", async () => {
@@ -2027,7 +2155,7 @@ describe("SeasonTickets routed event screen", { timeout: 20_000 }, () => {
 
     expect(
       screen.getByRole("alert"),
-    ).toHaveTextContent("You cannot transfer tickets to yourself.");
+    ).toHaveTextContent(TICKET_TRANSFER_DISPLAY_COPY.assigned);
     expect(
       screen.getByRole("textbox", { name: "Email address" }),
     ).toHaveAttribute("aria-invalid", "true");
@@ -2356,10 +2484,47 @@ describe("SeasonTickets ticket screen responsive layout", () => {
 
     render(<SeasonTickets />);
 
-    const footer = await screen.findByTestId("wallet-event-transfer-footer");
+    const footer = await screen.findByTestId("wallet-event-actions-footer");
     expect(
       within(footer).getByRole("button", { name: "Transfer" }),
     ).toBeInTheDocument();
+
+    Reflect.deleteProperty(navigator, "userAgent");
+  });
+
+  it("hides Transfer and shows Sell based on event wallet flags", async () => {
+    Object.defineProperty(window, "matchMedia", {
+      configurable: true,
+      writable: true,
+      value: (query: string) =>
+        ({ matches: query === "(pointer: coarse)" }) as MediaQueryList,
+    });
+    Object.defineProperty(navigator, "userAgent", {
+      configurable: true,
+      writable: true,
+      value: "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X)",
+    });
+    mockedGetMyEvents.mockResolvedValue({
+      data: [
+        demoCompletedTicketOrder({
+          event: {
+            ...icedogs,
+            enableTransfers: false,
+            enableResale: true,
+          },
+        }),
+      ],
+    } as never);
+
+    render(<SeasonTickets />);
+
+    const footer = await screen.findByTestId("wallet-event-actions-footer");
+    expect(
+      within(footer).queryByRole("button", { name: "Transfer" }),
+    ).not.toBeInTheDocument();
+    expect(
+      within(footer).getByRole("link", { name: "Sell" }),
+    ).toHaveAttribute("href", expect.stringMatching(/^\/wallet\/my-listings\/?$/));
 
     Reflect.deleteProperty(navigator, "userAgent");
   });

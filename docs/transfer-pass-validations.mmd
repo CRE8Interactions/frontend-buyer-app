@@ -8,7 +8,7 @@
 
 %%
 
-%% Blur: same rules as login (emailBlurInvalid). Ticket transfer modal wires blur; pass form uses submit-only today.
+%% Blur: optional hint on a non-empty email only. Empty blur is quiet. SendGrid is not called.
 
 %% Submit: validateSubmittedEmail — trim, empty, blocked/syntax, then POST /registration/validate-email.
 
@@ -28,15 +28,13 @@
 
 %% | Client | Email address is required. | Email is invalid. Please try again. | — |
 
-%% | POST /registration/validate-email | — | 402 → Email is invalid. Please try again. | 200 → ok |
+%% | POST /registration/validate-email | — | 402 Bad email → Email is invalid. Please try again. | 200 Valid → ok |
 
 %%
 
-%% --- Client-only (before / after validateSubmittedEmail) ---
+%% --- Client-only (after validateSubmittedEmail ok) ---
 
-%% Season pass guard: This season pass can't be transferred while tickets from it are in transfer.
-
-%% Self-transfer (pass): This {season pass|access pass} is already assigned to your email.
+%% Self-transfer (both pass types): This pass is already assigned to that email address.
 
 %%
 
@@ -44,61 +42,55 @@
 
 %% | Status | API message / body | Displayed copy |
 
-%% | 200 | SendGrid verdict Valid | (continue to confirm step) |
+%% | 200 | SendGrid verdict Valid | (continue — submit email / transfer) |
+
+%% | 200 | SendGrid verdict Invalid (or Risky with suggestion) | Email is invalid. Please try again. |
 
 %% | 402 | Bad email | Email is invalid. Please try again. |
 
 %%
 
-%% --- POST /ticket-transfers (accessPassId) — access pass ---
+%% --- POST /ticket-transfers (accessPassId) — shared (access pass and season pass) ---
 
 %% | Status | API message | Displayed copy |
 
-%% | 200 | Transfer created | Step: success |
+%% | 200 | Transfer created | Step 4: success |
 
-%% | 400 | Recipient email is required | Unable to transfer this access pass. Please try again. |
-
-%% | 402 | ACCESS PASS IS ALREADY ASSIGNED TO THIS EMAIL ADDRESS | Unable to transfer this access pass. Please try again. |
-
-%% | 404 | Access pass not found | Unable to transfer this access pass. Please try again. |
-
-%% | 400 | This access pass already has a pending transfer | Unable to transfer this access pass. Please try again. |
+%% | 402 | ACCESS PASS IS ALREADY ASSIGNED TO THIS EMAIL ADDRESS | This pass is already assigned to that email address. |
 
 %% | 500 / other | (any other) | We're experiencing technical difficulties. Please try again later. |
 
 %%
 
-%% --- POST /ticket-transfers (accessPassId) — season pass (type season_seat) ---
+%% --- POST /ticket-transfers — shared API message, kind-specific displayed copy ---
+
+%% | Status | API message | Access pass displayed copy | Season pass displayed copy |
+
+%% | 400 | Recipient email is required | Email address is required. | Email address is required. |
+
+%% | 400 | This access pass already has a pending transfer | This access pass already has a pending transfer. | This season pass already has a pending transfer. |
+
+%% | 402 | (any other) | We couldn't transfer this access pass. Please try again. | We couldn't transfer this season pass. Please try again. |
+
+%% | 404 | Access pass not found | Unable to transfer this access pass. Please try again. | Unable to transfer this season pass. Please try again. |
+
+%%
+
+%% --- POST /ticket-transfers — season pass only ---
 
 %% | Status | API message | Displayed copy |
 
-%% | 200 | Transfer created | Step: success |
+%% | 400 | This season pass cannot be transferred because one or more included game tickets are unavailable | This season pass can't be transferred because one or more included game tickets have already been transferred. |
 
-%% | 400 | Recipient email is required | Unable to transfer this season pass. Please try again. |
-
-%% | 402 | ACCESS PASS IS ALREADY ASSIGNED TO THIS EMAIL ADDRESS | Unable to transfer this season pass. Please try again. |
-
-%% | 404 | Access pass not found | Unable to transfer this season pass. Please try again. |
-
-%% | 400 | This access pass already has a pending transfer | Unable to transfer this season pass. Please try again. |
-
-%% | 400 | This season pass cannot be transferred because one or more included game tickets are unavailable | Unable to transfer this season pass. Please try again. |
-
-%% | 402 | Cannot transfer tickets that have already been scanned | Unable to transfer this season pass. Please try again. |
-
-%% | 500 / other | (any other) | We're experiencing technical difficulties. Please try again later. |
+%% | 402 | Cannot transfer tickets that have already been scanned | These tickets have already been scanned and can't be transferred. |
 
 
 
 flowchart TD
 
-  open[Open transfer] --> seasonGuard{Season pass with package tickets in transfer?}
+  open[Open transfer] --> step2[Step 2: recipient email]
 
-  seasonGuard -->|yes| clientBlock["This season pass can't be transferred while tickets from it are in transfer."]
-
-  seasonGuard -->|no| start[Step: recipient email]
-
-  start --> typeEmail[Type email]
+  step2 --> typeEmail[Type email]
 
   typeEmail --> blurField[Blur field]
 
@@ -120,25 +112,37 @@ flowchart TD
 
   valFail -->|ok| selfCheck{Same as signed-in email?}
 
-  valFail -->|network| network["We're experiencing technical difficulties. Please try again later."]
+  valFail -->|500| network["We're experiencing technical difficulties. Please try again later."]
 
-  selfCheck -->|yes| selfError["This pass is already assigned to your email."]
+  selfCheck -->|yes| assignedError["This pass is already assigned to that email address."]
 
-  selfCheck -->|no| confirm[Step: confirm]
-
-
-
-  confirm --> transferApi[POST /ticket-transfers accessPassId]
+  selfCheck -->|no| transferApi[POST /ticket-transfers accessPassId]
 
   transferApi --> apiFail{API response?}
 
-  apiFail -->|200| success[Step: success]
+  apiFail -->|200| step4[Step 4: success]
 
-  apiFail -->|400| passError["Unable to transfer this pass. Please try again."]
+  apiFail -->|400| api400{API message?}
 
-  apiFail -->|402| passError
+  api400 -->|400 Recipient email is required| emailRequiredError["Email address is required."]
 
-  apiFail -->|404| passError
+  api400 -->|400 This access pass already has a pending transfer| pendingError["This pass already has a pending transfer."]
+
+  api400 -->|400 season pass only · This season pass cannot be transferred because one or more included game tickets are unavailable| seasonPassError["This season pass can't be transferred because one or more included game tickets have already been transferred."]
+
+  api400 -->|400 other| passError["Unable to transfer this pass. Please try again."]
+
+  apiFail -->|402| api402{API message?}
+
+  api402 -->|402 ACCESS PASS IS ALREADY ASSIGNED TO THIS EMAIL ADDRESS| assignedError
+
+  api402 -->|402 season pass only · Cannot transfer tickets that have already been scanned| scannedError["These tickets have already been scanned and can't be transferred."]
+
+  api402 -->|402 other| transferError["We couldn't transfer this pass. Please try again."]
+
+  apiFail -->|404| api404{API message?}
+
+  api404 -->|404 Access pass not found| passError
 
   apiFail -->|500| network
 
@@ -176,7 +180,9 @@ flowchart TD
 
     vSendgrid --> vSgStatus{HTTP status?}
 
-    vSgStatus -->|200| vOk[ok]
+    vSgStatus -->|200 Valid| vOk[ok]
+
+    vSgStatus -->|200 Invalid or Risky with suggestion| vEmailInvalid
 
     vSgStatus -->|402| vEmailInvalid
 
@@ -187,4 +193,3 @@ flowchart TD
   blurValidate -.-> blurClientChecks
 
   validate -.-> validateSubmittedEmail
-

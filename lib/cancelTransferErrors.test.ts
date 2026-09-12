@@ -10,7 +10,14 @@ function axiosError(status: number, data: unknown) {
 }
 
 describe("parseCancelTransferApiError", () => {
-  it("returns the claimed message for a 400 Transfer has been claimed response", () => {
+  it("returns Transfer has been claimed for 226 and 400", () => {
+    expect(
+      parseCancelTransferApiError(
+        axiosError(226, {
+          error: { message: CANCEL_TRANSFER_API_ERROR_MESSAGES.transferClaimed },
+        }),
+      ),
+    ).toBe(CANCEL_TRANSFER_API_ERROR_MESSAGES.transferClaimed);
     expect(
       parseCancelTransferApiError(
         axiosError(400, {
@@ -18,6 +25,9 @@ describe("parseCancelTransferApiError", () => {
         }),
       ),
     ).toBe(CANCEL_TRANSFER_API_ERROR_MESSAGES.transferClaimed);
+    expect(parseCancelTransferApiError(axiosError(226, {}))).toBe(
+      CANCEL_TRANSFER_API_ERROR_MESSAGES.transferClaimed,
+    );
   });
 
   it("returns the network fallback for server and unknown API errors", () => {

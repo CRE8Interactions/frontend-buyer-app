@@ -136,6 +136,8 @@ function demoOrg(slug: string, name: string, category?: string) {
     image: DEMO_BRANDING[slug]?.logo,
     category: category ? { name: category } : undefined,
     website: DEMO_ORG_WEBSITES[slug],
+    enableTransfer: true,
+    enableResale: true,
   };
 }
 
@@ -706,6 +708,8 @@ export const DEMO_SEATED_TICKET_GROUPS: RawTicketGroup[] = [
 /** Attach sellable ticket inventory so FROM prices come from tickets, not tiers. */
 for (const event of DEMO_EVENTS) {
   Object.assign(event, {
+    enableTransfers: true,
+    enableResale: true,
     ticketGroups:
       event.seatmap?.ga_only === false
         ? DEMO_SEATED_TICKET_GROUPS
@@ -835,8 +839,6 @@ export function demoCheckoutCart(
       seoUrl: event.seoUrl,
       shortCode: event.shortCode,
       shortcode: event.shortcode,
-      enableTransfers:
-        (event as { enableTransfers?: boolean }).enableTransfers ?? true,
       image: event.image,
       branding: organization?.branding,
       organization,

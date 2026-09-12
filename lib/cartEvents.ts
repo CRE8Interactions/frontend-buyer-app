@@ -59,7 +59,6 @@ export type EventLike = {
   entry_gate?: string;
   subCategory?: { name?: string };
   attractions?: { name?: string; primary?: boolean; artwork?: ApiImage }[];
-  enableTransfers?: boolean;
 };
 
 export type AttractionCard = {
@@ -162,6 +161,7 @@ export type CartEventDetail = {
   eventUUID?: string;
   event: EventLike;
   transfersEnabled: boolean;
+  resaleEnabled: boolean;
   availability: CartEventSummary["availability"];
   pendingIncomingTransfer?: boolean;
   incomingTransferId?: string | number;
@@ -177,6 +177,41 @@ export type CartEventDetail = {
     logo?: string;
   }[];
 };
+
+/** Event toggles — both must be explicitly true to show wallet Transfer / Sell. */
+export function eventWalletCommerceFlags(event?: EventLike | null) {
+  return {
+    transfersEnabled: event?.enableTransfers === true,
+    resaleEnabled: event?.enableResale === true,
+  };
+}
+
+function mergeEventOrganization(
+  ev: EventLike,
+  order?: OrderLike | null,
+): EventLike {
+  const orderOrg =
+    (order?.organization as BrandingOrganization | undefined) ||
+    (order?.package?.organization as BrandingOrganization | undefined) ||
+    (order?.event?.organization as BrandingOrganization | undefined);
+  const enableTransfer =
+    orderOrg?.enableTransfer ?? ev.organization?.enableTransfer;
+  const enableResale = orderOrg?.enableResale ?? ev.organization?.enableResale;
+  if (
+    enableTransfer === ev.organization?.enableTransfer &&
+    enableResale === ev.organization?.enableResale
+  ) {
+    return ev;
+  }
+  return {
+    ...ev,
+    organization: {
+      ...ev.organization,
+      enableTransfer,
+      enableResale,
+    },
+  };
+}
 
 function formatCartVenueLine(venue?: VenueLike | null, orgName?: string) {
   const line = formatVenueLocationLine(venue?.name, venue?.address);
@@ -876,6 +911,7 @@ function collapseDuplicateIncomingEventDetails(
       pendingIncomingTransfer: true,
       availability: "available",
       transfersEnabled: false,
+      resaleEnabled: false,
     };
 
     for (const key of keyList) {
@@ -931,6 +967,7 @@ export function reconcilePendingReceivedTransfers(
       incomingTransferId: transfer.id,
       incomingTransferFrom: formatTransferSenderLabel(transfer),
       transfersEnabled: false,
+      resaleEnabled: false,
       showInUpcomingTab: true,
     };
     const patch: CartEventDetail = existing
@@ -1374,7 +1411,7 @@ function detailFromEvent(
     cartTotal,
     eventUUID: String(ev.uuid || "").trim() || undefined,
     event: ev,
-    transfersEnabled: ev.enableTransfers !== false,
+    ...eventWalletCommerceFlags(ev),
     availability: eventAvailability(ev, tickets),
     attractions,
     teams:
@@ -1475,6 +1512,7 @@ export function buildCartEventDetails(
       cartTotal: total,
       event: {},
       transfersEnabled: false,
+      resaleEnabled: false,
       availability: "available",
       teams: [],
     };
@@ -1808,9 +1846,10 @@ function attachOrderEventDetail(
         "ddd, MMM D · h:mm A",
       )
     : "";
+  const enriched = mergeEventOrganization(ev, order);
   out[key] = {
     ...detailFromEvent(
-      ev,
+      enriched,
       key,
       tickets as Array<Record<string, unknown>>,
       orderId,
@@ -2292,6 +2331,7 @@ export function withFullOrder(
   return {
     ...detail,
     ...refreshEventMatchupFields(event, detail.packageName),
+    ...eventWalletCommerceFlags(event),
     event,
     cartTotal: orderTotal(order.total) ?? detail.cartTotal,
     orderId: orderIdOf(order) || detail.orderId,

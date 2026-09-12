@@ -28,13 +28,13 @@
 
 %% | Client | Email address is required. | Email is invalid. Please try again. | — |
 
-%% | POST /registration/validate-email | — | 402 → Email is invalid. Please try again. | 200 → ok |
+%% | POST /registration/validate-email | — | 402 Bad email → Email is invalid. Please try again. | 200 Valid → ok |
 
 %%
 
 %% --- Client-only (after validateSubmittedEmail ok) ---
 
-%% Self-transfer (tickets): You cannot transfer tickets to yourself.
+%% Self-transfer (tickets): These tickets are already assigned to that email address.
 
 %%
 
@@ -43,6 +43,8 @@
 %% | Status | API message / body | Displayed copy |
 
 %% | 200 | SendGrid verdict Valid | (continue to Step 3: confirm) |
+
+%% | 200 | SendGrid verdict Invalid (or Risky with suggestion) | Email is invalid. Please try again. |
 
 %% | 402 | Bad email | Email is invalid. Please try again. |
 
@@ -54,9 +56,11 @@
 
 %% | 200 | Transfer created | Step 4: success |
 
-%% | 402 | Cannot transfer tickets that have already been scanned | We couldn't transfer those tickets. Please try again. |
+%% | 402 | Cannot transfer tickets that have already been scanned | These tickets have already been scanned and can't be transferred. |
 
-%% | 402 | TICKETS ARE ALREADY ASSIGNED TO THIS EMAIL ADDRESS | We couldn't transfer those tickets. Please try again. |
+%% | 402 | TICKETS ARE ALREADY ASSIGNED TO THIS EMAIL ADDRESS | These tickets are already assigned to that email address. |
+
+%% | 402 | (any other) | We couldn't transfer those tickets. Please try again. |
 
 %% | 500 / other | (any other) | We're experiencing technical difficulties. Please try again later. |
 
@@ -90,7 +94,7 @@ flowchart TD
 
   valFail -->|500| network["We're experiencing technical difficulties. Please try again later."]
 
-  selfCheck -->|yes| selfError["You cannot transfer tickets to yourself."]
+  selfCheck -->|yes| assignedError["These tickets are already assigned to that email address."]
 
   selfCheck -->|no| step3[Step 3: confirm]
 
@@ -102,7 +106,13 @@ flowchart TD
 
   apiFail -->|200| step4[Step 4: success]
 
-  apiFail -->|402| transferError["We couldn't transfer those tickets. Please try again."]
+  apiFail -->|402| api402{API message?}
+
+  api402 -->|402 Cannot transfer tickets that have already been scanned| scannedError["These tickets have already been scanned and can't be transferred."]
+
+  api402 -->|402 TICKETS ARE ALREADY ASSIGNED TO THIS EMAIL ADDRESS| assignedError["These tickets are already assigned to that email address."]
+
+  api402 -->|402 other| transferError["We couldn't transfer those tickets. Please try again."]
 
   apiFail -->|500| network
 
@@ -140,7 +150,9 @@ flowchart TD
 
     vSendgrid --> vSgStatus{HTTP status?}
 
-    vSgStatus -->|200| vOk[ok]
+    vSgStatus -->|200 Valid| vOk[ok]
+
+    vSgStatus -->|200 Invalid or Risky with suggestion| vEmailInvalid
 
     vSgStatus -->|402| vEmailInvalid
 

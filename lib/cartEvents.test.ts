@@ -46,6 +46,7 @@ import {
   walletFlexPackPath,
   walletPackageEventPath,
   walletPackagePath,
+  eventWalletCommerceFlags,
   walletRouteFromPath,
   withFullOrder,
 } from "@/lib/cartEvents";
@@ -1275,6 +1276,45 @@ describe("wallet flex-pack orders", () => {
     const ticketOrder = demoCompletedTicketOrder();
     expect(buildFlexPackSummaries([ticketOrder])).toEqual([]);
     expect(countFlexPacks([ticketOrder])).toBe(0);
+  });
+});
+
+describe("eventWalletCommerceFlags", () => {
+  it("enables wallet actions only when event flags are explicitly true", () => {
+    expect(
+      eventWalletCommerceFlags({
+        enableTransfers: true,
+        enableResale: true,
+      }),
+    ).toEqual({ transfersEnabled: true, resaleEnabled: true });
+    expect(
+      eventWalletCommerceFlags({
+        enableTransfers: false,
+        enableResale: true,
+      }),
+    ).toEqual({ transfersEnabled: false, resaleEnabled: true });
+    expect(eventWalletCommerceFlags({})).toEqual({
+      transfersEnabled: false,
+      resaleEnabled: false,
+    });
+  });
+
+  it("reads event flags when building wallet event details", () => {
+    const event = DEMO_EVENTS.find((row) => row.shortCode === "NMST004")!;
+    const detail = Object.values(
+      buildOrderEventDetails([
+        demoCompletedTicketOrder({
+          event: {
+            ...event,
+            enableTransfers: true,
+            enableResale: false,
+          },
+        }),
+      ]),
+    )[0];
+
+    expect(detail.transfersEnabled).toBe(true);
+    expect(detail.resaleEnabled).toBe(false);
   });
 });
 

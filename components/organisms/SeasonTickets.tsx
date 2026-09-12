@@ -47,8 +47,17 @@ import {
 import { validateSubmittedEmail } from "@/lib/submitEmailValidation";
 import {
   CANCEL_TRANSFER_API_ERROR_MESSAGES,
+  isCancelTransferClaimedStatus,
   parseCancelTransferApiError,
 } from "@/lib/cancelTransferErrors";
+import {
+  PASS_TRANSFER_DISPLAY_COPY,
+  parsePassTransferApiError,
+} from "@/lib/passTransferErrors";
+import {
+  TICKET_TRANSFER_DISPLAY_COPY,
+  parseTicketTransferApiError,
+} from "@/lib/ticketTransferErrors";
 import {
   acceptIncomingTransfers,
   cancelMyTransfers,
@@ -69,7 +78,6 @@ import {
   buildSeasonPackageSummaries,
   buildWalletEventDetails,
   mergePendingTransferWalletDetails,
-  packageOrderHasTicketTransfers,
   removeTicketsFromWalletDetails,
   sortSeasonPackageSummaries,
   summarizeEventDetails,
@@ -675,6 +683,7 @@ type EventT = {
   eventUUID?: string;
   event?: CartEventDetail["event"];
   transfersEnabled?: boolean;
+  resaleEnabled?: boolean;
   pendingIncomingTransfer?: boolean;
   incomingTransferId?: string | number;
   incomingTransferFrom?: string;
@@ -710,6 +719,7 @@ function detailToEventT(d: CartEventDetail, isCart = false): EventT {
     eventUUID: d.eventUUID,
     event: d.event,
     transfersEnabled: d.transfersEnabled,
+    resaleEnabled: d.resaleEnabled,
     pendingIncomingTransfer: d.pendingIncomingTransfer,
     incomingTransferId: d.incomingTransferId,
     incomingTransferFrom: d.incomingTransferFrom,
@@ -825,7 +835,7 @@ function upcomingAvailabilityLabel(
 type PassTransfer = {
   pass: AccessPassSummary;
   kind: "season pass" | "access pass";
-  step: "email" | "confirm" | "success";
+  step: "email" | "success";
   email: string;
   error: string;
   saving: boolean;
@@ -1487,7 +1497,12 @@ export default function SeasonTickets({
     setConfirmCancelSaving(true);
     setConfirmCancelError("");
     try {
-      await cancelMyTransfers(confirmCancel.id);
+      const res = await cancelMyTransfers(confirmCancel.id);
+      if (isCancelTransferClaimedStatus(res.status)) {
+        setConfirmCancelError(CANCEL_TRANSFER_API_ERROR_MESSAGES.transferClaimed);
+        await reloadWalletEvents();
+        return;
+      }
       await reloadWalletEvents();
       setConfirmCancel(null);
       flashToast("Transfer cancelled");
@@ -2406,19 +2421,6 @@ export default function SeasonTickets({
     pass: AccessPassSummary,
     kind: PassTransfer["kind"],
   ) => {
-    if (
-      kind === "season pass" &&
-      packageOrderHasTicketTransfers(
-        eventDetails,
-        sentTransferRecords,
-        pass.orderId,
-      )
-    ) {
-      flashToast(
-        "This season pass can't be transferred while tickets from it are in transfer.",
-      );
-      return;
-    }
     setPassTransfer({
       pass,
       kind,
@@ -2430,7 +2432,13 @@ export default function SeasonTickets({
   };
 
   const submitPassTransfer = async (rawEmail?: string) => {
-    if (!passTransfer) return;
+    if (
+      !passTransfer ||
+      passTransfer.step !== "email" ||
+      !passTransfer.pass.accessPassUUID
+    ) {
+      return;
+    }
     const result = await validateSubmittedEmail(rawEmail ?? passTransfer.email);
     if (!result.ok) {
       setPassTransfer({
@@ -2450,24 +2458,12 @@ export default function SeasonTickets({
       setPassTransfer({
         ...passTransfer,
         email: normalizedEmail,
-        error: `This ${passTransfer.kind} is already assigned to your email.`,
+        error: PASS_TRANSFER_DISPLAY_COPY.assigned,
       });
-      return;
-    }
-    if (passTransfer.step === "email") {
-      setPassTransfer({
-        ...passTransfer,
-        email: normalizedEmail,
-        step: "confirm",
-        error: "",
-      });
-      return;
-    }
-    if (passTransfer.step !== "confirm" || !passTransfer.pass.accessPassUUID) {
       return;
     }
 
-    setPassTransfer({ ...passTransfer, saving: true, error: "" });
+    setPassTransfer({ ...passTransfer, email: normalizedEmail, saving: true, error: "" });
     try {
       await createTicketTransfer({
         accessPassId: passTransfer.pass.accessPassUUID,
@@ -2499,11 +2495,12 @@ export default function SeasonTickets({
         saving: false,
         error: "",
       });
-    } catch {
+    } catch (err) {
       setPassTransfer({
         ...passTransfer,
+        email: normalizedEmail,
         saving: false,
-        error: `Unable to transfer this ${passTransfer.kind}. Please try again.`,
+        error: parsePassTransferApiError(err, passTransfer.kind),
       });
     }
   };
@@ -2589,13 +2586,7 @@ export default function SeasonTickets({
             {summary}
           </Link>
         ) : summary}
-        {row.status === "Active" &&
-        row.accessPassUUID &&
-        !packageOrderHasTicketTransfers(
-          eventDetails,
-          sentTransferRecords,
-          row.orderId,
-        ) ? (
+        {row.status === "Active" && row.accessPassUUID ? (
           <div style={{ padding: "12px 16px 16px" }}>
             <button
               type="button"
@@ -3041,8 +3032,30 @@ export default function SeasonTickets({
   const pendingIncomingEvent = ev.pendingIncomingTransfer === true;
   const canTransferEvent =
     !pendingIncomingEvent &&
-    ev.transfersEnabled !== false &&
+    ev.transfersEnabled === true &&
     ev.tickets.some((ticket) => ticket.id != null);
+  const canSellEvent =
+    !pendingIncomingEvent &&
+    ev.resaleEnabled === true &&
+    ev.tickets.some((ticket) => ticket.id != null);
+  const showEventActionsFooter =
+    pendingIncomingEvent || canTransferEvent || canSellEvent;
+  const manageActionBtnStyle: React.CSSProperties = {
+    fontFamily: "inherit",
+    width: "100%",
+    textAlign: "left",
+    fontSize: fluidSize(14),
+    fontWeight: 600,
+    color: INK,
+    background: "#fff",
+    border: "1px solid rgba(5,27,53,0.14)",
+    borderRadius: 12,
+    padding: "13px 16px",
+    cursor: "pointer",
+    textDecoration: "none",
+    boxSizing: "border-box",
+    display: "block",
+  };
 
   /* When the event screen owns the URL, leaving it has to pop back to tickets. */
   const EventBackControl = (
@@ -3199,7 +3212,7 @@ export default function SeasonTickets({
         </div>
       </div>
 
-    <div className="st-mobile-ticket" style={{ boxSizing: "border-box", padding: `calc(env(safe-area-inset-top) + 74px) 12px ${canTransferEvent || pendingIncomingEvent ? mobileStickyFooterReservePx(74) : "calc(28px + env(safe-area-inset-bottom))"}`, display: "flex", flexDirection: "column", gap: 16 }}>
+    <div className="st-mobile-ticket" style={{ boxSizing: "border-box", padding: `calc(env(safe-area-inset-top) + 74px) 12px ${showEventActionsFooter ? mobileStickyFooterReservePx(74) : "calc(28px + env(safe-area-inset-bottom))"}`, display: "flex", flexDirection: "column", gap: 16 }}>
       {pendingIncomingEvent ? (
         <div style={{ ...card, borderRadius: 16, padding: "14px 16px", display: "flex", flexDirection: "column", gap: 6, border: "1px solid rgba(192,122,18,0.28)", background: "#fffaf2" }}>
           <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: fluidSize(13), fontWeight: 600, color: "#c07a12" }}>
@@ -3309,33 +3322,62 @@ export default function SeasonTickets({
           padding: "12px 16px",
         })}
       </MobileStickyFooter>
-    ) : canTransferEvent ? (
+    ) : canTransferEvent || canSellEvent ? (
       <MobileStickyFooter
         zIndex={44}
         background="#fff"
         innerPadding="12px 16px"
         shellClassName="st-mobile-ticket"
-        data-testid="wallet-event-transfer-footer"
+        data-testid="wallet-event-actions-footer"
       >
-        <button
-          type="button"
-          onClick={openTransfer}
-          style={{
-            fontFamily: "inherit",
-            width: "100%",
-            minHeight: 50,
-            fontSize: fluidSize(16),
-            fontWeight: 600,
-            color: INK,
-            background: "#fff",
-            border: "1px solid rgba(5,27,53,0.14)",
-            borderRadius: 14,
-            padding: "12px 16px",
-            cursor: "pointer",
-          }}
-        >
-          Transfer
-        </button>
+        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+          {canTransferEvent ? (
+            <button
+              type="button"
+              onClick={openTransfer}
+              style={{
+                fontFamily: "inherit",
+                width: "100%",
+                minHeight: 50,
+                fontSize: fluidSize(16),
+                fontWeight: 600,
+                color: INK,
+                background: "#fff",
+                border: "1px solid rgba(5,27,53,0.14)",
+                borderRadius: 14,
+                padding: "12px 16px",
+                cursor: "pointer",
+              }}
+            >
+              Transfer
+            </button>
+          ) : null}
+          {canSellEvent ? (
+            <Link
+              href={walletSectionHref("resale")}
+              style={{
+                fontFamily: "inherit",
+                width: "100%",
+                minHeight: 50,
+                fontSize: fluidSize(16),
+                fontWeight: 600,
+                color: INK,
+                background: "#fff",
+                border: "1px solid rgba(5,27,53,0.14)",
+                borderRadius: 14,
+                padding: "12px 16px",
+                cursor: "pointer",
+                textDecoration: "none",
+                boxSizing: "border-box",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+              }}
+            >
+              Sell
+            </Link>
+          ) : null}
+        </div>
       </MobileStickyFooter>
     ) : null}
     </>
@@ -3435,7 +3477,10 @@ export default function SeasonTickets({
           <div style={{ ...card, borderRadius: 20, padding: cardPad, display: "flex", flexDirection: "column", gap: 10 }}>
             <div style={{ ...eyebrow, paddingBottom: 4 }}>Manage</div>
             {canTransferEvent ? (
-              <button onClick={openTransfer} style={{ fontFamily: "inherit", width: "100%", textAlign: "left", fontSize: fluidSize(14), fontWeight: 600, color: INK, background: "#fff", border: "1px solid rgba(5,27,53,0.14)", borderRadius: 12, padding: "13px 16px", cursor: "pointer" }}>Transfer</button>
+              <button type="button" onClick={openTransfer} style={manageActionBtnStyle}>Transfer</button>
+            ) : null}
+            {canSellEvent ? (
+              <Link href={walletSectionHref("resale")} style={manageActionBtnStyle}>Sell</Link>
             ) : null}
             <button
               type="button"
@@ -4250,8 +4295,8 @@ export default function SeasonTickets({
         }
 
         setTf({ ...tf, step: 4 });
-      } catch {
-        setTfError("We couldn't transfer those tickets. Please try again.");
+      } catch (err) {
+        setTfError(parseTicketTransferApiError(err));
       } finally {
         setTfSaving(false);
       }
@@ -4272,7 +4317,7 @@ export default function SeasonTickets({
         return;
       }
       if (result.email === normalizeEmail(email)) {
-        setTfError("You cannot transfer tickets to yourself.");
+        setTfError(TICKET_TRANSFER_DISPLAY_COPY.assigned);
         return;
       }
       setTf({ ...tf, email: result.email, step: 3 });
@@ -4498,17 +4543,6 @@ export default function SeasonTickets({
             </form>
           ) : null}
 
-          {step === "confirm" ? (
-            <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-              <p style={{ margin: 0, fontSize: fluidSize(15), lineHeight: 1.55 }}>
-                Transfer <strong>{pass.name}</strong> to <strong>{passTransfer.email}</strong>?
-              </p>
-              <p style={{ margin: 0, fontSize: fluidSize(13), lineHeight: 1.55, color: SUB }}>
-                The pass leaves your wallet now. Cancel from My transfers any time before the recipient claims it — after that, the transfer can&apos;t be cancelled.
-              </p>
-            </div>
-          ) : null}
-
           {step === "success" ? (
             <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
               <div style={{ fontSize: fluidSize(18), fontWeight: 600 }}>{pendingTitle}</div>
@@ -4518,23 +4552,11 @@ export default function SeasonTickets({
             </div>
           ) : null}
 
-          {error && step !== "email" ? (
-            <div role="alert" style={{ fontSize: fluidSize(13), color: DANGER }}>
-              {error}
-            </div>
-          ) : null}
-
           <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
             {step === "email" ? (
               <>
                 <button type="button" onClick={() => setPassTransfer(null)} style={{ fontFamily: "inherit", flex: 1, fontSize: fluidSize(15), fontWeight: 600, color: INK, background: "#f1f3f8", border: "none", borderRadius: 999, padding: 14, minHeight: 48, cursor: "pointer" }}>Cancel</button>
-                <button type="submit" form="season-pass-transfer" disabled={saving || !normalizeEmail(passTransfer.email)} style={{ fontFamily: "inherit", flex: 1, fontSize: fluidSize(15), fontWeight: 600, color: INK, background: ACCENT, border: "none", borderRadius: 999, padding: 14, minHeight: 48, cursor: "pointer" }}>Next</button>
-              </>
-            ) : null}
-            {step === "confirm" ? (
-              <>
-                <button type="button" disabled={saving} onClick={() => setPassTransfer({ ...passTransfer, step: "email", error: "" })} style={{ fontFamily: "inherit", flex: 1, fontSize: fluidSize(15), fontWeight: 600, color: INK, background: "#f1f3f8", border: "none", borderRadius: 999, padding: 14, minHeight: 48, cursor: "pointer" }}>Back</button>
-                <button type="button" disabled={saving} aria-busy={saving || undefined} onClick={() => void submitPassTransfer()} style={{ fontFamily: "inherit", flex: 1, display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 8, fontSize: fluidSize(15), fontWeight: 600, color: INK, background: ACCENT, border: "none", borderRadius: 999, padding: 14, minHeight: 48, cursor: "pointer" }}>
+                <button type="submit" form="season-pass-transfer" disabled={saving || !normalizeEmail(passTransfer.email)} aria-busy={saving || undefined} style={{ fontFamily: "inherit", flex: 1, display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 8, fontSize: fluidSize(15), fontWeight: 600, color: INK, background: ACCENT, border: "none", borderRadius: 999, padding: 14, minHeight: 48, cursor: "pointer" }}>
                   <ButtonBusyContents
                     loading={saving}
                     loadingLabel="Transferring…"
