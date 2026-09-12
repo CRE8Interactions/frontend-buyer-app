@@ -1,10 +1,11 @@
-import { render, screen } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { ReactNode } from "react";
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import GuestContact from "@/components/organisms/GuestContact";
 import { DEMO_USER } from "@/lib/demo/fixtures";
 import { FIELD_COPY } from "@/lib/fieldValidation";
+import { GUEST_CONTACT_COPY } from "@/lib/guestCheckout";
 
 vi.mock("@/lib/api", () => ({
   validateEmail: vi.fn(async () => ({ data: { verdict: "Valid" } })),
@@ -25,7 +26,17 @@ vi.mock("next/link", () => ({
   ),
 }));
 
+import { validateEmail } from "@/lib/api";
+
+const mockedValidateEmail = vi.mocked(validateEmail);
+
 describe("GuestContact", () => {
+  beforeEach(() => {
+    mockedValidateEmail.mockReset();
+    mockedValidateEmail.mockResolvedValue({
+      data: { verdict: "Valid" },
+    } as never);
+  });
   it("continues with the demo user's normalized details", async () => {
     const user = userEvent.setup();
     const onContinue = vi.fn();
@@ -80,6 +91,63 @@ describe("GuestContact", () => {
       "href",
       "/login/",
     );
+  });
+
+  it("shows start-failed copy when validate-email returns 400", async () => {
+    mockedValidateEmail.mockRejectedValue({ response: { status: 400 } });
+    const user = userEvent.setup();
+    const onContinue = vi.fn();
+    render(<GuestContact loginHref="/login/" onContinue={onContinue} />);
+
+    await user.type(
+      screen.getByLabelText(/email address/i),
+      DEMO_USER.email,
+    );
+    await user.type(screen.getByLabelText(/first name/i), DEMO_USER.firstName);
+    await user.type(screen.getByLabelText(/last name/i), DEMO_USER.lastName);
+    await user.click(
+      screen.getByRole("button", { name: /continue to payment/i }),
+    );
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      GUEST_CONTACT_COPY.startFailed,
+    );
+    expect(onContinue).not.toHaveBeenCalled();
+    expect(
+      screen.getByRole("heading", {
+        name: /where should we send your tickets/i,
+      }),
+    ).toBeInTheDocument();
+  });
+
+  it("shows start-failed copy when payment intent returns 400", async () => {
+    const user = userEvent.setup();
+    const onContinue = vi.fn(async () => {
+      throw { response: { status: 400 } };
+    });
+    render(<GuestContact loginHref="/login/" onContinue={onContinue} />);
+
+    await user.type(
+      screen.getByLabelText(/email address/i),
+      DEMO_USER.email,
+    );
+    await user.type(screen.getByLabelText(/first name/i), DEMO_USER.firstName);
+    await user.type(screen.getByLabelText(/last name/i), DEMO_USER.lastName);
+    await user.click(
+      screen.getByRole("button", { name: /continue to payment/i }),
+    );
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      GUEST_CONTACT_COPY.startFailed,
+    );
+    await waitFor(() => {
+      expect(onContinue).toHaveBeenCalled();
+    });
+    expect(
+      screen.getByRole("heading", {
+        name: /where should we send your tickets/i,
+      }),
+    ).toBeInTheDocument();
   });
 
   it("keeps Continue enabled when empty and validates on Enter", async () => {

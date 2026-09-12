@@ -11,10 +11,20 @@ export const TICKET_TRANSFER_API_ERROR_MESSAGES = {
 } as const;
 
 export const TICKET_TRANSFER_DISPLAY_COPY = {
-  assigned: "These tickets are already assigned to that email address.",
-  scanned: "These tickets have already been scanned and can't be transferred.",
   failed: "We couldn't transfer those tickets. Please try again.",
 } as const;
+
+export function ticketTransferAssignedCopy(ticketCount: number) {
+  return ticketCount === 1
+    ? "This ticket is already assigned to this email address."
+    : "These tickets are already assigned to this email address.";
+}
+
+export function ticketTransferScannedCopy(ticketCount: number) {
+  return ticketCount === 1
+    ? "This ticket has already been scanned and can't be transferred."
+    : "These tickets have already been scanned and can't be transferred.";
+}
 
 function extractTicketTransferApiMessage(error: unknown): string | undefined {
   if (!error || typeof error !== "object") return undefined;
@@ -32,15 +42,18 @@ function extractTicketTransferApiMessage(error: unknown): string | undefined {
 }
 
 /** Maps ticket-transfer API errors for the confirm step. */
-export function parseTicketTransferApiError(error: unknown): string {
+export function parseTicketTransferApiError(
+  error: unknown,
+  ticketCount = 0,
+): string {
   const status = (error as { response?: { status?: number } }).response?.status;
   const raw = extractTicketTransferApiMessage(error);
 
   if (raw === TICKET_TRANSFER_API_ERROR_MESSAGES.alreadyScanned) {
-    return TICKET_TRANSFER_DISPLAY_COPY.scanned;
+    return ticketTransferScannedCopy(ticketCount);
   }
   if (raw === TICKET_TRANSFER_API_ERROR_MESSAGES.alreadyAssigned) {
-    return TICKET_TRANSFER_DISPLAY_COPY.assigned;
+    return ticketTransferAssignedCopy(ticketCount);
   }
 
   if (status === 402) {

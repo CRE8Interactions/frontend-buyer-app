@@ -7,6 +7,7 @@ import EmailField from "@/components/molecules/EmailField";
 import NameField from "@/components/molecules/NameField";
 import {
   emailBlurInvalid,
+  fieldErrorTextClass,
   formString,
   nameBlurError,
   nameFieldError,
@@ -16,6 +17,8 @@ import {
 } from "@/lib/fieldValidation";
 import { validateSubmittedEmail } from "@/lib/submitEmailValidation";
 import {
+  GUEST_CONTACT_COPY,
+  guestContactStartFailed,
   parseGuestBuyer,
   type GuestBuyer,
 } from "@/lib/guestCheckout";
@@ -29,7 +32,7 @@ export default function GuestContact({
 }: {
   loginHref: string;
   onSignIn?: () => void;
-  onContinue: (buyer: GuestBuyer) => void;
+  onContinue: (buyer: GuestBuyer) => void | Promise<void>;
   buttonColor?: string;
   buttonTextColor?: string;
 }) {
@@ -38,6 +41,7 @@ export default function GuestContact({
   const [lastName, setLastName] = useState("");
   const [emailError, setEmailError] = useState<EmailFieldError>(null);
   const [emailNetworkError, setEmailNetworkError] = useState(false);
+  const [startError, setStartError] = useState("");
   const [firstError, setFirstError] = useState<NameFieldError>(null);
   const [lastError, setLastError] = useState<NameFieldError>(null);
   const [submitting, setSubmitting] = useState(false);
@@ -56,11 +60,15 @@ export default function GuestContact({
     setFirstError(firstBad);
     setLastError(lastBad);
     setEmailNetworkError(false);
+    setStartError("");
     setSubmitting(true);
     const emailResult = await validateSubmittedEmail(nextEmail);
-    setSubmitting(false);
     if (!emailResult.ok) {
-      if (emailResult.error === "network") {
+      setSubmitting(false);
+      if (emailResult.error === "startFailed") {
+        setEmailError(null);
+        setStartError(GUEST_CONTACT_COPY.startFailed);
+      } else if (emailResult.error === "network") {
         setEmailError(null);
         setEmailNetworkError(true);
       } else {
@@ -74,8 +82,21 @@ export default function GuestContact({
       firstName: first,
       lastName: last,
     });
-    if (!buyer || !emailResult.ok || firstBad || lastBad) return;
-    onContinue(buyer);
+    if (!buyer || !emailResult.ok || firstBad || lastBad) {
+      setSubmitting(false);
+      return;
+    }
+    try {
+      await onContinue(buyer);
+    } catch (error) {
+      if (guestContactStartFailed(error)) {
+        setStartError(GUEST_CONTACT_COPY.startFailed);
+      } else {
+        throw error;
+      }
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   return (
@@ -102,6 +123,7 @@ export default function GuestContact({
           setEmail(value);
           setEmailError(null);
           setEmailNetworkError(false);
+          setStartError("");
         }}
         onBlur={(value) =>
           setEmailError(emailBlurInvalid(value) ? "invalid" : null)
@@ -119,6 +141,7 @@ export default function GuestContact({
           onChange={(value) => {
             setFirstName(value);
             setFirstError(null);
+            setStartError("");
           }}
           onBlur={(value) => setFirstError(nameBlurError(value))}
         />
@@ -133,6 +156,7 @@ export default function GuestContact({
           onChange={(value) => {
             setLastName(value);
             setLastError(null);
+            setStartError("");
           }}
           onBlur={(value) => setLastError(nameBlurError(value))}
         />
@@ -148,6 +172,11 @@ export default function GuestContact({
       >
         Continue to payment
       </BrandedActionButton>
+      {startError ? (
+        <p className={fieldErrorTextClass("light")} role="alert">
+          {startError}
+        </p>
+      ) : null}
       <p className="text-center text-[14px] text-[#6e7180]">
         Already have an account?{" "}
         <Link

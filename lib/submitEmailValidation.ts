@@ -9,7 +9,11 @@ import {
 
 export type EmailSubmitValidationResult =
   | { ok: true; email: string }
-  | { ok: false; email: string; error: EmailFieldError | "network" };
+  | {
+      ok: false;
+      email: string;
+      error: EmailFieldError | "network" | "startFailed";
+    };
 
 /** Blocked domain and syntax first, then SendGrid — same order as login. */
 export async function validateSubmittedEmail(
@@ -33,7 +37,8 @@ export async function validateSubmittedEmail(
     return {
       ok: false,
       email,
-      error: status === 402 ? "invalid" : "network",
+      error:
+        status === 402 ? "invalid" : status === 400 ? "startFailed" : "network",
     };
   }
 }

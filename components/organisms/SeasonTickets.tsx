@@ -55,8 +55,8 @@ import {
   parsePassTransferApiError,
 } from "@/lib/passTransferErrors";
 import {
-  TICKET_TRANSFER_DISPLAY_COPY,
   parseTicketTransferApiError,
+  ticketTransferAssignedCopy,
 } from "@/lib/ticketTransferErrors";
 import {
   acceptIncomingTransfers,
@@ -166,6 +166,8 @@ const SOFT = "#ecf8dd";
 const LOGO = "/nmstate/nmstate-logo-nowordmark.png";
 const CODE_BOXES = [0, 1, 2, 3, 4, 5];
 const SEATMAP_THUMB = "/nmstate/seatmap-thumb.svg";
+const PACKAGE_PASS_ATTEMPTS = 2;
+const PACKAGE_PASS_RETRY_MS = 600;
 
 const card: React.CSSProperties = {
   background: "#fff",
@@ -926,6 +928,12 @@ export default function SeasonTickets({
   const [packagePassChecked, setPackagePassChecked] = useState<
     Record<string, boolean>
   >({});
+  const packagePassRequested = useRef<Record<string, boolean>>({});
+  const packagePassAttempts = useRef<Record<string, number>>({});
+  const packagePassRetryTimers = useRef<
+    Record<string, ReturnType<typeof setTimeout>>
+  >({});
+  const [packagePassRetryTick, setPackagePassRetryTick] = useState(0);
   const [fullOrders, setFullOrders] = useState<Record<string, OrderLike>>({});
   const [fullOrderChecked, setFullOrderChecked] = useState<
     Record<string, boolean>
@@ -1018,6 +1026,7 @@ export default function SeasonTickets({
       setUpcomingEvents([]);
       setSeasonPackages([]);
       setPackageAccessPasses({});
+      packagePassRequested.current = {};
       setPackagePassChecked({});
       setFlexPacks([]);
       setAccessPasses([]);
@@ -1091,6 +1100,7 @@ export default function SeasonTickets({
       setUpcomingEvents([]);
       setSeasonPackages([]);
       setPackageAccessPasses({});
+      packagePassRequested.current = {};
       setPackagePassChecked({});
       setFlexPacks([]);
       setAccessPasses([]);
@@ -1237,7 +1247,8 @@ export default function SeasonTickets({
     [routedOrderId, routedPackageUUID, seasonPackages],
   );
   const routedPackagePassPending = Boolean(
-    routedSeasonPackage?.orderId &&
+    routedSeasonPackage &&
+      (routedOrderId || routedSeasonPackage.orderId) &&
       !routedEventUUID &&
       !packagePassChecked[routedSeasonPackage.key],
   );
@@ -1748,68 +1759,76 @@ export default function SeasonTickets({
 
   useEffect(() => {
     const key = selectedSeasonPackage?.key;
-    const orderId = selectedSeasonPackage?.orderId;
-    if (
-      routedEventUUID ||
-      !key ||
-      !orderId ||
-      packagePassChecked[key]
-    ) {
-      return;
-    }
+    // The routed order id is the one the shopper opened; the summary falls back
+    // to the order record id, which /access-passes/by-order cannot resolve.
+    const orderId = routedOrderId || selectedSeasonPackage?.orderId;
+    if (routedEventUUID || !key || !orderId) return;
+    // Gating on a ref keeps the checked flag this effect writes out of its own
+    // dependencies, so marking the package checked cannot abort the lookup.
+    if (packagePassRequested.current[key]) return;
+    packagePassRequested.current[key] = true;
 
-    let cancelled = false;
-    getAccessPassesByOrder(orderId)
-      .then((res) => {
-        if (cancelled) return;
+    const loadPackagePasses = async () => {
+      try {
+        const res = await getAccessPassesByOrder(orderId);
         const rawPasses = unwrapList<AccessPassLike>(res.data);
-        getMySentTransfers(String(getSession()?.user?.email || email), 1)
-          .then((sentRes) => {
-            if (cancelled) return;
-            const sentTransfers = sentRes
-              ? unwrapTransferRecords(sentRes.data)
-              : [];
-            const passes = buildAccessPassSummaries(
-              filterWalletAccessPassesBySentTransfers(rawPasses, sentTransfers),
-            ).map((pass) => ({ ...pass, orderId: pass.orderId || orderId }));
-            setPackageAccessPasses((current) => ({
-              ...current,
-              [key]: passes,
-            }));
-          })
-          .catch(() => {
-            if (cancelled) return;
-            const passes = buildAccessPassSummaries(rawPasses).map((pass) => ({
-              ...pass,
-              orderId: pass.orderId || orderId,
-            }));
-            setPackageAccessPasses((current) => ({
-              ...current,
-              [key]: passes,
-            }));
+        let owned = rawPasses;
+        try {
+          const sentRes = await getMySentTransfers(
+            String(getSession()?.user?.email || email),
+            1,
+          );
+          owned = filterWalletAccessPassesBySentTransfers(
+            rawPasses,
+            sentRes ? unwrapTransferRecords(sentRes.data) : [],
+          );
+        } catch {
+          // Without the transfer list, show every pass the order still owns.
+        }
+        const passes = buildAccessPassSummaries(owned, {
+          includeInactive: true,
+        }).map((pass) => ({ ...pass, orderId: pass.orderId || orderId }));
+        setPackageAccessPasses((current) => ({ ...current, [key]: passes }));
+      } catch {
+        setPackageAccessPasses((current) => ({ ...current, [key]: [] }));
+        const attempts = (packagePassAttempts.current[key] ?? 0) + 1;
+        packagePassAttempts.current[key] = attempts;
+        if (attempts >= PACKAGE_PASS_ATTEMPTS) return;
+        // A dropped request must not hide the pass for the rest of the session.
+        packagePassRetryTimers.current[key] = setTimeout(() => {
+          delete packagePassRetryTimers.current[key];
+          delete packagePassRequested.current[key];
+          setPackagePassChecked((current) => {
+            const next = { ...current };
+            delete next[key];
+            return next;
           });
-        return;
-      })
-      .catch(() => {
-        if (!cancelled) {
-          setPackageAccessPasses((current) => ({ ...current, [key]: [] }));
-        }
-      })
-      .finally(() => {
-        if (!cancelled) {
-          setPackagePassChecked((current) => ({ ...current, [key]: true }));
-        }
-      });
-
-    return () => {
-      cancelled = true;
+          setPackagePassRetryTick((tick) => tick + 1);
+        }, PACKAGE_PASS_RETRY_MS);
+      } finally {
+        setPackagePassChecked((current) => ({ ...current, [key]: true }));
+      }
     };
+
+    void loadPackagePasses();
   }, [
-    packagePassChecked,
+    email,
+    packagePassRetryTick,
     routedEventUUID,
+    routedOrderId,
     selectedSeasonPackage?.key,
     selectedSeasonPackage?.orderId,
   ]);
+
+  useEffect(
+    () => () => {
+      for (const timer of Object.values(packagePassRetryTimers.current)) {
+        clearTimeout(timer);
+      }
+      packagePassRetryTimers.current = {};
+    },
+    [],
+  );
 
   useEffect(() => {
     if (!activeOrderId || fullOrderChecked[activeOrderId]) return;
@@ -1876,16 +1895,16 @@ export default function SeasonTickets({
             ? "We couldn't find that package"
             : flexPackUUID && !eventUUID
             ? "We couldn't find that flex pack"
-            : "We couldn't find those tickets"}
+            : "Order not found"}
         </div>
         <div style={{ fontSize: fluidSize(14), color: SUB }}>
           {routedAccessPassUUID
-            ? "This access pass isn't in your wallet, or your session expired. Head back to see everything you own."
+            ? "This access pass isn't in your wallet. Go back to see all of your tickets."
             : routedPackageUUID && !routedEventUUID
-            ? "This package isn't in your wallet, or your session expired. Head back to see everything you own."
+            ? "This package isn't in your wallet. Go back to see all of your tickets."
             : flexPackUUID && !eventUUID
-            ? "This flex pack isn't in your wallet, or your session expired. Head back to see everything you own."
-            : "This event isn't in your wallet, or your session expired. Head back to see everything you own."}
+            ? "This flex pack isn't in your wallet. Go back to see all of your tickets."
+            : "This event isn't in your wallet. Go back to see all of your tickets."}
         </div>
       </div>,
     );
@@ -2445,11 +2464,11 @@ export default function SeasonTickets({
         ...passTransfer,
         email: result.email,
         error:
-          result.error === "network"
-            ? FIELD_COPY.network
-            : result.error === "required"
-              ? FIELD_COPY.emailRequired
-              : FIELD_COPY.invalidEmail,
+          result.error === "required"
+            ? FIELD_COPY.emailRequired
+            : result.error === "invalid"
+              ? FIELD_COPY.invalidEmail
+              : FIELD_COPY.network,
       });
       return;
     }
@@ -3600,8 +3619,10 @@ export default function SeasonTickets({
     const eventCount = isDemo
       ? 6
       : selectedSeasonPackage?.eventCount ?? seasonPackageGames.length;
+    // Tickets for games already played are listed but do not count as usable.
     const gameTicketCount = seasonPackageGames.reduce(
-      (count, row) => count + row.ticketCount,
+      (count, row) =>
+        row.availability === "past" ? count : count + row.ticketCount,
       0,
     );
     const eventsBody = isDemo ? (
@@ -3767,7 +3788,7 @@ export default function SeasonTickets({
               <div style={{ flex: 1, minWidth: 200, display: "flex", flexDirection: "column", gap: 5 }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: fluidSize(12), fontWeight: 600, whiteSpace: "nowrap", color: pending ? "#c07a12" : GREEN }}>
                   <span style={{ width: 5, height: 5, flexShrink: 0, borderRadius: 999, background: pending ? "#c07a12" : GREEN }} />
-                  {pending ? "Pending · awaiting claim" : "Claimed · " + t.on}
+                  {pending ? "Pending · awaiting claim" : "Claimed · " + (t.claimedOn || t.on)}
                 </div>
                 <div style={{ fontSize: fluidSize(17), fontWeight: 600, letterSpacing: "-0.015em" }}>{t.title}</div>
                 {t.schedule ? (
@@ -3777,7 +3798,7 @@ export default function SeasonTickets({
                   lines={transferSeatLines(t)}
                   style={{ fontSize: fluidSize(13), color: SUB }}
                 />
-                <div style={{ fontSize: fluidSize(13), color: SUB }}>{listTab === "received" ? "From " + t.from : "To " + t.to + " · sent " + t.on}</div>
+                <div style={{ fontSize: fluidSize(13), color: SUB }}>{listTab === "received" ? "From " + t.from + (t.on ? " · received on " + t.on : "") : "To " + t.to + " · sent " + t.on}</div>
               </div>
               {listTab === "received" && pending
                 ? renderAcceptTransferButton(t.id)
@@ -4296,7 +4317,7 @@ export default function SeasonTickets({
 
         setTf({ ...tf, step: 4 });
       } catch (err) {
-        setTfError(parseTicketTransferApiError(err));
+        setTfError(parseTicketTransferApiError(err, tfSelectedTickets.length));
       } finally {
         setTfSaving(false);
       }
@@ -4309,15 +4330,15 @@ export default function SeasonTickets({
       const result = await validateSubmittedEmail(rawEmail ?? tf.email);
       setTfSaving(false);
       if (!result.ok) {
-        if (result.error === "network") {
-          setTfError(FIELD_COPY.network);
-        } else {
+        if (result.error === "required" || result.error === "invalid") {
           setTfEmailErr(result.error);
+        } else {
+          setTfError(FIELD_COPY.network);
         }
         return;
       }
       if (result.email === normalizeEmail(email)) {
-        setTfError(TICKET_TRANSFER_DISPLAY_COPY.assigned);
+        setTfError(ticketTransferAssignedCopy(tfSelectedTickets.length));
         return;
       }
       setTf({ ...tf, email: result.email, step: 3 });

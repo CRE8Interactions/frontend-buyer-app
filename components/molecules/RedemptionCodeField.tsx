@@ -52,12 +52,13 @@ export default function RedemptionCodeField({
   "id" | "name" | "value" | "onChange" | "onBlur" | "onInput"
 >) {
   const focusRef = useAutoFocus<HTMLInputElement>(autoFocus);
+  const showLabel = Boolean(label) && !hideLabel;
   const invalid = fieldShowsError(Boolean(error), errorMessage);
   const sync = (next: string) => onChange(next);
 
   return (
     <div className={className}>
-      {label && !hideLabel ? (
+      {showLabel ? (
         <label
           htmlFor={id}
           className={
@@ -79,7 +80,7 @@ export default function RedemptionCodeField({
         disabled={disabled}
         aria-invalid={invalid}
         placeholder={placeholder}
-        className={`${label ? "mt-2" : ""} ${fieldClass(variant, invalid)} ${inputClassName}`}
+        className={`${showLabel ? "mt-2" : ""} ${fieldClass(variant, invalid)} ${inputClassName}`}
         {...rest}
         onChange={(e) => sync(e.target.value)}
         onInput={(e) => sync(e.currentTarget.value)}

@@ -14,6 +14,7 @@ import {
   demoSeasonPackage,
 } from "@/lib/demo/fixtures";
 import { googleMapsDirectionsUrl } from "@/lib/venueLocation";
+import { formatEventWhen } from "@/lib/helpers";
 import { seatLabel } from "@/lib/wallet";
 
 const sessionMocks = vi.hoisted(() => ({
@@ -71,7 +72,8 @@ import { FIELD_COPY } from "@/lib/fieldValidation";
 import { CANCEL_TRANSFER_API_ERROR_MESSAGES } from "@/lib/cancelTransferErrors";
 import {
   TICKET_TRANSFER_API_ERROR_MESSAGES,
-  TICKET_TRANSFER_DISPLAY_COPY,
+  ticketTransferAssignedCopy,
+  ticketTransferScannedCopy,
 } from "@/lib/ticketTransferErrors";
 import {
   acceptIncomingTransfers,
@@ -559,6 +561,154 @@ describe("SeasonTickets package tab", () => {
     expect(screen.getByText("Transferred")).toBeInTheDocument();
   });
 
+  it("lists a package event the order has no tickets for", async () => {
+    const order = demoCompletedPackageOrder();
+    const [, ticketedEvent, ticketlessEvent] = pkg.events;
+    const events = [
+      { ...ticketedEvent, start: "2099-09-12T23:00:00.000Z" },
+      { ...ticketlessEvent, start: "2099-09-19T23:00:00.000Z" },
+    ];
+    navigationMocks.pathname = `/wallet/my-tickets/order/${packageOrderId}/package/${pkg.uuid}/`;
+    mockedGetMyEvents.mockResolvedValue({
+      data: [
+        demoCompletedPackageOrder({
+          package: { ...order.package, events },
+          tickets: order.tickets.map((ticket) => ({
+            ...ticket,
+            eventUUID: ticketedEvent.uuid,
+          })),
+        }),
+      ],
+    } as never);
+
+    render(<SeasonTickets />);
+
+    expect(await screen.findByText(ticketlessEvent.name)).toBeInTheDocument();
+    expect(screen.getByText("Transferred")).toBeInTheDocument();
+    expect(
+      screen.queryByRole("link", { name: `View ${ticketlessEvent.name}` }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.getByRole("link", { name: `View ${ticketedEvent.name}` }),
+    ).toBeInTheDocument();
+  });
+
+  it("leaves played games out of the game ticket count", async () => {
+    const order = demoCompletedPackageOrder();
+    const events = [
+      { ...pkg.events[0], start: "2020-08-15T23:00:00.000Z", status: "complete" },
+      { ...pkg.events[1], start: "2099-09-12T23:00:00.000Z" },
+      { ...pkg.events[2], start: "2099-09-19T23:00:00.000Z" },
+    ];
+    navigationMocks.pathname = `/wallet/my-tickets/order/${packageOrderId}/package/${pkg.uuid}/`;
+    mockedGetMyEvents.mockResolvedValue({
+      data: [
+        demoCompletedPackageOrder({
+          package: { ...order.package, events },
+          tickets: events.flatMap((event) =>
+            order.tickets.map((ticket) => ({
+              ...ticket,
+              id: `${ticket.id}-${event.uuid}`,
+              eventUUID: event.uuid,
+            })),
+          ),
+        }),
+      ],
+    } as never);
+    mockedGetAccessPassesByOrder.mockResolvedValue({
+      data: { data: [demoPackageAccessPass()] },
+    } as never);
+
+    render(<SeasonTickets />);
+
+    // Six tickets across three games, two of them on the game already played.
+    expect(
+      await screen.findByRole("tab", { name: "Game tickets (4)" }),
+    ).toBeInTheDocument();
+  });
+
+  it("looks up package passes with the routed order id", async () => {
+    const { orderId, ...orderWithoutOrderId } = demoCompletedPackageOrder();
+    const pass = demoPackageAccessPass();
+    navigationMocks.pathname = `/wallet/my-tickets/order/${orderId}/package/${pkg.uuid}/`;
+    mockedGetMyEvents.mockResolvedValue({
+      data: [orderWithoutOrderId],
+    } as never);
+    mockedGetAccessPassesByOrder.mockResolvedValue({
+      data: { data: [pass] },
+    } as never);
+
+    render(<SeasonTickets />);
+
+    expect(
+      await screen.findByRole("tab", { name: "Season pass" }),
+    ).toBeInTheDocument();
+    expect(mockedGetAccessPassesByOrder).toHaveBeenCalledWith(orderId);
+  });
+
+  it("keeps package passes that resolve after the sent transfer lookup", async () => {
+    const order = demoCompletedPackageOrder();
+    const pass = demoPackageAccessPass();
+    navigationMocks.pathname = `/wallet/my-tickets/order/${packageOrderId}/package/${pkg.uuid}/`;
+    mockedGetMyEvents.mockResolvedValue({ data: [order] } as never);
+    mockedGetAccessPassesByOrder.mockResolvedValue({
+      data: { data: [pass] },
+    } as never);
+    mockedGetMySentTransfers.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          setTimeout(() => resolve({ data: { data: [] } }), 50);
+        }) as never,
+    );
+
+    render(<SeasonTickets />);
+
+    expect(
+      await screen.findByRole("tab", { name: "Season pass" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("img", { name: `QR code for ${pass.name}` }),
+    ).toBeInTheDocument();
+  });
+
+  it("retries the package pass lookup after a failed request", async () => {
+    const order = demoCompletedPackageOrder();
+    const pass = demoPackageAccessPass();
+    navigationMocks.pathname = `/wallet/my-tickets/order/${packageOrderId}/package/${pkg.uuid}/`;
+    mockedGetMyEvents.mockResolvedValue({ data: [order] } as never);
+    mockedGetAccessPassesByOrder
+      .mockRejectedValueOnce(new Error("network"))
+      .mockResolvedValue({ data: { data: [pass] } } as never);
+
+    render(<SeasonTickets />);
+
+    expect(await screen.findByText(pkg.events[1].name)).toBeInTheDocument();
+    expect(
+      await screen.findByRole("tab", { name: "Season pass" }, { timeout: 3000 }),
+    ).toBeInTheDocument();
+    expect(mockedGetAccessPassesByOrder).toHaveBeenCalledTimes(2);
+  });
+
+  it("shows a revoked season pass with its status and no transfer button", async () => {
+    const order = demoCompletedPackageOrder();
+    const pass = { ...demoPackageAccessPass(), status: "revoked" };
+    navigationMocks.pathname = `/wallet/my-tickets/order/${packageOrderId}/package/${pkg.uuid}/`;
+    mockedGetMyEvents.mockResolvedValue({ data: [order] } as never);
+    mockedGetAccessPassesByOrder.mockResolvedValue({
+      data: { data: [pass] },
+    } as never);
+
+    render(<SeasonTickets />);
+
+    expect(
+      await screen.findByRole("tab", { name: "Season pass" }),
+    ).toHaveAttribute("aria-selected", "true");
+    expect(screen.getByText("Revoked")).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: /Transfer season pass/i }),
+    ).not.toBeInTheDocument();
+  });
+
   it("transfers the season pass associated with a package", async () => {
     const user = userEvent.setup();
     const order = demoCompletedPackageOrder();
@@ -616,7 +766,7 @@ describe("SeasonTickets package tab", () => {
     await user.click(screen.getByRole("button", { name: "Transfer" }));
 
     expect(screen.getByRole("alert")).toHaveTextContent(
-      "This pass is already assigned to that email address.",
+      "This pass is already assigned to this email address.",
     );
     expect(mockedCreateTicketTransfer).not.toHaveBeenCalled();
   });
@@ -685,7 +835,7 @@ describe("SeasonTickets package tab", () => {
 
   it("shows Transferred instead of Purchased on transfer-received order detail", async () => {
     const order = demoCompletedTicketOrder({
-      source: "ticket_assignment",
+      source: "transfer",
       orderId: "1475-191968-1399",
       event: icedogs,
     });
@@ -1145,6 +1295,24 @@ describe("SeasonTickets package transfers tab", () => {
     expect(await screen.findByText(icedogs.name)).toBeInTheDocument();
     expect(screen.getByText(packageEvent.name)).toBeInTheDocument();
     expect(
+      screen.getByText(
+        `From ${DEMO_SESSION.user.email} · received on ${formatEventWhen(
+          singleTransfer.createdAt,
+          ticketOrder.event?.venue?.timezone,
+          "MMM D, YYYY",
+        )}`,
+      ),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        `From ${DEMO_SESSION.user.email} · received on ${formatEventWhen(
+          packageTransfer.createdAt,
+          packageEvent.venue?.timezone,
+          "MMM D, YYYY",
+        )}`,
+      ),
+    ).toBeInTheDocument();
+    expect(
       screen.getAllByRole("button", { name: "Accept transfer" }),
     ).toHaveLength(2);
   });
@@ -1377,6 +1545,69 @@ describe("SeasonTickets section routes", () => {
     expect(await screen.findByText("Nothing received yet")).toBeInTheDocument();
     expect(screen.queryByText(icedogs.name)).not.toBeInTheDocument();
     expect(screen.queryByText("Accept transfer")).not.toBeInTheDocument();
+  });
+
+  it("shows claimed dates from transferedOn on sent and received tabs", async () => {
+    const user = userEvent.setup();
+    navigationMocks.pathname = "/wallet/my-transfers/";
+    const order = demoCompletedTicketOrder({ event: icedogs });
+    const [ticket] = order.tickets;
+    const createdAt = "2026-09-12T19:20:19.451Z";
+    const transferedOn = "2026-09-13T19:21:48.735Z";
+    const claimedCopy = `Claimed · ${formatEventWhen(
+      transferedOn,
+      order.event?.venue?.timezone,
+      "MMM D, YYYY",
+    )}`;
+    const sentOnCopy = formatEventWhen(
+      createdAt,
+      order.event?.venue?.timezone,
+      "MMM D, YYYY",
+    );
+    mockedGetMyEvents.mockResolvedValue({ data: [] } as never);
+    mockedGetIncomingTransfers.mockResolvedValue({ data: [] } as never);
+    mockedGetMySentTransfers.mockResolvedValue({
+      data: [
+        {
+          id: "sent-claimed",
+          status: "claimed",
+          emailAddressToUser: "recipient@example.com",
+          event: order.event,
+          tickets: [ticket],
+          createdAt,
+          transferedOn,
+        },
+      ],
+    } as never);
+    mockedGetMyReceivedTransfers.mockResolvedValue({
+      data: [
+        {
+          id: "incoming-claimed",
+          status: "claimed",
+          fromUserEmail: "jaimeconvery@hotmail.com",
+          event: order.event,
+          tickets: [ticket],
+          createdAt,
+          transferedOn,
+        },
+      ],
+    } as never);
+
+    render(<SeasonTickets />);
+
+    expect(await screen.findByText(claimedCopy)).toBeInTheDocument();
+    expect(
+      screen.getByText(`To recipient@example.com · sent ${sentOnCopy}`),
+    ).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: /received/i }));
+
+    expect(await screen.findByText(claimedCopy)).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        `From jaimeconvery@hotmail.com · received on ${sentOnCopy}`,
+      ),
+    ).toBeInTheDocument();
   });
 
   it.each([
@@ -2129,7 +2360,7 @@ describe("SeasonTickets routed event screen", { timeout: 20_000 }, () => {
     );
 
     expect(await screen.findByRole("alert")).toHaveTextContent(
-      TICKET_TRANSFER_DISPLAY_COPY.scanned,
+      ticketTransferScannedCopy(1),
     );
     expect(screen.queryByText("Transfer sent")).not.toBeInTheDocument();
   });
@@ -2155,7 +2386,7 @@ describe("SeasonTickets routed event screen", { timeout: 20_000 }, () => {
 
     expect(
       screen.getByRole("alert"),
-    ).toHaveTextContent(TICKET_TRANSFER_DISPLAY_COPY.assigned);
+    ).toHaveTextContent(ticketTransferAssignedCopy(1));
     expect(
       screen.getByRole("textbox", { name: "Email address" }),
     ).toHaveAttribute("aria-invalid", "true");
@@ -2233,7 +2464,10 @@ describe("SeasonTickets routed event screen", { timeout: 20_000 }, () => {
 
     render(<SeasonTickets initialScreen="event" eventUUID="missing-event-uuid" />);
 
-    expect(await screen.findByText(/couldn't find those tickets/i)).toBeInTheDocument();
+    expect(await screen.findByText("Order not found")).toBeInTheDocument();
+    expect(
+      screen.getByText("This event isn't in your wallet. Go back to see all of your tickets."),
+    ).toBeInTheDocument();
     expect(screen.queryByRole("heading", { name: icedogs.name })).not.toBeInTheDocument();
   });
 

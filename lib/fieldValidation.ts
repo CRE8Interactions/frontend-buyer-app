@@ -307,8 +307,37 @@ export function redemptionCodeBlurFieldError(
   return redemptionCodeBlurError(value);
 }
 
+/** Blocktickets POST /promo-code/redeem. See docs/promo-code-validations.mmd. */
+export const PROMO_CODE_API_ERROR_MESSAGES = {
+  notFound: "Promo code not found",
+  alreadyApplied: "Promo code already applied to order",
+  noLongerValid: "Promo code no longer valid",
+} as const;
+
+export function promoCodeRedeemApiMessage(error: unknown): string | undefined {
+  if (!error || typeof error !== "object") return undefined;
+  const data = (error as { response?: { data?: unknown } }).response?.data;
+  if (typeof data === "string" && data.trim()) return data.trim();
+  if (data && typeof data === "object") {
+    const record = data as {
+      error?: { message?: unknown } | string;
+      message?: unknown;
+    };
+    const nested =
+      typeof record.error === "string"
+        ? record.error
+        : record.error?.message ?? record.message;
+    if (typeof nested === "string" && nested.trim()) return nested.trim();
+  }
+  return undefined;
+}
+
 /** Checkout promo rejections keep the API message when present. */
 export function promoCodeRejectedMessage(apiMessage?: string | null) {
   const msg = apiMessage?.trim() || "Promo code could not be applied";
   return `${msg}${/[.!?]$/.test(msg) ? " " : ". "}Please try again.`;
+}
+
+export function promoCodeRedeemDisplayMessage(error: unknown) {
+  return promoCodeRejectedMessage(promoCodeRedeemApiMessage(error));
 }

@@ -252,11 +252,11 @@ export function FundraisingCampaignClient({
       const emailResult = await validateSubmittedEmail(nextEmail);
       if (!emailResult.ok) {
         setError(
-          emailResult.error === "network"
-            ? FIELD_COPY.network
-            : emailResult.error === "required"
-              ? FIELD_COPY.emailRequired
-              : FIELD_COPY.invalidEmail,
+          emailResult.error === "required"
+            ? FIELD_COPY.emailRequired
+            : emailResult.error === "invalid"
+              ? FIELD_COPY.invalidEmail
+              : FIELD_COPY.network,
         );
         return;
       }

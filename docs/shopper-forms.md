@@ -2,7 +2,7 @@
 
 This is how shopper-facing forms behave across the site.
 
-In every form below, **the primary button stays clickable when a field is empty or mistyped**. Pressing the button or Enter always checks the values that are actually in the fields right then. A request is sent only after those local checks pass.
+In every form below, **the primary button stays clickable when a field is empty or mistyped**, except checkout **Apply**, which stays disabled until a promo code is entered. Pressing the button or Enter always checks the values that are actually in the fields right then. A request is sent only after those local checks pass.
 
 ### Blur and submit (all text fields)
 
@@ -13,9 +13,9 @@ Every shopper text field — email, phone, names, date of birth, access code, pr
 - **Submit or Enter:** re-check every field from the form, whether or not blur already ran. Empty required fields show required copy. Typed-but-wrong fields show invalid copy.
 - **API rejections** (wrong access code, rejected promo, existing phone): the server message stays visible on blur until the shopper edits the field. Connection problems behave the same way.
 
-Shared rules and copy live in `lib/fieldValidation.ts`. Login flowcharts are in `docs/login-validations.mmd`, `docs/code-validations.mmd`, and `docs/create-account-validations.mmd`.
+Shared rules and copy live in `lib/fieldValidation.ts`. Login flowcharts are in `docs/login-validations.mmd`, `docs/code-validations.mmd`, and `docs/create-account-validations.mmd`. Guest checkout contact is in `docs/guest-contact-validations.mmd`. Checkout payment is in `docs/payment-validations.mmd`. Promo code is in `docs/promo-code-validations.mmd`.
 
-Buttons still grey out when something operational is in the way: a request already in progress, an action that already succeeded, payment not ready, sold out, no tickets selected, or personal details that have not changed.
+Buttons still grey out when something operational is in the way: a request already in progress, an action that already succeeded, payment not ready, sold out, no tickets selected, personal details that have not changed, or Apply with no promo code.
 
 A field with an error is outlined in red only while it does not have the cursor. The moment it is focused, the outline is the brand colour (Blocktickets lime, or the org colour on an org-branded page). The error copy under the field stays.
 
@@ -53,10 +53,11 @@ Shoppers enter first name, last name, phone, and date of birth. The email from s
 
 ## Guest checkout
 
-Shoppers type email, first name, and last name, then **Continue to payment** or Enter.
+Shoppers type email, first name, and last name, then **Continue to payment** or Enter. Flowchart: `docs/guest-contact-validations.mmd`.
 
 - **Email:** same blur and submit rules as sign-in — empty blur is quiet; invalid email on blur or submit uses “Email is invalid. Please try again.”; empty submit uses “Email address is required.”
 - **Names:** empty blur is quiet. A filled name with illegal characters shows “Letters only — no digits.” on blur. Empty or whitespace-only submit shows “First name is required.” / “Last name is required.”
+- A 400 from email check or payment start stays on this form: “We could not start your checkout. Please check your details and try again.”
 - Success continues into payment.
 
 ## Waitlist and Remind me
@@ -104,10 +105,9 @@ Shoppers enter a new phone and press **Update phone number** or Enter. Uniquenes
 
 ## Promo code
 
-Shoppers type a code at checkout and press **Apply** or Enter.
+Shoppers type a code at checkout and press **Apply** or Enter. Flowchart: `docs/promo-code-validations.mmd`.
 
-- Apply stays clickable when the field is empty. Empty blur is quiet.
-- Empty submit shows “Enter a promo code.”
+- Apply is disabled when the field is empty. Empty blur is quiet.
 - A rejected code shows the server message and asks them to try again. That rejection stays on blur until the shopper edits the field.
 - A valid code shows the discount on the order. **Pay** still waits on Stripe and any required donation.
 

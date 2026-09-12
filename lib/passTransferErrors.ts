@@ -16,7 +16,7 @@ export const PASS_TRANSFER_API_ERROR_MESSAGES = {
 } as const;
 
 export const PASS_TRANSFER_DISPLAY_COPY = {
-  assigned: "This pass is already assigned to that email address.",
+  assigned: "This pass is already assigned to this email address.",
   scanned: "These tickets have already been scanned and can't be transferred.",
   seasonPassTransferred:
     "This season pass can't be transferred because one or more included game tickets have already been transferred.",

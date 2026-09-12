@@ -162,8 +162,11 @@ function LoginForm() {
     const result = await validateSubmittedEmail(rawEmail ?? email);
     setEmail(result.email);
     if (!result.ok) {
-      if (result.error === "network") setHasError(true);
-      else setEmailError(result.error);
+      if (result.error === "required" || result.error === "invalid") {
+        setEmailError(result.error);
+      } else {
+        setHasError(true);
+      }
       setIsSaving(false);
       return;
     }

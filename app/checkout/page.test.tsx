@@ -105,6 +105,7 @@ vi.mock("@/lib/api", () => ({
   redeemPromoCode: vi.fn(),
   removePromoCode: vi.fn(),
   resolveFundraisingCampaign: vi.fn(),
+  validateEmail: vi.fn(),
 }));
 
 vi.mock("@/lib/auth", () => ({
@@ -135,6 +136,7 @@ import {
   redeemPromoCode,
   removePromoCode,
   resolveFundraisingCampaign,
+  validateEmail,
 } from "@/lib/api";
 import { setLastKnown, useAuth } from "@/lib/auth";
 import {
@@ -142,7 +144,8 @@ import {
   formatHoldClock,
 } from "@/lib/checkoutBranding";
 import { eventPurchasePath, flexPackPurchasePath, formatCurrency, imageUrl, packagePurchasePath } from "@/lib/helpers";
-import { FIELD_COPY } from "@/lib/fieldValidation";
+import { FIELD_COPY, PROMO_CODE_API_ERROR_MESSAGES } from "@/lib/fieldValidation";
+import { GUEST_CONTACT_COPY } from "@/lib/guestCheckout";
 import { cacheOrgBranding } from "@/lib/orgBrandingCache";
 import { getSeatViewImageCandidates } from "@/lib/seatView";
 import { markCheckoutLoginDetour, setCheckoutReturnPath } from "@/lib/cart";
@@ -156,6 +159,7 @@ const mockedProcessOrder = vi.mocked(processOrder);
 const mockedRedeemPromo = vi.mocked(redeemPromoCode);
 const mockedRemovePromo = vi.mocked(removePromoCode);
 const mockedResolveFundraising = vi.mocked(resolveFundraisingCampaign);
+const mockedValidateEmail = vi.mocked(validateEmail);
 const mockedUseAuth = vi.mocked(useAuth);
 const mockedSetLastKnown = vi.mocked(setLastKnown);
 
@@ -219,6 +223,10 @@ describe("Checkout page", { timeout: 20_000 }, () => {
     mockedRemovePromo.mockResolvedValue({} as never);
     mockedResolveFundraising.mockReset();
     mockedResolveFundraising.mockResolvedValue({ data: { campaign: null } } as never);
+    mockedValidateEmail.mockReset();
+    mockedValidateEmail.mockResolvedValue({
+      data: { verdict: "Valid" },
+    } as never);
     stripeMocks.submit.mockResolvedValue({});
     stripeMocks.confirmPayment.mockResolvedValue({});
     stripeMocks.retrievePaymentIntent.mockResolvedValue({
@@ -435,8 +443,8 @@ describe("Checkout page", { timeout: 20_000 }, () => {
     });
   });
 
-  it("shows the card declined popup when process order fails", async () => {
-    mockedProcessOrder.mockRejectedValue(new Error("failed"));
+  it("shows the card declined popup when the process API fails", async () => {
+    mockedProcessOrder.mockRejectedValue({ response: { status: 500 } });
     const user = userEvent.setup();
     render(
       <>
@@ -459,6 +467,59 @@ describe("Checkout page", { timeout: 20_000 }, () => {
     expect(stripeMocks.confirmPayment).not.toHaveBeenCalled();
     expect(routerMocks.push).not.toHaveBeenCalled();
     expect(screen.queryByText(/retrieving payment details/i)).not.toBeInTheDocument();
+  });
+
+  it("shows the process API error message in the card declined popup", async () => {
+    mockedProcessOrder.mockRejectedValue({
+      response: {
+        status: 400,
+        data: { error: { message: "Order could not be processed" } },
+      },
+    });
+    const user = userEvent.setup();
+    render(<CheckoutPageRoute />);
+
+    await user.click(await screen.findByTestId("payment-element"));
+    await user.click(
+      screen.getByRole("button", {
+        name: `Pay ${formatCurrency(demoCheckoutCart().total)}`,
+      }),
+    );
+
+    expect(
+      await screen.findByRole("heading", { name: /card declined/i }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText("Order could not be processed"),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByText(/unable to complete purchase/i),
+    ).not.toBeInTheDocument();
+  });
+
+  it("opens the cart expired popup when process order returns 410", async () => {
+    mockedProcessOrder.mockRejectedValue({ response: { status: 410 } });
+    const user = userEvent.setup();
+    render(<CheckoutPageRoute />);
+
+    await user.click(await screen.findByTestId("payment-element"));
+    await user.click(
+      screen.getByRole("button", {
+        name: `Pay ${formatCurrency(demoCheckoutCart().total)}`,
+      }),
+    );
+
+    expect(
+      await screen.findByRole("dialog", { name: /cart expired/i }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(/your reserved tickets were released/i),
+    ).toBeInTheDocument();
+    expect(stripeMocks.confirmPayment).not.toHaveBeenCalled();
+    expect(
+      screen.queryByRole("heading", { name: /card declined/i }),
+    ).not.toBeInTheDocument();
+    expect(routerMocks.replace).not.toHaveBeenCalled();
   });
 
   it("shows the card declined popup when Stripe confirm fails", async () => {
@@ -889,7 +950,7 @@ describe("Checkout page", { timeout: 20_000 }, () => {
     const cart = demoCheckoutCart();
     mockedGetCart.mockResolvedValue({ data: cart } as never);
     mockedRedeemPromo.mockRejectedValue({
-      response: { data: { error: { message: "Promo code not found" } } },
+      response: { data: { error: { message: PROMO_CODE_API_ERROR_MESSAGES.notFound } } },
     });
     const user = userEvent.setup();
     render(<CheckoutPageRoute />);
@@ -913,21 +974,20 @@ describe("Checkout page", { timeout: 20_000 }, () => {
     ).toBeInTheDocument();
   });
 
-  it("keeps Apply enabled when the promo field is empty and shows an error on submit", async () => {
+  it("keeps Apply disabled until a promo code is entered", async () => {
     mockedGetCart.mockResolvedValue({ data: demoCheckoutCart() } as never);
     const user = userEvent.setup();
     render(<CheckoutPageRoute />);
 
     const apply = await screen.findByRole("button", { name: /apply/i });
-    expect(apply).toBeEnabled();
-    await user.click(apply);
-
-    expect(await screen.findByText(/enter a promo code/i)).toBeInTheDocument();
-    expect(screen.getByPlaceholderText(/enter promo code/i)).toHaveAttribute(
-      "aria-invalid",
-      "true",
-    );
+    expect(apply).toBeDisabled();
     expect(mockedRedeemPromo).not.toHaveBeenCalled();
+
+    await user.type(
+      screen.getByPlaceholderText(/enter promo code/i),
+      "TESTDIS",
+    );
+    expect(apply).toBeEnabled();
   });
 
   it("opens checkout success after a flex pack payment", async () => {
@@ -1044,6 +1104,62 @@ describe("Checkout page", { timeout: 20_000 }, () => {
       );
     });
     expect(await screen.findByTestId("payment-element")).toBeInTheDocument();
+  });
+
+  it("keeps guest contact open when payment intent returns 400", async () => {
+    mockedUseAuth.mockReturnValue(authState(false));
+    stubLocation();
+    mockedGetPaymentIntent.mockRejectedValue({ response: { status: 400 } });
+    const user = userEvent.setup();
+    render(<CheckoutPageRoute />);
+
+    await user.type(
+      await screen.findByLabelText(/email address/i),
+      DEMO_USER.email,
+    );
+    await user.type(screen.getByLabelText(/first name/i), DEMO_USER.firstName);
+    await user.type(screen.getByLabelText(/last name/i), DEMO_USER.lastName);
+    await user.click(
+      screen.getByRole("button", { name: /continue to payment/i }),
+    );
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      GUEST_CONTACT_COPY.startFailed,
+    );
+    expect(screen.queryByText("Checkout unavailable")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("payment-element")).not.toBeInTheDocument();
+    expect(
+      screen.getByRole("heading", {
+        name: /where should we send your tickets/i,
+      }),
+    ).toBeInTheDocument();
+  });
+
+  it("opens the cart expired popup when guest payment intent returns 410", async () => {
+    mockedUseAuth.mockReturnValue(authState(false));
+    stubLocation();
+    mockedGetPaymentIntent.mockRejectedValue({ response: { status: 410 } });
+    const user = userEvent.setup();
+    render(<CheckoutPageRoute />);
+
+    await user.type(
+      await screen.findByLabelText(/email address/i),
+      DEMO_USER.email,
+    );
+    await user.type(screen.getByLabelText(/first name/i), DEMO_USER.firstName);
+    await user.type(screen.getByLabelText(/last name/i), DEMO_USER.lastName);
+    await user.click(
+      screen.getByRole("button", { name: /continue to payment/i }),
+    );
+
+    expect(
+      await screen.findByRole("dialog", { name: /cart expired/i }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(/your reserved tickets were released/i),
+    ).toBeInTheDocument();
+    expect(routerMocks.replace).not.toHaveBeenCalled();
+    expect(screen.queryByText("Checkout unavailable")).not.toBeInTheDocument();
   });
 
   it("does not create a payment intent for an invalid guest email", async () => {

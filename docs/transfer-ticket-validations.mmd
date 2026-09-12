@@ -34,7 +34,7 @@
 
 %% --- Client-only (after validateSubmittedEmail ok) ---
 
-%% Self-transfer (tickets): These tickets are already assigned to that email address.
+%% Self-transfer (tickets): This ticket is already assigned to this email address. (1) / These tickets are already assigned to this email address. (2+)
 
 %%
 
@@ -56,9 +56,9 @@
 
 %% | 200 | Transfer created | Step 4: success |
 
-%% | 402 | Cannot transfer tickets that have already been scanned | These tickets have already been scanned and can't be transferred. |
+%% | 402 | Cannot transfer tickets that have already been scanned | This ticket has already been scanned and can't be transferred. (1) / These tickets have already been scanned and can't be transferred. (2+) |
 
-%% | 402 | TICKETS ARE ALREADY ASSIGNED TO THIS EMAIL ADDRESS | These tickets are already assigned to that email address. |
+%% | 402 | TICKETS ARE ALREADY ASSIGNED TO THIS EMAIL ADDRESS | This ticket is already assigned to this email address. (1) / These tickets are already assigned to this email address. (2+) |
 
 %% | 402 | (any other) | We couldn't transfer those tickets. Please try again. |
 
@@ -94,7 +94,7 @@ flowchart TD
 
   valFail -->|500| network["We're experiencing technical difficulties. Please try again later."]
 
-  selfCheck -->|yes| assignedError["These tickets are already assigned to that email address."]
+  selfCheck -->|yes| assignedError["This ticket / These tickets are already assigned to this email address."]
 
   selfCheck -->|no| step3[Step 3: confirm]
 
@@ -108,9 +108,9 @@ flowchart TD
 
   apiFail -->|402| api402{API message?}
 
-  api402 -->|402 Cannot transfer tickets that have already been scanned| scannedError["These tickets have already been scanned and can't be transferred."]
+  api402 -->|402 Cannot transfer tickets that have already been scanned| scannedError["This ticket / These tickets have already been scanned and can't be transferred."]
 
-  api402 -->|402 TICKETS ARE ALREADY ASSIGNED TO THIS EMAIL ADDRESS| assignedError["These tickets are already assigned to that email address."]
+  api402 -->|402 TICKETS ARE ALREADY ASSIGNED TO THIS EMAIL ADDRESS| assignedError
 
   api402 -->|402 other| transferError["We couldn't transfer those tickets. Please try again."]
 

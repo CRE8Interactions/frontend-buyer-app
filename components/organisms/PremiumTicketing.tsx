@@ -592,11 +592,11 @@ export default function PremiumTicketing({
     const result = await validateSubmittedEmail(email);
     setNotifyEmailChecking(false);
     if (!result.ok) {
-      if (result.error === "network") {
+      if (result.error === "required" || result.error === "invalid") {
+        setNotifyEmailError(result.error);
+      } else {
         setNotifyEmailError(null);
         setNotifyEmailNetworkError(true);
-      } else {
-        setNotifyEmailError(result.error);
       }
       return false;
     }
@@ -2321,11 +2321,11 @@ export default function PremiumTicketing({
                     const result = await validateSubmittedEmail(next);
                     setNotifyEmailChecking(false);
                     if (!result.ok) {
-                      if (result.error === "network") {
+                      if (result.error === "required" || result.error === "invalid") {
+                        setNotifyEmailError(result.error);
+                      } else {
                         setNotifyEmailError(null);
                         setNotifyEmailNetworkError(true);
-                      } else {
-                        setNotifyEmailError(result.error);
                       }
                       return;
                     }

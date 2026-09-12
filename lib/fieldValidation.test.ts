@@ -20,7 +20,9 @@ import {
   phoneBlurError,
   phoneNumberError,
   phoneSubmitError,
+  promoCodeRedeemDisplayMessage,
   promoCodeRejectedMessage,
+  PROMO_CODE_API_ERROR_MESSAGES,
   redemptionCodeBlurError,
   redemptionCodeBlurFieldError,
   redemptionCodeSubmitError,
@@ -141,10 +143,43 @@ describe("redemption codes", () => {
     expect(redemptionCodeBlurFieldError(null, "   ")).toBeNull();
   });
 
-  it("formats rejected promo copy from the API message", () => {
-    expect(promoCodeRejectedMessage("Promo code not found")).toBe(
-      "Promo code not found. Please try again.",
+  it("formats rejected promo copy from redeem API messages", () => {
+    expect(
+      promoCodeRejectedMessage(PROMO_CODE_API_ERROR_MESSAGES.notFound),
+    ).toBe("Promo code not found. Please try again.");
+    expect(
+      promoCodeRejectedMessage(PROMO_CODE_API_ERROR_MESSAGES.alreadyApplied),
+    ).toBe("Promo code already applied to order. Please try again.");
+    expect(
+      promoCodeRejectedMessage(PROMO_CODE_API_ERROR_MESSAGES.noLongerValid),
+    ).toBe("Promo code no longer valid. Please try again.");
+    expect(promoCodeRejectedMessage()).toBe(
+      "Promo code could not be applied. Please try again.",
     );
+  });
+
+  it("reads redeem API messages from nested and string error bodies", () => {
+    expect(
+      promoCodeRedeemDisplayMessage({
+        response: {
+          data: {
+            error: { message: PROMO_CODE_API_ERROR_MESSAGES.alreadyApplied },
+          },
+        },
+      }),
+    ).toBe("Promo code already applied to order. Please try again.");
+    expect(
+      promoCodeRedeemDisplayMessage({
+        response: {
+          data: { message: PROMO_CODE_API_ERROR_MESSAGES.noLongerValid },
+        },
+      }),
+    ).toBe("Promo code no longer valid. Please try again.");
+    expect(
+      promoCodeRedeemDisplayMessage({
+        response: { data: PROMO_CODE_API_ERROR_MESSAGES.notFound },
+      }),
+    ).toBe("Promo code not found. Please try again.");
   });
 });
 

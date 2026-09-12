@@ -4,11 +4,41 @@ import {
   TICKET_TRANSFER_API_ERROR_MESSAGES,
   TICKET_TRANSFER_DISPLAY_COPY,
   parseTicketTransferApiError,
+  ticketTransferAssignedCopy,
+  ticketTransferScannedCopy,
 } from "@/lib/ticketTransferErrors";
 
 function axiosError(status: number, data: unknown) {
   return { response: { status, data } };
 }
+
+describe("ticketTransferAssignedCopy", () => {
+  it("names one ticket in the singular", () => {
+    expect(ticketTransferAssignedCopy(1)).toBe(
+      "This ticket is already assigned to this email address.",
+    );
+  });
+
+  it("names several tickets in the plural", () => {
+    expect(ticketTransferAssignedCopy(2)).toBe(
+      "These tickets are already assigned to this email address.",
+    );
+  });
+});
+
+describe("ticketTransferScannedCopy", () => {
+  it("names one ticket in the singular", () => {
+    expect(ticketTransferScannedCopy(1)).toBe(
+      "This ticket has already been scanned and can't be transferred.",
+    );
+  });
+
+  it("names several tickets in the plural", () => {
+    expect(ticketTransferScannedCopy(2)).toBe(
+      "These tickets have already been scanned and can't be transferred.",
+    );
+  });
+});
 
 describe("parseTicketTransferApiError", () => {
   it("returns scanned and assigned copy for mapped 402 responses", () => {
@@ -19,8 +49,19 @@ describe("parseTicketTransferApiError", () => {
             message: TICKET_TRANSFER_API_ERROR_MESSAGES.alreadyScanned,
           },
         }),
+        1,
       ),
-    ).toBe(TICKET_TRANSFER_DISPLAY_COPY.scanned);
+    ).toBe(ticketTransferScannedCopy(1));
+    expect(
+      parseTicketTransferApiError(
+        axiosError(402, {
+          error: {
+            message: TICKET_TRANSFER_API_ERROR_MESSAGES.alreadyScanned,
+          },
+        }),
+        2,
+      ),
+    ).toBe(ticketTransferScannedCopy(2));
     expect(
       parseTicketTransferApiError(
         axiosError(402, {
@@ -28,8 +69,19 @@ describe("parseTicketTransferApiError", () => {
             message: TICKET_TRANSFER_API_ERROR_MESSAGES.alreadyAssigned,
           },
         }),
+        1,
       ),
-    ).toBe(TICKET_TRANSFER_DISPLAY_COPY.assigned);
+    ).toBe(ticketTransferAssignedCopy(1));
+    expect(
+      parseTicketTransferApiError(
+        axiosError(402, {
+          error: {
+            message: TICKET_TRANSFER_API_ERROR_MESSAGES.alreadyAssigned,
+          },
+        }),
+        3,
+      ),
+    ).toBe(ticketTransferAssignedCopy(3));
   });
 
   it("returns the ticket fallback for other 402s and network copy otherwise", () => {

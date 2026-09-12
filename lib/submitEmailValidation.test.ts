@@ -82,6 +82,20 @@ describe("validateSubmittedEmail", () => {
     });
   });
 
+  it("returns startFailed when validate-email responds with 400", async () => {
+    mockedValidateEmail.mockRejectedValue({
+      response: { status: 400 },
+    });
+
+    const result = await validateSubmittedEmail(DEMO_USER.email);
+
+    expect(result).toEqual({
+      ok: false,
+      email: DEMO_USER.email,
+      error: "startFailed",
+    });
+  });
+
   it("returns invalid when validate-email responds with 402 Bad email", async () => {
     mockedValidateEmail.mockRejectedValue({
       response: { status: 402, data: "Bad email" },

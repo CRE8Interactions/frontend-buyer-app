@@ -30,7 +30,7 @@ import {
 import { cacheOrgBranding, orgSlugFromPathname } from "@/lib/orgBrandingCache";
 import { beginRouteTransition } from "@/lib/routeTransition";
 import { useClientReady } from "@/lib/useClientReady";
-import { formString, promoCodeRejectedMessage, redemptionCodeBlurFieldError, redemptionCodeSubmitError, type RedemptionCodeFieldError } from "@/lib/fieldValidation";
+import { formString, normalizeRedemptionCode, promoCodeRedeemDisplayMessage, redemptionCodeBlurFieldError, redemptionCodeSubmitError, type RedemptionCodeFieldError } from "@/lib/fieldValidation";
 import RedemptionCodeField from "@/components/molecules/RedemptionCodeField";
 import {
   flexPackSeasonLine,
@@ -65,14 +65,22 @@ import {
   type FundraisingSelection,
 } from "@/lib/fundraisingCheckout";
 import {
+  CHECKOUT_PAYMENT_COPY,
+  paymentIntentLoadOutcome,
+  processOrderDisplayMessage,
+  stripeConfirmDisplayMessage,
+  stripeSubmitDisplayMessage,
+  waitForPaymentIntentSucceeded,
+} from "@/lib/checkoutPaymentErrors";
+import {
   formatCurrency,
   formatEventWhen,
   imageUrl,
   isCartExpiredResponse,
-  isCartGoneResponse,
   isRequestCanceled,
 } from "@/lib/helpers";
 import {
+  guestContactStartFailed,
   isComplimentaryWebsiteCart,
   isGuestEligibleCart,
   setGuestCheckoutBuyer,
@@ -200,42 +208,6 @@ type CartData = {
 const lightCard =
   "rounded-[18px] border border-[rgba(5,27,53,0.08)] bg-white shadow-[0_10px_30px_-20px_rgba(5,27,53,0.35)]";
 const muted = "text-[#6e7180]";
-
-async function waitForPaymentIntentSucceeded(
-  stripe: {
-    retrievePaymentIntent: (clientSecret: string) => Promise<{
-      error?: { message?: string } | null;
-      paymentIntent?: { status?: string } | null;
-    }>;
-  },
-  clientSecret: string,
-  confirmed: {
-    error?: { message?: string } | null;
-    paymentIntent?: { status?: string } | null;
-  },
-) {
-  if (confirmed.error) return confirmed.error;
-  let status = confirmed.paymentIntent?.status;
-  if (!status || status === "succeeded") return null;
-  if (status === "requires_payment_method" || status === "canceled") {
-    return { message: "Card declined" };
-  }
-
-  const deadline = Date.now() + 15_000;
-  while (Date.now() < deadline) {
-    const retrieved = await stripe.retrievePaymentIntent(clientSecret);
-    if (retrieved.error) return retrieved.error;
-    status = retrieved.paymentIntent?.status;
-    if (status === "succeeded") return null;
-    if (status === "requires_payment_method" || status === "canceled") {
-      return { message: "Card declined" };
-    }
-    await new Promise<void>((resolve) => {
-      window.setTimeout(resolve, 400);
-    });
-  }
-  return { message: "Payment is still processing. Please wait a moment." };
-}
 
 type CheckoutPromoDiscount = { code: string; amount: number };
 
@@ -370,11 +342,8 @@ function CheckoutPaymentForm({
       setDiscountedPrice(res.data?.promoPricingDetails?.discountedPrice);
       setPromoDetails(res.data);
     } catch (err: unknown) {
-      const msg =
-        (err as { response?: { data?: { error?: { message?: string } } } })
-          ?.response?.data?.error?.message;
       setPromoFieldError("rejected");
-      setPromoRejectedMessage(promoCodeRejectedMessage(msg));
+      setPromoRejectedMessage(promoCodeRedeemDisplayMessage(err));
     } finally {
       setSubmittingPromo(false);
     }
@@ -404,9 +373,7 @@ function CheckoutPaymentForm({
     try {
       const submitted = await elements.submit();
       if (submitted?.error) {
-        onDeclined(
-          submitted.error.message || "Unable to complete purchase. Please try again.",
-        );
+        onDeclined(stripeSubmitDisplayMessage(submitted.error.message));
         setPurchasing(false);
         return;
       }
@@ -422,7 +389,7 @@ function CheckoutPaymentForm({
         confirmed,
       );
       if (confirmError) {
-        onDeclined(confirmError.message || "Card declined");
+        onDeclined(stripeConfirmDisplayMessage(confirmError.message));
         setPurchasing(false);
         return;
       }
@@ -435,7 +402,7 @@ function CheckoutPaymentForm({
         onExpired();
         return;
       }
-      onDeclined("Unable to complete purchase. Please try again.");
+      onDeclined(processOrderDisplayMessage(err));
     }
   };
 
@@ -524,6 +491,7 @@ function CheckoutPaymentForm({
                   tone="secondary"
                   loading={submittingPromo}
                   loadingLabel="Applying…"
+                  disabled={!normalizeRedemptionCode(promoCode)}
                   className="!rounded-[10px] px-6 !h-12"
                 >
                   Apply
@@ -847,7 +815,7 @@ function CheckoutPage() {
         cartId = getStoredCart()?.cartId ?? null;
       }
       if (!cartId) {
-        setLoadError("No cart found. Please select tickets again.");
+        setLoadError(CHECKOUT_PAYMENT_COPY.noCart);
         setLoading(false);
         return;
       }
@@ -858,7 +826,7 @@ function CheckoutPage() {
         const cartData = res.data as CartData | null;
         if (!cartData?.id) {
           clearStoredCart();
-          setLoadError("No cart found. Please select tickets again.");
+          setLoadError(CHECKOUT_PAYMENT_COPY.noCart);
           return;
         }
         setCart(cartData);
@@ -963,7 +931,7 @@ function CheckoutPage() {
           !cartData.access_pass_template &&
           !eventData
         ) {
-          setLoadError("Unable to load checkout. Please try again.");
+          setLoadError(CHECKOUT_PAYMENT_COPY.loadFailed);
           return;
         }
 
@@ -978,12 +946,12 @@ function CheckoutPage() {
         );
       } catch (err: unknown) {
         if (cancelled) return;
-        if (isCartGoneResponse(err)) {
+        if (paymentIntentLoadOutcome(err) === "gone") {
           abandonGoneCart(cartRef.current?.event);
         } else {
           // Keep sessionStorage.cart so login/redirect races and transient
           // API failures don't force the shopper to rebuild their cart.
-          setLoadError("Unable to load checkout. Please try again.");
+          setLoadError(CHECKOUT_PAYMENT_COPY.loadFailed);
         }
       } finally {
         if (
@@ -1063,7 +1031,8 @@ function CheckoutPage() {
         guestBuyerRef.current,
       );
     } catch (err) {
-      if (isCartGoneResponse(err)) abandonGoneCart();
+      if (paymentIntentLoadOutcome(err) === "gone") abandonGoneCart();
+      else setLoadError(CHECKOUT_PAYMENT_COPY.loadFailed);
     } finally {
       setIsRefreshingIntent(false);
     }
@@ -1076,10 +1045,8 @@ function CheckoutPage() {
   )}`;
 
   const confirmGuestBuyer = async (buyer: GuestBuyer) => {
-    guestBuyerRef.current = buyer;
-    setGuestBuyer(buyer);
-    setGuestCheckoutBuyer(buyer);
     if (!cartRef.current) return;
+    guestBuyerRef.current = buyer;
     setIsRefreshingIntent(true);
     try {
       await loadPaymentIntent(
@@ -1091,9 +1058,19 @@ function CheckoutPage() {
         ),
         buyer,
       );
+      setGuestBuyer(buyer);
+      setGuestCheckoutBuyer(buyer);
     } catch (err) {
-      if (isCartGoneResponse(err)) abandonGoneCart();
-      else setLoadError("Unable to load checkout. Please try again.");
+      guestBuyerRef.current = null;
+      if (isRequestCanceled(err)) return;
+      if (paymentIntentLoadOutcome(err) === "gone") {
+        handleHoldExpired();
+        return;
+      }
+      if (guestContactStartFailed(err)) {
+        throw err;
+      }
+      setLoadError(CHECKOUT_PAYMENT_COPY.loadFailed);
     } finally {
       setIsRefreshingIntent(false);
     }
@@ -1300,7 +1277,7 @@ function CheckoutPage() {
                       );
                       markCheckoutLoginDetour();
                     }}
-                    onContinue={(buyer) => void confirmGuestBuyer(buyer)}
+                    onContinue={confirmGuestBuyer}
                     buttonColor={branding.theme.buttonColor}
                     buttonTextColor={branding.theme.buttonTextColor}
                   />
@@ -1325,11 +1302,7 @@ function CheckoutPage() {
                       onPromoChange={setPromoDiscount}
                       onSuccess={() => goToSuccess(intentId)}
                       onDeclined={setDeclineMsg}
-                      onExpired={() =>
-                        setDeclineMsg(
-                          "Your seat hold expired. Please select tickets again.",
-                        )
-                      }
+                      onExpired={handleHoldExpired}
                     />
                   </Elements>
                 ) : (
