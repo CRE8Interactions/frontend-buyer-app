@@ -1915,12 +1915,26 @@ describe("SeasonTickets section routes", () => {
     expect(
       await screen.findByRole("heading", { name: heading, level: 1 }),
     ).toBeInTheDocument();
-    expect(screen.getByText(DEMO_SESSION.user.email)).toBeInTheDocument();
     expect(screen.queryByText(icedogs.name)).not.toBeInTheDocument();
     expect(screen.getByRole("link", { name: heading })).toHaveAttribute(
       "aria-current",
       "page",
     );
+  });
+
+  it.each([
+    ["/wallet/my-transfers/", "Transfers"],
+    ["/wallet/my-listings/", "Listings"],
+    ["/wallet/giving/", "Giving"],
+  ])("shows the signed-in email on %s", async (pathname, heading) => {
+    navigationMocks.pathname = pathname;
+
+    render(<SeasonTickets />);
+
+    expect(
+      await screen.findByRole("heading", { name: heading, level: 1 }),
+    ).toBeInTheDocument();
+    expect(screen.getByText(DEMO_SESSION.user.email)).toBeInTheDocument();
   });
 
   it("focuses the email field on the wallet sign-in screen", async () => {
