@@ -9,6 +9,7 @@ import {
   demoCompletedTicketOrder,
   demoFlexPack,
   demoSeasonPackage,
+  DEMO_USER,
 } from "@/lib/demo/fixtures";
 import { demoDate } from "@/lib/demo/now";
 import {
@@ -20,6 +21,7 @@ import {
   countFlexPacks,
   countSeasonPackages,
   formatCartOrderTotal,
+  formatSeasonPassHolderName,
   isIncomingTransferTicket,
   isPendingTransferTicket,
   isTransferReceivedDetail,
@@ -311,9 +313,29 @@ describe("wallet season-package orders", () => {
     );
     expect(season[0].eventCount).toBe(pkg.events.length);
     expect(season[0].ticketCount).toBe(packageOrder.tickets.length);
+    expect(season[0].holderName).toBe(
+      formatSeasonPassHolderName(packageOrder),
+    );
+    expect(season[0].firstEvent?.uuid).toBe(pkg.events[0].uuid);
     expect(packageGames.map((row) => row.name)).toEqual(
       pkg.events.map((event) => event.name),
     );
+  });
+
+  it("formats the season-pass holder like Joe D.", () => {
+    expect(
+      formatSeasonPassHolderName({ firstName: "jaime", lastName: "convery" }),
+    ).toBe("Jaime C.");
+    expect(formatSeasonPassHolderName({ firstName: "JOE", lastName: "doe" })).toBe(
+      "Joe D.",
+    );
+    expect(
+      formatSeasonPassHolderName(demoCompletedPackageOrder()),
+    ).toBe(`${DEMO_USER.firstName} ${DEMO_USER.lastName.charAt(0)}.`);
+    expect(formatSeasonPassHolderName({}, { email: DEMO_USER.email })).toBe(
+      "fan",
+    );
+    expect(formatSeasonPassHolderName(null, null)).toBe("");
   });
 
   it("takes the matching package event category from a fetched order", () => {
@@ -671,7 +693,7 @@ describe("wallet season-package orders", () => {
     expect(upcoming[0]?.ticketCount).toBe(1);
     expect(upcoming[0]?.pendingIncomingTransfer).toBe(true);
     expect(upcoming[0]?.incomingTransferId).toBe("incoming-1");
-    expect(upcoming[0]?.incomingTransferFrom).toBe("M. Rivera");
+    expect(upcoming[0]?.incomingTransferFrom).toBe("m.rivera@example.com");
   });
 
   it("adds pending package event transfers to upcoming wallet details", () => {
@@ -700,7 +722,9 @@ describe("wallet season-package orders", () => {
     expect(wallet.upcomingEvents).toHaveLength(1);
     expect(wallet.upcomingEvents[0]?.name).toBe(activeEvent.name);
     expect(wallet.upcomingEvents[0]?.pendingIncomingTransfer).toBe(true);
-    expect(wallet.upcomingEvents[0]?.incomingTransferFrom).toBe("M. Rivera");
+    expect(wallet.upcomingEvents[0]?.incomingTransferFrom).toBe(
+      "m.rivera@example.com",
+    );
   });
 
   it("does not surface cancelled incoming transfers in upcoming", () => {

@@ -1247,8 +1247,8 @@ export default function PremiumTicketing({
         style={{ padding: "18px 20px", background: "#fff" }}
       >
         {eventSoldOutNotifyBarInner}
-      </div>
-    );
+    </div>
+  );
 
   // GA tier cards — rendered inline on desktop, inside the mobile bottom sheet.
   const gaTierCards = (
@@ -1449,7 +1449,7 @@ export default function PremiumTicketing({
       </div>
       <div style={{ height: 1, background: "rgba(5,27,53,0.08)", margin: compact ? "10px 0 0" : "16px 0 0" }} />
     </>
-    );
+  );
   })();
 
   const showListingsShellLoader = listingsSheet && !listingsShellReady;
@@ -1539,14 +1539,14 @@ export default function PremiumTicketing({
               {isGa ? (
                 d.brandLogoSrc ? (
                   <span style={{ display: "inline-flex", alignItems: "center", flexShrink: 0 }}>
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
                     <img src={d.brandLogoSrc} alt={d.orgLabel} style={{ height: 46, width: "auto", display: "block", objectFit: "contain" }} />
                   </span>
                 ) : (
                   <Link href="/browse" aria-label="Blocktickets home" style={{ display: "inline-flex", alignItems: "center", flexShrink: 0 }}>
                     {/* eslint-disable-next-line @next/next/no-img-element */}
                     <img src="/blocktickets-logo-navy.svg" alt="Blocktickets" style={{ height: 26, width: "auto", display: "block", objectFit: "contain" }} />
-                  </Link>
+                </Link>
                 )
               ) : (
                 <>
@@ -1596,14 +1596,14 @@ export default function PremiumTicketing({
           {isGa ? (
             d.brandLogoSrc ? (
               <span style={{ flex: 1, minWidth: 0, display: "flex", alignItems: "center" }}>
-                {/* eslint-disable-next-line @next/next/no-img-element */}
+              {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img src={d.brandLogoSrc} alt={d.orgLabel} style={{ height: 34, width: "auto", objectFit: "contain" }} />
               </span>
             ) : (
               <Link href="/browse" aria-label="Blocktickets home" style={{ flex: 1, minWidth: 0, display: "flex", alignItems: "center" }}>
                 {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img src="/blocktickets-logo-navy.svg" alt="Blocktickets" style={{ height: 20, width: "auto", objectFit: "contain" }} />
-              </Link>
+            </Link>
             )
           ) : (
             <div style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", gap: 2 }}>
@@ -1781,15 +1781,15 @@ export default function PremiumTicketing({
               <div role="status" aria-label="Loading listings" style={{ display: "flex", flexDirection: "column", gap: 14 }}>
                 {Array.from({ length: skeletonRows }, (_, i) => (
                   <div key={i} aria-hidden style={{ display: "flex", alignItems: "center", gap: 18, background: "#fff", border: "1px solid rgba(5,27,53,0.10)", borderRadius: 16, padding: "16px 20px" }}>
-                    <div style={{ width: thumbSize, height: thumbSize, borderRadius: 12, flexShrink: 0, ...shimmer }} />
+                  <div style={{ width: thumbSize, height: thumbSize, borderRadius: 12, flexShrink: 0, ...shimmer }} />
                     <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 9, minWidth: 0 }}>
                       <div style={{ height: 24, width: 120, borderRadius: 999, ...shimmer }} />
                       <div style={{ height: 20, width: "58%", borderRadius: 8, ...shimmer }} />
                       <div style={{ height: 16, width: 128, borderRadius: 8, ...shimmer }} />
-                    </div>
-                    {!mobile && <div style={{ height: 22, width: 92, borderRadius: 8, flexShrink: 0, ...shimmer }} />}
                   </div>
-                ))}
+                    {!mobile && <div style={{ height: 22, width: 92, borderRadius: 8, flexShrink: 0, ...shimmer }} />}
+                </div>
+              ))}
               </div>
             )}
 
@@ -1836,7 +1836,7 @@ export default function PremiumTicketing({
                       <span style={{ minWidth: 0, overflowWrap: "anywhere" }}>Sec {l.sec} · Row {l.row}</span>
                     </div>
                     <div style={{ fontSize: fluidSize(15), color: "#6e7180" }}>{l.range}</div>
-                  </div>
+                      </div>
                   <div style={{ textAlign: "right", flexShrink: 0, marginLeft: 8 }}>
                     <div style={{ fontSize: fluidSize(20), fontWeight: 600, fontVariantNumeric: "tabular-nums", letterSpacing: "-0.015em", whiteSpace: "nowrap" }}>{l.price} each</div>
                     <div style={{ fontSize: fluidSize(13), color: "#6e7180", marginTop: 2, whiteSpace: "nowrap" }}>{mobile ? "incl. fees" : "Incl. Taxes & Fees"}</div>
@@ -1907,10 +1907,10 @@ export default function PremiumTicketing({
                     border: "1px solid rgba(5,27,53,0.08)",
                   }}
                 >
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img src={POSTER} alt="" style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
-                </div>
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src={POSTER} alt="" style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
               </div>
+            </div>
               {compactTrustCard}
             </div>
           </div>
@@ -1943,7 +1943,7 @@ export default function PremiumTicketing({
             ) : null}
 
             {d.aboutText ? (
-              <div style={{ ...card, borderRadius: 20, padding: mobile ? 18 : 24, display: "flex", flexDirection: "column", gap: 14 }}>
+            <div style={{ ...card, borderRadius: 20, padding: mobile ? 18 : 24, display: "flex", flexDirection: "column", gap: 14 }}>
                 <div style={{ fontSize: fluidSize(12), fontWeight: 600, letterSpacing: "0.12em", textTransform: "uppercase", color: "#8a93a3" }}>About this event</div>
                 <ExpandableDescription
                   text={d.aboutText}
@@ -1951,7 +1951,7 @@ export default function PremiumTicketing({
                   toggleColor={ACC}
                   style={{ fontSize: fluidSize(15), lineHeight: 1.6, color: "#4a5567" }}
                 />
-              </div>
+            </div>
             ) : null}
 
             {showMatchupSection ? (
@@ -1978,11 +1978,11 @@ export default function PremiumTicketing({
                     ) : (
                       d.awayShort
                     )}
-                  </div>
-                  <div style={{ fontSize: fluidSize(15), fontWeight: 500 }}>{d.awayLabel}</div>
                 </div>
-                ) : null}
+                  <div style={{ fontSize: fluidSize(15), fontWeight: 500 }}>{d.awayLabel}</div>
               </div>
+                ) : null}
+            </div>
             </div>
             ) : null}
 
@@ -2552,7 +2552,7 @@ export default function PremiumTicketing({
                 </div>
               </div>
               {panelOfferDescription ? (
-                <div style={{ display: "flex", flexDirection: "column", gap: 8, paddingBottom: 18 }}>
+              <div style={{ display: "flex", flexDirection: "column", gap: 8, paddingBottom: 18 }}>
                   <div style={{ fontSize: fluidSize(12), fontWeight: 600, letterSpacing: "0.12em", textTransform: "uppercase", color: "#8a93a3" }}>About this ticket</div>
                   <ExpandableDescription
                     text={panelOfferDescription}
@@ -2564,7 +2564,7 @@ export default function PremiumTicketing({
                       lineHeight: 1.6,
                     }}
                   />
-                </div>
+              </div>
               ) : null}
               <div style={{ width: "100%", boxSizing: "border-box" }}>{compactTrustCard}</div>
             </div>
@@ -2735,9 +2735,9 @@ export default function PremiumTicketing({
               </div>
               {d.aboutText ? (
                 <>
-                  <div className="h-px bg-[rgba(5,27,53,0.08)]" />
-                  <div className="flex flex-col gap-2">
-                    <div className="text-[12px] font-semibold uppercase tracking-[0.12em] text-[#8a93a3]">About this event</div>
+              <div className="h-px bg-[rgba(5,27,53,0.08)]" />
+              <div className="flex flex-col gap-2">
+                <div className="text-[12px] font-semibold uppercase tracking-[0.12em] text-[#8a93a3]">About this event</div>
                     <ExpandableDescription
                       text={d.aboutText}
                       mobile={mobile}
@@ -2745,7 +2745,7 @@ export default function PremiumTicketing({
                       className="leading-relaxed text-[#4a5567]"
                       style={{ fontSize: fluidSize(14) }}
                     />
-                  </div>
+              </div>
                 </>
               ) : null}
             </div>

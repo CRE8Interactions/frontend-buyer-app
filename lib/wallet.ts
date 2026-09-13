@@ -131,6 +131,8 @@ export type AccessPassLike = {
   primaryColor?: string;
   orderId?: string;
   order?: { orderId?: string };
+  /** Pass holder, used for the card name when the order has no name saved. */
+  email?: string;
   events?: EventLike[];
   [key: string]: unknown;
 };
@@ -149,6 +151,8 @@ export type AccessPassSummary = {
   pass: AccessPassLike;
   accessPassUUID?: string;
   orderId?: string;
+  /** Pass holder email, the card's fallback name when the order has none. */
+  holderEmail?: string;
   name: string;
   typeLabel: string;
   checkInCode: string;
@@ -187,6 +191,7 @@ export function buildAccessPassSummaries(
         pass,
         accessPassUUID: String(pass.uuid || "").trim() || undefined,
         orderId: accessPassOrderId(pass),
+        holderEmail: String(pass.email || "").trim() || undefined,
         name: pass.name || "Access pass",
         typeLabel: pass.type === "organizer" ? "All-access pass" : "Season pass",
         checkInCode: String(pass.checkInCode || ""),

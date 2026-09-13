@@ -28,6 +28,8 @@ export type WalletTransferRow = {
   status: string;
   createdAt?: string;
   accessPassId?: string;
+  passKind?: "season pass" | "access pass";
+  ticketCount?: number;
 };
 
 type TransferOrderLike = {
@@ -257,7 +259,7 @@ function titleCaseWord(value: string) {
   return word.charAt(0).toUpperCase() + word.slice(1).toLowerCase();
 }
 
-function transferSenderEmail(transfer?: {
+export function transferSenderEmail(transfer?: {
   fromUser?: TransferLike["fromUser"];
   fromUserEmail?: string;
 } | null): string {
@@ -465,6 +467,16 @@ function transferTitle(transfer: TransferLike) {
   return String(event?.name || "").trim() || "Transfer";
 }
 
+function passTransferKind(
+  transfer: TransferLike,
+): "season pass" | "access pass" | undefined {
+  if (transfer.tickets?.length) return undefined;
+  const pass = transfer.access_pass ?? transfer.accessPass;
+  if (!pass && !transfer.accessPassId) return undefined;
+  const type = String(pass?.type || "").trim().toLowerCase();
+  return type === "package" ? "season pass" : "access pass";
+}
+
 function passTransferSeatLabel(transfer: TransferLike) {
   const pass = transfer.access_pass ?? transfer.accessPass;
   if (!pass) return "Tickets";
@@ -554,6 +566,8 @@ function mapTransferRow(
     status,
     createdAt: transfer.createdAt,
     accessPassId: transferAccessPassId(transfer) || undefined,
+    passKind: passTransferKind(transfer),
+    ticketCount: transfer.tickets?.length,
   };
 }
 

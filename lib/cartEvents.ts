@@ -15,7 +15,7 @@ import {
   formatVenueCityState,
   formatVenueLocationLine,
 } from "@/lib/venueLocation";
-import { formatTransferSenderLabel } from "@/lib/ticketTransfers";
+import { transferSenderEmail } from "@/lib/ticketTransfers";
 import {
   formatTicketHolderName,
   gaTicketSeatLine,
@@ -106,6 +106,7 @@ export type CartEventSummary = {
   availability: "available" | "past" | "transferred";
   pendingIncomingTransfer?: boolean;
   incomingTransferId?: string | number;
+  /** Sender email shown on the Upcoming pending-transfer banner. */
   incomingTransferFrom?: string;
   /** Sender row already shows tickets waiting for the recipient to claim. */
   pendingOutgoingTransfer?: boolean;
@@ -123,7 +124,35 @@ export type SeasonPackageSummary = {
   ticketCount: number;
   thumb?: string;
   packageUUID?: string;
+  /** Order name for the pass card: first name plus last initial, e.g. "Joe D." */
+  holderName?: string;
+  /** First package event, used when the access-pass payload omits events. */
+  firstEvent?: EventLike;
 };
+
+/** Season-pass card name, resolved the way the legacy pass card does: the name
+ * saved on the order, then the pass holder's email local part, else nothing so
+ * the card leaves the holder line out. The user profile is never consulted.
+ * Order names are title-cased as "Joe D."
+ */
+export function formatSeasonPassHolderName(
+  order?: { firstName?: string; lastName?: string } | null,
+  pass?: { email?: string } | null,
+): string {
+  const first = String(order?.firstName || "").trim();
+  if (first) {
+    const last = String(order?.lastName || "").trim();
+    const firstName = first
+      .toLowerCase()
+      .replace(
+        /(^|[\s'-])(\p{L})/gu,
+        (_, lead: string, char: string) => lead + char.toUpperCase(),
+      );
+    const lastInitial = last ? ` ${last.charAt(0).toUpperCase()}.` : "";
+    return `${firstName}${lastInitial}`;
+  }
+  return String(pass?.email || "").split("@")[0].trim();
+}
 
 export type CartTicketDetail = {
   id?: number | string;
@@ -165,6 +194,7 @@ export type CartEventDetail = {
   availability: CartEventSummary["availability"];
   pendingIncomingTransfer?: boolean;
   incomingTransferId?: string | number;
+  /** Sender email shown on the Upcoming pending-transfer banner. */
   incomingTransferFrom?: string;
   showInUpcomingTab?: boolean;
   attractions: AttractionCard[];
@@ -965,7 +995,7 @@ export function reconcilePendingReceivedTransfers(
     const incomingMeta = {
       pendingIncomingTransfer: true,
       incomingTransferId: transfer.id,
-      incomingTransferFrom: formatTransferSenderLabel(transfer),
+      incomingTransferFrom: transferSenderEmail(transfer) || undefined,
       transfersEnabled: false,
       resaleEnabled: false,
       showInUpcomingTab: true,
@@ -1962,16 +1992,21 @@ export function buildSeasonPackageSummaries(
     const tickets = order.tickets ?? [];
     const orderId = orderIdOf(order) || undefined;
     const packageUUID = String(pkg.uuid || "").trim() || undefined;
+    const events = [...(pkg.events ?? [])].sort((a, b) =>
+      String(a.start || "").localeCompare(String(b.start || "")),
+    );
     out.push({
       key: orderId || packageUUID || `package-${out.length + 1}`,
       orderId,
       name: pkg.name || "Season tickets",
       venueLine: formatCartVenueLine(pkg.venue, pkg.organization?.name),
       // Every game in the package counts, matching the package screen's rows.
-      eventCount: (pkg.events ?? []).length,
+      eventCount: events.length,
       ticketCount: uniqueSeatCount(tickets) || tickets.length,
       thumb: pkg.image ? imageUrl(pkg.image, "") : undefined,
       packageUUID,
+      holderName: formatSeasonPassHolderName(order) || undefined,
+      firstEvent: events[0],
     });
   }
 

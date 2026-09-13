@@ -18,8 +18,9 @@ import {
   isUpcomingEvent,
   isWalletListedEvent,
   unwrapOrder,
+  type AccessPassLike,
 } from "@/lib/wallet";
-import { demoAccessPass } from "@/lib/demo/fixtures";
+import { demoAccessPass, demoPackageAccessPass } from "@/lib/demo/fixtures";
 
 describe("unwrapOrder", () => {
   it("reads the order whether it comes bare, wrapped, or in a list", () => {
@@ -40,6 +41,17 @@ describe("buildAccessPassSummaries", () => {
   it("keeps the purchase order id on the pass", () => {
     const pass = demoAccessPass();
     expect(buildAccessPassSummaries([pass])[0].orderId).toBe(pass.orderId);
+  });
+
+  it("carries the pass holder email for the card name", () => {
+    const pass = demoPackageAccessPass() as AccessPassLike;
+
+    expect(buildAccessPassSummaries([pass])[0].holderEmail).toBe(pass.email);
+    expect(
+      buildAccessPassSummaries([
+        demoPackageAccessPass({ email: "" }) as AccessPassLike,
+      ])[0].holderEmail,
+    ).toBeUndefined();
   });
 
   it("only keeps a revoked pass when inactive passes are included", () => {

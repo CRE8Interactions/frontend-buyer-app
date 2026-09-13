@@ -6,7 +6,7 @@ vi.mock("@/lib/api", () => ({
 }));
 
 import { downloadApplePass, downloadGooglePass } from "@/lib/api";
-import { DEMO_EVENTS, demoAccessPass, demoCompletedTicketOrder } from "@/lib/demo/fixtures";
+import { DEMO_EVENTS, demoAccessPass, demoCompletedTicketOrder, demoPackageAccessPass, demoSeasonPackage } from "@/lib/demo/fixtures";
 import {
   addAccessPassToPhoneWallet,
   addTicketToPhoneWallet,
@@ -165,6 +165,25 @@ describe("addAccessPassToPhoneWallet", () => {
       ),
     ).toMatch(/no code/i);
     expect(mockedApplePass).not.toHaveBeenCalled();
+  });
+
+  it("sends the package event when the pass listing has no events", async () => {
+    const pkg = demoSeasonPackage();
+    const summary = summaryFor(demoPackageAccessPass({ events: [] }));
+    mockedApplePass.mockResolvedValue({
+      data: new Blob(["pkpass"], { type: "application/vnd.apple.pkpass" }),
+    } as never);
+
+    expect(
+      await addAccessPassToPhoneWallet(summary, "apple", pkg.events[0]),
+    ).toBeNull();
+    expect(mockedApplePass).toHaveBeenCalledWith({
+      event: expect.objectContaining({ uuid: pkg.events[0].uuid }),
+      obj: expect.objectContaining({
+        checkInCode: summary.checkInCode,
+        accessPass: true,
+      }),
+    });
   });
 });
 

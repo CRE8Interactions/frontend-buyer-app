@@ -1262,6 +1262,7 @@ export function demoPackageAccessPass(
   return {
     uuid: "access-pass-nms-package-1",
     orderId: order.orderId,
+    email: DEMO_USER.email,
     checkInCode: "NMSPASS2026",
     type: "package",
     name: pkg.name,

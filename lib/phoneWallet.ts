@@ -189,13 +189,26 @@ export function phoneWalletTheme(kind: PhoneWalletKind): PhoneWalletTheme {
   return kind === "google" ? GOOGLE_WALLET_THEME : APPLE_WALLET_THEME;
 }
 
-/** The pass rides along as the ticket, against its first event. */
+/** The pass rides along as the ticket, against the package event then the pass events. */
 export function accessPassWalletRequest(
   pass: AccessPassSummary,
+  fallbackEvent?: EventLike | null,
 ): { event: EventLike; obj: Record<string, unknown> } | null {
-  const obj = { ...pass.pass, accessPass: true };
-  const event = walletPassEvent(pass.events[0], obj);
-  if (!event || !pass.checkInCode) return null;
+  const obj = {
+    ...pass.pass,
+    uuid: pass.accessPassUUID || pass.pass.uuid,
+    checkInCode: pass.checkInCode || pass.pass.checkInCode,
+    sectionNumber: pass.pass.sectionNumber,
+    rowNumber: pass.pass.rowNumber,
+    seatNumber: pass.pass.seatNumber,
+    generalAdmission: pass.pass.generalAdmission,
+    name: pass.name || pass.pass.name,
+    accessPass: true,
+  };
+  const event =
+    walletPassEvent(fallbackEvent, obj) ||
+    walletPassEvent(pass.events[0], obj);
+  if (!event || !String(pass.checkInCode || "").trim()) return null;
   return { event, obj };
 }
 
@@ -262,9 +275,10 @@ export async function addPassToPhoneWallet(
 export async function addAccessPassToPhoneWallet(
   pass: AccessPassSummary,
   kind: PhoneWalletKind,
+  fallbackEvent?: EventLike | null,
 ): Promise<string | null> {
   return addPassToPhoneWallet(
-    accessPassWalletRequest(pass),
+    accessPassWalletRequest(pass, fallbackEvent),
     kind,
     "This pass has no code to add yet.",
   );
