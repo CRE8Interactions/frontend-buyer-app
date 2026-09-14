@@ -271,6 +271,23 @@ describe("walletPassEvent", () => {
     ).toBeUndefined();
   });
 
+  it("keeps the venue of the event row that has the uuid, not the stub", () => {
+    const passEvent = walletPassEvent(
+      { name: "NM State", venue: { name: "Pan American Center" } },
+      {
+        checkInCode: "NMS-1",
+        event: {
+          uuid: "af194e70-d31e-4837-b96d-1771d3ec3fac",
+          name: "NM State Aggies",
+          venue: { name: "Pan American Center", timezone: "America/Denver" },
+        },
+      },
+    );
+
+    expect(passEvent?.uuid).toBe("af194e70-d31e-4837-b96d-1771d3ec3fac");
+    expect(passEvent?.venue?.timezone).toBe("America/Denver");
+  });
+
   it("uses a string ticket.event as the event uuid", () => {
     expect(
       walletPassEvent({ name: "NM State" }, {

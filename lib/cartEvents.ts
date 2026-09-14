@@ -721,6 +721,247 @@ function mergeTicketDetailLists(
 }
 
 /** Remove transferred tickets from the sender wallet immediately after send. */
+/** Put cancelled transfer tickets back on the wallet order before rebuilding upcoming. */
+export function restoreCancelledTransferTicketsToOrders(
+  orders: OrderLike[],
+  transfer?: PendingSentTransfer | null,
+): OrderLike[] {
+  const tickets = transfer?.tickets ?? [];
+  if (!tickets.length) return orders;
+
+  const orderKey = String(transfer?.orderId ?? "").trim();
+  if (!orderKey) return orders;
+
+  return orders.map((order) => {
+    const matches =
+      String(order.orderId ?? "") === orderKey ||
+      String(order.id ?? "") === orderKey;
+    if (!matches) return order;
+
+    return mergeTicketsIntoWalletOrder(order, tickets);
+  });
+}
+
+/** Add accepted incoming transfer tickets to wallet orders before rebuilding upcoming. */
+export function applyAcceptedIncomingTransferToOrders(
+  orders: OrderLike[],
+  transfer?: PendingReceivedTransfer | null,
+  recipientEmail = "",
+): OrderLike[] {
+  const tickets = transfer?.tickets ?? [];
+  if (!transfer || !tickets.length) return orders;
+
+  const cleaned = tickets.map(stripPendingTransferTicketFields);
+  const acceptedOrderId = `accepted-${String(transfer.id ?? cleaned[0]?.id ?? "transfer")}`;
+  if (
+    orders.some(
+      (order) =>
+        String(order.orderId ?? order.id ?? "").trim() === acceptedOrderId,
+    )
+  ) {
+    return orders;
+  }
+  const orderKey = String(transfer.orderId ?? "").trim();
+  const packageFromTransfer = transfer.order?.package;
+  const event =
+    transfer.event ??
+    (packageFromTransfer?.events?.find(
+      (row) =>
+        String(row.uuid || "") ===
+        String(cleaned[0]?.eventUUID || cleaned[0]?.eventId || "").trim(),
+    ) ??
+      null);
+  const eventUUID =
+    String(event?.uuid || transferTicketEventUUID(transfer)).trim() ||
+    String(cleaned[0]?.eventUUID || cleaned[0]?.eventId || "").trim();
+
+  let targetIndex = -1;
+  if (orderKey) {
+    targetIndex = orders.findIndex(
+      (order) =>
+        String(order.orderId ?? "") === orderKey ||
+        String(order.id ?? "") === orderKey,
+    );
+  }
+  if (targetIndex < 0 && packageFromTransfer?.uuid) {
+    const packageUUID = String(packageFromTransfer.uuid).trim();
+    targetIndex = orders.findIndex(
+      (order) => String(order.package?.uuid ?? "").trim() === packageUUID,
+    );
+  }
+
+  if (targetIndex >= 0) {
+    return orders.map((order, index) =>
+      index === targetIndex ? mergeTicketsIntoWalletOrder(order, cleaned) : order,
+    );
+  }
+
+  // Never reuse the sender's orderId on the recipient wallet — navigation uses
+  // orderId for GET /orders and would 404 until the wallet reloads.
+  const newOrderId = acceptedOrderId;
+
+  if (packageFromTransfer?.events?.length) {
+    return [
+      ...orders,
+      {
+        id: transfer.id,
+        orderId: newOrderId,
+        source: "transfer",
+        email: recipientEmail,
+        package: packageFromTransfer,
+        tickets: cleaned,
+      },
+    ];
+  }
+
+  const packageGameEvent =
+    event ??
+    (eventUUID
+      ? packageFromTransfer?.events?.find(
+          (row) => String(row.uuid || "") === eventUUID,
+        ) ?? { uuid: eventUUID }
+      : null);
+  const ticketEventUUID = String(cleaned[0]?.eventUUID || cleaned[0]?.eventId || "").trim();
+  if (
+    ticketEventUUID &&
+    packageGameEvent &&
+    String(packageGameEvent.uuid || "").trim() === ticketEventUUID
+  ) {
+    return [
+      ...orders,
+      {
+        id: transfer.id,
+        orderId: newOrderId,
+        source: "transfer",
+        email: recipientEmail,
+        event: packageGameEvent,
+        tickets: cleaned,
+      },
+    ];
+  }
+
+  if (!packageGameEvent) return orders;
+
+  return [
+    ...orders,
+    {
+      id: transfer.id,
+      orderId: newOrderId,
+      source: "transfer",
+      email: recipientEmail,
+      event: packageGameEvent,
+      tickets: cleaned,
+    },
+  ];
+}
+
+function mergeLocalTicketsIntoOrder(
+  apiOrder: OrderLike,
+  localOrder: OrderLike,
+): OrderLike {
+  const apiTickets = apiOrder.tickets ?? [];
+  const localTickets = localOrder.tickets ?? [];
+  const apiTicketIds = new Set(
+    apiTickets.map((ticket) => String(ticket.id ?? "")).filter(Boolean),
+  );
+  const localTicketIds = new Set(
+    localTickets.map((ticket) => String(ticket.id ?? "")).filter(Boolean),
+  );
+
+  if (localTicketIds.size < apiTicketIds.size) {
+    return { ...apiOrder, tickets: localTickets };
+  }
+
+  const extra = localTickets.filter((ticket) => {
+    const id = String(ticket.id ?? "");
+    return id && !apiTicketIds.has(id);
+  });
+  if (!extra.length) return apiOrder;
+
+  return {
+    ...apiOrder,
+    tickets: [...apiTickets, ...extra],
+  };
+}
+
+export function isSyntheticAcceptWalletOrder(order?: OrderLike | null): boolean {
+  const key = String(order?.orderId ?? order?.id ?? "").trim();
+  return key.startsWith("accepted-");
+}
+
+function ticketIdsInOrders(orders: OrderLike[]): Set<string> {
+  const ids = new Set<string>();
+  for (const order of orders) {
+    for (const ticket of order.tickets ?? []) {
+      const id = String(ticket.id ?? "").trim();
+      if (id) ids.add(id);
+    }
+  }
+  return ids;
+}
+
+/** Keep locally restored tickets when a wallet reload returns stale API orders. */
+export function mergeWalletOrdersPreservingLocalTickets(
+  apiOrders: OrderLike[],
+  localOrders: OrderLike[],
+): OrderLike[] {
+  if (!localOrders.length) return apiOrders;
+
+  const localByKey = new Map<string, OrderLike>();
+  for (const order of localOrders) {
+    const key = String(order.orderId ?? order.id ?? "").trim();
+    if (key) localByKey.set(key, order);
+  }
+
+  const merged = apiOrders.map((apiOrder) => {
+    const key = String(apiOrder.orderId ?? apiOrder.id ?? "").trim();
+    const local = key ? localByKey.get(key) : undefined;
+    return local ? mergeLocalTicketsIntoOrder(apiOrder, local) : apiOrder;
+  });
+
+  const apiKeys = new Set(
+    apiOrders
+      .map((order) => String(order.orderId ?? order.id ?? "").trim())
+      .filter(Boolean),
+  );
+  const mergedTicketIds = ticketIdsInOrders(merged);
+  for (const [key, local] of localByKey) {
+    if (apiKeys.has(key)) continue;
+    if ((local.tickets?.length ?? 0) === 0) continue;
+    if (
+      isSyntheticAcceptWalletOrder(local) &&
+      (local.tickets ?? []).every((ticket) =>
+        mergedTicketIds.has(String(ticket.id ?? "")),
+      )
+    ) {
+      continue;
+    }
+    merged.push(local);
+  }
+
+  return merged;
+}
+
+/** Drop transferred tickets from cached wallet orders after a local send. */
+export function removeTicketsFromWalletOrders(
+  orders: OrderLike[],
+  ticketIds: Array<number | string | undefined | null>,
+): OrderLike[] {
+  const idSet = new Set(
+    ticketIds
+      .filter((value) => value != null && value !== "")
+      .map((value) => String(value)),
+  );
+  if (!idSet.size) return orders;
+
+  return orders.map((order) => ({
+    ...order,
+    tickets: (order.tickets ?? []).filter(
+      (ticket) => !idSet.has(String(ticket.id ?? "")),
+    ),
+  }));
+}
+
 export function removeTicketsFromWalletDetails(
   details: Record<string, CartEventDetail>,
   ticketIds: Array<number | string | undefined | null>,
@@ -816,18 +1057,54 @@ export function packageOrderHasTicketTransfers(
 }
 
 export type PendingSentTransfer = {
+  id?: string | number;
   status?: string;
+  createdAt?: string;
+  emailAddressToUser?: string;
   orderId?: string | number;
+  eventUUID?: string;
   event?: EventLike | null;
   tickets?: TicketLike[];
   access_pass?: { uuid?: string; name?: string; type?: string };
   accessPass?: { uuid?: string; name?: string; type?: string };
+  accessPassId?: string | number;
 };
 
 export type PendingReceivedTransfer = PendingSentTransfer & {
-  id?: string | number;
   fromUserEmail?: string;
+  order?: OrderLike | null;
 };
+
+function stripPendingTransferTicketFields(ticket: TicketLike): TicketLike {
+  const raw = { ...(ticket as Record<string, unknown>) };
+  delete raw.transferStatus;
+  delete raw.transferredAt;
+  delete raw.ticketTransfer;
+  return raw as TicketLike;
+}
+
+function mergeTicketsIntoWalletOrder(
+  order: OrderLike,
+  tickets: TicketLike[],
+): OrderLike {
+  const orderTickets = order.tickets ?? [];
+  const existing = new Set(
+    orderTickets.map((ticket) => String(ticket.id ?? "")).filter(Boolean),
+  );
+  const toAdd = tickets.filter((ticket) => {
+    const id = String(ticket.id ?? "");
+    return id && !existing.has(id);
+  });
+  if (!toAdd.length) return order;
+
+  return {
+    ...order,
+    tickets: [
+      ...orderTickets,
+      ...toAdd.map(stripPendingTransferTicketFields),
+    ],
+  };
+}
 
 function transferTicketEventUUID(transfer: PendingSentTransfer) {
   const fromEvent = String(transfer.event?.uuid || "").trim();
@@ -859,8 +1136,9 @@ function incomingTransferDetailKey(
   transferId?: string | number,
 ) {
   const event = String(eventUUID || "").trim();
-  if (event) return `incoming:${event}`;
   const id = String(transferId ?? "").trim();
+  if (event && id) return `incoming:${event}:${id}`;
+  if (event) return `incoming:${event}`;
   return id ? `incoming:transfer:${id}` : "incoming:transfer:unknown";
 }
 
@@ -882,27 +1160,32 @@ function findReceivedTransferDetailKey(
   details: Record<string, CartEventDetail>,
   eventUUID: string,
   transferId?: string | number,
-  transferOrderId?: string,
+  _transferOrderId?: string,
   incomingTicketIds: string[] = [],
 ) {
-  const ticketIdSet = new Set(incomingTicketIds.map(String).filter(Boolean));
-  const matchesEvent = (row: CartEventDetail) =>
-    Boolean(eventUUID) && row.eventUUID === eventUUID;
-  const matchesTicket = (row: CartEventDetail) =>
-    ticketIdSet.size > 0 &&
-    row.tickets.some((ticket) =>
-      ticketIdSet.has(String(ticket.id ?? ticket.code)),
-    );
+  const transferKey = incomingTransferDetailKey(eventUUID, transferId);
+  const id = String(transferId ?? "").trim();
+  if (id) {
+    const byTransferId = Object.entries(details).find(
+      ([key, row]) =>
+        key === transferKey || String(row.incomingTransferId ?? "") === id,
+    )?.[0];
+    if (byTransferId) return byTransferId;
+  }
 
-  const incoming =
-    Object.entries(details).find(
+  const ticketIdSet = new Set(incomingTicketIds.map(String).filter(Boolean));
+  if (ticketIdSet.size) {
+    const byTicket = Object.entries(details).find(
       ([key, row]) =>
         key.startsWith("incoming:") &&
-        (matchesEvent(row) || matchesTicket(row)),
-    )?.[0] ?? null;
-  if (incoming) return incoming;
+        row.tickets.some((ticket) =>
+          ticketIdSet.has(String(ticket.id ?? ticket.code)),
+        ),
+    )?.[0];
+    if (byTicket) return byTicket;
+  }
 
-  return incomingTransferDetailKey(eventUUID, transferId);
+  return transferKey;
 }
 
 /** One pending incoming row per event — drop duplicate wallet/my-events rows. */
@@ -922,6 +1205,13 @@ function collapseDuplicateIncomingEventDetails(
   for (const [, pendingKeys] of pendingByEvent) {
     const keyList = pendingKeys.filter((key) => key.startsWith("incoming:"));
     if (keyList.length <= 1) continue;
+
+    const transferIds = new Set(
+      keyList
+        .map((key) => String(out[key]?.incomingTransferId ?? "").trim())
+        .filter(Boolean),
+    );
+    if (transferIds.size > 1) continue;
 
     const preferred = keyList[0]!;
     const pendingDetails = keyList
@@ -2039,12 +2329,16 @@ function findOwnedWalletDetailKeyForEvent(
   for (const [key, detail] of Object.entries(details)) {
     if (key.startsWith("sent:") || key.startsWith("incoming:")) continue;
     if (String(detail.eventUUID || "").trim() !== eventUUID) continue;
-    if (
-      normalizedOrderId &&
-      detail.orderId &&
-      String(detail.orderId) === normalizedOrderId
-    ) {
-      return key;
+    if (normalizedOrderId) {
+      if (detail.orderId && String(detail.orderId) === normalizedOrderId) {
+        return key;
+      }
+      if (
+        detail.orderRecordId != null &&
+        String(detail.orderRecordId) === normalizedOrderId
+      ) {
+        return key;
+      }
     }
     if (!detail.packageName && !fallback) fallback = key;
   }

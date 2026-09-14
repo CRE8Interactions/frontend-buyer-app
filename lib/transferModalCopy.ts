@@ -137,6 +137,18 @@ export function transferCancelReturnCopy(
   return `Cancelling the transfer returns ${entity} to your wallet and removes ${pronoun} from the recipient's account. If the recipient has claimed the transfer already, it can't be cancelled.`;
 }
 
+export function transferAcceptConfirmCopy(
+  kind: TransferModalKind,
+  count = 1,
+): string {
+  if (kind === "ticket") {
+    return count === 1
+      ? "Accepting adds this ticket to your wallet. Once accepted, the transfer is final and can't be undone."
+      : "Accepting adds these tickets to your wallet. Once accepted, the transfer is final and can't be undone.";
+  }
+  return `Accepting adds this ${kind} to your wallet. Once accepted, the transfer is final and can't be undone.`;
+}
+
 export function transferSuccessBody(
   kind: TransferModalKind,
   count: number,

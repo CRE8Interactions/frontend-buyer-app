@@ -293,8 +293,12 @@ export const getMyEvents = (options?: { fresh?: boolean }) =>
     options,
   );
 
-export function __resetMyEventsCacheForTests() {
+export function invalidateMyEventsCache() {
   myEventsCache.reset();
+}
+
+export function __resetMyEventsCacheForTests() {
+  invalidateMyEventsCache();
 }
 
 export const getMyUpcomingOrders = () =>

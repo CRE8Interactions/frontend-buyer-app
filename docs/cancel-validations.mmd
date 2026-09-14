@@ -2,27 +2,23 @@
 %% Source: components/organisms/SeasonTickets.tsx, lib/cancelTransferErrors.ts, lib/fieldValidation.ts
 %% API:    blocktickets/tickets/src/api/ticket-transfer/controllers/ticket-transfer.js (cancelTransfer)
 %%
-%% Response shape: 226/400/403 → { error: { message } } | 200 → success body
-%% 226 is HTTP IM Used (2xx), so axios resolves it; treat it as claimed, not success.
+%% Response shape: 400 → { error: { message } } | 200 → success body
 %%
 %% --- Blocktickets POST /ticket-transfers/cancel API responses ---
 %% | Status | API message | Displayed copy |
 %% | 200 | (success) | Close popup + "Transfer cancelled" toast |
-%% | 226 | Transfer has been claimed | Transfer has been claimed |
-%% | 400 | Transfer has been claimed | Transfer has been claimed |
-%% | 403 | You cannot cancel this transfer | We're experiencing technical difficulties. Please try again later. |
+%% | 400 | Transfer has already been claimed | Transfer has already been claimed |
+%% | 402 / 403 / other 4xx | (any other) | Could not cancel transfer. Please try again. |
 %% | 500 / other | (any other) | We're experiencing technical difficulties. Please try again later. |
 
 flowchart TD
-  open[Sent tab: Cancel transfer] --> confirm[Confirm cancel popup]
-  confirm --> submit[POST /ticket-transfers/cancel]
-  submit --> parse[parseCancelTransferApiError]
+  submit[POST /ticket-transfers/cancel] --> parse[parseCancelTransferApiError]
   parse --> apiFail{API response?}
   apiFail -->|200| success[Close popup + Transfer cancelled toast]
-  apiFail -->|226| claimed["Transfer has been claimed"]
-  apiFail -->|400| claimed
-  apiFail -->|other| apiNetwork["We're experiencing technical difficulties. Please try again later."]
+  apiFail -->|400| claimed["Transfer has already been claimed"]
+  apiFail -->|4xx other| cancelError["Could not cancel transfer. Please try again."]
+  apiFail -->|500 / other| apiNetwork["We're experiencing technical difficulties. Please try again later."]
 
   claimed --> showError[Show error in popup]
+  cancelError --> showError
   apiNetwork --> showError
-

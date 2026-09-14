@@ -46,9 +46,16 @@ import {
 } from "@/lib/fieldValidation";
 import { validateSubmittedEmail } from "@/lib/submitEmailValidation";
 import {
+  ACCEPT_TRANSFER_API_ERROR_MESSAGES,
+  isAcceptTransferAlreadyClaimedStatus,
+  parseAcceptTransferApiError,
+  parseAcceptTransferApiResponse,
+} from "@/lib/acceptTransferErrors";
+import {
   CANCEL_TRANSFER_API_ERROR_MESSAGES,
-  isCancelTransferClaimedStatus,
+  isCancelTransferAlreadyClaimedStatus,
   parseCancelTransferApiError,
+  parseCancelTransferApiResponse,
 } from "@/lib/cancelTransferErrors";
 import {
   PASS_TRANSFER_DISPLAY_COPY,
@@ -65,6 +72,7 @@ import {
   transferRecipientNotifyCopy,
   transferSuccessBody,
   transferSuccessTitle,
+  transferAcceptConfirmCopy,
   transferCancelReturnCopy,
   transferKindFromWalletRow,
   transferWalletRemovalCopy,
@@ -79,22 +87,36 @@ import {
   getMyAccessPasses,
   getMyEvents,
   getIncomingTransfers,
+  invalidateMyEventsCache,
+  getMyListings,
   getMyReceivedTransfers,
   getMySentTransfers,
   getOrder,
 } from "@/lib/api";
 import { getSession } from "@/lib/auth";
+import {
+  applyPersistedCancelRestores,
+  filterPersistedCancelledSentTransfers,
+  persistCancelledTransferRestore,
+  prunePersistedCancelRestores,
+  prunePersistedCancelledSentTransfers,
+} from "@/lib/walletCancelPersistence";
 import { imageUrl } from "@/lib/helpers";
 import {
+  applyAcceptedIncomingTransferToOrders,
+  isSyntheticAcceptWalletOrder,
   buildFlexPackSummaries,
   buildSeasonPackageSummaries,
   buildWalletEventDetails,
-  mergePendingTransferWalletDetails,
+  mergeWalletOrdersPreservingLocalTickets,
   removeTicketsFromWalletDetails,
+  removeTicketsFromWalletOrders,
+  restoreCancelledTransferTicketsToOrders,
   sortSeasonPackageSummaries,
   summarizeEventDetails,
   summarizeUpcomingWalletEvents,
   walletEventAvailabilityBadge,
+  type PendingReceivedTransfer,
   type PendingSentTransfer,
   formatCartOrderTotal,
   formatSeasonPassHolderName,
@@ -117,11 +139,27 @@ import {
 import {
   buildWalletReceivedTransferRows,
   buildWalletSentTransferRows,
+  enrichTransferRecordsFromOrders,
+  filterActiveTransferRecords,
+  clearLocallyResolvedIncomingTransfersForTests,
+  filterIncomingTransfersForWallet,
   filterPendingIncomingTransfers,
+  isPendingIncomingTransferRecord,
   filterVisibleWalletTransferRows,
+  markIncomingTransferLocallyResolved,
   filterWalletAccessPassesBySentTransfers,
+  mergeWalletReceivedTransferRecords,
+  mergeWalletSentTransferRecords,
   mergeWalletTransferRows,
+  findSentTransferRecordForCancel,
+  isOptimisticWalletTransferId,
+  promoteAcceptedIncomingTransferToReceived,
+  removeSentTransferRecordsForCancel,
+  resolveCancelTransferIdForApi,
+  resolveSentTransferIdFromApi,
+  resolveCreatedTransferMeta,
   unwrapTransferRecords,
+  type TransferLike,
   type WalletTransferRow,
 } from "@/lib/ticketTransfers";
 import {
@@ -814,6 +852,64 @@ const EVENT_CSS = `
 type Screen = "login" | "code" | "events" | "event" | "seasonPackage" | "package" | "listings" | "resale" | "giving" | "profile";
 type Sent = WalletTransferRow;
 
+type ConfirmAcceptTransfer = {
+  transferId: string | number;
+  title: string;
+  seat: string;
+  from?: string;
+  passKind?: TransferModalKind;
+  ticketCount?: number;
+  seatLines?: string[];
+  accessPassId?: string;
+  id?: string;
+};
+
+type ConfirmAcceptSource = "wallet-upcoming" | "wallet-event" | "transfers-received";
+
+function acceptTargetFromUpcoming(row: CartEventSummary): ConfirmAcceptTransfer {
+  const seatLines = row.ticketSeats ?? [];
+  return {
+    transferId: String(row.incomingTransferId ?? ""),
+    title: row.name,
+    seat:
+      seatLines.join(" · ") ||
+      `${row.ticketCount} ${row.ticketCount === 1 ? "ticket" : "tickets"}`,
+    from: row.incomingTransferFrom,
+    ticketCount: row.ticketCount,
+    seatLines,
+  };
+}
+
+function acceptTargetFromWalletRow(row: WalletTransferRow): ConfirmAcceptTransfer {
+  return {
+    transferId: row.id,
+    title: row.title,
+    seat: row.seat,
+    from: row.from,
+    passKind: row.passKind,
+    ticketCount: row.ticketCount,
+    seatLines: row.seatLines,
+    accessPassId: row.accessPassId,
+    id: row.id,
+  };
+}
+
+function acceptTargetFromEventDetail(ev: EventT): ConfirmAcceptTransfer {
+  const seatLines = ev.tickets
+    .map((ticket) => String(ticket.seat || "").trim())
+    .filter(Boolean);
+  return {
+    transferId: String(ev.incomingTransferId ?? ""),
+    title: ev.title,
+    seat:
+      seatLines.join(" · ") ||
+      `${ev.tickets.length} ${ev.tickets.length === 1 ? "ticket" : "tickets"}`,
+    from: ev.incomingTransferFrom,
+    ticketCount: ev.tickets.length,
+    seatLines,
+  };
+}
+
 function StackedSeatLines({
   lines,
   style,
@@ -842,15 +938,51 @@ function transferSeatLines(row: Pick<WalletTransferRow, "seatLines" | "seat">) {
   return row.seatLines?.length ? row.seatLines : row.seat ? [row.seat] : [];
 }
 
+function walletAvailabilityBadgeKind(
+  availability: CartEventSummary["availability"],
+  availabilityBadge?: CartEventSummary["availabilityBadge"],
+): CartEventSummary["availabilityBadge"] | null {
+  const badge = availabilityBadge || availability;
+  if (badge === "attended" || badge === "transferred" || badge === "past") {
+    return badge;
+  }
+  return null;
+}
+
 function upcomingAvailabilityLabel(
   availability: CartEventSummary["availability"],
   availabilityBadge?: CartEventSummary["availabilityBadge"],
 ) {
-  const badge = availabilityBadge || availability;
+  const badge = walletAvailabilityBadgeKind(availability, availabilityBadge);
   if (badge === "attended") return "Attended";
   if (badge === "transferred") return "Transferred";
   if (badge === "past") return "Past";
   return "";
+}
+
+/** Filled pill badges for non-actionable games — same weight as the Today chip. */
+function walletAvailabilityBadgeStyle(
+  kind: NonNullable<CartEventSummary["availabilityBadge"]>,
+): CSSProperties {
+  const base: CSSProperties = {
+    display: "inline-flex",
+    alignItems: "center",
+    fontSize: fluidSize(11),
+    fontWeight: 600,
+    textTransform: "uppercase",
+    letterSpacing: "0.10em",
+    borderRadius: 999,
+    padding: "4px 10px",
+    whiteSpace: "nowrap",
+    alignSelf: "flex-start",
+  };
+  if (kind === "attended") {
+    return { ...base, color: INK, background: ACCENT };
+  }
+  if (kind === "transferred") {
+    return { ...base, color: "#8a5300", background: "#fff0c8" };
+  }
+  return { ...base, color: INK, background: "#d8deea" };
 }
 type TransferWizard = {
   step: number;
@@ -860,6 +992,13 @@ type TransferWizard = {
   pass?: AccessPassSummary;
   passKind?: Exclude<TransferModalKind, "ticket">;
 };
+
+let walletApiHydratedInBrowserSession = false;
+
+/** Reset first-load API-only hydration (tests simulate a fresh browser session). */
+export function resetWalletApiHydrationForTests() {
+  walletApiHydratedInBrowserSession = false;
+}
 
 export default function SeasonTickets({
   initialScreen = "events",
@@ -927,14 +1066,30 @@ export default function SeasonTickets({
   const [confirmCancel, setConfirmCancel] = useState<Sent | null>(null);
   const [confirmCancelSaving, setConfirmCancelSaving] = useState(false);
   const [confirmCancelError, setConfirmCancelError] = useState("");
+  const [confirmAccept, setConfirmAccept] = useState<ConfirmAcceptTransfer | null>(
+    null,
+  );
+  const [confirmAcceptSaving, setConfirmAcceptSaving] = useState(false);
+  const [confirmAcceptError, setConfirmAcceptError] = useState("");
+  const [confirmAcceptSource, setConfirmAcceptSource] =
+    useState<ConfirmAcceptSource>("wallet-upcoming");
   const [sent, setSent] = useState<Sent[] | null>(null);
   const [sentTransferRecords, setSentTransferRecords] = useState<
     PendingSentTransfer[]
   >([]);
+  const sentTransferRecordsRef = useRef<PendingSentTransfer[]>([]);
+  const walletOrdersRef = useRef<OrderLike[]>([]);
+  const [incomingTransferRecords, setIncomingTransferRecords] = useState<
+    TransferLike[]
+  >([]);
+  const incomingTransferRecordsRef = useRef<TransferLike[]>([]);
+  const [receivedTransferRecords, setReceivedTransferRecords] = useState<
+    TransferLike[]
+  >([]);
+  const receivedTransferRecordsRef = useRef<TransferLike[]>([]);
+  const walletReloadGenerationRef = useRef(0);
+  const [walletOrders, setWalletOrders] = useState<OrderLike[]>([]);
   const [received, setReceived] = useState<Sent[] | null>(null);
-  const [acceptingTransferId, setAcceptingTransferId] = useState<string | null>(
-    null,
-  );
   const [toast, setToast] = useState<string | null>(null);
   const [upcomingEvents, setUpcomingEvents] = useState<CartEventSummary[]>([]);
   const [seasonPackages, setSeasonPackages] = useState<SeasonPackageSummary[]>([]);
@@ -969,6 +1124,11 @@ export default function SeasonTickets({
   const [eventDetails, setEventDetails] = useState<Record<string, CartEventDetail>>({});
   const [eventsChecked, setEventsChecked] = useState(false);
   const [eventsLoading, setEventsLoading] = useState(false);
+  const [resaleListingsChecked, setResaleListingsChecked] = useState(false);
+  const [resaleListingsLoading, setResaleListingsLoading] = useState(false);
+  const [sentTransferListLoading, setSentTransferListLoading] = useState(false);
+  const [receivedTransferListLoading, setReceivedTransferListLoading] =
+    useState(false);
   const [phoneDevice, setPhoneDevice] = useState(false);
   const passWalletTheme = passWallet ? phoneWalletTheme(passWallet) : null;
   const codeBoxes = useRef<(HTMLInputElement | null)[]>([]);
@@ -1037,7 +1197,96 @@ export default function SeasonTickets({
     setScreen(section);
   }, [screen, section]);
 
-  const reloadWalletEvents = useCallback(async () => {
+  const applyWalletSnapshot = useCallback(
+    (snapshot: {
+      orders: OrderLike[];
+      sentTransfers: TransferLike[];
+      incomingTransfers: TransferLike[];
+      receivedTransfers: TransferLike[];
+      accessPasses?: AccessPassLike[];
+      removedTicketIds?: Array<number | string>;
+      mergeSentTransfers?: boolean;
+      mergeReceivedTransfers?: boolean;
+    }) => {
+      const holderEmail = String(getSession()?.user?.email || email);
+      const sentAsPending = filterPersistedCancelledSentTransfers(
+        snapshot.mergeSentTransfers
+          ? mergeWalletSentTransferRecords(
+              snapshot.sentTransfers,
+              sentTransferRecordsRef.current,
+            )
+          : filterActiveTransferRecords(snapshot.sentTransfers),
+      ) as PendingSentTransfer[];
+      sentTransferRecordsRef.current = sentAsPending;
+      const receivedAsHistory = snapshot.mergeReceivedTransfers
+        ? mergeWalletReceivedTransferRecords(
+            snapshot.receivedTransfers,
+            receivedTransferRecordsRef.current,
+          )
+        : filterActiveTransferRecords(snapshot.receivedTransfers);
+      receivedTransferRecordsRef.current = receivedAsHistory;
+      const pendingIncoming = filterIncomingTransfersForWallet(
+        snapshot.incomingTransfers,
+        receivedAsHistory,
+      );
+      incomingTransferRecordsRef.current = pendingIncoming;
+      let { allDetails, upcomingEvents: walletUpcoming } =
+        buildWalletEventDetails(snapshot.orders, holderEmail, {
+          sentTransfers: sentAsPending,
+          incomingTransfers: pendingIncoming as PendingReceivedTransfer[],
+        });
+      if (snapshot.removedTicketIds?.length) {
+        allDetails = removeTicketsFromWalletDetails(
+          allDetails,
+          snapshot.removedTicketIds,
+        );
+        walletUpcoming = summarizeUpcomingWalletEvents(allDetails);
+      }
+
+      walletOrdersRef.current = snapshot.orders;
+      setWalletOrders(snapshot.orders);
+      setSentTransferRecords(sentAsPending);
+      setIncomingTransferRecords(pendingIncoming);
+      setReceivedTransferRecords(receivedAsHistory);
+      setEventDetails(allDetails);
+      setUpcomingEvents(walletUpcoming);
+      setSeasonPackages(
+        sortSeasonPackageSummaries(
+          buildSeasonPackageSummaries(snapshot.orders),
+          allDetails,
+        ),
+      );
+      setFlexPacks(buildFlexPackSummaries(snapshot.orders));
+      setSent(
+        buildWalletSentTransferRows(sentAsPending, snapshot.orders),
+      );
+      setReceived(
+        buildWalletReceivedTransferRows(
+          receivedAsHistory,
+          [],
+          snapshot.orders,
+        ),
+      );
+      if (snapshot.accessPasses) {
+        setAccessPasses(
+          buildAccessPassSummaries(
+            filterWalletAccessPassesBySentTransfers(
+              snapshot.accessPasses,
+              sentAsPending,
+            ),
+          ),
+        );
+      }
+    },
+    [email],
+  );
+
+  const reloadWalletTickets = useCallback(async (options?: {
+    fresh?: boolean;
+    background?: boolean;
+    trustApiOnly?: boolean;
+    fetchReceivedTransfers?: boolean;
+  }) => {
     const session = getSession();
     if (!session?.jwt) {
       setUpcomingEvents([]);
@@ -1050,69 +1299,76 @@ export default function SeasonTickets({
       setAccessPassDetails({});
       setAccessPassDetailChecked({});
       setEventDetails({});
+      setWalletOrders([]);
+      walletOrdersRef.current = [];
+      setSentTransferRecords([]);
+      sentTransferRecordsRef.current = [];
+      setIncomingTransferRecords([]);
+      incomingTransferRecordsRef.current = [];
+      setReceivedTransferRecords([]);
+      receivedTransferRecordsRef.current = [];
+      clearLocallyResolvedIncomingTransfersForTests();
       setEventsLoading(false);
       setEventsChecked(true);
       return;
     }
 
-    setEventsLoading(true);
+    const fetchReceived = options?.fetchReceivedTransfers === true;
+    if (!options?.background) setEventsLoading(true);
+    const reloadGeneration = walletReloadGenerationRef.current;
     try {
       const holderEmail = String(session.user?.email || email);
-      const [
-        res,
-        accessPassRes,
-        sentTransfersRes,
-        incomingTransfersRes,
-        receivedTransfersRes,
-      ] = await Promise.all([
-        getMyEvents().catch(() => null),
-        getMyAccessPasses("organizer").catch(() => null),
-        getMySentTransfers(holderEmail, 1).catch(() => null),
-        getIncomingTransfers().catch(() => null),
-        getMyReceivedTransfers(holderEmail, 1).catch(() => null),
-      ]);
-      const orders = unwrapList<OrderLike>(res?.data);
+      const [res, accessPassRes, incomingTransfersRes, receivedTransfersRes] =
+        await Promise.all([
+          getMyEvents({ fresh: options?.fresh }).catch(() => null),
+          getMyAccessPasses("organizer").catch(() => null),
+          getIncomingTransfers().catch(() => null),
+          fetchReceived
+            ? getMyReceivedTransfers(holderEmail, 1).catch(() => null)
+            : Promise.resolve(null),
+        ]);
+      const apiOrders = unwrapList<OrderLike>(res?.data);
+      const trustApiOnly = options?.trustApiOnly === true;
+      let orders = applyPersistedCancelRestores(apiOrders);
+      if (!trustApiOnly) {
+        orders = mergeWalletOrdersPreservingLocalTickets(
+          orders,
+          walletOrdersRef.current,
+        );
+      }
+      prunePersistedCancelRestores(apiOrders);
       const passes = accessPassRes
         ? unwrapList<AccessPassLike>(accessPassRes.data)
         : [];
-      const sentTransfers = sentTransfersRes
-        ? unwrapTransferRecords(sentTransfersRes.data)
-        : [];
+      if (reloadGeneration !== walletReloadGenerationRef.current) return;
+      // Sent transfers are fetched on My Transfers only; preserve in-session state here.
+      const rawSentTransfers = sentTransferRecordsRef.current;
+      if (trustApiOnly) {
+        prunePersistedCancelledSentTransfers(rawSentTransfers);
+        prunePersistedCancelRestores(apiOrders);
+      } else {
+        prunePersistedCancelledSentTransfers(rawSentTransfers);
+      }
+      const sentTransfers = trustApiOnly
+        ? filterActiveTransferRecords(rawSentTransfers)
+        : filterPersistedCancelledSentTransfers(
+            filterActiveTransferRecords(rawSentTransfers),
+          );
       const incomingTransfers = incomingTransfersRes
         ? unwrapTransferRecords(incomingTransfersRes.data)
         : [];
       const receivedTransfers = receivedTransfersRes
         ? unwrapTransferRecords(receivedTransfersRes.data)
-        : [];
-      const pendingIncoming = filterPendingIncomingTransfers(incomingTransfers);
-      const { allDetails, upcomingEvents: walletUpcoming } =
-        buildWalletEventDetails(orders, holderEmail, {
-          sentTransfers: sentTransfers as PendingSentTransfer[],
-          incomingTransfers: pendingIncoming,
-        });
-      setEventDetails(allDetails);
-      setUpcomingEvents(walletUpcoming);
-      setSeasonPackages(
-        sortSeasonPackageSummaries(
-          buildSeasonPackageSummaries(orders),
-          allDetails,
-        ),
-      );
-      setSentTransferRecords(sentTransfers as PendingSentTransfer[]);
-      setSent(buildWalletSentTransferRows(sentTransfers, orders));
-      setReceived(
-        buildWalletReceivedTransferRows(
-          receivedTransfers,
-          incomingTransfers,
-          orders,
-        ),
-      );
-      setFlexPacks(buildFlexPackSummaries(orders));
-      setAccessPasses(
-        buildAccessPassSummaries(
-          filterWalletAccessPassesBySentTransfers(passes, sentTransfers),
-        ),
-      );
+        : receivedTransferRecordsRef.current;
+      if (reloadGeneration !== walletReloadGenerationRef.current) return;
+      applyWalletSnapshot({
+        orders,
+        sentTransfers,
+        incomingTransfers,
+        receivedTransfers,
+        accessPasses: passes,
+        mergeReceivedTransfers: fetchReceived,
+      });
     } catch {
       setUpcomingEvents([]);
       setSeasonPackages([]);
@@ -1124,65 +1380,212 @@ export default function SeasonTickets({
       setAccessPassDetails({});
       setAccessPassDetailChecked({});
       setEventDetails({});
+      setWalletOrders([]);
+      walletOrdersRef.current = [];
+      setSentTransferRecords([]);
+      sentTransferRecordsRef.current = [];
+      setIncomingTransferRecords([]);
+      incomingTransferRecordsRef.current = [];
+      setReceivedTransferRecords([]);
+      receivedTransferRecordsRef.current = [];
     } finally {
       setSent((current) => current ?? []);
       setReceived((current) => current ?? []);
-      setEventsLoading(false);
+      if (!options?.background) setEventsLoading(false);
       setEventsChecked(true);
     }
-  }, [email]);
+  }, [applyWalletSnapshot, email]);
 
-  const refreshWalletTransferLists = useCallback(
-    async (optimisticSent?: Sent) => {
+  const lookupSentTransferApiId = useCallback(
+    async (
+      cancelRow: WalletTransferRow,
+      records: PendingSentTransfer[] = sentTransferRecordsRef.current,
+    ): Promise<string | number | null> => {
+      const directId = resolveCancelTransferIdForApi(
+        cancelRow.id,
+        records,
+        cancelRow,
+      );
+      if (
+        directId != null &&
+        !isOptimisticWalletTransferId(String(directId))
+      ) {
+        return directId;
+      }
+      const localRecord = findSentTransferRecordForCancel(
+        records,
+        cancelRow,
+        walletOrdersRef.current,
+      );
+      const stub =
+        localRecord ??
+        ({
+          id: cancelRow.id,
+          status: cancelRow.status,
+          emailAddressToUser: cancelRow.to,
+          accessPassId: cancelRow.accessPassId,
+          createdAt: cancelRow.createdAt,
+        } as PendingSentTransfer);
       const session = getSession();
-      const holderEmail = String(session?.user?.email || email);
-      const [sentRes, incomingRes, receivedRes, eventsRes, accessPassRes] =
-        await Promise.all([
-        getMySentTransfers(holderEmail, 1).catch(() => null),
-        getIncomingTransfers().catch(() => null),
-        getMyReceivedTransfers(holderEmail, 1).catch(() => null),
-        getMyEvents().catch(() => null),
-        getMyAccessPasses("organizer").catch(() => null),
-      ]);
-      const orders = unwrapList<OrderLike>(eventsRes?.data);
-      const refreshedSent = sentRes
-        ? unwrapTransferRecords(sentRes.data)
-        : [];
-      const refreshedIncoming = incomingRes
-        ? unwrapTransferRecords(incomingRes.data)
-        : [];
-      const refreshedReceived = receivedRes
-        ? unwrapTransferRecords(receivedRes.data)
-        : [];
-      const apiSentRows = buildWalletSentTransferRows(refreshedSent, orders);
-      setSent(
-        optimisticSent
-          ? mergeWalletTransferRows([optimisticSent], apiSentRows)
-          : apiSentRows,
-      );
-      setReceived(
-        buildWalletReceivedTransferRows(
-          refreshedReceived,
-          refreshedIncoming,
-          orders,
-        ),
-      );
-      const passes = accessPassRes
-        ? unwrapList<AccessPassLike>(accessPassRes.data)
-        : [];
-      setAccessPasses(
-        buildAccessPassSummaries(
-          filterWalletAccessPassesBySentTransfers(passes, refreshedSent),
-        ),
-      );
-      return { orders, refreshedSent, refreshedIncoming, refreshedReceived };
+      if (!session?.jwt) return null;
+      const holderEmail = String(session.user?.email || email);
+      try {
+        const sentRes = await getMySentTransfers(holderEmail, 1);
+        const apiRecords = sentRes ? unwrapTransferRecords(sentRes.data) : [];
+        return resolveSentTransferIdFromApi(stub, apiRecords);
+      } catch {
+        return null;
+      }
     },
     [email],
   );
 
+  const reloadListingsTransfers = useCallback(async () => {
+    const session = getSession();
+    if (!session?.jwt) {
+      setSentTransferListLoading(false);
+      setReceivedTransferListLoading(false);
+      return;
+    }
+    const holderEmail = String(session.user?.email || email);
+    const reloadGeneration = walletReloadGenerationRef.current;
+    setSentTransferListLoading(true);
+    setReceivedTransferListLoading(true);
+    try {
+      const [sentTransfersRes, receivedTransfersRes] = await Promise.all([
+        getMySentTransfers(holderEmail, 1).catch(() => null),
+        getMyReceivedTransfers(holderEmail, 1).catch(() => null),
+      ]);
+      if (reloadGeneration !== walletReloadGenerationRef.current) return;
+      const rawSentTransfers = sentTransfersRes
+        ? unwrapTransferRecords(sentTransfersRes.data)
+        : [];
+      prunePersistedCancelledSentTransfers(rawSentTransfers);
+      const sentTransfers = filterPersistedCancelledSentTransfers(
+        filterActiveTransferRecords(rawSentTransfers),
+      );
+      const receivedTransfers = receivedTransfersRes
+        ? unwrapTransferRecords(receivedTransfersRes.data)
+        : [];
+      if (reloadGeneration !== walletReloadGenerationRef.current) return;
+      applyWalletSnapshot({
+        orders: walletOrdersRef.current,
+        sentTransfers,
+        incomingTransfers: incomingTransferRecordsRef.current,
+        receivedTransfers,
+        mergeSentTransfers: true,
+        mergeReceivedTransfers: true,
+      });
+    } catch {
+      /* keep the current transfer lists on refresh failure */
+    } finally {
+      if (reloadGeneration === walletReloadGenerationRef.current) {
+        setSentTransferListLoading(false);
+        setReceivedTransferListLoading(false);
+      }
+    }
+  }, [applyWalletSnapshot, email]);
+
+  const reloadResaleListings = useCallback(async () => {
+    const session = getSession();
+    if (!session?.jwt) {
+      setResaleListingsLoading(false);
+      setResaleListingsChecked(true);
+      return;
+    }
+    const reloadGeneration = walletReloadGenerationRef.current;
+    setResaleListingsLoading(true);
+    try {
+      await getMyListings().catch(() => null);
+      if (reloadGeneration !== walletReloadGenerationRef.current) return;
+    } catch {
+      /* keep the current resale empty state on refresh failure */
+    } finally {
+      if (reloadGeneration === walletReloadGenerationRef.current) {
+        setResaleListingsLoading(false);
+        setResaleListingsChecked(true);
+      }
+    }
+  }, []);
+
+  const openReceivedTransfersTab = () => {
+    setListTab("received");
+  };
+
+  const syncWalletAfterTransferAction = useCallback(
+    async (snapshot: {
+      sentTransfers?: TransferLike[];
+      incomingTransfers?: TransferLike[];
+      receivedTransfers?: TransferLike[];
+      orders?: OrderLike[];
+      removedTicketIds?: Array<number | string>;
+      mergeSentTransfers?: boolean;
+      mergeReceivedTransfers?: boolean;
+    }) => {
+      const nextSent =
+        snapshot.sentTransfers ??
+        sentTransferRecordsRef.current;
+      const nextIncoming = snapshot.incomingTransfers ?? incomingTransferRecords;
+      const nextReceived =
+        snapshot.receivedTransfers ?? receivedTransferRecords;
+      const nextOrders = snapshot.orders ?? walletOrders;
+      applyWalletSnapshot({
+        orders: nextOrders,
+        sentTransfers: nextSent,
+        incomingTransfers: nextIncoming,
+        receivedTransfers: nextReceived,
+        removedTicketIds: snapshot.removedTicketIds,
+        mergeSentTransfers: snapshot.mergeSentTransfers,
+      });
+    },
+    [
+      applyWalletSnapshot,
+      incomingTransferRecords,
+      receivedTransferRecords,
+      walletOrders,
+    ],
+  );
+
   useEffect(() => {
-    void reloadWalletEvents();
-  }, [reloadWalletEvents]);
+    if (walletApiHydratedInBrowserSession) return;
+    walletApiHydratedInBrowserSession = true;
+    if (section === "listings") {
+      void reloadListingsTransfers();
+      return;
+    }
+    if (section === "resale") {
+      void reloadResaleListings();
+      return;
+    }
+    if (section === "events") {
+      void reloadWalletTickets({ trustApiOnly: true });
+    }
+  }, [
+    reloadWalletTickets,
+    reloadListingsTransfers,
+    reloadResaleListings,
+    section,
+  ]);
+
+  const prevWalletSectionRef = useRef(section);
+  useEffect(() => {
+    const prevSection = prevWalletSectionRef.current;
+    if (prevSection !== section && walletApiHydratedInBrowserSession) {
+      if (section === "listings") {
+        void reloadListingsTransfers();
+      } else if (section === "resale") {
+        void reloadResaleListings();
+      } else if (section === "events") {
+        void reloadWalletTickets({ trustApiOnly: true, fresh: true });
+      }
+    }
+    prevWalletSectionRef.current = section;
+  }, [
+    section,
+    reloadListingsTransfers,
+    reloadResaleListings,
+    reloadWalletTickets,
+  ]);
 
   useEffect(() => {
     const uuid = routedAccessPassUUID;
@@ -1487,7 +1890,7 @@ export default function SeasonTickets({
         initials: ev.teams[1]?.initials || ev.initials,
       };
 
-  const anyModal = !!modal || !!tf || !!confirmCancel || !!qrPass;
+  const anyModal = !!modal || !!tf || !!confirmCancel || !!confirmAccept || !!qrPass;
   useEffect(() => {
     document.body.style.overflow = anyModal ? "hidden" : "";
     return () => { document.body.style.overflow = ""; };
@@ -1499,18 +1902,123 @@ export default function SeasonTickets({
     toastT.current = setTimeout(() => setToast(null), 2400);
   };
 
-  const acceptIncomingTransfer = async (transferId: string | number) => {
-    const id = String(transferId);
-    if (!id || acceptingTransferId) return;
-    setAcceptingTransferId(id);
+  const openConfirmAccept = (
+    target: ConfirmAcceptTransfer,
+    source: ConfirmAcceptSource,
+  ) => {
+    const id = String(target.transferId ?? "").trim();
+    if (!id) return;
+    setConfirmAcceptError("");
+    setConfirmAcceptSaving(false);
+    setConfirmAcceptSource(source);
+    setConfirmAccept({ ...target, transferId: id });
+  };
+
+  const submitAcceptTransfer = async () => {
+    if (!confirmAccept?.transferId || confirmAcceptSaving) return;
+    const id = String(confirmAccept.transferId);
+    const source = confirmAcceptSource;
+    setConfirmAcceptSaving(true);
+    setConfirmAcceptError("");
+    const acceptedRecord =
+      incomingTransferRecordsRef.current.find(
+        (transfer) => String(transfer.id ?? "") === id,
+      ) ??
+      receivedTransferRecordsRef.current.find(
+        (transfer) => String(transfer.id ?? "") === id,
+      );
+    const dropPendingTransfer = async (acceptResponse?: unknown) => {
+      const nextIncoming = incomingTransferRecordsRef.current.filter(
+        (transfer) => String(transfer.id ?? "") !== id,
+      );
+      const nextReceived = promoteAcceptedIncomingTransferToReceived(
+        receivedTransferRecordsRef.current,
+        acceptedRecord,
+        acceptResponse,
+      );
+      markIncomingTransferLocallyResolved(id);
+      await syncWalletAfterTransferAction({
+        incomingTransfers: nextIncoming,
+        receivedTransfers: nextReceived,
+      });
+      if (source === "transfers-received") {
+        setReceived(
+          buildWalletReceivedTransferRows(
+            nextReceived,
+            [],
+            walletOrdersRef.current,
+          ),
+        );
+      }
+    };
+    const claimAcceptedTransfer = async (acceptResponse: unknown) => {
+      const nextIncoming = incomingTransferRecordsRef.current.filter(
+        (transfer) => String(transfer.id ?? "") !== id,
+      );
+      const nextReceived = promoteAcceptedIncomingTransferToReceived(
+        receivedTransferRecordsRef.current,
+        acceptedRecord,
+        acceptResponse,
+      );
+      markIncomingTransferLocallyResolved(id);
+      if (source === "transfers-received") {
+        await syncWalletAfterTransferAction({
+          incomingTransfers: nextIncoming,
+          receivedTransfers: nextReceived,
+        });
+        setReceived(
+          buildWalletReceivedTransferRows(
+            nextReceived,
+            [],
+            walletOrdersRef.current,
+          ),
+        );
+        return;
+      }
+      const enrichedAccepted = acceptedRecord
+        ? enrichTransferRecordsFromOrders(
+            [acceptedRecord],
+            walletOrdersRef.current,
+          )[0]
+        : undefined;
+      const nextOrders = applyAcceptedIncomingTransferToOrders(
+        walletOrdersRef.current,
+        enrichedAccepted as PendingReceivedTransfer | undefined,
+        email,
+      );
+      await syncWalletAfterTransferAction({
+        orders: nextOrders,
+        incomingTransfers: nextIncoming,
+        receivedTransfers: nextReceived,
+      });
+    };
     try {
-      await acceptIncomingTransfers({ transferId });
-      await reloadWalletEvents();
+      const res = await acceptIncomingTransfers({ transferId: id });
+      const alreadyClaimed = parseAcceptTransferApiResponse(res);
+      if (alreadyClaimed) {
+        setConfirmAcceptError(alreadyClaimed);
+        await dropPendingTransfer(res?.data);
+        return;
+      }
+      await claimAcceptedTransfer(res?.data);
+      invalidateMyEventsCache();
+      setConfirmAccept(null);
       flashToast("Transfer accepted");
-    } catch {
-      flashToast("Could not accept transfer. Please try again.");
+    } catch (err) {
+      const message = parseAcceptTransferApiError(err);
+      setConfirmAcceptError(message);
+      if (
+        isAcceptTransferAlreadyClaimedStatus(
+          (err as { response?: { status?: number } }).response?.status,
+        ) ||
+        message === ACCEPT_TRANSFER_API_ERROR_MESSAGES.alreadyClaimed
+      ) {
+        await dropPendingTransfer(
+          (err as { response?: { data?: unknown } }).response?.data,
+        );
+      }
     } finally {
-      setAcceptingTransferId(null);
+      setConfirmAcceptSaving(false);
     }
   };
 
@@ -1524,26 +2032,93 @@ export default function SeasonTickets({
     if (!confirmCancel?.id || confirmCancelSaving) return;
     setConfirmCancelSaving(true);
     setConfirmCancelError("");
+    let resolvedCancelIdForPersist: string | number | undefined;
+    const dropCancelledTransfer = async (
+      resolvedTransferId?: string | number,
+    ) => {
+      const currentSentRecords = sentTransferRecordsRef.current;
+      const cancelledRecord = findSentTransferRecordForCancel(
+        currentSentRecords,
+        confirmCancel,
+        walletOrders,
+      ) as PendingSentTransfer | undefined;
+      const nextSent = removeSentTransferRecordsForCancel(
+        currentSentRecords,
+        confirmCancel,
+        walletOrders,
+      );
+      const nextOrders = restoreCancelledTransferTicketsToOrders(
+        walletOrders,
+        cancelledRecord,
+      );
+      const persistIds = new Set(
+        [
+          cancelledRecord?.id,
+          resolvedTransferId,
+          confirmCancel.id,
+        ]
+          .map((value) => String(value ?? "").trim())
+          .filter(Boolean),
+      );
+      for (const transferId of persistIds) {
+        persistCancelledTransferRestore({
+          ...(cancelledRecord ?? {}),
+          id: transferId,
+          orderId: cancelledRecord?.orderId,
+          tickets: cancelledRecord?.tickets,
+        });
+      }
+      await syncWalletAfterTransferAction({
+        sentTransfers: nextSent,
+        orders: nextOrders,
+      });
+      setSent(buildWalletSentTransferRows(nextSent, nextOrders));
+    };
     try {
-      const res = await cancelMyTransfers(confirmCancel.id);
-      if (isCancelTransferClaimedStatus(res.status)) {
-        setConfirmCancelError(CANCEL_TRANSFER_API_ERROR_MESSAGES.transferClaimed);
-        await reloadWalletEvents();
+      let resolvedCancelId = resolveCancelTransferIdForApi(
+        confirmCancel.id,
+        sentTransferRecordsRef.current,
+        confirmCancel,
+      );
+      if (
+        resolvedCancelId == null ||
+        isOptimisticWalletTransferId(String(resolvedCancelId))
+      ) {
+        resolvedCancelId = await lookupSentTransferApiId(confirmCancel);
+      }
+      if (
+        resolvedCancelId == null ||
+        isOptimisticWalletTransferId(String(resolvedCancelId))
+      ) {
+        setConfirmCancelError(CANCEL_TRANSFER_API_ERROR_MESSAGES.couldNotCancel);
         return;
       }
-      await reloadWalletEvents();
+      resolvedCancelIdForPersist = resolvedCancelId;
+      const res = await cancelMyTransfers(resolvedCancelId);
+      const alreadyClaimed = parseCancelTransferApiResponse(res);
+      if (alreadyClaimed) {
+        setConfirmCancelError(alreadyClaimed);
+        await dropCancelledTransfer(resolvedCancelId);
+        return;
+      }
+      await dropCancelledTransfer(resolvedCancelId);
+      invalidateMyEventsCache();
       setConfirmCancel(null);
       flashToast("Transfer cancelled");
     } catch (err) {
       if ((err as { code?: string }).code === "INVALID_TRANSFER_ID") {
-        await reloadWalletEvents();
-        setConfirmCancelError("Refresh the page and try again.");
+        setConfirmCancelError(CANCEL_TRANSFER_API_ERROR_MESSAGES.couldNotCancel);
         return;
       }
       const message = parseCancelTransferApiError(err);
       setConfirmCancelError(message);
-      if (message === CANCEL_TRANSFER_API_ERROR_MESSAGES.transferClaimed) {
-        await reloadWalletEvents();
+      if (
+        isCancelTransferAlreadyClaimedStatus(
+          (err as { response?: { status?: number } }).response?.status,
+        ) ||
+        message === CANCEL_TRANSFER_API_ERROR_MESSAGES.alreadyClaimed
+      ) {
+        await dropCancelledTransfer(resolvedCancelIdForPersist);
       }
     } finally {
       setConfirmCancelSaving(false);
@@ -1551,13 +2126,14 @@ export default function SeasonTickets({
   };
 
   const renderAcceptTransferButton = (
-    transferId: string | number | undefined,
+    target: ConfirmAcceptTransfer,
+    source: ConfirmAcceptSource,
     style?: CSSProperties,
     layout: "inline" | "footer" = "inline",
   ) => {
-    if (transferId == null || transferId === "") return null;
-    const id = String(transferId);
-    const accepting = acceptingTransferId === id;
+    const id = String(target.transferId ?? "").trim();
+    if (!id) return null;
+    const accepting = confirmAcceptSaving && String(confirmAccept?.transferId) === id;
     const baseStyle: CSSProperties =
       layout === "footer"
         ? {
@@ -1572,8 +2148,8 @@ export default function SeasonTickets({
             padding: "2px 0",
             minHeight: "auto",
             whiteSpace: "nowrap",
-            cursor: acceptingTransferId ? "default" : "pointer",
-            opacity: acceptingTransferId && !accepting ? 0.55 : 1,
+            cursor: confirmAcceptSaving ? "default" : "pointer",
+            opacity: confirmAcceptSaving && !accepting ? 0.55 : 1,
           }
         : {
             fontFamily: "inherit",
@@ -1587,8 +2163,8 @@ export default function SeasonTickets({
             padding: "10px 16px",
             minHeight: 42,
             whiteSpace: "nowrap",
-            cursor: acceptingTransferId ? "default" : "pointer",
-            opacity: acceptingTransferId && !accepting ? 0.55 : 1,
+            cursor: confirmAcceptSaving ? "default" : "pointer",
+            opacity: confirmAcceptSaving && !accepting ? 0.55 : 1,
           };
     return (
       <button
@@ -1596,13 +2172,13 @@ export default function SeasonTickets({
         onClick={(event) => {
           event.preventDefault();
           event.stopPropagation();
-          void acceptIncomingTransfer(transferId);
+          openConfirmAccept(target, source);
         }}
-        disabled={Boolean(acceptingTransferId)}
+        disabled={confirmAcceptSaving}
         aria-busy={accepting || undefined}
         style={{ ...baseStyle, ...style }}
       >
-        {accepting ? "Accepting…" : "Accept transfer"}
+        Accept transfer
       </button>
     );
   };
@@ -2176,9 +2752,16 @@ export default function SeasonTickets({
   }) => {
     const available = row.availability === "available";
     const pendingIncoming = row.pendingIncomingTransfer === true;
+    const orderNavReady =
+      Boolean(row.orderId) &&
+      !isSyntheticAcceptWalletOrder({ orderId: row.orderId });
     const href = packageUUID
-      ? walletPackageEventPath(row.orderId, packageUUID, row.eventUUID)
-      : walletEventTicketsPath(row.orderId);
+      ? orderNavReady
+        ? walletPackageEventPath(row.orderId, packageUUID, row.eventUUID)
+        : ""
+      : orderNavReady
+        ? walletEventTicketsPath(row.orderId)
+        : "";
     const eventRowLayout = {
       position: "relative" as const,
       overflow: "hidden" as const,
@@ -2223,7 +2806,12 @@ export default function SeasonTickets({
               {row.ticketCount} {row.ticketCount === 1 ? "ticket" : "tickets"}
             </span>
           ) : (
-            <span style={{ fontSize: fluidSize(12), fontWeight: 600, color: MUTE, border: `1px solid ${LINE}`, borderRadius: 8, padding: "5px 10px", whiteSpace: "nowrap", alignSelf: "flex-start" }}>
+            <span
+              style={walletAvailabilityBadgeStyle(
+                walletAvailabilityBadgeKind(row.availability, row.availabilityBadge) ||
+                  "transferred",
+              )}
+            >
               {upcomingAvailabilityLabel(row.availability, row.availabilityBadge) ||
                 "Transferred"}
             </span>
@@ -2327,7 +2915,7 @@ export default function SeasonTickets({
               background: "#fff",
             }}
           >
-            {renderAcceptTransferButton(row.incomingTransferId, {
+            {renderAcceptTransferButton(acceptTargetFromUpcoming(row), "wallet-upcoming", {
               width: "100%",
               textAlign: "center",
             }, "footer")}
@@ -2658,7 +3246,31 @@ export default function SeasonTickets({
                 : when}
             </div>
           </div>
-          <span style={{ flexShrink: 0, borderRadius: 7, padding: "5px 8px", fontSize: fluidSize(10), fontWeight: 600, color: INK, background: ACCENT }}>
+          <span
+            style={
+              highlighted && pass.seat !== "Ticket"
+                ? {
+                    flexShrink: 0,
+                    borderRadius: 999,
+                    padding: "4px 10px",
+                    fontSize: fluidSize(11),
+                    fontWeight: 600,
+                    color: INK,
+                    background: ACCENT,
+                  }
+                : badge === "transferred" || badge === "attended" || badge === "past"
+                  ? { flexShrink: 0, ...walletAvailabilityBadgeStyle(badge) }
+                  : {
+                      flexShrink: 0,
+                      borderRadius: 999,
+                      padding: "4px 10px",
+                      fontSize: fluidSize(11),
+                      fontWeight: 600,
+                      color: INK,
+                      background: ACCENT,
+                    }
+            }
+          >
             {highlighted && pass.seat !== "Ticket" ? pass.seat : status}
           </span>
         </div>
@@ -2785,16 +3397,16 @@ export default function SeasonTickets({
     );
   };
 
-  const WalletPageTitle = ({ children }: { children: string }) => (
+  const WalletPageTitle = (title: string) => (
     <div style={{ display: "flex", alignItems: "flex-end", justifyContent: "space-between", gap: 16 }}>
-      <h1 style={{ margin: 0, fontSize: fluidSize(42), fontWeight: 600, letterSpacing: "-0.03em", lineHeight: 1 }}>{children}</h1>
+      <h1 style={{ margin: 0, fontSize: fluidSize(42), fontWeight: 600, letterSpacing: "-0.03em", lineHeight: 1 }}>{title}</h1>
       {!mobile && <div style={{ fontSize: fluidSize(13), color: MUTE, whiteSpace: "nowrap" }}>{email}</div>}
     </div>
   );
 
   const Events = () => (
     <div style={{ maxWidth: 1100, margin: "0 auto", padding: bodyPad, display: "flex", flexDirection: "column", gap: 18 }}>
-      <WalletPageTitle>My tickets</WalletPageTitle>
+      {WalletPageTitle("My tickets")}
 
       <div className="st-noscroll" style={{ display: "flex", gap: 6, overflowX: "auto", paddingBottom: 2 }}>
         {tabDefs.map((t) => (
@@ -3304,7 +3916,7 @@ export default function SeasonTickets({
         shellClassName="st-mobile-ticket"
         data-testid="wallet-event-accept-transfer-footer"
       >
-        {renderAcceptTransferButton(ev.incomingTransferId, {
+        {renderAcceptTransferButton(acceptTargetFromEventDetail(ev), "wallet-event", {
           width: "100%",
           minHeight: 50,
           fontSize: fluidSize(16),
@@ -3458,7 +4070,7 @@ export default function SeasonTickets({
               <div style={{ fontSize: fluidSize(13), lineHeight: 1.5, color: SUB }}>
                 Accept this transfer to add {ev.tickets.length === 1 ? "this ticket" : "these tickets"} to your account.
               </div>
-              {renderAcceptTransferButton(ev.incomingTransferId, {
+              {renderAcceptTransferButton(acceptTargetFromEventDetail(ev), "wallet-event", {
                 width: "100%",
                 textAlign: "center",
               })}
@@ -3733,17 +4345,36 @@ export default function SeasonTickets({
 
   /* ---------- transfers (listings) ---------- */
   const listData = listTab === "received" ? receivedList : sentList;
+  const listingsTabsPending =
+    sentTransferListLoading || receivedTransferListLoading;
+  const transfersListPending = listingsTabsPending;
   const Listings = () => (
     <div style={{ maxWidth: 1100, margin: "0 auto", padding: bodyPad, display: "flex", flexDirection: "column", gap: 18 }}>
-      <WalletPageTitle>Transfers</WalletPageTitle>
+      {WalletPageTitle("Transfers")}
       <div style={{ display: "flex", gap: 6 }}>
         {[{ id: "active" as const, label: "Sent", n: sentList.length }, { id: "received" as const, label: "Received", n: receivedList.length }].map((t) => (
-          <button key={t.id} onClick={() => setListTab(t.id)} style={chip(listTab === t.id)}>
-            {t.label}{pillCount(t.n, listTab === t.id)}
+          <button
+            key={t.id}
+            onClick={() => {
+              if (t.id === "received") openReceivedTransfersTab();
+              else setListTab(t.id);
+            }}
+            style={chip(listTab === t.id)}
+          >
+            {t.label}
+            <span
+              aria-hidden={listingsTabsPending || undefined}
+              style={{
+                ...pillCountStyle(listTab === t.id),
+                visibility: listingsTabsPending ? "hidden" : "visible",
+              }}
+            >
+              {listingsTabsPending ? "" : t.n}
+            </span>
           </button>
         ))}
       </div>
-      {!eventsChecked || eventsLoading ? (
+      {transfersListPending ? (
         <WalletTicketsBlocksLoading routeDestination />
       ) : (
       <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
@@ -3772,7 +4403,10 @@ export default function SeasonTickets({
                 <div style={{ fontSize: fluidSize(13), color: SUB }}>{listTab === "received" ? "From " + t.from + (t.on ? " · received on " + t.on : "") : "To " + t.to + " · sent " + t.on}</div>
               </div>
               {listTab === "received" && pending
-                ? renderAcceptTransferButton(t.id)
+                ? renderAcceptTransferButton(
+                    acceptTargetFromWalletRow(t),
+                    "transfers-received",
+                  )
                 : null}
               {listTab !== "received" && pending && (
                 <button onClick={() => openConfirmCancel(t)} style={{ fontFamily: "inherit", flexShrink: 0, fontSize: fluidSize(13), fontWeight: 600, color: DANGER, background: "#fff", border: "1px solid rgba(194,57,74,0.28)", borderRadius: 999, padding: "10px 16px", minHeight: 42, whiteSpace: "nowrap", cursor: "pointer" }}>Cancel transfer</button>
@@ -3802,7 +4436,7 @@ export default function SeasonTickets({
   } as const;
   const Resale = () => (
     <div style={{ maxWidth: 1100, margin: "0 auto", padding: bodyPad, display: "flex", flexDirection: "column", gap: 18 }}>
-      <WalletPageTitle>Listings</WalletPageTitle>
+      {WalletPageTitle("Listings")}
       <div
         role="tablist"
         aria-label="Listing status"
@@ -3849,7 +4483,7 @@ export default function SeasonTickets({
           );
         })}
       </div>
-      {!eventsChecked || eventsLoading ? (
+      {!resaleListingsChecked || resaleListingsLoading ? (
         <WalletTicketsBlocksLoading routeDestination />
       ) : (
       <div style={walletEmptyState}>
@@ -3871,7 +4505,7 @@ export default function SeasonTickets({
   ] : [];
   const Giving = () => (
     <div style={{ maxWidth: 1100, margin: "0 auto", padding: bodyPad, display: "flex", flexDirection: "column", gap: 18 }}>
-      <WalletPageTitle>Giving</WalletPageTitle>
+      {WalletPageTitle("Giving")}
       <div style={{ ...card, borderRadius: 24, boxShadow: "0 1px 2px rgba(5,27,53,0.05), 0 20px 46px -22px rgba(5,27,53,0.45)", padding: cardPad, display: "flex", flexDirection: "column", gap: 16 }}>
         <div style={{ display: "grid", gridTemplateColumns: mobile ? "1fr 1fr" : "repeat(3, 1fr)", gap: 10 }}>
           {givingStats.map((s) => (
@@ -4033,7 +4667,7 @@ export default function SeasonTickets({
     const title =
       kind === "season pass" && seatLine ? `${pass.name} · ${seatLine}` : pass.name;
     return (
-      <div onClick={closeQrPass} style={overlay}>
+      <div style={overlay}>
         <div
           role="dialog"
           aria-modal="true"
@@ -4103,7 +4737,7 @@ export default function SeasonTickets({
   ];
 
   const DetailsModal = () => (
-    <div onClick={() => setModal(null)} style={overlay}>
+    <div style={overlay}>
       <div className={mobile ? "st-details-sheet" : undefined} onClick={(e) => e.stopPropagation()} style={{ ...sheet, maxHeight: "88vh", overflowY: "auto", gap: 16 }}>
         <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 12 }}>
           <h2 style={{ margin: 0, fontSize: fluidSize(22), fontWeight: 600, letterSpacing: "-0.02em" }}>Ticket details</h2>
@@ -4125,7 +4759,7 @@ export default function SeasonTickets({
   const TicketQrModal = () => {
     if (!detail?.code) return null;
     return (
-      <div onClick={() => setModal(null)} style={overlay}>
+      <div style={overlay}>
         <div
           role="dialog"
           aria-modal="true"
@@ -4158,7 +4792,7 @@ export default function SeasonTickets({
   };
 
   const FieldModal = () => (
-    <div onClick={() => setModal(null)} style={overlay}>
+    <div style={overlay}>
       <div onClick={(e) => e.stopPropagation()} style={sheet}>
         <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 12 }}>
           <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
@@ -4236,94 +4870,114 @@ export default function SeasonTickets({
       setTfError("");
       try {
         if (tf.passKind && tf.pass?.accessPassUUID) {
-          await createTicketTransfer({
+          const optimisticPassId = `access-pass-transfer-${tf.pass.accessPassUUID}`;
+          const passResponse = await createTicketTransfer({
             accessPassId: tf.pass.accessPassUUID,
             email: tf.email,
           });
+          const passCreatedAt = new Date().toISOString();
+          const { id: transferId, createdAt } = resolveCreatedTransferMeta(
+            passResponse.data,
+            { id: optimisticPassId, createdAt: passCreatedAt },
+          );
           const seatLine =
             tf.passKind === "season pass" ? "1 Season pass" : "1 Access pass";
           const entry: Sent = {
-            id: `access-pass-transfer-${tf.pass.accessPassUUID}`,
+            id: transferId,
             to: tf.email,
             title: tf.pass.name,
             seat: seatLine,
             seatLines: [seatLine],
             on: "Just now",
-            createdAt: new Date().toISOString(),
+            createdAt,
             status: "pending",
             passKind: tf.passKind,
+            accessPassId: tf.pass.accessPassUUID,
+          };
+          const passStub: PendingSentTransfer = {
+            id: transferId,
+            status: "pending",
+            createdAt,
+            emailAddressToUser: tf.email,
+            accessPassId: tf.pass.accessPassUUID,
+            access_pass: {
+              uuid: tf.pass.accessPassUUID,
+              name: tf.pass.name,
+              type: tf.passKind === "season pass" ? "package" : "organizer",
+            },
           };
           setSent((current) => mergeWalletTransferRows([entry], current ?? []));
-          try {
-            await refreshWalletTransferLists(entry);
-            await reloadWalletEvents();
-          } catch {
-            // Transfer succeeded; wallet lists can refresh on the next visit.
-          }
+          await syncWalletAfterTransferAction({
+            sentTransfers: [passStub],
+            mergeSentTransfers: true,
+          });
+          invalidateMyEventsCache();
         } else {
-          await createTicketTransfer({
+          const transferWalletOrderId =
+            tfEv?.orderId ?? tfEv?.cartId ?? String(tfEv?.orderRecordId ?? "");
+          const transferApiOrderId =
+            tfEv?.orderRecordId ??
+            walletOrders.find(
+              (order) =>
+                String(order.orderId || "") === transferWalletOrderId ||
+                String(order.id || "") === transferWalletOrderId,
+            )?.id;
+          const transferEventUUID =
+            tfEv?.eventUUID ?? tfEv?.event?.uuid ?? undefined;
+          const optimisticTransferId = `transfer-${tfSelectedTickets
+            .map(({ key }) => key)
+            .join("-")}`;
+          const ticketResponse = await createTicketTransfer({
             email: tf.email,
-            orderId: tfEv?.orderRecordId ?? tfEv?.cartId,
+            orderId: transferApiOrderId,
             event: tfEv?.event,
             ticketIds: tfSelectedTickets.map(({ ticket }) => ticket.id),
-            eventUUID: tfEv?.eventUUID,
+            eventUUID: transferEventUUID,
           });
+          const ticketCreatedAt = new Date().toISOString();
+          const { id: transferId, createdAt } = resolveCreatedTransferMeta(
+            ticketResponse.data,
+            { id: optimisticTransferId, createdAt: ticketCreatedAt },
+          );
           const seatLines = tfSelectedTickets.map(({ ticket }) => ticket.seat);
           const entry: Sent = {
-            id: `transfer-${tfSelectedTickets.map(({ key }) => key).join("-")}`,
+            id: transferId,
             to: tf.email,
             title: tfEv?.title || "",
             seat: seatLines.join(", "),
             seatLines,
             on: "Just now",
-            createdAt: new Date().toISOString(),
+            createdAt,
             status: "pending",
             ticketCount: tfSelectedTickets.length,
           };
+          const sentStub: PendingSentTransfer = {
+            id: transferId,
+            status: "pending",
+            createdAt,
+            emailAddressToUser: tf.email,
+            orderId: transferWalletOrderId,
+            eventUUID: transferEventUUID,
+            event: tfEv?.event,
+            tickets: tfSelectedTickets.map(({ ticket }) => ({
+              ...(ticket.raw ?? {}),
+              id: ticket.id,
+              eventUUID: transferEventUUID,
+            })),
+          };
+          const removedTicketIds = tfSelectedTickets.map(({ ticket }) => ticket.id);
+          const nextOrders = removeTicketsFromWalletOrders(
+            walletOrders,
+            removedTicketIds,
+          );
           setSent((current) => mergeWalletTransferRows([entry], current ?? []));
-
-          try {
-            const pendingTicketIds = tfSelectedTickets.map(({ ticket }) => ticket.id);
-            const sentStub: PendingSentTransfer = {
-              status: "pending",
-              orderId: tfEv?.orderRecordId ?? tfEv?.cartId,
-              event: tfEv?.event,
-              tickets: tfSelectedTickets.map(({ ticket }) => ({
-                ...(ticket.raw ?? {}),
-                id: ticket.id,
-                eventUUID: tfEv?.eventUUID,
-              })),
-            };
-
-            const res = await getMyEvents();
-            const orders = unwrapList<OrderLike>(res?.data);
-            const holderEmail = String(getSession()?.user?.email || email);
-            let mergedDetails: Record<string, CartEventDetail> = {};
-            setEventDetails((current) => {
-              const wallet = buildWalletEventDetails(orders, holderEmail, {
-                sentTransfers: [sentStub],
-              });
-              mergedDetails = removeTicketsFromWalletDetails(
-                mergePendingTransferWalletDetails(wallet.allDetails, current),
-                pendingTicketIds,
-              );
-              return mergedDetails;
-            });
-            setSentTransferRecords((current) => [...current, sentStub]);
-            setUpcomingEvents(summarizeUpcomingWalletEvents(mergedDetails));
-            setSeasonPackages(
-              sortSeasonPackageSummaries(
-                buildSeasonPackageSummaries(orders),
-                mergedDetails,
-              ),
-            );
-            setFlexPacks(buildFlexPackSummaries(orders));
-
-            await refreshWalletTransferLists(entry);
-            await reloadWalletEvents();
-          } catch {
-            // The transfer succeeded; stale wallet data can refresh next visit.
-          }
+          await syncWalletAfterTransferAction({
+            sentTransfers: [sentStub],
+            mergeSentTransfers: true,
+            orders: nextOrders,
+            removedTicketIds,
+          });
+          invalidateMyEventsCache();
         }
 
         setTf({ ...tf, step: 4 });
@@ -4392,7 +5046,7 @@ export default function SeasonTickets({
     seatNo: fluidSize(22),
   };
   const TransferModal = () => (
-    <div onClick={() => { if (!tfSaving) setTf(null); }} style={{ ...overlay, zIndex: 85, alignItems: mobile ? "flex-end" : "center", padding: mobile ? 0 : 32 }}>
+    <div style={{ ...overlay, zIndex: 85, alignItems: mobile ? "flex-end" : "center", padding: mobile ? 0 : 32 }}>
       <div className={mobile ? "st-sheet-up st-transfer-sheet" : undefined} onClick={(e) => e.stopPropagation()} style={{ ...sheet, maxWidth: mobile ? "100%" : 460, width: "100%", maxHeight: mobile ? "92vh" : "88vh", overflowY: "auto", borderRadius: mobile ? "26px 26px 0 0" : 26, paddingBottom: mobile ? "calc(22px + env(safe-area-inset-bottom))" : 22 }}>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, paddingBottom: 16, borderBottom: "1px solid rgba(5,27,53,0.08)" }}>
           <h2 style={{ margin: 0, fontSize: transferModalType.title, fontWeight: 600, letterSpacing: "-0.02em" }}>Transfer</h2>
@@ -4558,7 +5212,7 @@ export default function SeasonTickets({
   );
 
   const VouchersModal = () => (
-    <div onClick={() => setModal(null)} style={overlay}>
+    <div style={overlay}>
       <div onClick={(e) => e.stopPropagation()} style={{ ...sheet, maxHeight: "88vh", gap: 16 }}>
         <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 12 }}>
           <h2 style={{ margin: 0, fontSize: fluidSize(22), fontWeight: 600, letterSpacing: "-0.02em" }}>Your vouchers</h2>
@@ -4577,6 +5231,119 @@ export default function SeasonTickets({
     </div>
   );
 
+  const ConfirmAccept = () => {
+    const acceptPopupBtnDisabled: CSSProperties = confirmAcceptSaving
+      ? { opacity: 0.55, cursor: "default" }
+      : {};
+    const acceptEntity = transferKindFromWalletRow(confirmAccept ?? {});
+
+    return (
+      <div
+        style={{
+          ...overlay,
+          zIndex: 88,
+          alignItems: mobile ? "flex-end" : "center",
+          padding: mobile ? 0 : 32,
+        }}
+      >
+        <div
+          className={mobile ? "st-transfer-sheet" : undefined}
+          onClick={(e) => e.stopPropagation()}
+          style={{
+            ...sheet,
+            maxWidth: mobile ? "100%" : 420,
+            width: "100%",
+            maxHeight: mobile ? "92vh" : undefined,
+            overflowY: mobile ? "auto" : undefined,
+            borderRadius: mobile ? "26px 26px 0 0" : 26,
+            padding: 24,
+            paddingBottom: mobile
+              ? "calc(24px + env(safe-area-inset-bottom))"
+              : 24,
+            gap: 16,
+          }}
+          aria-busy={confirmAcceptSaving || undefined}
+        >
+          <h2 style={{ margin: 0, fontSize: fluidSize(21), fontWeight: 600, letterSpacing: "-0.02em", lineHeight: 1.2 }}>Accept this transfer?</h2>
+          <p style={{ margin: 0, fontSize: fluidSize(14), lineHeight: 1.6, color: SUB }}>
+            {transferAcceptConfirmCopy(acceptEntity.kind, acceptEntity.count)}
+          </p>
+          <div style={{ display: "flex", flexDirection: "column", gap: 3, background: FIELD, borderRadius: 14, padding: "14px 16px" }}>
+            <div style={{ fontSize: fluidSize(14), fontWeight: 600 }}>{confirmAccept?.title}</div>
+            <div style={{ fontSize: fluidSize(13), color: SUB }}>{confirmAccept?.seat}</div>
+            {confirmAccept?.from ? (
+              <div style={{ fontSize: fluidSize(13), color: SUB }}>{`From ${confirmAccept.from}`}</div>
+            ) : null}
+          </div>
+          {confirmAcceptError ? (
+            <div role="alert" style={{ fontSize: fluidSize(13), color: DANGER }}>
+              {confirmAcceptError}
+            </div>
+          ) : null}
+          <div style={{ display: "flex", gap: 8 }}>
+            <button
+              type="button"
+              disabled={confirmAcceptSaving}
+              onClick={() => {
+                if (confirmAcceptSaving) return;
+                setConfirmAccept(null);
+              }}
+              style={{
+                fontFamily: "inherit",
+                flex: 1,
+                fontSize: fluidSize(15),
+                fontWeight: 600,
+                color: INK,
+                background: "#f1f3f8",
+                border: "none",
+                borderRadius: 999,
+                padding: 14,
+                minHeight: 48,
+                cursor: "pointer",
+                ...acceptPopupBtnDisabled,
+              }}
+            >
+              Not now
+            </button>
+            <button
+              type="button"
+              disabled={confirmAcceptSaving}
+              aria-busy={confirmAcceptSaving || undefined}
+              onClick={() => void submitAcceptTransfer()}
+              style={{
+                fontFamily: "inherit",
+                flex: 1,
+                display: "inline-flex",
+                alignItems: "center",
+                justifyContent: "center",
+                gap: 8,
+                fontSize: fluidSize(15),
+                fontWeight: 600,
+                color: INK,
+                background: ACCENT,
+                border: "none",
+                borderRadius: 999,
+                padding: 14,
+                minHeight: 48,
+                cursor: "pointer",
+                ...acceptPopupBtnDisabled,
+              }}
+            >
+              <ButtonBusyContents
+                loading={confirmAcceptSaving}
+                loadingLabel="Accepting…"
+                spinnerColor={INK}
+                trackColor="rgba(5,27,53,0.2)"
+              >
+                Accept transfer
+              </ButtonBusyContents>
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
   const ConfirmCancel = () => {
     const cancelPopupBtnDisabled: CSSProperties = confirmCancelSaving
       ? { opacity: 0.55, cursor: "default" }
@@ -4589,14 +5356,29 @@ export default function SeasonTickets({
 
     return (
       <div
-        onClick={() => {
-          if (!confirmCancelSaving) setConfirmCancel(null);
+        style={{
+          ...overlay,
+          zIndex: 88,
+          alignItems: mobile ? "flex-end" : "center",
+          padding: mobile ? 0 : 32,
         }}
-        style={{ ...overlay, zIndex: 88 }}
       >
         <div
+          className={mobile ? "st-transfer-sheet" : undefined}
           onClick={(e) => e.stopPropagation()}
-          style={{ ...sheet, maxWidth: 420, borderRadius: 26, padding: 24, gap: 16 }}
+          style={{
+            ...sheet,
+            maxWidth: mobile ? "100%" : 420,
+            width: "100%",
+            maxHeight: mobile ? "92vh" : undefined,
+            overflowY: mobile ? "auto" : undefined,
+            borderRadius: mobile ? "26px 26px 0 0" : 26,
+            padding: 24,
+            paddingBottom: mobile
+              ? "calc(24px + env(safe-area-inset-bottom))"
+              : 24,
+            gap: 16,
+          }}
           aria-busy={confirmCancelSaving || undefined}
         >
           <h2 style={{ margin: 0, fontSize: fluidSize(21), fontWeight: 600, letterSpacing: "-0.02em", lineHeight: 1.2 }}>Cancel this transfer?</h2>
@@ -4714,6 +5496,7 @@ export default function SeasonTickets({
       {modal === "vouchers" && VouchersModal()}
       {tf && TransferModal()}
       {qrPass && AccessPassQrModal()}
+      {confirmAccept && ConfirmAccept()}
       {confirmCancel && ConfirmCancel()}
 
       {toast && (

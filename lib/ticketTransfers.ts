@@ -57,6 +57,8 @@ export type TransferLike = {
     email?: string;
   } | null;
   event?: EventLike | { name?: string; venue?: { timezone?: string } } | null;
+  /** Authoritative game uuid on package transfers; the `event` relation may be order.event. */
+  eventUUID?: string;
   tickets?: TicketLike[];
   access_pass?: {
     uuid?: string;
@@ -99,11 +101,12 @@ export function normalizeTransferRecord(raw: unknown): TransferLike | null {
     strapiRel<TransferOrderLike>(row.order) ??
     (row.order as TransferOrderLike | undefined);
   const tickets = normalizeTicketList(row.tickets);
+  const eventUUID = String(row.eventUUID || row.event_uuid || "").trim() || undefined;
   let event =
     strapiRel<EventLike>(row.event) ??
     (row.event as EventLike | undefined) ??
     null;
-  event = resolveTransferEvent({ event, tickets, order });
+  event = resolveTransferEvent({ event, eventUUID, tickets, order });
   const orderId = row.orderId ?? order?.orderId ?? order?.id;
   const accessPass =
     strapiRel<{
@@ -130,6 +133,7 @@ export function normalizeTransferRecord(raw: unknown): TransferLike | null {
     emailAddressToUser: String(row.emailAddressToUser || row.email || ""),
     fromUserEmail: String(row.fromUserEmail || fromUser?.email || ""),
     fromUser,
+    eventUUID,
     event,
     tickets,
     accessPassId:
@@ -167,28 +171,29 @@ export function filterWalletAccessPassesBySentTransfers<
 }
 
 function transferTicketEventUUID(
-  transfer: Pick<TransferLike, "event" | "tickets">,
+  transfer: Pick<TransferLike, "eventUUID" | "event" | "tickets">,
 ) {
-  const fromEvent = String(transfer.event?.uuid || "").trim();
-  if (fromEvent) return fromEvent;
+  const fromRecord = String(transfer.eventUUID || "").trim();
+  if (fromRecord) return fromRecord;
   for (const ticket of transfer.tickets ?? []) {
     const uuid = String(ticket.eventUUID || ticket.eventId || "").trim();
     if (uuid) return uuid;
   }
-  return "";
+  return String(transfer.event?.uuid || "").trim();
 }
 
 /** Package transfers often omit `event`; borrow the matching package game. */
 export function resolveTransferEvent(transfer: {
   event?: TransferLike["event"];
+  eventUUID?: string;
   tickets?: TicketLike[];
   order?: TransferOrderLike | null;
 }): EventLike | null {
   const direct = transfer.event;
-  if (direct?.name) return direct;
-
   const eventUUID = transferTicketEventUUID(transfer);
+  const directUUID = String(direct?.uuid || "").trim();
   const packageEvents = transfer.order?.package?.events ?? [];
+
   if (eventUUID && packageEvents.length) {
     const match = packageEvents.find(
       (row) => String(row.uuid || "") === eventUUID,
@@ -196,11 +201,44 @@ export function resolveTransferEvent(transfer: {
     if (match) return match;
   }
 
-  if (transfer.order?.event?.name) return transfer.order.event;
-  if (direct?.uuid || eventUUID) {
-    return direct?.uuid ? direct : { uuid: eventUUID };
+  if (direct?.name) {
+    if (!eventUUID || !directUUID || directUUID === eventUUID) {
+      return direct;
+    }
   }
-  return null;
+
+  const orderEvent = transfer.order?.event;
+  if (orderEvent?.name) {
+    const orderEventUUID = String(orderEvent.uuid || "").trim();
+    if (!eventUUID || orderEventUUID === eventUUID) {
+      return orderEvent;
+    }
+  }
+
+  if (eventUUID) {
+    if (directUUID === eventUUID && direct) return direct;
+    if (direct?.name || direct?.start) {
+      return { ...direct, uuid: eventUUID };
+    }
+    return { uuid: eventUUID };
+  }
+
+  return direct?.name ? direct : null;
+}
+
+function preferTransferStatus(
+  left?: string,
+  right?: string,
+): string {
+  const a = normalizedStatus(left);
+  const b = normalizedStatus(right);
+  if (INACTIVE.has(a) || INACTIVE.has(b)) {
+    return INACTIVE.has(a) ? String(left || "") : String(right || "");
+  }
+  if (COMPLETED.has(a) || COMPLETED.has(b)) {
+    return COMPLETED.has(a) ? String(left || "") : String(right || "");
+  }
+  return String(left || right || "");
 }
 
 function mergeTransferRecord(
@@ -229,10 +267,55 @@ function mergeTransferRecord(
     tickets,
     access_pass: accessPass,
     accessPass,
-    status: primary.status || secondary.status,
+    eventUUID: primary.eventUUID || secondary.eventUUID,
+    status: preferTransferStatus(primary.status, secondary.status),
     createdAt: primary.createdAt || secondary.createdAt,
     transferedOn: primary.transferedOn || secondary.transferedOn,
   };
+}
+
+function readAcceptTransferResponseMeta(acceptResponse?: unknown): {
+  status?: string;
+  transferedOn?: string;
+} {
+  if (!acceptResponse || typeof acceptResponse !== "object") return {};
+  const body =
+    (acceptResponse as { data?: unknown }).data ?? acceptResponse;
+  if (!body || typeof body !== "object") return {};
+  const row = body as Record<string, unknown>;
+  const status = String(row.status || "").trim();
+  const transferedOn = String(row.transferedOn || row.transferredOn || "").trim();
+  return {
+    status: status || undefined,
+    transferedOn: transferedOn || undefined,
+  };
+}
+
+/** Move an accepted pending incoming transfer into received history as claimed. */
+export function promoteAcceptedIncomingTransferToReceived(
+  receivedTransfers: TransferLike[],
+  acceptedRecord: TransferLike | undefined,
+  acceptResponse?: unknown,
+): TransferLike[] {
+  if (!acceptedRecord) return receivedTransfers;
+  const id = String(acceptedRecord.id ?? "").trim();
+  if (!id) return receivedTransfers;
+
+  const responseMeta = readAcceptTransferResponseMeta(acceptResponse);
+
+  const claimedRecord: TransferLike = {
+    ...acceptedRecord,
+    status: responseMeta.status || "claimed",
+    transferedOn:
+      responseMeta.transferedOn ||
+      acceptedRecord.transferedOn ||
+      new Date().toISOString(),
+  };
+
+  const withoutDuplicate = receivedTransfers.filter(
+    (transfer) => String(transfer.id ?? "").trim() !== id,
+  );
+  return mergeTransferRecords(withoutDuplicate, [claimedRecord]);
 }
 
 /** Dedupe transfer rows from incoming and history endpoints. */
@@ -359,6 +442,91 @@ export function filterPendingIncomingTransfers(
   return transfers.filter(isPendingIncomingTransferRecord);
 }
 
+const locallyResolvedIncomingTransferIds = new Set<string>();
+
+/** Keep accepted/cancelled incoming rows out of wallet reloads until the API catches up. */
+export function markIncomingTransferLocallyResolved(transferId: string) {
+  const id = String(transferId ?? "").trim();
+  if (id) locallyResolvedIncomingTransferIds.add(id);
+}
+
+export function unmarkIncomingTransferLocallyResolved(transferId: string) {
+  const id = String(transferId ?? "").trim();
+  if (id) locallyResolvedIncomingTransferIds.delete(id);
+}
+
+/** @internal Test hook — clears locally resolved incoming transfer ids between cases. */
+export function clearLocallyResolvedIncomingTransfersForTests() {
+  locallyResolvedIncomingTransferIds.clear();
+}
+
+function inactiveReceivedTransferIds(receivedTransfers: TransferLike[]) {
+  return new Set(
+    receivedTransfers
+      .filter((transfer) => INACTIVE.has(normalizedStatus(transfer.status)))
+      .map((transfer) => String(transfer.id ?? "").trim())
+      .filter(Boolean),
+  );
+}
+
+function receivedHistoryResolvedTransferIds(receivedTransfers: TransferLike[]) {
+  return new Set(
+    receivedTransfers
+      .filter((transfer) => {
+        const status = normalizedStatus(transfer.status);
+        return INACTIVE.has(status) || COMPLETED.has(status);
+      })
+      .map((transfer) => String(transfer.id ?? "").trim())
+      .filter(Boolean),
+  );
+}
+
+/** Drop incoming rows resolved on the received-history list (claimed/cancelled). */
+export function filterIncomingTransfersAgainstReceivedHistory(
+  incomingTransfers: TransferLike[],
+  receivedTransfers: TransferLike[],
+): TransferLike[] {
+  const resolvedIds = receivedHistoryResolvedTransferIds(receivedTransfers);
+  if (!resolvedIds.size) return incomingTransfers;
+  return incomingTransfers.filter(
+    (transfer) =>
+      !resolvedIds.has(String(transfer.id ?? "").trim()),
+  );
+}
+
+export function filterIncomingTransfersForWallet(
+  incomingTransfers: TransferLike[],
+  receivedTransfers: TransferLike[] = [],
+): TransferLike[] {
+  const pending = filterPendingIncomingTransfers(
+    filterIncomingTransfersAgainstReceivedHistory(
+      incomingTransfers,
+      receivedTransfers,
+    ),
+  );
+  const apiIds = new Set(
+    pending
+      .map((transfer) => String(transfer.id ?? "").trim())
+      .filter(Boolean),
+  );
+  const receivedPendingIds = new Set(
+    filterPendingIncomingTransfers(receivedTransfers)
+      .map((transfer) => String(transfer.id ?? "").trim())
+      .filter(Boolean),
+  );
+  for (const id of locallyResolvedIncomingTransferIds) {
+    if (!apiIds.has(id) && !receivedPendingIds.has(id)) {
+      locallyResolvedIncomingTransferIds.delete(id);
+    }
+  }
+  return pending.filter(
+    (transfer) =>
+      !locallyResolvedIncomingTransferIds.has(
+        String(transfer.id ?? "").trim(),
+      ),
+  );
+}
+
 export function filterActiveTransferRecords(
   transfers: TransferLike[],
 ): TransferLike[] {
@@ -392,6 +560,7 @@ export function enrichTransferRecordsFromOrders(
 
     const event = resolveTransferEvent({
       event: transfer.event,
+      eventUUID: transfer.eventUUID,
       tickets: transfer.tickets,
       order,
     });
@@ -430,32 +599,280 @@ export function buildWalletSentTransferRows(
 ): WalletTransferRow[] {
   return mapSentTransferRows(
     enrichTransferRecordsFromOrders(
-      filterActiveTransferRecords(sentTransfers),
+      dedupeActivePendingSentByTicketIds(filterActiveTransferRecords(sentTransfers)),
       orders,
     ),
   );
 }
 
-export function buildWalletReceivedTransferRows(
-  receivedTransfers: TransferLike[],
-  incomingTransfers: TransferLike[],
-  orders: OrderLike[] = [],
-): WalletTransferRow[] {
-  const pendingIncoming = filterPendingIncomingTransfers(incomingTransfers);
-  const merged = mergeTransferRecords(
-    filterActiveTransferRecords(receivedTransfers),
-    pendingIncoming,
+/** Keep API received history while preserving optimistic claimed rows. */
+export function mergeWalletReceivedTransferRecords(
+  apiReceived: TransferLike[],
+  localReceived: TransferLike[],
+): TransferLike[] {
+  const localById = new Map<string, TransferLike>();
+  for (const transfer of localReceived) {
+    const id = String(transfer.id ?? "").trim();
+    if (id) localById.set(id, transfer);
+  }
+
+  const apiActive = filterActiveTransferRecords(apiReceived).map((transfer) => {
+    const id = String(transfer.id ?? "").trim();
+    if (!id) return transfer;
+    const local = localById.get(id);
+    const localClaimed =
+      local && COMPLETED.has(normalizedStatus(local.status));
+    if (localClaimed && isPendingIncomingTransferRecord(transfer)) {
+      return local;
+    }
+    return transfer;
+  });
+
+  const apiIds = new Set(
+    apiActive
+      .map((transfer) => String(transfer.id ?? "").trim())
+      .filter(Boolean),
   );
-  return mapReceivedTransferRows(
-    enrichTransferRecordsFromOrders(merged, orders),
+  const apiInactiveIds = new Set(
+    apiReceived
+      .filter((transfer) => INACTIVE.has(normalizedStatus(transfer.status)))
+      .map((transfer) => String(transfer.id ?? "").trim())
+      .filter(Boolean),
+  );
+  const localClaimed = localReceived.filter((transfer) => {
+    const id = String(transfer.id ?? "").trim();
+    if (!id || apiInactiveIds.has(id)) return false;
+    if (!COMPLETED.has(normalizedStatus(transfer.status))) return false;
+    if (apiIds.has(id)) return false;
+    return true;
+  });
+  return mergeTransferRecords(apiActive, localClaimed);
+}
+
+export function transferTicketIdsKey(transfer: TransferLike): string {
+  return (transfer.tickets ?? [])
+    .map((ticket) => String(ticket.id ?? "").trim())
+    .filter(Boolean)
+    .sort()
+    .join("|");
+}
+
+function sentTransferRecipientEmail(transfer: TransferLike): string {
+  return String(transfer.emailAddressToUser || "").trim().toLowerCase();
+}
+
+/** Match an optimistic sent stub to the real Blocktickets transfer row. */
+export function findReconciledSentTransferMatch(
+  stub: TransferLike,
+  apiRecords: TransferLike[],
+  usedApiIds: Set<string> = new Set(),
+): TransferLike | undefined {
+  const stubEmail = sentTransferRecipientEmail(stub);
+  const stubPassId = transferAccessPassId(stub);
+  const stubTicketKey = transferTicketIdsKey(stub);
+
+  return apiRecords.find((api) => {
+    const apiId = String(api.id ?? "").trim();
+    if (!apiId || usedApiIds.has(apiId)) return false;
+    if (sentTransferRecipientEmail(api) !== stubEmail) return false;
+    if (stubPassId) {
+      return transferAccessPassId(api) === stubPassId;
+    }
+    if (!stubTicketKey) return false;
+    return transferTicketIdsKey(api) === stubTicketKey;
+  });
+}
+
+/** Resolve a sent transfer's real API id without merging lists (cancel preflight). */
+export function resolveSentTransferIdFromApi(
+  localRow: TransferLike,
+  apiRecords: TransferLike[],
+): string | number | null {
+  const localId = String(localRow.id ?? "").trim();
+  if (localId && !isOptimisticWalletTransferId(localId)) {
+    return /^\d+$/.test(localId) ? Number(localId) : localId;
+  }
+  const match = findReconciledSentTransferMatch(
+    localRow,
+    filterActiveTransferRecords(apiRecords),
+  );
+  const resolved = String(match?.id ?? "").trim();
+  if (!resolved || isOptimisticWalletTransferId(resolved)) return null;
+  return /^\d+$/.test(resolved) ? Number(resolved) : resolved;
+}
+
+/** Replace optimistic sent ids with real API ids after POST /ticket-transfers. */
+export function reconcileOptimisticSentTransfers(
+  localRecords: TransferLike[],
+  apiRecords: TransferLike[],
+): TransferLike[] {
+  const apiPending = filterActiveTransferRecords(apiRecords);
+  const usedApiIds = new Set<string>();
+
+  return localRecords.map((local) => {
+    const localId = String(local.id ?? "").trim();
+    if (!localId || !isOptimisticWalletTransferId(localId)) return local;
+    const match = findReconciledSentTransferMatch(
+      local,
+      apiPending,
+      usedApiIds,
+    );
+    if (!match) return local;
+    usedApiIds.add(String(match.id ?? "").trim());
+    return {
+      ...mergeTransferRecord(local, match),
+      id: match.id,
+    };
+  });
+}
+
+/** Only one pending sent transfer per ticket should be visible. */
+export function dedupeActivePendingSentByTicketIds(
+  transfers: TransferLike[],
+): TransferLike[] {
+  const claimedOrOther: TransferLike[] = [];
+  const pendingByTicketKey = new Map<string, TransferLike>();
+
+  for (const transfer of transfers) {
+    if (INACTIVE.has(normalizedStatus(transfer.status))) {
+      continue;
+    }
+    if (COMPLETED.has(normalizedStatus(transfer.status))) {
+      claimedOrOther.push(transfer);
+      continue;
+    }
+    const ticketKey = transferTicketIdsKey(transfer);
+    const passId = transferAccessPassId(transfer);
+    const dedupeKey = ticketKey
+      ? ticketKey
+      : passId
+        ? `pass:${passId}`
+        : "";
+    if (!dedupeKey) {
+      claimedOrOther.push(transfer);
+      continue;
+    }
+    const existing = pendingByTicketKey.get(dedupeKey);
+    if (!existing) {
+      pendingByTicketKey.set(dedupeKey, transfer);
+      continue;
+    }
+    const existingTime = moment(existing.createdAt || 0).valueOf();
+    const nextTime = moment(transfer.createdAt || 0).valueOf();
+    if (nextTime >= existingTime) {
+      pendingByTicketKey.set(dedupeKey, transfer);
+    }
+  }
+
+  return [...claimedOrOther, ...pendingByTicketKey.values()];
+}
+
+/** Keep API sent history while preserving optimistic pending rows. */
+export function mergeWalletSentTransferRecords(
+  apiSent: TransferLike[],
+  localSent: TransferLike[],
+): TransferLike[] {
+  const apiActive = filterActiveTransferRecords(apiSent);
+  const reconciledLocal = reconcileOptimisticSentTransfers(localSent, apiActive);
+  const apiActiveIds = new Set(
+    apiActive
+      .map((transfer) => String(transfer.id ?? "").trim())
+      .filter(Boolean),
+  );
+  const apiInactiveIds = new Set(
+    apiSent
+      .filter((transfer) => INACTIVE.has(normalizedStatus(transfer.status)))
+      .map((transfer) => String(transfer.id ?? "").trim())
+      .filter(Boolean),
+  );
+  const inactiveTicketScopeKey = (transfer: TransferLike) => {
+    const ticketKey = transferTicketIdsKey(transfer);
+    if (ticketKey) return ticketKey;
+    const passId = transferAccessPassId(transfer);
+    return passId ? `pass:${passId}` : "";
+  };
+  const apiInactiveTicketKeys = new Set(
+    apiSent
+      .filter((transfer) => INACTIVE.has(normalizedStatus(transfer.status)))
+      .map(inactiveTicketScopeKey)
+      .filter(Boolean),
+  );
+  const usedApiMatchIds = new Set<string>();
+  const localPending = reconciledLocal.filter((transfer) => {
+    const id = String(transfer.id ?? "").trim();
+    if (id && apiInactiveIds.has(id)) return false;
+    const scopedTicketKey = inactiveTicketScopeKey(transfer);
+    if (scopedTicketKey && apiInactiveTicketKeys.has(scopedTicketKey)) return false;
+    if (INACTIVE.has(normalizedStatus(transfer.status))) return false;
+    if (COMPLETED.has(normalizedStatus(transfer.status))) return false;
+    if (id && apiActiveIds.has(id)) return false;
+    if (findReconciledSentTransferMatch(transfer, apiActive, usedApiMatchIds)) {
+      return false;
+    }
+    return (
+      isOptimisticWalletTransferId(id) ||
+      !normalizedStatus(transfer.status) ||
+      PENDING.has(normalizedStatus(transfer.status))
+    );
+  });
+  return dedupeActivePendingSentByTicketIds(
+    mergeTransferRecords(apiActive, localPending),
   );
 }
 
-/** Hide cancelled/rejected transfers from wallet transfer tabs. */
+/** Only one pending transfer per ticket should be visible on Received. */
+export function dedupeActivePendingReceivedByTicketIds(
+  transfers: TransferLike[],
+): TransferLike[] {
+  const claimedOrOther: TransferLike[] = [];
+  const pendingByTicketKey = new Map<string, TransferLike>();
+
+  for (const transfer of transfers) {
+    if (!isPendingIncomingTransferRecord(transfer)) {
+      claimedOrOther.push(transfer);
+      continue;
+    }
+    const ticketKey = transferTicketIdsKey(transfer);
+    if (!ticketKey) {
+      claimedOrOther.push(transfer);
+      continue;
+    }
+    const existing = pendingByTicketKey.get(ticketKey);
+    if (!existing) {
+      pendingByTicketKey.set(ticketKey, transfer);
+      continue;
+    }
+    const existingTime = moment(existing.createdAt || 0).valueOf();
+    const nextTime = moment(transfer.createdAt || 0).valueOf();
+    if (nextTime >= existingTime) {
+      pendingByTicketKey.set(ticketKey, transfer);
+    }
+  }
+
+  return [...claimedOrOther, ...pendingByTicketKey.values()];
+}
+
+/** Blocktickets My Transfers → Received uses GET /ticket-transfers only (not /incoming). */
+export function buildWalletReceivedTransferRows(
+  receivedTransfers: TransferLike[],
+  _incomingTransfers: TransferLike[] = [],
+  orders: OrderLike[] = [],
+): WalletTransferRow[] {
+  const activeReceived = dedupeActivePendingReceivedByTicketIds(
+    mergeTransferRecords(filterActiveTransferRecords(receivedTransfers)),
+  );
+  return mapReceivedTransferRows(
+    enrichTransferRecordsFromOrders(activeReceived, orders),
+  );
+}
+
+/** Hide cancelled/rejected transfers; list newest `createdAt` first. */
 export function filterVisibleWalletTransferRows(
   rows: WalletTransferRow[],
 ): WalletTransferRow[] {
-  return rows.filter((row) => row.status === "pending" || row.status === "claimed");
+  return sortWalletTransferRows(
+    rows.filter((row) => row.status === "pending" || row.status === "claimed"),
+  );
 }
 
 function transferTitle(transfer: TransferLike) {
@@ -607,6 +1024,96 @@ export function isOptimisticWalletTransferId(id: string): boolean {
   return /^transfer-/.test(id) || /^access-pass-transfer-/.test(id);
 }
 
+export function resolveCreatedTransferId(
+  data: unknown,
+  fallback: string,
+): string {
+  return resolveCreatedTransferMeta(data, {
+    id: fallback,
+    createdAt: "",
+  }).id;
+}
+
+export function resolveCreatedTransferMeta(
+  data: unknown,
+  fallback: { id: string; createdAt: string },
+): { id: string; createdAt: string } {
+  const normalized = normalizeTransferRecord(
+    (data as { data?: unknown } | null | undefined)?.data ?? data,
+  );
+  const id = String(normalized?.id ?? "").trim();
+  const createdAt = String(normalized?.createdAt ?? "").trim();
+  return {
+    id: id || fallback.id,
+    createdAt: createdAt || fallback.createdAt,
+  };
+}
+
+function optimisticTransferTicketIds(cancelId: string): string[] {
+  if (!isOptimisticWalletTransferId(cancelId)) return [];
+  const suffix = String(cancelId).replace(/^transfer-/, "");
+  if (!suffix) return [];
+  return suffix.split("-").filter(Boolean);
+}
+
+function recordTicketIds(record: TransferLike): string[] {
+  return (record.tickets ?? [])
+    .map((ticket) => String(ticket.id ?? "").trim())
+    .filter(Boolean);
+}
+
+function recordMatchesOptimisticCancel(
+  record: TransferLike,
+  cancelId: string,
+): boolean {
+  const ticketIds = optimisticTransferTicketIds(cancelId);
+  if (!ticketIds.length) return false;
+  const recordIds = recordTicketIds(record);
+  return (
+    ticketIds.length === recordIds.length &&
+    ticketIds.every((id) => recordIds.includes(id))
+  );
+}
+
+function sentTransferRecordMatchesCancel(
+  record: TransferLike,
+  _cancelRow: WalletTransferRow,
+  cancelId: string,
+  _orders: OrderLike[],
+): boolean {
+  const recordId = String(record.id ?? "").trim();
+  if (cancelId && recordId && recordId === cancelId) {
+    return true;
+  }
+  if (!cancelId || !isOptimisticWalletTransferId(cancelId)) {
+    return false;
+  }
+  return recordMatchesOptimisticCancel(record, cancelId);
+}
+
+export function findSentTransferRecordForCancel(
+  records: TransferLike[],
+  cancelRow: WalletTransferRow,
+  orders: OrderLike[] = [],
+): TransferLike | undefined {
+  const cancelId = String(cancelRow.id ?? "").trim();
+  return records.find((record) =>
+    sentTransferRecordMatchesCancel(record, cancelRow, cancelId, orders),
+  );
+}
+
+export function removeSentTransferRecordsForCancel(
+  records: TransferLike[],
+  cancelRow: WalletTransferRow,
+  orders: OrderLike[] = [],
+): TransferLike[] {
+  const cancelId = String(cancelRow.id ?? "").trim();
+  return records.filter(
+    (record) =>
+      !sentTransferRecordMatchesCancel(record, cancelRow, cancelId, orders),
+  );
+}
+
 export function resolveCancelTransferId(
   data: unknown,
 ): string | number | null | undefined {
@@ -619,6 +1126,28 @@ export function resolveCancelTransferId(
 }
 
 /** Blocktickets cancel route reads `transferId` from `ctx.request.body.data`. */
+export function resolveCancelTransferIdForApi(
+  cancelId: string | number | null | undefined,
+  records: TransferLike[] = [],
+  cancelRow?: Pick<WalletTransferRow, "id" | "seat" | "seatLines" | "to" | "status" | "title" | "accessPassId">,
+): string | number | null {
+  const raw = String(cancelId ?? "").trim();
+  if (!raw) return null;
+  if (!isOptimisticWalletTransferId(raw)) return raw;
+
+  const matched = records.find((record) =>
+    sentTransferRecordMatchesCancel(
+      record,
+      (cancelRow ?? { id: raw }) as WalletTransferRow,
+      raw,
+      [],
+    ),
+  );
+  const resolved = String(matched?.id ?? "").trim();
+  if (!resolved || isOptimisticWalletTransferId(resolved)) return null;
+  return /^\d+$/.test(resolved) ? Number(resolved) : resolved;
+}
+
 export function buildCancelTransferRequestBody(
   transferId: string | number | null | undefined,
 ): { data: { transferId: number | string } } | null {
@@ -649,6 +1178,14 @@ export function walletTransferRowsEquivalent(
   a: WalletTransferRow,
   b: WalletTransferRow,
 ): boolean {
+  const aId = String(a.id ?? "").trim();
+  const bId = String(b.id ?? "").trim();
+  if (aId && bId && aId !== bId) {
+    const aOptimistic = isOptimisticWalletTransferId(aId);
+    const bOptimistic = isOptimisticWalletTransferId(bId);
+    if (aOptimistic && bOptimistic) return false;
+    if (!aOptimistic && !bOptimistic) return false;
+  }
   if (normalizeTransferRecipient(a.to) !== normalizeTransferRecipient(b.to)) {
     return false;
   }

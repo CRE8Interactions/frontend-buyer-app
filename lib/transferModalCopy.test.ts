@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  transferAcceptConfirmCopy,
   transferCancelReturnCopy,
   transferConfirmTitle,
   transferEntityNoun,
@@ -40,6 +41,12 @@ describe("transfer modal copy", () => {
     expect(transferCancelReturnCopy("ticket", 2)).toBe(
       "Cancelling the transfer returns these tickets to your wallet and removes them from the recipient's account. If the recipient has claimed the transfer already, it can't be cancelled.",
     );
+    expect(transferAcceptConfirmCopy("ticket", 1)).toBe(
+      "Accepting adds this ticket to your wallet. Once accepted, the transfer is final and can't be undone.",
+    );
+    expect(transferAcceptConfirmCopy("ticket", 2)).toBe(
+      "Accepting adds these tickets to your wallet. Once accepted, the transfer is final and can't be undone.",
+    );
     expect(transferKindFromWalletRow({ ticketCount: 2 })).toEqual({
       kind: "ticket",
       count: 2,
@@ -78,6 +85,9 @@ describe("transfer modal copy", () => {
     );
     expect(transferCancelReturnCopy("access pass", 1)).toBe(
       "Cancelling the transfer returns this access pass to your wallet and removes it from the recipient's account. If the recipient has claimed the transfer already, it can't be cancelled.",
+    );
+    expect(transferAcceptConfirmCopy("season pass", 1)).toBe(
+      "Accepting adds this season pass to your wallet. Once accepted, the transfer is final and can't be undone.",
     );
     expect(
       transferKindFromWalletRow({

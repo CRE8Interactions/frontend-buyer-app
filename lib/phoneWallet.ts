@@ -133,9 +133,13 @@ export function walletPassEvent(
     issuerIdFromUnknown(ticket),
   );
   if (issuerId) organization.issuerId = issuerId;
+  // Package orders hand us a stub event with no uuid, so whichever row does
+  // carry one wins the shared keys too: its venue and start build the pass.
+  const [base, overlay] =
+    !row?.uuid && nested?.uuid ? [event, nested] : [nested, event];
   return {
-    ...nested,
-    ...event,
+    ...base,
+    ...overlay,
     ...(uuid ? { uuid } : {}),
     ...(organizationUuid ? { organizationUUID: organizationUuid } : {}),
     ...(Object.keys(organization).length

@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
+  DEMO_EVENTS,
   demoAccessPass,
   demoCompletedPackageOrder,
   demoCompletedTicketOrder,
@@ -7,20 +8,36 @@ import {
   demoSeasonPackage,
 } from "@/lib/demo/fixtures";
 import { formatEventWhen } from "@/lib/helpers";
+import { seatLabel } from "@/lib/wallet";
 import {
   buildWalletReceivedTransferRows,
   buildWalletSentTransferRows,
+  enrichTransferRecordsFromOrders,
+  clearLocallyResolvedIncomingTransfersForTests,
+  filterIncomingTransfersAgainstReceivedHistory,
+  filterIncomingTransfersForWallet,
   filterPendingIncomingTransfers,
   filterVisibleWalletTransferRows,
+  markIncomingTransferLocallyResolved,
   filterWalletAccessPassesBySentTransfers,
   formatTransferSenderLabel,
   mapReceivedTransferRows,
   mapSentTransferRows,
   buildCancelTransferRequestBody,
+  findSentTransferRecordForCancel,
+  removeSentTransferRecordsForCancel,
   resolveCancelTransferId,
+  resolveCancelTransferIdForApi,
+  resolveSentTransferIdFromApi,
+  resolveCreatedTransferId,
+  resolveCreatedTransferMeta,
   mergeTransferRecords,
+  mergeWalletReceivedTransferRecords,
+  mergeWalletSentTransferRecords,
   mergeWalletTransferRows,
   normalizeTransferRecord,
+  reconcileOptimisticSentTransfers,
+  promoteAcceptedIncomingTransferToReceived,
   pendingIncomingTransferLabel,
   sortWalletTransferRows,
   unwrapTransferRecords,
@@ -253,6 +270,52 @@ describe("ticketTransfers", () => {
     expect(mapSentTransferRows(rows)[0]?.seat).toContain(String(ticket.seatNumber));
   });
 
+  it("prefers eventUUID over a mismatched package order event relation", () => {
+    const order = demoCompletedPackageOrder();
+    const [wrongEvent, correctEvent] = demoSeasonPackage().events;
+    const [ticket] = order.tickets.map((row) => ({
+      ...row,
+      eventUUID: correctEvent.uuid,
+    }));
+
+    const rows = unwrapTransferRecords([
+      {
+        id: "package-transfer-wrong-event",
+        status: "pending",
+        eventUUID: correctEvent.uuid,
+        event: wrongEvent,
+        orderId: order.orderId,
+        tickets: [ticket],
+      },
+    ]);
+
+    const enriched = enrichTransferRecordsFromOrders(rows, [order]);
+
+    expect(enriched[0]?.event?.name).toBe(correctEvent.name);
+    expect(enriched[0]?.event?.uuid).toBe(correctEvent.uuid);
+    expect(mapSentTransferRows(enriched)[0]?.title).toBe(correctEvent.name);
+    expect(mapSentTransferRows(enriched)[0]?.schedule).toContain("2026");
+  });
+
+  it("keeps event name when ticket eventUUID differs from transfer event uuid", () => {
+    const event = DEMO_EVENTS.find((row) => row.shortCode === "NMST004")!;
+    const order = demoCompletedTicketOrder({ event });
+    const [ticket] = order.tickets;
+
+    const rows = unwrapTransferRecords([
+      {
+        id: "incoming-1",
+        status: "pending",
+        fromUserEmail: "m.rivera@example.com",
+        event: order.event,
+        tickets: [ticket],
+      },
+    ]);
+
+    expect(rows[0]?.event?.name).toBe(event.name);
+    expect(String(rows[0]?.event?.uuid)).toBe(String(ticket.eventUUID));
+  });
+
   it("lists single-event and package transfers together on sent and received tabs", () => {
     const ticketOrder = demoCompletedTicketOrder();
     const packageOrder = demoCompletedPackageOrder();
@@ -286,8 +349,8 @@ describe("ticketTransfers", () => {
       [ticketOrder, packageOrder],
     );
     const receivedRows = buildWalletReceivedTransferRows(
-      [],
       [singleTransfer, packageTransfer],
+      [],
       [ticketOrder, packageOrder],
     );
 
@@ -355,8 +418,8 @@ describe("ticketTransfers", () => {
       accessTransfer,
     ]);
     const receivedRows = buildWalletReceivedTransferRows(
-      [],
       [seasonTransfer, accessTransfer],
+      [],
     );
 
     expect(sentRows.map((row) => row.title)).toEqual([
@@ -375,6 +438,51 @@ describe("ticketTransfers", () => {
       "1 Season pass",
       "1 Access pass",
     ]);
+  });
+
+  it("promotes an accepted incoming transfer into received history as claimed", () => {
+    const order = demoCompletedTicketOrder({ event: DEMO_EVENTS[0] });
+    const [ticket] = order.tickets;
+    const existingClaimed = {
+      id: "received-claimed",
+      status: "claimed",
+      fromUserEmail: "sender@example.com",
+      event: order.event,
+      tickets: [ticket],
+      createdAt: "2026-09-10T18:00:00.000Z",
+      transferedOn: "2026-09-11T18:00:00.000Z",
+    };
+    const pendingIncoming = {
+      id: "incoming-1",
+      status: "pending",
+      fromUserEmail: "m.rivera@example.com",
+      event: order.event,
+      tickets: [ticket],
+      createdAt: "2026-09-12T18:00:00.000Z",
+    };
+    const transferedOn = "2026-09-13T19:21:48.735Z";
+
+    const received = promoteAcceptedIncomingTransferToReceived(
+      [existingClaimed],
+      pendingIncoming,
+      { status: "accepted", transferedOn },
+    );
+    const rows = buildWalletReceivedTransferRows(received, [], [order]);
+
+    expect(received).toHaveLength(2);
+    expect(rows).toHaveLength(2);
+    expect(rows.every((row) => row.status === "claimed")).toBe(true);
+    expect(rows.some((row) => row.id === "incoming-1")).toBe(true);
+    expect(rows.some((row) => row.id === "received-claimed")).toBe(true);
+    expect(
+      rows.find((row) => row.id === "incoming-1")?.claimedOn,
+    ).toContain(
+      formatEventWhen(
+        transferedOn,
+        order.event?.venue?.timezone,
+        "MMM D, YYYY",
+      ),
+    );
   });
 
   it("preserves access pass metadata when merging incoming and received rows", () => {
@@ -467,7 +575,225 @@ describe("ticketTransfers", () => {
     expect(merged[0]?.id).toBe("transfer-ticket-42");
   });
 
-  it("hides cancelled transfers from wallet transfer tabs", () => {
+  it("filters locally resolved incoming transfers out of wallet reloads", () => {
+    const order = demoCompletedTicketOrder({ event: DEMO_EVENTS[0] });
+    const [ticket] = order.tickets;
+    const pendingTransfer = {
+      id: "incoming-1",
+      status: "pending",
+      fromUserEmail: "m.rivera@example.com",
+      event: order.event,
+      tickets: [ticket],
+    };
+
+    clearLocallyResolvedIncomingTransfersForTests();
+    markIncomingTransferLocallyResolved("incoming-1");
+
+    expect(
+      filterIncomingTransfersForWallet([pendingTransfer]),
+    ).toEqual([]);
+  });
+
+  it("lists pending received transfers from history only, like Blocktickets My Transfers", () => {
+    const order = demoCompletedTicketOrder({ event: DEMO_EVENTS[0] });
+    const [ticket] = order.tickets;
+    const pendingTransfer = {
+      id: "incoming-1",
+      status: "pending",
+      fromUserEmail: "sender@example.com",
+      event: order.event,
+      tickets: [ticket],
+      createdAt: "2026-09-12T18:00:00.000Z",
+    };
+
+    const rows = buildWalletReceivedTransferRows(
+      [pendingTransfer],
+      [pendingTransfer],
+      [order],
+    );
+
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.id).toBe("incoming-1");
+    expect(rows[0]?.status).toBe("pending");
+  });
+
+  it("prefers local claimed received rows over API pending rows with the same id", () => {
+    const order = demoCompletedTicketOrder({ event: DEMO_EVENTS[0] });
+    const [ticket] = order.tickets;
+    const pendingTransfer = {
+      id: "incoming-1",
+      status: "pending",
+      fromUserEmail: "sender@example.com",
+      event: order.event,
+      tickets: [ticket],
+      createdAt: "2026-09-12T19:20:19.451Z",
+    };
+    const claimedTransfer = {
+      ...pendingTransfer,
+      status: "claimed",
+      transferedOn: "2026-09-13T19:21:48.735Z",
+    };
+
+    const merged = mergeWalletReceivedTransferRecords(
+      [pendingTransfer],
+      [claimedTransfer],
+    );
+    const rows = buildWalletReceivedTransferRows(merged, [], [order]);
+
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.id).toBe("incoming-1");
+    expect(rows[0]?.status).toBe("claimed");
+  });
+
+  it("drops local pending received rows when the API marks them cancelled", () => {
+    const order = demoCompletedTicketOrder({ event: DEMO_EVENTS[0] });
+    const [ticket] = order.tickets;
+    const pendingTransfer = {
+      id: "incoming-1",
+      status: "pending",
+      fromUserEmail: "sender@example.com",
+      event: order.event,
+      tickets: [ticket],
+    };
+
+    const merged = mergeWalletReceivedTransferRecords(
+      [{ ...pendingTransfer, status: "cancelled" }],
+      [pendingTransfer],
+    );
+    const rows = buildWalletReceivedTransferRows(merged, [], [order]);
+
+    expect(rows).toHaveLength(0);
+  });
+
+  it("keeps one pending received row when duplicate transfers share the same ticket", () => {
+    const order = demoCompletedTicketOrder({ event: DEMO_EVENTS[0] });
+    const [ticket] = order.tickets;
+    const older = {
+      id: "transfer-old",
+      status: "pending",
+      fromUserEmail: "sender@example.com",
+      event: order.event,
+      tickets: [ticket],
+      createdAt: "2026-09-12T18:00:00.000Z",
+    };
+    const newer = {
+      ...older,
+      id: "transfer-new",
+      createdAt: "2026-09-13T18:00:00.000Z",
+    };
+
+    const rows = buildWalletReceivedTransferRows(
+      [older, newer],
+      [],
+      [order],
+    );
+
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.id).toBe("transfer-new");
+  });
+
+  it("resolves optimistic sent ids from API records without merging lists", () => {
+    const order = demoCompletedTicketOrder({ event: DEMO_EVENTS[0] });
+    const [ticket] = order.tickets;
+    const optimistic = {
+      id: `transfer-${ticket.id}`,
+      status: "pending",
+      emailAddressToUser: "recipient@example.com",
+      orderId: order.orderId,
+      tickets: [ticket],
+    };
+    const apiRecord = {
+      id: 4812,
+      status: "pending",
+      emailAddressToUser: "recipient@example.com",
+      orderId: order.orderId,
+      tickets: [ticket],
+    };
+
+    expect(resolveSentTransferIdFromApi(optimistic, [apiRecord])).toBe(4812);
+    expect(resolveSentTransferIdFromApi(apiRecord, [apiRecord])).toBe(4812);
+  });
+
+  it("resolves optimistic cancel ids to the API transfer record", () => {
+    const order = demoCompletedTicketOrder({ event: DEMO_EVENTS[0] });
+    const [ticket] = order.tickets;
+    const record = {
+      id: 4812,
+      status: "pending",
+      orderId: order.orderId,
+      event: order.event,
+      tickets: [ticket],
+    };
+
+    expect(
+      resolveCancelTransferIdForApi(
+        `transfer-${ticket.id}`,
+        [record],
+        {
+          id: `transfer-${ticket.id}`,
+          title: order.event?.name || "",
+          seat: seatLabel(ticket),
+          seatLines: [seatLabel(ticket)],
+          on: "",
+          status: "pending",
+        },
+      ),
+    ).toBe(4812);
+  });
+
+  it("drops incoming when received history already marks the transfer claimed", () => {
+    const order = demoCompletedTicketOrder({ event: DEMO_EVENTS[0] });
+    const [ticket] = order.tickets;
+    const pendingTransfer = {
+      id: "incoming-1",
+      status: "pending",
+      fromUserEmail: "sender@example.com",
+      event: order.event,
+      tickets: [ticket],
+    };
+    const claimedTransfer = {
+      ...pendingTransfer,
+      status: "claimed",
+      transferedOn: "2026-09-13T18:00:00.000Z",
+    };
+
+    expect(
+      filterIncomingTransfersForWallet([pendingTransfer], [claimedTransfer]),
+    ).toEqual([]);
+  });
+
+  it("ignores incoming rows on the received tab when history already cancelled them", () => {
+    const order = demoCompletedTicketOrder({ event: DEMO_EVENTS[0] });
+    const [ticket] = order.tickets;
+    const pendingTransfer = {
+      id: "incoming-1",
+      status: "pending",
+      fromUserEmail: "sender@example.com",
+      event: order.event,
+      tickets: [ticket],
+    };
+    const cancelledTransfer = {
+      ...pendingTransfer,
+      status: "canceled",
+    };
+
+    expect(
+      filterIncomingTransfersAgainstReceivedHistory(
+        [pendingTransfer],
+        [cancelledTransfer],
+      ),
+    ).toEqual([]);
+
+    const rows = buildWalletReceivedTransferRows(
+      [cancelledTransfer],
+      [pendingTransfer],
+      [order],
+    );
+
+    expect(rows).toHaveLength(0);
+  });
+
+  it("hides cancelled transfers and sorts visible rows newest first", () => {
     const rows = filterVisibleWalletTransferRows([
       {
         id: "pending-1",
@@ -476,6 +802,7 @@ describe("ticketTransfers", () => {
         seatLines: ["Sec A · Row 1 · Seat 1"],
         on: "Sep 10, 2026",
         status: "pending",
+        createdAt: "2026-09-10T12:00:00.000Z",
       },
       {
         id: "cancelled-1",
@@ -484,6 +811,7 @@ describe("ticketTransfers", () => {
         seatLines: ["Sec B · Row 2 · Seat 2"],
         on: "Sep 9, 2026",
         status: "cancelled",
+        createdAt: "2026-09-09T12:00:00.000Z",
       },
       {
         id: "claimed-1",
@@ -492,6 +820,7 @@ describe("ticketTransfers", () => {
         seatLines: ["Sec C · Row 3 · Seat 3"],
         on: "Sep 8, 2026",
         status: "claimed",
+        createdAt: "2026-09-08T12:00:00.000Z",
       },
     ]);
 
@@ -519,6 +848,361 @@ describe("ticketTransfers", () => {
 
     expect(claimed).toHaveLength(0);
     expect(pending).toHaveLength(0);
+  });
+
+  it("resolves created transfer ids from API payloads", () => {
+    expect(
+      resolveCreatedTransferId({ data: { id: 88, status: "pending" } }, "transfer-1"),
+    ).toBe("88");
+    expect(resolveCreatedTransferId(null, "transfer-1")).toBe("transfer-1");
+  });
+
+  it("lists a newly sent transfer before older sent rows", () => {
+    const olderOrder = demoCompletedTicketOrder({
+      id: 1475,
+      orderId: "1475-643535-0700",
+      tickets: demoCompletedTicketOrder().tickets.map((ticket, index) => ({
+        ...ticket,
+        id: 8100 + index,
+      })),
+    });
+    const newerOrder = demoCompletedTicketOrder({
+      id: 1476,
+      orderId: "1476-643535-0700",
+      tickets: demoCompletedTicketOrder().tickets.map((ticket, index) => ({
+        ...ticket,
+        id: 8200 + index,
+      })),
+    });
+    const [olderTicket] = olderOrder.tickets;
+    const [newerTicket] = newerOrder.tickets;
+
+    const rows = buildWalletSentTransferRows(
+      [
+        {
+          id: "older-sent",
+          status: "pending",
+          emailAddressToUser: "old@example.com",
+          orderId: olderOrder.orderId,
+          event: olderOrder.event,
+          tickets: [olderTicket],
+          createdAt: "2026-01-01T12:00:00.000Z",
+        },
+        {
+          id: "999",
+          status: "pending",
+          emailAddressToUser: "recipient@example.com",
+          orderId: newerOrder.orderId,
+          event: newerOrder.event,
+          tickets: [newerTicket],
+          createdAt: "2026-09-13T12:00:00.000Z",
+        },
+      ],
+      [olderOrder, newerOrder],
+    );
+
+    expect(rows.map((row) => row.id)).toEqual(["999", "older-sent"]);
+  });
+
+  it("resolves created transfer metadata from API payloads", () => {
+    expect(
+      resolveCreatedTransferMeta(
+        {
+          data: {
+            id: 88,
+            status: "pending",
+            createdAt: "2026-09-13T12:00:00.000Z",
+          },
+        },
+        { id: "transfer-1", createdAt: "2026-01-01T12:00:00.000Z" },
+      ),
+    ).toEqual({
+      id: "88",
+      createdAt: "2026-09-13T12:00:00.000Z",
+    });
+    expect(
+      resolveCreatedTransferMeta(null, {
+        id: "transfer-1",
+        createdAt: "2026-01-01T12:00:00.000Z",
+      }),
+    ).toEqual({
+      id: "transfer-1",
+      createdAt: "2026-01-01T12:00:00.000Z",
+    });
+  });
+
+  it("reconciles optimistic sent transfer ids from the sent transfers list", () => {
+    const order = demoCompletedTicketOrder();
+    const [ticket] = order.tickets;
+    const optimisticId = `transfer-${ticket.id}`;
+    const optimistic = {
+      id: optimisticId,
+      status: "pending",
+      emailAddressToUser: "recipient@example.com",
+      orderId: order.orderId,
+      tickets: [ticket],
+      createdAt: "2026-09-13T12:00:00.000Z",
+    };
+    const apiRecord = {
+      id: 901,
+      status: "pending",
+      emailAddressToUser: "recipient@example.com",
+      orderId: order.orderId,
+      tickets: [ticket],
+      createdAt: "2026-09-13T12:01:00.000Z",
+    };
+    const cancelRow = {
+      id: optimisticId,
+      title: "Event",
+      seat: seatLabel(ticket),
+      seatLines: [seatLabel(ticket)],
+      on: "Today",
+      status: "pending",
+    };
+
+    expect(
+      reconcileOptimisticSentTransfers([optimistic], [apiRecord])[0]?.id,
+    ).toBe(901);
+    expect(
+      resolveCancelTransferIdForApi(optimisticId, [optimistic], cancelRow),
+    ).toBeNull();
+    expect(
+      resolveCancelTransferIdForApi(
+        optimisticId,
+        reconcileOptimisticSentTransfers([optimistic], [apiRecord]),
+        cancelRow,
+      ),
+    ).toBe(901);
+  });
+
+  it("dedupes pending sent transfers that share the same order and ticket ids", () => {
+    const order = demoCompletedTicketOrder();
+    const [ticket] = order.tickets;
+    const rows = buildWalletSentTransferRows([
+      {
+        id: "older",
+        status: "pending",
+        orderId: order.orderId,
+        emailAddressToUser: "recipient@example.com",
+        tickets: [ticket],
+        createdAt: "2026-09-12T12:00:00.000Z",
+      },
+      {
+        id: "newer",
+        status: "pending",
+        orderId: order.orderId,
+        emailAddressToUser: "recipient@example.com",
+        tickets: [ticket],
+        createdAt: "2026-09-13T12:00:00.000Z",
+      },
+    ]);
+
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.id).toBe("newer");
+  });
+
+  it("dedupes optimistic and API sent rows when wallet and API order ids differ", () => {
+    const order = demoCompletedTicketOrder();
+    const [ticket] = order.tickets;
+    const merged = mergeWalletSentTransferRecords(
+      [
+        {
+          id: 901,
+          status: "pending",
+          orderId: 12345,
+          emailAddressToUser: "recipient@example.com",
+          tickets: [ticket],
+          createdAt: "2026-09-13T12:01:00.000Z",
+        },
+      ],
+      [
+        {
+          id: `transfer-${ticket.id}`,
+          status: "pending",
+          orderId: order.orderId,
+          emailAddressToUser: "recipient@example.com",
+          tickets: [ticket],
+          createdAt: "2026-09-13T12:00:00.000Z",
+        },
+      ],
+    );
+
+    expect(merged).toHaveLength(1);
+    expect(merged[0]?.id).toBe(901);
+  });
+
+  it("drops locally pending sent rows when the API already cancelled that ticket", () => {
+    const order = demoCompletedTicketOrder();
+    const [ticket] = order.tickets;
+    const merged = mergeWalletSentTransferRecords(
+      [
+        {
+          id: 901,
+          status: "canceled",
+          orderId: order.orderId,
+          emailAddressToUser: "recipient@example.com",
+          tickets: [ticket],
+        },
+      ],
+      [
+        {
+          id: "transfer-42",
+          status: "pending",
+          orderId: order.orderId,
+          emailAddressToUser: "recipient@example.com",
+          tickets: [ticket],
+        },
+      ],
+    );
+
+    expect(merged).toHaveLength(0);
+  });
+
+  it("removes only the cancelled transfer id when ga rows share the same seat line", () => {
+    const order = demoCompletedTicketOrder();
+    const [firstTicket, secondTicket] = order.tickets;
+    const gaSeatLine = "Sec P";
+    const cancelRow = {
+      id: "901",
+      to: "recipient@example.com",
+      title: order.event?.name || "Transfer",
+      seat: gaSeatLine,
+      seatLines: [gaSeatLine],
+      on: "Sep 12, 2026",
+      status: "pending",
+    };
+    const records = [
+      {
+        id: "901",
+        status: "pending",
+        emailAddressToUser: "recipient@example.com",
+        orderId: order.orderId,
+        event: order.event,
+        tickets: [{ ...firstTicket, sectionNumber: "P", sectionName: "P" }],
+      },
+      {
+        id: "902",
+        status: "pending",
+        emailAddressToUser: "recipient@example.com",
+        orderId: order.orderId,
+        event: order.event,
+        tickets: [{ ...secondTicket, sectionNumber: "P", sectionName: "P" }],
+      },
+    ];
+
+    expect(
+      removeSentTransferRecordsForCancel(records, cancelRow, [order]).map(
+        (record) => String(record.id),
+      ),
+    ).toEqual(["902"]);
+    expect(
+      findSentTransferRecordForCancel(records, cancelRow, [order])?.id,
+    ).toBe("901");
+  });
+
+  it("removes only the optimistic ga transfer whose ticket ids are encoded in the cancel id", () => {
+    const order = demoCompletedTicketOrder();
+    const [firstTicket, secondTicket] = order.tickets;
+    const gaSeatLine = "Sec P";
+    const cancelRow = {
+      id: `transfer-${firstTicket.id}`,
+      to: "recipient@example.com",
+      title: order.event?.name || "Transfer",
+      seat: gaSeatLine,
+      seatLines: [gaSeatLine],
+      on: "Just now",
+      status: "pending",
+    };
+    const records = [
+      {
+        id: "901",
+        status: "pending",
+        emailAddressToUser: "recipient@example.com",
+        orderId: order.orderId,
+        event: order.event,
+        tickets: [{ ...firstTicket, sectionNumber: "P", sectionName: "P" }],
+      },
+      {
+        id: "902",
+        status: "pending",
+        emailAddressToUser: "recipient@example.com",
+        orderId: order.orderId,
+        event: order.event,
+        tickets: [{ ...secondTicket, sectionNumber: "P", sectionName: "P" }],
+      },
+    ];
+
+    expect(
+      removeSentTransferRecordsForCancel(records, cancelRow, [order]).map(
+        (record) => String(record.id),
+      ),
+    ).toEqual(["902"]);
+  });
+
+  it("keeps distinct optimistic ga transfer rows on the sent list", () => {
+    const merged = mergeWalletTransferRows(
+      [
+        {
+          id: "transfer-9101",
+          to: "recipient@example.com",
+          title: "Niagara IceDogs vs North Bay Battalion",
+          seat: "Sec Club",
+          seatLines: ["Sec Club"],
+          on: "Just now",
+          status: "pending",
+        },
+      ],
+      [
+        {
+          id: "transfer-9102",
+          to: "recipient@example.com",
+          title: "Niagara IceDogs vs North Bay Battalion",
+          seat: "Sec Club",
+          seatLines: ["Sec Club"],
+          on: "Just now",
+          status: "pending",
+        },
+      ],
+    );
+
+    expect(merged.map((row) => row.id).sort()).toEqual([
+      "transfer-9101",
+      "transfer-9102",
+    ]);
+  });
+
+  it("removes optimistic sent transfer records for cancel", () => {
+    const order = demoCompletedTicketOrder();
+    const [ticket] = order.tickets;
+    const cancelRow = {
+      id: "transfer-9001",
+      to: "recipient@example.com",
+      title: order.event?.name || "Transfer",
+      seat: seatLabel(ticket),
+      seatLines: [seatLabel(ticket)],
+      on: "Just now",
+      status: "pending",
+    };
+    const records = [
+      {
+        id: "transfer-9001",
+        status: "pending",
+        orderId: order.orderId,
+        event: order.event,
+        tickets: [ticket],
+      },
+      {
+        id: "other-transfer",
+        status: "pending",
+        orderId: order.orderId,
+        event: order.event,
+        tickets: [order.tickets[1]],
+      },
+    ];
+
+    expect(
+      removeSentTransferRecordsForCancel(records, cancelRow, [order]),
+    ).toEqual([records[1]]);
   });
 
   it("keeps a pass when a package ticket transfer carries the pass relation", () => {

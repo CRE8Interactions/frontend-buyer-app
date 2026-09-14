@@ -385,7 +385,39 @@ const routes: Route[] = [
           list[index] = { ...list[index]!, status: "cancelled" };
         }
       };
-      markCancelled(demoSentTransfers);
+      const sentIndex = demoSentTransfers.findIndex(
+        (row) => String(row.id) === transferId,
+      );
+      if (sentIndex >= 0) {
+        const transfer = demoSentTransfers[sentIndex]!;
+        markCancelled(demoSentTransfers);
+        const tickets = transfer.tickets ?? [];
+        if (tickets.length) {
+          const order = findDemoWalletOrder(transfer.orderId);
+          if (order) {
+            const existing = new Set(
+              (order.tickets ?? []).map((ticket) => String(ticket.id ?? "")),
+            );
+            const toRestore = tickets.filter(
+              (ticket) => !existing.has(String(ticket.id ?? "")),
+            );
+            if (toRestore.length) {
+              order.tickets = [
+                ...(order.tickets ?? []),
+                ...toRestore.map((ticket) => {
+                  const raw = { ...ticket };
+                  delete raw.transferStatus;
+                  delete raw.ticketTransfer;
+                  delete raw.transferredAt;
+                  return raw;
+                }),
+              ];
+            }
+          }
+        }
+      } else {
+        markCancelled(demoSentTransfers);
+      }
       markCancelled(demoReceivedTransfers);
       return { data: { status: "cancelled", transferId } };
     },
@@ -400,7 +432,30 @@ const routes: Route[] = [
         (row) => String(row.id) === transferId,
       );
       if (index >= 0) {
-        demoReceivedTransfers.splice(index, 1);
+        const claimedTransfer = demoReceivedTransfers[index]!;
+        demoReceivedTransfers[index] = {
+          ...claimedTransfer,
+          status: "claimed",
+          transferedOn: new Date().toISOString(),
+        };
+        const cleanedTickets = (claimedTransfer.tickets ?? []).map((ticket) => {
+          const raw = { ...ticket };
+          delete raw.transferStatus;
+          delete raw.ticketTransfer;
+          delete raw.transferredAt;
+          return raw;
+        });
+        if (cleanedTickets.length && claimedTransfer.event) {
+          const recipientOrder = demoCompletedTicketOrder({
+            id: Number(transferId) || Date.now(),
+            orderId: `1474-${transferId}-accepted`,
+            source: "transfer",
+            email: String(claimedTransfer.emailAddressToUser || claimedTransfer.email || ""),
+            event: claimedTransfer.event,
+            tickets: cleanedTickets,
+          });
+          walletOrders().unshift(recipientOrder);
+        }
       }
       const sentIndex = demoSentTransfers.findIndex(
         (row) => String(row.id) === transferId,
@@ -442,8 +497,9 @@ const routes: Route[] = [
           const recipientEmail = String(body.email || "");
           const pkg = demoSeasonPackage();
           const events = pass.events ?? pkg.events ?? [];
+          const passTransferId = `demo-pass-transfer-${demoSentTransfers.length + 1}`;
           const transferRecord: DemoSentTransfer = {
-            id: `demo-pass-transfer-${demoSentTransfers.length + 1}`,
+            id: passTransferId,
             status: "pending",
             orderId: pass.orderId,
             email: recipientEmail,
@@ -461,14 +517,16 @@ const routes: Route[] = [
           };
           demoSentTransfers.unshift(transferRecord);
           demoReceivedTransfers.unshift(transferRecord);
+          return {
+            data: {
+              id: passTransferId,
+              status: "pending",
+              createdAt: transferRecord.createdAt,
+              ...body,
+            },
+          };
         }
-        return {
-          data: {
-            id: "demo-pass-transfer",
-            status: "pending",
-            ...body,
-          },
-        };
+        return { data: { status: "pending", ...body } };
       }
       const ticketIds = Array.isArray(body.ticketIds)
         ? body.ticketIds.map((value) => String(value))
@@ -498,14 +556,16 @@ const routes: Route[] = [
               ),
             );
         }
+        const ticketTransferId = `demo-ticket-transfer-${demoSentTransfers.length + 1}`;
         const transferRecord = {
-          id: `demo-ticket-transfer-${demoSentTransfers.length + 1}`,
+          id: ticketTransferId,
           status: "pending" as const,
           orderId: order.id ?? order.orderId,
           email: recipientEmail,
           emailAddressToUser: recipientEmail,
           fromUserEmail: DEMO_SESSION.user.email,
           event,
+          createdAt: new Date().toISOString(),
           tickets: transferredTickets.map((ticket) => ({
             ...ticket,
             transferStatus: "pending",
@@ -514,10 +574,17 @@ const routes: Route[] = [
         };
         demoSentTransfers.unshift(transferRecord);
         demoReceivedTransfers.unshift(transferRecord);
+        return {
+          data: {
+            id: ticketTransferId,
+            status: "pending",
+            createdAt: transferRecord.createdAt,
+            ...body,
+          },
+        };
       }
       return {
         data: {
-          id: "demo-ticket-transfer",
           status: "pending",
           ...body,
         },
