@@ -2031,7 +2031,7 @@ export default function PremiumTicketing({
 
       {/* GA TIER SHEET (mobile) */}
       {isGa && gaSheet && !gaSoldOut && !gaScheduled && (
-        <div onClick={() => setGaSheet(false)} style={{ position: "fixed", inset: 0, zIndex: 55, background: "rgba(5,27,53,0.55)", backdropFilter: "blur(6px)", display: "flex", alignItems: "flex-end", justifyContent: "center" }}>
+        <div style={{ position: "fixed", inset: 0, zIndex: 55, background: "rgba(5,27,53,0.55)", backdropFilter: "blur(6px)", display: "flex", alignItems: "flex-end", justifyContent: "center" }}>
           <div onClick={(e) => e.stopPropagation()} style={{ width: "100%", maxWidth: 560, maxHeight: "88vh", background: "#fff", borderTopLeftRadius: 24, borderTopRightRadius: 24, boxShadow: "0 -20px 60px -20px rgba(5,27,53,0.5)", display: "flex", flexDirection: "column", overflow: "hidden" }}>
             <div style={{ display: "flex", justifyContent: "center", paddingTop: 10, flexShrink: 0 }}>
               <div style={{ width: 40, height: 5, borderRadius: 999, background: "rgba(5,27,53,0.14)" }} />
@@ -2058,7 +2058,6 @@ export default function PremiumTicketing({
           const overlay = (
         <div
           className="ga-soldout-notify-sheet-overlay"
-          onClick={() => setEventSoldOutSheet(false)}
           style={{
             position: "fixed",
             inset: 0,
@@ -2480,7 +2479,7 @@ export default function PremiumTicketing({
       {/* TICKET DETAIL DRAWER */}
       {panelOpen && selRow && (
         <>
-          <div onClick={() => setSel(null)} style={{ position: "fixed", inset: 0, zIndex: 20, background: "rgba(5,27,53,0.42)", backdropFilter: "blur(3px)" }} />
+          <div style={{ position: "fixed", inset: 0, zIndex: 20, background: "rgba(5,27,53,0.42)", backdropFilter: "blur(3px)" }} />
           <div style={{ position: "fixed", zIndex: 21, display: "flex", flexDirection: "column", background: "#fff", overflow: "hidden", boxShadow: "-30px 0 80px -20px rgba(5,27,53,0.45)", top: mobile ? "auto" : 0, right: 0, bottom: 0, left: "auto", width: mobile ? "100%" : 480, height: mobile ? "86vh" : "auto", maxWidth: "100%", borderRadius: mobile ? "24px 24px 0 0" : 0 }}>
             <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "16px 20px", borderBottom: "1px solid rgba(5,27,53,0.08)", flexShrink: 0 }}>
               <button onClick={() => setSel(null)} aria-label="Back" style={{ fontFamily: "inherit", width: 44, height: 44, display: "flex", alignItems: "center", justifyContent: "center", background: "#fff", border: "1px solid #d3d6e0", borderRadius: 12, color: NAVY, cursor: "pointer", flexShrink: 0 }}>

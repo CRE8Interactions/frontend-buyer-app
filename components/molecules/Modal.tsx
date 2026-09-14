@@ -3,7 +3,7 @@
 import { useEffect, useId, useRef, type ReactNode } from "react";
 import { focusFirstField } from "@/lib/autoFocus";
 
-/** Modal — app-surface dialog with title bar and backdrop-close. */
+/** Modal — app-surface dialog with title bar; dismiss via the close control only. */
 export default function Modal({
   title,
   onClose,
@@ -16,7 +16,7 @@ export default function Modal({
   onClose: () => void;
   children: ReactNode;
   variant?: "dark" | "light";
-  /** When true, backdrop and close cannot dismiss (in-flight action). */
+  /** When true, the close control cannot dismiss (in-flight action). */
   busy?: boolean;
   /** Slide up from the bottom edge (mobile drawers). */
   sheet?: boolean;
@@ -55,10 +55,7 @@ export default function Modal({
       }`;
 
   return (
-    <div
-      className="fixed inset-0 z-[60] overflow-y-auto bg-black/70 backdrop-blur-sm"
-      onClick={requestClose}
-    >
+    <div className="fixed inset-0 z-[60] overflow-y-auto bg-black/70 backdrop-blur-sm">
       <div className={shellCls}>
         <div
           ref={dialogRef}

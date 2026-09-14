@@ -50,6 +50,19 @@ describe("Modal", () => {
     expect(screen.getByRole("dialog")).toHaveClass("rounded-t-[26px]");
   });
 
+  it("does not dismiss when the backdrop is clicked", () => {
+    const onClose = vi.fn();
+    render(
+      <Modal title="Transfer tickets" onClose={onClose}>
+        <p>Confirm transfer</p>
+      </Modal>,
+    );
+
+    fireEvent.click(screen.getByRole("dialog").parentElement!.parentElement!);
+
+    expect(onClose).not.toHaveBeenCalled();
+  });
+
   it("opens on a phone with the cursor set but the keyboard down", () => {
     Object.defineProperty(window, "matchMedia", {
       configurable: true,

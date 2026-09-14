@@ -404,7 +404,6 @@ export default function SeatMapSelectionOverlay({
         padding: mobile ? 0 : 16,
         boxSizing: "border-box",
       }}
-      onClick={requestClose}
     >
       <div
         role="dialog"
