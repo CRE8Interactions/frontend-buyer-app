@@ -193,7 +193,7 @@ async function confirmAcceptTransferInPopup(
   );
 }
 
-beforeEach(() => {
+  beforeEach(() => {
   navigationMocks.pathname = "/wallet/my-tickets/";
   navigationMocks.search = "";
   resetWalletApiHydrationForTests();
@@ -530,6 +530,7 @@ describe("SeasonTickets empty wallet", () => {
       event: order.event,
       tickets: [ticket],
     });
+    let resolveAccept: (value: { data: { status: string } }) => void = () => {};
     mockedGetMyEvents.mockImplementation(async () => ({
       data:
         mockedAcceptIncomingTransfers.mock.calls.length > 0
@@ -550,9 +551,12 @@ describe("SeasonTickets empty wallet", () => {
               },
             ],
     }));
-    mockedAcceptIncomingTransfers.mockResolvedValue({
-      data: { status: "accepted" },
-    } as never);
+    mockedAcceptIncomingTransfers.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          resolveAccept = resolve;
+        }) as never,
+    );
 
     render(<SeasonTickets />);
 
@@ -565,14 +569,24 @@ describe("SeasonTickets empty wallet", () => {
     expect(
       screen.getByText(transferAcceptConfirmCopy("ticket", 1)),
     ).toBeInTheDocument();
-    await confirmAcceptTransferInPopup(user);
+    await user.click(
+      screen.getAllByRole("button", { name: "Accept transfer" }).at(-1)!,
+    );
+
+    expect(
+      screen.getByRole("heading", { name: "Accept this transfer?" }),
+    ).toBeInTheDocument();
+    expect(screen.getByText("Accepting…")).toBeInTheDocument();
+
+    await act(async () => {
+      resolveAccept({ data: { status: "accepted" } });
+    });
 
     await waitFor(() => {
       expect(mockedAcceptIncomingTransfers).toHaveBeenCalledWith({
         transferId: "incoming-1",
       });
     });
-    const eventCallsAfterAccept = mockedGetMyEvents.mock.calls.length;
     await waitFor(() => {
       expect(
         screen.queryByRole("heading", { name: "Accept this transfer?" }),
@@ -583,7 +597,11 @@ describe("SeasonTickets empty wallet", () => {
         screen.queryByRole("button", { name: "Accept transfer" }),
       ).not.toBeInTheDocument();
     });
-    expect(mockedGetMyEvents.mock.calls.length).toBe(eventCallsAfterAccept);
+    await waitFor(() => {
+      expect(mockedGetMyEvents).toHaveBeenCalledWith(
+        expect.objectContaining({ fresh: true }),
+      );
+    });
     expect(screen.queryByLabelText("Loading tickets")).not.toBeInTheDocument();
     expect(await screen.findByText(icedogs.name)).toBeInTheDocument();
     expect(screen.getByText("1 ticket")).toBeInTheDocument();
@@ -591,8 +609,8 @@ describe("SeasonTickets empty wallet", () => {
       screen.queryByText("Pending transfer from m.rivera@example.com"),
     ).not.toBeInTheDocument();
     expect(
-      screen.queryByRole("link", { name: `View ${icedogs.name}` }),
-    ).not.toBeInTheDocument();
+      await screen.findByRole("link", { name: `View ${icedogs.name}` }),
+    ).toHaveAttribute("href", `/wallet/my-tickets/order/${recipientOrder.orderId}`);
   });
 
   it("keeps other upcoming events visible after accepting a transfer", async () => {
@@ -4243,7 +4261,7 @@ describe("SeasonTickets routed event screen", { timeout: 20_000 }, () => {
       ).not.toBeInTheDocument();
     });
 
-    it("accepts on My Tickets in memory without refetching wallet routes", async () => {
+    it("reloads My Tickets after accepting on upcoming when the API has no orders yet", async () => {
       const user = userEvent.setup();
       sessionMocks.getSession.mockReturnValue(DEMO_SESSION);
       const order = demoCompletedTicketOrder({ event: icedogs });
@@ -4266,7 +4284,6 @@ describe("SeasonTickets routed event screen", { timeout: 20_000 }, () => {
 
       render(<SeasonTickets />);
       await waitFor(() => expect(mockedGetMyEvents).toHaveBeenCalled());
-      const eventCallsAfterLoad = mockedGetMyEvents.mock.calls.length;
 
       await user.click(
         await screen.findByRole("button", { name: "Accept transfer" }),
@@ -4278,12 +4295,19 @@ describe("SeasonTickets routed event screen", { timeout: 20_000 }, () => {
           transferId: "incoming-1",
         });
       });
-      expect(mockedGetMyEvents.mock.calls.length).toBe(eventCallsAfterLoad);
-      expect(await screen.findByText(icedogs.name)).toBeInTheDocument();
-      expect(screen.getByText("1 ticket")).toBeInTheDocument();
+      await waitFor(() => {
+        expect(mockedGetMyEvents).toHaveBeenCalledWith(
+          expect.objectContaining({ fresh: true }),
+        );
+      });
       expect(
         screen.queryByText("Pending transfer from m.rivera@example.com"),
       ).not.toBeInTheDocument();
+      expect(screen.queryByText(icedogs.name)).not.toBeInTheDocument();
+      expect(
+        screen.queryByRole("link", { name: `View ${icedogs.name}` }),
+      ).not.toBeInTheDocument();
+      expect(screen.queryByLabelText("Loading tickets")).not.toBeInTheDocument();
     });
 
     it("round-trips My Tickets accept through Transfers without duplicate events", async () => {
@@ -4301,17 +4325,20 @@ describe("SeasonTickets routed event screen", { timeout: 20_000 }, () => {
       mockedGetMyEvents
         .mockResolvedValueOnce({ data: [] } as never)
         .mockResolvedValue({ data: [recipientOrder] } as never);
-      mockedGetIncomingTransfers.mockResolvedValue({
-        data: [
-          {
-            id: "incoming-1",
-            status: "pending",
-            fromUserEmail: "m.rivera@example.com",
-            event: order.event,
-            tickets: [ticket],
-          },
-        ],
-      } as never);
+      mockedGetIncomingTransfers.mockImplementation(async () => ({
+        data:
+          mockedAcceptIncomingTransfers.mock.calls.length > 0
+            ? []
+            : [
+                {
+                  id: "incoming-1",
+                  status: "pending",
+                  fromUserEmail: "m.rivera@example.com",
+                  event: order.event,
+                  tickets: [ticket],
+                },
+              ],
+      }));
       mockedGetMySentTransfers.mockResolvedValue({ data: [] } as never);
       mockedGetMyReceivedTransfers.mockResolvedValue({ data: [] } as never);
       mockedAcceptIncomingTransfers.mockResolvedValue({
@@ -4325,7 +4352,7 @@ describe("SeasonTickets routed event screen", { timeout: 20_000 }, () => {
         await screen.findByRole("button", { name: "Accept transfer" }),
       );
       await confirmAcceptTransferInPopup(user);
-      expect(await screen.findAllByText(icedogs.name)).toHaveLength(1);
+      expect(await screen.findByText(icedogs.name)).toBeInTheDocument();
 
       navigationMocks.pathname = "/wallet/my-transfers/";
       rerender(<SeasonTickets />);
@@ -4336,8 +4363,60 @@ describe("SeasonTickets routed event screen", { timeout: 20_000 }, () => {
       await waitFor(() =>
         expect(mockedGetMyEvents.mock.calls.length).toBeGreaterThan(1),
       );
-      expect(await screen.findAllByText(icedogs.name)).toHaveLength(1);
+      expect(await screen.findByText(icedogs.name)).toBeInTheDocument();
       expect(screen.getByText("1 ticket")).toBeInTheDocument();
+    });
+
+    it("cancels in-flight My Transfers reload when navigating to My Tickets", async () => {
+      sessionMocks.getSession.mockReturnValue(DEMO_SESSION);
+      const ownedOrder = demoCompletedTicketOrder({ event: icedogs });
+      const staleTransfer = {
+        id: "stale-transfer-1",
+        status: "pending",
+        fromUserEmail: "sender@example.com",
+        emailAddressToUser: "recipient@example.com",
+        event: ownedOrder.event,
+        tickets: ownedOrder.tickets,
+        createdAt: "2026-09-12T19:20:19.451Z",
+      };
+      let resolveSentTransfers: (value: { data: unknown[] }) => void = () => {};
+      let resolveMyEvents: (value: { data: unknown[] }) => void = () => {};
+
+      mockedGetMySentTransfers.mockImplementation(
+        () =>
+          new Promise((resolve) => {
+            resolveSentTransfers = resolve;
+          }) as never,
+      );
+      mockedGetMyReceivedTransfers.mockResolvedValue({ data: [] } as never);
+      mockedGetMyEvents.mockImplementation(
+        () =>
+          new Promise((resolve) => {
+            resolveMyEvents = resolve;
+          }) as never,
+      );
+      mockedGetIncomingTransfers.mockResolvedValue({ data: [] } as never);
+      mockedGetMyAccessPasses.mockResolvedValue({ data: { data: [] } } as never);
+
+      navigationMocks.pathname = "/wallet/my-transfers/";
+      const { rerender } = render(<SeasonTickets />);
+      await waitFor(() => expect(mockedGetMySentTransfers).toHaveBeenCalled());
+
+      navigationMocks.pathname = "/wallet/my-tickets/";
+      rerender(<SeasonTickets />);
+      await waitFor(() => expect(mockedGetMyEvents).toHaveBeenCalled());
+
+      await act(async () => {
+        resolveSentTransfers({ data: [staleTransfer] });
+      });
+      await act(async () => {
+        resolveMyEvents({ data: [ownedOrder] });
+      });
+
+      expect(
+        await screen.findByRole("link", { name: `View ${icedogs.name}` }),
+      ).toHaveAttribute("href", `/wallet/my-tickets/order/${ownedOrder.orderId}`);
+      expect(screen.getByText("My tickets")).toBeInTheDocument();
     });
 
     it("fetches incoming when navigating to My Tickets from My Transfers", async () => {
