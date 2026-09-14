@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 import { mobileSeatPopupPosition } from "@/components/organisms/InteractiveSeatmap/SeatmapTooltip";
-import { panDeltaToRevealPopup } from "@/lib/seatmapPopup";
+import {
+  panDeltaToRevealPopup,
+  seatmapSeatOfferScrollMaxHeight,
+} from "@/lib/seatmapPopup";
 
 describe("mobileSeatPopupPosition", () => {
   it("places the caret tip on the anchor y when card height is known", () => {
@@ -16,6 +19,22 @@ describe("mobileSeatPopupPosition", () => {
 
     expect(position.top).toBe(anchorY - cardHeight - 10);
     expect(position.caretLeft + position.left + 10).toBe(200);
+  });
+});
+
+describe("seatmapSeatOfferScrollMaxHeight", () => {
+  it("does not scroll when a popup has three or fewer offers", () => {
+    expect(seatmapSeatOfferScrollMaxHeight(1)).toBeNull();
+    expect(seatmapSeatOfferScrollMaxHeight(3)).toBeNull();
+  });
+
+  it("limits the scroll area to two rows when the first offer stays pinned", () => {
+    expect(seatmapSeatOfferScrollMaxHeight(4, { pinFirstOffer: true })).toBe(
+      128,
+    );
+    expect(seatmapSeatOfferScrollMaxHeight(7, { pinFirstOffer: true })).toBe(
+      128,
+    );
   });
 });
 

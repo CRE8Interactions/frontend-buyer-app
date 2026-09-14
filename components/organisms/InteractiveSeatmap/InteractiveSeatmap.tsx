@@ -202,6 +202,15 @@ export default function InteractiveSeatmap({
     setTooltip(null);
   }, [clearDismissTooltipTimer]);
 
+  const dismissTooltipFromMapPointer = useCallback(
+    (target: Element | null) => {
+      if (target?.closest?.("[data-interactive-seat]")) return;
+      if (target?.closest?.("[data-seatmap-tooltip]")) return;
+      dismissTooltipNow();
+    },
+    [dismissTooltipNow],
+  );
+
   const scheduleDismissTooltip = useCallback(() => {
     clearDismissTooltipTimer();
     dismissTooltipTimerRef.current = setTimeout(() => {
@@ -655,7 +664,7 @@ export default function InteractiveSeatmap({
         e.preventDefault();
         if (!pan.active) {
           pan.active = true;
-          if (!tooltipPinnedRef.current) dismissTooltipNow();
+          dismissTooltipNow();
         }
         setViewport((prev) => ({
           ...prev,
@@ -725,7 +734,7 @@ export default function InteractiveSeatmap({
     if (!pan.active && Math.hypot(dx, dy) < PAN_THRESHOLD_PX) return;
     if (!pan.active) {
       pan.active = true;
-      if (!tooltipPinnedRef.current) dismissTooltipNow();
+      dismissTooltipNow();
       (e.currentTarget as HTMLElement).setPointerCapture?.(e.pointerId);
     }
     setViewport((prev) => ({
@@ -826,15 +835,16 @@ export default function InteractiveSeatmap({
       <div
         ref={containerRef}
         className={`relative h-full w-full touch-none select-none ${compactChrome ? "min-h-0" : "min-h-[420px]"}`}
-        onPointerDown={onPointerDown}
+        onPointerDown={(event) => {
+          onPointerDown(event);
+          if (event.pointerType === "touch") return;
+          dismissTooltipFromMapPointer(event.target as Element);
+        }}
         onPointerMove={onPointerMove}
         onPointerUp={onPointerUp}
         onPointerCancel={onPointerUp}
         onClick={(event) => {
-          if ((event.target as Element | null)?.closest?.("[data-interactive-seat]")) {
-            return;
-          }
-          dismissTooltipNow();
+          dismissTooltipFromMapPointer(event.target as Element);
         }}
       >
         {showLoading && !hideLoadingSpinner ? (
@@ -919,7 +929,10 @@ export default function InteractiveSeatmap({
             <button
               type="button"
               aria-label="Zoom out"
-              onClick={() => zoomBy(1 / 1.25)}
+              onClick={() => {
+                dismissTooltipNow();
+                zoomBy(1 / 1.25);
+              }}
               className="flex h-9 w-9 items-center justify-center rounded-full text-[20px] text-[#051B35]"
             >
               −
@@ -933,7 +946,10 @@ export default function InteractiveSeatmap({
             <button
               type="button"
               aria-label="Zoom in"
-              onClick={() => zoomBy(1.25)}
+              onClick={() => {
+                dismissTooltipNow();
+                zoomBy(1.25);
+              }}
               className="flex h-9 w-9 items-center justify-center rounded-full text-[20px] text-[#051B35]"
             >
               +
@@ -944,7 +960,10 @@ export default function InteractiveSeatmap({
             <button
               type="button"
               aria-label="Zoom out"
-              onClick={() => zoomBy(1 / 1.25)}
+              onClick={() => {
+                dismissTooltipNow();
+                zoomBy(1 / 1.25);
+              }}
               className="flex h-9 w-9 items-center justify-center rounded-xl border border-[#D9DEE7] bg-white/95 text-[#051B35] shadow-sm backdrop-blur hover:bg-[#F4F5F7]"
             >
               −
@@ -952,7 +971,10 @@ export default function InteractiveSeatmap({
             <button
               type="button"
               aria-label="Zoom in"
-              onClick={() => zoomBy(1.25)}
+              onClick={() => {
+                dismissTooltipNow();
+                zoomBy(1.25);
+              }}
               className="flex h-9 w-9 items-center justify-center rounded-xl border border-[#D9DEE7] bg-white/95 text-[#051B35] shadow-sm backdrop-blur hover:bg-[#F4F5F7]"
             >
               +
@@ -960,7 +982,10 @@ export default function InteractiveSeatmap({
             {showReset ? (
               <button
                 type="button"
-                onClick={resetView}
+                onClick={() => {
+                  dismissTooltipNow();
+                  resetView();
+                }}
                 className="flex h-9 items-center justify-center rounded-xl border border-[#D9DEE7] bg-white/95 px-3 text-[13px] font-semibold text-[#051B35] shadow-sm backdrop-blur hover:bg-[#F4F5F7]"
               >
                 Back to map
@@ -982,7 +1007,10 @@ export default function InteractiveSeatmap({
         >
           <button
             type="button"
-            onClick={() => setLegendOpen((open) => !open)}
+            onClick={() => {
+              dismissTooltipNow();
+              setLegendOpen((open) => !open);
+            }}
             aria-expanded={legendOpen}
             className="flex w-full items-center justify-between border-0 bg-white px-4 py-3 text-left text-[14px] font-semibold text-[#051B35]"
           >

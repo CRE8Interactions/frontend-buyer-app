@@ -972,6 +972,43 @@ describe("SeatmapSeat", () => {
     expect(onUnlockOffer).toHaveBeenCalledWith("VIP Coded");
   });
 
+  it("scrolls seated offer rows when a seat has more than three offers", () => {
+    const parent = DEMO_SEATED_TICKET_GROUPS.find((g) => g.seatIds?.includes("s1"));
+    if (!parent) throw new Error("demo fixtures need a seated group on seat s1");
+    const seatId = "s1";
+    const offers = ["Offer A", "Offer B", "Offer C", "Offer D"].map(
+      (name, index) => ({
+        ...parent,
+        price: 20 + index,
+        offer: { id: `off-${index}`, name, maxQuantity: 1 },
+      }),
+    );
+
+    useSeatmapStore.setState({
+      seatLookupTable: { [seatId]: offers[0] },
+      seatOffersLookupTable: { [seatId]: offers },
+      selectedFromMap: [],
+      data: mapping,
+    });
+    useFiltersStore.setState({ eventTicketLimit: null });
+
+    render(
+      <SeatmapTooltip
+        target={{ kind: "seat", seatId, x: 20, y: 20, pinned: true }}
+        onClose={() => {}}
+      />,
+    );
+
+    expect(screen.getByTestId("seat-offer-pinned")).toHaveTextContent("Offer A");
+    expect(screen.getByTestId("seat-offer-scroll")).toBeInTheDocument();
+    expect(screen.getByTestId("seat-offer-scroll")).not.toHaveTextContent(
+      "Offer A",
+    );
+    for (const name of ["Offer A", "Offer B", "Offer C", "Offer D"]) {
+      expect(screen.getByText(name)).toBeInTheDocument();
+    }
+  });
+
   it("selects an unlocked seat instead of reopening the locked tooltip", () => {
     const coded = DEMO_SEATED_TICKET_GROUPS.find((item) => item.offer?.accessCode);
     expect(coded).toBeTruthy();
@@ -1460,6 +1497,28 @@ describe("InteractiveSeatmap canvas", () => {
     ).not.toBeInTheDocument();
   });
 
+  it("clears a pinned seat tooltip when the map canvas is clicked", async () => {
+    window.innerWidth = 390;
+    const { container } = render(
+      <InteractiveSeatmap lookupsMode="external" dismissTooltipKey={0} />,
+    );
+    const seat = container.querySelector("#s1");
+    expect(seat).toBeTruthy();
+    fireEvent.touchEnd(seat!, {
+      clientX: 80,
+      clientY: 120,
+      changedTouches: [{ clientX: 80, clientY: 120 }],
+    });
+
+    expect(await screen.findByRole("button", { name: /add now/i })).toBeInTheDocument();
+
+    const mapSurface = container.querySelector("[data-seatmap-canvas] > div");
+    expect(mapSurface).toBeTruthy();
+    fireEvent.click(mapSurface!);
+
+    expect(screen.queryByRole("button", { name: /add now/i })).not.toBeInTheDocument();
+  });
+
   it("clears the seat tooltip when dismissTooltipKey changes", async () => {
     window.innerWidth = 390;
     const { container, rerender } = render(
@@ -1580,6 +1639,168 @@ describe("SeatmapTooltip GA stepper", () => {
     renderGaTooltip({}, "offer");
     expect(screen.getByText("Ticket limit: 1–20 per order")).toBeInTheDocument();
     expect(screen.getByLabelText(/ticket quantity/i)).toHaveTextContent("0");
+  });
+
+  it("scrolls GA offer rows when a section has more than three offers", () => {
+    const ga = demoTicketGroups().ticketGroups.find((group) => group.GA);
+    if (!ga) throw new Error("demo fixtures need a GA ticket group");
+    const groups = ["Offer A", "Offer B", "Offer C", "Offer D"].map(
+      (name, index) => ({
+        ...ga,
+        id: `grp-${index}`,
+        price: 20 + index,
+        availableCount: 20,
+        offer: {
+          id: `off-${index}`,
+          name,
+          maxQuantity: 1,
+          connected_offers: [],
+        },
+      }),
+    );
+
+    useSeatmapStore.setState({
+      sectionLookupTable: createSectionLookupTable(groups),
+      selectedFromMap: [],
+      seatedError: null,
+      totalCount: 0,
+      totalPrice: 0,
+    });
+    useFiltersStore.setState({ eventTicketLimit: null });
+
+    render(
+      <SeatmapTooltip
+        target={{ kind: "section", sectionId: DEMO_GA_SECTION_ID, x: 20, y: 20 }}
+        onClose={() => {}}
+      />,
+    );
+
+    expect(screen.getByTestId("seat-offer-pinned")).toHaveTextContent("Offer A");
+    expect(screen.getByTestId("seat-offer-scroll")).toBeInTheDocument();
+    expect(screen.getByTestId("seat-offer-scroll")).not.toHaveTextContent(
+      "Offer A",
+    );
+    for (const name of ["Offer A", "Offer B", "Offer C", "Offer D"]) {
+      expect(screen.getByText(name)).toBeInTheDocument();
+    }
+  });
+
+  it("does not scroll GA offer rows when a section has three or fewer offers", () => {
+    const ga = demoTicketGroups().ticketGroups.find((group) => group.GA);
+    if (!ga) throw new Error("demo fixtures need a GA ticket group");
+    const groups = ["Offer A", "Offer B", "Offer C"].map((name, index) => ({
+      ...ga,
+      id: `grp-${index}`,
+      price: 20 + index,
+      availableCount: 20,
+      offer: {
+        id: `off-${index}`,
+        name,
+        maxQuantity: 1,
+        connected_offers: [],
+      },
+    }));
+
+    useSeatmapStore.setState({
+      sectionLookupTable: createSectionLookupTable(groups),
+    });
+    useFiltersStore.setState({ eventTicketLimit: null });
+
+    render(
+      <SeatmapTooltip
+        target={{ kind: "section", sectionId: DEMO_GA_SECTION_ID, x: 20, y: 20 }}
+        onClose={() => {}}
+      />,
+    );
+
+    expect(screen.queryByTestId("seat-offer-scroll")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("seat-offer-pinned")).not.toBeInTheDocument();
+    expect(screen.getByText("Offer A")).toBeInTheDocument();
+  });
+
+  it("shows locked GA offers with unlock controls instead of quantity steppers", () => {
+    const ga = demoTicketGroups().ticketGroups.find((group) => group.GA);
+    if (!ga) throw new Error("demo fixtures need a GA ticket group");
+    const lockedOffer = {
+      ...ga,
+      id: "grp-locked-ga",
+      price: 51.75,
+      offer: {
+        id: "off-locked-ga",
+        name: "Adrian Juarez",
+        accessCode: "GO2026",
+        unlocked: false,
+        connected_offers: [],
+      },
+    };
+    const standardOffer = {
+      ...ga,
+      id: "grp-standard-ga",
+      price: 51.75,
+      offer: {
+        id: "off-standard-ga",
+        name: "Izzy Portillo",
+        connected_offers: [],
+      },
+    };
+
+    useSeatmapStore.setState({
+      sectionLookupTable: createSectionLookupTable([
+        lockedOffer,
+        standardOffer,
+      ]),
+    });
+    useFiltersStore.setState({ eventTicketLimit: null });
+
+    render(
+      <SeatmapTooltip
+        target={{ kind: "section", sectionId: DEMO_GA_SECTION_ID, x: 20, y: 20 }}
+        onClose={() => {}}
+        onUnlockOffer={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByText("Requires access code")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /unlock offer/i })).toBeInTheDocument();
+    expect(screen.getByText("Izzy Portillo")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /increase quantity/i })).toBeInTheDocument();
+    expect(screen.queryByText(/\$51\.75 ea/)).toBeInTheDocument();
+  });
+
+  it("shows unlock offer for a single locked GA section", () => {
+    const ga = demoTicketGroups().ticketGroups.find((group) => group.GA);
+    if (!ga) throw new Error("demo fixtures need a GA ticket group");
+    const lockedOffer = {
+      ...ga,
+      offer: {
+        ...ga.offer,
+        name: "STH Presale",
+        accessCode: "GO2026",
+        unlocked: false,
+        connected_offers: [],
+      },
+    };
+
+    useSeatmapStore.setState({
+      sectionLookupTable: { [DEMO_GA_SECTION_ID]: [lockedOffer] },
+    });
+    useFiltersStore.setState({ eventTicketLimit: null });
+
+    render(
+      <SeatmapTooltip
+        target={{ kind: "section", sectionId: DEMO_GA_SECTION_ID, x: 20, y: 20 }}
+        onClose={() => {}}
+        onUnlockOffer={vi.fn()}
+      />,
+    );
+
+    expect(
+      screen.getByText(/This section requires an access code for/i),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /unlock offer/i })).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: /increase quantity/i }),
+    ).not.toBeInTheDocument();
   });
 
   it("shows configured exact limits on multi-offer GA rows when inventory is tight", () => {

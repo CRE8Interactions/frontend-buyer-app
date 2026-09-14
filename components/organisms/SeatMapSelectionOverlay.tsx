@@ -198,6 +198,14 @@ export default function SeatMapSelectionOverlay({
   const [prepareExpired, setPrepareExpired] = useState(false);
   const [dismissTooltipKey, setDismissTooltipKey] = useState(0);
   const dismissMapTooltip = () => setDismissTooltipKey((key) => key + 1);
+  const handleOverlayButtonPointerDown = (
+    event: React.PointerEvent<HTMLDivElement>,
+  ) => {
+    const target = event.target as Element | null;
+    if (!target?.closest("button, a[href], [role='button']")) return;
+    if (target.closest("[data-seatmap-canvas]")) return;
+    dismissMapTooltip();
+  };
   const paneRestrictionLabel = selectionPaneRestrictionLabel(
     seatmapTicketLimit ?? eventTicketLimit,
     selectedFromMap,
@@ -301,6 +309,7 @@ export default function SeatMapSelectionOverlay({
   }, []);
 
   const requestClose = () => {
+    dismissMapTooltip();
     if (selectedFromMap.length > 0) {
       setExitConfirm(true);
       return;
@@ -410,6 +419,7 @@ export default function SeatMapSelectionOverlay({
         aria-modal="true"
         aria-label="Select your seats"
         onClick={(event) => event.stopPropagation()}
+        onPointerDownCapture={handleOverlayButtonPointerDown}
         style={{
           flex: 1,
           minWidth: 0,
@@ -1424,7 +1434,10 @@ export default function SeatMapSelectionOverlay({
         <Modal
           variant="light"
           title={seatedError.title}
-          onClose={() => setSeatedError(null)}
+          onClose={() => {
+            dismissMapTooltip();
+            setSeatedError(null);
+          }}
         >
           <p className="mt-4 text-[15px] leading-relaxed text-[#4a5567]">
             {seatedError.message}
@@ -1434,6 +1447,7 @@ export default function SeatMapSelectionOverlay({
             textColor={buttonTextColor}
             onClick={() => {
               const leave = seatedError.leaveMap;
+              dismissMapTooltip();
               setSeatedError(null);
               if (leave) onClose();
             }}
@@ -1448,7 +1462,10 @@ export default function SeatMapSelectionOverlay({
         <Modal
           variant="light"
           title="Are you sure you want to exit?"
-          onClose={() => setExitConfirm(false)}
+          onClose={() => {
+            dismissMapTooltip();
+            setExitConfirm(false);
+          }}
         >
           <p className="mt-4 text-[15px] leading-relaxed text-[#4a5567]">
             You will lose your selected tickets....
@@ -1457,14 +1474,20 @@ export default function SeatMapSelectionOverlay({
             <BrandedActionButton
               primaryColor={accent}
               textColor={buttonTextColor}
-              onClick={onClose}
+              onClick={() => {
+                dismissMapTooltip();
+                onClose();
+              }}
               className="w-full"
             >
               Exit anyway
             </BrandedActionButton>
             <BrandedActionButton
               tone="secondary"
-              onClick={() => setExitConfirm(false)}
+              onClick={() => {
+                dismissMapTooltip();
+                setExitConfirm(false);
+              }}
               className="w-full"
             >
               Cancel

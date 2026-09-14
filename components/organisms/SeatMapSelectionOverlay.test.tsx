@@ -24,15 +24,22 @@ vi.mock("@/components/organisms/InteractiveSeatmap", async () => {
   const { useEffect } = await import("react");
   return {
     InteractiveSeatmap: ({
+      dismissTooltipKey,
       onPaintReady,
     }: {
+      dismissTooltipKey?: number;
       onPaintReady?: () => void;
     }) => {
       useEffect(() => {
         onPaintReady?.();
       }, [onPaintReady]);
       return (
-        <div data-testid="interactive-seatmap">Interactive seat map</div>
+        <div
+          data-testid="interactive-seatmap"
+          data-dismiss-tooltip-key={String(dismissTooltipKey ?? 0)}
+        >
+          Interactive seat map
+        </div>
       );
     },
     InteractiveSeatmapMemo: () => (
@@ -315,5 +322,32 @@ describe("SeatMapSelectionOverlay map readiness", () => {
     // Without seats there is nothing to draw, so the loader is never waived.
     expect(loaderShowing()).toBe(true);
     expect(screen.queryByTestId("interactive-seatmap")).not.toBeInTheDocument();
+  });
+
+  it("dismisses the map tooltip when the overlay close control is used", () => {
+    const group = DEMO_SEATED_TICKET_GROUPS[0];
+    useSeatmapStore.setState({
+      selectedFromMap: [{ ...group, seatId: "s1", seatNumber: 1, quantity: 1 }],
+      totalCount: 1,
+      totalPrice: Number(group.price || 0),
+    });
+    renderOverlay({
+      mapMapping: demoSeatmapMapping(),
+      mapBackground: BACKGROUND,
+    });
+    fireEvent.load(backgroundPreload()!);
+
+    expect(screen.getByTestId("interactive-seatmap")).toHaveAttribute(
+      "data-dismiss-tooltip-key",
+      "0",
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: /close seat map/i }));
+
+    expect(screen.getByTestId("interactive-seatmap")).toHaveAttribute(
+      "data-dismiss-tooltip-key",
+      "1",
+    );
+    expect(screen.getByText(/Are you sure you want to exit/i)).toBeInTheDocument();
   });
 });
