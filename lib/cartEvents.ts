@@ -15,7 +15,11 @@ import {
   formatVenueCityState,
   formatVenueLocationLine,
 } from "@/lib/venueLocation";
-import { transferSenderEmail } from "@/lib/ticketTransfers";
+import {
+  isPassTransferRowPresentation,
+  isWholeAccessPassTransfer,
+  transferSenderEmail,
+} from "@/lib/ticketTransfers";
 import {
   formatTicketHolderName,
   gaTicketSeatLine,
@@ -761,7 +765,6 @@ export function applyAcceptedIncomingTransferToOrders(
   ) {
     return orders;
   }
-  const orderKey = String(transfer.orderId ?? "").trim();
   const packageFromTransfer = transfer.order?.package;
   const event =
     transfer.event ??
@@ -775,45 +778,10 @@ export function applyAcceptedIncomingTransferToOrders(
     String(event?.uuid || transferTicketEventUUID(transfer)).trim() ||
     String(cleaned[0]?.eventUUID || cleaned[0]?.eventId || "").trim();
 
-  let targetIndex = -1;
-  if (orderKey) {
-    targetIndex = orders.findIndex(
-      (order) =>
-        String(order.orderId ?? "") === orderKey ||
-        String(order.id ?? "") === orderKey,
-    );
-  }
-  if (targetIndex < 0 && packageFromTransfer?.uuid) {
-    const packageUUID = String(packageFromTransfer.uuid).trim();
-    targetIndex = orders.findIndex(
-      (order) => String(order.package?.uuid ?? "").trim() === packageUUID,
-    );
-  }
-
-  if (targetIndex >= 0) {
-    return orders.map((order, index) =>
-      index === targetIndex ? mergeTicketsIntoWalletOrder(order, cleaned) : order,
-    );
-  }
-
-  // Never reuse the sender's orderId on the recipient wallet — navigation uses
-  // orderId for GET /orders and would 404 until the wallet reloads.
+  // Legacy accept creates a new event-only transfer order, even when the
+  // tickets came from a package. Copying the package relation would make the
+  // recipient appear to own its full schedule and produce ticketless games.
   const newOrderId = acceptedOrderId;
-
-  if (packageFromTransfer?.events?.length) {
-    return [
-      ...orders,
-      {
-        id: transfer.id,
-        orderId: newOrderId,
-        source: "transfer",
-        email: recipientEmail,
-        package: packageFromTransfer,
-        tickets: cleaned,
-      },
-    ];
-  }
-
   const packageGameEvent =
     event ??
     (eventUUID
@@ -821,24 +789,6 @@ export function applyAcceptedIncomingTransferToOrders(
           (row) => String(row.uuid || "") === eventUUID,
         ) ?? { uuid: eventUUID }
       : null);
-  const ticketEventUUID = String(cleaned[0]?.eventUUID || cleaned[0]?.eventId || "").trim();
-  if (
-    ticketEventUUID &&
-    packageGameEvent &&
-    String(packageGameEvent.uuid || "").trim() === ticketEventUUID
-  ) {
-    return [
-      ...orders,
-      {
-        id: transfer.id,
-        orderId: newOrderId,
-        source: "transfer",
-        email: recipientEmail,
-        event: packageGameEvent,
-        tickets: cleaned,
-      },
-    ];
-  }
 
   if (!packageGameEvent) return orders;
 
@@ -980,17 +930,15 @@ export function removeTicketsFromWalletDetails(
         !idSet.has(String(ticket.id ?? "")) &&
         !idSet.has(walletTicketKey(ticket)),
     );
-    if (!tickets.length && !detail.packageName) continue;
     const rawTickets = tickets.map(
       (ticket) => (ticket.raw ?? ticket) as Record<string, unknown>,
     );
     out[key] = {
       ...detail,
       tickets,
-      availability:
-        !tickets.length && detail.packageName
-          ? "transferred"
-          : eventAvailability(detail.event, rawTickets),
+      availability: !tickets.length
+        ? emptyEventAvailability(detail.event)
+        : eventAvailability(detail.event, rawTickets),
     };
   }
   return out;
@@ -1026,10 +974,9 @@ function removeSentTransferTicketsFromDetail(
   return {
     ...detail,
     tickets,
-    availability:
-      !tickets.length && detail.packageName
-        ? "transferred"
-        : eventAvailability(detail.event, rawTickets),
+    availability: !tickets.length
+      ? emptyEventAvailability(detail.event)
+      : eventAvailability(detail.event, rawTickets),
   };
 }
 
@@ -1043,6 +990,7 @@ export function packageOrderHasTicketTransfers(
   if (!normalizedOrderId) return false;
 
   for (const transfer of sentTransfers) {
+    if (isWholeAccessPassTransfer(transfer)) continue;
     if (transfer.access_pass || transfer.accessPass) continue;
     if (String(transfer.orderId || "").trim() !== normalizedOrderId) continue;
     if ((transfer.tickets?.length ?? 0) > 0) return true;
@@ -1065,7 +1013,16 @@ export type PendingSentTransfer = {
   eventUUID?: string;
   event?: EventLike | null;
   tickets?: TicketLike[];
-  access_pass?: { uuid?: string; name?: string; type?: string };
+  transferType?: string;
+  access_pass?: {
+    uuid?: string;
+    name?: string;
+    type?: string;
+    events?: EventLike[];
+    sectionNumber?: string | number;
+    rowNumber?: string | number;
+    seatNumber?: string | number;
+  };
   accessPass?: { uuid?: string; name?: string; type?: string };
   accessPassId?: string | number;
 };
@@ -1549,13 +1506,11 @@ export function pruneTransferredWalletDetails(
     });
 
     if (!tickets.length) {
-      if (detail.packageName) {
-        out[key] = {
-          ...detail,
-          tickets: [],
-          availability: isUpcomingEvent(detail.event) ? "transferred" : "past",
-        };
-      }
+      out[key] = {
+        ...detail,
+        tickets: [],
+        availability: emptyEventAvailability(detail.event),
+      };
       continue;
     }
 
@@ -1664,6 +1619,12 @@ export function reconcilePendingSentTransfers(
   }
 
   return collapseDuplicateSentEventDetails(merged);
+}
+
+function emptyEventAvailability(
+  event: EventLike,
+): CartEventSummary["availability"] {
+  return isUpcomingEvent(event) ? "transferred" : "past";
 }
 
 function eventAvailability(
@@ -1939,34 +1900,6 @@ export function sortWalletEventSchedule(
   });
 }
 
-/** Season packages tab: next upcoming game in the package. */
-export function sortSeasonPackageSummaries(
-  packages: SeasonPackageSummary[],
-  details: Record<string, CartEventDetail>,
-): SeasonPackageSummary[] {
-  const nextEventMs = (pkg: SeasonPackageSummary) => {
-    const prefix = pkg.packageUUID
-      ? `${pkg.packageUUID}:`
-      : `${pkg.key}:`;
-    const games = Object.entries(details)
-      .filter(
-        ([key, detail]) =>
-          key.startsWith(prefix) &&
-          (!pkg.orderId || detail.orderId === pkg.orderId) &&
-          detail.availability === "available",
-      )
-      .map(([, detail]) => detail);
-    if (!games.length) return Number.MAX_SAFE_INTEGER;
-    return Math.min(...games.map((detail) => walletEventStartMs(detail)));
-  };
-
-  return [...packages].sort((a, b) => {
-    const diff = nextEventMs(a) - nextEventMs(b);
-    if (diff !== 0) return diff;
-    return a.name.localeCompare(b.name);
-  });
-}
-
 export function summarizeEventDetails(
   details: Record<string, CartEventDetail>,
   mode: "upcoming" | "schedule" = "upcoming",
@@ -2211,6 +2144,103 @@ function uniqueSeatCount(tickets: TicketLike[]): number {
   return keys.size;
 }
 
+function transferMatchesWalletOrder(
+  transfer: Pick<PendingSentTransfer, "orderId">,
+  order: OrderLike,
+): boolean {
+  const transferOrderId = String(transfer.orderId ?? "").trim();
+  if (!transferOrderId) return false;
+  const walletOrderId = String(order.orderId ?? "").trim();
+  const walletRecordId = String(order.id ?? "").trim();
+  return (
+    (walletOrderId && transferOrderId === walletOrderId) ||
+    (walletRecordId && transferOrderId === walletRecordId)
+  );
+}
+
+function orderPurchasedSeatTicketSources(order: OrderLike): TicketLike[] {
+  const details = order.details as
+    | {
+        tickets?: TicketLike[];
+        originalTickets?: TicketLike[];
+      }
+    | undefined;
+  const originalTickets = Array.isArray(order.originalTickets)
+    ? (order.originalTickets as TicketLike[])
+    : [];
+  return [
+    ...(order.tickets ?? []),
+    ...originalTickets,
+    ...(details?.tickets ?? []),
+    ...(details?.originalTickets ?? []),
+  ];
+}
+
+function orderPurchasedSeatCountFromDetails(order: OrderLike): number {
+  const details = order.details as
+    | {
+        ticketCount?: number;
+        pricing?: { ticketCount?: number; totalSeats?: number };
+      }
+    | undefined;
+  const candidates = [
+    details?.pricing?.ticketCount,
+    details?.pricing?.totalSeats,
+    details?.ticketCount,
+  ];
+  for (const value of candidates) {
+    const count = Number(value);
+    if (Number.isFinite(count) && count > 0) return count;
+  }
+  return 0;
+}
+
+function appendPassTransferSeatTickets(
+  seatTickets: TicketLike[],
+  transfer: PendingSentTransfer,
+) {
+  if ((transfer.tickets?.length ?? 0) > 0) {
+    seatTickets.push(...(transfer.tickets ?? []));
+    return;
+  }
+  const pass =
+    transfer.access_pass ??
+    transfer.accessPass ??
+    (transfer as { accessPassSnapshot?: PendingSentTransfer["access_pass"] })
+      .accessPassSnapshot;
+  if (
+    pass &&
+    (pass.sectionNumber != null ||
+      pass.rowNumber != null ||
+      pass.seatNumber != null)
+  ) {
+    seatTickets.push({
+      sectionNumber: pass.sectionNumber,
+      rowNumber: pass.rowNumber,
+      seatNumber: pass.seatNumber,
+      generalAdmission: pass.generalAdmission,
+    });
+  }
+}
+
+/** Purchased seats on a package order, including seats sent with a season pass. */
+export function resolvePackagePurchasedSeatCount(
+  order: OrderLike,
+  sentTransfers: PendingSentTransfer[] = [],
+): number {
+  const seatTickets = orderPurchasedSeatTicketSources(order);
+
+  for (const transfer of sentTransfers) {
+    if (!transferMatchesWalletOrder(transfer, order)) continue;
+    if (!isPassTransferRowPresentation(transfer)) continue;
+    appendPassTransferSeatTickets(seatTickets, transfer);
+  }
+
+  const seatCount = uniqueSeatCount(seatTickets) || seatTickets.length;
+  if (seatCount > 0) return seatCount;
+  return orderPurchasedSeatCountFromDetails(order);
+}
+
 /** Upcoming single-event wallet tickets from GET /events/myUpcomingEvents. */
 export function buildOrderEventDetails(
   orders: OrderLike[],
@@ -2273,26 +2303,35 @@ export function buildSeasonPackageEventDetails(
 /** One wallet card per season-package order. */
 export function buildSeasonPackageSummaries(
   orders: OrderLike[],
+  sentTransfers: PendingSentTransfer[] = [],
+  previousPackages: SeasonPackageSummary[] = [],
 ): SeasonPackageSummary[] {
   const out: SeasonPackageSummary[] = [];
+  const previousByKey = new Map(
+    previousPackages.map((row) => [row.key, row.ticketCount] as const),
+  );
 
   for (const order of orders) {
     const pkg = order.package;
     if (!pkg) continue;
-    const tickets = order.tickets ?? [];
     const orderId = orderIdOf(order) || undefined;
     const packageUUID = String(pkg.uuid || "").trim() || undefined;
+    const key = orderId || packageUUID || `package-${out.length + 1}`;
     const events = [...(pkg.events ?? [])].sort((a, b) =>
       String(a.start || "").localeCompare(String(b.start || "")),
     );
+    const purchasedSeatCount = Math.max(
+      resolvePackagePurchasedSeatCount(order, sentTransfers),
+      previousByKey.get(key) ?? 0,
+    );
     out.push({
-      key: orderId || packageUUID || `package-${out.length + 1}`,
+      key,
       orderId,
       name: pkg.name || "Season tickets",
       venueLine: formatCartVenueLine(pkg.venue, pkg.organization?.name),
       // Every game in the package counts, matching the package screen's rows.
       eventCount: events.length,
-      ticketCount: uniqueSeatCount(tickets) || tickets.length,
+      ticketCount: purchasedSeatCount,
       thumb: pkg.image ? imageUrl(pkg.image, "") : undefined,
       packageUUID,
       holderName: formatSeasonPassHolderName(order) || undefined,

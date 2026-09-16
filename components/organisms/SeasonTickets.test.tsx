@@ -182,6 +182,9 @@ function mockMutableSentTransferList(initial: SentTransferStub[] = []) {
     prepend(transfer: SentTransferStub) {
       list.unshift(transfer);
     },
+    clear() {
+      list.length = 0;
+    },
   };
 }
 
@@ -271,6 +274,51 @@ describe("SeasonTickets empty wallet", () => {
       screen.getByRole("button", { name: "Accept transfer" }),
     ).toBeInTheDocument();
     expect(screen.queryByText("No upcoming tickets yet")).not.toBeInTheDocument();
+  });
+
+  it("shows GA section plus a count on the incoming transfer banner", async () => {
+    sessionMocks.getSession.mockReturnValue(DEMO_SESSION);
+    mockedGetMyEvents.mockResolvedValue({ data: [] } as never);
+    mockedGetIncomingTransfers.mockResolvedValue({
+      data: [
+        {
+          id: "incoming-ga-multi",
+          status: "pending",
+          fromUserEmail: "m.rivera@example.com",
+          event: icedogs,
+          tickets: [
+            {
+              id: 9101,
+              uuid: "ticket-ga-1",
+              checkInCode: "GA-1",
+              eventUUID: icedogs.uuid,
+              generalAdmission: true,
+              sectionName: "General Admission",
+              sectionNumber: "Club",
+              offerName: "General admission",
+            },
+            {
+              id: 9102,
+              uuid: "ticket-ga-2",
+              checkInCode: "GA-2",
+              eventUUID: icedogs.uuid,
+              generalAdmission: true,
+              sectionName: "General Admission",
+              sectionNumber: "Club",
+              offerName: "General admission",
+            },
+          ],
+        },
+      ],
+    } as never);
+
+    render(<SeasonTickets />);
+
+    expect(
+      await screen.findByText("Pending transfer from m.rivera@example.com"),
+    ).toBeInTheDocument();
+    expect(screen.getByText("Sec Club x 2")).toBeInTheDocument();
+    expect(screen.getByText("2 tickets")).toBeInTheDocument();
   });
 
   it("hides cancelled incoming transfers from upcoming events", async () => {
@@ -1529,6 +1577,274 @@ describe("SeasonTickets package tab", () => {
     );
   });
 
+  it("hides season pass tabs and shows game list after pass transfer", async () => {
+    const user = userEvent.setup();
+    const order = demoCompletedPackageOrder();
+    const pass = demoPackageAccessPass();
+    navigationMocks.pathname = `/wallet/my-tickets/order/${packageOrderId}/package/${pkg.uuid}/`;
+    mockedGetMyEvents.mockResolvedValue({ data: [order] } as never);
+    mockedGetAccessPassesByOrder.mockResolvedValue({
+      data: { data: [pass] },
+    } as never);
+
+    render(<SeasonTickets />);
+
+    expect(
+      await screen.findByRole("tab", { name: "Season pass" }),
+    ).toBeInTheDocument();
+    await user.click(
+      screen.getByRole("button", { name: "Transfer season pass" }),
+    );
+    await user.type(
+      screen.getByRole("textbox", { name: "Email address" }),
+      "recipient@example.com",
+    );
+    await user.click(screen.getByRole("button", { name: "Next" }));
+    await user.click(screen.getByRole("button", { name: "Transfer" }));
+    await screen.findByText("Season pass transfer pending");
+    const closeButtons = screen.getAllByRole("button", { name: "Close" });
+    await user.click(closeButtons[closeButtons.length - 1]!);
+
+    expect(screen.queryByRole("tab", { name: "Season pass" })).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Transfer season pass" }),
+    ).not.toBeInTheDocument();
+    expect(screen.getByText(pkg.events[1].name)).toBeInTheDocument();
+  });
+
+  it("shows package ticket count after reload when sent pass transfer uses order record id", async () => {
+    const user = userEvent.setup();
+    const order = demoCompletedPackageOrder();
+    const strippedOrder = { ...order, tickets: [] };
+    const pass = demoPackageAccessPass();
+    mockedGetMyEvents.mockResolvedValue({ data: [strippedOrder] } as never);
+    mockedGetMySentTransfers.mockResolvedValue({
+      data: [
+        {
+          id: "season-pass-transfer-1",
+          status: "pending",
+          orderId: order.id,
+          transferType: "access_pass",
+          accessPassId: pass.uuid,
+          tickets: order.tickets,
+          access_pass: {
+            uuid: pass.uuid,
+            name: pass.name,
+            type: "package",
+          },
+        },
+      ],
+    } as never);
+
+    render(<SeasonTickets />);
+    await user.click(await screen.findByRole("button", { name: /Packages/i }));
+
+    expect(await screen.findByText("2 tickets")).toBeInTheDocument();
+    expect(screen.getByText(`${pkg.events.length} games`)).toBeInTheDocument();
+  });
+
+  it("reloads the package page after transferring a season pass", async () => {
+    const user = userEvent.setup();
+    const order = demoCompletedPackageOrder();
+    const strippedOrder = { ...order, tickets: [] };
+    const pass = demoPackageAccessPass();
+    navigationMocks.pathname = `/wallet/my-tickets/order/${packageOrderId}/package/${pkg.uuid}/`;
+    mockedGetMyEvents
+      .mockResolvedValueOnce({ data: [order] } as never)
+      .mockResolvedValue({ data: [strippedOrder] } as never);
+    mockedGetAccessPassesByOrder
+      .mockResolvedValueOnce({ data: { data: [pass] } } as never)
+      .mockResolvedValue({ data: { data: [] } } as never);
+
+    render(<SeasonTickets />);
+
+    await screen.findByRole("button", { name: "Transfer season pass" });
+    const eventsCallsBeforeTransfer = mockedGetMyEvents.mock.calls.length;
+    const passesCallsBeforeTransfer = mockedGetAccessPassesByOrder.mock.calls.length;
+
+    await user.click(
+      screen.getByRole("button", { name: "Transfer season pass" }),
+    );
+    await user.type(
+      screen.getByRole("textbox", { name: "Email address" }),
+      "recipient@example.com",
+    );
+    await user.click(screen.getByRole("button", { name: "Next" }));
+    await user.click(screen.getByRole("button", { name: "Transfer" }));
+
+    expect(
+      await screen.findByText("Season pass transfer pending"),
+    ).toBeInTheDocument();
+    expect(mockedGetMyEvents.mock.calls.length).toBe(eventsCallsBeforeTransfer);
+    expect(mockedGetAccessPassesByOrder.mock.calls.length).toBe(
+      passesCallsBeforeTransfer,
+    );
+
+    const closeButtons = screen.getAllByRole("button", { name: "Close" });
+    await user.click(closeButtons[closeButtons.length - 1]!);
+
+    await waitFor(() => {
+      expect(mockedGetMyEvents.mock.calls.length).toBeGreaterThan(
+        eventsCallsBeforeTransfer,
+      );
+      expect(mockedGetAccessPassesByOrder.mock.calls.length).toBeGreaterThan(
+        passesCallsBeforeTransfer,
+      );
+    });
+    expect(
+      screen.queryByRole("button", { name: "Transfer season pass" }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("restores the season pass on the package page after cancelling the transfer", async () => {
+    const user = userEvent.setup();
+    const order = demoCompletedPackageOrder();
+    const strippedOrder = { ...order, tickets: [] as typeof order.tickets };
+    const pass = demoPackageAccessPass();
+    const sentList = mockMutableSentTransferList();
+    navigationMocks.pathname = `/wallet/my-tickets/order/${packageOrderId}/package/${pkg.uuid}/`;
+    mockedGetMyEvents
+      .mockResolvedValueOnce({ data: [order] } as never)
+      .mockResolvedValue({ data: [strippedOrder] } as never);
+    mockedGetAccessPassesByOrder
+      .mockResolvedValueOnce({ data: { data: [pass] } } as never)
+      .mockResolvedValueOnce({ data: { data: [] } } as never)
+      .mockResolvedValue({ data: { data: [pass] } } as never);
+    mockedCreateTicketTransfer.mockImplementation(async () => {
+      sentList.prepend({
+        id: 901,
+        status: "pending",
+        fromUserEmail: DEMO_SESSION.user.email,
+        emailAddressToUser: "recipient@example.com",
+        transferType: "access_pass",
+        accessPassId: pass.uuid,
+        orderId: order.orderId,
+        access_pass: {
+          uuid: pass.uuid,
+          name: pass.name,
+          type: "package",
+          orderId: order.orderId,
+          events: pass.events,
+          sectionNumber: pass.sectionNumber,
+          rowNumber: pass.rowNumber,
+          seatNumber: pass.seatNumber,
+        },
+        createdAt: "2026-09-13T12:00:00.000Z",
+      } as never);
+      return { data: { id: 901, status: "pending" } } as never;
+    });
+    mockedCancelMyTransfers.mockImplementation(async () => {
+      sentList.clear();
+      return { data: { status: "cancelled" } } as never;
+    });
+
+    const { rerender } = render(<SeasonTickets />);
+
+    await user.click(
+      await screen.findByRole("button", { name: "Transfer season pass" }),
+    );
+    await user.type(
+      screen.getByRole("textbox", { name: "Email address" }),
+      "recipient@example.com",
+    );
+    await user.click(screen.getByRole("button", { name: "Next" }));
+    await user.click(screen.getByRole("button", { name: "Transfer" }));
+    await screen.findByText("Season pass transfer pending");
+    await user.click(
+      screen.getAllByRole("button", { name: "Close" }).at(-1)!,
+    );
+    expect(
+      screen.queryByRole("button", { name: "Transfer season pass" }),
+    ).not.toBeInTheDocument();
+
+    navigationMocks.pathname = "/wallet/my-transfers/";
+    rerender(<SeasonTickets />);
+
+    await user.click(
+      (await screen.findAllByRole("button", { name: "Cancel transfer" }))[0]!,
+    );
+    await user.click(
+      screen.getAllByRole("button", { name: "Cancel transfer" }).at(-1)!,
+    );
+    expect(await screen.findByText("Transfer cancelled")).toBeInTheDocument();
+
+    navigationMocks.pathname = `/wallet/my-tickets/order/${packageOrderId}/package/${pkg.uuid}/`;
+    rerender(<SeasonTickets />);
+
+    expect(
+      await screen.findByRole("button", { name: "Transfer season pass" }),
+    ).toBeInTheDocument();
+  });
+
+  it("keeps package ticket count on the Packages tab after a season pass transfer", async () => {
+    const user = userEvent.setup();
+    const order = demoCompletedPackageOrder();
+    const strippedOrder = { ...order, tickets: [] };
+    const pass = demoPackageAccessPass();
+    navigationMocks.pathname = `/wallet/my-tickets/order/${packageOrderId}/package/${pkg.uuid}/`;
+    mockedGetMyEvents
+      .mockResolvedValueOnce({ data: [order] } as never)
+      .mockResolvedValue({ data: [strippedOrder] } as never);
+    mockedGetAccessPassesByOrder.mockResolvedValue({
+      data: { data: [pass] },
+    } as never);
+
+    const { rerender } = render(<SeasonTickets />);
+
+    await user.click(
+      await screen.findByRole("button", { name: "Transfer season pass" }),
+    );
+    await user.type(
+      screen.getByRole("textbox", { name: "Email address" }),
+      "recipient@example.com",
+    );
+    await user.click(screen.getByRole("button", { name: "Next" }));
+    await user.click(screen.getByRole("button", { name: "Transfer" }));
+    await screen.findByText("Season pass transfer pending");
+    const closeButtons = screen.getAllByRole("button", { name: "Close" });
+    await user.click(closeButtons[closeButtons.length - 1]!);
+
+    navigationMocks.pathname = "/wallet/my-tickets/";
+    rerender(<SeasonTickets />);
+    await user.click(screen.getByRole("button", { name: /Packages/i }));
+
+    expect(await screen.findByText("2 tickets")).toBeInTheDocument();
+    expect(screen.getByText(`${pkg.events.length} games`)).toBeInTheDocument();
+  });
+
+  it("keeps the total package game count in the header when some games are played", async () => {
+    const order = demoCompletedPackageOrder();
+    const events = [
+      { ...pkg.events[0], start: "2020-08-15T23:00:00.000Z", status: "complete" },
+      ...pkg.events.slice(1),
+    ];
+    navigationMocks.pathname = `/wallet/my-tickets/order/${packageOrderId}/package/${pkg.uuid}/`;
+    mockedGetMyEvents.mockResolvedValue({
+      data: [
+        demoCompletedPackageOrder({
+          package: { ...order.package, events },
+          tickets: events.flatMap((event) =>
+            order.tickets.map((ticket) => ({
+              ...ticket,
+              id: `${ticket.id}-${event.uuid}`,
+              eventUUID: event.uuid,
+            })),
+          ),
+        }),
+      ],
+    } as never);
+    mockedGetAccessPassesByOrder.mockResolvedValue({
+      data: { data: [demoPackageAccessPass()] },
+    } as never);
+
+    render(<SeasonTickets />);
+
+    expect(await screen.findByText(`${events.length} games`)).toBeInTheDocument();
+    expect(
+      await screen.findByRole("tab", { name: /Game tickets/i }),
+    ).toBeInTheDocument();
+  });
+
   it("does not transfer a season pass back to its owner", async () => {
     const user = userEvent.setup();
     const order = demoCompletedPackageOrder();
@@ -1556,45 +1872,47 @@ describe("SeasonTickets package tab", () => {
     expect(mockedCreateTicketTransfer).not.toHaveBeenCalled();
   });
 
-  it("shows a season pass transfer error when included tickets were already transferred", async () => {
-    const user = userEvent.setup();
+  it("disables season pass transfer when a package game was already transferred", async () => {
     const order = demoCompletedPackageOrder();
     const pass = demoPackageAccessPass();
+    const [, activeEvent, transferredEvent] = pkg.events;
+    const events = [
+      activeEvent,
+      { ...transferredEvent, start: "2099-09-19T23:00:00.000Z" },
+    ];
+    const tickets = events.flatMap((event) =>
+      order.tickets.map((ticket) => ({
+        ...ticket,
+        id: `${ticket.id}-${event.uuid}`,
+        eventUUID: event.uuid,
+        ...(event.uuid === transferredEvent.uuid
+          ? { transferStatus: "transferred" }
+          : {}),
+      })),
+    );
     navigationMocks.pathname = `/wallet/my-tickets/order/${packageOrderId}/package/${pkg.uuid}/`;
-    mockedGetMyEvents.mockResolvedValue({ data: [order] } as never);
+    mockedGetMyEvents.mockResolvedValue({
+      data: [
+        demoCompletedPackageOrder({
+          package: { ...order.package, events },
+          tickets,
+        }),
+      ],
+    } as never);
     mockedGetAccessPassesByOrder.mockResolvedValue({
       data: { data: [pass] },
     } as never);
-    mockedCreateTicketTransfer.mockRejectedValue({
-      response: {
-        status: 400,
-        data: {
-          error: {
-            message:
-              "This season pass cannot be transferred because one or more included game tickets are unavailable",
-          },
-        },
-      },
-    });
 
     render(<SeasonTickets />);
 
-    await user.click(
-      await screen.findByRole("button", { name: "Transfer season pass" }),
-    );
-    await user.type(
-      screen.getByRole("textbox", { name: "Email address" }),
-      "recipient@example.com",
-    );
-    await user.click(screen.getByRole("button", { name: "Next" }));
-    await user.click(screen.getByRole("button", { name: "Transfer" }));
-
-    expect(await screen.findByRole("alert")).toHaveTextContent(
-      "This season pass can't be transferred because one or more included game tickets have already been transferred.",
-    );
+    const transferButton = await screen.findByRole("button", {
+      name: "Transfer season pass",
+    });
+    expect(transferButton).toBeDisabled();
     expect(
-      screen.queryByText("Season pass transfer pending"),
-    ).not.toBeInTheDocument();
+      screen.getByText(PASS_TRANSFER_DISPLAY_COPY.seasonPassTransferred),
+    ).toBeInTheDocument();
+    expect(mockedCreateTicketTransfer).not.toHaveBeenCalled();
   });
 
   it("shows pending-transfer copy when a season pass already has a pending transfer", async () => {
@@ -2125,7 +2443,14 @@ describe("SeasonTickets package transfers tab", () => {
       fromUserEmail: DEMO_SESSION.user.email,
       emailAddressToUser: "recipient@example.com",
       orderId: seasonPass.orderId,
-      access_pass: { name: seasonPass.name, type: "package" },
+      access_pass: {
+        name: seasonPass.name,
+        type: "package",
+        events: pkg.events,
+        sectionNumber: seasonPass.sectionNumber,
+        rowNumber: seasonPass.rowNumber,
+        seatNumber: seasonPass.seatNumber,
+      },
       createdAt: "2026-09-11T18:00:00.000Z",
     };
     const accessTransfer = {
@@ -2134,7 +2459,11 @@ describe("SeasonTickets package transfers tab", () => {
       fromUserEmail: DEMO_SESSION.user.email,
       emailAddressToUser: "recipient@example.com",
       orderId: accessPass.orderId,
-      access_pass: { name: accessPass.name, type: "organizer" },
+      access_pass: {
+        name: accessPass.name,
+        type: "organizer",
+        events: accessPass.events,
+      },
       createdAt: "2026-09-10T18:00:00.000Z",
     };
 
@@ -2154,7 +2483,15 @@ describe("SeasonTickets package transfers tab", () => {
 
     expect(await screen.findByText(seasonPass.name)).toBeInTheDocument();
     expect(screen.getByText(accessPass.name)).toBeInTheDocument();
-    expect(screen.getAllByText("1 Season pass")).toHaveLength(1);
+    expect(
+      screen.getByText(`${pkg.events.length} events`),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(`${accessPass.events.length} events`),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(/Sec M · Row M3 · Seat 21/i),
+    ).toBeInTheDocument();
     expect(screen.getAllByText("1 Access pass")).toHaveLength(1);
 
     await user.click(
@@ -2749,6 +3086,22 @@ describe("SeasonTickets section routes", () => {
     for (const label of pills.labels) {
       expect(screen.getByRole(pills.role, { name: label })).toHaveAccessibleName(label);
     }
+  });
+
+  it("loads my tickets again after a remount aborts the first fetch", async () => {
+    sessionMocks.getSession.mockReturnValue(DEMO_SESSION);
+    const order = demoCompletedTicketOrder({ event: icedogs });
+    mockedGetMyEvents.mockResolvedValue({ data: [order] } as never);
+
+    const { unmount } = render(<SeasonTickets />);
+    expect(await screen.findByText(icedogs.name)).toBeInTheDocument();
+    unmount();
+
+    // Same browser session, new mount — do not call resetWalletApiHydrationForTests.
+    render(<SeasonTickets />);
+
+    expect(await screen.findByText(icedogs.name)).toBeInTheDocument();
+    expect(screen.queryByLabelText("Loading tickets")).not.toBeInTheDocument();
   });
 
   it.each([
