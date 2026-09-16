@@ -1,34 +1,138 @@
 %% Step 0: login (email)
-%% Source: app/login/page.tsx and lib/fieldValidation.ts
-%% Email required: Email address is required.
-%% Email invalid: Email is invalid. Please try again.
-%% Network: We're experiencing technical difficulties. Please try again later.
+
+%% Source: app/login/page.tsx, lib/submitEmailValidation.ts, lib/fieldValidation.ts
+
+%% API:    blocktickets/tickets/src/api/registration/controllers/registration.js (validateEmail)
+
+%%         blocktickets/tickets/src/api/verify/controllers/verify.js (create → POST /verifies)
+
+%%
+
+%% Blur: optional hint on a non-empty field only. Empty blur is quiet (no required copy). SendGrid is not called.
+
+%% Submit: validateSubmittedEmail — trim, empty, blocked/syntax, then POST /registration/validate-email.
+
+%%
+
+%% --- Blur — client hint (non-empty only) ---
+
+%% | Field | Empty blur | Non-empty invalid |
+
+%% | Email | (no error) | Email is invalid. Please try again. |
+
+%%
+
+%% --- Submit — validateSubmittedEmail (before POST /verifies) ---
+
+%% | Step | Empty | Non-empty invalid | API |
+
+%% | Client | Email address is required. | Email is invalid. Please try again. | — |
+
+%% | POST /registration/validate-email | — | 402 Bad email → Email is invalid. Please try again. | 200 Valid → ok |
+
+%%
+
+%% --- POST /registration/validate-email ---
+
+%% | Status | API message / body | Displayed copy |
+
+%% | 200 | SendGrid verdict Valid | (continue to verifyUser) |
+
+%% | 200 | SendGrid verdict Invalid (or Risky with suggestion) | Email is invalid. Please try again. |
+
+%% | 402 | Bad email | Email is invalid. Please try again. |
+
+%%
+
+%% --- POST /verifies (verifyUser — send OTP) ---
+
+%% | Status | API message / body | Displayed copy |
+
+%% | 200 | verify record created (code omitted) | Continue to Step 1: 6-digit code |
+
+%% | 500 / other | (any other) | We're experiencing technical difficulties. Please try again later. |
+
+
 
 flowchart TD
-  start[Shopper opens /login] --> emailStep[Step 0: email]
 
-  emailStep --> typeEmail[Type email]
-  typeEmail --> blurEmail{Leave a non-empty field?}
-  blurEmail -->|yes| localEmail{Blocked or bad syntax?}
-  localEmail -->|yes| emailInvalid["Email is invalid. Please try again."]
-  localEmail -->|no| readySend[Send my code stays clickable]
-  blurEmail -->|empty or still focused| readySend
+  start[Step 0: email] --> typeEmail[Type email]
 
-  readySend --> sendClick[Click Send my code or press Enter]
-  sendClick --> readDom[Read the value currently in the field]
-  readDom --> normalize[Trim and lowercase]
+  typeEmail --> blurField[Blur field]
 
-  normalize --> emptyCheck{Empty?}
-  emptyCheck -->|yes| emailRequired["Email address is required."]
-  emptyCheck -->|no| syntaxCheck{Blocked or bad syntax?}
-  syntaxCheck -->|yes| emailInvalid
-  syntaxCheck -->|no| sendgrid[POST validateEmail]
+  blurField --> blurValidate[emailBlurInvalid]
 
-  sendgrid --> sgFail{Network error?}
-  sgFail -->|yes| network["We're experiencing technical difficulties. Please try again later."]
-  sgFail -->|no| sgVerdict{Invalid or Risky with suggestion?}
-  sgVerdict -->|yes| emailInvalid
-  sgVerdict -->|no| verifyUser[verifyUser send OTP]
-  verifyUser --> verifyFail{Network error?}
-  verifyFail -->|yes| network
-  verifyFail -->|no| nextStep[Continue to Step 1: 6-digit code]
+  blurValidate --> blurHint[Show inline hint if non-empty invalid]
+
+  blurHint --> typeEmail
+
+  typeEmail --> sendClick[Submit email]
+
+  sendClick --> readDom[Read submitted email]
+
+  readDom --> validate[validateSubmittedEmail]
+
+
+
+  validate --> valFail{Result?}
+
+  valFail -->|ok| verifyUser[POST /verifies verifyUser]
+
+  valFail -->|500| network["We're experiencing technical difficulties. Please try again later."]
+
+
+
+  verifyUser --> verifyFail{API response?}
+
+  verifyFail -->|200| nextStep[Continue to Step 1: 6-digit code]
+
+  verifyFail -->|500| network
+
+
+
+  subgraph blurClientChecks [blur — client check]
+
+    bNonEmpty{Email non-empty on blur?}
+
+    bNonEmpty -->|no| bQuiet[No error]
+
+    bNonEmpty -->|yes| bBlocked{Blocked domain or bad syntax?}
+
+    bBlocked -->|yes| bInvalid["Email is invalid. Please try again."]
+
+    bBlocked -->|no| bQuiet
+
+  end
+
+
+
+  subgraph validateSubmittedEmail [submit — validateSubmittedEmail]
+
+    vNorm[Trim and lowercase]
+
+    vNorm --> vEmpty{Empty?}
+
+    vEmpty -->|yes| vEmailRequired["Email address is required."]
+
+    vEmpty -->|no| vBlocked{Blocked domain or bad syntax?}
+
+    vBlocked -->|yes| vEmailInvalid["Email is invalid. Please try again."]
+
+    vBlocked -->|no| vSendgrid[POST /registration/validate-email]
+
+    vSendgrid --> vSgStatus{HTTP status?}
+
+    vSgStatus -->|200 Valid| vOk[ok]
+
+    vSgStatus -->|200 Invalid or Risky with suggestion| vEmailInvalid
+
+    vSgStatus -->|402| vEmailInvalid
+
+  end
+
+
+
+  blurValidate -.-> blurClientChecks
+
+  validate -.-> validateSubmittedEmail
+

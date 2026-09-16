@@ -66,4 +66,22 @@ describe("EmailField", () => {
     expect(screen.getByText(FIELD_COPY.invalidEmail)).toBeInTheDocument();
     expect(screen.queryByText(FIELD_COPY.emailRequired)).not.toBeInTheDocument();
   });
+
+  it("marks the field invalid and shows a custom error message", () => {
+    render(
+      <EmailField
+        id="email"
+        value="owner@example.com"
+        onChange={() => {}}
+        errorMessage="You cannot transfer tickets to yourself."
+      />,
+    );
+
+    expect(
+      screen.getByRole("textbox", { name: /email address/i }),
+    ).toHaveAttribute("aria-invalid", "true");
+    expect(
+      screen.getByRole("alert"),
+    ).toHaveTextContent("You cannot transfer tickets to yourself.");
+  });
 });

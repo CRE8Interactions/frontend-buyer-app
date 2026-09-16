@@ -65,10 +65,18 @@ vi.mock("next/navigation", () => ({
 }));
 
 vi.mock("@/components/organisms/InteractiveSeatmap", async () => {
+  const { useEffect } = await import("react");
   const { default: useFiltersStore } = await import("@/stores/filtersStore");
   return {
-    InteractiveSeatmap: () => {
+    InteractiveSeatmap: ({
+      onPaintReady,
+    }: {
+      onPaintReady?: () => void;
+    }) => {
       const loading = useFiltersStore.getState().loadingTicketGroups;
+      useEffect(() => {
+        if (!loading) onPaintReady?.();
+      }, [loading, onPaintReady]);
       return loading ? (
         <div role="status" aria-label="Loading seat map">
           Loading seat map
@@ -203,7 +211,9 @@ async function openLiveMap() {
   });
   await user.click(screen.getAllByText(/find on map/i)[0]);
   await finishSeatmapBackgroundLoad();
-  await screen.findByTestId("interactive-seatmap");
+  await waitFor(() => {
+    expect(screen.getByTestId("interactive-seatmap")).toBeVisible();
+  });
   return user;
 }
 
@@ -699,6 +709,25 @@ describe("Select tickets page (PremiumTicketing)", { timeout: 20_000 }, () => {
     expect(within(offers).getByText(/select tickets/i)).toBeInTheDocument();
     expect(within(offers).getByText(/sort by price/i)).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /find on map/i })).toBeEnabled();
+  });
+
+  it("keeps the org loader until the mobile select tickets panel is ready", async () => {
+    Object.defineProperty(window, "innerWidth", {
+      configurable: true,
+      writable: true,
+      value: 390,
+    });
+    const { rerender } = render(
+      <PremiumTicketing data={seatedTicketingFixture} refreshing />,
+    );
+
+    expect(document.querySelector("[data-bt-destination-loader]")).toBeTruthy();
+    expect(screen.queryByText(/sec m · row m3/i)).not.toBeInTheDocument();
+
+    rerender(<PremiumTicketing data={seatedTicketingFixture} refreshing={false} />);
+
+    expect(await screen.findByText(/sec m · row m3/i)).toBeInTheDocument();
+    expect(document.querySelector("[data-bt-destination-loader]")).toBeNull();
   });
 
   it("opens the mobile Select tickets sheet under Find on map", async () => {
@@ -1327,6 +1356,9 @@ describe("Select tickets page (PremiumTicketing)", { timeout: 20_000 }, () => {
       (group) => group.offer?.accessCode,
     );
     if (!presaleGroup) throw new Error("demo fixtures need a locked GA group");
+    if (!presaleGroup.offer?.description) {
+      throw new Error("demo fixtures need a locked offer description");
+    }
     const lockedZones = lockedZonesFromGroups([presaleGroup]);
     const gaTiers = groupsToGaTiers([presaleGroup], { includeLocked: true });
     const user = userEvent.setup();
@@ -1350,8 +1382,14 @@ describe("Select tickets page (PremiumTicketing)", { timeout: 20_000 }, () => {
     ).not.toBeInTheDocument();
 
     await user.click(screen.getByRole("button", { name: /enter access code/i }));
+    const unlockDialog = screen.getByRole("dialog");
     expect(
-      screen.getByText(/enter your access code to unlock this offer/i),
+      within(unlockDialog).getByText(presaleGroup.offer.description),
+    ).toBeInTheDocument();
+    expect(
+      within(unlockDialog).getByText(
+        /enter your access code to unlock this offer/i,
+      ),
     ).toBeInTheDocument();
     await user.type(screen.getByPlaceholderText(/access code/i), "GO2026");
     await user.click(screen.getByRole("button", { name: /unlock offer/i }));
@@ -1565,6 +1603,14 @@ describe("Select tickets page (PremiumTicketing)", { timeout: 20_000 }, () => {
       expect(mockedPlaceTickets).toHaveBeenCalled();
       expect(routerMocks.push).toHaveBeenCalledWith(checkoutHref("cart-1"));
     });
+    // The API reserves the seats that were clicked only while the group has no
+    // quantity — with one it quickpicks its own consecutive seats instead.
+    const [payload] = mockedPlaceTickets.mock.calls[0] as [
+      { ticketGroups: Array<Record<string, unknown>> },
+    ];
+    expect(payload.ticketGroups).toHaveLength(1);
+    expect(payload.ticketGroups[0]).toMatchObject({ seatId: "s1" });
+    expect(payload.ticketGroups[0]).not.toHaveProperty("quantity");
   });
 
   it("opens the seat map popup right away and shows the org loader until the map is ready", async () => {
@@ -1669,10 +1715,10 @@ describe("Select tickets page (PremiumTicketing)", { timeout: 20_000 }, () => {
     expect(
       within(loader).getByText(seatedTicketingFixture.orgLabel),
     ).toBeInTheDocument();
-    expect(screen.queryByTestId("interactive-seatmap")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("interactive-seatmap")).not.toBeVisible();
   });
 
-  it("does not show the org loader in Find on map when the map is already loaded", async () => {
+  it("keeps the org loader up in Find on map while ticket groups are still loading", async () => {
     useFiltersStore.setState({ loadingTicketGroups: true });
     const user = await renderReady({
       ...seatedTicketingFixture,
@@ -1685,10 +1731,9 @@ describe("Select tickets page (PremiumTicketing)", { timeout: 20_000 }, () => {
     });
 
     await user.click(screen.getAllByText(/find on map/i)[0]);
-    await finishSeatmapBackgroundLoad();
-    expect(await screen.findByLabelText(/loading seat map/i)).toBeInTheDocument();
-    expect(document.querySelector("[data-bt-tenant-loader]")).toBeNull();
-    expect(screen.queryByTestId("interactive-seatmap")).not.toBeInTheDocument();
+    const loader = await screen.findByRole("status", { name: /loading/i });
+    expect(within(loader).getByText(/loading tickets/i)).toBeInTheDocument();
+    expect(screen.queryByTestId("interactive-seatmap")).not.toBeVisible();
   });
 
   it("opens ticket details with the seat location and no quantity stepper", async () => {

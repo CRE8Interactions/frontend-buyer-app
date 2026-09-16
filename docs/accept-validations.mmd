@@ -1,0 +1,26 @@
+%% Accept incoming transfer — Blocktickets API errors
+%% Source: components/organisms/SeasonTickets.tsx, lib/acceptTransferErrors.ts, lib/fieldValidation.ts
+%% API:    blocktickets/tickets/src/api/ticket-transfer/controllers/ticket-transfer.js (acceptTransfer)
+%%
+%% Request body: { transferId }
+%% Response shape: 226 → { error: { message } } | 200 → success body
+%% 226 is HTTP IM Used (2xx), so axios resolves it; treat it as already claimed, not success.
+%%
+%% --- Blocktickets POST /ticket-transfers/accept API responses ---
+%% | Status | API message | Displayed copy |
+%% | 200 | (success) | Close popup + "Transfer accepted" toast |
+%% | 226 | Transfer has already been claimed | Transfer has already been claimed |
+%% | 400 / 402 / other 4xx | (any other) | Could not accept transfer. Please try again. |
+%% | 500 / other | (any other) | We're experiencing technical difficulties. Please try again later. |
+
+flowchart TD
+  submit[POST /ticket-transfers/accept] --> parse[parseAcceptTransferApiError]
+  parse --> apiFail{API response?}
+  apiFail -->|200| success[Close popup + Transfer accepted toast]
+  apiFail -->|226| claimed["Transfer has already been claimed"]
+  apiFail -->|4xx other| acceptError["Could not accept transfer. Please try again."]
+  apiFail -->|500 / other| apiNetwork["We're experiencing technical difficulties. Please try again later."]
+
+  claimed --> showError[Show error in popup]
+  acceptError --> showError
+  apiNetwork --> showError

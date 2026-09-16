@@ -8,11 +8,12 @@
  * prop, so any event can use it. See NM_STATE_DATA for the reference content.
  */
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import BrandedActionButton from "@/components/atoms/BrandedActionButton";
+import { BrandedLoader } from "@/components/molecules/RouteLoader";
 import { Ticket } from "@/components/atoms/icons";
 import EmailField from "@/components/molecules/EmailField";
 import ExpandableDescription from "@/components/molecules/ExpandableDescription";
@@ -55,8 +56,6 @@ import {
 import { checkoutHref, rememberCheckoutReturnPath, setStoredCart } from "@/lib/cart";
 import {
   emailBlurInvalid,
-  emailSubmitError,
-  emailSubmitInvalid,
   formString,
   normalizeRedemptionCode,
   redemptionCodeBlurFieldError,
@@ -65,6 +64,8 @@ import {
   type EmailFieldError,
   type RedemptionCodeFieldError,
 } from "@/lib/fieldValidation";
+import { validateSubmittedEmail } from "@/lib/submitEmailValidation";
+import { LOADER_MESSAGE } from "@/lib/loaderMessages";
 import { beginRouteTransition } from "@/lib/routeTransition";
 import { walletSectionHref } from "@/lib/walletNav";
 import type { SeatmapBackground, SeatmapMapping } from "@/lib/seatmapLookups";
@@ -209,6 +210,20 @@ const LIST_SHIMMER_MS = 420;
 /** Bottom bar height reserved so the map fills the locked mobile viewport. */
 const LISTINGS_SHEET_BAR_PX = 88;
 
+function initialViewportWidth() {
+  return typeof window !== "undefined" ? window.innerWidth : 1440;
+}
+
+function usesListingsSheet(
+  viewportWidth: number,
+  data: Pick<TicketingData, "eventType" | "soldOut" | "scheduled" | "listings">,
+) {
+  if (data.eventType === "ga") return false;
+  const seatedScheduled = !!data.scheduled && data.listings.length === 0;
+  if (seatedScheduled || data.soldOut) return false;
+  return viewportWidth < 1120 && data.listings.length > 0;
+}
+
 const DEFAULT_GA_TIERS: GATier[] = [
   { name: "Standard admission", sub: "General admission · unreserved seating", price: "$10.08", unit: 10.08, note: "Ticket limit: 100 per order", state: "live" },
   { name: "Aggie student", sub: "Valid NMSU student ID required at the gate", price: "Free", unit: 0, note: "All 800 student tickets claimed", state: "soldout" },
@@ -339,7 +354,10 @@ export default function PremiumTicketing({
   const hasLiveSeatmap = Boolean(mapMapping?.sections || mapMapping?.seats);
 
   const [mounted, setMounted] = useState(false);
-  const [vw, setVw] = useState(1440);
+  const [vw, setVw] = useState(initialViewportWidth);
+  const [listingsShellReady, setListingsShellReady] = useState(
+    () => !usesListingsSheet(initialViewportWidth(), d),
+  );
   const [want, setWant] = useState(() => initialTicketQuantity(d.listings));
   const [zoneFilter, setZoneFilter] = useState<string[]>([]);
   const [unlocked, setUnlocked] = useState<string[]>([]);
@@ -351,9 +369,11 @@ export default function PremiumTicketing({
   const [qtyMenu, setQtyMenu] = useState(false);
   const [ada, setAda] = useState(false);
   const [sortDir, setSortDir] = useState<"price" | "-price">("price");
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
   const [pinned, setPinned] = useState(false);
   const [map, setMap] = useState(false);
+  const [mapReady, setMapReady] = useState(false);
+  const [preparingMap, setPreparingMap] = useState(false);
   const [mapExitConfirm, setMapExitConfirm] = useState(false);
   const [zoom, setZoom] = useState(100);
   const [legendOpen, setLegendOpen] = useState(false);
@@ -368,12 +388,16 @@ export default function PremiumTicketing({
   const [notifySubject, setNotifySubject] = useState<NotifySubject | null>(null);
   const [notifyEmail, setNotifyEmail] = useState("");
   const [notifyEmailError, setNotifyEmailError] = useState<EmailFieldError>(null);
+  const [notifyEmailNetworkError, setNotifyEmailNetworkError] = useState(false);
+  const [notifyEmailChecking, setNotifyEmailChecking] = useState(false);
   const [notifySms, setNotifySms] = useState(false);
   const [notifySent, setNotifySent] = useState(false);
   const [notified, setNotified] = useState<Record<string, boolean>>({});
   const [gaSheet, setGaSheet] = useState(false);
   const [eventSoldOutSheet, setEventSoldOutSheet] = useState(false);
-  const [listingsExpanded, setListingsExpanded] = useState(false);
+  const [listingsExpanded, setListingsExpanded] = useState(
+    () => usesListingsSheet(initialViewportWidth(), d),
+  );
   const [mapTop, setMapTop] = useState(0);
   const headerRef = useRef<HTMLElement | null>(null);
   const sticky = useRef<HTMLDivElement | null>(null);
@@ -403,11 +427,8 @@ export default function PremiumTicketing({
     setVw(window.innerWidth);
     const onResize = () => setVw(window.innerWidth);
     window.addEventListener("resize", onResize);
-    setLoading(true);
-    const t = setTimeout(() => setLoading(false), 700);
     return () => {
       window.removeEventListener("resize", onResize);
-      clearTimeout(t);
       if (loadTimer.current) clearTimeout(loadTimer.current);
     };
   }, []);
@@ -461,6 +482,7 @@ export default function PremiumTicketing({
 
   useEffect(() => {
     setListingsExpanded(listingsSheet);
+    if (!listingsSheet) setListingsShellReady(true);
   }, [listingsSheet]);
 
   useEffect(() => {
@@ -561,15 +583,24 @@ export default function PremiumTicketing({
     setNotifySent(false);
   };
 
-  const submitEventWaitlist = (
+  const submitEventWaitlist = async (
     email: string,
     onSuccess?: () => void,
-  ): boolean => {
-    if (emailSubmitInvalid(email)) {
-      setNotifyEmailError(emailSubmitError(email));
+  ): Promise<boolean> => {
+    setNotifyEmailNetworkError(false);
+    setNotifyEmailChecking(true);
+    const result = await validateSubmittedEmail(email);
+    setNotifyEmailChecking(false);
+    if (!result.ok) {
+      if (result.error === "required" || result.error === "invalid") {
+        setNotifyEmailError(result.error);
+      } else {
+        setNotifyEmailError(null);
+        setNotifyEmailNetworkError(true);
+      }
       return false;
     }
-    setNotifyEmail(email);
+    setNotifyEmail(result.email);
     setNotifyEmailError(null);
     setNotified((current) => ({ ...current, [d.eventName]: true }));
     onSuccess?.();
@@ -587,6 +618,17 @@ export default function PremiumTicketing({
   const gaTierQtyLimits = (t: GATier) => limitsFromGaTier(t, eventTicketLimit);
   const isLocked = (zone: string) => !!lockedMap[zone] && !unlocked.includes(zone);
   const busy = loading || refreshing;
+
+  useLayoutEffect(() => {
+    if (!listingsSheet) {
+      setListingsShellReady(true);
+      return;
+    }
+    if (listingsExpanded && !busy) {
+      setListingsShellReady(true);
+    }
+  }, [busy, listingsExpanded, listingsSheet]);
+
   const mapLocked = Boolean(d.soldOut) || eventScheduled;
   const priceOf = (l: TicketingListing) =>
     parseFloat(l.price.replace(/[^0-9.]/g, "")) || 0;
@@ -653,6 +695,11 @@ export default function PremiumTicketing({
     d.listings.find((l) => !isLocked(l.zone));
   const unit = selRow ? parseFloat(selRow.price.replace(/[^0-9.]/g, "")) : 0;
   const panelOfferDescription = selectionOfferDescription(selRow?.cartGroup);
+  const unlockOfferDescription = selectionOfferDescription(
+    GA_TIERS.find((tier) => tier.name === unlockZone)?.cartGroup ??
+      d.listings.find((listing) => listing.zone === unlockZone)?.cartGroup ??
+      quantityCatalog.find((listing) => listing.zone === unlockZone)?.cartGroup,
+  );
   const panelOpen = sel !== null && !map;
 
   const pickTotal = picks.reduce((t, p) => t + p.unit, 0);
@@ -669,6 +716,14 @@ export default function PremiumTicketing({
   const addPick = (z: (typeof ZONES)[number]) => setPicks((list) => [...list, { sec: z.sec, row: z.row, seat: String(21 + list.length), zone: z.zone, tier: z.tier, unit: z.unit, price: "$" + z.unit.toFixed(2) }]);
   const flip = () => setMedia((m) => (m === 0 ? 1 : 0));
 
+  const closeMap = () => {
+    setMap(false);
+    setMapReady(false);
+    setPreparingMap(false);
+    resetMapState();
+    setPicks([]);
+  };
+
   /** Closing with seats selected needs confirm so the shopper does not lose them by accident. */
   const requestCloseMap = () => {
     if (selectedFromMap.length > 0 || picks.length > 0) {
@@ -676,16 +731,43 @@ export default function PremiumTicketing({
       return;
     }
     setMapExitConfirm(false);
-    setMap(false);
-    resetMapState();
-    setPicks([]);
+    closeMap();
   };
 
   const confirmExitMap = () => {
     setMapExitConfirm(false);
-    setMap(false);
-    resetMapState();
-    setPicks([]);
+    closeMap();
+  };
+
+  const openMap = () => {
+    if (mapLocked) return;
+
+    setMapReady(false);
+    if (hasLiveSeatmap) setPreparingMap(true);
+    setMap(true);
+
+    if (!hasLiveSeatmap) return;
+
+    const hydrate = () => {
+      const filtersState = useFiltersStore.getState();
+      filtersState.setLoadingTicketGroups(false);
+
+      if (mapMapping) setStoreMapping(mapMapping);
+      if (mapBackground) setStoreBackground(mapBackground);
+
+      const lookups = seatmapLookupsFromTicketGroups(
+        filtersState.ticketGroups,
+        filtersState.filters.selectedOfferIds,
+      );
+      setSeatLookupTable(lookups.seatLookupTable);
+      setSeatOffersLookupTable(lookups.seatOffersLookupTable);
+      setSectionLookupTable(lookups.sectionLookupTable);
+
+      setMapReady(true);
+      setPreparingMap(false);
+    };
+
+    window.setTimeout(hydrate, 50);
   };
 
   const submitUnlockCode = async (code = unlockInput) => {
@@ -732,7 +814,7 @@ export default function PremiumTicketing({
   };
 
   const placeSelectedTickets = async (
-    groups: Array<Record<string, unknown> & { quantity: number }>,
+    groups: Array<Record<string, unknown> & { quantity?: number }>,
   ) => {
     if (d.eventId == null) {
       throw new Error("This event is not ready for checkout yet.");
@@ -755,7 +837,7 @@ export default function PremiumTicketing({
     if (cartId == null) {
       throw new Error("Cart could not be created. Please try again.");
     }
-    const qty = groups.reduce((sum, g) => sum + Number(g.quantity || 0), 0);
+    const qty = groups.reduce((sum, g) => sum + Number(g.quantity || 1), 0);
     setStoredCart(cartId, qty || 1);
     return String(cartId);
   };
@@ -784,10 +866,17 @@ export default function PremiumTicketing({
     setHolding(true);
     setHoldError("");
     try {
-      const groups = selectedFromMap.map((g) => ({
-        ...(g as Record<string, unknown>),
-        quantity: Number(g.quantity || 1),
-      }));
+      // A seat picked off the map has to reach the API without a quantity:
+      // any quantity switches it to the quickpick path, which throws the
+      // chosen seats away and reserves consecutive ones instead.
+      const groups = selectedFromMap.map((g) => {
+        const group = { ...(g as Record<string, unknown>) };
+        if (!g.GA && g.seatId != null) {
+          delete group.quantity;
+          return group;
+        }
+        return { ...group, quantity: Number(g.quantity || 1) };
+      });
       const cartId = await placeSelectedTickets(groups);
       goToCheckout(cartId);
     } catch (err: unknown) {
@@ -846,7 +935,7 @@ export default function PremiumTicketing({
       className="nmt-map-btn"
       type="button"
       disabled={mapLocked}
-      onClick={() => setMap(true)}
+      onClick={openMap}
       style={{
         fontFamily: "inherit",
         position: "relative",
@@ -1170,8 +1259,8 @@ export default function PremiumTicketing({
         style={{ padding: "18px 20px", background: "#fff" }}
       >
         {eventSoldOutNotifyBarInner}
-      </div>
-    );
+    </div>
+  );
 
   // GA tier cards — rendered inline on desktop, inside the mobile bottom sheet.
   const gaTierCards = (
@@ -1372,10 +1461,24 @@ export default function PremiumTicketing({
       </div>
       <div style={{ height: 1, background: "rgba(5,27,53,0.08)", margin: compact ? "10px 0 0" : "16px 0 0" }} />
     </>
-    );
+  );
   })();
 
+  const showListingsShellLoader = listingsSheet && !listingsShellReady;
+
   return (
+    <>
+      {showListingsShellLoader ? (
+        <BrandedLoader
+          branding={{
+            primaryColor: ACC,
+            logoSrc: d.brandLogoSrc || d.logoSrc,
+            name: d.orgLabel,
+          }}
+          routeDestination
+          message={LOADER_MESSAGE}
+        />
+      ) : null}
     <div className="shopper-page" data-theme="light" style={{ position: "relative", ...(gaDesktop ? {} : { display: "flex", flexDirection: "column" }), background: "#f7f8fc", color: NAVY, width: "100%", minHeight: isGa && mobile ? "100vh" : "100dvh", fontFamily: "'Geist', system-ui, -apple-system, sans-serif", WebkitFontSmoothing: "antialiased", ...shopperShellVars(ACC), ...(isGa ? {} : { height: "100dvh", overflowY: listingsSheet ? "hidden" : "auto" }) }}>
       <style>{`
         ${shopperPageTypeCss()}
@@ -1448,14 +1551,14 @@ export default function PremiumTicketing({
               {isGa ? (
                 d.brandLogoSrc ? (
                   <span style={{ display: "inline-flex", alignItems: "center", flexShrink: 0 }}>
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
                     <img src={d.brandLogoSrc} alt={d.orgLabel} style={{ height: 46, width: "auto", display: "block", objectFit: "contain" }} />
                   </span>
                 ) : (
                   <Link href="/browse" aria-label="Blocktickets home" style={{ display: "inline-flex", alignItems: "center", flexShrink: 0 }}>
                     {/* eslint-disable-next-line @next/next/no-img-element */}
                     <img src="/blocktickets-logo-navy.svg" alt="Blocktickets" style={{ height: 26, width: "auto", display: "block", objectFit: "contain" }} />
-                  </Link>
+                </Link>
                 )
               ) : (
                 <>
@@ -1505,14 +1608,14 @@ export default function PremiumTicketing({
           {isGa ? (
             d.brandLogoSrc ? (
               <span style={{ flex: 1, minWidth: 0, display: "flex", alignItems: "center" }}>
-                {/* eslint-disable-next-line @next/next/no-img-element */}
+              {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img src={d.brandLogoSrc} alt={d.orgLabel} style={{ height: 34, width: "auto", objectFit: "contain" }} />
               </span>
             ) : (
               <Link href="/browse" aria-label="Blocktickets home" style={{ flex: 1, minWidth: 0, display: "flex", alignItems: "center" }}>
                 {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img src="/blocktickets-logo-navy.svg" alt="Blocktickets" style={{ height: 20, width: "auto", objectFit: "contain" }} />
-              </Link>
+            </Link>
             )
           ) : (
             <div style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", gap: 2 }}>
@@ -1690,15 +1793,15 @@ export default function PremiumTicketing({
               <div role="status" aria-label="Loading listings" style={{ display: "flex", flexDirection: "column", gap: 14 }}>
                 {Array.from({ length: skeletonRows }, (_, i) => (
                   <div key={i} aria-hidden style={{ display: "flex", alignItems: "center", gap: 18, background: "#fff", border: "1px solid rgba(5,27,53,0.10)", borderRadius: 16, padding: "16px 20px" }}>
-                    <div style={{ width: thumbSize, height: thumbSize, borderRadius: 12, flexShrink: 0, ...shimmer }} />
+                  <div style={{ width: thumbSize, height: thumbSize, borderRadius: 12, flexShrink: 0, ...shimmer }} />
                     <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 9, minWidth: 0 }}>
                       <div style={{ height: 24, width: 120, borderRadius: 999, ...shimmer }} />
                       <div style={{ height: 20, width: "58%", borderRadius: 8, ...shimmer }} />
                       <div style={{ height: 16, width: 128, borderRadius: 8, ...shimmer }} />
-                    </div>
-                    {!mobile && <div style={{ height: 22, width: 92, borderRadius: 8, flexShrink: 0, ...shimmer }} />}
                   </div>
-                ))}
+                    {!mobile && <div style={{ height: 22, width: 92, borderRadius: 8, flexShrink: 0, ...shimmer }} />}
+                </div>
+              ))}
               </div>
             )}
 
@@ -1745,7 +1848,7 @@ export default function PremiumTicketing({
                       <span style={{ minWidth: 0, overflowWrap: "anywhere" }}>Sec {l.sec} · Row {l.row}</span>
                     </div>
                     <div style={{ fontSize: fluidSize(15), color: "#6e7180" }}>{l.range}</div>
-                  </div>
+                      </div>
                   <div style={{ textAlign: "right", flexShrink: 0, marginLeft: 8 }}>
                     <div style={{ fontSize: fluidSize(20), fontWeight: 600, fontVariantNumeric: "tabular-nums", letterSpacing: "-0.015em", whiteSpace: "nowrap" }}>{l.price} each</div>
                     <div style={{ fontSize: fluidSize(13), color: "#6e7180", marginTop: 2, whiteSpace: "nowrap" }}>{mobile ? "incl. fees" : "Incl. Taxes & Fees"}</div>
@@ -1816,10 +1919,10 @@ export default function PremiumTicketing({
                     border: "1px solid rgba(5,27,53,0.08)",
                   }}
                 >
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img src={POSTER} alt="" style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
-                </div>
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src={POSTER} alt="" style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
               </div>
+            </div>
               {compactTrustCard}
             </div>
           </div>
@@ -1852,7 +1955,7 @@ export default function PremiumTicketing({
             ) : null}
 
             {d.aboutText ? (
-              <div style={{ ...card, borderRadius: 20, padding: mobile ? 18 : 24, display: "flex", flexDirection: "column", gap: 14 }}>
+            <div style={{ ...card, borderRadius: 20, padding: mobile ? 18 : 24, display: "flex", flexDirection: "column", gap: 14 }}>
                 <div style={{ fontSize: fluidSize(12), fontWeight: 600, letterSpacing: "0.12em", textTransform: "uppercase", color: "#8a93a3" }}>About this event</div>
                 <ExpandableDescription
                   text={d.aboutText}
@@ -1860,7 +1963,7 @@ export default function PremiumTicketing({
                   toggleColor={ACC}
                   style={{ fontSize: fluidSize(15), lineHeight: 1.6, color: "#4a5567" }}
                 />
-              </div>
+            </div>
             ) : null}
 
             {showMatchupSection ? (
@@ -1887,11 +1990,11 @@ export default function PremiumTicketing({
                     ) : (
                       d.awayShort
                     )}
-                  </div>
-                  <div style={{ fontSize: fluidSize(15), fontWeight: 500 }}>{d.awayLabel}</div>
                 </div>
-                ) : null}
+                  <div style={{ fontSize: fluidSize(15), fontWeight: 500 }}>{d.awayLabel}</div>
               </div>
+                ) : null}
+            </div>
             </div>
             ) : null}
 
@@ -1940,7 +2043,7 @@ export default function PremiumTicketing({
 
       {/* GA TIER SHEET (mobile) */}
       {isGa && gaSheet && !gaSoldOut && !gaScheduled && (
-        <div onClick={() => setGaSheet(false)} style={{ position: "fixed", inset: 0, zIndex: 55, background: "rgba(5,27,53,0.55)", backdropFilter: "blur(6px)", display: "flex", alignItems: "flex-end", justifyContent: "center" }}>
+        <div style={{ position: "fixed", inset: 0, zIndex: 55, background: "rgba(5,27,53,0.55)", backdropFilter: "blur(6px)", display: "flex", alignItems: "flex-end", justifyContent: "center" }}>
           <div onClick={(e) => e.stopPropagation()} style={{ width: "100%", maxWidth: 560, maxHeight: "88vh", background: "#fff", borderTopLeftRadius: 24, borderTopRightRadius: 24, boxShadow: "0 -20px 60px -20px rgba(5,27,53,0.5)", display: "flex", flexDirection: "column", overflow: "hidden" }}>
             <div style={{ display: "flex", justifyContent: "center", paddingTop: 10, flexShrink: 0 }}>
               <div style={{ width: 40, height: 5, borderRadius: 999, background: "rgba(5,27,53,0.14)" }} />
@@ -1967,7 +2070,6 @@ export default function PremiumTicketing({
           const overlay = (
         <div
           className="ga-soldout-notify-sheet-overlay"
-          onClick={() => setEventSoldOutSheet(false)}
           style={{
             position: "fixed",
             inset: 0,
@@ -2149,7 +2251,7 @@ export default function PremiumTicketing({
                     noValidate
                     onSubmit={(event) => {
                       event.preventDefault();
-                      submitEventWaitlist(
+                      void submitEventWaitlist(
                         submittedEmail(new FormData(event.currentTarget)),
                         () => setNotifySent(true),
                       );
@@ -2164,9 +2266,12 @@ export default function PremiumTicketing({
                       placeholder="you@example.com"
                       value={notifyEmail}
                       error={notifyEmailError}
+                      networkError={notifyEmailNetworkError}
+                      disabled={notifyEmailChecking}
                       onChange={(value) => {
                         setNotifyEmail(value);
                         setNotifyEmailError(null);
+                        setNotifyEmailNetworkError(false);
                       }}
                       onBlur={(value) =>
                         setNotifyEmailError(emailBlurInvalid(value) ? "invalid" : null)
@@ -2178,6 +2283,9 @@ export default function PremiumTicketing({
                       textColor={BTN_INK}
                       className="ga-soldout-notify-submit w-full"
                       style={{ padding: "16px 24px" }}
+                      loading={notifyEmailChecking}
+                      loadingLabel="Checking email…"
+                      disabled={notifyEmailChecking}
                     >
                       Notify me when tickets become available
                     </BrandedActionButton>
@@ -2217,14 +2325,26 @@ export default function PremiumTicketing({
                 className="mt-5 flex flex-col gap-3.5"
                 onSubmit={(event) => {
                   event.preventDefault();
-                  const next = submittedEmail(new FormData(event.currentTarget));
-                  if (emailSubmitInvalid(next)) {
-                    setNotifyEmailError(emailSubmitError(next));
-                    return;
-                  }
-                  setNotifyEmail(next);
-                  setNotifySent(true);
-                  setNotified((m) => ({ ...m, [t.name]: true }));
+                  void (async () => {
+                    const next = submittedEmail(new FormData(event.currentTarget));
+                    setNotifyEmailNetworkError(false);
+                    setNotifyEmailChecking(true);
+                    const result = await validateSubmittedEmail(next);
+                    setNotifyEmailChecking(false);
+                    if (!result.ok) {
+                      if (result.error === "required" || result.error === "invalid") {
+                        setNotifyEmailError(result.error);
+                      } else {
+                        setNotifyEmailError(null);
+                        setNotifyEmailNetworkError(true);
+                      }
+                      return;
+                    }
+                    setNotifyEmail(result.email);
+                    setNotifyEmailError(null);
+                    setNotifySent(true);
+                    setNotified((m) => ({ ...m, [t.name]: true }));
+                  })();
                 }}
               >
                 <EmailField
@@ -2234,9 +2354,12 @@ export default function PremiumTicketing({
                   placeholder="you@example.com"
                   value={notifyEmail}
                   error={notifyEmailError}
+                  networkError={notifyEmailNetworkError}
+                  disabled={notifyEmailChecking}
                   onChange={(value) => {
                     setNotifyEmail(value);
                     setNotifyEmailError(null);
+                    setNotifyEmailNetworkError(false);
                   }}
                   onBlur={(value) =>
                     setNotifyEmailError(emailBlurInvalid(value) ? "invalid" : null)
@@ -2315,18 +2438,14 @@ export default function PremiumTicketing({
           buttonColor={BTN}
           buttonTextColor={BTN_INK}
           mobile={mobile}
-          onClose={() => {
-            setMap(false);
-            resetMapState();
-            setPicks([]);
-          }}
+          onClose={closeMap}
           onCheckout={() => void startHoldFromMap()}
           checkoutLoading={holding}
           checkoutError=""
           mapBackground={mapBackground}
           mapMapping={mapMapping}
           venueSlug={d.venueSlug}
-          preparing={!hasLiveSeatmap}
+          preparing={preparingMap || !mapReady || !hasLiveSeatmap}
           orgName={d.orgLabel}
           logoSrc={d.brandLogoSrc || d.logoSrc}
           onUnlockOffer={(offerName) => {
@@ -2372,7 +2491,7 @@ export default function PremiumTicketing({
       {/* TICKET DETAIL DRAWER */}
       {panelOpen && selRow && (
         <>
-          <div onClick={() => setSel(null)} style={{ position: "fixed", inset: 0, zIndex: 20, background: "rgba(5,27,53,0.42)", backdropFilter: "blur(3px)" }} />
+          <div style={{ position: "fixed", inset: 0, zIndex: 20, background: "rgba(5,27,53,0.42)", backdropFilter: "blur(3px)" }} />
           <div style={{ position: "fixed", zIndex: 21, display: "flex", flexDirection: "column", background: "#fff", overflow: "hidden", boxShadow: "-30px 0 80px -20px rgba(5,27,53,0.45)", top: mobile ? "auto" : 0, right: 0, bottom: 0, left: "auto", width: mobile ? "100%" : 480, height: mobile ? "86vh" : "auto", maxWidth: "100%", borderRadius: mobile ? "24px 24px 0 0" : 0 }}>
             <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "16px 20px", borderBottom: "1px solid rgba(5,27,53,0.08)", flexShrink: 0 }}>
               <button onClick={() => setSel(null)} aria-label="Back" style={{ fontFamily: "inherit", width: 44, height: 44, display: "flex", alignItems: "center", justifyContent: "center", background: "#fff", border: "1px solid #d3d6e0", borderRadius: 12, color: NAVY, cursor: "pointer", flexShrink: 0 }}>
@@ -2444,7 +2563,7 @@ export default function PremiumTicketing({
                 </div>
               </div>
               {panelOfferDescription ? (
-                <div style={{ display: "flex", flexDirection: "column", gap: 8, paddingBottom: 18 }}>
+              <div style={{ display: "flex", flexDirection: "column", gap: 8, paddingBottom: 18 }}>
                   <div style={{ fontSize: fluidSize(12), fontWeight: 600, letterSpacing: "0.12em", textTransform: "uppercase", color: "#8a93a3" }}>About this ticket</div>
                   <ExpandableDescription
                     text={panelOfferDescription}
@@ -2456,7 +2575,7 @@ export default function PremiumTicketing({
                       lineHeight: 1.6,
                     }}
                   />
-                </div>
+              </div>
               ) : null}
               <div style={{ width: "100%", boxSizing: "border-box" }}>{compactTrustCard}</div>
             </div>
@@ -2507,6 +2626,11 @@ export default function PremiumTicketing({
             >
               <LockIcon s={22} />
             </div>
+            {unlockOfferDescription ? (
+              <p className="text-[14px] leading-relaxed text-[#4a5567]">
+                {unlockOfferDescription}
+              </p>
+            ) : null}
             <p className="text-[14px] leading-relaxed text-[#6e7180]">
               Enter your access code to unlock {isGa ? "this offer" : "these seats"}.
             </p>
@@ -2563,7 +2687,7 @@ export default function PremiumTicketing({
       ) : null}
 
       {info && (
-        <Modal variant="light" sheet={mobile} title="Event information" onClose={() => setInfo(false)}>
+        <Modal variant="light" title="Event information" onClose={() => setInfo(false)}>
           <div className={`mt-4 flex flex-col gap-[22px] ${mobile ? "" : "max-h-[min(70vh,640px)] overflow-y-auto"}`}>
             <div className="flex flex-col items-center gap-3.5 text-center">
               <div className="flex h-[132px] w-[132px] items-center justify-center overflow-hidden rounded-[22px] border border-[rgba(5,27,53,0.08)] bg-[#f1f3f8]">
@@ -2627,9 +2751,9 @@ export default function PremiumTicketing({
               </div>
               {d.aboutText ? (
                 <>
-                  <div className="h-px bg-[rgba(5,27,53,0.08)]" />
-                  <div className="flex flex-col gap-2">
-                    <div className="text-[12px] font-semibold uppercase tracking-[0.12em] text-[#8a93a3]">About this event</div>
+              <div className="h-px bg-[rgba(5,27,53,0.08)]" />
+              <div className="flex flex-col gap-2">
+                <div className="text-[12px] font-semibold uppercase tracking-[0.12em] text-[#8a93a3]">About this event</div>
                     <ExpandableDescription
                       text={d.aboutText}
                       mobile={mobile}
@@ -2637,7 +2761,7 @@ export default function PremiumTicketing({
                       className="leading-relaxed text-[#4a5567]"
                       style={{ fontSize: fluidSize(14) }}
                     />
-                  </div>
+              </div>
                 </>
               ) : null}
             </div>
@@ -2656,6 +2780,7 @@ export default function PremiumTicketing({
         </Modal>
       )}
     </div>
+    </>
   );
 }
 

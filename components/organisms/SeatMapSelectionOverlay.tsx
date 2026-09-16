@@ -18,6 +18,7 @@ import {
 } from "@/lib/ticketListings";
 import type { QuantityRestrictionSource } from "@/lib/ticketListings";
 import { selectionOfferDescription, selectionOfferName, selectionTicketCards } from "@/lib/ticketSummary";
+import { gaTicketSeatLine } from "@/lib/wallet";
 import useFiltersStore from "@/stores/filtersStore";
 import useSeatmapStore from "@/stores/seatmapStore";
 
@@ -157,6 +158,7 @@ export default function SeatMapSelectionOverlay({
   orderQuantitySource,
   onUnlockOffer,
   keepTooltipOpen = false,
+  mapLegend = "event",
 }: {
   title: string;
   accent: string;
@@ -179,6 +181,7 @@ export default function SeatMapSelectionOverlay({
   orderQuantitySource?: QuantityRestrictionSource | null;
   onUnlockOffer?: (offerName: string) => void;
   keepTooltipOpen?: boolean;
+  mapLegend?: "event" | "package";
 }) {
   const selectedFromMap = useSeatmapStore((s) => s.selectedFromMap);
   const totalCount = useSeatmapStore((s) => s.totalCount);
@@ -195,6 +198,14 @@ export default function SeatMapSelectionOverlay({
   const [prepareExpired, setPrepareExpired] = useState(false);
   const [dismissTooltipKey, setDismissTooltipKey] = useState(0);
   const dismissMapTooltip = () => setDismissTooltipKey((key) => key + 1);
+  const handleOverlayButtonPointerDown = (
+    event: React.PointerEvent<HTMLDivElement>,
+  ) => {
+    const target = event.target as Element | null;
+    if (!target?.closest("button, a[href], [role='button']")) return;
+    if (target.closest("[data-seatmap-canvas]")) return;
+    dismissMapTooltip();
+  };
   const paneRestrictionLabel = selectionPaneRestrictionLabel(
     seatmapTicketLimit ?? eventTicketLimit,
     selectedFromMap,
@@ -220,7 +231,19 @@ export default function SeatMapSelectionOverlay({
     setLoadedBackgroundUrl(backgroundUrl);
   };
   const mapPaintable = mapHasSeats && (backgroundReady || prepareExpired);
-  const showOrgLoader = preparing || !mapPaintable;
+  const [seatmapPaintReady, setSeatmapPaintReady] = useState(false);
+  const geometryPending = preparing && !mapHasSeats;
+  const showMapLoader =
+    preparing ||
+    (mapHasSeats && (!mapPaintable || !seatmapPaintReady));
+
+  useEffect(() => {
+    setSeatmapPaintReady(false);
+  }, [backgroundUrl, mapHasSeats]);
+
+  useEffect(() => {
+    if (preparing) setSeatmapPaintReady(false);
+  }, [preparing]);
 
   const [mapDetail, setMapDetail] = useState<number | null>(null);
   const [mapSelectionOpen, setMapSelectionOpen] = useState(false);
@@ -252,7 +275,7 @@ export default function SeatMapSelectionOverlay({
     selectedFromMap.length > 0 &&
     (!mobile || mapSelectionOpen || mapDetail != null);
   const checkoutDisabled =
-    checkoutLoading || showOrgLoader || selectedFromMap.length === 0;
+    checkoutLoading || showMapLoader || selectedFromMap.length === 0;
   const handleCheckout = () => {
     if (checkoutDisabled) return;
     dismissMapTooltip();
@@ -269,13 +292,13 @@ export default function SeatMapSelectionOverlay({
   // Never reset this: closing the overlay unmounts it, and clearing the flag
   // while the loader is up would flip it straight back on.
   useEffect(() => {
-    if (!showOrgLoader) return;
+    if (!showMapLoader) return;
     const timer = window.setTimeout(
       () => setPrepareExpired(true),
       MAX_PREPARING_MS,
     );
     return () => window.clearTimeout(timer);
-  }, [showOrgLoader]);
+  }, [showMapLoader]);
 
   useEffect(() => {
     const prev = document.body.style.overflow;
@@ -286,6 +309,7 @@ export default function SeatMapSelectionOverlay({
   }, []);
 
   const requestClose = () => {
+    dismissMapTooltip();
     if (selectedFromMap.length > 0) {
       setExitConfirm(true);
       return;
@@ -389,13 +413,13 @@ export default function SeatMapSelectionOverlay({
         padding: mobile ? 0 : 16,
         boxSizing: "border-box",
       }}
-      onClick={requestClose}
     >
       <div
         role="dialog"
         aria-modal="true"
         aria-label="Select your seats"
         onClick={(event) => event.stopPropagation()}
+        onPointerDownCapture={handleOverlayButtonPointerDown}
         style={{
           flex: 1,
           minWidth: 0,
@@ -486,7 +510,7 @@ export default function SeatMapSelectionOverlay({
         </div>
       </div>
 
-      {showOrgLoader ? (
+      {geometryPending ? (
         <div
           style={{
             flex: 1,
@@ -548,20 +572,71 @@ export default function SeatMapSelectionOverlay({
               minHeight: 0,
               display: "flex",
               flexDirection: "column",
+              position: "relative",
             }}
           >
-            <InteractiveSeatmap
-              className={mobile ? "h-full min-h-0" : "h-full min-h-[60vh]"}
-              lookupsMode="external"
-              accent={accent}
-              buttonColor={buttonColor}
-              buttonTextColor={buttonTextColor}
-              compactChrome={mobile}
-              hideLoadingSpinner
-              dismissTooltipKey={dismissTooltipKey}
-              onUnlockOffer={onUnlockOffer}
-              keepTooltipOpen={keepTooltipOpen}
-            />
+            {showMapLoader ? (
+              <div
+                style={{
+                  position: "absolute",
+                  inset: 0,
+                  zIndex: 2,
+                }}
+              >
+                <BrandedLoader
+                  embedded
+                  branding={{
+                    primaryColor: accent,
+                    logoSrc,
+                    name: orgName,
+                  }}
+                />
+                {backgroundUrl ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img
+                    src={backgroundUrl}
+                    alt=""
+                    aria-hidden
+                    data-seatmap-background-preload="true"
+                    ref={(el) => {
+                      if (el?.complete) markBackgroundLoaded();
+                    }}
+                    onLoad={markBackgroundLoaded}
+                    onError={markBackgroundLoaded}
+                    style={{
+                      position: "absolute",
+                      width: 1,
+                      height: 1,
+                      opacity: 0,
+                      pointerEvents: "none",
+                    }}
+                  />
+                ) : null}
+              </div>
+            ) : null}
+            <div
+              style={{
+                flex: 1,
+                minHeight: 0,
+                display: "flex",
+                flexDirection: "column",
+                visibility: showMapLoader ? "hidden" : "visible",
+              }}
+            >
+              <InteractiveSeatmap
+                className={mobile ? "h-full min-h-0" : "h-full min-h-[60vh]"}
+                lookupsMode="external"
+                accent={accent}
+                buttonColor={buttonColor}
+                buttonTextColor={buttonTextColor}
+                compactChrome={mobile}
+                mapLegend={mapLegend}
+                hideLoadingSpinner
+                dismissTooltipKey={dismissTooltipKey}
+                onUnlockOffer={onUnlockOffer}
+                keepTooltipOpen={keepTooltipOpen}
+                onPaintReady={() => setSeatmapPaintReady(true)}
+              />
             {showMobileMapBar ? (
               <div
                 style={{
@@ -645,6 +720,7 @@ export default function SeatMapSelectionOverlay({
                 </div>
               </div>
             ) : null}
+            </div>
           </div>
           {showMapSelectionPanel && (
             <aside
@@ -914,7 +990,7 @@ export default function SeatMapSelectionOverlay({
                           }}
                         >
                           {mapDetailGroup.GA
-                            ? `Sec ${mapDetailSection} · General admission`
+                            ? gaTicketSeatLine(mapDetailGroup)
                             : `Sec ${mapDetailSection} · Row ${mapDetailGroup.rowNumber || mapDetailGroup.rowName || "—"} · Seat ${mapDetailGroup.seatNumber ?? "—"}`}
                         </div>
                         <div style={{ fontSize: fluidSize(15), color: "#6e7180" }}>
@@ -1040,7 +1116,7 @@ export default function SeatMapSelectionOverlay({
                             style={{
                               flex: 1,
                               textAlign: "center",
-                              fontSize: fluidSize(16),
+                              fontSize: fluidSize(20),
                               fontWeight: 600,
                               letterSpacing: "-0.015em",
                             }}
@@ -1357,8 +1433,12 @@ export default function SeatMapSelectionOverlay({
       {seatedError ? (
         <Modal
           variant="light"
+          sheet={false}
           title={seatedError.title}
-          onClose={() => setSeatedError(null)}
+          onClose={() => {
+            dismissMapTooltip();
+            setSeatedError(null);
+          }}
         >
           <p className="mt-4 text-[15px] leading-relaxed text-[#4a5567]">
             {seatedError.message}
@@ -1368,6 +1448,7 @@ export default function SeatMapSelectionOverlay({
             textColor={buttonTextColor}
             onClick={() => {
               const leave = seatedError.leaveMap;
+              dismissMapTooltip();
               setSeatedError(null);
               if (leave) onClose();
             }}
@@ -1381,8 +1462,12 @@ export default function SeatMapSelectionOverlay({
       {exitConfirm ? (
         <Modal
           variant="light"
+          sheet={false}
           title="Are you sure you want to exit?"
-          onClose={() => setExitConfirm(false)}
+          onClose={() => {
+            dismissMapTooltip();
+            setExitConfirm(false);
+          }}
         >
           <p className="mt-4 text-[15px] leading-relaxed text-[#4a5567]">
             You will lose your selected tickets....
@@ -1391,14 +1476,20 @@ export default function SeatMapSelectionOverlay({
             <BrandedActionButton
               primaryColor={accent}
               textColor={buttonTextColor}
-              onClick={onClose}
+              onClick={() => {
+                dismissMapTooltip();
+                onClose();
+              }}
               className="w-full"
             >
               Exit anyway
             </BrandedActionButton>
             <BrandedActionButton
               tone="secondary"
-              onClick={() => setExitConfirm(false)}
+              onClick={() => {
+                dismissMapTooltip();
+                setExitConfirm(false);
+              }}
               className="w-full"
             >
               Cancel

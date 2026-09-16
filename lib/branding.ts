@@ -23,6 +23,8 @@ export type BrandingOrganization = {
   image?: ApiImage;
   logo?: ApiImage;
   branding?: OrgBranding | null;
+  enableTransfer?: boolean;
+  enableResale?: boolean;
 };
 
 export type BrandingEvent = {

@@ -70,6 +70,18 @@ function isGaGroup(group: QuantityCapGroup) {
   return Boolean(group.GA || group.generalAdmission);
 }
 
+/** Identity of the quantity rules a group carries, so mixed offers are detectable. */
+function restrictionSourceKey(
+  source: QuantityRestrictionSource | null | undefined,
+) {
+  return [
+    normalizeGlobalTicketLimit(source?.limit) ?? "",
+    normalizeGlobalTicketLimit(source?.minQuantity) ?? "",
+    normalizeGlobalTicketLimit(source?.maxQuantity) ?? "",
+    normalizeGlobalTicketLimit(source?.multipleOf ?? source?.incrementsOf) ?? "",
+  ].join("|");
+}
+
 function groupMaxQuantity(group: QuantityCapGroup) {
   return (
     normalizeGlobalTicketLimit(group.offer?.limit) ??
@@ -144,7 +156,9 @@ export function selectionPaneTicketLimit(
 
 /**
  * Full min/max/step copy for the map Your selection pane — mirrors GA tier notes.
- * Clamps max to `selectionPaneTicketLimit()` when that cap is tighter.
+ * Clamps max to `selectionPaneTicketLimit()` when that cap is tighter. A selection
+ * spanning offers with different quantity rules falls back to the default range,
+ * since no single offer's rules describe the order.
  */
 export function selectionPaneRestrictionLabel(
   eventLimit: unknown,
@@ -157,15 +171,14 @@ export function selectionPaneRestrictionLabel(
     ? DEFAULT_GA_TICKET_LIMIT
     : DEFAULT_SEATED_TICKET_LIMIT;
 
-  let source: QuantityRestrictionSource | null = null;
-  for (const group of selected) {
-    const fromGroup = restrictionSourceFromGroup(group);
-    if (fromGroup) {
-      source = fromGroup;
-      break;
-    }
-  }
-  if (!source && fallbackSource) {
+  const groupSources = selected.map(restrictionSourceFromGroup);
+  const mixedOffers =
+    new Set(groupSources.map(restrictionSourceKey)).size > 1;
+
+  let source: QuantityRestrictionSource | null = mixedOffers
+    ? null
+    : groupSources.find((fromGroup) => fromGroup != null) ?? null;
+  if (!source && !mixedOffers && fallbackSource) {
     source = fallbackSource;
   }
 
@@ -358,15 +371,15 @@ export function hasSeatedMapSelectableOffers(
   return seatedMapSelectableOffers(groups, globalMax).length > 0;
 }
 
-/** Limit copy for a seated map offer row (one ticket per seat). */
-export function offerRestrictionLabelForSeatedRow(
+/** Limits a seated map offer row shows (one ticket per seat). */
+export function offerRestrictionLimitsForSeatedRow(
   source: QuantityRestrictionSource | null | undefined,
   limits: QuantityLimits,
-): string | null {
+): QuantityLimits | null {
   if (!limits.valid) {
-    return offerRestrictionLabel(source, limits);
+    return offerRestrictionLimits(source, limits);
   }
-  return "1 per order";
+  return { min: 1, max: 1, step: 1, valid: true };
 }
 
 export function limitsFromListing(
@@ -482,21 +495,16 @@ export function quantityRestrictionLabel(limits: QuantityLimits) {
 }
 
 /**
- * Shopper-facing limit copy for an offer row. Configured exact limits stay
- * visible even when inventory makes the offer temporarily unpurchasable.
+ * Limits an offer row shows. Configured exact limits stay visible even when
+ * inventory makes the offer temporarily unpurchasable.
  */
-export function offerRestrictionLabel(
+export function offerRestrictionLimits(
   source: QuantityRestrictionSource | null | undefined,
   limits: QuantityLimits,
-): string | null {
+): QuantityLimits | null {
   const exactLimit = normalizeGlobalTicketLimit(source?.limit);
   if (exactLimit != null) {
-    return quantityRestrictionLabel({
-      min: exactLimit,
-      max: exactLimit,
-      step: 1,
-      valid: true,
-    });
+    return { min: exactLimit, max: exactLimit, step: 1, valid: true };
   }
 
   const offerMax = normalizeGlobalTicketLimit(source?.maxQuantity);
@@ -506,16 +514,69 @@ export function offerRestrictionLabel(
       source?.multipleOf ?? source?.incrementsOf,
       1,
     );
-    return quantityRestrictionLabel({
-      min: offerMax,
-      max: offerMax,
-      step,
-      valid: true,
-    });
+    return { min: offerMax, max: offerMax, step, valid: true };
   }
 
   if (!limits.valid) return null;
-  return quantityRestrictionLabel(limits);
+  return limits;
+}
+
+/**
+ * Unconstrained GA default: 1–100, no increment. Shown once in the popover
+ * header instead of on every offer row.
+ */
+export function isUnconstrainedGaTicketLimit(
+  limits: QuantityLimits | null | undefined,
+) {
+  return Boolean(
+    limits &&
+      limits.min === 1 &&
+      limits.max === DEFAULT_GA_TICKET_LIMIT &&
+      limits.step === 1,
+  );
+}
+
+/**
+ * GA popover offer-row copy. Hide the unconstrained default (1–100).
+ */
+export function gaOfferRowRestrictionLabel(
+  source: QuantityRestrictionSource | null | undefined,
+  limits: QuantityLimits,
+): string | null {
+  const display = offerRestrictionLimits(source, limits);
+  if (!display || isUnconstrainedGaTicketLimit(display)) return null;
+  return quantityRestrictionLabel(display);
+}
+
+/** Header copy when at least one GA offer still uses the 1–100 default. */
+export function gaPopoverDefaultLimitLabel(
+  rows: Array<QuantityLimits | null>,
+): string | null {
+  if (!rows.some((row) => isUnconstrainedGaTicketLimit(row))) return null;
+  return quantityRestrictionLabel({
+    min: 1,
+    max: DEFAULT_GA_TICKET_LIMIT,
+    step: 1,
+    valid: true,
+  });
+}
+
+/**
+ * One shopper-facing limit line for the offers a popover lists: the shared copy
+ * when the offers agree, otherwise the full span they allow together.
+ */
+export function offerListRestrictionLabel(
+  rows: Array<QuantityLimits | null>,
+): string | null {
+  const shown = rows.filter((row): row is QuantityLimits => row != null);
+  if (!shown.length) return null;
+  const steps = new Set(shown.map((row) => row.step));
+  return quantityRestrictionLabel({
+    min: Math.min(...shown.map((row) => row.min)),
+    max: Math.max(...shown.map((row) => row.max)),
+    step: steps.size === 1 ? shown[0].step : 1,
+    valid: true,
+  });
 }
 
 /** Listing row copy: `2 – 20 Tickets`. */

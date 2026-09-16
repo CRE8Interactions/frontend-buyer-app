@@ -1,0 +1,155 @@
+%% Checkout — POST /payment/intent and POST /orders/process
+
+%% Source: app/checkout/page.tsx
+
+%% API:    blocktickets POST /payment/intent
+
+%%         blocktickets POST /orders/process
+
+%%         Stripe Payment Element (elements.submit + confirmPayment)
+
+%%
+
+%% Guest contact is documented in docs/guest-contact-validations.mmd.
+
+%% Promo code is documented in docs/promo-code-validations.mmd.
+
+%%
+
+%% Intent is created for a signed-in shopper on checkout load, or after guest
+
+%% contact succeeds. Pay stays disabled until Stripe reports complete.
+
+%%
+
+%% --- Checkout load (before intent) ---
+
+%% | Status | Meaning | Displayed copy |
+
+%% | (no cart) | Missing cart id / empty cart | No cart found. Please select tickets again. |
+
+%% | Missing event on a ticket cart | Intent cannot be created | Unable to load checkout. Please try again. |
+
+%%
+
+%% --- POST /payment/intent ---
+
+%% | Status | API meaning | Displayed copy |
+
+%% | 200 | clientSecret + paymentIntentId | Show Stripe Payment Element |
+
+%% | 404 / 410 | Cart missing or abandoned | (leave checkout — cart gone) |
+
+%% | 500 / other | (any other) | Unable to load checkout. Please try again. |
+
+%%
+
+%% --- Pay — POST /orders/process ---
+
+%% Pay is disabled until Stripe onChange.complete is true, Stripe is ready,
+
+%% and any required fundraising donation is satisfied.
+
+%% Card number / expiry / CVC are validated by Stripe, not by shopper field helpers.
+
+%% Other POST /orders/process API errors are displayed in the Card declined popup,
+
+%% never as an inline checkout error. 410 opens the Cart expired popup — the same
+
+%% one as the hold countdown.
+
+%%
+
+%% | Step | Source | Displayed copy |
+
+%% | elements.submit() error | Stripe message | Card declined modal: Stripe message, or Unable to complete purchase. Please try again. |
+
+%% | POST /orders/process 410 | Cart timed out | Cart expired popup — Your reserved tickets were released. Please select tickets again. |
+
+%% | POST /orders/process other | {error.message} when present | Card declined modal: API message |
+
+%% | POST /orders/process other | (no message) | Card declined modal: Unable to complete purchase. Please try again. |
+
+%% | stripe.confirmPayment error | Stripe message | Stripe message, or Card declined |
+
+%% | PaymentIntent requires_payment_method or canceled | Poll / confirm | Card declined |
+
+%% | PaymentIntent still not succeeded after 15s | Poll timeout | Payment is still processing. Please wait a moment. |
+
+
+
+flowchart TD
+
+  start[Checkout] --> hasCart{Cart?}
+
+  hasCart -->|missing| noCart["No cart found. Please select tickets again."]
+
+  hasCart -->|ok| createIntent[POST /payment/intent]
+
+
+
+  createIntent --> intentFail{API response?}
+
+  intentFail -->|200| payForm[Stripe Payment Element]
+
+  intentFail -->|404 / 410| cartGone[Leave checkout — cart gone]
+
+  intentFail -->|other| loadError["Unable to load checkout. Please try again."]
+
+
+
+  payForm --> stripeComplete{Stripe complete?}
+
+  stripeComplete -->|no| payDisabled[Pay disabled]
+
+  stripeComplete -->|yes| payEnabled[Pay enabled]
+
+
+
+  payEnabled --> payClick[Pay]
+
+  payClick --> stripeSubmit[elements.submit]
+
+  stripeSubmit --> submitErr{Stripe submit error?}
+
+  submitErr -->|yes| stripeMsg["Stripe message or Unable to complete purchase. Please try again."]
+
+  submitErr -->|no| process[POST /orders/process]
+
+
+
+  process --> processFail{API response?}
+
+  processFail -->|410| cartExpired["Cart expired — Your reserved tickets were released. Please select tickets again."]
+
+  processFail -->|other with message| processApi["API message"]
+
+  processFail -->|other no message| unable["Unable to complete purchase. Please try again."]
+
+  processFail -->|ok| confirm[stripe.confirmPayment]
+
+
+
+  confirm --> confirmFail{Result?}
+
+  confirmFail -->|Stripe error| stripeMsg2["Stripe message or Card declined"]
+
+  confirmFail -->|requires_payment_method / canceled| declined["Card declined"]
+
+  confirmFail -->|still processing after 15s| stillProcessing["Payment is still processing. Please wait a moment."]
+
+  confirmFail -->|succeeded| success[Checkout success]
+
+
+
+  stripeMsg --> declineModal[Card declined modal]
+
+  stripeMsg2 --> declineModal
+
+  declined --> declineModal
+
+  stillProcessing --> declineModal
+
+  processApi --> declineModal
+
+  unable --> declineModal

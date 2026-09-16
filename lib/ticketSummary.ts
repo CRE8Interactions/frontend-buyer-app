@@ -3,6 +3,21 @@
 import { packageFromPrice } from "@/lib/eventFromPrice";
 import { flexPackVoucherFee } from "@/lib/flexPackDisplay";
 import { formatEventWhen, type TimezoneLike } from "@/lib/helpers";
+import {
+  formatSeatNumberRanges,
+  gaTicketSeatLine,
+  ticketRowValue,
+  ticketSeatValue,
+  ticketSectionValue,
+} from "@/lib/wallet";
+
+export type TicketOfferPriceLine = {
+  /** Offer label shown on the checkout price row (e.g. "Early Bird"). */
+  offerName: string;
+  count: number;
+  unit: number;
+  subtotal: number;
+};
 
 export type TicketSelectionSummary = {
   count: number;
@@ -12,6 +27,8 @@ export type TicketSelectionSummary = {
   seatLine: string;
   subtitle: string;
   qtyLabel: string;
+  /** One row per distinct offer + unit price in the cart. */
+  offerLines: TicketOfferPriceLine[];
 };
 
 type OfferNameSource = {
@@ -142,30 +159,68 @@ export function selectionTicketCards<T extends SelectionCardGroup>(
   });
 }
 
+/** Group cart tickets by offer name and unit price for the checkout breakdown. */
+export function ticketOfferPriceLines(
+  tickets: Array<Record<string, unknown>>,
+  options?: { defaultOffer?: string },
+): TicketOfferPriceLine[] {
+  const lines: TicketOfferPriceLine[] = [];
+  const indexByKey = new Map<string, number>();
+
+  for (const ticket of tickets) {
+    const offerName = options?.defaultOffer
+      ? selectionOfferName(ticket, options.defaultOffer)
+      : offerNameFromSource(ticket) || "Tickets";
+    const unit = Number(ticket.cost || ticket.price || 0);
+    const key = `${offerName}\0${unit}`;
+    const existing = indexByKey.get(key);
+    if (existing == null) {
+      indexByKey.set(key, lines.length);
+      lines.push({ offerName, count: 1, unit, subtotal: unit });
+      continue;
+    }
+    const line = lines[existing]!;
+    line.count += 1;
+    line.subtotal += unit;
+  }
+
+  return lines;
+}
+
 export function ticketSelectionSummary(
   tickets: Array<Record<string, unknown>>,
   options?: { defaultOffer?: string },
 ): TicketSelectionSummary {
   const count = tickets.length;
   const first = tickets[0] || {};
-  const section = String(first.sectionName || first.sectionNumber || "");
-  const row = String(first.rowNumber || "");
-  const ga = Boolean(first.generalAdmission);
+  const section = ticketSectionValue(first);
+  const row = ticketRowValue(first);
+  const ga = Boolean(first.generalAdmission || first.GA);
   const sameBlock = tickets.every(
     (ticket) =>
-      String(ticket.sectionName || ticket.sectionNumber || "") === section &&
-      String(ticket.rowNumber || "") === row,
+      ticketSectionValue(ticket) === section &&
+      ticketRowValue(ticket) === row,
   );
-  const offerName = options?.defaultOffer
-    ? selectionOfferName(first, options.defaultOffer)
-    : offerNameFromSource(first);
+  const offerLines = ticketOfferPriceLines(tickets, options);
+  const distinctOffers = new Set(offerLines.map((line) => line.offerName));
+  // Only show the pill when every ticket shares one offer; mixed carts list
+  // each offer on its own price row instead.
+  const offerName =
+    distinctOffers.size === 1
+      ? options?.defaultOffer
+        ? selectionOfferName(first, options.defaultOffer)
+        : offerNameFromSource(first)
+      : "";
   const unit = Number(first.cost || first.price || 0);
   const subtotal = tickets.reduce(
     (sum, ticket) => sum + Number(ticket.cost || ticket.price || 0),
     0,
   );
+  const seatNumbers = tickets.map((ticket) => ticketSeatValue(ticket));
+  const together = sameBlock && seatsAreTogether(seatNumbers);
+  const seatList = formatSeatNumberRanges(seatNumbers);
   const seatLine = ga
-    ? String(first.sectionName || first.offerName || "GA")
+    ? gaTicketSeatLine(first)
     : count === 1
       ? `Sec ${section} · Row ${row} · Seat ${first.seatNumber}`
       : sameBlock
@@ -179,11 +234,22 @@ export function ticketSelectionSummary(
   const subtitle =
     count === 1
       ? "1 ticket"
-      : sameBlock
+      : together
         ? `${count} tickets · seats are together`
-        : `${count} tickets`;
+        : sameBlock && seatList
+          ? `${count} tickets · ${seatList}`
+          : `${count} tickets`;
   const qtyLabel = `${count} ${count === 1 ? "ticket" : "tickets"}`;
-  return { count, offerName, unit, subtotal, seatLine, subtitle, qtyLabel };
+  return {
+    count,
+    offerName,
+    unit,
+    subtotal,
+    seatLine,
+    subtitle,
+    qtyLabel,
+    offerLines,
+  };
 }
 
 export type PackageSeatLine = {
@@ -428,31 +494,23 @@ export function withPackageCheckoutSeatPrices(
   });
 }
 
+/** Unknown seat numbers can never be described as together. */
+function seatsAreTogether(seats: Array<string | number>): boolean {
+  const cleaned = seats.map((seat) => String(seat ?? "").trim());
+  if (cleaned.some((seat) => !seat)) return false;
+  const unique = [...new Set(cleaned)];
+  if (unique.length !== cleaned.length) return false;
+  if (unique.length === 1) return true;
+  const nums = unique.map(Number).filter(Number.isFinite);
+  if (nums.length !== unique.length) return false;
+  const sorted = [...nums].sort((a, b) => a - b);
+  return sorted[sorted.length - 1] - sorted[0] === sorted.length - 1;
+}
+
 function formatSeatNumbers(seats: Array<string | number>): string {
   const unique = [...new Set(seats.map((seat) => String(seat)))];
-  const nums = unique
-    .map((seat) => Number(seat))
-    .filter((seat) => Number.isFinite(seat));
-  if (nums.length !== unique.length) {
-    return unique.length === 1 ? `Seat ${unique[0]}` : `Seats ${unique.join(", ")}`;
-  }
-
-  const sorted = [...new Set(nums)].sort((a, b) => a - b);
-  if (sorted.length === 1) return `Seat ${sorted[0]}`;
-
-  const parts: string[] = [];
-  let start = sorted[0];
-  let end = sorted[0];
-  for (let i = 1; i < sorted.length; i += 1) {
-    if (sorted[i] === end + 1) {
-      end = sorted[i];
-      continue;
-    }
-    parts.push(start === end ? String(start) : `${start}-${end}`);
-    start = end = sorted[i];
-  }
-  parts.push(start === end ? String(start) : `${start}-${end}`);
-  return `Seats ${parts.join(", ")}`;
+  if (unique.length === 1) return `Seat ${unique[0]}`;
+  return `Seats ${formatSeatNumberRanges(seats)}`;
 }
 
 export function packageSeatLines(
@@ -473,8 +531,8 @@ export function packageSeatLines(
   const seenSeat = new Set<string>();
 
   tickets.forEach((ticket, index) => {
-    const section = String(ticket.sectionName || ticket.sectionNumber || "GA");
-    const row = String(ticket.rowNumber || ticket.rowName || "—");
+    const section = ticketSectionValue(ticket) || "GA";
+    const row = ticketRowValue(ticket) || "—";
     const seatNumber =
       (ticket.seatNumber as string | number | null | undefined) ?? "—";
     const ga = Boolean(ticket.GA || ticket.generalAdmission);
@@ -518,7 +576,7 @@ export function packageSeatLines(
     const uniqueSeats = new Set(group.seatNumbers.map((seat) => String(seat))).size || 1;
     return {
       seatLine: group.ga
-        ? `Sec ${group.section} · General admission`
+        ? gaTicketSeatLine({ sectionNumber: group.section, rowNumber: group.row, generalAdmission: true })
         : `Sec ${group.section} · Row ${group.row} · ${formatSeatNumbers(group.seatNumbers)}`,
       context: group.context,
       price: group.amount > 0 ? group.amount : unitPrice * uniqueSeats,

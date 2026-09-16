@@ -21,6 +21,7 @@ import {
   demoGroupInvitation,
   demoPackageAccessPass,
   demoPublicMenu,
+  demoSeasonPackage,
 } from "./fixtures";
 
 type DemoResult = { data: unknown; status?: number };
@@ -81,21 +82,83 @@ function parseBody(config: InternalAxiosRequestConfig): Record<string, unknown> 
   return d as Record<string, unknown>;
 }
 
-const walletOrders = () => [
-  demoCompletedTicketOrder({ source: "website" }),
-  demoCompletedTicketOrder({
-    id: 128186,
-    orderId: "1474-145929-3863",
-    source: "box_office",
-  }),
-  demoCompletedTicketOrder({
-    id: 128187,
-    orderId: "1474-145929-3864",
-    source: "ticket_assignment",
-  }),
-  demoCompletedPackageOrder({ source: "ticket_assignment" }),
-  demoCompletedFlexPackOrder({ source: "website" }),
-];
+function cancelTransferIdFromBody(body: Record<string, unknown>): string {
+  const nested =
+    body.data && typeof body.data === "object"
+      ? (body.data as Record<string, unknown>)
+      : null;
+  return String(nested?.transferId ?? body.transferId ?? "");
+}
+
+type DemoWalletOrder = ReturnType<typeof demoCompletedTicketOrder>;
+type DemoSentTransfer = {
+  id: string;
+  status: "pending" | "claimed" | "cancelled";
+  orderId?: string | number;
+  email?: string;
+  emailAddressToUser?: string;
+  fromUserEmail?: string;
+  createdAt?: string;
+  event?: DemoWalletOrder["event"];
+  tickets?: DemoWalletOrder["tickets"];
+  accessPassId?: string;
+  transferType?: string;
+  access_pass?: {
+    uuid?: string;
+    name?: string;
+    type?: string;
+    start?: string;
+    end?: string;
+    events?: DemoWalletOrder["event"][];
+    sectionNumber?: string | number;
+    rowNumber?: string | number;
+    seatNumber?: string | number;
+    generalAdmission?: boolean;
+  };
+};
+
+function initialWalletOrders(): DemoWalletOrder[] {
+  return [
+    demoCompletedTicketOrder({ source: "website" }),
+    demoCompletedTicketOrder({
+      id: 128186,
+      orderId: "1474-145929-3863",
+      source: "box_office",
+    }),
+    demoCompletedTicketOrder({
+      id: 128187,
+      orderId: "1474-145929-3864",
+      source: "transfer",
+    }),
+    demoCompletedPackageOrder({ source: "transfer" }),
+    demoCompletedFlexPackOrder({ source: "website" }),
+  ];
+}
+
+let demoWalletOrdersState: DemoWalletOrder[] | null = null;
+const demoSentTransfers: DemoSentTransfer[] = [];
+const demoReceivedTransfers: DemoSentTransfer[] = [];
+let demoOrganizerAccessPasses = [demoAccessPass()];
+const demoPackageAccessPassesByOrder: Record<
+  string,
+  ReturnType<typeof demoPackageAccessPass>[]
+> = {
+  [demoCompletedPackageOrder().orderId]: [demoPackageAccessPass()],
+};
+
+function walletOrders() {
+  if (!demoWalletOrdersState) {
+    demoWalletOrdersState = initialWalletOrders();
+  }
+  return demoWalletOrdersState;
+}
+
+function findDemoWalletOrder(orderId: unknown) {
+  const target = String(orderId ?? "");
+  return walletOrders().find(
+    (row) => String(row.id) === target || String(row.orderId) === target,
+  );
+}
 
 const routes: Route[] = [
   // ---- Browse / discovery (real snapshots) ----
@@ -136,7 +199,7 @@ const routes: Route[] = [
   {
     methods: ["get"],
     match: endsWith("/events/myAccessPasses"),
-    handle: () => ({ data: { data: [demoAccessPass()] } }),
+    handle: () => ({ data: { data: demoOrganizerAccessPasses } }),
   },
   {
     methods: ["get"],
@@ -144,11 +207,11 @@ const routes: Route[] = [
     handle: (path) => {
       const uuid = lastSeg(path);
       const pass =
-        uuid === demoAccessPass().uuid
-          ? demoAccessPass()
-          : uuid === demoPackageAccessPass().uuid
-            ? demoPackageAccessPass()
-            : null;
+        demoOrganizerAccessPasses.find((row) => row.uuid === uuid) ??
+        Object.values(demoPackageAccessPassesByOrder)
+          .flat()
+          .find((row) => row.uuid === uuid) ??
+        null;
       return { data: { data: pass }, status: pass ? 200 : 404 };
     },
   },
@@ -157,12 +220,26 @@ const routes: Route[] = [
     match: (path) => /\/access-passes\/by-order\/[^/?]+/.test(path),
     handle: (path) => ({
       data: {
-        data:
-          lastSeg(path) === demoCompletedPackageOrder().orderId
-            ? [demoPackageAccessPass()]
-            : [],
+        data: demoPackageAccessPassesByOrder[lastSeg(path)] ?? [],
       },
     }),
+  },
+
+  // ---- Season packages ----
+  {
+    methods: ["get"],
+    match: (p) => /\/packages\/get-package-fe/.test(p),
+    handle: async (p) => {
+      const uuid =
+        new URLSearchParams(p.split("?")[1] || "").get("uuid") ||
+        "pkg-nms-level-a";
+      return {
+        data: {
+          eventPackage: demoSeasonPackage({ uuid, id: uuid }),
+          purchaseLog: null,
+        },
+      };
+    },
   },
 
   // ---- Seatmap (must come before the event route) ----
@@ -272,15 +349,259 @@ const routes: Route[] = [
   { methods: ["post"], match: endsWith("/events/place-tickets-into-cart"), handle: () => ({ data: demoCart() }) },
   { methods: ["post"], match: endsWith("/tickets/checkAccessCode"), handle: () => ({ data: true }) },
   {
+    methods: ["get"],
+    match: (path) => path.includes("/ticket-transfers?filters[fromUserEmail]"),
+    handle: () => ({ data: demoSentTransfers }),
+  },
+  {
+    methods: ["get"],
+    match: endsWith("/ticket-transfers/incoming"),
+    handle: () => ({
+      data: demoReceivedTransfers.filter((row) => row.status === "pending"),
+    }),
+  },
+  {
+    methods: ["get"],
+    match: (path) =>
+      path.includes("/ticket-transfers?") &&
+      path.includes("filters[emailAddressToUser]"),
+    handle: (path) => {
+      const match = path.match(/filters\[emailAddressToUser\]\[\$eq\]=([^&]+)/i);
+      const email = decodeURIComponent(match?.[1] || "")
+        .trim()
+        .toLowerCase();
+      return {
+        data: demoReceivedTransfers.filter(
+          (row) =>
+            String(row.emailAddressToUser || row.email || "")
+              .trim()
+              .toLowerCase() === email,
+        ),
+      };
+    },
+  },
+  {
+    methods: ["post"],
+    match: endsWith("/ticket-transfers/cancel"),
+    handle: (_path, config) => {
+      const transferId = cancelTransferIdFromBody(parseBody(config));
+      const markCancelled = (list: typeof demoSentTransfers) => {
+        const index = list.findIndex((row) => String(row.id) === transferId);
+        if (index >= 0) {
+          list[index] = { ...list[index]!, status: "cancelled" };
+        }
+      };
+      const sentIndex = demoSentTransfers.findIndex(
+        (row) => String(row.id) === transferId,
+      );
+      if (sentIndex >= 0) {
+        const transfer = demoSentTransfers[sentIndex]!;
+        markCancelled(demoSentTransfers);
+        const tickets = transfer.tickets ?? [];
+        if (tickets.length) {
+          const order = findDemoWalletOrder(transfer.orderId);
+          if (order) {
+            const existing = new Set(
+              (order.tickets ?? []).map((ticket) => String(ticket.id ?? "")),
+            );
+            const toRestore = tickets.filter(
+              (ticket) => !existing.has(String(ticket.id ?? "")),
+            );
+            if (toRestore.length) {
+              order.tickets = [
+                ...(order.tickets ?? []),
+                ...toRestore.map((ticket) => {
+                  const raw = { ...ticket };
+                  delete raw.transferStatus;
+                  delete raw.ticketTransfer;
+                  delete raw.transferredAt;
+                  return raw;
+                }),
+              ];
+            }
+          }
+        }
+      } else {
+        markCancelled(demoSentTransfers);
+      }
+      markCancelled(demoReceivedTransfers);
+      return { data: { status: "cancelled", transferId } };
+    },
+  },
+  {
+    methods: ["post"],
+    match: endsWith("/ticket-transfers/accept"),
+    handle: (_path, config) => {
+      const body = parseBody(config);
+      const transferId = String(body.transferId || "");
+      const index = demoReceivedTransfers.findIndex(
+        (row) => String(row.id) === transferId,
+      );
+      if (index >= 0) {
+        const claimedTransfer = demoReceivedTransfers[index]!;
+        demoReceivedTransfers[index] = {
+          ...claimedTransfer,
+          status: "claimed",
+          transferedOn: new Date().toISOString(),
+        };
+        const cleanedTickets = (claimedTransfer.tickets ?? []).map((ticket) => {
+          const raw = { ...ticket };
+          delete raw.transferStatus;
+          delete raw.ticketTransfer;
+          delete raw.transferredAt;
+          return raw;
+        });
+        if (cleanedTickets.length && claimedTransfer.event) {
+          const recipientOrder = demoCompletedTicketOrder({
+            id: Number(transferId) || Date.now(),
+            orderId: `1474-${transferId}-accepted`,
+            source: "transfer",
+            email: String(claimedTransfer.emailAddressToUser || claimedTransfer.email || ""),
+            event: claimedTransfer.event,
+            tickets: cleanedTickets,
+          });
+          walletOrders().unshift(recipientOrder);
+        }
+      }
+      const sentIndex = demoSentTransfers.findIndex(
+        (row) => String(row.id) === transferId,
+      );
+      if (sentIndex >= 0) {
+        const claimed = demoSentTransfers[sentIndex]!;
+        demoSentTransfers[sentIndex] = {
+          ...claimed,
+          status: "claimed",
+        };
+        if (claimed.accessPassId) {
+          demoOrganizerAccessPasses = demoOrganizerAccessPasses.filter(
+            (row) => row.uuid !== claimed.accessPassId,
+          );
+          for (const orderId of Object.keys(demoPackageAccessPassesByOrder)) {
+            demoPackageAccessPassesByOrder[orderId] = (
+              demoPackageAccessPassesByOrder[orderId] ?? []
+            ).filter((row) => row.uuid !== claimed.accessPassId);
+          }
+        }
+      }
+      return { data: { status: "claimed", transferId } };
+    },
+  },
+  {
     methods: ["post"],
     match: endsWith("/ticket-transfers"),
-    handle: (_path, config) => ({
-      data: {
-        id: "demo-ticket-transfer",
-        status: "pending",
-        ...parseBody(config),
-      },
-    }),
+    handle: (_path, config) => {
+      const body = parseBody(config);
+      const accessPassId = String(body.accessPassId || "").trim();
+      if (accessPassId) {
+        const pass =
+          accessPassId === demoAccessPass().uuid
+            ? demoAccessPass()
+            : accessPassId === demoPackageAccessPass().uuid
+              ? demoPackageAccessPass()
+              : null;
+        if (pass) {
+          const recipientEmail = String(body.email || "");
+          const pkg = demoSeasonPackage();
+          const events = pass.events ?? pkg.events ?? [];
+          const passTransferId = `demo-pass-transfer-${demoSentTransfers.length + 1}`;
+          const transferRecord: DemoSentTransfer = {
+            id: passTransferId,
+            status: "pending",
+            orderId: pass.orderId,
+            email: recipientEmail,
+            emailAddressToUser: recipientEmail,
+            fromUserEmail: DEMO_SESSION.user.email,
+            accessPassId: pass.uuid,
+            transferType: "access_pass",
+            access_pass: {
+              uuid: pass.uuid,
+              name: pass.name,
+              type: String(pass.type || ""),
+              start: pkg.start || events[0]?.start,
+              end: pkg.end || events.at(-1)?.start,
+              events,
+              sectionNumber: pass.sectionNumber,
+              rowNumber: pass.rowNumber,
+              seatNumber: pass.seatNumber,
+              generalAdmission: pass.generalAdmission,
+            },
+            createdAt: new Date().toISOString(),
+          };
+          demoSentTransfers.unshift(transferRecord);
+          demoReceivedTransfers.unshift(transferRecord);
+          return {
+            data: {
+              id: passTransferId,
+              status: "pending",
+              createdAt: transferRecord.createdAt,
+              ...body,
+            },
+          };
+        }
+        return { data: { status: "pending", ...body } };
+      }
+      const ticketIds = Array.isArray(body.ticketIds)
+        ? body.ticketIds.map((value) => String(value))
+        : [];
+      const order = findDemoWalletOrder(body.orderId);
+      const transferredTickets =
+        order?.tickets?.filter((ticket) =>
+          ticketIds.includes(String(ticket.id)),
+        ) ?? [];
+      if (order && transferredTickets.length) {
+        order.tickets = order.tickets.filter(
+          (ticket) => !ticketIds.includes(String(ticket.id)),
+        );
+        const recipientEmail = String(body.email || "");
+        const eventUUID = String(body.eventUUID || body.event?.uuid || "").trim();
+        let event = body.event || order.event;
+        if (!event && order.package?.events?.length) {
+          event =
+            order.package.events.find(
+              (row) => String(row.uuid || "") === eventUUID,
+            ) ??
+            order.package.events.find((row) =>
+              transferredTickets.some(
+                (ticket) =>
+                  String(ticket.eventUUID || ticket.eventId || "") ===
+                  String(row.uuid || ""),
+              ),
+            );
+        }
+        const ticketTransferId = `demo-ticket-transfer-${demoSentTransfers.length + 1}`;
+        const transferRecord = {
+          id: ticketTransferId,
+          status: "pending" as const,
+          orderId: order.id ?? order.orderId,
+          email: recipientEmail,
+          emailAddressToUser: recipientEmail,
+          fromUserEmail: DEMO_SESSION.user.email,
+          event,
+          createdAt: new Date().toISOString(),
+          tickets: transferredTickets.map((ticket) => ({
+            ...ticket,
+            transferStatus: "pending",
+            ticketTransfer: { status: "pending" },
+          })),
+        };
+        demoSentTransfers.unshift(transferRecord);
+        demoReceivedTransfers.unshift(transferRecord);
+        return {
+          data: {
+            id: ticketTransferId,
+            status: "pending",
+            createdAt: transferRecord.createdAt,
+            ...body,
+          },
+        };
+      }
+      return {
+        data: {
+          status: "pending",
+          ...body,
+        },
+      };
+    },
   },
 
   // ---- Login (any code works) ----

@@ -34,6 +34,14 @@ export type CodeFieldError = "code" | "network" | null;
 export type RedemptionCodeFieldError = "required" | "rejected" | "network" | null;
 export type FieldVariant = "light" | "dark";
 
+/** True when a field should show the idle error border and message. */
+export function fieldShowsError(
+  invalid: boolean,
+  message?: string | null,
+) {
+  return invalid || Boolean(message?.trim());
+}
+
 export const DOB_REQUIRED_MESSAGE = "Date of birth is required.";
 export const DOB_INVALID_MESSAGE =
   "Date of birth is incorrect. Make sure it is in the correct format: MM/DD/YYYY";
@@ -186,14 +194,24 @@ function rejectionStatus(cause: unknown): number | undefined {
  * request that never got a verdict — offline, timed out, rate limited, or a
  * server fault — is a connection problem.
  */
-export function codeSubmitError(cause: unknown): Exclude<CodeFieldError, null> {
-  const status = rejectionStatus(cause);
+function codeStatusError(status: number): Exclude<CodeFieldError, null> {
   const rejected =
-    status !== undefined &&
     status >= 400 &&
     status < 500 &&
     !CODE_UNANSWERED_STATUSES.has(status);
   return rejected ? "code" : "network";
+}
+
+export function codeResponseError(
+  status: number,
+): Exclude<CodeFieldError, null> {
+  return codeStatusError(status);
+}
+
+export function codeSubmitError(cause: unknown): Exclude<CodeFieldError, null> {
+  const status = rejectionStatus(cause);
+  if (status === undefined) return "network";
+  return codeStatusError(status);
 }
 
 export function lightFieldClass(invalid: boolean) {
@@ -253,6 +271,19 @@ export function emailSubmitInvalid(value: string) {
   return emailSubmitError(value) !== null;
 }
 
+export type SendGridEmailVerdict = {
+  verdict?: string;
+  suggestion?: string;
+};
+
+/** Matches login: Invalid, or Risky when SendGrid suggests a correction. */
+export function sendgridEmailInvalid(data: SendGridEmailVerdict) {
+  return (
+    (data.verdict === "Risky" && Boolean(data.suggestion)) ||
+    data.verdict === "Invalid"
+  );
+}
+
 /** Trim access/promo codes before submit or API calls. */
 export function normalizeRedemptionCode(value?: string | null) {
   return (value || "").trim();
@@ -276,8 +307,37 @@ export function redemptionCodeBlurFieldError(
   return redemptionCodeBlurError(value);
 }
 
+/** Blocktickets POST /promo-code/redeem. See docs/promo-code-validations.mmd. */
+export const PROMO_CODE_API_ERROR_MESSAGES = {
+  notFound: "Promo code not found",
+  alreadyApplied: "Promo code already applied to order",
+  noLongerValid: "Promo code no longer valid",
+} as const;
+
+export function promoCodeRedeemApiMessage(error: unknown): string | undefined {
+  if (!error || typeof error !== "object") return undefined;
+  const data = (error as { response?: { data?: unknown } }).response?.data;
+  if (typeof data === "string" && data.trim()) return data.trim();
+  if (data && typeof data === "object") {
+    const record = data as {
+      error?: { message?: unknown } | string;
+      message?: unknown;
+    };
+    const nested =
+      typeof record.error === "string"
+        ? record.error
+        : record.error?.message ?? record.message;
+    if (typeof nested === "string" && nested.trim()) return nested.trim();
+  }
+  return undefined;
+}
+
 /** Checkout promo rejections keep the API message when present. */
 export function promoCodeRejectedMessage(apiMessage?: string | null) {
   const msg = apiMessage?.trim() || "Promo code could not be applied";
   return `${msg}${/[.!?]$/.test(msg) ? " " : ". "}Please try again.`;
+}
+
+export function promoCodeRedeemDisplayMessage(error: unknown) {
+  return promoCodeRejectedMessage(promoCodeRedeemApiMessage(error));
 }
