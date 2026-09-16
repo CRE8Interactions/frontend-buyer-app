@@ -13,10 +13,13 @@ import Button from "@/components/atoms/Button";
 import { formatOfferListPrice } from "@/lib/helpers";
 import { gaOfferSelectionKey } from "@/lib/connectedOffers";
 import {
+  gaOfferRowRestrictionLabel,
+  gaPopoverDefaultLimitLabel,
   limitsFromSeatedOfferRow,
   limitsFromTicketGroup,
-  offerRestrictionLabel,
-  offerRestrictionLabelForSeatedRow,
+  offerListRestrictionLabel,
+  offerRestrictionLimits,
+  offerRestrictionLimitsForSeatedRow,
   shouldShowSeatedMapOfferRow,
 } from "@/lib/ticketListings";
 import type { QuantityLimits, RawTicketGroup } from "@/lib/ticketListings";
@@ -26,6 +29,7 @@ import useSeatmapStore from "@/stores/seatmapStore";
 import type { TicketGroup } from "@/stores/filtersStore";
 import { isMobileSeatmapViewport } from "./SeatmapSeat";
 import {
+  clampPopupToViewport,
   seatmapSeatOfferScrollMaxHeight,
   SEATMAP_SEAT_OFFER_ROW_HEIGHT_PX,
   SEATMAP_SEAT_OFFER_ROWS_VISIBLE,
@@ -35,7 +39,13 @@ import type { SeatmapSeat as SeatmapSeatData } from "@/lib/seatmapLookups";
 
 export type SeatmapTooltipTarget =
   | { kind: "seat"; seatId: string; x: number; y: number; pinned?: boolean }
-  | { kind: "section"; sectionId: string; x: number; y: number }
+  | {
+      kind: "section";
+      sectionId: string;
+      x: number;
+      y: number;
+      pinned?: boolean;
+    }
   | null;
 
 type Props = {
@@ -88,14 +98,71 @@ function isLockedOffer(offer: TicketGroup) {
   return Boolean(offer.offer?.accessCode && !offer.offer?.unlocked);
 }
 
+/** Single game ticket prices include taxes and fees; package prices do not. */
+function priceIncludesTaxesAndFees(offer: TicketGroup) {
+  return !offer.package;
+}
+
+function OfferPriceNote({ color }: { color: string }) {
+  return (
+    <p className="text-[10px]" style={{ color }}>
+      Incl. Taxes &amp; Fees
+    </p>
+  );
+}
+
+function GaOfferLimitNote({
+  group,
+  limits,
+  color,
+}: {
+  group: TicketGroup;
+  limits: QuantityLimits;
+  color: string;
+}) {
+  const label = gaOfferRowRestrictionLabel(group.package || group.offer, limits);
+  if (!label) return null;
+  return (
+    <p className="text-[10px]" style={{ color }}>
+      Ticket limit: {label}
+    </p>
+  );
+}
+
+function PopoverTicketLimit({
+  label,
+  color,
+}: {
+  label: string | null;
+  color: string;
+}) {
+  if (!label) return null;
+  return (
+    <p className="mt-2 text-[11px]" style={{ color }}>
+      Ticket limit: {label}
+    </p>
+  );
+}
+
 const UNLOCK_OFFER_BTN_CLASS =
   "!h-auto min-h-0 rounded-full !px-2.5 !py-1 text-[11px] font-semibold leading-tight";
 
+/** Matches the offer filter scrollbar on the select-tickets page. */
+const OFFER_SCROLL_CLASS = "seatmap-offer-scroll";
+const OFFER_SCROLL_CSS = `
+  .${OFFER_SCROLL_CLASS} { scrollbar-width: thin; scrollbar-color: var(--seatmap-offer-thumb) #e7eaf1; }
+  .${OFFER_SCROLL_CLASS}::-webkit-scrollbar { width: 7px; }
+  .${OFFER_SCROLL_CLASS}::-webkit-scrollbar-track { background: #e7eaf1; border-radius: 999px; }
+  .${OFFER_SCROLL_CLASS}::-webkit-scrollbar-thumb { background: var(--seatmap-offer-thumb); border-radius: 999px; }
+`;
+
 function SeatOfferList({
   offerCount,
+  thumbColor,
   children,
 }: {
   offerCount: number;
+  thumbColor: string;
   children: ReactNode;
 }) {
   const rows = Children.toArray(children);
@@ -114,10 +181,17 @@ function SeatOfferList({
       {scrollRows.length > 0 ? (
         <div
           className={`space-y-2 pr-1${
-            scrollMaxHeight != null ? " overflow-y-auto overscroll-contain" : ""
+            scrollMaxHeight != null
+              ? ` overflow-y-auto overscroll-contain ${OFFER_SCROLL_CLASS}`
+              : ""
           }`}
           style={
-            scrollMaxHeight != null ? { maxHeight: scrollMaxHeight } : undefined
+            scrollMaxHeight != null
+              ? ({
+                  maxHeight: scrollMaxHeight,
+                  "--seatmap-offer-thumb": thumbColor,
+                } as React.CSSProperties)
+              : undefined
           }
           data-testid={
             scrollMaxHeight != null ? "seat-offer-scroll" : undefined
@@ -126,6 +200,7 @@ function SeatOfferList({
           {scrollRows}
         </div>
       ) : null}
+      {scrollMaxHeight != null ? <style>{OFFER_SCROLL_CSS}</style> : null}
     </div>
   );
 }
@@ -215,6 +290,8 @@ const MOBILE_SEAT_CARD_WIDTH = 272;
 const MOBILE_SEAT_POPUP_WIDTH = 280;
 const MOBILE_SEAT_CARET_SIZE = 10;
 const MOBILE_SEAT_POPUP_ESTIMATED_HEIGHT = 140;
+const GA_POPUP_WIDTH = 280;
+const GA_POPUP_ESTIMATED_HEIGHT = 220;
 
 /** Anchor popup above the seat so the caret tip lands on target.y. */
 export function mobileSeatPopupPosition(
@@ -500,9 +577,6 @@ export default function SeatmapTooltip({
       eventTicketLimit,
     );
 
-  const groupRestrictionLabel = (group: TicketGroup, limits: QuantityLimits) =>
-    offerRestrictionLabel(group.package || group.offer, limits);
-
   const sectionMeta = useMemo(() => {
     if (target?.kind !== "section") return null;
     return data?.sections?.[target.sectionId] || null;
@@ -521,6 +595,17 @@ export default function SeatmapTooltip({
     [seatOffers, eventTicketLimit],
   );
 
+  // The GA card grows with its offer list, so its height has to be measured
+  // before it can be placed: a guessed height clips the last offer rows off
+  // the bottom of the window.
+  const gaCardRef = useRef<HTMLDivElement>(null);
+  const [gaCardHeight, setGaCardHeight] = useState(GA_POPUP_ESTIMATED_HEIGHT);
+
+  useLayoutEffect(() => {
+    const measured = gaCardRef.current?.offsetHeight;
+    if (measured && measured !== gaCardHeight) setGaCardHeight(measured);
+  }, [gaCardHeight, sectionOffers.length, target]);
+
   if (!target) return null;
 
   const ink = inkOn(accent);
@@ -531,9 +616,15 @@ export default function SeatmapTooltip({
 
   const style: React.CSSProperties = {
     position: "fixed",
-    left: Math.min(target.x + 12, window.innerWidth - 300),
-    top: Math.min(target.y + 12, window.innerHeight - 220),
+    ...clampPopupToViewport(
+      target,
+      { width: GA_POPUP_WIDTH, height: gaCardHeight },
+      { width: window.innerWidth, height: window.innerHeight },
+    ),
     zIndex: 80,
+    // A window too short for the whole card scrolls it instead of clipping it.
+    maxHeight: "calc(100vh - 32px)",
+    overflowY: "auto",
     background: accent,
     color: ink,
     borderColor: line,
@@ -603,6 +694,20 @@ export default function SeatmapTooltip({
             offer != null && Number(offer.quantity) > 0,
         );
 
+    const seatRestrictionLabel = offerListRestrictionLabel(
+      visibleSeatOffers.map(({ offer }) =>
+        isLockedOffer(offer)
+          ? null
+          : offerRestrictionLimitsForSeatedRow(
+              offer.package || offer.offer,
+              limitsFromSeatedOfferRow(
+                offer as RawTicketGroup,
+                eventTicketLimit,
+              ),
+            ),
+      ),
+    );
+
     const seatPopupBody = (
       <>
         <div className="flex items-start justify-between gap-3">
@@ -617,6 +722,10 @@ export default function SeatmapTooltip({
               Sec {primary?.sectionName || primary?.sectionNumber} · Row{" "}
               {primary?.rowName || primary?.rowNumber}
             </p>
+            <PopoverTicketLimit
+              label={multiOffer ? seatRestrictionLabel : null}
+              color={muted}
+            />
           </div>
           <button
             type="button"
@@ -635,7 +744,10 @@ export default function SeatmapTooltip({
           </p>
         ) : multiOffer ? (
           <>
-          <SeatOfferList offerCount={visibleSeatOffers.length}>
+          <SeatOfferList
+            offerCount={visibleSeatOffers.length}
+            thumbColor={accent}
+          >
             {visibleSeatOffers.map(({ offer, index }) => {
                 const key = gaOfferSelectionKey(offer, index);
                 const offerLocked = isLockedOffer(offer);
@@ -644,10 +756,6 @@ export default function SeatmapTooltip({
                   eventTicketLimit,
                 );
                 const selectedQty = seatedResolvedOfferQuantity(offerQtys, key);
-                const restrictionLabel = offerRestrictionLabelForSeatedRow(
-                  offer.package || offer.offer,
-                  limits,
-                );
                 return (
                   <div
                     key={key}
@@ -670,10 +778,8 @@ export default function SeatmapTooltip({
                       <p className="text-[10px]" style={{ color: muted }}>
                         Requires access code
                       </p>
-                    ) : restrictionLabel ? (
-                      <p className="text-[10px]" style={{ color: muted }}>
-                        Ticket limit: {restrictionLabel}
-                      </p>
+                    ) : priceIncludesTaxesAndFees(offer) ? (
+                      <OfferPriceNote color={muted} />
                     ) : null}
                     </div>
                     {offerLocked &&
@@ -799,9 +905,16 @@ export default function SeatmapTooltip({
     : 0;
   const packageOrOfferName = selectionOfferName(primary, "GA");
   const multiGaOffers = sectionOffers.length > 1;
-  const primaryGaRestrictionLabel = primary
-    ? groupRestrictionLabel(primary, gaLimits)
-    : null;
+  const gaHeaderLimitLabel = gaPopoverDefaultLimitLabel(
+    sectionOffers.map((group) =>
+      isLockedOffer(group)
+        ? null
+        : offerRestrictionLimits(
+            group.package || group.offer,
+            groupQuantityLimits(group),
+          ),
+    ),
+  );
   const gaOfferPicks = () =>
     sectionOffers
       .map((group, index) => {
@@ -819,6 +932,7 @@ export default function SeatmapTooltip({
 
   return (
     <div
+      ref={gaCardRef}
       data-seatmap-tooltip="true"
       style={style}
       className="w-[280px] rounded-2xl border p-4 shadow-2xl shadow-black/40"
@@ -838,6 +952,7 @@ export default function SeatmapTooltip({
               primary?.sectionName ||
               "Section"}
           </p>
+          <PopoverTicketLimit label={gaHeaderLimitLabel} color={muted} />
         </div>
         <button
           type="button"
@@ -854,13 +969,12 @@ export default function SeatmapTooltip({
         <p className="mt-3 text-[14px]" style={{ color: muted }}>No tickets available.</p>
       ) : multiGaOffers ? (
         <>
-          <SeatOfferList offerCount={sectionOffers.length}>
+          <SeatOfferList offerCount={sectionOffers.length} thumbColor={accent}>
             {sectionOffers.map((group, index) => {
               const key = gaOfferSelectionKey(group, index);
               const offerLocked = isLockedOffer(group);
               const limits = groupQuantityLimits(group);
               const selectedQty = resolvedOfferQuantity(offerQtys, key);
-              const restrictionLabel = groupRestrictionLabel(group, limits);
               return (
                 <div
                   key={key}
@@ -883,11 +997,18 @@ export default function SeatmapTooltip({
                       <p className="text-[10px]" style={{ color: muted }}>
                         Requires access code
                       </p>
-                    ) : restrictionLabel ? (
-                      <p className="text-[10px]" style={{ color: muted }}>
-                        Ticket limit: {restrictionLabel}
-                      </p>
-                    ) : null}
+                    ) : (
+                      <>
+                        {priceIncludesTaxesAndFees(group) ? (
+                          <OfferPriceNote color={muted} />
+                        ) : null}
+                        <GaOfferLimitNote
+                          group={group}
+                          limits={limits}
+                          color={muted}
+                        />
+                      </>
+                    )}
                   </div>
                   {offerLocked &&
                   showGaUnlockForLockedOffer(offerLocked) &&
@@ -962,13 +1083,15 @@ export default function SeatmapTooltip({
               <p className="mt-1 text-[12px] font-semibold" style={{ color: ink }}>
                 {formatOfferListPrice(primary?.price ?? 0, primary?.offer)} ea
               </p>
-              <p className="mt-1 text-[10px]" style={{ color: muted }}>
-                Incl. Taxes &amp; Fees
-              </p>
-              {primaryGaRestrictionLabel ? (
-                <p className="mt-1 text-[10px]" style={{ color: muted }}>
-                  Ticket limit: {primaryGaRestrictionLabel}
-                </p>
+              {primary && priceIncludesTaxesAndFees(primary) ? (
+                <OfferPriceNote color={muted} />
+              ) : null}
+              {primary ? (
+                <GaOfferLimitNote
+                  group={primary}
+                  limits={gaLimits}
+                  color={muted}
+                />
               ) : null}
             </div>
             <TooltipQuantityStepper

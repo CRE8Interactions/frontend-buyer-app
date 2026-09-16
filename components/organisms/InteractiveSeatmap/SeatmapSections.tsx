@@ -198,6 +198,7 @@ const SeatmapSections = memo(function SeatmapSections({
                         sectionId: sid,
                         x: e.clientX,
                         y: e.clientY,
+                        pinned: true,
                       });
                     }
                   : undefined
@@ -213,6 +214,7 @@ const SeatmapSections = memo(function SeatmapSections({
                         sectionId: sid,
                         x: touch?.clientX ?? 0,
                         y: touch?.clientY ?? 0,
+                        pinned: true,
                       });
                     }
                   : undefined

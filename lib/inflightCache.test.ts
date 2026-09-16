@@ -29,6 +29,30 @@ describe("createInflightCache", () => {
     expect(load).toHaveBeenCalledTimes(3);
   });
 
+  it("loads again instead of sharing a request whose signal was aborted", async () => {
+    const cache = createInflightCache<string>(60_000);
+    const controller = new AbortController();
+    const load = vi
+      .fn()
+      .mockImplementationOnce(
+        () =>
+          new Promise<string>((_, reject) => {
+            controller.signal.addEventListener("abort", () =>
+              reject(new Error("canceled")),
+            );
+          }),
+      )
+      .mockResolvedValueOnce("events");
+
+    const aborted = cache.get(load, { signal: controller.signal });
+    controller.abort();
+    const remounted = cache.get(load);
+
+    await expect(aborted).rejects.toThrow("canceled");
+    await expect(remounted).resolves.toBe("events");
+    expect(load).toHaveBeenCalledTimes(2);
+  });
+
   it("does not reuse a load for a different key", async () => {
     const cache = createInflightCache<string>(60_000);
     const loadA = vi.fn().mockResolvedValue("raptors");

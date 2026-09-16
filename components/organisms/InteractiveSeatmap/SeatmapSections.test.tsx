@@ -1068,7 +1068,11 @@ describe("SeatmapSeat", () => {
       clientY: 60,
     });
 
-    expect(onTooltip).not.toHaveBeenCalled();
+    // Selecting closes whatever card was open, but never reopens this seat's.
+    expect(onTooltip).not.toHaveBeenCalledWith(
+      expect.objectContaining({ kind: "seat" }),
+    );
+    expect(onTooltip).toHaveBeenCalledWith(null);
     expect(useSeatmapStore.getState().selectedFromMap).toHaveLength(1);
   });
 
@@ -1334,7 +1338,7 @@ describe("InteractiveSeatmap canvas", () => {
     expect(screen.getAllByLabelText(/ticket quantity/i)).toHaveLength(2);
   });
 
-  it("keeps a pinned seat card open when the map pans", async () => {
+  it("closes the clicked seat card when the map is panned", async () => {
     const parent = DEMO_SEATED_TICKET_GROUPS.find((g) => g.seatIds?.includes("s1"));
     if (!parent) throw new Error("demo fixtures need a seated group on seat s1");
     const firstOffer = {
@@ -1381,7 +1385,10 @@ describe("InteractiveSeatmap canvas", () => {
       pointerType: "mouse",
     });
 
-    expect(screen.getByRole("button", { name: /add now/i })).toBeInTheDocument();
+    // Dragging the map would leave the card pointing at a seat that moved.
+    expect(
+      screen.queryByRole("button", { name: /add now/i }),
+    ).not.toBeInTheDocument();
   });
 
   it("pans the map when a seat card would be cut off by the map edge", async () => {
@@ -1421,7 +1428,7 @@ describe("InteractiveSeatmap canvas", () => {
     restoreRect();
   });
 
-  it("hands the pinned multi-offer seat card over to the next hovered seat", async () => {
+  it("keeps the clicked multi-offer seat card while a neighbouring seat is hovered", async () => {
     const parent = DEMO_SEATED_TICKET_GROUPS.find((g) => g.seatIds?.includes("s1"));
     if (!parent) throw new Error("demo fixtures need a seated group on seat s1");
     const firstOffer = {
@@ -1459,10 +1466,9 @@ describe("InteractiveSeatmap canvas", () => {
       await new Promise((resolve) => setTimeout(resolve, 550));
     });
 
-    expect(await screen.findByText(/Offer C/)).toBeInTheDocument();
-    expect(
-      screen.queryByRole("button", { name: /add now/i }),
-    ).not.toBeInTheDocument();
+    expect(screen.queryByText(/Offer C/)).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /add now/i })).toBeInTheDocument();
+    expect(screen.getByText(/Offer A/)).toBeInTheDocument();
   });
 
   it("closes the pinned multi-offer seat card from its close button", async () => {
@@ -1495,6 +1501,32 @@ describe("InteractiveSeatmap canvas", () => {
     expect(
       screen.queryByRole("button", { name: /add now/i }),
     ).not.toBeInTheDocument();
+  });
+
+  it("keeps a clicked GA section popover open until the map is clicked", async () => {
+    const { container } = render(<InteractiveSeatmap lookupsMode="external" />);
+    const section = container.querySelector(`[id="${DEMO_GA_SECTION_ID}"]`);
+    expect(section).toBeTruthy();
+
+    fireEvent.click(section!, { clientX: 200, clientY: 220 });
+    const card = (
+      await screen.findByText(/general admission/i)
+    ).closest("[data-seatmap-tooltip]");
+    expect(card).toBeTruthy();
+
+    fireEvent.mouseLeave(card!);
+    await act(async () => {
+      await new Promise((resolve) =>
+        setTimeout(resolve, TOOLTIP_DISMISS_DELAY_MS + 50),
+      );
+    });
+    expect(screen.getByText(/general admission/i)).toBeInTheDocument();
+
+    const mapSurface = container.querySelector("[data-seatmap-canvas] > div");
+    expect(mapSurface).toBeTruthy();
+    fireEvent.click(mapSurface!);
+
+    expect(screen.queryByText(/general admission/i)).not.toBeInTheDocument();
   });
 
   it("clears a pinned seat tooltip when the map canvas is clicked", async () => {
@@ -1603,7 +1635,7 @@ describe("SeatmapTooltip GA stepper", () => {
     expect(screen.getByText("Ticket limit: 2–6 per order · Increments of 2")).toBeInTheDocument();
   });
 
-  it("steps a package GA section by min, max, and incrementsOf", () => {
+  it("steps a package GA section by min, max, and incrementsOf without promising taxes and fees", () => {
     renderGaTooltip({ minQuantity: 2, maxQuantity: 6, incrementsOf: 2 }, "package");
     const increase = screen.getByRole("button", { name: /increase quantity/i });
 
@@ -1614,6 +1646,7 @@ describe("SeatmapTooltip GA stepper", () => {
     expect(screen.getByLabelText(/ticket quantity/i)).toHaveTextContent("6");
     expect(increase).toBeDisabled();
     expect(screen.getByText("Ticket limit: 2–6 per order · Increments of 2")).toBeInTheDocument();
+    expect(screen.queryByText(/Incl\. Taxes/i)).not.toBeInTheDocument();
   });
 
   it("locks the GA stepper to the exact offer limit", () => {
@@ -1639,6 +1672,28 @@ describe("SeatmapTooltip GA stepper", () => {
     renderGaTooltip({}, "offer");
     expect(screen.getByText("Ticket limit: 1–20 per order")).toBeInTheDocument();
     expect(screen.getByLabelText(/ticket quantity/i)).toHaveTextContent("0");
+  });
+
+  it("omits the unconstrained 1–100 GA default from the offer row and shows it above the offers", () => {
+    const ga = demoTicketGroups().ticketGroups.find((group) => group.GA);
+    if (!ga) throw new Error("demo fixtures need a GA ticket group");
+    const group = {
+      ...ga,
+      availableCount: 100,
+      offer: { ...ga.offer, connected_offers: [] },
+    };
+    useSeatmapStore.setState({
+      sectionLookupTable: { [DEMO_GA_SECTION_ID]: [group] },
+    });
+    useFiltersStore.setState({ eventTicketLimit: null });
+    render(
+      <SeatmapTooltip
+        target={{ kind: "section", sectionId: DEMO_GA_SECTION_ID, x: 20, y: 20 }}
+        onClose={() => {}}
+      />,
+    );
+    expect(screen.getByText(/Incl\. Taxes/i)).toBeInTheDocument();
+    expect(screen.getByText("Ticket limit: 1–100 per order")).toBeInTheDocument();
   });
 
   it("scrolls GA offer rows when a section has more than three offers", () => {
@@ -1682,6 +1737,56 @@ describe("SeatmapTooltip GA stepper", () => {
     );
     for (const name of ["Offer A", "Offer B", "Offer C", "Offer D"]) {
       expect(screen.getByText(name)).toBeInTheDocument();
+    }
+  });
+
+  it("lifts a tall GA popover off the bottom of the window instead of clipping it", () => {
+    const ga = demoTicketGroups().ticketGroups.find((group) => group.GA);
+    if (!ga) throw new Error("demo fixtures need a GA ticket group");
+    const groups = ["Offer A", "Offer B", "Offer C", "Offer D"].map(
+      (name, index) => ({
+        ...ga,
+        id: `grp-${index}`,
+        price: 20 + index,
+        availableCount: 20,
+        offer: { id: `off-${index}`, name, connected_offers: [] },
+      }),
+    );
+    useSeatmapStore.setState({
+      sectionLookupTable: createSectionLookupTable(groups),
+    });
+    useFiltersStore.setState({ eventTicketLimit: null });
+    Object.defineProperty(window, "innerHeight", {
+      configurable: true,
+      writable: true,
+      value: 700,
+    });
+    const cardHeight = 360;
+    const offsetHeight = Object.getOwnPropertyDescriptor(
+      HTMLElement.prototype,
+      "offsetHeight",
+    );
+    Object.defineProperty(HTMLElement.prototype, "offsetHeight", {
+      configurable: true,
+      value: cardHeight,
+    });
+
+    try {
+      render(
+        <SeatmapTooltip
+          target={{ kind: "section", sectionId: DEMO_GA_SECTION_ID, x: 200, y: 660 }}
+          onClose={() => {}}
+        />,
+      );
+
+      const card = screen
+        .getByText(/general admission/i)
+        .closest("[data-seatmap-tooltip]") as HTMLElement;
+      expect(card.style.top).toBe(`${700 - cardHeight - 16}px`);
+    } finally {
+      if (offsetHeight) {
+        Object.defineProperty(HTMLElement.prototype, "offsetHeight", offsetHeight);
+      }
     }
   });
 
@@ -1803,7 +1908,88 @@ describe("SeatmapTooltip GA stepper", () => {
     ).not.toBeInTheDocument();
   });
 
-  it("shows configured exact limits on multi-offer GA rows when inventory is tight", () => {
+  it("shows a non-default GA ticket limit on each offer below taxes and fees", () => {
+    const ga = demoTicketGroups().ticketGroups.find((group) => group.GA);
+    if (!ga) throw new Error("demo fixtures need a GA ticket group");
+    const groups = ["Offer A", "Offer B"].map((name, index) => ({
+      ...ga,
+      id: `grp-${index}`,
+      price: 20 + index,
+      availableCount: 20,
+      offer: {
+        id: `off-${index}`,
+        name,
+        maxQuantity: 4,
+        connected_offers: [],
+      },
+    }));
+
+    useSeatmapStore.setState({
+      sectionLookupTable: createSectionLookupTable(groups),
+      selectedFromMap: [],
+    });
+    useFiltersStore.setState({ eventTicketLimit: null });
+
+    render(
+      <SeatmapTooltip
+        target={{ kind: "section", sectionId: DEMO_GA_SECTION_ID, x: 20, y: 20 }}
+        onClose={() => {}}
+      />,
+    );
+
+    expect(screen.getAllByText("Ticket limit: 1–4 per order")).toHaveLength(2);
+    expect(screen.queryByText("Ticket limit: 1–100 per order")).not.toBeInTheDocument();
+    expect(screen.getAllByText("Incl. Taxes & Fees")).toHaveLength(2);
+  });
+
+  it("states the 1–100 default at the top when other GA offers have their own limit", () => {
+    const ga = demoTicketGroups().ticketGroups.find((group) => group.GA);
+    if (!ga) throw new Error("demo fixtures need a GA ticket group");
+    const groups = [
+      {
+        ...ga,
+        id: "grp-standard",
+        price: 51.75,
+        availableCount: 100,
+        offer: {
+          id: "off-standard",
+          name: "Standard Admission",
+          connected_offers: [],
+        },
+      },
+      {
+        ...ga,
+        id: "grp-early",
+        price: 46.61,
+        availableCount: 20,
+        offer: {
+          id: "off-early",
+          name: "EARLY BIRD",
+          minQuantity: 2,
+          maxQuantity: 5,
+          connected_offers: [],
+        },
+      },
+    ];
+    useSeatmapStore.setState({
+      sectionLookupTable: createSectionLookupTable(groups),
+      selectedFromMap: [],
+    });
+    useFiltersStore.setState({ eventTicketLimit: null });
+
+    render(
+      <SeatmapTooltip
+        target={{ kind: "section", sectionId: DEMO_GA_SECTION_ID, x: 20, y: 20 }}
+        onClose={() => {}}
+      />,
+    );
+
+    expect(screen.getByText("Ticket limit: 1–100 per order")).toBeInTheDocument();
+    expect(screen.getByText("Ticket limit: 2–5 per order")).toBeInTheDocument();
+    expect(screen.getAllByText(/Ticket limit:/)).toHaveLength(2);
+  });
+
+  it("lists each GA offer's configured limit when inventory is tight", () => {
     const ga = demoTicketGroups().ticketGroups.find((group) => group.GA);
     if (!ga) throw new Error("demo fixtures need a GA ticket group");
     const groups = [
@@ -2161,7 +2347,69 @@ describe("SeatmapTooltip GA stepper", () => {
     expect(screen.getByRole("button", { name: /add now/i })).toBeInTheDocument();
   });
 
-  it("labels selectable seated offers as one per order even without a maxQuantity cap", () => {
+  it("states the seat ticket limit once above the offers and marks each single game price as tax and fee inclusive", () => {
+    const parent = DEMO_SEATED_TICKET_GROUPS.find((g) => g.seatIds?.includes("a1"));
+    if (!parent) throw new Error("demo fixtures need a seated group on seat a1");
+    const seatId = "a1";
+    const firstOffer = {
+      ...parent,
+      offer: { id: "off-a", name: "Offer A", maxQuantity: 1 },
+    };
+    const secondOffer = {
+      ...parent,
+      price: 31.68,
+      offer: { id: "off-b", name: "Offer B", maxQuantity: 1 },
+    };
+
+    useSeatmapStore.setState({
+      seatLookupTable: { [seatId]: firstOffer },
+      seatOffersLookupTable: { [seatId]: [firstOffer, secondOffer] },
+      selectedFromMap: [],
+      data: mapping,
+    });
+    useFiltersStore.setState({ eventTicketLimit: null });
+
+    render(
+      <SeatmapTooltip
+        target={{ kind: "seat", seatId, x: 20, y: 20, pinned: true }}
+        onClose={() => {}}
+      />,
+    );
+
+    expect(screen.getAllByText(/Ticket limit:/)).toHaveLength(1);
+    expect(screen.getByText("Ticket limit: 1 per order")).toBeInTheDocument();
+    expect(screen.getAllByText("Incl. Taxes & Fees")).toHaveLength(2);
+  });
+
+  it("omits the ticket limit on a seated popover with only one offer", () => {
+    const parent = DEMO_SEATED_TICKET_GROUPS.find((g) => g.seatIds?.includes("a1"));
+    if (!parent) throw new Error("demo fixtures need a seated group on seat a1");
+    const seatId = "a1";
+    const offer = {
+      ...parent,
+      offer: { id: "off-standard", name: "Standard Admission", maxQuantity: 1 },
+    };
+
+    useSeatmapStore.setState({
+      seatLookupTable: { [seatId]: offer },
+      seatOffersLookupTable: { [seatId]: [offer] },
+      selectedFromMap: [],
+      data: mapping,
+    });
+    useFiltersStore.setState({ eventTicketLimit: null });
+
+    render(
+      <SeatmapTooltip
+        target={{ kind: "seat", seatId, x: 20, y: 20, pinned: true }}
+        onClose={() => {}}
+      />,
+    );
+
+    expect(screen.getByText(/Standard Admission/i)).toBeInTheDocument();
+    expect(screen.queryByText(/Ticket limit:/)).not.toBeInTheDocument();
+  });
+
+  it("omits the ticket limit when only one seated offer remains after filtering", () => {
     const parent = DEMO_SEATED_TICKET_GROUPS.find((g) => g.seatIds?.includes("a1"));
     if (!parent) throw new Error("demo fixtures need a seated group on seat a1");
     const seatId = "a1";
@@ -2205,7 +2453,7 @@ describe("SeatmapTooltip GA stepper", () => {
     expect(screen.queryByText("scheduled")).not.toBeInTheDocument();
     expect(screen.getByText(/Standard Admission/i)).toBeInTheDocument();
     expect(screen.getByText(/31\.68/)).toBeInTheDocument();
-    expect(screen.queryByText(/1–19 per order/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Ticket limit:/)).not.toBeInTheDocument();
   });
 
   it("lets shoppers opt out of a multi-offer GA row by setting its quantity to 0", () => {

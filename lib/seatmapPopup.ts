@@ -42,6 +42,25 @@ export function seatmapSeatOfferScrollMaxHeight(
 export const seatmapOfferScrollMaxHeight = seatmapSeatOfferScrollMaxHeight;
 
 /**
+ * Place a cursor-anchored popup so the whole card stays in the viewport. A
+ * popup taller or wider than the viewport sits at the margin and scrolls
+ * internally rather than hanging off the edge.
+ */
+export function clampPopupToViewport(
+  anchor: { x: number; y: number },
+  size: { width: number; height: number },
+  viewport: { width: number; height: number },
+  { offset = 12, margin = 16 } = {},
+): { left: number; top: number } {
+  const place = (position: number, length: number, available: number) =>
+    Math.max(margin, Math.min(position + offset, available - length - margin));
+  return {
+    left: place(anchor.x, size.width, viewport.width),
+    top: place(anchor.y, size.height, viewport.height),
+  };
+}
+
+/**
  * How far the map has to pan for a seat-anchored popup to fit inside the map
  * area. The popup keeps pointing at its seat because the seat moves with the
  * same delta, so panning is preferred over clamping the popup off its anchor.

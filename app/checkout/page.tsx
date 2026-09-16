@@ -1505,15 +1505,32 @@ function CheckoutPage() {
                   </div>
                   <div className="h-px bg-[rgba(5,27,53,0.08)]" />
                   <div className="flex flex-col gap-2.5 text-[14px] text-[#4a5567]">
-                    <div className="flex justify-between gap-3">
-                      <span>
-                        Tickets: {formatCurrency(ticketSummary.unit)} x{" "}
-                        {ticketSummary.count}
-                      </span>
-                      <span className="tabular-nums text-[#051b35]">
-                        {formatCurrency(ticketSummary.subtotal)}
-                      </span>
-                    </div>
+                    {ticketSummary.offerLines.length > 1
+                      ? ticketSummary.offerLines.map((line) => (
+                          <div
+                            key={`${line.offerName}-${line.unit}`}
+                            className="flex justify-between gap-3"
+                          >
+                            <span>
+                              {line.offerName} x {line.count} (
+                              {formatCurrency(line.unit)})
+                            </span>
+                            <span className="tabular-nums text-[#051b35]">
+                              {formatCurrency(line.subtotal)}
+                            </span>
+                          </div>
+                        ))
+                      : (
+                          <div className="flex justify-between gap-3">
+                            <span>
+                              Tickets: {formatCurrency(ticketSummary.unit)} x{" "}
+                              {ticketSummary.count}
+                            </span>
+                            <span className="tabular-nums text-[#051b35]">
+                              {formatCurrency(ticketSummary.subtotal)}
+                            </span>
+                          </div>
+                        )}
                     <div className="flex justify-between gap-3">
                       <span>Tax</span>
                       <span className="tabular-nums text-[#051b35]">

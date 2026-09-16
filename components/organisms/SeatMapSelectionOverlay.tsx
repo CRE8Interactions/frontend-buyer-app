@@ -1433,6 +1433,7 @@ export default function SeatMapSelectionOverlay({
       {seatedError ? (
         <Modal
           variant="light"
+          sheet={false}
           title={seatedError.title}
           onClose={() => {
             dismissMapTooltip();
@@ -1461,6 +1462,7 @@ export default function SeatMapSelectionOverlay({
       {exitConfirm ? (
         <Modal
           variant="light"
+          sheet={false}
           title="Are you sure you want to exit?"
           onClose={() => {
             dismissMapTooltip();

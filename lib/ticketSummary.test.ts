@@ -177,6 +177,67 @@ describe("ticketSelectionSummary", () => {
         .offerName,
     ).toBe(cart.tickets[0].offerName);
   });
+
+  it("keeps seats-are-together copy when selected seats are consecutive", () => {
+    const cart = demoCheckoutCart({ ticketCount: 2 });
+    const summary = ticketSelectionSummary(cart.tickets);
+    expect(summary.subtitle).toBe("2 tickets · seats are together");
+    expect(summary.seatLine).toBe(
+      `Sec ${cart.tickets[0].sectionNumber} · Row ${cart.tickets[0].rowNumber}`,
+    );
+  });
+
+  it("lists seat numbers instead of together copy when seats in the same row have a gap", () => {
+    const cart = demoCheckoutCart({ ticketCount: 2 });
+    const summary = ticketSelectionSummary([
+      { ...cart.tickets[0], seatNumber: 3 },
+      { ...cart.tickets[1], seatNumber: 5 },
+    ]);
+    expect(summary.subtitle).toBe("2 tickets · 3, 5");
+    expect(summary.subtitle).not.toMatch(/together/i);
+  });
+
+  it("drops the together copy when the tickets carry no seat numbers", () => {
+    const cart = demoCheckoutCart({ ticketCount: 2 });
+    const summary = ticketSelectionSummary(
+      cart.tickets.map((ticket) => ({ ...ticket, seatNumber: undefined })),
+    );
+    expect(summary.subtitle).toBe("2 tickets");
+  });
+
+  it("groups the checkout price breakdown by offer name and unit price", () => {
+    const cart = demoCheckoutCart({ ticketCount: 3 });
+    const summary = ticketSelectionSummary([
+      { ...cart.tickets[0], offerName: "Standard Admission", cost: 51.75, price: 51.75 },
+      { ...cart.tickets[1], offerName: "Early Bird", cost: 50, price: 50 },
+      { ...cart.tickets[2], offerName: "Early Bird", cost: 50, price: 50 },
+    ]);
+
+    expect(summary.offerName).toBe("");
+    expect(summary.offerLines).toEqual([
+      {
+        offerName: "Standard Admission",
+        count: 1,
+        unit: 51.75,
+        subtotal: 51.75,
+      },
+      {
+        offerName: "Early Bird",
+        count: 2,
+        unit: 50,
+        subtotal: 100,
+      },
+    ]);
+    expect(summary.subtotal).toBe(151.75);
+  });
+
+  it("keeps a single offer line when every ticket shares one offer", () => {
+    const cart = demoCheckoutCart({ ticketCount: 2 });
+    const summary = ticketSelectionSummary(cart.tickets);
+    expect(summary.offerLines).toHaveLength(1);
+    expect(summary.offerLines[0]?.offerName).toBe(summary.offerName);
+    expect(summary.offerLines[0]?.count).toBe(2);
+  });
 });
 
 describe("packageSeatLines", () => {

@@ -651,6 +651,49 @@ describe("Checkout page", { timeout: 20_000 }, () => {
     expect(screen.queryByText("Service Fee")).not.toBeInTheDocument();
   });
 
+  it("lists each offer on its own price row when the cart mixes offers", async () => {
+    const cart = demoCheckoutCart({ ticketCount: 3 });
+    cart.tickets = [
+      {
+        ...cart.tickets[0],
+        offerName: "Standard Admission",
+        cost: 51.75,
+        price: 51.75,
+      },
+      {
+        ...cart.tickets[1],
+        offerName: "Early Bird",
+        cost: 50,
+        price: 50,
+      },
+      {
+        ...cart.tickets[2],
+        offerName: "Early Bird",
+        cost: 50,
+        price: 50,
+      },
+    ];
+    cart.total = 151.75;
+    mockedGetCart.mockResolvedValue({ data: cart } as never);
+    render(<CheckoutPageRoute />);
+
+    expect(
+      await screen.findByText(
+        `Standard Admission x 1 (${formatCurrency(51.75)})`,
+      ),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(`Early Bird x 2 (${formatCurrency(50)})`),
+    ).toBeInTheDocument();
+    expect(screen.getByText(formatCurrency(51.75))).toBeInTheDocument();
+    expect(screen.getByText(formatCurrency(100))).toBeInTheDocument();
+    expect(screen.queryByText(/Tickets:/)).not.toBeInTheDocument();
+    // Mixed carts drop the single-offer pill; the names only appear on price rows.
+    expect(
+      screen.queryByText(/^Standard Admission$/),
+    ).not.toBeInTheDocument();
+  });
+
   it("does not list event processing or service fees even when the cart has them", async () => {
     const cart = demoCheckoutCart({ serviceFee: 2.5, processingFee: 0.5 });
     mockedGetCart.mockResolvedValue({ data: cart } as never);

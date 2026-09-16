@@ -3,9 +3,9 @@ import { formatEventWhen } from "@/lib/helpers";
 import {
   eventTimezone,
   eventWhenLabel,
-  formatPassDateRange,
   formatTicketHolderName,
   groupedWalletSeatLines,
+  seatLabel,
   strapiAttr,
   strapiRel,
   unwrapList,
@@ -42,12 +42,28 @@ type TransferOrderLike = {
   } | null;
 };
 
+type TransferPassLike = {
+  uuid?: string;
+  name?: string;
+  type?: string;
+  start?: string;
+  end?: string;
+  events?: EventLike[];
+  generalAdmission?: boolean;
+  GA?: boolean;
+  sectionNumber?: string | number;
+  rowNumber?: string | number;
+  seatNumber?: string | number;
+};
+
 export type TransferLike = {
   id?: number | string;
   status?: string;
   createdAt?: string;
   transferedOn?: string;
+  transferType?: string;
   accessPassId?: string | number;
+  accessPassSnapshot?: TransferPassLike | null;
   orderId?: string | number;
   emailAddressToUser?: string;
   fromUserEmail?: string;
@@ -60,22 +76,8 @@ export type TransferLike = {
   /** Authoritative game uuid on package transfers; the `event` relation may be order.event. */
   eventUUID?: string;
   tickets?: TicketLike[];
-  access_pass?: {
-    uuid?: string;
-    name?: string;
-    type?: string;
-    start?: string;
-    end?: string;
-    events?: EventLike[];
-  } | null;
-  accessPass?: {
-    uuid?: string;
-    name?: string;
-    type?: string;
-    start?: string;
-    end?: string;
-    events?: EventLike[];
-  } | null;
+  access_pass?: TransferPassLike | null;
+  accessPass?: TransferPassLike | null;
 };
 
 function normalizeTicketList(raw: unknown): TicketLike[] {
@@ -108,17 +110,15 @@ export function normalizeTransferRecord(raw: unknown): TransferLike | null {
     null;
   event = resolveTransferEvent({ event, eventUUID, tickets, order });
   const orderId = row.orderId ?? order?.orderId ?? order?.id;
-  const accessPass =
-    strapiRel<{
-      uuid?: string;
-      name?: string;
-      type?: string;
-      start?: string;
-      end?: string;
-      events?: EventLike[];
-    }>(row.access_pass ?? row.accessPass) ??
+  const accessPassRelation =
+    strapiRel<TransferPassLike>(row.access_pass ?? row.accessPass) ??
     (row.access_pass as TransferLike["access_pass"] | undefined) ??
     (row.accessPass as TransferLike["accessPass"] | undefined);
+  const accessPassSnapshot =
+    (row.accessPassSnapshot as TransferPassLike | undefined) ?? undefined;
+  const accessPass = accessPassSnapshot
+    ? { ...accessPassSnapshot, ...accessPassRelation }
+    : accessPassRelation;
   const fromUser =
     strapiRel<{ firstName?: string; lastName?: string; email?: string }>(
       row.fromUser,
@@ -129,6 +129,7 @@ export function normalizeTransferRecord(raw: unknown): TransferLike | null {
     status: String(row.status || ""),
     createdAt: String(row.createdAt || ""),
     transferedOn: String(row.transferedOn || row.transferredOn || ""),
+    transferType: String(row.transferType || "").trim() || undefined,
     orderId: orderId as string | number | undefined,
     emailAddressToUser: String(row.emailAddressToUser || row.email || ""),
     fromUserEmail: String(row.fromUserEmail || fromUser?.email || ""),
@@ -139,6 +140,7 @@ export function normalizeTransferRecord(raw: unknown): TransferLike | null {
     accessPassId:
       (row.accessPassId as string | number | undefined) ??
       accessPass?.uuid,
+    accessPassSnapshot,
     access_pass: accessPass,
     accessPass,
   };
@@ -146,8 +148,50 @@ export function normalizeTransferRecord(raw: unknown): TransferLike | null {
 
 /** Pass id on ticket-transfer payloads (season or organizer access pass). */
 export function transferAccessPassId(transfer: TransferLike): string {
-  const pass = transfer.access_pass ?? transfer.accessPass;
+  const pass = resolveTransferPass(transfer);
   return String(transfer.accessPassId || pass?.uuid || "").trim();
+}
+
+function normalizedTransferType(transfer: TransferLike): string {
+  return String(transfer.transferType || "").trim().toLowerCase();
+}
+
+function resolveTransferPass(
+  transfer: TransferLike,
+): TransferPassLike | null | undefined {
+  const relation = transfer.access_pass ?? transfer.accessPass;
+  const snapshot = transfer.accessPassSnapshot;
+  if (relation?.name) return { ...snapshot, ...relation };
+  if (snapshot) return { ...relation, ...snapshot };
+  return relation ?? snapshot;
+}
+
+/** Whole pass transfer (season or organizer), not a single-game ticket transfer. */
+export function isWholeAccessPassTransfer(transfer: TransferLike): boolean {
+  if (normalizedTransferType(transfer) === "access_pass") return true;
+  const pass = resolveTransferPass(transfer);
+  const passId = transferAccessPassId(transfer);
+  if (!passId && !pass) return false;
+  return !(transfer.tickets?.length);
+}
+
+/** Pass transfer card copy (name + event count), including API rows that include tickets. */
+export function isPassTransferRowPresentation(transfer: TransferLike): boolean {
+  if (normalizedTransferType(transfer) === "access_pass") return true;
+  const pass = resolveTransferPass(transfer);
+  const passId = transferAccessPassId(transfer);
+  if (passId && pass?.name) return true;
+  if (!pass && !passId) return false;
+  return !(transfer.tickets?.length);
+}
+
+function formatPassEventCount(count: number): string {
+  if (count <= 0) return "";
+  return count === 1 ? "1 event" : `${count} events`;
+}
+
+function passEventCountLine(transfer: TransferLike): string {
+  return formatPassEventCount(resolveTransferPass(transfer)?.events?.length ?? 0);
 }
 
 /** Sender loses a pass from the wallet once a transfer is sent or claimed. */
@@ -156,10 +200,7 @@ export function filterWalletAccessPassesBySentTransfers<
 >(passes: T[], sentTransfers: TransferLike[]): T[] {
   const hiddenIds = new Set<string>();
   for (const transfer of sentTransfers) {
-    if (!(transfer.access_pass || transfer.accessPass)) continue;
-    // Ticket transfers out of a season package carry the pass relation as well;
-    // only transferring the pass itself removes it from the wallet.
-    if (transfer.tickets?.length) continue;
+    if (!isWholeAccessPassTransfer(transfer)) continue;
     const passId = transferAccessPassId(transfer);
     if (!passId) continue;
     const status = transferStatusLabel(transfer.status);
@@ -168,6 +209,22 @@ export function filterWalletAccessPassesBySentTransfers<
     }
   }
   return passes.filter((pass) => !hiddenIds.has(String(pass.uuid || "").trim()));
+}
+
+/** Hide access-pass summaries the sender has already transferred. */
+export function filterAccessPassSummariesBySentTransfers<
+  T extends { accessPassUUID?: string },
+>(summaries: T[], sentTransfers: TransferLike[]): T[] {
+  const allowed = filterWalletAccessPassesBySentTransfers(
+    summaries.map((summary) => ({ uuid: summary.accessPassUUID })),
+    sentTransfers,
+  );
+  const allowedIds = new Set(
+    allowed.map((pass) => String(pass.uuid || "").trim()).filter(Boolean),
+  );
+  return summaries.filter((summary) =>
+    allowedIds.has(String(summary.accessPassUUID || "").trim()),
+  );
 }
 
 function transferTicketEventUUID(
@@ -260,6 +317,8 @@ function mergeTransferRecord(
           primary.accessPass ??
           secondary.access_pass ??
           secondary.accessPass;
+  const accessPassSnapshot =
+    primary.accessPassSnapshot ?? secondary.accessPassSnapshot;
   return {
     ...secondary,
     ...primary,
@@ -267,6 +326,12 @@ function mergeTransferRecord(
     tickets,
     access_pass: accessPass,
     accessPass,
+    accessPassSnapshot,
+    transferType:
+      normalizedTransferType(primary) === "access_pass" ||
+      normalizedTransferType(secondary) === "access_pass"
+        ? "access_pass"
+        : primary.transferType || secondary.transferType,
     eventUUID: primary.eventUUID || secondary.eventUUID,
     status: preferTransferStatus(primary.status, secondary.status),
     createdAt: primary.createdAt || secondary.createdAt,
@@ -564,9 +629,9 @@ export function enrichTransferRecordsFromOrders(
       tickets: transfer.tickets,
       order,
     });
-    const pass = transfer.access_pass ?? transfer.accessPass;
+    const pass = resolveTransferPass(transfer);
     let access_pass = pass;
-    if (pass && order.package) {
+    if (isPassTransferRowPresentation(transfer) && order.package) {
       const pkg = order.package as {
         name?: string;
         start?: string;
@@ -575,20 +640,33 @@ export function enrichTransferRecordsFromOrders(
       };
       access_pass = {
         ...pass,
-        name: pass.name || pkg.name,
-        start: pass.start || pkg.start,
-        end: pass.end || pkg.end,
-        events: pass.events?.length ? pass.events : pkg.events,
-        type: pass.type || "package",
+        name: pass?.name || pkg.name,
+        start: pass?.start || pkg.start,
+        end: pass?.end || pkg.end,
+        events: pass?.events?.length ? pass.events : pkg.events,
+        type: pass?.type || "package",
       };
+    } else if (pass) {
+      access_pass = pass;
     }
 
     const next = {
       ...transfer,
-      event: event?.name ? event : transfer.event,
+      event: isPassTransferRowPresentation(transfer)
+        ? transfer.event
+        : event?.name
+          ? event
+          : transfer.event,
       ...(access_pass ? { access_pass: access_pass, accessPass: access_pass } : {}),
     };
-    if (!event?.name && !transfer.event?.name && !access_pass) return transfer;
+    if (
+      !isPassTransferRowPresentation(transfer) &&
+      !event?.name &&
+      !transfer.event?.name &&
+      !access_pass
+    ) {
+      return transfer;
+    }
     return next;
   });
 }
@@ -876,10 +954,12 @@ export function filterVisibleWalletTransferRows(
 }
 
 function transferTitle(transfer: TransferLike) {
-  const passName = String(
-    transfer.access_pass?.name || transfer.accessPass?.name || "",
-  ).trim();
-  if (passName) return passName;
+  if (isPassTransferRowPresentation(transfer)) {
+    const passName = String(resolveTransferPass(transfer)?.name || "").trim();
+    if (passName) return passName;
+    const kind = passTransferKind(transfer);
+    return kind === "season pass" ? "Season pass" : "Access pass";
+  }
   const event = resolveTransferEvent(transfer);
   return String(event?.name || "").trim() || "Transfer";
 }
@@ -887,24 +967,43 @@ function transferTitle(transfer: TransferLike) {
 function passTransferKind(
   transfer: TransferLike,
 ): "season pass" | "access pass" | undefined {
-  if (transfer.tickets?.length) return undefined;
-  const pass = transfer.access_pass ?? transfer.accessPass;
+  if (!isPassTransferRowPresentation(transfer)) return undefined;
+  const pass = resolveTransferPass(transfer);
   if (!pass && !transfer.accessPassId) return undefined;
   const type = String(pass?.type || "").trim().toLowerCase();
-  return type === "package" ? "season pass" : "access pass";
+  if (type === "package" || type === "season_seat") return "season pass";
+  return "access pass";
 }
 
 function passTransferSeatLabel(transfer: TransferLike) {
-  const pass = transfer.access_pass ?? transfer.accessPass;
+  const pass = resolveTransferPass(transfer);
   if (!pass) return "Tickets";
   const type = String(pass.type || "").trim().toLowerCase();
-  if (type === "package") return "1 Season pass";
+  if (type === "package" || type === "season_seat") return "1 Season pass";
   if (type === "organizer") return "1 Access pass";
   const passName = String(pass.name || "").trim();
   return passName ? `1 ${passName}` : "1 Access pass";
 }
 
+function passTransferSeatLines(transfer: TransferLike): string[] {
+  const kind = passTransferKind(transfer);
+  const tickets = transfer.tickets ?? [];
+  if (kind === "season pass") {
+    if (tickets.length) return groupedWalletSeatLines(tickets);
+    const pass = resolveTransferPass(transfer);
+    if (pass) {
+      const seated = seatLabel(pass as TicketLike);
+      if (seated && seated !== "Ticket") return [seated];
+    }
+    return ["1 Season pass"];
+  }
+  return [passTransferSeatLabel(transfer)];
+}
+
 function transferSeatLines(transfer: TransferLike): string[] {
+  if (isPassTransferRowPresentation(transfer)) {
+    return passTransferSeatLines(transfer);
+  }
   const tickets = transfer.tickets ?? [];
   if (!tickets.length) {
     return [passTransferSeatLabel(transfer)];
@@ -913,19 +1012,8 @@ function transferSeatLines(transfer: TransferLike): string[] {
 }
 
 function transferScheduleLine(transfer: TransferLike): string {
-  const pass = transfer.access_pass ?? transfer.accessPass;
-  if (!transfer.tickets?.length && pass) {
-    const events = pass.events ?? [];
-    const sorted = [...events].sort((a, b) =>
-      String(a.start || "").localeCompare(String(b.start || "")),
-    );
-    const start = pass.start || sorted[0]?.start;
-    const end = pass.end || sorted.at(-1)?.start || sorted.at(-1)?.end;
-    const timezone =
-      sorted[0]?.venue?.timezone ||
-      transfer.event?.venue?.timezone ||
-      undefined;
-    return formatPassDateRange(start, end, timezone);
+  if (isPassTransferRowPresentation(transfer)) {
+    return passEventCountLine(transfer);
   }
 
   const event = resolveTransferEvent(transfer);

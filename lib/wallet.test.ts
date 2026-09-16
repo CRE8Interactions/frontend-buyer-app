@@ -166,6 +166,37 @@ describe("groupedWalletSeatLines", () => {
       ]),
     ).toEqual(["Sec Club · Row A"]);
   });
+
+  it("shows GA section or row plus a count for multiple tickets", () => {
+    expect(
+      groupedWalletSeatLines([
+        {
+          generalAdmission: true,
+          sectionNumber: "Club",
+          sectionName: "General Admission",
+        },
+        {
+          generalAdmission: true,
+          sectionNumber: "Club",
+          sectionName: "General Admission",
+        },
+      ]),
+    ).toEqual(["Sec Club x 2"]);
+    expect(
+      groupedWalletSeatLines([
+        {
+          generalAdmission: true,
+          sectionNumber: "N",
+          rowNumber: "I",
+        },
+        {
+          generalAdmission: true,
+          sectionNumber: "N",
+          rowNumber: "I",
+        },
+      ]),
+    ).toEqual(["Sec N · Row I x 2"]);
+  });
 });
 
 describe("formatPassDateRange", () => {

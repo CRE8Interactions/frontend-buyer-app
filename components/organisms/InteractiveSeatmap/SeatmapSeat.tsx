@@ -83,6 +83,9 @@ export function activateSellableSeat(args: {
     return;
   }
   selectSpecificSeat(seatId, ticketGroup);
+  // Selecting straight off the map is still a click elsewhere for whichever
+  // card was open, so it closes rather than hanging over the new selection.
+  onTooltip(null);
 }
 
 function accessibleColor(accessibleType?: string) {

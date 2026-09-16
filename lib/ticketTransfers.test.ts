@@ -19,6 +19,7 @@ import {
   filterPendingIncomingTransfers,
   filterVisibleWalletTransferRows,
   markIncomingTransferLocallyResolved,
+  filterAccessPassSummariesBySentTransfers,
   filterWalletAccessPassesBySentTransfers,
   formatTransferSenderLabel,
   mapReceivedTransferRows,
@@ -129,7 +130,32 @@ describe("ticketTransfers", () => {
     expect(rows[0]?.seatLines).toEqual(["Sec G · Row 25 · Seats 6-7"]);
   });
 
-  it("formats pass transfer schedule from pass start and end dates", () => {
+  it("shows GA section or row plus a count for multiple tickets on one transfer", () => {
+    const event = DEMO_EVENTS.find((row) => row.shortCode === "NMST004")!;
+    const gaTicket = (id: number) => ({
+      id,
+      uuid: `ticket-ga-${id}`,
+      checkInCode: `GA-${id}`,
+      eventUUID: event.uuid,
+      generalAdmission: true,
+      sectionName: "General Admission",
+      sectionNumber: "Club",
+      offerName: "General admission",
+    });
+    const rows = mapSentTransferRows([
+      {
+        id: "multi-ga",
+        status: "pending",
+        event,
+        tickets: [gaTicket(9101), gaTicket(9102)],
+      },
+    ]);
+
+    expect(rows[0]?.seatLines).toEqual(["Sec Club x 2"]);
+    expect(rows[0]?.ticketCount).toBe(2);
+  });
+
+  it("shows pass event count instead of dates on pass transfer cards", () => {
     const pkg = demoSeasonPackage();
     const pass = demoPackageAccessPass();
     const rows = mapSentTransferRows([
@@ -141,11 +167,72 @@ describe("ticketTransfers", () => {
           type: "package",
           start: pkg.start,
           end: pkg.end,
+          events: pkg.events,
         },
       },
     ]);
 
-    expect(rows[0]?.schedule).toContain("–");
+    expect(rows[0]?.schedule).toBe(`${pkg.events.length} events`);
+    expect(rows[0]?.schedule).not.toContain("–");
+  });
+
+  it("shows pass name and event count for API access_pass transfers that include tickets", () => {
+    const pkg = demoSeasonPackage();
+    const pass = demoPackageAccessPass();
+    const order = demoCompletedPackageOrder();
+    const event = pkg.events[0]!;
+
+    const rows = buildWalletSentTransferRows(
+      [
+        {
+          id: "api-pass-transfer",
+          status: "pending",
+          transferType: "access_pass",
+          accessPassId: pass.uuid,
+          accessPassSnapshot: {
+            uuid: pass.uuid,
+            name: pass.name,
+            type: "season_seat",
+            events: pkg.events,
+          },
+          event,
+          tickets: [order.tickets[0]!],
+          orderId: order.orderId,
+          createdAt: "2026-09-15T18:00:00.000Z",
+        },
+      ],
+      [order],
+    );
+
+    expect(rows[0]?.title).toBe(pass.name);
+    expect(rows[0]?.schedule).toBe(`${pkg.events.length} events`);
+    expect(rows[0]?.seatLines[0]).toContain(String(order.tickets[0]?.sectionNumber));
+    expect(rows[0]?.passKind).toBe("season pass");
+  });
+
+  it("shows pass card copy when accessPassId and tickets omit transferType", () => {
+    const order = demoCompletedPackageOrder();
+    const pass = demoPackageAccessPass();
+    const pkg = demoSeasonPackage();
+    const rows = buildWalletSentTransferRows(
+      [
+        {
+          id: "pass-with-tickets-no-type",
+          status: "pending",
+          accessPassId: pass.uuid,
+          access_pass: { uuid: pass.uuid, name: pass.name, type: "package" },
+          orderId: order.orderId,
+          event: pkg.events[0],
+          tickets: order.tickets,
+        },
+      ],
+      [order],
+    );
+
+    expect(rows[0]?.title).toBe(pass.name);
+    expect(rows[0]?.schedule).toBe(`${pkg.events.length} events`);
+    expect(rows[0]?.schedule).not.toMatch(/PM|–/);
+    expect(rows[0]?.seatLines[0]).toContain(String(order.tickets[0]?.sectionNumber));
   });
 
   it("formats transfer senders as initial plus last name", () => {
@@ -394,13 +481,21 @@ describe("ticketTransfers", () => {
   it("lists season pass and access pass transfers on sent and received tabs", () => {
     const seasonPass = demoPackageAccessPass();
     const accessPass = demoAccessPass();
+    const pkg = demoSeasonPackage();
     const seasonTransfer = {
       id: "season-pass-transfer-1",
       status: "pending",
       emailAddressToUser: "recipient@example.com",
       fromUserEmail: "sender@example.com",
       orderId: seasonPass.orderId,
-      access_pass: { name: seasonPass.name, type: "package" },
+      access_pass: {
+        name: seasonPass.name,
+        type: "package",
+        events: pkg.events,
+        sectionNumber: seasonPass.sectionNumber,
+        rowNumber: seasonPass.rowNumber,
+        seatNumber: seasonPass.seatNumber,
+      },
       createdAt: "2026-09-11T18:00:00.000Z",
     };
     const accessTransfer = {
@@ -409,7 +504,11 @@ describe("ticketTransfers", () => {
       emailAddressToUser: "recipient@example.com",
       fromUserEmail: "sender@example.com",
       orderId: accessPass.orderId,
-      access_pass: { name: accessPass.name, type: "organizer" },
+      access_pass: {
+        name: accessPass.name,
+        type: "organizer",
+        events: accessPass.events,
+      },
       createdAt: "2026-09-10T18:00:00.000Z",
     };
 
@@ -427,15 +526,19 @@ describe("ticketTransfers", () => {
       accessPass.name,
     ]);
     expect(sentRows.map((row) => row.seat)).toEqual([
-      "1 Season pass",
+      seatLabel(seasonPass),
       "1 Access pass",
+    ]);
+    expect(sentRows.map((row) => row.schedule)).toEqual([
+      `${pkg.events.length} events`,
+      `${accessPass.events.length} events`,
     ]);
     expect(receivedRows.map((row) => row.title)).toEqual([
       seasonPass.name,
       accessPass.name,
     ]);
     expect(receivedRows.map((row) => row.seat)).toEqual([
-      "1 Season pass",
+      seatLabel(seasonPass),
       "1 Access pass",
     ]);
   });
@@ -825,6 +928,25 @@ describe("ticketTransfers", () => {
     ]);
 
     expect(rows.map((row) => row.id)).toEqual(["pending-1", "claimed-1"]);
+  });
+
+  it("hides pending sent pass summaries from package pass cards", () => {
+    const pass = demoAccessPass();
+    const summary = {
+      key: pass.uuid,
+      accessPassUUID: pass.uuid,
+      name: pass.name,
+    };
+    const visible = filterAccessPassSummariesBySentTransfers([summary], [
+      {
+        id: "pending-pass",
+        status: "pending",
+        accessPassId: pass.uuid,
+        access_pass: { uuid: pass.uuid, name: pass.name, type: "organizer" },
+      },
+    ]);
+
+    expect(visible).toHaveLength(0);
   });
 
   it("hides pending and claimed sent pass transfers from wallet pass lists", () => {
@@ -1226,5 +1348,28 @@ describe("ticketTransfers", () => {
         },
       ]),
     ).toHaveLength(1);
+  });
+
+  it("hides a pass when the API returns an access_pass transfer with included tickets", () => {
+    const pass = demoAccessPass();
+
+    expect(
+      filterWalletAccessPassesBySentTransfers([pass], [
+        {
+          id: "whole-pass-transfer",
+          status: "pending",
+          transferType: "access_pass",
+          accessPassId: pass.uuid,
+          tickets: [
+            {
+              id: 9001,
+              sectionNumber: "R",
+              rowNumber: "25",
+              seatNumber: 11,
+            },
+          ],
+        },
+      ]),
+    ).toHaveLength(0);
   });
 });

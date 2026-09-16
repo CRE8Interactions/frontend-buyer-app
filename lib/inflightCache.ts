@@ -1,6 +1,9 @@
 /** Share one in-flight promise and keep a short successful result for remounts. */
 export function createInflightCache<T>(ttlMs: number) {
-  const inflight = new Map<string, Promise<T>>();
+  const inflight = new Map<
+    string,
+    { request: Promise<T>; signal?: AbortSignal }
+  >();
   const cached = new Map<string, { expires: number; value: T }>();
   const generation = new Map<string, number>();
 
@@ -10,7 +13,7 @@ export function createInflightCache<T>(ttlMs: number) {
   return {
     get(
       load: () => Promise<T>,
-      options?: { fresh?: boolean; key?: string },
+      options?: { fresh?: boolean; key?: string; signal?: AbortSignal },
     ): Promise<T> {
       const key = options?.key ?? "";
       if (options?.fresh) {
@@ -23,7 +26,9 @@ export function createInflightCache<T>(ttlMs: number) {
           return Promise.resolve(hit.value);
         }
         const pending = inflight.get(key);
-        if (pending) return pending;
+        // A remount aborts the previous request, so sharing it would hand the
+        // new caller a cancelled response instead of fetching again.
+        if (pending && !pending.signal?.aborted) return pending.request;
       }
 
       const gen = genOf(key);
@@ -35,9 +40,9 @@ export function createInflightCache<T>(ttlMs: number) {
           return value;
         })
         .finally(() => {
-          if (inflight.get(key) === request) inflight.delete(key);
+          if (inflight.get(key)?.request === request) inflight.delete(key);
         });
-      inflight.set(key, request);
+      inflight.set(key, { request, signal: options?.signal });
       return request;
     },
     reset() {

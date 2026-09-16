@@ -695,6 +695,11 @@ export default function PremiumTicketing({
     d.listings.find((l) => !isLocked(l.zone));
   const unit = selRow ? parseFloat(selRow.price.replace(/[^0-9.]/g, "")) : 0;
   const panelOfferDescription = selectionOfferDescription(selRow?.cartGroup);
+  const unlockOfferDescription = selectionOfferDescription(
+    GA_TIERS.find((tier) => tier.name === unlockZone)?.cartGroup ??
+      d.listings.find((listing) => listing.zone === unlockZone)?.cartGroup ??
+      quantityCatalog.find((listing) => listing.zone === unlockZone)?.cartGroup,
+  );
   const panelOpen = sel !== null && !map;
 
   const pickTotal = picks.reduce((t, p) => t + p.unit, 0);
@@ -809,7 +814,7 @@ export default function PremiumTicketing({
   };
 
   const placeSelectedTickets = async (
-    groups: Array<Record<string, unknown> & { quantity: number }>,
+    groups: Array<Record<string, unknown> & { quantity?: number }>,
   ) => {
     if (d.eventId == null) {
       throw new Error("This event is not ready for checkout yet.");
@@ -832,7 +837,7 @@ export default function PremiumTicketing({
     if (cartId == null) {
       throw new Error("Cart could not be created. Please try again.");
     }
-    const qty = groups.reduce((sum, g) => sum + Number(g.quantity || 0), 0);
+    const qty = groups.reduce((sum, g) => sum + Number(g.quantity || 1), 0);
     setStoredCart(cartId, qty || 1);
     return String(cartId);
   };
@@ -861,10 +866,17 @@ export default function PremiumTicketing({
     setHolding(true);
     setHoldError("");
     try {
-      const groups = selectedFromMap.map((g) => ({
-        ...(g as Record<string, unknown>),
-        quantity: Number(g.quantity || 1),
-      }));
+      // A seat picked off the map has to reach the API without a quantity:
+      // any quantity switches it to the quickpick path, which throws the
+      // chosen seats away and reserves consecutive ones instead.
+      const groups = selectedFromMap.map((g) => {
+        const group = { ...(g as Record<string, unknown>) };
+        if (!g.GA && g.seatId != null) {
+          delete group.quantity;
+          return group;
+        }
+        return { ...group, quantity: Number(g.quantity || 1) };
+      });
       const cartId = await placeSelectedTickets(groups);
       goToCheckout(cartId);
     } catch (err: unknown) {
@@ -2614,6 +2626,11 @@ export default function PremiumTicketing({
             >
               <LockIcon s={22} />
             </div>
+            {unlockOfferDescription ? (
+              <p className="text-[14px] leading-relaxed text-[#4a5567]">
+                {unlockOfferDescription}
+              </p>
+            ) : null}
             <p className="text-[14px] leading-relaxed text-[#6e7180]">
               Enter your access code to unlock {isGa ? "this offer" : "these seats"}.
             </p>
@@ -2670,7 +2687,7 @@ export default function PremiumTicketing({
       ) : null}
 
       {info && (
-        <Modal variant="light" sheet={mobile} title="Event information" onClose={() => setInfo(false)}>
+        <Modal variant="light" title="Event information" onClose={() => setInfo(false)}>
           <div className={`mt-4 flex flex-col gap-[22px] ${mobile ? "" : "max-h-[min(70vh,640px)] overflow-y-auto"}`}>
             <div className="flex flex-col items-center gap-3.5 text-center">
               <div className="flex h-[132px] w-[132px] items-center justify-center overflow-hidden rounded-[22px] border border-[rgba(5,27,53,0.08)] bg-[#f1f3f8]">

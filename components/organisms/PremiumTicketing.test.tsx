@@ -1356,6 +1356,9 @@ describe("Select tickets page (PremiumTicketing)", { timeout: 20_000 }, () => {
       (group) => group.offer?.accessCode,
     );
     if (!presaleGroup) throw new Error("demo fixtures need a locked GA group");
+    if (!presaleGroup.offer?.description) {
+      throw new Error("demo fixtures need a locked offer description");
+    }
     const lockedZones = lockedZonesFromGroups([presaleGroup]);
     const gaTiers = groupsToGaTiers([presaleGroup], { includeLocked: true });
     const user = userEvent.setup();
@@ -1379,8 +1382,14 @@ describe("Select tickets page (PremiumTicketing)", { timeout: 20_000 }, () => {
     ).not.toBeInTheDocument();
 
     await user.click(screen.getByRole("button", { name: /enter access code/i }));
+    const unlockDialog = screen.getByRole("dialog");
     expect(
-      screen.getByText(/enter your access code to unlock this offer/i),
+      within(unlockDialog).getByText(presaleGroup.offer.description),
+    ).toBeInTheDocument();
+    expect(
+      within(unlockDialog).getByText(
+        /enter your access code to unlock this offer/i,
+      ),
     ).toBeInTheDocument();
     await user.type(screen.getByPlaceholderText(/access code/i), "GO2026");
     await user.click(screen.getByRole("button", { name: /unlock offer/i }));
@@ -1594,6 +1603,14 @@ describe("Select tickets page (PremiumTicketing)", { timeout: 20_000 }, () => {
       expect(mockedPlaceTickets).toHaveBeenCalled();
       expect(routerMocks.push).toHaveBeenCalledWith(checkoutHref("cart-1"));
     });
+    // The API reserves the seats that were clicked only while the group has no
+    // quantity — with one it quickpicks its own consecutive seats instead.
+    const [payload] = mockedPlaceTickets.mock.calls[0] as [
+      { ticketGroups: Array<Record<string, unknown>> },
+    ];
+    expect(payload.ticketGroups).toHaveLength(1);
+    expect(payload.ticketGroups[0]).toMatchObject({ seatId: "s1" });
+    expect(payload.ticketGroups[0]).not.toHaveProperty("quantity");
   });
 
   it("opens the seat map popup right away and shows the org loader until the map is ready", async () => {

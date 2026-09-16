@@ -102,12 +102,18 @@ type DemoSentTransfer = {
   event?: DemoWalletOrder["event"];
   tickets?: DemoWalletOrder["tickets"];
   accessPassId?: string;
+  transferType?: string;
   access_pass?: {
     uuid?: string;
     name?: string;
     type?: string;
     start?: string;
     end?: string;
+    events?: DemoWalletOrder["event"][];
+    sectionNumber?: string | number;
+    rowNumber?: string | number;
+    seatNumber?: string | number;
+    generalAdmission?: boolean;
   };
 };
 
@@ -506,12 +512,18 @@ const routes: Route[] = [
             emailAddressToUser: recipientEmail,
             fromUserEmail: DEMO_SESSION.user.email,
             accessPassId: pass.uuid,
+            transferType: "access_pass",
             access_pass: {
               uuid: pass.uuid,
               name: pass.name,
               type: String(pass.type || ""),
               start: pkg.start || events[0]?.start,
               end: pkg.end || events.at(-1)?.start,
+              events,
+              sectionNumber: pass.sectionNumber,
+              rowNumber: pass.rowNumber,
+              seatNumber: pass.seatNumber,
+              generalAdmission: pass.generalAdmission,
             },
             createdAt: new Date().toISOString(),
           };

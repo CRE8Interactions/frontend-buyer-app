@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { mobileSeatPopupPosition } from "@/components/organisms/InteractiveSeatmap/SeatmapTooltip";
 import {
+  clampPopupToViewport,
   panDeltaToRevealPopup,
   seatmapSeatOfferScrollMaxHeight,
 } from "@/lib/seatmapPopup";
@@ -19,6 +20,32 @@ describe("mobileSeatPopupPosition", () => {
 
     expect(position.top).toBe(anchorY - cardHeight - 10);
     expect(position.caretLeft + position.left + 10).toBe(200);
+  });
+});
+
+describe("clampPopupToViewport", () => {
+  const viewport = { width: 1200, height: 800 };
+
+  it("sits just past the anchor when the card fits below it", () => {
+    expect(
+      clampPopupToViewport({ x: 300, y: 200 }, { width: 280, height: 360 }, viewport),
+    ).toEqual({ left: 312, top: 212 });
+  });
+
+  it("lifts a tall card off the bottom edge instead of clipping it", () => {
+    const { top } = clampPopupToViewport(
+      { x: 300, y: 700 },
+      { width: 280, height: 360 },
+      viewport,
+    );
+    expect(top).toBe(viewport.height - 360 - 16);
+    expect(top + 360).toBeLessThanOrEqual(viewport.height);
+  });
+
+  it("keeps a card taller than the viewport at the top margin", () => {
+    expect(
+      clampPopupToViewport({ x: 300, y: 600 }, { width: 280, height: 900 }, viewport),
+    ).toMatchObject({ top: 16 });
   });
 });
 

@@ -10,7 +10,7 @@ export default function Modal({
   children,
   variant = "dark",
   busy = false,
-  sheet = false,
+  sheet,
 }: {
   title: string;
   onClose: () => void;
@@ -18,12 +18,14 @@ export default function Modal({
   variant?: "dark" | "light";
   /** When true, the close control cannot dismiss (in-flight action). */
   busy?: boolean;
-  /** Slide up from the bottom edge (mobile drawers). */
+  /** Bottom sheet layout. Omit to pin from the bottom on viewports under 900px. */
   sheet?: boolean;
 }) {
   const titleId = useId();
   const light = variant === "light";
   const dialogRef = useRef<HTMLDivElement | null>(null);
+  const forceSheet = sheet === true;
+  const forceCentered = sheet === false;
 
   useEffect(() => {
     focusFirstField(dialogRef.current);
@@ -34,25 +36,43 @@ export default function Modal({
     onClose();
   };
 
-  const shellCls = sheet
+  const shellCls = forceSheet
     ? "flex min-h-full items-end justify-center p-0"
-    : "flex min-h-full justify-center p-4 sm:p-6";
+    : forceCentered
+      ? "flex min-h-full justify-center p-4 sm:p-6"
+      : "flex min-h-full justify-center p-4 sm:p-6 max-[899px]:items-end max-[899px]:p-0";
 
-  const dialogCls = sheet
-    ? light
-      ? "m-0 w-full max-w-none overflow-y-auto rounded-t-[26px] rounded-b-none border border-b-0 border-[rgba(5,27,53,0.10)] bg-white p-6 pb-[calc(1.5rem+env(safe-area-inset-bottom))] text-[#051b35] shadow-[0_-20px_60px_-20px_rgba(5,27,53,0.5)] max-h-[92vh]"
-      : "m-0 w-full max-w-none overflow-y-auto rounded-t-[26px] rounded-b-none border border-b-0 border-white/15 bg-[#0a2747] p-6 pb-[calc(1.5rem+env(safe-area-inset-bottom))] text-white shadow-[0_-20px_60px_-20px_rgba(5,27,53,0.5)] max-h-[92vh]"
-    : light
-      ? "m-auto w-full max-w-[560px] rounded-2xl border border-[rgba(5,27,53,0.10)] bg-white p-6 text-[#051b35] shadow-2xl shadow-black/20 sm:p-8"
-      : "m-auto w-full max-w-[560px] rounded-2xl border border-white/15 bg-[#0a2747] p-6 text-white shadow-2xl shadow-black/60 sm:p-8";
+  const sheetDialogCls = light
+    ? "m-0 w-full max-w-none overflow-y-auto rounded-t-[26px] rounded-b-none border border-b-0 border-[rgba(5,27,53,0.10)] bg-white p-6 pb-[calc(1.5rem+env(safe-area-inset-bottom))] text-[#051b35] shadow-[0_-20px_60px_-20px_rgba(5,27,53,0.5)] max-h-[92vh]"
+    : "m-0 w-full max-w-none overflow-y-auto rounded-t-[26px] rounded-b-none border border-b-0 border-white/15 bg-[#0a2747] p-6 pb-[calc(1.5rem+env(safe-area-inset-bottom))] text-white shadow-[0_-20px_60px_-20px_rgba(5,27,53,0.5)] max-h-[92vh]";
 
-  const headerCls = sheet
-    ? `-mx-6 flex items-start justify-between gap-4 border-b px-6 pb-4 ${
-        light ? "border-[rgba(5,27,53,0.10)]" : "border-white/10"
-      }`
-    : `-mx-6 flex items-center justify-between gap-4 border-b px-6 pb-4 sm:-mx-8 sm:px-8 ${
-        light ? "border-[rgba(5,27,53,0.10)]" : "border-white/10"
-      }`;
+  const centeredDialogCls = light
+    ? "m-auto w-full max-w-[560px] rounded-2xl border border-[rgba(5,27,53,0.10)] bg-white p-6 text-[#051b35] shadow-2xl shadow-black/20 sm:p-8"
+    : "m-auto w-full max-w-[560px] rounded-2xl border border-white/15 bg-[#0a2747] p-6 text-white shadow-2xl shadow-black/60 sm:p-8";
+
+  const autoMobileSheetCls = light
+    ? "max-[899px]:m-0 max-[899px]:w-full max-[899px]:max-w-none max-[899px]:overflow-y-auto max-[899px]:rounded-t-[26px] max-[899px]:rounded-b-none max-[899px]:border-b-0 max-[899px]:pb-[calc(1.5rem+env(safe-area-inset-bottom))] max-[899px]:shadow-[0_-20px_60px_-20px_rgba(5,27,53,0.5)] max-[899px]:max-h-[92vh]"
+    : "max-[899px]:m-0 max-[899px]:w-full max-[899px]:max-w-none max-[899px]:overflow-y-auto max-[899px]:rounded-t-[26px] max-[899px]:rounded-b-none max-[899px]:border-b-0 max-[899px]:pb-[calc(1.5rem+env(safe-area-inset-bottom))] max-[899px]:shadow-[0_-20px_60px_-20px_rgba(5,27,53,0.5)] max-[899px]:max-h-[92vh]";
+
+  const dialogCls = forceSheet
+    ? sheetDialogCls
+    : forceCentered
+      ? centeredDialogCls
+      : `${centeredDialogCls} ${autoMobileSheetCls}`;
+
+  const sheetHeaderCls = `-mx-6 flex items-start justify-between gap-4 border-b px-6 pb-4 ${
+    light ? "border-[rgba(5,27,53,0.10)]" : "border-white/10"
+  }`;
+
+  const centeredHeaderCls = `-mx-6 flex items-center justify-between gap-4 border-b px-6 pb-4 sm:-mx-8 sm:px-8 ${
+    light ? "border-[rgba(5,27,53,0.10)]" : "border-white/10"
+  }`;
+
+  const headerCls = forceSheet
+    ? sheetHeaderCls
+    : forceCentered
+      ? centeredHeaderCls
+      : `${centeredHeaderCls} max-[899px]:items-start max-[899px]:sm:-mx-6 max-[899px]:sm:px-6`;
 
   return (
     <div className="fixed inset-0 z-[60] overflow-y-auto bg-black/70 backdrop-blur-sm">

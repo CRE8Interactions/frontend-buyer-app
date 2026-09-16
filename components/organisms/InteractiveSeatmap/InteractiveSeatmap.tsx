@@ -33,6 +33,14 @@ const PAN_THRESHOLD_PX = SEATMAP_TAP_THRESHOLD_PX;
 /** Softens pinch scale changes so zoom feels less jumpy on iOS. */
 const PINCH_ZOOM_DAMPING = 0.7;
 
+/** Identifies which seat or GA section a popover belongs to. */
+function tooltipTargetKey(target: SeatmapTooltipTarget) {
+  if (!target) return null;
+  return target.kind === "seat"
+    ? `seat:${target.seatId}`
+    : `section:${target.sectionId}`;
+}
+
 /**
  * Same ZoomLevel % formula as the legacy SvgSeatmap `calculateScalePercentage`.
  * Default fit ≈ 0; ~3.2× fit ≈ 22.
@@ -182,7 +190,7 @@ export default function InteractiveSeatmap({
   maxScaleRef.current = maxScale;
   const [tooltip, setTooltip] = useState<SeatmapTooltipTarget>(null);
   const tooltipHoveredRef = useRef(false);
-  /** Seat id of the pinned card, or null while the tooltip is a hover preview. */
+  /** Key of the clicked card, or null while the tooltip is a hover preview. */
   const tooltipPinnedRef = useRef<string | null>(null);
   const dismissTooltipTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
     null,
@@ -222,9 +230,7 @@ export default function InteractiveSeatmap({
     (target: SeatmapTooltipTarget) => {
       clearDismissTooltipTimer();
       tooltipPinnedRef.current =
-        target?.kind === "seat" && target.pinned === true
-          ? String(target.seatId)
-          : null;
+        target?.pinned === true ? tooltipTargetKey(target) : null;
       setTooltip(target);
     },
     [clearDismissTooltipTimer],
@@ -233,18 +239,9 @@ export default function InteractiveSeatmap({
   const handleSeatTooltip = useCallback(
     (target: SeatmapTooltipTarget | null) => {
       if (target) {
-        // A pinned seat card stays put until Add now, close, or another seat
-        // takes over; hovering the pinned seat must not downgrade it.
-        const pinning = target.kind === "seat" && target.pinned === true;
-        const pinnedSeatId = tooltipPinnedRef.current;
-        if (
-          pinnedSeatId &&
-          !pinning &&
-          target.kind === "seat" &&
-          String(target.seatId) === pinnedSeatId
-        ) {
-          return;
-        }
+        // A clicked card stays put until Add now, close, or a click elsewhere.
+        // Hovering any seat — its own or a neighbour — must not replace it.
+        if (tooltipPinnedRef.current && target.pinned !== true) return;
         openTooltip(target);
         return;
       }

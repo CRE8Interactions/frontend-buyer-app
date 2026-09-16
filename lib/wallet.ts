@@ -377,6 +377,7 @@ export function formatSeatNumberRanges(
   }
 
   const sorted = [...new Set(nums)].sort((a, b) => a - b);
+  if (!sorted.length) return "";
   if (sorted.length === 1) return String(sorted[0]);
 
   const parts: string[] = [];
@@ -416,6 +417,23 @@ type SectionSeatGroup = {
 function sectionGroupKey(ticket: TicketLike | Record<string, unknown>) {
   const section = transferGroupSectionValue(ticket);
   return (section || "GA").trim().toLowerCase();
+}
+
+function gaGroupLocationLine(
+  tickets: Array<TicketLike | Record<string, unknown>>,
+): string {
+  const first = tickets[0];
+  if (!first) return "GA";
+  const section = transferGroupSectionValue(first);
+  const rows = [
+    ...new Set(
+      tickets.map((ticket) => ticketRowValue(ticket)).filter(Boolean),
+    ),
+  ];
+  const parts: string[] = [];
+  if (section) parts.push(`Sec ${section}`);
+  if (rows.length === 1) parts.push(`Row ${rows[0]}`);
+  return parts.join(" · ") || "GA";
 }
 
 /** One line per section; multiple rows on the same line; GA shows Sec only unless row/seat exist. */
@@ -464,22 +482,9 @@ export function groupedWalletSeatLines(
         lines.push(gaTicketSeatLine(group.tickets[0]));
         continue;
       }
-      const seats = group.tickets
-        .map((ticket) => ticketSeatValue(ticket))
-        .filter(Boolean);
-      const base = gaTicketSeatLine({
-        ...group.tickets[0],
-        seatNumber: undefined,
-        seat_number: undefined,
-        seatName: undefined,
-        seat_name: undefined,
-      });
-      if (seats.length) {
-        const seatLabelPart = formatRowSeatsLabel(seats);
-        lines.push(seatLabelPart ? `${base} · ${seatLabelPart}` : base);
-      } else {
-        lines.push(base);
-      }
+      lines.push(
+        `${gaGroupLocationLine(group.tickets)} x ${group.tickets.length}`,
+      );
       continue;
     }
 

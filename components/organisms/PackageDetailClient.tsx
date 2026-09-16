@@ -899,6 +899,7 @@ export default function PackageDetailClient({
       {seatedError && !seatmapOpen ? (
         <Modal
           variant="light"
+          sheet={false}
           title={seatedError.title}
           onClose={() => setSeatedError(null)}
           busy={checkingOut}
