@@ -20,6 +20,7 @@ import {
   isToday,
   isUpcomingEvent,
   isWalletListedEvent,
+  unwrapAccessPassList,
   unwrapOrder,
   type AccessPassLike,
 } from "@/lib/wallet";
@@ -59,6 +60,16 @@ describe("buildAccessPassSummaries", () => {
         demoPackageAccessPass({ email: "" }) as AccessPassLike,
       ])[0].holderEmail,
     ).toBeUndefined();
+  });
+
+  it("treats Active status as visible", () => {
+    const pass = { ...demoAccessPass(), status: "Active" };
+    expect(buildAccessPassSummaries([pass])[0]?.name).toBe(pass.name);
+  });
+
+  it("treats accepted organizer passes as visible", () => {
+    const pass = { ...demoAccessPass(), status: "accepted" };
+    expect(buildAccessPassSummaries([pass])[0]?.name).toBe(pass.name);
   });
 
   it("only keeps a revoked pass when inactive passes are included", () => {
@@ -124,6 +135,55 @@ describe("buildAccessPassSummaries", () => {
       buildAccessPassSummaries([pass], { packageEvents: pkg.events })[0]
         .eventCount,
     ).toBe(passEvents.length);
+  });
+});
+
+describe("unwrapAccessPassList", () => {
+  it("flattens nested data and Strapi attributes from myAccessPasses", () => {
+    const pass = demoAccessPass();
+
+    expect(
+      unwrapAccessPassList({
+        data: {
+          data: [
+            {
+              id: 41,
+              attributes: pass,
+            },
+          ],
+        },
+      }).map((row) => row.uuid),
+    ).toEqual([pass.uuid]);
+  });
+
+  it("unwraps nested access_pass rows from myAccessPasses", () => {
+    const pass = demoAccessPass();
+
+    expect(
+      unwrapAccessPassList({
+        data: [
+          {
+            id: 41,
+            createdAt: "2026-08-27T17:40:51.485Z",
+            access_pass: {
+              uuid: pass.uuid,
+              name: pass.name,
+              type: "organizer",
+              status: "accepted",
+              events: pass.events,
+            },
+          },
+        ],
+      }).map((row) => ({ uuid: row.uuid, name: row.name })),
+    ).toEqual([{ uuid: pass.uuid, name: pass.name }]);
+  });
+
+  it("unwraps the flat myAccessPasses list the API returns", () => {
+    const pass = demoAccessPass();
+
+    expect(
+      unwrapAccessPassList({ data: [pass] }).map((row) => row.uuid),
+    ).toEqual([pass.uuid]);
   });
 });
 

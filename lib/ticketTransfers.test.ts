@@ -29,6 +29,7 @@ import {
   filterAccessPassSummariesBySentTransfers,
   filterWalletAccessPassesBySentTransfers,
   incomingAccessPassSummaryFromTransfer,
+  unwrapAcceptTransferAccessPass,
   formatAccessPassRemainingLine,
   mergeWalletAccessPassesPreservingLocal,
   formatTransferSenderLabel,
@@ -461,6 +462,22 @@ describe("ticketTransfers", () => {
     expect(summary?.nextEvent?.name).toBe(owned?.nextEvent?.name);
     expect(summary?.attendedCount).toBe(owned?.attendedCount);
     expect(summary?.eventCount).toBe(owned?.eventCount);
+  });
+
+  it("does not treat an accept-status payload as an access pass", () => {
+    const pass = demoAccessPass();
+    expect(
+      unwrapAcceptTransferAccessPass({
+        status: "accepted",
+        transferedOn: "2026-09-13T19:21:48.735Z",
+      }),
+    ).toBeNull();
+    expect(
+      unwrapAcceptTransferAccessPass({
+        status: "accepted",
+        access_pass: pass,
+      }),
+    ).toMatchObject({ uuid: pass.uuid, name: pass.name });
   });
 
   it("omits next event when the incoming access pass snapshot has no games", () => {
@@ -999,6 +1016,179 @@ describe("ticketTransfers", () => {
     );
   });
 
+  it("lists a sent organizer access pass from the Strapi my-sent payload", () => {
+    const pass = demoAccessPass();
+    const event = pass.events[0];
+
+    const rows = buildWalletSentTransferRows(
+      unwrapTransferRecords({
+        data: [
+          {
+            id: 88,
+            attributes: {
+              status: "pending",
+              transferType: "access_pass",
+              accessPassId: pass.uuid,
+              accessPassSnapshot: {
+                uuid: pass.uuid,
+                name: pass.name,
+                type: "organizer",
+                events: pass.events,
+              },
+              emailAddressToUser: "recipient@example.com",
+              fromUserEmail: "sender@example.com",
+              createdAt: "2026-09-17T18:00:00.000Z",
+              tickets: { data: [] },
+              event: event
+                ? { data: { id: 1, attributes: event } }
+                : { data: null },
+            },
+          },
+        ],
+      }),
+    );
+
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.title).toBe(pass.name);
+    expect(rows[0]?.passKind).toBe("access pass");
+    expect(rows[0]?.to).toBe("recipient@example.com");
+    expect(rows[0]?.status).toBe("pending");
+  });
+
+  it("keeps new pending sent rows beside older claimed rows for the same event, package event, and pass", () => {
+    const eventOrder = demoCompletedTicketOrder({ event: DEMO_EVENTS[0] });
+    const [eventTicket] = eventOrder.tickets;
+    const packageOrder = demoCompletedPackageOrder();
+    const packageEvent = demoSeasonPackage().events[1];
+    const [packageTicket] = packageOrder.tickets.map((row) => ({
+      ...row,
+      eventUUID: packageEvent.uuid,
+    }));
+    const seasonPass = demoPackageAccessPass();
+    const accessPass = demoAccessPass();
+
+    const claimed = [
+      {
+        id: 81,
+        status: "accepted",
+        emailAddressToUser: "recipient@example.com",
+        event: eventOrder.event,
+        eventUUID: eventOrder.event?.uuid,
+        tickets: [eventTicket],
+        createdAt: "2026-09-10T18:00:00.000Z",
+      },
+      {
+        id: 82,
+        status: "accepted",
+        emailAddressToUser: "recipient@example.com",
+        event: packageEvent,
+        eventUUID: packageEvent.uuid,
+        tickets: [packageTicket],
+        createdAt: "2026-09-10T18:00:00.000Z",
+      },
+      {
+        id: 83,
+        status: "accepted",
+        transferType: "access_pass",
+        accessPassId: seasonPass.uuid,
+        emailAddressToUser: "recipient@example.com",
+        accessPassSnapshot: {
+          uuid: seasonPass.uuid,
+          name: seasonPass.name,
+          type: "package",
+          events: demoSeasonPackage().events,
+        },
+        createdAt: "2026-09-10T18:00:00.000Z",
+      },
+      {
+        id: 84,
+        status: "accepted",
+        transferType: "access_pass",
+        accessPassId: accessPass.uuid,
+        emailAddressToUser: "recipient@example.com",
+        accessPassSnapshot: {
+          uuid: accessPass.uuid,
+          name: accessPass.name,
+          type: "organizer",
+          events: accessPass.events,
+        },
+        createdAt: "2026-09-10T18:00:00.000Z",
+      },
+    ];
+    const pending = [
+      { ...claimed[0], id: 91, status: "pending", createdAt: "2026-09-17T18:05:00.000Z" },
+      { ...claimed[1], id: 92, status: "pending", createdAt: "2026-09-17T18:05:00.000Z" },
+      { ...claimed[2], id: 93, status: "pending", createdAt: "2026-09-17T18:05:00.000Z" },
+      { ...claimed[3], id: 94, status: "pending", createdAt: "2026-09-17T18:05:00.000Z" },
+    ];
+
+    const rows = filterVisibleWalletTransferRows(
+      buildWalletSentTransferRows(
+        mergeWalletSentTransferRecords(claimed, pending),
+      ),
+    );
+
+    expect(rows.filter((row) => row.status === "pending").map((row) => row.id).sort()).toEqual(
+      ["91", "92", "93", "94"],
+    );
+    expect(rows.filter((row) => row.status === "claimed").map((row) => row.id).sort()).toEqual(
+      ["81", "82", "83", "84"],
+    );
+    expect(rows.map((row) => row.title)).toEqual(
+      expect.arrayContaining([
+        eventOrder.event?.name,
+        packageEvent.name,
+        seasonPass.name,
+        accessPass.name,
+      ]),
+    );
+  });
+
+  it("keeps a just-sent access pass when my-sent still lists an older cancelled row", () => {
+    const pass = demoAccessPass();
+    const pendingStub = {
+      id: 91,
+      status: "pending",
+      transferType: "access_pass",
+      accessPassId: pass.uuid,
+      emailAddressToUser: "recipient@example.com",
+      createdAt: "2026-09-17T18:05:00.000Z",
+      accessPassSnapshot: {
+        uuid: pass.uuid,
+        name: pass.name,
+        type: "organizer",
+        events: pass.events,
+      },
+    };
+    const cancelledRow = {
+      id: 90,
+      status: "canceled",
+      transferType: "access_pass",
+      accessPassId: pass.uuid,
+      emailAddressToUser: "recipient@example.com",
+      createdAt: "2026-09-09T18:00:00.000Z",
+      accessPassSnapshot: {
+        uuid: pass.uuid,
+        name: pass.name,
+        type: "organizer",
+        events: pass.events,
+      },
+    };
+
+    const merged = mergeWalletSentTransferRecords([cancelledRow], [pendingStub]);
+    const rows = filterVisibleWalletTransferRows(
+      buildWalletSentTransferRows(merged),
+    );
+
+    expect(rows).toEqual([
+      expect.objectContaining({
+        id: "91",
+        title: pass.name,
+        status: "pending",
+      }),
+    ]);
+  });
+
   it("promotes accepted season pass transfers with ambiguous API status as claimed rows", () => {
     const pass = demoPackageAccessPass();
     const order = demoCompletedPackageOrder();
@@ -1373,6 +1563,100 @@ describe("ticketTransfers", () => {
     ).toBe(4812);
   });
 
+  it("keeps new pending received rows beside older claimed rows for the same event, package event, and pass", () => {
+    const eventOrder = demoCompletedTicketOrder({ event: DEMO_EVENTS[0] });
+    const [eventTicket] = eventOrder.tickets;
+    const packageOrder = demoCompletedPackageOrder();
+    const packageEvent = demoSeasonPackage().events[1];
+    const [packageTicket] = packageOrder.tickets.map((row) => ({
+      ...row,
+      eventUUID: packageEvent.uuid,
+    }));
+    const seasonPass = demoPackageAccessPass();
+    const accessPass = demoAccessPass();
+
+    const claimed = [
+      {
+        id: "claimed-event",
+        status: "claimed",
+        fromUserEmail: "sender@example.com",
+        event: eventOrder.event,
+        eventUUID: eventOrder.event?.uuid,
+        tickets: [eventTicket],
+        createdAt: "2026-09-10T18:00:00.000Z",
+      },
+      {
+        id: "claimed-package-event",
+        status: "claimed",
+        fromUserEmail: "sender@example.com",
+        event: packageEvent,
+        eventUUID: packageEvent.uuid,
+        tickets: [packageTicket],
+        createdAt: "2026-09-10T18:00:00.000Z",
+      },
+      {
+        id: "claimed-season",
+        status: "claimed",
+        transferType: "access_pass",
+        accessPassId: seasonPass.uuid,
+        fromUserEmail: "sender@example.com",
+        access_pass: {
+          uuid: seasonPass.uuid,
+          name: seasonPass.name,
+          type: "package",
+          events: demoSeasonPackage().events,
+        },
+        createdAt: "2026-09-10T18:00:00.000Z",
+      },
+      {
+        id: "claimed-access",
+        status: "claimed",
+        transferType: "access_pass",
+        accessPassId: accessPass.uuid,
+        fromUserEmail: "sender@example.com",
+        accessPassSnapshot: {
+          uuid: accessPass.uuid,
+          name: accessPass.name,
+          type: "organizer",
+          events: accessPass.events,
+        },
+        createdAt: "2026-09-10T18:00:00.000Z",
+      },
+    ];
+    const pending = [
+      { ...claimed[0], id: "pending-event", status: "pending", createdAt: "2026-09-17T18:05:00.000Z" },
+      { ...claimed[1], id: "pending-package-event", status: "pending", createdAt: "2026-09-17T18:05:00.000Z" },
+      { ...claimed[2], id: "pending-season", status: "pending", createdAt: "2026-09-17T18:05:00.000Z" },
+      { ...claimed[3], id: "pending-access", status: "pending", createdAt: "2026-09-17T18:05:00.000Z" },
+    ];
+
+    const merged = mergeWalletReceivedTransferRecords(claimed, pending);
+    const incomingPasses = pending.filter((row) => row.transferType === "access_pass");
+    const rows = filterVisibleWalletTransferRows(
+      buildWalletReceivedTransferRows(merged, incomingPasses),
+    );
+
+    expect(rows.filter((row) => row.status === "pending").map((row) => row.id).sort()).toEqual(
+      [
+        "pending-access",
+        "pending-event",
+        "pending-package-event",
+        "pending-season",
+      ].sort(),
+    );
+    expect(rows.filter((row) => row.status === "claimed").map((row) => row.id).sort()).toEqual(
+      [
+        "claimed-access",
+        "claimed-event",
+        "claimed-package-event",
+        "claimed-season",
+      ].sort(),
+    );
+    expect(
+      filterIncomingTransfersForWallet(pending, claimed).map((row) => row.id),
+    ).toEqual(pending.map((row) => row.id));
+  });
+
   it("drops incoming when received history already marks the transfer claimed", () => {
     const order = demoCompletedTicketOrder({ event: DEMO_EVENTS[0] });
     const [ticket] = order.tickets;
@@ -1478,12 +1762,30 @@ describe("ticketTransfers", () => {
     expect(visible).toHaveLength(0);
   });
 
-  it("hides pending and claimed sent pass transfers from wallet pass lists", () => {
+  it("keeps owned pass cards that have no uuid when nothing was sent", () => {
+    const visible = filterAccessPassSummariesBySentTransfers(
+      [{ key: "local-pass", name: demoAccessPass().name }],
+      [],
+    );
+
+    expect(visible).toHaveLength(1);
+  });
+
+  it("hides pending sent pass transfers but keeps claimed owned passes", () => {
     const pass = demoAccessPass();
     const claimed = filterWalletAccessPassesBySentTransfers([pass], [
       {
         id: "claimed-pass",
         status: "claimed",
+        accessPassId: pass.uuid,
+        access_pass: { uuid: pass.uuid, name: pass.name, type: "organizer" },
+      },
+    ]);
+    const accepted = filterWalletAccessPassesBySentTransfers([pass], [
+      {
+        id: "accepted-pass",
+        status: "accepted",
+        transferType: "access_pass",
         accessPassId: pass.uuid,
         access_pass: { uuid: pass.uuid, name: pass.name, type: "organizer" },
       },
@@ -1497,7 +1799,8 @@ describe("ticketTransfers", () => {
       },
     ]);
 
-    expect(claimed).toHaveLength(0);
+    expect(claimed).toHaveLength(1);
+    expect(accepted).toHaveLength(1);
     expect(pending).toHaveLength(0);
   });
 

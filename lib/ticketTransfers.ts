@@ -453,10 +453,40 @@ export function mergePackageEventCountLookups(
   return merged;
 }
 
+function isAccessPassRecord(
+  pass: AccessPassLike | null | undefined,
+): pass is AccessPassLike {
+  if (!pass) return false;
+  if (String(pass.uuid || "").trim()) return true;
+  if (String(pass.checkInCode || "").trim()) return true;
+  const type = String(pass.type || "").trim().toLowerCase();
+  return type === "organizer" || type === "package" || type === "season_seat";
+}
+
 export function unwrapAcceptTransferAccessPass(
   acceptResponse?: unknown,
 ): AccessPassLike | null {
-  return unwrapAccessPassRecord(acceptResponse);
+  if (!acceptResponse || typeof acceptResponse !== "object") return null;
+  const root = acceptResponse as Record<string, unknown>;
+  const nested =
+    root.data && typeof root.data === "object"
+      ? (root.data as Record<string, unknown>)
+      : undefined;
+  const candidates = [
+    root.access_pass,
+    root.accessPass,
+    root.accessPassSnapshot,
+    nested?.access_pass,
+    nested?.accessPass,
+    nested?.accessPassSnapshot,
+    nested,
+    root,
+  ];
+  for (const candidate of candidates) {
+    const pass = unwrapAccessPassRecord(candidate);
+    if (isAccessPassRecord(pass)) return pass;
+  }
+  return null;
 }
 
 /** Recipient wallet order id after accept; synthetic `accepted-*` until reload. */
@@ -713,7 +743,7 @@ export function incomingPassTransferPresentation(
   };
 }
 
-/** Sender loses a pass from the wallet once a transfer is sent or claimed. */
+/** Sender loses a pass from the wallet only while the outbound transfer is pending. */
 export function filterWalletAccessPassesBySentTransfers<
   T extends { uuid?: string },
 >(passes: T[], sentTransfers: TransferLike[]): T[] {
@@ -722,8 +752,7 @@ export function filterWalletAccessPassesBySentTransfers<
     if (!isWholeAccessPassTransfer(transfer)) continue;
     const passId = transferAccessPassId(transfer);
     if (!passId) continue;
-    const status = transferStatusLabel(transfer.status);
-    if (status === "claimed" || status === "pending") {
+    if (transferStatusLabel(transfer.status) === "pending") {
       hiddenIds.add(passId);
     }
   }
@@ -734,16 +763,11 @@ export function filterWalletAccessPassesBySentTransfers<
 export function filterAccessPassSummariesBySentTransfers<
   T extends { accessPassUUID?: string },
 >(summaries: T[], sentTransfers: TransferLike[]): T[] {
-  const allowed = filterWalletAccessPassesBySentTransfers(
-    summaries.map((summary) => ({ uuid: summary.accessPassUUID })),
-    sentTransfers,
-  );
-  const allowedIds = new Set(
-    allowed.map((pass) => String(pass.uuid || "").trim()).filter(Boolean),
-  );
-  return summaries.filter((summary) =>
-    allowedIds.has(String(summary.accessPassUUID || "").trim()),
-  );
+  return summaries.filter((summary) => {
+    const id = String(summary.accessPassUUID || "").trim();
+    if (!id) return true;
+    return !isAccessPassHiddenBySentTransfers(id, sentTransfers);
+  });
 }
 
 export function isAccessPassHiddenBySentTransfers(
@@ -1497,7 +1521,14 @@ export function mergeWalletReceivedTransferRecords(
     if (apiIds.has(id)) return false;
     return true;
   });
-  return mergeTransferRecords(apiActive, localClaimed);
+  const localPending = localReceived.filter((transfer) => {
+    const id = String(transfer.id ?? "").trim();
+    if (!id || apiInactiveIds.has(id) || apiIds.has(id)) return false;
+    const status = normalizedStatus(transfer.status);
+    if (INACTIVE.has(status) || COMPLETED.has(status)) return false;
+    return !status || PENDING.has(status);
+  });
+  return mergeTransferRecords(apiActive, localClaimed, localPending);
 }
 
 export function transferTicketIdsKey(transfer: TransferLike): string {
@@ -1510,6 +1541,25 @@ export function transferTicketIdsKey(transfer: TransferLike): string {
 
 function sentTransferRecipientEmail(transfer: TransferLike): string {
   return String(transfer.emailAddressToUser || "").trim().toLowerCase();
+}
+
+/** Pending stubs only reconcile to pending API rows — never older claimed history. */
+function transferRecordsAlignForReconcile(
+  stub: TransferLike,
+  api: TransferLike,
+): boolean {
+  const stubStatus = normalizedStatus(stub.status);
+  const apiStatus = normalizedStatus(api.status);
+  if (!stubStatus || PENDING.has(stubStatus)) {
+    return !apiStatus || PENDING.has(apiStatus);
+  }
+  if (COMPLETED.has(stubStatus)) {
+    return COMPLETED.has(apiStatus);
+  }
+  if (INACTIVE.has(stubStatus)) {
+    return INACTIVE.has(apiStatus);
+  }
+  return stubStatus === apiStatus;
 }
 
 function sentStubMatchesTicketlessApi(
@@ -1549,6 +1599,7 @@ export function findReconciledSentTransferMatch(
     const apiId = String(api.id ?? "").trim();
     if (!apiId || usedApiIds.has(apiId)) return false;
     if (sentTransferRecipientEmail(api) !== stubEmail) return false;
+    if (!transferRecordsAlignForReconcile(stub, api)) return false;
     if (stubPassId) {
       return transferAccessPassId(api) === stubPassId;
     }
@@ -1710,7 +1761,14 @@ export function mergeWalletSentTransferRecords(
     const id = String(transfer.id ?? "").trim();
     if (id && apiInactiveIds.has(id)) return false;
     const scopedTicketKey = inactiveTicketScopeKey(transfer);
-    if (scopedTicketKey && apiInactiveTicketKeys.has(scopedTicketKey)) return false;
+    const ticketOnlyScope = Boolean(transferTicketIdsKey(transfer));
+    if (
+      ticketOnlyScope &&
+      scopedTicketKey &&
+      apiInactiveTicketKeys.has(scopedTicketKey)
+    ) {
+      return false;
+    }
     if (INACTIVE.has(normalizedStatus(transfer.status))) return false;
     if (COMPLETED.has(normalizedStatus(transfer.status))) return false;
     if (id && apiActiveIds.has(id)) return false;
