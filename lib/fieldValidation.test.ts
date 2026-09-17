@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { DEMO_USER } from "@/lib/demo/fixtures";
 import {
+  codeResponseError,
   codeSubmitError,
   dobBlurError,
   dobSubmitError,
@@ -10,6 +11,7 @@ import {
   emailSubmitInvalid,
   formString,
   isBlockedEmail,
+  sendgridEmailInvalid,
   isValidDob,
   nameAllows,
   nameBlurError,
@@ -18,7 +20,9 @@ import {
   phoneBlurError,
   phoneNumberError,
   phoneSubmitError,
+  promoCodeRedeemDisplayMessage,
   promoCodeRejectedMessage,
+  PROMO_CODE_API_ERROR_MESSAGES,
   redemptionCodeBlurError,
   redemptionCodeBlurFieldError,
   redemptionCodeSubmitError,
@@ -52,6 +56,18 @@ describe("email order", () => {
     expect(emailSubmitError("not-an-email")).toBe("invalid");
     expect(emailSubmitInvalid(DEMO_USER.email)).toBe(false);
     expect(emailSubmitError(DEMO_USER.email)).toBeNull();
+  });
+
+  it("matches login SendGrid rejection rules", () => {
+    expect(sendgridEmailInvalid({ verdict: "Valid" })).toBe(false);
+    expect(sendgridEmailInvalid({ verdict: "Invalid" })).toBe(true);
+    expect(
+      sendgridEmailInvalid({
+        verdict: "Risky",
+        suggestion: "fan@blocktickets.xyz",
+      }),
+    ).toBe(true);
+    expect(sendgridEmailInvalid({ verdict: "Risky" })).toBe(false);
   });
 
   it("reads a submitted email from FormData even when state would be empty", () => {
@@ -127,10 +143,56 @@ describe("redemption codes", () => {
     expect(redemptionCodeBlurFieldError(null, "   ")).toBeNull();
   });
 
-  it("formats rejected promo copy from the API message", () => {
-    expect(promoCodeRejectedMessage("Promo code not found")).toBe(
-      "Promo code not found. Please try again.",
+  it("formats rejected promo copy from redeem API messages", () => {
+    expect(
+      promoCodeRejectedMessage(PROMO_CODE_API_ERROR_MESSAGES.notFound),
+    ).toBe("Promo code not found. Please try again.");
+    expect(
+      promoCodeRejectedMessage(PROMO_CODE_API_ERROR_MESSAGES.alreadyApplied),
+    ).toBe("Promo code already applied to order. Please try again.");
+    expect(
+      promoCodeRejectedMessage(PROMO_CODE_API_ERROR_MESSAGES.noLongerValid),
+    ).toBe("Promo code no longer valid. Please try again.");
+    expect(promoCodeRejectedMessage()).toBe(
+      "Promo code could not be applied. Please try again.",
     );
+  });
+
+  it("reads redeem API messages from nested and string error bodies", () => {
+    expect(
+      promoCodeRedeemDisplayMessage({
+        response: {
+          data: {
+            error: { message: PROMO_CODE_API_ERROR_MESSAGES.alreadyApplied },
+          },
+        },
+      }),
+    ).toBe("Promo code already applied to order. Please try again.");
+    expect(
+      promoCodeRedeemDisplayMessage({
+        response: {
+          data: { message: PROMO_CODE_API_ERROR_MESSAGES.noLongerValid },
+        },
+      }),
+    ).toBe("Promo code no longer valid. Please try again.");
+    expect(
+      promoCodeRedeemDisplayMessage({
+        response: { data: PROMO_CODE_API_ERROR_MESSAGES.notFound },
+      }),
+    ).toBe("Promo code not found. Please try again.");
+  });
+});
+
+describe("codeResponseError", () => {
+  it("reads a rejected code as a wrong code", () => {
+    expect(codeResponseError(400)).toBe("code");
+    expect(codeResponseError(401)).toBe("code");
+  });
+
+  it("keeps network copy for a code that never got a verdict", () => {
+    expect(codeResponseError(408)).toBe("network");
+    expect(codeResponseError(429)).toBe("network");
+    expect(codeResponseError(500)).toBe("network");
   });
 });
 

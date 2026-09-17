@@ -5,7 +5,6 @@
  * Google.
  */
 import { downloadApplePass, downloadGooglePass } from "@/lib/api";
-import { toIanaTimezone } from "@/lib/helpers";
 import {
   downloadBlobPass,
   isPhoneDevice,
@@ -134,9 +133,13 @@ export function walletPassEvent(
     issuerIdFromUnknown(ticket),
   );
   if (issuerId) organization.issuerId = issuerId;
+  // Package orders hand us a stub event with no uuid, so whichever row does
+  // carry one wins the shared keys too: its venue and start build the pass.
+  const [base, overlay] =
+    !row?.uuid && nested?.uuid ? [event, nested] : [nested, event];
   return {
-    ...nested,
-    ...event,
+    ...base,
+    ...overlay,
     ...(uuid ? { uuid } : {}),
     ...(organizationUuid ? { organizationUUID: organizationUuid } : {}),
     ...(Object.keys(organization).length
@@ -190,13 +193,26 @@ export function phoneWalletTheme(kind: PhoneWalletKind): PhoneWalletTheme {
   return kind === "google" ? GOOGLE_WALLET_THEME : APPLE_WALLET_THEME;
 }
 
-/** The pass rides along as the ticket, against its first event. */
+/** The pass rides along as the ticket, against the package event then the pass events. */
 export function accessPassWalletRequest(
   pass: AccessPassSummary,
+  fallbackEvent?: EventLike | null,
 ): { event: EventLike; obj: Record<string, unknown> } | null {
-  const obj = { ...pass.pass, accessPass: true };
-  const event = walletPassEvent(pass.events[0], obj);
-  if (!event || !pass.checkInCode) return null;
+  const obj = {
+    ...pass.pass,
+    uuid: pass.accessPassUUID || pass.pass.uuid,
+    checkInCode: pass.checkInCode || pass.pass.checkInCode,
+    sectionNumber: pass.pass.sectionNumber,
+    rowNumber: pass.pass.rowNumber,
+    seatNumber: pass.pass.seatNumber,
+    generalAdmission: pass.pass.generalAdmission,
+    name: pass.name || pass.pass.name,
+    accessPass: true,
+  };
+  const event =
+    walletPassEvent(fallbackEvent, obj) ||
+    walletPassEvent(pass.events[0], obj);
+  if (!event || !String(pass.checkInCode || "").trim()) return null;
   return { event, obj };
 }
 
@@ -209,27 +225,6 @@ function googleWalletLink(data: unknown): string {
   if (typeof data === "string") return data;
   const body = data as { url?: string; data?: { url?: string } } | null;
   return body?.url || body?.data?.url || "";
-}
-
-function apiErrorMessage(err: unknown): string {
-  if (!err || typeof err !== "object") return "";
-  const data = (err as { response?: { data?: { error?: { message?: string }; message?: string } } })
-    .response?.data;
-  return firstText(data?.error?.message, data?.message);
-}
-
-/** Google Wallet rejects the bare "UTC" label the API often stores. */
-function googleWalletTimezone(event?: EventLike | null): string {
-  const row = event as WalletEvent | undefined;
-  const venue = asRecord(row?.venue);
-  const iana = toIanaTimezone(
-    (venue?.timezone as string | undefined) ?? row?.timezone,
-  );
-  if (iana && iana.includes("/")) return iana;
-  if (/^utc$/i.test(String(iana || venue?.timezone || row?.timezone || ""))) {
-    return "Etc/UTC";
-  }
-  return iana || "Etc/UTC";
 }
 
 async function addApplePass(request: PhoneWalletRequest): Promise<string | null> {
@@ -255,33 +250,9 @@ async function addApplePass(request: PhoneWalletRequest): Promise<string | null>
 async function addGooglePass(request: PhoneWalletRequest): Promise<string | null> {
   try {
     const passEvent = walletPassEvent(request.event, request.obj) || request.event;
-    const eventUUID = eventUuidFromUnknown(
-      (passEvent as WalletEvent).uuid,
-      (passEvent as WalletEvent).eventUUID,
-    );
-    if (!eventUUID) {
-      return "Could not add this pass to Google Wallet. Please try again.";
-    }
-    const timezone = googleWalletTimezone(passEvent);
-    const ticket = {
-      ...request.obj,
-      eventUUID,
-      timezone,
-      event: {
-        ...passEvent,
-        uuid: eventUUID,
-        timezone,
-        venue: {
-          ...asRecord((passEvent as WalletEvent).venue),
-          timezone,
-        },
-      },
-    };
     const res = await downloadGooglePass({
-      event: eventUUID,
-      ticket,
-      obj: ticket,
-      timezone,
+      event: passEvent,
+      ticket: request.obj,
     });
     const link = googleWalletLink(res.data);
     if (!link) {
@@ -289,10 +260,7 @@ async function addGooglePass(request: PhoneWalletRequest): Promise<string | null
     }
     window.open(link, "_blank", "noopener,noreferrer");
     return null;
-  } catch (err) {
-    if (/time zone/i.test(apiErrorMessage(err))) {
-      return "Google Wallet needs a valid event time zone.";
-    }
+  } catch {
     return "Could not add this pass to Google Wallet. Please try again.";
   }
 }
@@ -311,9 +279,10 @@ export async function addPassToPhoneWallet(
 export async function addAccessPassToPhoneWallet(
   pass: AccessPassSummary,
   kind: PhoneWalletKind,
+  fallbackEvent?: EventLike | null,
 ): Promise<string | null> {
   return addPassToPhoneWallet(
-    accessPassWalletRequest(pass),
+    accessPassWalletRequest(pass, fallbackEvent),
     kind,
     "This pass has no code to add yet.",
   );

@@ -50,6 +50,41 @@ describe("Modal", () => {
     expect(screen.getByRole("dialog")).toHaveClass("rounded-t-[26px]");
   });
 
+  it("includes mobile bottom-sheet layout classes by default", () => {
+    render(
+      <Modal title="Cart expired" onClose={vi.fn()} variant="light">
+        <p>Your reserved tickets were released.</p>
+      </Modal>,
+    );
+
+    expect(screen.getByRole("dialog")).toHaveClass("max-[899px]:rounded-t-[26px]");
+    expect(screen.getByRole("dialog").parentElement).toHaveClass("max-[899px]:items-end");
+  });
+
+  it("stays centered on mobile when sheet mode is disabled", () => {
+    render(
+      <Modal title="Design preview" onClose={vi.fn()} sheet={false}>
+        <p>Always centered</p>
+      </Modal>,
+    );
+
+    expect(screen.getByRole("dialog")).not.toHaveClass("max-[899px]:rounded-t-[26px]");
+    expect(screen.getByRole("dialog")).toHaveClass("rounded-2xl");
+  });
+
+  it("does not dismiss when the backdrop is clicked", () => {
+    const onClose = vi.fn();
+    render(
+      <Modal title="Transfer tickets" onClose={onClose}>
+        <p>Confirm transfer</p>
+      </Modal>,
+    );
+
+    fireEvent.click(screen.getByRole("dialog").parentElement!.parentElement!);
+
+    expect(onClose).not.toHaveBeenCalled();
+  });
+
   it("opens on a phone with the cursor set but the keyboard down", () => {
     Object.defineProperty(window, "matchMedia", {
       configurable: true,

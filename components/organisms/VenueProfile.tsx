@@ -6,9 +6,10 @@
  * shows that venue — not hardcoded NM State fixtures.
  */
 
-import { useEffect, useMemo, useState, type CSSProperties } from "react";
+import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import ExpandableDescription from "@/components/molecules/ExpandableDescription";
 import InAppBackLink from "@/components/molecules/InAppBackLink";
 import NavAuthActions from "@/components/molecules/NavAuthActions";
 import RouteLoader from "@/components/molecules/RouteLoader";
@@ -53,6 +54,11 @@ import {
 } from "@/lib/venueWebsite";
 import { categoryLabel, eventTypeLabel } from "@/lib/eventType";
 import { useClientReady } from "@/lib/useClientReady";
+import {
+  stickyOffsetBelowHeader,
+  TICKETING_HEADER_FALLBACK_PX,
+  TICKETING_STICKY_GAP_PX,
+} from "@/lib/ticketingSticky";
 
 const NAVY = "#051b35";
 const GREEN = "#a6e773";
@@ -131,13 +137,6 @@ type RowEvent = {
   href: string;
   sort: number;
 };
-
-const tagFor = (st: string) =>
-  st === "Few left"
-    ? { tagBg: "#fbf1de", tagInk: "#b5791e" }
-    : st === "Presale"
-      ? { tagBg: "#f1f3f8", tagInk: "#4a5567" }
-      : { tagBg: "#e6f4eb", tagInk: "#2f8f4e" };
 
 function firstAddress(address?: VenueAddress) {
   if (!address) return undefined;
@@ -418,7 +417,25 @@ export default function VenueProfile({ slug }: { slug: string }) {
 
   const mobile = vw < 900;
   const narrow = !mobile && vw < 1160;
+  const wide = !mobile && !narrow;
   const stacked = mobile || narrow;
+  const headerRef = useRef<HTMLElement | null>(null);
+  const [headerH, setHeaderH] = useState(TICKETING_HEADER_FALLBACK_PX);
+
+  useEffect(() => {
+    const el = headerRef.current;
+    if (!el || typeof ResizeObserver === "undefined") return;
+    const apply = () => {
+      const h = Math.round(el.getBoundingClientRect().height);
+      if (h > 1) setHeaderH((prev) => (prev === h ? prev : h));
+    };
+    apply();
+    const ro = new ResizeObserver(apply);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [vw]);
+
+  const stickTop = Math.round(stickyOffsetBelowHeader(headerH));
 
   const venueName = venue?.name || "Venue";
   const city = cityState(venue?.address) || "";
@@ -426,6 +443,9 @@ export default function VenueProfile({ slug }: { slug: string }) {
     venue?.capacity != null && String(venue.capacity).trim() !== ""
       ? Number(venue.capacity).toLocaleString("en-US")
       : "";
+  const venueMeta = [city, capacity ? `${capacity} capacity` : ""]
+    .filter(Boolean)
+    .join(" · ");
   const description =
     venue?.description?.trim() ||
     `Find upcoming events and buy tickets at ${venueName}.`;
@@ -549,7 +569,17 @@ export default function VenueProfile({ slug }: { slug: string }) {
       <style>{`${shopperPageTypeCss()}
 .vp-row{transition:box-shadow 150ms ease,border-color 150ms ease}.vp-row:hover{box-shadow:0 8px 30px rgba(5,27,53,0.09);border-color:rgba(5,27,53,0.20)}.vp-action{outline:2px solid transparent;outline-offset:2px;transition:outline-color 140ms ease}.vp-action:hover,.vp-action:focus-visible{outline-color:var(--vp-accent)}`}</style>
 
-      <header style={{ background: ACC, position: "sticky", top: 0, zIndex: 20 }}>
+      <header
+        ref={headerRef}
+        style={{
+          background: ACC,
+          position: wide ? "fixed" : "sticky",
+          top: 0,
+          left: wide ? 0 : undefined,
+          right: wide ? 0 : undefined,
+          zIndex: 20,
+        }}
+      >
         <div
           style={{
             maxWidth: 1320,
@@ -610,35 +640,114 @@ export default function VenueProfile({ slug }: { slug: string }) {
         </div>
       </header>
 
-      <div style={{ maxWidth: 1320, margin: "0 auto", padding: mobile ? "20px 20px 0" : "32px 32px 0", display: "grid", gridTemplateColumns: mobile ? "1fr" : narrow ? "300px minmax(0, 1fr)" : "344px minmax(0, 1fr)", gap: mobile ? 20 : 28, alignItems: "start" }}>
+      {wide ? (
+        <div aria-hidden style={{ height: stickTop, flexShrink: 0 }} />
+      ) : null}
 
+      <main
+        style={{
+          width: "100%",
+          maxWidth: 1320,
+          margin: "0 auto",
+          padding: mobile
+            ? "20px 20px 0"
+            : wide
+              ? "0 32px 120px"
+              : `${TICKETING_STICKY_GAP_PX}px 32px 120px`,
+          boxSizing: "border-box",
+          display: "grid",
+          gridTemplateColumns: mobile
+            ? "1fr"
+            : narrow
+              ? "300px minmax(0, 1fr)"
+              : "minmax(300px, 360px) minmax(0, 1fr)",
+          gap: mobile ? 20 : 28,
+          alignItems: mobile || narrow ? "start" : "stretch",
+        }}
+      >
         {!mobile && (
-          <aside style={{ background: "#fff", border: "1px solid rgba(5,27,53,0.10)", borderRadius: 24, boxShadow: "0 8px 30px rgba(5,27,53,0.08)", padding: 24, position: "sticky", top: 84, zIndex: 5, display: "flex", flexDirection: "column", gap: 18 }}>
-            <div style={{ display: "flex", flexDirection: "column", gap: 14, alignItems: "center" }}>
-              <div style={{ position: "relative", width: 116, height: 116, borderRadius: 24, overflow: "hidden", background: "#f1f3f8", border: "1px solid rgba(5,27,53,0.08)", flexShrink: 0 }}>
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img src={photoSrc} alt={venueName} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+          <div style={{ minWidth: 0, ...(wide ? { alignSelf: "stretch" } : {}) }}>
+            <div
+              data-testid="venue-profile-sidebar"
+              style={{
+                display: "flex",
+                flexDirection: "column",
+                gap: 16,
+                minWidth: 0,
+                ...(wide
+                  ? {
+                      position: "sticky",
+                      top: stickTop,
+                      zIndex: 5,
+                    }
+                  : {}),
+              }}
+            >
+              <aside
+                style={{
+                  background: "#fff",
+                  border: "1px solid rgba(5,27,53,0.10)",
+                  borderRadius: 24,
+                  boxShadow: "0 8px 30px rgba(5,27,53,0.08)",
+                  padding: 24,
+                  display: "flex",
+                  flexDirection: "column",
+                  gap: 18,
+                  width: "100%",
+                  boxSizing: "border-box",
+                }}
+              >
+              <div style={{ display: "flex", flexDirection: "column", gap: 14, alignItems: "center" }}>
+                <div style={{ position: "relative", width: 116, height: 116, borderRadius: 24, overflow: "hidden", background: "#f1f3f8", border: "1px solid rgba(5,27,53,0.08)", flexShrink: 0 }}>
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img src={photoSrc} alt={venueName} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                </div>
+                <div style={{ display: "flex", flexDirection: "column", gap: 8, alignItems: "center", textAlign: "center", minWidth: 0 }}>
+                  <h1 style={{ margin: 0, fontSize: fluidSize(32), fontWeight: 600, letterSpacing: "-0.03em", lineHeight: 1.08 }}>{venueName}</h1>
+                  {venueMeta ? (
+                    <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: fluidSize(13), color: "#6e7180", textAlign: "center", flexWrap: "wrap", justifyContent: "center" }}>
+                      {city ? (
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" style={{ width: 13, height: 13, flexShrink: 0 }}><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z" /><circle cx="12" cy="10" r="3" /></svg>
+                      ) : null}
+                      {venueMeta}
+                    </div>
+                  ) : null}
+                </div>
               </div>
-              <div style={{ display: "flex", flexDirection: "column", gap: 8, alignItems: "center", textAlign: "center", minWidth: 0 }}>
-                <h1 style={{ margin: 0, fontSize: fluidSize(32), fontWeight: 600, letterSpacing: "-0.03em", lineHeight: 1.08 }}>{venueName}</h1>
-                {city ? (
-                  <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: fluidSize(13), color: "#6e7180", whiteSpace: "nowrap" }}>
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" style={{ width: 13, height: 13, flexShrink: 0 }}><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z" /><circle cx="12" cy="10" r="3" /></svg>
-                    {city}
-                  </div>
-                ) : null}
-              </div>
+
+              <p style={{ margin: 0, paddingTop: 16, borderTop: "1px solid rgba(5,27,53,0.08)", fontSize: fluidSize(13), lineHeight: 1.6, color: "#6e7180" }}>{description}</p>
+
+              {venueActions}
+              </aside>
             </div>
-
-            <p style={{ margin: 0, paddingTop: 16, borderTop: "1px solid rgba(5,27,53,0.08)", fontSize: fluidSize(13), lineHeight: 1.6, color: "#6e7180" }}>{description}</p>
-
-            {venueActions}
-          </aside>
+          </div>
         )}
 
-        <main style={{ display: "flex", flexDirection: "column", gap: 14, minWidth: 0 }}>
+        <div
+          style={{
+            display: "flex",
+            flexDirection: "column",
+            gap: 14,
+            minWidth: 0,
+            ...(mobile || narrow ? {} : { alignSelf: "start" }),
+          }}
+        >
           {mobile && (
-            <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+            <div
+              data-testid="venue-profile-mobile-card"
+              style={{
+                background: "#fff",
+                border: "1px solid rgba(5,27,53,0.10)",
+                borderRadius: 18,
+                boxShadow: "0 1px 2px rgba(5,27,53,0.05)",
+                padding: 14,
+                display: "flex",
+                flexDirection: "column",
+                gap: 14,
+                width: "100%",
+                boxSizing: "border-box",
+              }}
+            >
               <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
                 <div style={{ position: "relative", width: 64, height: 64, borderRadius: 16, overflow: "hidden", background: "#f1f3f8", border: "1px solid rgba(5,27,53,0.08)", flexShrink: 0 }}>
                   {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -647,10 +756,25 @@ export default function VenueProfile({ slug }: { slug: string }) {
                 <div style={{ display: "flex", flexDirection: "column", gap: 3, minWidth: 0 }}>
                   <h1 style={{ margin: 0, fontSize: fluidSize(21), fontWeight: 600, letterSpacing: "-0.025em", lineHeight: 1.15 }}>{venueName}</h1>
                   <div style={{ fontSize: fluidSize(13), color: "#6e7180" }}>
-                    {[city, capacity ? `${capacity} capacity` : ""].filter(Boolean).join(" · ")}
+                    {venueMeta}
                   </div>
                 </div>
               </div>
+
+              <div style={{ paddingTop: 14, borderTop: "1px solid rgba(5,27,53,0.08)" }}>
+                <ExpandableDescription
+                  text={description}
+                  mobile
+                  toggleColor={ACC}
+                  style={{
+                    margin: 0,
+                    fontSize: fluidSize(13),
+                    lineHeight: 1.6,
+                    color: "#6e7180",
+                  }}
+                />
+              </div>
+
               {venueActions}
             </div>
           )}
@@ -671,7 +795,6 @@ export default function VenueProfile({ slug }: { slug: string }) {
                 </div>
                 {g.rows.map((e) => {
                   const soon = e.status === "Presale";
-                  const tag = tagFor(e.status);
                   const dateW = stacked ? 64 : 76;
                   return (
                     <Link key={e.key} href={e.href} className="vp-row" style={{ background: "#fff", border: "1px solid rgba(5,27,53,0.10)", borderRadius: 18, boxShadow: "0 1px 2px rgba(5,27,53,0.05)", padding: mobile ? 14 : "16px 20px", display: "grid", gridTemplateColumns: stacked ? "64px minmax(0, 1fr)" : "76px minmax(0, 1fr) auto", gap: mobile ? 14 : 20, alignItems: "center", cursor: "pointer", color: NAVY, textDecoration: "none" }}>
@@ -683,9 +806,6 @@ export default function VenueProfile({ slug }: { slug: string }) {
                       <div style={{ display: "flex", flexDirection: "column", gap: 5, minWidth: 0 }}>
                         <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
                           <span style={{ fontSize: fluidSize(12), color: "#6e7180" }}>{e.sport}{e.time ? ` · ${e.time}` : ""}</span>
-                          {e.status !== "On sale" && (
-                            <span style={{ fontSize: fluidSize(10), fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.12em", color: tag.tagInk, background: tag.tagBg, borderRadius: 999, padding: "4px 9px" }}>{e.status}</span>
-                          )}
                         </div>
                         <div style={{ fontSize: fluidSize(mobile ? 16 : 17), fontWeight: 600, letterSpacing: "-0.015em", lineHeight: 1.25 }}>{e.title}</div>
                         {e.host ? (
@@ -703,8 +823,8 @@ export default function VenueProfile({ slug }: { slug: string }) {
           )}
 
           <div style={{ height: 32 }} />
-        </main>
-      </div>
+        </div>
+      </main>
     </div>
   );
 }

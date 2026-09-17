@@ -8,7 +8,8 @@ import {
   hasSeatedMapSelectableOffers,
   seatedMapSelectableOffers,
   shouldShowSeatedMapOfferRow,
-  offerRestrictionLabelForSeatedRow,
+  offerListRestrictionLabel,
+  offerRestrictionLimitsForSeatedRow,
   lockedZonesFromGroups,
   offerChipNames,
   validQuantityOptions,
@@ -18,7 +19,9 @@ import {
   clampQuantity,
   quantityIsAllowed,
   quantityLimits,
-  offerRestrictionLabel,
+  offerRestrictionLimits,
+  gaOfferRowRestrictionLabel,
+  gaPopoverDefaultLimitLabel,
   quantityRestrictionLabel,
   selectionPaneTicketLimit,
   selectionPaneRestrictionLabel,
@@ -116,21 +119,21 @@ describe("offer quantity restrictions", () => {
       quantityLimits({ limit: 4 }, { available: 2, defaultMax: 20 }).valid,
     ).toBe(false);
     expect(
-      offerRestrictionLabel({ limit: 4 }, {
+      offerRestrictionLimits({ limit: 4 }, {
         min: 4,
         max: 2,
         step: 1,
         valid: false,
       }),
-    ).toBe("4 per order");
+    ).toEqual({ min: 4, max: 4, step: 1, valid: true });
     expect(
-      offerRestrictionLabel({ maxQuantity: 1 }, {
+      offerRestrictionLimits({ maxQuantity: 1 }, {
         min: 1,
         max: 1,
         step: 1,
         valid: true,
       }),
-    ).toBe("1 per order");
+    ).toEqual({ min: 1, max: 1, step: 1, valid: true });
   });
 
   it("marks an offer unavailable when no permitted multiple fits", () => {
@@ -359,6 +362,38 @@ describe("selectionPaneRestrictionLabel", () => {
         { minQuantity: 2, maxQuantity: 6, incrementsOf: 2 },
       ),
     ).toBe("2–6 per order");
+  });
+
+  it("falls back to the GA default when GA seats come from two different offers", () => {
+    const ga = demoTicketGroups().ticketGroups.find((group) => group.GA);
+    if (!ga) throw new Error("demo fixtures need a GA ticket group");
+
+    expect(
+      selectionPaneRestrictionLabel(null, [
+        { ...ga, offer: { id: "off-standard", name: "Standard Admission" } },
+        {
+          ...ga,
+          offer: {
+            id: "off-early",
+            name: "EARLY BIRD",
+            minQuantity: 5,
+          },
+        },
+      ]),
+    ).toBe(`1–${DEFAULT_GA_TICKET_LIMIT} per order`);
+  });
+
+  it("keeps the offer's own limits when every selected seat shares that offer", () => {
+    const ga = demoTicketGroups().ticketGroups.find((group) => group.GA);
+    if (!ga) throw new Error("demo fixtures need a GA ticket group");
+    const offer = { id: "off-early", name: "EARLY BIRD", minQuantity: 2, maxQuantity: 5 };
+
+    expect(
+      selectionPaneRestrictionLabel(null, [
+        { ...ga, offer },
+        { ...ga, offer },
+      ]),
+    ).toBe("2–5 per order");
   });
 
   it("uses the event cap when the selected offer has no max", () => {
@@ -905,23 +940,87 @@ describe("hasSeatedMapSelectableOffers", () => {
   });
 });
 
-describe("offerRestrictionLabelForSeatedRow", () => {
+describe("offerRestrictionLimitsForSeatedRow", () => {
   it("shows configured exact limits when the offer cannot be picked on one seat", () => {
     expect(
-      offerRestrictionLabelForSeatedRow(
+      offerRestrictionLimitsForSeatedRow(
         { limit: 3 },
         { min: 3, max: 3, step: 1, valid: false },
       ),
-    ).toBe("3 per order");
+    ).toEqual({ min: 3, max: 3, step: 1, valid: true });
   });
 
-  it("shows one per order for selectable seated rows even when the offer allows more elsewhere", () => {
+  it("caps selectable seated rows at one per order even when the offer allows more elsewhere", () => {
     expect(
-      offerRestrictionLabelForSeatedRow(
+      offerRestrictionLimitsForSeatedRow(
         { maxQuantity: 19 },
         { min: 1, max: 1, step: 1, valid: true },
       ),
-    ).toBe("1 per order");
+    ).toEqual({ min: 1, max: 1, step: 1, valid: true });
+  });
+});
+
+describe("offerListRestrictionLabel", () => {
+  it("states a shared limit once for every offer in the list", () => {
+    expect(
+      offerListRestrictionLabel([
+        { min: 2, max: 6, step: 2, valid: true },
+        { min: 2, max: 6, step: 2, valid: true },
+      ]),
+    ).toBe("2–6 per order · Increments of 2");
+  });
+
+  it("spans offers with different limits and ignores offers without one", () => {
+    expect(
+      offerListRestrictionLabel([
+        { min: 3, max: 3, step: 1, valid: true },
+        null,
+        { min: 1, max: 1, step: 1, valid: true },
+      ]),
+    ).toBe("1–3 per order");
+    expect(offerListRestrictionLabel([null])).toBeNull();
+  });
+});
+
+describe("gaOfferRowRestrictionLabel", () => {
+  it("hides the unconstrained GA default of 1–100", () => {
+    expect(
+      gaOfferRowRestrictionLabel(null, {
+        min: 1,
+        max: DEFAULT_GA_TICKET_LIMIT,
+        step: 1,
+        valid: true,
+      }),
+    ).toBeNull();
+  });
+
+  it("states a configured GA limit that is not the 1–100 default", () => {
+    expect(
+      gaOfferRowRestrictionLabel(
+        { minQuantity: 2, maxQuantity: 6, multipleOf: 2 },
+        { min: 2, max: 6, step: 2, valid: true },
+      ),
+    ).toBe("2–6 per order · Increments of 2");
+  });
+});
+
+describe("gaPopoverDefaultLimitLabel", () => {
+  it("states 1–100 when any offer still uses the unconstrained default", () => {
+    expect(
+      gaPopoverDefaultLimitLabel([
+        { min: 1, max: DEFAULT_GA_TICKET_LIMIT, step: 1, valid: true },
+        { min: 2, max: 5, step: 1, valid: true },
+      ]),
+    ).toBe("1–100 per order");
+  });
+
+  it("stays off when every offer has its own limit", () => {
+    expect(
+      gaPopoverDefaultLimitLabel([
+        { min: 2, max: 5, step: 1, valid: true },
+        { min: 1, max: 1, step: 1, valid: true },
+      ]),
+    ).toBeNull();
   });
 });
 

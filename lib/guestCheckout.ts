@@ -7,6 +7,17 @@ import {
 
 export const GUEST_CHECKOUT_KEY = "guestCheckout";
 
+export const GUEST_CONTACT_COPY = {
+  startFailed:
+    "We could not start your checkout. Please check your details and try again.",
+} as const;
+
+export function guestContactStartFailed(error: unknown) {
+  const status = (error as { response?: { status?: number } } | undefined)
+    ?.response?.status;
+  return status === 400;
+}
+
 export type GuestBuyer = {
   email: string;
   firstName: string;

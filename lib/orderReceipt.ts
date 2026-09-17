@@ -17,6 +17,7 @@ import {
   promoSummaryLabel,
   resolveCompletedOrderFees,
 } from "@/lib/ticketSummary";
+import { ticketRowValue, ticketSectionValue } from "@/lib/wallet";
 import moment from "moment-timezone";
 
 export type OrderReceiptPerson = {
@@ -380,8 +381,8 @@ function groupReceiptTickets(tickets: Array<Record<string, unknown>>) {
 
   tickets.forEach((ticket) => {
     const ga = Boolean(ticket.generalAdmission || ticket.GA || ticket.general_admission);
-    const section = String(ticket.sectionName || ticket.sectionNumber || ticket.section_number || "GA");
-    const row = String(ticket.rowNumber || ticket.rowName || ticket.row_number || (ga ? "GA" : ""));
+    const section = ticketSectionValue(ticket) || "GA";
+    const row = ticketRowValue(ticket) || (ga ? "GA" : "");
     const offer = String(
       ticket.offerName ||
         (ticket.offer as { name?: string } | undefined)?.name ||
@@ -399,7 +400,7 @@ function groupReceiptTickets(tickets: Array<Record<string, unknown>>) {
     }
     groups.set(key, {
       section,
-      row: ga ? "GA" : row || "GA",
+      row: ga ? ticketRowValue(ticket) || "GA" : row || "GA",
       ga,
       seats: seat != null ? [seat as string | number] : [],
       count: 1,

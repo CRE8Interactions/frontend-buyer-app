@@ -4,6 +4,10 @@ import { getToken, isLoggedIn } from "@/lib/auth";
 import { demoAdapter } from "@/lib/demo/adapter";
 import { createInflightCache } from "@/lib/inflightCache";
 import {
+  buildCancelTransferRequestBody,
+  resolveCancelTransferId,
+} from "@/lib/ticketTransfers";
+import {
   clearWaitingRoomToken,
   getCurrentWaitingRoomEventUuid,
   getQueueSessionId,
@@ -129,8 +133,14 @@ export const getOrder = (orderId: string) =>
 export const getAccessPassesByOrder = (orderId: string) =>
   instance.get(`/access-passes/by-order/${orderId}`);
 
-export const getMyAccessPasses = (type = "organizer") =>
-  instance.get("/events/myAccessPasses", { params: type ? { type } : {} });
+export const getMyAccessPasses = (
+  type = "organizer",
+  options?: { signal?: AbortSignal },
+) =>
+  instance.get("/events/myAccessPasses", {
+    params: type ? { type } : {},
+    signal: options?.signal,
+  });
 
 export const getMyAccessPass = (uuid: string) =>
   instance.get(`/events/myAccessPasses/${uuid}`);
@@ -283,14 +293,22 @@ export const searchEvents = (q: unknown) => instance.post(`/events/search`, q);
 
 const myEventsCache = createInflightCache<AxiosResponse>(5_000);
 
-export const getMyEvents = (options?: { fresh?: boolean }) =>
+export const getMyEvents = (options?: {
+  fresh?: boolean;
+  signal?: AbortSignal;
+}) =>
   myEventsCache.get(
-    () => instance.get("/events/myUpcomingEvents"),
+    () =>
+      instance.get("/events/myUpcomingEvents", { signal: options?.signal }),
     options,
   );
 
-export function __resetMyEventsCacheForTests() {
+export function invalidateMyEventsCache() {
   myEventsCache.reset();
+}
+
+export function __resetMyEventsCacheForTests() {
+  invalidateMyEventsCache();
 }
 
 export const getMyUpcomingOrders = () =>
@@ -339,21 +357,44 @@ export const savePassGoogle = () => instance.get("/aaa/google");
 export const removeBankAccount = () =>
   instance.get("/payment-information/deactive");
 
-export const getMySentTransfers = (userEmail: string, page: number) =>
+/** Legacy wallet uses populate=* so transfer rows include tickets with seat fields. */
+export const TICKET_TRANSFER_POPULATE_QUERY = "populate=*";
+
+export const getMySentTransfers = (
+  userEmail: string,
+  page: number,
+  options?: { signal?: AbortSignal },
+) =>
   instance.get(
-    `/ticket-transfers?filters[fromUserEmail][$eq]=${userEmail}&populate=*&sort[0]=createdAt:desc&pagination[page]=${page}&pagination[pageSize]=50`,
+    `/ticket-transfers?filters[fromUserEmail][$eq]=${userEmail}&${TICKET_TRANSFER_POPULATE_QUERY}&sort[0]=createdAt:desc&pagination[page]=${page}&pagination[pageSize]=50`,
+    { signal: options?.signal },
   );
 
-export const getMyReceivedTransfers = (userEmail: string, page: number) =>
+export const getMyReceivedTransfers = (
+  userEmail: string,
+  page: number,
+  options?: { signal?: AbortSignal },
+) =>
   instance.get(
-    `/ticket-transfers?filters[emailAddressToUser][$eq]=${userEmail}&populate=*&sort[0]=createdAt:desc&pagination[page]=${page}&pagination[pageSize]=50`,
+    `/ticket-transfers?filters[emailAddressToUser][$eq]=${userEmail}&${TICKET_TRANSFER_POPULATE_QUERY}&sort[0]=createdAt:desc&pagination[page]=${page}&pagination[pageSize]=50`,
+    { signal: options?.signal },
   );
 
-export const cancelMyTransfers = (data: unknown) =>
-  instance.post("/ticket-transfers/cancel", data);
+export const cancelMyTransfers = (data: unknown) => {
+  const payload = buildCancelTransferRequestBody(resolveCancelTransferId(data));
+  if (!payload) {
+    return Promise.reject(
+      Object.assign(new Error("Invalid transfer id"), {
+        code: "INVALID_TRANSFER_ID",
+      }),
+    );
+  }
+  return instance.post("/ticket-transfers/cancel", payload);
+};
 
-export const getIncomingTransfers = () =>
-  instance.get("/ticket-transfers/incoming");
+/** Custom route — backend populates order, event, and tickets; query populates are ignored. */
+export const getIncomingTransfers = (options?: { signal?: AbortSignal }) =>
+  instance.get("/ticket-transfers/incoming", { signal: options?.signal });
 
 export const acceptIncomingTransfers = (data: unknown) =>
   instance.post("/ticket-transfers/accept", data);
@@ -363,7 +404,8 @@ export const createListing = (data: unknown) => instance.post("/listings", data)
 export const getListingsByEvent = (id: string) =>
   instance.get(`/listings/byEvent?id=${id}`);
 
-export const getMyListings = () => instance.get("/listings/mylisting");
+export const getMyListings = (options?: { signal?: AbortSignal }) =>
+  instance.get("/listings/mylisting", { signal: options?.signal });
 
 export const getAvailableFunds = () =>
   instance.get("/listings/available-funds");

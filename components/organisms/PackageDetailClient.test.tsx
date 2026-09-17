@@ -8,7 +8,11 @@ import {
   demoSeasonPackage,
 } from "@/lib/demo/fixtures";
 import { formatCurrency } from "@/lib/helpers";
-import { formatPackageFromPrice, packageFromPrice } from "@/lib/eventFromPrice";
+import {
+  formatPackageFromPrice,
+  formatPackageFromPriceAmount,
+  packageFromPrice,
+} from "@/lib/eventFromPrice";
 import {
   __resetInAppBackForTests,
   markInAppNavigation,
@@ -49,14 +53,26 @@ vi.mock("next/navigation", () => ({
   useParams: () => ({ slug: "nm-state" }),
 }));
 
-vi.mock("@/components/organisms/InteractiveSeatmap", () => ({
-  InteractiveSeatmap: () => (
-    <div data-testid="interactive-seatmap">Interactive seat map</div>
-  ),
-  InteractiveSeatmapMemo: () => (
-    <div data-testid="interactive-seatmap">Interactive seat map</div>
-  ),
-}));
+vi.mock("@/components/organisms/InteractiveSeatmap", async () => {
+  const { useEffect } = await import("react");
+  return {
+    InteractiveSeatmap: ({
+      onPaintReady,
+    }: {
+      onPaintReady?: () => void;
+    }) => {
+      useEffect(() => {
+        onPaintReady?.();
+      }, [onPaintReady]);
+      return (
+        <div data-testid="interactive-seatmap">Interactive seat map</div>
+      );
+    },
+    InteractiveSeatmapMemo: () => (
+      <div data-testid="interactive-seatmap">Interactive seat map</div>
+    ),
+  };
+});
 
 vi.mock("@/components/molecules/SectionLocatorThumb", () => ({
   default: ({ sectionNumber }: { sectionNumber?: string | number }) => (
@@ -232,6 +248,50 @@ describe("Package detail (PackageDetailClient)", () => {
     expect(screen.queryByText(/select your seats/i)).not.toBeInTheDocument();
   });
 
+  it("shows the mobile footer from-price on two lines", async () => {
+    Object.defineProperty(window, "innerWidth", {
+      configurable: true,
+      writable: true,
+      value: 390,
+    });
+    const pkg = demoSeasonPackage();
+    await renderPackage(pkg);
+    await screen.findByRole("heading", { name: pkg.name });
+
+    const amount = packageFromPrice(pkg)!;
+    expect(screen.getByText("From")).toBeInTheDocument();
+    expect(
+      screen.getByText(formatPackageFromPriceAmount(amount)),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByText(formatPackageFromPrice(amount)),
+    ).not.toBeInTheDocument();
+  });
+
+  it("hides the mobile sticky footer while the package seat map is open", async () => {
+    Object.defineProperty(window, "innerWidth", {
+      configurable: true,
+      writable: true,
+      value: 390,
+    });
+    const pkg = demoSeasonPackage();
+    const user = await renderPackage(pkg);
+    await screen.findByRole("heading", { name: pkg.name });
+
+    expect(
+      screen.getByRole("button", { name: /choose your seats/i }),
+    ).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: /choose your seats/i }));
+
+    expect(
+      await screen.findByRole("dialog", { name: /select your seats/i }),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: /choose your seats/i }),
+    ).not.toBeInTheDocument();
+  });
+
   it("opens the shared seat map overlay with the selection panel", async () => {
     const pkg = demoSeasonPackage();
     const user = await renderPackage(pkg);
@@ -267,9 +327,12 @@ describe("Package detail (PackageDetailClient)", () => {
     expect(document.querySelector("[data-bt-tenant-loader]")).toBeNull();
 
     await user.click(screen.getByRole("button", { name: /close seat map/i }));
-    fireEvent.click(screen.getByRole("button", { name: /choose your seats/i }));
-    expect(document.querySelector("[data-bt-tenant-loader]")).toBeNull();
-    expect(screen.getByTestId("interactive-seatmap")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: /choose your seats/i }));
+    await finishSeatmapBackgroundLoad();
+    await waitFor(() => {
+      expect(document.querySelector("[data-bt-tenant-loader]")).toBeNull();
+    });
+    expect(screen.getByTestId("interactive-seatmap")).toBeVisible();
   });
 
   it("shows Standard admission and keeps Details when a package seat has no offer", async () => {

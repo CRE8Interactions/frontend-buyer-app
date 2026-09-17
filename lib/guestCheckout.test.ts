@@ -9,6 +9,8 @@ import {
 import {
   getGuestCheckoutBuyer,
   getGuestCheckoutEmail,
+  GUEST_CONTACT_COPY,
+  guestContactStartFailed,
   isComplimentaryWebsiteCart,
   isGuestEligibleCart,
   parseGuestBuyer,
@@ -104,5 +106,15 @@ describe("guest checkout session", () => {
       firstName: "",
       lastName: "",
     });
+  });
+});
+
+describe("guestContactStartFailed", () => {
+  it("maps HTTP 400 to the guest-contact start copy", () => {
+    expect(guestContactStartFailed({ response: { status: 400 } })).toBe(true);
+    expect(guestContactStartFailed({ response: { status: 500 } })).toBe(false);
+    expect(GUEST_CONTACT_COPY.startFailed).toBe(
+      "We could not start your checkout. Please check your details and try again.",
+    );
   });
 });

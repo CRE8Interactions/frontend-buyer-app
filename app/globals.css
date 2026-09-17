@@ -20,7 +20,8 @@
    `:focus-visible`, and would otherwise paint their own dark outline. */
 input[aria-invalid="true"]:not([type="checkbox"]):not([type="radio"]):not(:focus),
 textarea[aria-invalid="true"]:not(:focus),
-select[aria-invalid="true"]:not(:focus) {
+select[aria-invalid="true"]:not(:focus),
+.bt-focus-edge[aria-invalid="true"]:not(:focus-within) {
   border-color: #c2394a !important;
 }
 

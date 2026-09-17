@@ -1,0 +1,89 @@
+%% Checkout promo code — ticket carts only (not package, flex pack, or access pass)
+
+%% Source: app/checkout/page.tsx, components/molecules/RedemptionCodeField.tsx,
+
+%%         lib/fieldValidation.ts (promoCodeRedeemDisplayMessage, redemptionCodeSubmitError)
+
+%% API:    blocktickets POST /promo-code/redeem
+
+%%
+
+%% --- Blur ---
+
+%% | Field | Empty blur | Non-empty invalid |
+
+%% | Promo code | (no error) | (no format check) |
+
+%%
+
+%% API rejections stay on blur until the shopper edits the field.
+
+%%
+
+%% --- Apply ---
+
+%% Apply is disabled when the field is empty or whitespace-only. Empty blur is quiet.
+
+%%
+
+%% --- POST /promo-code/redeem ---
+
+%% Display wraps error.message with "Please try again." (adds a period if the API
+
+%% message has none).
+
+%%
+
+%% | Status | API message | Displayed copy |
+
+%% | (any error) | Promo code not found | Promo code not found. Please try again. |
+
+%% | (any error) | Promo code already applied to order | Promo code already applied to order. Please try again. |
+
+%% | (any error) | Promo code no longer valid | Promo code no longer valid. Please try again. |
+
+%% | (any error) | {error.message} (when present) | {message}. Please try again. |
+
+%% | (any error) | (no message) | Promo code could not be applied. Please try again. |
+
+
+
+flowchart TD
+
+  typeCode[Type promo code] --> blurField[Blur]
+
+
+
+  subgraph blurValidations [blur]
+
+    bEmpty{Non-empty?}
+
+    bEmpty -->|no| bQuiet[No error]
+
+    bEmpty -->|yes| bQuiet
+
+  end
+
+
+
+  blurField -.-> blurValidations
+
+
+
+  typeCode --> apply{Promo entered?}
+
+  apply -->|no| applyDisabled[Apply disabled]
+
+  apply -->|yes| redeem[POST /promo-code/redeem]
+
+  redeem --> redeemFail{API message?}
+
+  redeemFail -->|Promo code not found| notFound["Promo code not found. Please try again."]
+
+  redeemFail -->|Promo code already applied to order| alreadyApplied["Promo code already applied to order. Please try again."]
+
+  redeemFail -->|Promo code no longer valid| noLongerValid["Promo code no longer valid. Please try again."]
+
+  redeemFail -->|other message| apiMsg["{API message}. Please try again."]
+
+  redeemFail -->|no message| fallback["Promo code could not be applied. Please try again."]

@@ -6,7 +6,7 @@ vi.mock("@/lib/api", () => ({
 }));
 
 import { downloadApplePass, downloadGooglePass } from "@/lib/api";
-import { DEMO_EVENTS, demoAccessPass, demoCompletedTicketOrder } from "@/lib/demo/fixtures";
+import { DEMO_EVENTS, demoAccessPass, demoCompletedTicketOrder, demoPackageAccessPass, demoSeasonPackage } from "@/lib/demo/fixtures";
 import {
   addAccessPassToPhoneWallet,
   addTicketToPhoneWallet,
@@ -136,13 +136,13 @@ describe("addAccessPassToPhoneWallet", () => {
     } as never);
 
     expect(await addAccessPassToPhoneWallet(summary, "google")).toBeNull();
-    expect(mockedGooglePass).toHaveBeenCalledWith(
-      expect.objectContaining({
-        event: summary.events[0]?.uuid,
-        ticket: expect.objectContaining({ checkInCode: pass.checkInCode }),
-        obj: expect.objectContaining({ checkInCode: pass.checkInCode }),
+    expect(mockedGooglePass).toHaveBeenCalledWith({
+      event: expect.objectContaining({ uuid: summary.events[0]?.uuid }),
+      ticket: expect.objectContaining({
+        checkInCode: pass.checkInCode,
+        accessPass: true,
       }),
-    );
+    });
     expect(open).toHaveBeenCalledWith(
       "https://pay.google.com/gp/v/save/pass-1",
       "_blank",
@@ -165,6 +165,25 @@ describe("addAccessPassToPhoneWallet", () => {
       ),
     ).toMatch(/no code/i);
     expect(mockedApplePass).not.toHaveBeenCalled();
+  });
+
+  it("sends the package event when the pass listing has no events", async () => {
+    const pkg = demoSeasonPackage();
+    const summary = summaryFor(demoPackageAccessPass({ events: [] }));
+    mockedApplePass.mockResolvedValue({
+      data: new Blob(["pkpass"], { type: "application/vnd.apple.pkpass" }),
+    } as never);
+
+    expect(
+      await addAccessPassToPhoneWallet(summary, "apple", pkg.events[0]),
+    ).toBeNull();
+    expect(mockedApplePass).toHaveBeenCalledWith({
+      event: expect.objectContaining({ uuid: pkg.events[0].uuid }),
+      obj: expect.objectContaining({
+        checkInCode: summary.checkInCode,
+        accessPass: true,
+      }),
+    });
   });
 });
 
@@ -191,18 +210,8 @@ describe("addTicketToPhoneWallet", () => {
 
     expect(await addTicketToPhoneWallet(event, ticket, "google")).toBeNull();
     expect(mockedGooglePass).toHaveBeenCalledWith({
-      event: event.uuid,
-      ticket: expect.objectContaining({
-        checkInCode: ticket.checkInCode,
-        eventUUID: event.uuid,
-        timezone: "America/Denver",
-      }),
-      obj: expect.objectContaining({
-        checkInCode: ticket.checkInCode,
-        eventUUID: event.uuid,
-        timezone: "America/Denver",
-      }),
-      timezone: "America/Denver",
+      event: expect.objectContaining({ uuid: event.uuid }),
+      ticket,
     });
     expect(open).toHaveBeenCalledWith(
       "https://pay.google.com/gp/v/save/ticket-1",
@@ -222,18 +231,7 @@ describe("addTicketToPhoneWallet", () => {
     ).toMatch(/no code/i);
   });
 
-  it("does not ask Google Wallet to build a pass without an event uuid", async () => {
-    expect(
-      await addTicketToPhoneWallet(
-        { name: event.name } as EventLike,
-        { checkInCode: "NMS-1" },
-        "google",
-      ),
-    ).toMatch(/Google Wallet/);
-    expect(mockedGooglePass).not.toHaveBeenCalled();
-  });
-
-  it("sends the event uuid string so Google Wallet can load issuer id", async () => {
+  it("sends the full event object when the page only has a sparse event", async () => {
     mockedGooglePass.mockResolvedValue({
       data: { url: "https://pay.google.com/gp/v/save/ticket-1" },
     } as never);
@@ -246,14 +244,12 @@ describe("addTicketToPhoneWallet", () => {
       ),
     ).toBeNull();
     expect(mockedGooglePass).toHaveBeenCalledWith({
-      event: ticket.eventUUID,
-      ticket: expect.objectContaining({ eventUUID: ticket.eventUUID }),
-      obj: expect.objectContaining({ eventUUID: ticket.eventUUID }),
-      timezone: "Etc/UTC",
+      event: expect.objectContaining({ uuid: ticket.eventUUID }),
+      ticket,
     });
   });
 
-  it("explains when Google Wallet rejects the event time zone", async () => {
+  it("explains when Google Wallet cannot create the pass", async () => {
     mockedGooglePass.mockRejectedValue({
       response: {
         data: { error: { message: "Invalid time zone specified: UTC" } },
@@ -261,7 +257,7 @@ describe("addTicketToPhoneWallet", () => {
     });
 
     expect(await addTicketToPhoneWallet(event, ticket, "google")).toMatch(
-      /time zone/i,
+      /Google Wallet/,
     );
     expect(open).not.toHaveBeenCalled();
   });
@@ -273,6 +269,23 @@ describe("walletPassEvent", () => {
       walletPassEvent({ name: "NM State" }, { eventId: 1219, checkInCode: "NMS-1" })
         ?.uuid,
     ).toBeUndefined();
+  });
+
+  it("keeps the venue of the event row that has the uuid, not the stub", () => {
+    const passEvent = walletPassEvent(
+      { name: "NM State", venue: { name: "Pan American Center" } },
+      {
+        checkInCode: "NMS-1",
+        event: {
+          uuid: "af194e70-d31e-4837-b96d-1771d3ec3fac",
+          name: "NM State Aggies",
+          venue: { name: "Pan American Center", timezone: "America/Denver" },
+        },
+      },
+    );
+
+    expect(passEvent?.uuid).toBe("af194e70-d31e-4837-b96d-1771d3ec3fac");
+    expect(passEvent?.venue?.timezone).toBe("America/Denver");
   });
 
   it("uses a string ticket.event as the event uuid", () => {

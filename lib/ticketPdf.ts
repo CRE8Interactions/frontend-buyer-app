@@ -16,8 +16,9 @@ import {
   resolveEventCategoryName,
   resolveTicketCategoryKey,
 } from "@/lib/eventCategory";
-import { formatEventWhen } from "@/lib/helpers";
+import { eventAboutText, formatEventWhen } from "@/lib/helpers";
 import type { EventLike } from "@/lib/cartEvents";
+import { ticketRowValue, ticketSeatValue, ticketSectionValue } from "@/lib/wallet";
 import { formatVenueCityState } from "@/lib/venueLocation";
 
 type PrintableTicket = {
@@ -51,6 +52,7 @@ const TICKET_SLOTS = [TOP_TICKET_Y, BOTTOM_TICKET_Y];
 const CORNER_R = 14;
 const SHELL_PAD = 12;
 const TITLE_BAND = 76;
+const TITLE_BAND_WITH_SUMMARY = 102;
 const DEFAULT_PRIMARY = "#1A365D";
 
 function hexToRgb(hex?: string | null, fallback = DEFAULT_PRIMARY): RGB {
@@ -143,6 +145,47 @@ function fitText(text: unknown, font: PDFFont, size: number, maxWidth: number) {
   return low > 0 ? `${value.slice(0, low)}…` : "…";
 }
 
+function wrapSummaryLines(
+  text: string,
+  font: PDFFont,
+  size: number,
+  maxWidth: number,
+  maxLines = 2,
+) {
+  const words = sanitizeText(text).split(" ").filter(Boolean);
+  if (!words.length) return [];
+
+  const lines: string[] = [];
+  let current = "";
+  let wordIndex = 0;
+
+  while (wordIndex < words.length && lines.length < maxLines) {
+    const word = words[wordIndex];
+    const next = current ? `${current} ${word}` : word;
+    if (font.widthOfTextAtSize(next, size) <= maxWidth) {
+      current = next;
+      wordIndex += 1;
+      continue;
+    }
+    if (current) {
+      lines.push(current);
+      current = "";
+      continue;
+    }
+    lines.push(fitText(word, font, size, maxWidth));
+    wordIndex += 1;
+  }
+
+  if (current && lines.length < maxLines) lines.push(current);
+
+  if (wordIndex < words.length && lines.length > 0) {
+    const last = lines.length - 1;
+    lines[last] = fitText(`${lines[last]} …`, font, size, maxWidth);
+  }
+
+  return lines.slice(0, maxLines);
+}
+
 export { resolveTicketCategoryKey } from "@/lib/eventCategory";
 
 /** Brand colour and category treatment a printed ticket is drawn with. */
@@ -223,6 +266,23 @@ async function embedLogo(pdf: PDFDocument, event: EventLike) {
   }
 }
 
+/** Seat box values rendered on the printable ticket PDF. */
+export function ticketPdfSeatColumnValues(
+  ticket: PrintableTicket & { GA?: boolean },
+): { section: string; row: string; seat: string } {
+  const isGA = Boolean(ticket.generalAdmission || ticket.GA);
+  const gaRow = isGA ? ticketRowValue(ticket) : "";
+  const gaSeat = isGA ? ticketSeatValue(ticket) : "";
+  const gaBare = isGA && !gaRow && !gaSeat;
+  return {
+    section: isGA
+      ? ticketSectionValue(ticket) || "—"
+      : String(ticket.sectionName ?? ticket.sectionNumber ?? "—"),
+    row: isGA ? gaRow || (gaBare ? "GA" : "—") : String(ticket.rowNumber ?? "—"),
+    seat: isGA ? gaSeat || (gaBare ? "GA" : "—") : String(ticket.seatNumber ?? "—"),
+  };
+}
+
 /** Venue line on Print PDF / Print all. City is title-cased (Las Cruces). */
 export function printedVenueLabel(event: EventLike) {
   const name = String(event.venue?.name || "").trim();
@@ -255,20 +315,23 @@ async function drawBrandedTicket(
     event: EventLike;
     ticket: PrintableTicket;
     packageName?: string;
-    fonts: { regular: PDFFont; bold: PDFFont };
+    fonts: { regular: PDFFont; bold: PDFFont; oblique: PDFFont };
     logo: PDFImage | null;
     ticketY: number;
     showPageChrome: boolean;
   },
 ) {
-  const { regular, bold } = fonts;
+  const { regular, bold, oblique } = fonts;
   const theme = resolveTicketTheme(event);
+  const summary = eventAboutText(event);
+  const titleBand = summary ? TITLE_BAND_WITH_SUMMARY : TITLE_BAND;
   const primaryHex = theme.primaryColor;
   const primary = hexToRgb(primaryHex);
   const badgeColor = hexToRgb(theme.badgeColor);
   const bodyBg = lightenHex(primaryHex, 0.92);
   const headerOnLight = relativeLuminance(primary) > CONTRAST_PIVOT;
   const titleColor = headerOnLight ? hexToRgb("#1A1F2B") : rgb(1, 1, 1);
+  const summaryColor = headerOnLight ? hexToRgb("#41506B") : rgb(1, 1, 1);
   const textDark = hexToRgb("#1A1F2B");
   const textBody = hexToRgb("#2D3648");
   const textMuted = hexToRgb("#708095");
@@ -306,7 +369,7 @@ async function drawBrandedTicket(
   const innerX = TICKET_X + SHELL_PAD;
   const innerY = ticketY + SHELL_PAD;
   const innerW = TICKET_W - SHELL_PAD * 2;
-  const innerH = TICKET_H - SHELL_PAD - TITLE_BAND;
+  const innerH = TICKET_H - SHELL_PAD - titleBand;
   drawRoundedRect(page, {
     x: innerX,
     y: innerY,
@@ -338,13 +401,36 @@ async function drawBrandedTicket(
     color: rgb(1, 1, 1),
   });
 
-  page.drawText(fitText(event.name, bold, 18, TICKET_W - 150) || "Event", {
-    x: contentLeft,
-    y: shellTop - 62,
-    size: 18,
-    font: bold,
-    color: titleColor,
-  });
+  const titleSize = summary ? 16 : 18;
+  page.drawText(
+    fitText(event.name, bold, titleSize, TICKET_W - 150) || "Event",
+    {
+      x: contentLeft,
+      y: shellTop - (summary ? 56 : 62),
+      size: titleSize,
+      font: bold,
+      color: titleColor,
+    },
+  );
+
+  if (summary) {
+    const summaryLines = wrapSummaryLines(
+      summary,
+      oblique,
+      10,
+      TICKET_W - 36,
+      2,
+    );
+    summaryLines.forEach((line, index) => {
+      page.drawText(line, {
+        x: contentLeft,
+        y: shellTop - 74 - index * 12,
+        size: 10,
+        font: oblique,
+        color: summaryColor,
+      });
+    });
+  }
 
   if (logo) {
     const scale = Math.min(64 / logo.width, 36 / logo.height);
@@ -369,9 +455,12 @@ async function drawBrandedTicket(
   };
 
   const timezone = event.venue?.timezone;
-  drawField("DATE", formatEventWhen(event.start, timezone, "ddd, MMM D, YYYY"), contentLeft, innerTop - 32);
-  drawField("TIME", formatEventWhen(event.start, timezone, "h:mm A"), contentLeft, innerTop - 68);
-  drawField("VENUE", printedVenueLabel(event), contentLeft, innerTop - 104);
+  const dateFieldY = innerTop - 32;
+  const timeFieldY = innerTop - 68;
+  const venueFieldY = innerTop - 104;
+  drawField("DATE", formatEventWhen(event.start, timezone, "ddd, MMM D, YYYY"), contentLeft, dateFieldY);
+  drawField("TIME", formatEventWhen(event.start, timezone, "h:mm A"), contentLeft, timeFieldY);
+  drawField("VENUE", printedVenueLabel(event), contentLeft, venueFieldY);
 
   const holderX = innerX + innerW / 2 + 8;
   page.drawText("TICKET HOLDER", {
@@ -401,29 +490,25 @@ async function drawBrandedTicket(
   }
 
   const seatBoxX = contentLeft;
-  const seatBoxY = innerY + 28;
+  const seatBoxHeight = 68;
+  const seatBoxGapBelowVenue = 14;
+  const seatBoxY = venueFieldY - seatBoxGapBelowVenue - seatBoxHeight;
   drawRoundedRect(page, {
     x: seatBoxX,
     y: seatBoxY,
     width: 223,
-    height: 68,
+    height: seatBoxHeight,
     radius: 8,
     color: rgb(1, 1, 1),
     borderColor: boxBorder,
     borderWidth: 1,
   });
 
-  const isGA = Boolean(ticket.generalAdmission);
+  const seatValues = ticketPdfSeatColumnValues(ticket);
   const seatCols = [
-    {
-      label: "SECTION",
-      value: isGA
-        ? String(ticket.sectionName ?? ticket.sectionNumber ?? "General Admission")
-        : String(ticket.sectionName ?? ticket.sectionNumber ?? "—"),
-      x: seatBoxX + 22,
-    },
-    { label: "ROW", value: isGA ? "GA" : String(ticket.rowNumber ?? "—"), x: seatBoxX + 100 },
-    { label: "SEAT", value: isGA ? "GA" : String(ticket.seatNumber ?? "—"), x: seatBoxX + 170 },
+    { label: "SECTION", value: seatValues.section, x: seatBoxX + 22 },
+    { label: "ROW", value: seatValues.row, x: seatBoxX + 100 },
+    { label: "SEAT", value: seatValues.seat, x: seatBoxX + 170 },
   ];
   seatCols.forEach((col) => {
     const labelW = bold.widthOfTextAtSize(col.label, 7);
@@ -464,7 +549,7 @@ async function drawBrandedTicket(
 
   page.drawText("Valid ID required  •  Non-transferable  •  Subject to venue policies", {
     x: contentLeft,
-    y: innerY + 10,
+    y: Math.min(innerY + 10, seatBoxY - 12),
     size: 7,
     font: regular,
     color: textFaint,
@@ -492,6 +577,7 @@ export async function printTicketsPdf({
   const fonts = {
     regular: await pdf.embedFont(StandardFonts.Helvetica),
     bold: await pdf.embedFont(StandardFonts.HelveticaBold),
+    oblique: await pdf.embedFont(StandardFonts.HelveticaOblique),
   };
   const logo = await embedLogo(pdf, event);
 

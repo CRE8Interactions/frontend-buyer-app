@@ -1,0 +1,109 @@
+%% Guest contact — checkout "Where should we send your tickets?"
+
+%% Source: components/organisms/GuestContact.tsx, lib/submitEmailValidation.ts,
+
+%%         lib/fieldValidation.ts, lib/guestCheckout.ts
+
+%% API:    blocktickets POST /registration/validate-email
+
+%%         blocktickets POST /payment/intent (after this form ok)
+
+%%
+
+%% --- Blur ---
+
+%% | Field | Empty blur | Non-empty invalid |
+
+%% | Email | (no error) | Email is invalid. Please try again. |
+
+%% | First name | (no error) | Letters only — no digits. |
+
+%% | Last name | (no error) | Letters only — no digits. |
+
+%%
+
+%% --- POST /registration/validate-email ---
+
+%% | Status | API message / body | Displayed copy |
+
+%% | 200 | Invalid (or Risky with suggestion) | Email is invalid. Please try again. |
+
+%% | 400 | (any) | We could not start your checkout. Please check your details and try again. |
+
+%% | 402 | Bad email | Email is invalid. Please try again. |
+
+%% | 500 / other | (any other) | We're experiencing technical difficulties. Please try again later. |
+
+%%
+
+%% --- POST /payment/intent ---
+
+%% | Status | API meaning | Displayed copy |
+
+%% | 400 | Details rejected | We could not start your checkout. Please check your details and try again. |
+
+%% | 404 / 410 | Cart gone | Cart expired popup — Your reserved tickets were released. Please select tickets again. |
+
+%% | other | Load failed | Unable to load checkout. Please try again. |
+
+
+
+flowchart TD
+
+  typeFields[Type email, first name, last name] --> blurField[Blur]
+
+
+
+  subgraph blurValidations [blur]
+
+    bWhich{Which field?}
+
+    bWhich -->|email| bEmailEmpty{Non-empty?}
+
+    bEmailEmpty -->|no| bQuiet[No error]
+
+    bEmailEmpty -->|yes| bEmailOk{Blocked domain or bad syntax?}
+
+    bEmailOk -->|yes| bEmailInvalid["Email is invalid. Please try again."]
+
+    bEmailOk -->|no| bQuiet
+
+    bWhich -->|first or last name| bNameEmpty{Non-empty?}
+
+    bNameEmpty -->|no| bQuiet
+
+    bNameEmpty -->|yes| bNameOk{Letters, spaces, apostrophes, hyphens?}
+
+    bNameOk -->|no| bNameInvalid["Letters only — no digits."]
+
+    bNameOk -->|yes| bQuiet
+
+  end
+
+
+
+  blurField -.-> blurValidations
+
+
+
+  typeFields --> validateEmail[POST /registration/validate-email]
+
+  validateEmail --> emailFail{API response?}
+
+  emailFail -->|200 Invalid or Risky with suggestion| emailInvalid["Email is invalid. Please try again."]
+
+  emailFail -->|402| emailInvalid
+
+  emailFail -->|400| startFailed["We could not start your checkout. Please check your details and try again."]
+
+  emailFail -->|500 / other| network["We're experiencing technical difficulties. Please try again later."]
+
+  emailFail -->|200 Valid| intent[POST /payment/intent]
+
+  intent --> intentFail{API response?}
+
+  intentFail -->|400| startFailed
+
+  intentFail -->|404 / 410| cartExpired["Cart expired — Your reserved tickets were released. Please select tickets again."]
+
+  intentFail -->|other| loadError["Unable to load checkout. Please try again."]

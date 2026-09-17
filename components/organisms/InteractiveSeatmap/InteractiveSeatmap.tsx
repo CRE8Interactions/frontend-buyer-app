@@ -8,7 +8,6 @@ import {
   useRef,
   useState,
 } from "react";
-import Button from "@/components/atoms/Button";
 import Spinner from "@/components/atoms/Spinner";
 import {
   createSeatLookupTables,
@@ -16,7 +15,11 @@ import {
   isSectionCoverVenue,
   mappingStageSize,
 } from "@/lib/seatmapLookups";
-import { panDeltaToRevealPopup, type PopupRect } from "@/lib/seatmapPopup";
+import {
+  panDeltaToRevealPopup,
+  SEATMAP_TAP_THRESHOLD_PX,
+  type PopupRect,
+} from "@/lib/seatmapPopup";
 import useFiltersStore from "@/stores/filtersStore";
 import useSeatmapStore from "@/stores/seatmapStore";
 import SeatmapIcons from "./SeatmapIcons";
@@ -26,9 +29,17 @@ import SeatmapSeat, {
 import SeatmapSections from "./SeatmapSections";
 import SeatmapTooltip, { type SeatmapTooltipTarget } from "./SeatmapTooltip";
 
-const PAN_THRESHOLD_PX = 5;
+const PAN_THRESHOLD_PX = SEATMAP_TAP_THRESHOLD_PX;
 /** Softens pinch scale changes so zoom feels less jumpy on iOS. */
 const PINCH_ZOOM_DAMPING = 0.7;
+
+/** Identifies which seat or GA section a popover belongs to. */
+function tooltipTargetKey(target: SeatmapTooltipTarget) {
+  if (!target) return null;
+  return target.kind === "seat"
+    ? `seat:${target.seatId}`
+    : `section:${target.sectionId}`;
+}
 
 /**
  * Same ZoomLevel % formula as the legacy SvgSeatmap `calculateScalePercentage`.
@@ -96,6 +107,8 @@ type Props = {
   lookupsMode?: "auto" | "external";
   /** Mobile find-on-map: collapsed legend + zoom pill, no pinch hint. */
   compactChrome?: boolean;
+  /** Package seatmaps omit locked/exclusive legend rows; events show the full set. */
+  mapLegend?: "event" | "package";
   /** Parent (seat-map modal) already shows the org loader. */
   hideLoadingSpinner?: boolean;
   /** Increment to clear the seat/section tooltip (mobile View selection / Checkout). */
@@ -104,6 +117,8 @@ type Props = {
   onUnlockOffer?: (offerName: string) => void;
   /** Keep the seat tooltip open while the unlock modal is visible. */
   keepTooltipOpen?: boolean;
+  /** Fires once geometry, inventory, viewport fit, and artwork are ready to paint. */
+  onPaintReady?: () => void;
 };
 
 export default function InteractiveSeatmap({
@@ -113,10 +128,12 @@ export default function InteractiveSeatmap({
   buttonTextColor = "#fff",
   lookupsMode = "auto",
   compactChrome = false,
+  mapLegend = "event",
   hideLoadingSpinner = false,
   dismissTooltipKey = 0,
   onUnlockOffer,
   keepTooltipOpen = false,
+  onPaintReady,
 }: Props) {
   const data = useSeatmapStore((s) => s.data);
   const background = useSeatmapStore((s) => s.background);
@@ -173,7 +190,7 @@ export default function InteractiveSeatmap({
   maxScaleRef.current = maxScale;
   const [tooltip, setTooltip] = useState<SeatmapTooltipTarget>(null);
   const tooltipHoveredRef = useRef(false);
-  /** Seat id of the pinned card, or null while the tooltip is a hover preview. */
+  /** Key of the clicked card, or null while the tooltip is a hover preview. */
   const tooltipPinnedRef = useRef<string | null>(null);
   const dismissTooltipTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
     null,
@@ -193,6 +210,15 @@ export default function InteractiveSeatmap({
     setTooltip(null);
   }, [clearDismissTooltipTimer]);
 
+  const dismissTooltipFromMapPointer = useCallback(
+    (target: Element | null) => {
+      if (target?.closest?.("[data-interactive-seat]")) return;
+      if (target?.closest?.("[data-seatmap-tooltip]")) return;
+      dismissTooltipNow();
+    },
+    [dismissTooltipNow],
+  );
+
   const scheduleDismissTooltip = useCallback(() => {
     clearDismissTooltipTimer();
     dismissTooltipTimerRef.current = setTimeout(() => {
@@ -204,9 +230,7 @@ export default function InteractiveSeatmap({
     (target: SeatmapTooltipTarget) => {
       clearDismissTooltipTimer();
       tooltipPinnedRef.current =
-        target?.kind === "seat" && target.pinned === true
-          ? String(target.seatId)
-          : null;
+        target?.pinned === true ? tooltipTargetKey(target) : null;
       setTooltip(target);
     },
     [clearDismissTooltipTimer],
@@ -215,18 +239,9 @@ export default function InteractiveSeatmap({
   const handleSeatTooltip = useCallback(
     (target: SeatmapTooltipTarget | null) => {
       if (target) {
-        // A pinned seat card stays put until Add seats, close, or another seat
-        // takes over; hovering the pinned seat must not downgrade it.
-        const pinning = target.kind === "seat" && target.pinned === true;
-        const pinnedSeatId = tooltipPinnedRef.current;
-        if (
-          pinnedSeatId &&
-          !pinning &&
-          target.kind === "seat" &&
-          String(target.seatId) === pinnedSeatId
-        ) {
-          return;
-        }
+        // A clicked card stays put until Add now, close, or a click elsewhere.
+        // Hovering any seat — its own or a neighbour — must not replace it.
+        if (tooltipPinnedRef.current && target.pinned !== true) return;
         openTooltip(target);
         return;
       }
@@ -784,6 +799,15 @@ export default function InteractiveSeatmap({
   const showLoading =
     !ready || !fitted || loadingTicketGroups || !backgroundReady;
 
+  useEffect(() => {
+    if (!stage) {
+      onPaintReady?.();
+      return;
+    }
+    if (showLoading) return;
+    onPaintReady?.();
+  }, [stage, showLoading, onPaintReady]);
+
   // Only give up when there is nothing to draw — a missing background image is
   // survivable as long as the mapping has geometry.
   if (!stage) {
@@ -808,15 +832,16 @@ export default function InteractiveSeatmap({
       <div
         ref={containerRef}
         className={`relative h-full w-full touch-none select-none ${compactChrome ? "min-h-0" : "min-h-[420px]"}`}
-        onPointerDown={onPointerDown}
+        onPointerDown={(event) => {
+          onPointerDown(event);
+          if (event.pointerType === "touch") return;
+          dismissTooltipFromMapPointer(event.target as Element);
+        }}
         onPointerMove={onPointerMove}
         onPointerUp={onPointerUp}
         onPointerCancel={onPointerUp}
         onClick={(event) => {
-          if ((event.target as Element | null)?.closest?.("[data-interactive-seat]")) {
-            return;
-          }
-          dismissTooltipNow();
+          dismissTooltipFromMapPointer(event.target as Element);
         }}
       >
         {showLoading && !hideLoadingSpinner ? (
@@ -901,7 +926,10 @@ export default function InteractiveSeatmap({
             <button
               type="button"
               aria-label="Zoom out"
-              onClick={() => zoomBy(1 / 1.25)}
+              onClick={() => {
+                dismissTooltipNow();
+                zoomBy(1 / 1.25);
+              }}
               className="flex h-9 w-9 items-center justify-center rounded-full text-[20px] text-[#051B35]"
             >
               −
@@ -915,7 +943,10 @@ export default function InteractiveSeatmap({
             <button
               type="button"
               aria-label="Zoom in"
-              onClick={() => zoomBy(1.25)}
+              onClick={() => {
+                dismissTooltipNow();
+                zoomBy(1.25);
+              }}
               className="flex h-9 w-9 items-center justify-center rounded-full text-[20px] text-[#051B35]"
             >
               +
@@ -926,7 +957,10 @@ export default function InteractiveSeatmap({
             <button
               type="button"
               aria-label="Zoom out"
-              onClick={() => zoomBy(1 / 1.25)}
+              onClick={() => {
+                dismissTooltipNow();
+                zoomBy(1 / 1.25);
+              }}
               className="flex h-9 w-9 items-center justify-center rounded-xl border border-[#D9DEE7] bg-white/95 text-[#051B35] shadow-sm backdrop-blur hover:bg-[#F4F5F7]"
             >
               −
@@ -934,24 +968,25 @@ export default function InteractiveSeatmap({
             <button
               type="button"
               aria-label="Zoom in"
-              onClick={() => zoomBy(1.25)}
+              onClick={() => {
+                dismissTooltipNow();
+                zoomBy(1.25);
+              }}
               className="flex h-9 w-9 items-center justify-center rounded-xl border border-[#D9DEE7] bg-white/95 text-[#051B35] shadow-sm backdrop-blur hover:bg-[#F4F5F7]"
             >
               +
             </button>
             {showReset ? (
-              <Button
-                size="sm"
-                className="!h-9 border-0 backdrop-blur"
-                style={{
-                  background: buttonColor,
-                  color: buttonTextColor,
-                  borderColor: buttonColor,
+              <button
+                type="button"
+                onClick={() => {
+                  dismissTooltipNow();
+                  resetView();
                 }}
-                onClick={resetView}
+                className="flex h-9 items-center justify-center rounded-xl border border-[#D9DEE7] bg-white/95 px-3 text-[13px] font-semibold text-[#051B35] shadow-sm backdrop-blur hover:bg-[#F4F5F7]"
               >
                 Back to map
-              </Button>
+              </button>
             ) : null}
           </div>
         )}
@@ -969,7 +1004,10 @@ export default function InteractiveSeatmap({
         >
           <button
             type="button"
-            onClick={() => setLegendOpen((open) => !open)}
+            onClick={() => {
+              dismissTooltipNow();
+              setLegendOpen((open) => !open);
+            }}
             aria-expanded={legendOpen}
             className="flex w-full items-center justify-between border-0 bg-white px-4 py-3 text-left text-[14px] font-semibold text-[#051B35]"
           >
@@ -989,14 +1027,23 @@ export default function InteractiveSeatmap({
           </button>
           {legendOpen ? (
             <div className="space-y-3 px-4 pb-4">
-              {[
-                { label: "Unavailable", color: "#E6E8EC" },
-                { label: "Available", color: "#3E8BF7" },
-                { label: "Selected", color: accent },
-                { label: "Locked", color: "#353945" },
-                { label: "Exclusive", color: "#9757D7" },
-                { label: "Accessibility", color: "#F4BC16" },
-              ].map((item) => (
+              {(
+                mapLegend === "package"
+                  ? [
+                      { label: "Unavailable", color: "#E6E8EC" },
+                      { label: "Available", color: "#3E8BF7" },
+                      { label: "Selected", color: accent },
+                      { label: "Accessibility", color: "#F4BC16" },
+                    ]
+                  : [
+                      { label: "Unavailable", color: "#E6E8EC" },
+                      { label: "Available", color: "#3E8BF7" },
+                      { label: "Selected", color: accent },
+                      { label: "Locked", color: "#353945" },
+                      { label: "Exclusive", color: "#9757D7" },
+                      { label: "Accessibility", color: "#F4BC16" },
+                    ]
+              ).map((item) => (
                 <div
                   key={item.label}
                   className="flex items-center gap-2 text-[13px]"

@@ -15,6 +15,24 @@ if (!listing || !seatId || !offerName) {
 }
 
 describe("createPackageLookupTables", () => {
+  it("maps seated package inventory from seatIds arrays", () => {
+    const pkg = demoSeasonPackage({
+      package_tickets: [
+        {
+          ...listing,
+          seatIds: listing.seatIds,
+          seatId: undefined,
+        },
+      ],
+    });
+
+    const { seatLookupTable } = createPackageLookupTables(pkg, null, null);
+
+    for (const seatId of listing.seatIds || []) {
+      expect(seatLookupTable[seatId]?.seatId).toBe(seatId);
+    }
+  });
+
   it("keeps the ticket offer name on seated package seats", () => {
     const pkg = demoSeasonPackage({
       package_tickets: [

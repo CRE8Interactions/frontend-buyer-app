@@ -7,7 +7,7 @@ import EmailField from "@/components/molecules/EmailField";
 import NameField from "@/components/molecules/NameField";
 import {
   emailBlurInvalid,
-  emailSubmitError,
+  fieldErrorTextClass,
   formString,
   nameBlurError,
   nameFieldError,
@@ -15,7 +15,10 @@ import {
   type EmailFieldError,
   type NameFieldError,
 } from "@/lib/fieldValidation";
+import { validateSubmittedEmail } from "@/lib/submitEmailValidation";
 import {
+  GUEST_CONTACT_COPY,
+  guestContactStartFailed,
   parseGuestBuyer,
   type GuestBuyer,
 } from "@/lib/guestCheckout";
@@ -29,7 +32,7 @@ export default function GuestContact({
 }: {
   loginHref: string;
   onSignIn?: () => void;
-  onContinue: (buyer: GuestBuyer) => void;
+  onContinue: (buyer: GuestBuyer) => void | Promise<void>;
   buttonColor?: string;
   buttonTextColor?: string;
 }) {
@@ -37,10 +40,13 @@ export default function GuestContact({
   const [firstName, setFirstName] = useState("");
   const [lastName, setLastName] = useState("");
   const [emailError, setEmailError] = useState<EmailFieldError>(null);
+  const [emailNetworkError, setEmailNetworkError] = useState(false);
+  const [startError, setStartError] = useState("");
   const [firstError, setFirstError] = useState<NameFieldError>(null);
   const [lastError, setLastError] = useState<NameFieldError>(null);
+  const [submitting, setSubmitting] = useState(false);
 
-  const onSubmit = (event: FormEvent<HTMLFormElement>) => {
+  const onSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     const data = new FormData(event.currentTarget);
     const nextEmail = submittedEmail(data);
@@ -49,19 +55,48 @@ export default function GuestContact({
     setEmail(nextEmail);
     setFirstName(first);
     setLastName(last);
-    const emailKind = emailSubmitError(nextEmail);
     const firstBad = nameFieldError(first);
     const lastBad = nameFieldError(last);
-    setEmailError(emailKind);
     setFirstError(firstBad);
     setLastError(lastBad);
+    setEmailNetworkError(false);
+    setStartError("");
+    setSubmitting(true);
+    const emailResult = await validateSubmittedEmail(nextEmail);
+    if (!emailResult.ok) {
+      setSubmitting(false);
+      if (emailResult.error === "startFailed") {
+        setEmailError(null);
+        setStartError(GUEST_CONTACT_COPY.startFailed);
+      } else if (emailResult.error === "network") {
+        setEmailError(null);
+        setEmailNetworkError(true);
+      } else {
+        setEmailError(emailResult.error);
+      }
+    } else {
+      setEmailError(null);
+    }
     const buyer = parseGuestBuyer({
-      email: nextEmail,
+      email: emailResult.email,
       firstName: first,
       lastName: last,
     });
-    if (!buyer) return;
-    onContinue(buyer);
+    if (!buyer || !emailResult.ok || firstBad || lastBad) {
+      setSubmitting(false);
+      return;
+    }
+    try {
+      await onContinue(buyer);
+    } catch (error) {
+      if (guestContactStartFailed(error)) {
+        setStartError(GUEST_CONTACT_COPY.startFailed);
+      } else {
+        throw error;
+      }
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   return (
@@ -82,9 +117,13 @@ export default function GuestContact({
         placeholder="Enter your email"
         value={email}
         error={emailError}
+        networkError={emailNetworkError}
+        disabled={submitting}
         onChange={(value) => {
           setEmail(value);
           setEmailError(null);
+          setEmailNetworkError(false);
+          setStartError("");
         }}
         onBlur={(value) =>
           setEmailError(emailBlurInvalid(value) ? "invalid" : null)
@@ -102,6 +141,7 @@ export default function GuestContact({
           onChange={(value) => {
             setFirstName(value);
             setFirstError(null);
+            setStartError("");
           }}
           onBlur={(value) => setFirstError(nameBlurError(value))}
         />
@@ -116,6 +156,7 @@ export default function GuestContact({
           onChange={(value) => {
             setLastName(value);
             setLastError(null);
+            setStartError("");
           }}
           onBlur={(value) => setLastError(nameBlurError(value))}
         />
@@ -125,9 +166,17 @@ export default function GuestContact({
         primaryColor={buttonColor}
         textColor={buttonTextColor}
         className="w-full py-4 text-[16px]"
+        loading={submitting}
+        loadingLabel="Checking email…"
+        disabled={submitting}
       >
         Continue to payment
       </BrandedActionButton>
+      {startError ? (
+        <p className={fieldErrorTextClass("light")} role="alert">
+          {startError}
+        </p>
+      ) : null}
       <p className="text-center text-[14px] text-[#6e7180]">
         Already have an account?{" "}
         <Link

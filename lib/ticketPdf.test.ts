@@ -4,6 +4,7 @@ import {
   printedVenueLabel,
   printTicketsPdf,
   resolveTicketTheme,
+  ticketPdfSeatColumnValues,
   type TicketPdfRequest,
 } from "@/lib/ticketPdf";
 
@@ -85,6 +86,40 @@ describe("printedVenueLabel", () => {
   });
 });
 
+describe("ticketPdfSeatColumnValues", () => {
+  it("shows GA for row and seat when a GA ticket has no assigned row or seat", () => {
+    expect(
+      ticketPdfSeatColumnValues({
+        checkInCode: "GA-1",
+        generalAdmission: true,
+        sectionNumber: "ga",
+      }),
+    ).toEqual({ section: "ga", row: "GA", seat: "GA" });
+  });
+
+  it("keeps reserved row and seat values for assigned GA sections", () => {
+    expect(
+      ticketPdfSeatColumnValues({
+        checkInCode: "GA-2",
+        generalAdmission: true,
+        sectionNumber: "P",
+        rowNumber: 12,
+        seatNumber: 8,
+      }),
+    ).toEqual({ section: "P", row: "12", seat: "8" });
+  });
+
+  it("uses dash placeholders for reserved tickets missing row or seat", () => {
+    expect(
+      ticketPdfSeatColumnValues({
+        checkInCode: "RES-1",
+        sectionNumber: "G",
+        rowNumber: 25,
+      }),
+    ).toEqual({ section: "G", row: "25", seat: "—" });
+  });
+});
+
 describe("printTicketsPdf", () => {
   const objectUrl = "blob:ticket-pdf";
   let blobs: Blob[];
@@ -128,5 +163,32 @@ describe("printTicketsPdf", () => {
     await expect(
       printTicketsPdf(request({ tickets: [{ id: 3, checkInCode: "" }] })),
     ).rejects.toThrow(/check-in code/i);
+  });
+
+  it("still builds a PDF when the event includes a summary", async () => {
+    const click = vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => {});
+
+    await printTicketsPdf(
+      request({
+        event: {
+          ...nmState,
+          summary:
+            "Join us this fall for the Bands of America Regional Championship - September 19th, 2026. See you there!",
+        },
+        tickets: [
+          {
+            id: 1,
+            checkInCode: "NMS-1",
+            holder: "Jaime Convery",
+            sectionNumber: "G",
+            rowNumber: 20,
+            seatNumber: 20,
+          },
+        ],
+      }),
+    );
+
+    expect(click).toHaveBeenCalledOnce();
+    expect(blobs[0]?.size).toBeGreaterThan(0);
   });
 });

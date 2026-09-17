@@ -805,10 +805,7 @@ function CheckoutSuccessPage() {
       ) : null}
 
       {showWalletCta && passWallet && walletSheetOpen ? (
-        <div
-          className="fixed inset-0 z-[80] flex items-end justify-center bg-[rgba(5,27,53,0.55)]"
-          onClick={closeWalletSheet}
-        >
+        <div className="fixed inset-0 z-[80] flex items-end justify-center bg-[rgba(5,27,53,0.55)]">
           <div
             role="dialog"
             aria-modal="true"
