@@ -131,18 +131,152 @@ export type AccessPassLike = {
   primaryColor?: string;
   orderId?: string;
   order?: { orderId?: string };
+  package?: {
+    name?: string;
+    image?: ApiImage;
+    events?: EventLike[];
+  };
   /** Pass holder, used for the card name when the order has no name saved. */
   email?: string;
   events?: EventLike[];
   [key: string]: unknown;
 };
 
-function accessPassOrderId(pass: AccessPassLike) {
+export function unwrapAccessPassRecord(payload: unknown): AccessPassLike | null {
+  if (!payload || typeof payload !== "object") return null;
+  const root = payload as Record<string, unknown>;
+  const nested = root.data;
+  if (nested && typeof nested === "object") {
+    const data = nested as Record<string, unknown>;
+    if (data.data && typeof data.data === "object") {
+      return data.data as AccessPassLike;
+    }
+    return data as AccessPassLike;
+  }
+  return root as AccessPassLike;
+}
+
+export function extractAccessPassPackageImage(
+  pass?: AccessPassLike | null,
+): ApiImage | undefined {
+  if (!pass) return undefined;
+  return pass.package?.image ?? pass.artwork;
+}
+
+type SeatMatchLike = {
+  seatId?: string | number;
+  sectionId?: string | number;
+  rowId?: string | number;
+  sectionNumber?: string | number;
+  rowNumber?: string | number;
+  seatNumber?: string | number;
+};
+
+function normalizeSeatSection(value: string): string {
+  const text = String(value ?? "").trim();
+  if (!text) return "";
+  return text
+    .replace(/^section\s+/i, "")
+    .replace(/^sec\.?\s+/i, "")
+    .trim();
+}
+
+function seatSortValue(value: unknown) {
+  if (value == null) return "";
+  return String(value).trim();
+}
+
+/** Empty / GA parts sort last so reserved seats stay grouped. */
+function compareSeatPart(a: unknown, b: unknown) {
+  const left = seatSortValue(a);
+  const right = seatSortValue(b);
+  if (!left && !right) return 0;
+  if (!left) return 1;
+  if (!right) return -1;
+  return left.localeCompare(right, undefined, {
+    numeric: true,
+    sensitivity: "base",
+  });
+}
+
+function compareAccessPassSeats(a: AccessPassLike, b: AccessPassLike) {
+  return (
+    compareSeatPart(a.sectionNumber, b.sectionNumber) ||
+    compareSeatPart(a.rowNumber, b.rowNumber) ||
+    compareSeatPart(a.seatNumber, b.seatNumber) ||
+    compareSeatPart(a.checkInCode, b.checkInCode)
+  );
+}
+
+/** Match a season pass to a package ticket seat, mirroring backend access-pass logic. */
+export function passMatchesTicketSeat(
+  pass: SeatMatchLike | null | undefined,
+  ticket: SeatMatchLike | null | undefined,
+): boolean {
+  if (!pass || !ticket) return false;
+
+  const passSeatId = String(pass.seatId ?? "").trim();
+  const ticketSeatId = String(ticket.seatId ?? "").trim();
+  if (passSeatId && ticketSeatId) {
+    return passSeatId === ticketSeatId;
+  }
+
+  const passSectionId = String(pass.sectionId ?? "").trim();
+  const ticketSectionId = String(ticket.sectionId ?? "").trim();
+  const passRowId = String(pass.rowId ?? "").trim();
+  const ticketRowId = String(ticket.rowId ?? "").trim();
+  const passSeat = ticketSeatValue(pass) || String(pass.seatNumber ?? "").trim();
+  const ticketSeat =
+    ticketSeatValue(ticket) || String(ticket.seatNumber ?? "").trim();
+  if (
+    passSectionId &&
+    passRowId &&
+    passSeat &&
+    ticketSectionId &&
+    ticketRowId &&
+    ticketSeat
+  ) {
+    return (
+      passSectionId === ticketSectionId &&
+      passRowId === ticketRowId &&
+      passSeat === ticketSeat
+    );
+  }
+
+  if (!passSeat || !ticketSeat) return false;
+  if (passSeat !== ticketSeat) return false;
+
+  const passSection = normalizeSeatSection(ticketSectionValue(pass));
+  const ticketSection = normalizeSeatSection(ticketSectionValue(ticket));
+  if (passSection && ticketSection && passSection !== ticketSection) {
+    return false;
+  }
+
+  const passRow = ticketRowValue(pass);
+  const ticketRow = ticketRowValue(ticket);
+  if (passRow && ticketRow && passRow !== ticketRow) {
+    return false;
+  }
+
+  return true;
+}
+
+export function accessPassWalletOrderId(pass: AccessPassLike) {
   const nested =
     pass.order && typeof pass.order === "object"
       ? String(pass.order.orderId || "").trim()
       : "";
   return String(pass.orderId || "").trim() || nested || undefined;
+}
+
+/** Total games on a pass, preferring the full package schedule when available. */
+export function resolveAccessPassTotalEventCount(
+  pass?: { events?: EventLike[] } | null,
+  options: { packageEvents?: EventLike[] } = {},
+): number {
+  const packageCount = options.packageEvents?.length ?? 0;
+  const passCount = pass?.events?.length ?? 0;
+  return Math.max(packageCount, passCount);
 }
 
 export type AccessPassSummary = {
@@ -176,27 +310,34 @@ export type AccessPassSummary = {
  */
 export function buildAccessPassSummaries(
   passes: AccessPassLike[],
-  { includeInactive = false }: { includeInactive?: boolean } = {},
+  {
+    includeInactive = false,
+    packageEvents,
+  }: { includeInactive?: boolean; packageEvents?: EventLike[] } = {},
 ): AccessPassSummary[] {
-  return passes
+  return [...passes]
     .filter(
       (pass) => includeInactive || !pass.status || pass.status === "active",
     )
+    .sort(compareAccessPassSeats)
     .map((pass, index) => {
       const events = [...(pass.events ?? [])].sort((a, b) =>
         String(a.start || "").localeCompare(String(b.start || "")),
       );
+      const eventCount = resolveAccessPassTotalEventCount(pass, {
+        packageEvents,
+      });
       return {
         key: String(pass.uuid || pass.checkInCode || `access-pass-${index + 1}`),
         pass,
         accessPassUUID: String(pass.uuid || "").trim() || undefined,
-        orderId: accessPassOrderId(pass),
+        orderId: accessPassWalletOrderId(pass),
         holderEmail: String(pass.email || "").trim() || undefined,
         name: pass.name || "Access pass",
         typeLabel: pass.type === "organizer" ? "All-access pass" : "Season pass",
         checkInCode: String(pass.checkInCode || ""),
         seat: seatLabel(pass),
-        eventCount: events.length,
+        eventCount,
         attendedCount: events.filter((event) => isEventComplete(event)).length,
         season: events[0]?.start ? moment(events[0].start).format("YYYY") : "",
         status: pass.status

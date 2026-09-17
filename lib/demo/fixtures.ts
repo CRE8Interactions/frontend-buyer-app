@@ -1274,6 +1274,12 @@ export function demoPackageAccessPass(
     backgroundColor: "#8c0b42",
     fontColor: "#ffffff",
     artwork: pkg.image,
+    package: {
+      uuid: pkg.uuid,
+      name: pkg.name,
+      image: pkg.image,
+      events: pkg.events,
+    },
     events: pkg.events,
     ...overrides,
   };

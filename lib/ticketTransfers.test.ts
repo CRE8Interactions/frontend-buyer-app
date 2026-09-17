@@ -10,8 +10,15 @@ import {
 import { formatEventWhen } from "@/lib/helpers";
 import { seatLabel } from "@/lib/wallet";
 import {
+  buildPassTransferOrderSnapshot,
   buildWalletReceivedTransferRows,
   buildWalletSentTransferRows,
+  enrichPassTransfersFromAccessPasses,
+  resolveAcceptedPassTransferWalletOrderId,
+  walletOrdersIncludeAcceptedPassPackage,
+  resolvePassTransferPackageEvents,
+  resolvePassTransferPackageImage,
+  resolveTransferOrderPackage,
   enrichTransferRecordsFromOrders,
   clearLocallyResolvedIncomingTransfersForTests,
   filterIncomingTransfersAgainstReceivedHistory,
@@ -29,11 +36,13 @@ import {
   removeSentTransferRecordsForCancel,
   resolveCancelTransferId,
   resolveCancelTransferIdForApi,
+  resolveCancelTransferIdWithSentLookup,
   resolveSentTransferIdFromApi,
   resolveCreatedTransferId,
   resolveCreatedTransferMeta,
   mergeTransferRecords,
   mergeWalletReceivedTransferRecords,
+  appendLocalSentTransferStubs,
   mergeWalletSentTransferRecords,
   mergeWalletTransferRows,
   normalizeTransferRecord,
@@ -174,6 +183,346 @@ describe("ticketTransfers", () => {
 
     expect(rows[0]?.schedule).toBe(`${pkg.events.length} events`);
     expect(rows[0]?.schedule).not.toContain("–");
+  });
+
+  it("uses the full package schedule when pass events omit past games", () => {
+    const pkg = demoSeasonPackage();
+    const pass = demoPackageAccessPass();
+    const order = demoCompletedPackageOrder();
+    const upcomingEvents = pkg.events.slice(1);
+
+    const rows = buildWalletSentTransferRows(
+      [
+        {
+          id: "pass-transfer-partial-events",
+          status: "pending",
+          transferType: "access_pass",
+          accessPassId: pass.uuid,
+          access_pass: {
+            uuid: pass.uuid,
+            name: pass.name,
+            type: "package",
+            events: upcomingEvents,
+          },
+          orderId: order.orderId,
+          createdAt: "2026-09-15T18:00:00.000Z",
+        },
+      ],
+      [order],
+    );
+
+    expect(rows[0]?.schedule).toBe(`${pkg.events.length} events`);
+  });
+
+  it("builds pass transfer order snapshots with package image and full events", () => {
+    const order = demoCompletedPackageOrder();
+    const pkg = demoSeasonPackage();
+    const snapshot = buildPassTransferOrderSnapshot(order, pkg.events);
+
+    expect(snapshot?.package?.image).toEqual(order.package?.image);
+    expect(snapshot?.package?.events).toHaveLength(pkg.events.length);
+  });
+
+  it("detects when wallet orders already include the accepted pass package", () => {
+    const pass = demoPackageAccessPass();
+    const order = demoCompletedPackageOrder({ orderId: "1474-recipient-order" });
+    const transfer = {
+      id: "incoming-pass-1",
+      transferType: "access_pass",
+      orderId: "1475-sender-order",
+      order: { package: order.package },
+    };
+
+    expect(
+      walletOrdersIncludeAcceptedPassPackage([order], transfer, {
+        data: {
+          uuid: pass.uuid,
+          orderId: "1474-recipient-order",
+        },
+      }),
+    ).toBe(true);
+    expect(walletOrdersIncludeAcceptedPassPackage([], transfer)).toBe(false);
+  });
+
+  it("uses the recipient wallet order id from the accept response", () => {
+    const pass = demoPackageAccessPass();
+    const transfer = {
+      id: "incoming-pass-1",
+      transferType: "access_pass",
+      orderId: "1475-sender-order",
+    };
+
+    expect(
+      resolveAcceptedPassTransferWalletOrderId(transfer, {
+        data: {
+          uuid: pass.uuid,
+          orderId: "1474-recipient-order",
+          order: { orderId: "1474-recipient-order" },
+        },
+      }),
+    ).toBe("1474-recipient-order");
+    expect(
+      resolveAcceptedPassTransferWalletOrderId(transfer, {
+        data: { status: "claimed" },
+      }),
+    ).toBe("accepted-incoming-pass-1");
+  });
+
+  it("reads package image and events from transfer order.details.package", () => {
+    const pkg = demoSeasonPackage();
+    const packageImage = { url: "/details-package-image.jpg" };
+    const pastEvent = {
+      uuid: "evt-past-details",
+      name: "Past Game",
+      start: "2025-09-01T19:00:00.000Z",
+      venue: pkg.venue,
+    };
+    const fullEvents = [pastEvent, ...pkg.events];
+    const transfer = {
+      transferType: "access_pass",
+      accessPassSnapshot: {
+        uuid: "pass-1",
+        name: pkg.name,
+        type: "package",
+        events: pkg.events.slice(1),
+      },
+      order: {
+        details: {
+          package: {
+            name: pkg.name,
+            image: packageImage,
+            events: fullEvents,
+          },
+        },
+      },
+    };
+
+    expect(resolveTransferOrderPackage(transfer.order)?.image).toEqual(
+      packageImage,
+    );
+    expect(resolvePassTransferPackageEvents(transfer, [])).toHaveLength(
+      fullEvents.length,
+    );
+    expect(resolvePassTransferPackageImage(transfer, [])).toEqual(packageImage);
+  });
+
+  it("falls back to accessPassSnapshot artwork when order package image is missing", () => {
+    const pass = demoPackageAccessPass();
+    const artwork = { url: "/pass-artwork.jpg" };
+
+    expect(
+      resolvePassTransferPackageImage(
+        {
+          transferType: "access_pass",
+          accessPassSnapshot: {
+            uuid: pass.uuid,
+            name: pass.name,
+            type: "package",
+            artwork,
+          },
+        },
+        [],
+      ),
+    ).toEqual(artwork);
+  });
+
+  it("prefers transfer order package image over accessPassSnapshot artwork", () => {
+    const pass = demoPackageAccessPass();
+    const order = demoCompletedPackageOrder();
+    const packageImage = { url: "/package-from-transfer.jpg" };
+    const artwork = { url: "/pass-artwork.jpg" };
+
+    expect(
+      resolvePassTransferPackageImage(
+        {
+          transferType: "access_pass",
+          order: {
+            orderId: order.orderId,
+            details: {
+              package: { ...order.package, image: packageImage },
+            },
+          },
+          accessPassSnapshot: {
+            uuid: pass.uuid,
+            name: pass.name,
+            type: "package",
+            artwork,
+          },
+        },
+        [],
+      ),
+    ).toEqual(packageImage);
+  });
+
+  it("uses the full package schedule on received pass transfers without wallet orders", () => {
+    const pkg = demoSeasonPackage();
+    const pass = demoPackageAccessPass();
+    const order = demoCompletedPackageOrder();
+    const upcomingEvents = pkg.events.slice(1);
+
+    const rows = buildWalletReceivedTransferRows(
+      [
+        {
+          id: "received-pass-transfer",
+          status: "pending",
+          transferType: "access_pass",
+          accessPassId: pass.uuid,
+          fromUserEmail: "jaimeconvery@hotmail.com",
+          access_pass: {
+            uuid: pass.uuid,
+            name: pass.name,
+            type: "package",
+            events: upcomingEvents,
+          },
+          orderId: order.orderId,
+          order: {
+            orderId: order.orderId,
+            package: order.package,
+          },
+          createdAt: "2026-09-16T12:00:00.000Z",
+        },
+      ],
+      [],
+      [],
+    );
+
+    expect(rows[0]?.schedule).toBe(`${pkg.events.length} events`);
+    expect(rows[0]?.title).toBe(pass.name);
+    expect(rows[0]?.passKind).toBe("season pass");
+  });
+
+  it("merges a fuller local pass schedule over API sent transfers", () => {
+    const pkg = demoSeasonPackage();
+    const pass = demoPackageAccessPass();
+    const order = demoCompletedPackageOrder();
+    const pastEvent = {
+      uuid: "evt-nmstate-past",
+      name: "Past Home Opener",
+      start: "2025-09-01T19:00:00.000Z",
+      venue: pkg.venue,
+    };
+    const fullEvents = [pastEvent, ...pkg.events];
+    const upcomingEvents = pkg.events.slice(1);
+    const localStub = {
+      id: 8801,
+      status: "pending",
+      transferType: "access_pass",
+      accessPassId: pass.uuid,
+      access_pass: {
+        uuid: pass.uuid,
+        name: pass.name,
+        type: "package",
+        events: fullEvents,
+      },
+      orderId: order.orderId,
+      order: {
+        orderId: order.orderId,
+        package: { ...order.package, events: fullEvents },
+      },
+      createdAt: "2026-09-16T12:00:00.000Z",
+    };
+    const apiRow = {
+      ...localStub,
+      access_pass: {
+        ...localStub.access_pass,
+        events: upcomingEvents,
+      },
+      order: {
+        orderId: order.orderId,
+        package: { ...order.package, events: upcomingEvents },
+      },
+    };
+
+    const merged = mergeWalletSentTransferRecords([apiRow], [localStub]);
+    const rows = buildWalletSentTransferRows(merged, [order]);
+
+    expect(rows[0]?.schedule).toBe(`${fullEvents.length} events`);
+  });
+
+  it("enriches pass transfers with the full access-pass schedule", () => {
+    const pkg = demoSeasonPackage();
+    const pass = demoPackageAccessPass();
+    const order = demoCompletedPackageOrder();
+    const pastEvent = {
+      uuid: "evt-nmstate-past",
+      name: "Past Home Opener",
+      start: "2025-09-01T19:00:00.000Z",
+      venue: pkg.venue,
+    };
+    const fullEvents = [pastEvent, ...pkg.events];
+    const upcomingEvents = pkg.events.slice(1);
+    const transfer = {
+      id: "pass-transfer-enriched",
+      status: "pending",
+      transferType: "access_pass",
+      accessPassId: pass.uuid,
+      access_pass: {
+        uuid: pass.uuid,
+        name: pass.name,
+        type: "package",
+        events: upcomingEvents,
+      },
+      orderId: order.orderId,
+      createdAt: "2026-09-16T12:00:00.000Z",
+    };
+    const passesByOrderId = new Map([
+      [
+        String(order.orderId),
+        [{ ...pass, events: fullEvents }],
+      ],
+    ]);
+
+    const [enriched] = enrichPassTransfersFromAccessPasses(
+      [transfer],
+      passesByOrderId,
+    );
+    const rows = buildWalletSentTransferRows([enriched!], [order]);
+
+    expect(rows[0]?.schedule).toBe(`${fullEvents.length} events`);
+  });
+
+  it("uses season package totals when API order ids differ and pass events omit past games", () => {
+    const pkg = demoSeasonPackage();
+    const pass = demoPackageAccessPass();
+    const order = demoCompletedPackageOrder();
+    const upcomingEvents = pkg.events.slice(1);
+    const totalEvents = pkg.events.length + 1;
+    const packageEventCounts = new Map<string, number>([
+      [String(order.orderId), totalEvents],
+      [String(order.id), totalEvents],
+    ]);
+
+    const rows = buildWalletSentTransferRows(
+      [
+        {
+          id: "pass-transfer-numeric-order-id",
+          status: "pending",
+          transferType: "access_pass",
+          accessPassId: pass.uuid,
+          access_pass: {
+            uuid: pass.uuid,
+            name: pass.name,
+            type: "package",
+            orderId: order.orderId,
+            events: upcomingEvents,
+          },
+          orderId: order.id,
+          createdAt: "2026-09-15T18:00:00.000Z",
+        },
+      ],
+      [
+        {
+          ...order,
+          package: {
+            ...order.package,
+            events: upcomingEvents,
+          },
+        },
+      ],
+      { packageEventCounts },
+    );
+
+    expect(rows[0]?.schedule).toBe(`${totalEvents} events`);
   });
 
   it("shows pass name and event count for API access_pass transfers that include tickets", () => {
@@ -543,6 +892,39 @@ describe("ticketTransfers", () => {
     ]);
   });
 
+  it("promotes accepted season pass transfers with ambiguous API status as claimed rows", () => {
+    const pass = demoPackageAccessPass();
+    const order = demoCompletedPackageOrder();
+    const pendingIncoming = {
+      id: "incoming-pass-1",
+      status: "pending",
+      transferType: "access_pass",
+      accessPassId: pass.uuid,
+      fromUserEmail: "sender@example.com",
+      access_pass: {
+        uuid: pass.uuid,
+        name: pass.name,
+        type: "package",
+        events: demoSeasonPackage().events,
+      },
+      orderId: order.orderId,
+      createdAt: "2026-09-12T18:00:00.000Z",
+    };
+
+    const received = promoteAcceptedIncomingTransferToReceived(
+      [],
+      pendingIncoming,
+      { status: "active", transferedOn: "2026-09-13T19:21:48.735Z" },
+    );
+    const rows = filterVisibleWalletTransferRows(
+      buildWalletReceivedTransferRows(received, [], [order]),
+    );
+
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.status).toBe("claimed");
+    expect(rows[0]?.title).toBe(pass.name);
+  });
+
   it("promotes an accepted incoming transfer into received history as claimed", () => {
     const order = demoCompletedTicketOrder({ event: DEMO_EVENTS[0] });
     const [ticket] = order.tickets;
@@ -695,6 +1077,46 @@ describe("ticketTransfers", () => {
     expect(
       filterIncomingTransfersForWallet([pendingTransfer]),
     ).toEqual([]);
+  });
+
+  it("merges pending incoming season pass transfers onto the received tab", () => {
+    const pkg = demoSeasonPackage();
+    const pass = demoPackageAccessPass();
+    const order = demoCompletedPackageOrder();
+    const incomingPassTransfer = {
+      id: "incoming-pass-only",
+      status: "pending",
+      transferType: "access_pass",
+      accessPassId: pass.uuid,
+      fromUserEmail: "sender@example.com",
+      access_pass: {
+        uuid: pass.uuid,
+        name: pass.name,
+        type: "package",
+        events: pkg.events,
+        sectionNumber: pass.sectionNumber,
+        rowNumber: pass.rowNumber,
+        seatNumber: pass.seatNumber,
+      },
+      orderId: order.orderId,
+      order: {
+        orderId: order.orderId,
+        package: order.package,
+      },
+      createdAt: "2026-09-16T12:00:00.000Z",
+    };
+
+    const rows = buildWalletReceivedTransferRows(
+      [],
+      [incomingPassTransfer],
+      [order],
+    );
+
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.title).toBe(pass.name);
+    expect(rows[0]?.schedule).toBe(`${pkg.events.length} events`);
+    expect(rows[0]?.passKind).toBe("season pass");
+    expect(rows[0]?.seatLines?.[0]).toMatch(/Seat 21/);
   });
 
   it("lists pending received transfers from history only, like Blocktickets My Transfers", () => {
@@ -1053,6 +1475,52 @@ describe("ticketTransfers", () => {
     });
   });
 
+  it("resolves package event cancel ids when API ticket ids differ from composite UI ids", () => {
+    const order = demoCompletedPackageOrder();
+    const packageEvent = demoSeasonPackage().events[1];
+    const [ticket] = order.tickets.map((row) => ({
+      ...row,
+      id: `${row.id}-${packageEvent.uuid}`,
+      eventUUID: packageEvent.uuid,
+    }));
+    const compositeOptimisticId = `transfer-${ticket.id}`;
+    const optimistic = {
+      id: compositeOptimisticId,
+      status: "pending",
+      emailAddressToUser: "recipient@example.com",
+      orderId: order.orderId,
+      event: packageEvent,
+      tickets: [ticket],
+      createdAt: "2026-09-13T12:00:00.000Z",
+    };
+    const apiRecord = {
+      id: 5521,
+      status: "pending",
+      emailAddressToUser: "recipient@example.com",
+      orderId: order.id,
+      event: packageEvent,
+      tickets: [{ id: ticket.seatNumber ? 8000 + ticket.seatNumber : 8022, eventUUID: packageEvent.uuid }],
+      createdAt: "2026-09-13T12:01:00.000Z",
+    };
+    const cancelRow = {
+      id: compositeOptimisticId,
+      title: packageEvent.name,
+      seat: seatLabel(ticket),
+      seatLines: [seatLabel(ticket)],
+      on: "Just now",
+      status: "pending",
+      to: "recipient@example.com",
+    };
+
+    expect(resolveSentTransferIdFromApi(optimistic, [apiRecord])).toBe(5521);
+    expect(
+      resolveCancelTransferIdWithSentLookup(cancelRow, [optimistic], [apiRecord]),
+    ).toBe(5521);
+    expect(
+      resolveCancelTransferIdForApi(compositeOptimisticId, [optimistic], cancelRow),
+    ).toBeNull();
+  });
+
   it("reconciles optimistic sent transfer ids from the sent transfers list", () => {
     const order = demoCompletedTicketOrder();
     const [ticket] = order.tickets;
@@ -1123,6 +1591,194 @@ describe("ticketTransfers", () => {
     expect(rows[0]?.id).toBe("newer");
   });
 
+  it("dedupes optimistic sent stubs when the API row omits ticket payloads", () => {
+    const order = demoCompletedTicketOrder({ event: DEMO_EVENTS[0] });
+    const [ticket] = order.tickets;
+    const gaTicket = {
+      ...ticket,
+      id: 9101,
+      generalAdmission: true,
+      sectionName: "lower",
+      sectionNumber: "lower",
+      offerName: "General admission",
+    };
+    const event = DEMO_EVENTS[0];
+    const merged = mergeWalletSentTransferRecords(
+      [
+        {
+          id: 185,
+          status: "pending",
+          emailAddressToUser: "jaimeconvery@hotmail.com",
+          orderId: order.id,
+          event: { name: event.name, start: event.start },
+          createdAt: "2026-09-16T18:00:01.000Z",
+        },
+      ],
+      [
+        {
+          id: `transfer-${gaTicket.id}`,
+          status: "pending",
+          emailAddressToUser: "jaimeconvery@hotmail.com",
+          orderId: order.orderId,
+          event,
+          eventUUID: event.uuid,
+          tickets: [gaTicket],
+          createdAt: "2026-09-16T18:00:00.000Z",
+        },
+      ],
+    );
+    const rows = buildWalletSentTransferRows(merged, [order]);
+
+    expect(merged).toHaveLength(1);
+    expect(merged[0]?.id).toBe(185);
+    expect(merged[0]?.tickets).toEqual([gaTicket]);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.seatLines?.[0]).toMatch(/^Sec lower\b/);
+  });
+
+  it("shows seat lines on sent and received tabs when API rows omit ticket payloads", () => {
+    const order = demoCompletedTicketOrder({ event: DEMO_EVENTS[0] });
+    const [ticket] = order.tickets;
+    const ticketlessTransfer = {
+      id: "received-ticketless-1",
+      status: "pending",
+      fromUserEmail: "sender@example.com",
+      emailAddressToUser: "recipient@example.com",
+      orderId: order.orderId,
+      event: order.event,
+      eventUUID: order.event?.uuid,
+      tickets: [{ id: ticket.id }],
+      order: {
+        orderId: order.orderId,
+        tickets: [ticket],
+      },
+      createdAt: "2026-09-16T18:00:00.000Z",
+    };
+    const incomingWithTickets = {
+      ...ticketlessTransfer,
+      tickets: [ticket],
+    };
+
+    const sentRows = buildWalletSentTransferRows(
+      [ticketlessTransfer],
+      [order],
+    );
+    const receivedRows = buildWalletReceivedTransferRows(
+      [ticketlessTransfer],
+      [incomingWithTickets],
+      [],
+    );
+
+    expect(sentRows[0]?.seatLines?.[0]).toBe(seatLabel(ticket));
+    expect(receivedRows[0]?.seatLines?.[0]).toBe(seatLabel(ticket));
+  });
+
+  it("keeps package game transfers on ticket seat copy instead of generic Tickets", () => {
+    const order = demoCompletedPackageOrder();
+    const pass = demoPackageAccessPass();
+    const packageEvent = demoSeasonPackage().events[1];
+    const [ticket] = order.tickets.map((row) => ({
+      ...row,
+      eventUUID: packageEvent.uuid,
+    }));
+    const packageGameTransfer = {
+      id: "package-game-transfer-seat",
+      status: "pending",
+      fromUserEmail: "sender@example.com",
+      emailAddressToUser: "recipient@example.com",
+      orderId: order.orderId,
+      event: packageEvent,
+      eventUUID: packageEvent.uuid,
+      accessPassId: pass.uuid,
+      access_pass: {
+        uuid: pass.uuid,
+        name: pass.name,
+        type: "package",
+        sectionNumber: ticket.sectionNumber,
+        rowNumber: ticket.rowNumber,
+        seatNumber: ticket.seatNumber,
+      },
+      createdAt: "2026-09-16T18:00:00.000Z",
+    };
+
+    const rows = buildWalletReceivedTransferRows(
+      [packageGameTransfer],
+      [],
+      [order],
+    );
+
+    expect(rows[0]?.title).toBe(packageEvent.name);
+    expect(rows[0]?.seatLines?.[0]).toBe(seatLabel(ticket));
+    expect(rows[0]?.passKind).toBeUndefined();
+  });
+
+  it("shows seat lines on claimed received transfers when API omits tickets but wallet has the event", () => {
+    const order = demoCompletedTicketOrder({ event: DEMO_EVENTS[0] });
+    const [ticket] = order.tickets;
+    const recipientOrder = {
+      ...order,
+      id: 99901,
+      orderId: "recipient-order-1",
+      tickets: [
+        {
+          ...ticket,
+          id: 88001,
+          eventUUID: order.event?.uuid,
+        },
+      ],
+    };
+    const claimedTransfer = {
+      id: "claimed-received-1",
+      status: "claimed",
+      transferedOn: "2026-09-15T18:00:00.000Z",
+      fromUserEmail: "sender@example.com",
+      emailAddressToUser: "recipient@example.com",
+      orderId: "sender-order-99",
+      event: order.event,
+      eventUUID: order.event?.uuid,
+      createdAt: "2026-09-14T18:00:00.000Z",
+    };
+
+    const rows = buildWalletReceivedTransferRows(
+      [claimedTransfer],
+      [],
+      [recipientOrder],
+    );
+
+    expect(rows[0]?.status).toBe("claimed");
+    expect(rows[0]?.seatLines?.[0]).toBe(seatLabel(recipientOrder.tickets[0]!));
+  });
+
+  it("keeps richer local ticket payloads when API claimed rows drop seat fields", () => {
+    const order = demoCompletedTicketOrder({ event: DEMO_EVENTS[0] });
+    const [ticket] = order.tickets;
+    const localClaimed = {
+      id: "incoming-1",
+      status: "claimed",
+      transferedOn: "2026-09-13T19:21:48.735Z",
+      fromUserEmail: "sender@example.com",
+      event: order.event,
+      tickets: [ticket],
+      createdAt: "2026-09-12T19:20:19.451Z",
+    };
+    const apiClaimed = {
+      id: "incoming-1",
+      status: "claimed",
+      transferedOn: "2026-09-13T19:21:48.735Z",
+      fromUserEmail: "sender@example.com",
+      event: order.event,
+      createdAt: "2026-09-12T19:20:19.451Z",
+    };
+
+    const merged = mergeWalletReceivedTransferRecords(
+      [apiClaimed],
+      [localClaimed],
+    );
+    const rows = buildWalletReceivedTransferRows(merged, [], [order]);
+
+    expect(rows[0]?.seatLines?.[0]).toBe(seatLabel(ticket));
+  });
+
   it("dedupes optimistic and API sent rows when wallet and API order ids differ", () => {
     const order = demoCompletedTicketOrder();
     const [ticket] = order.tickets;
@@ -1151,6 +1807,49 @@ describe("ticketTransfers", () => {
 
     expect(merged).toHaveLength(1);
     expect(merged[0]?.id).toBe(901);
+  });
+
+  it("appends a new local sent stub without dropping existing sent transfers", () => {
+    const order = demoCompletedTicketOrder();
+    const [firstTicket, secondTicket] = order.tickets;
+    const existingSent = [
+      {
+        id: 901,
+        status: "accepted",
+        orderId: order.orderId,
+        emailAddressToUser: "first@example.com",
+        tickets: [firstTicket],
+        createdAt: "2026-09-12T12:00:00.000Z",
+      },
+      {
+        id: 902,
+        status: "pending",
+        orderId: order.orderId,
+        emailAddressToUser: "second@example.com",
+        tickets: [secondTicket],
+        createdAt: "2026-09-13T12:00:00.000Z",
+      },
+    ];
+    const newStub = {
+      id: "access-pass-transfer-pass-uuid",
+      status: "pending",
+      transferType: "access_pass",
+      accessPassId: "pass-uuid",
+      emailAddressToUser: "third@example.com",
+      createdAt: "2026-09-16T12:00:00.000Z",
+      access_pass: {
+        uuid: "pass-uuid",
+        name: "Season pass",
+        type: "package",
+      },
+    };
+
+    const merged = appendLocalSentTransferStubs(existingSent, [newStub]);
+
+    expect(merged).toHaveLength(3);
+    expect(merged.map((row) => String(row.id))).toEqual(
+      expect.arrayContaining(["901", "902", "access-pass-transfer-pass-uuid"]),
+    );
   });
 
   it("drops locally pending sent rows when the API already cancelled that ticket", () => {

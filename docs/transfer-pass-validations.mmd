@@ -1,10 +1,12 @@
 %% Pass transfer — access pass or season pass
 
-%% Source: components/organisms/SeasonTickets.tsx, lib/submitEmailValidation.ts, lib/fieldValidation.ts
+%% Source: components/organisms/SeasonTickets.tsx, lib/submitEmailValidation.ts, lib/fieldValidation.ts, lib/acceptTransferErrors.ts
 
 %% API:    blocktickets/tickets/src/api/registration/controllers/registration.js (validateEmail)
 
-%%         blocktickets/tickets/src/api/ticket-transfer/controllers/ticket-transfer.js (create, accessPassId)
+%%         blocktickets/tickets/src/api/ticket-transfer/controllers/ticket-transfer.js (create, accessPassId, acceptTransfer)
+
+%%         lib/api.ts — acceptIncomingTransfers → POST /ticket-transfers/accept
 
 %%
 
@@ -83,6 +85,30 @@
 %% | 400 | This season pass cannot be transferred because one or more included game tickets are unavailable | This season pass can't be transferred because one or more included game tickets have already been transferred. |
 
 %% | 402 | Cannot transfer tickets that have already been scanned | These tickets have already been scanned and can't be transferred. |
+
+%%
+
+%% --- POST /ticket-transfers/accept (acceptIncomingTransfers) — shared (access pass and season pass) ---
+
+%% Request body: { transferId }
+
+%% Response shape: 226 → { error: { message } } | 200 → success body
+
+%% 226 is HTTP IM Used (2xx), so axios resolves it; parseAcceptTransferApiResponse treats it as already claimed, not success.
+
+%% Modal: acceptIncomingTransfers runs while confirm accept popup is open; dismiss + toast only on 200 success.
+
+%%
+
+%% | Status | API message | Displayed copy |
+
+%% | 200 | (success) | Close popup + "Transfer accepted" toast |
+
+%% | 226 | Transfer has already been claimed | Transfer has already been claimed (popup stays open; drop pending transfer locally) |
+
+%% | 400 / 402 / other 4xx | (any other) | Could not accept transfer. Please try again. |
+
+%% | 500 / other | (any other) | We're experiencing technical difficulties. Please try again later. |
 
 
 
@@ -193,3 +219,29 @@ flowchart TD
   blurValidate -.-> blurClientChecks
 
   validate -.-> validateSubmittedEmail
+
+
+
+flowchart TD
+
+  acceptOpen[Accept transfer — confirm popup open] --> acceptClick[Accept transfer button]
+
+  acceptClick --> acceptApi[POST /ticket-transfers/accept acceptIncomingTransfers]
+
+  acceptApi --> acceptParse{API response?}
+
+  acceptParse -->|200| acceptSuccess[Close popup + Transfer accepted toast]
+
+  acceptParse -->|226| acceptClaimed["Transfer has already been claimed"]
+
+  acceptParse -->|4xx other| accept4xx["Could not accept transfer. Please try again."]
+
+  acceptParse -->|500 / other| acceptNetwork["We're experiencing technical difficulties. Please try again later."]
+
+  acceptClaimed --> acceptShowError[Show error in popup — modal stays open]
+
+  accept4xx --> acceptShowError
+
+  acceptNetwork --> acceptShowError
+
+  acceptClaimed --> acceptDropPending[Drop pending transfer locally]

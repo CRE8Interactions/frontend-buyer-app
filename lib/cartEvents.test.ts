@@ -19,7 +19,10 @@ import {
   buildSeasonPackageEventDetails,
   buildSeasonPackageSummaries,
   buildWalletEventDetails,
+  formatPackageRemainingTicketsLabel,
   resolvePackagePurchasedSeatCount,
+  resolvePackageRemainingSeatCount,
+  resolvePackageTransferredSeatCount,
   countFlexPacks,
   countSeasonPackages,
   formatCartOrderTotal,
@@ -33,10 +36,13 @@ import {
   markTicketsPendingTransferInDetails,
   mergePendingTransferWalletDetails,
   packageOrderHasTicketTransfers,
+  seasonPassHasTicketTransfers,
   removeTicketsFromWalletDetails,
   removeTicketsFromWalletOrders,
   mergeWalletOrdersPreservingLocalTickets,
   applyAcceptedIncomingTransferToOrders,
+  applyAcceptedIncomingPassTransferToOrders,
+  ticketIdsForPassSeat,
   isSyntheticAcceptWalletOrder,
   restoreCancelledTransferTicketsToOrders,
   reconcilePendingReceivedTransfers,
@@ -45,6 +51,7 @@ import {
   walletEventAvailabilityBadge,
   sortWalletEventSchedule,
   sortWalletUpcomingEvents,
+  summarizeIncomingPassPackageTransfers,
   summarizeUpcomingWalletEvents,
   ticketEntryLine,
   summarizeCartEvents,
@@ -375,7 +382,7 @@ describe("wallet season-package orders", () => {
     );
   });
 
-  it("keeps package ticket count after pass transfer clears order tickets", () => {
+  it("shows remaining package tickets after a pass transfer clears order tickets", () => {
     const order = demoCompletedPackageOrder();
     const pass = demoPackageAccessPass();
     const strippedOrder = { ...order, tickets: [] as typeof order.tickets };
@@ -400,18 +407,193 @@ describe("wallet season-package orders", () => {
       resolvePackagePurchasedSeatCount(strippedOrder, [passTransfer]),
     ).toBe(2);
     expect(
+      resolvePackageTransferredSeatCount(strippedOrder, [passTransfer]),
+    ).toBe(1);
+    expect(
+      resolvePackageRemainingSeatCount(strippedOrder, [passTransfer]),
+    ).toBe(1);
+    expect(
       buildSeasonPackageSummaries([strippedOrder], [passTransfer])[0]
         ?.ticketCount,
+    ).toBe(1);
+    expect(
+      buildSeasonPackageSummaries([strippedOrder], [passTransfer])[0]
+        ?.purchasedTicketCount,
     ).toBe(2);
   });
 
-  it("never lowers package ticket count after seats leave the wallet", () => {
+  it("collects ticket ids for a single pass seat across the package order", () => {
+    const order = demoCompletedPackageOrder();
+    const pass = demoPackageAccessPass({ seatNumber: 21 });
+    const seat21Tickets = order.tickets.filter(
+      (ticket) => ticket.seatNumber === 21,
+    );
+
+    expect(ticketIdsForPassSeat(order, pass)).toEqual(
+      seat21Tickets.map((ticket) => ticket.id),
+    );
+    expect(ticketIdsForPassSeat(order, pass)).not.toEqual(
+      order.tickets.map((ticket) => ticket.id),
+    );
+  });
+
+  it("appends a synthetic package order when accepting an incoming season pass", () => {
+    const seasonPackage = demoSeasonPackage();
+    const pass = demoPackageAccessPass();
+    const order = demoCompletedPackageOrder();
+    const incoming = {
+      id: "incoming-pass-accept",
+      status: "pending",
+      transferType: "access_pass",
+      accessPassId: pass.uuid,
+      access_pass: {
+        uuid: pass.uuid,
+        name: pass.name,
+        type: "package",
+        events: seasonPackage.events.slice(1),
+      },
+      orderId: order.orderId,
+      order: {
+        orderId: order.orderId,
+        package: order.package,
+      },
+    };
+
+    const nextOrders = applyAcceptedIncomingPassTransferToOrders(
+      [],
+      incoming,
+      "recipient@example.com",
+    );
+
+    expect(nextOrders).toHaveLength(1);
+    expect(nextOrders[0]?.orderId).toBe("accepted-incoming-pass-accept");
+    expect(nextOrders[0]?.package?.events?.length).toBe(
+      seasonPackage.events.length,
+    );
+    expect(isSyntheticAcceptWalletOrder(nextOrders[0])).toBe(true);
+
+    const recipientOrderId = "1474-incoming-pass-accept-recipient";
+    const withResponse = applyAcceptedIncomingPassTransferToOrders(
+      [],
+      incoming,
+      "recipient@example.com",
+      {
+        data: {
+          uuid: pass.uuid,
+          type: "package",
+          orderId: recipientOrderId,
+          order: { orderId: recipientOrderId },
+        },
+      },
+    );
+    expect(withResponse[0]?.orderId).toBe(recipientOrderId);
+    expect(isSyntheticAcceptWalletOrder(withResponse[0])).toBe(false);
+  });
+
+  it("keeps purchased package ticket count when seats leave without a pass transfer", () => {
     const order = demoCompletedPackageOrder();
     const previous = buildSeasonPackageSummaries([order]);
     const strippedOrder = { ...order, tickets: [] as typeof order.tickets };
 
     expect(
+      buildSeasonPackageSummaries([strippedOrder], [], previous)[0]
+        ?.purchasedTicketCount,
+    ).toBe(2);
+    expect(
       buildSeasonPackageSummaries([strippedOrder], [], previous)[0]?.ticketCount,
+    ).toBe(2);
+  });
+
+  it("marks a package fully transferred when every seat was sent with a pass", () => {
+    const order = demoCompletedPackageOrder();
+    const [seat21, seat22] = order.tickets;
+    const pass21 = demoPackageAccessPass({
+      uuid: "access-pass-seat-21",
+      seatNumber: seat21.seatNumber,
+    });
+    const pass22 = demoPackageAccessPass({
+      uuid: "access-pass-seat-22",
+      seatNumber: seat22.seatNumber,
+    });
+    const strippedOrder = { ...order, tickets: [] as typeof order.tickets };
+    const sentTransfers = [
+      {
+        id: "season-pass-transfer-21",
+        status: "pending",
+        orderId: order.orderId,
+        transferType: "access_pass",
+        accessPassId: pass21.uuid,
+        access_pass: {
+          uuid: pass21.uuid,
+          name: pass21.name,
+          type: "package",
+          sectionNumber: seat21.sectionNumber,
+          rowNumber: seat21.rowNumber,
+          seatNumber: seat21.seatNumber,
+        },
+      },
+      {
+        id: "season-pass-transfer-22",
+        status: "claimed",
+        orderId: order.orderId,
+        transferType: "access_pass",
+        accessPassId: pass22.uuid,
+        access_pass: {
+          uuid: pass22.uuid,
+          name: pass22.name,
+          type: "package",
+          sectionNumber: seat22.sectionNumber,
+          rowNumber: seat22.rowNumber,
+          seatNumber: seat22.seatNumber,
+        },
+      },
+    ];
+    const summary = buildSeasonPackageSummaries(
+      [strippedOrder],
+      sentTransfers,
+    )[0];
+
+    expect(summary?.ticketCount).toBe(0);
+    expect(summary?.purchasedTicketCount).toBe(2);
+    expect(summary?.fullyTransferred).toBe(true);
+    expect(
+      formatPackageRemainingTicketsLabel(
+        summary?.ticketCount ?? 0,
+        summary?.fullyTransferred ?? false,
+      ),
+    ).toBe("Fully Transferred");
+  });
+
+  it("does not lower package ticket count for a pending package game transfer", () => {
+    const order = demoCompletedPackageOrder();
+    const activeEvent = pkg.events[1];
+    const [seat21, seat22] = order.tickets;
+    const transferredTicket = {
+      ...seat22,
+      id: `${seat22.id}-${activeEvent.uuid}`,
+      eventUUID: activeEvent.uuid,
+    };
+    const sentTransfers = [
+      {
+        status: "pending",
+        orderId: order.id,
+        tickets: [transferredTicket],
+        access_pass: {
+          uuid: "access-pass-seat-22",
+          name: "NMS Football Season Seats",
+          type: "package",
+          sectionNumber: seat22.sectionNumber,
+          rowNumber: seat22.rowNumber,
+          seatNumber: seat22.seatNumber,
+        },
+      },
+    ];
+
+    expect(
+      resolvePackageTransferredSeatCount(order, sentTransfers),
+    ).toBe(0);
+    expect(
+      buildSeasonPackageSummaries([order], sentTransfers)[0]?.ticketCount,
     ).toBe(2);
   });
 
@@ -847,6 +1029,161 @@ describe("wallet season-package orders", () => {
     expect(wallet.upcomingEvents[0]?.pendingIncomingTransfer).toBe(true);
     expect(wallet.upcomingEvents[0]?.incomingTransferFrom).toBe(
       "m.rivera@example.com",
+    );
+  });
+
+  it("shows pending incoming season pass transfers as pass rows, not single events", () => {
+    const pass = demoPackageAccessPass();
+    const order = demoCompletedPackageOrder();
+    const activeEvent = pkg.events[1];
+    const [ticket] = order.tickets;
+    const passName = "Section 101 · Row A · Seat 12";
+    const packageName = "NMS Football Season Seats - Pricing Level C";
+
+    const wallet = buildWalletEventDetails([order], "recipient@example.com", {
+      incomingTransfers: [
+        {
+          id: "incoming-pass-1",
+          status: "pending",
+          fromUserEmail: "jaimeconvery@hotmail.com",
+          transferType: "access_pass",
+          accessPassId: pass.uuid,
+          access_pass: {
+            uuid: pass.uuid,
+            name: passName,
+            type: "package",
+            events: pkg.events.slice(1),
+            sectionNumber: pass.sectionNumber,
+            rowNumber: pass.rowNumber,
+            seatNumber: pass.seatNumber,
+          },
+          orderId: order.orderId,
+          order: {
+            orderId: order.orderId,
+            package: { ...order.package, name: packageName },
+          },
+          event: activeEvent,
+          tickets: [ticket],
+        },
+      ],
+    });
+
+    const incomingPackages = summarizeIncomingPassPackageTransfers(
+      wallet.allDetails,
+    );
+
+    expect(wallet.upcomingEvents).toHaveLength(0);
+    expect(incomingPackages).toHaveLength(1);
+    expect(incomingPackages[0]?.name).toBe(passName);
+    expect(incomingPackages[0]?.name).not.toBe(packageName);
+    expect(incomingPackages[0]?.name).not.toBe(activeEvent.name);
+    expect(incomingPackages[0]?.incomingPassTransfer).toBe(true);
+    expect(incomingPackages[0]?.passKind).toBe("season pass");
+    expect(incomingPackages[0]?.passEventCount).toBe(pkg.events.length);
+    expect(incomingPackages[0]?.passTicketCount).toBe(1);
+    expect(incomingPackages[0]?.ticketCount).toBe(1);
+  });
+
+  it("shows full incoming season pass event counts from access pass schedules when past games are omitted", () => {
+    const pass = demoPackageAccessPass();
+    const order = demoCompletedPackageOrder();
+    const pastEvent = {
+      uuid: "evt-nmstate-past-incoming",
+      name: "Past Home Opener",
+      start: "2025-09-01T19:00:00.000Z",
+      venue: pkg.venue,
+    };
+    const fullEvents = [pastEvent, ...pkg.events];
+    const upcomingEvents = pkg.events.slice(1);
+    const accessPassesByOrderId = new Map([
+      [String(order.orderId), [{ ...pass, events: fullEvents }]],
+    ]);
+
+    const wallet = buildWalletEventDetails([], "recipient@example.com", {
+      incomingTransfers: [
+        {
+          id: "incoming-pass-empty-wallet",
+          status: "pending",
+          fromUserEmail: "jaimeconvery@hotmail.com",
+          transferType: "access_pass",
+          accessPassId: pass.uuid,
+          access_pass: {
+            uuid: pass.uuid,
+            name: pass.name,
+            type: "package",
+            events: upcomingEvents,
+            sectionNumber: pass.sectionNumber,
+            rowNumber: pass.rowNumber,
+            seatNumber: pass.seatNumber,
+          },
+          orderId: order.orderId,
+        },
+      ],
+      accessPassesByOrderId,
+    });
+
+    const incomingPackages = summarizeIncomingPassPackageTransfers(
+      wallet.allDetails,
+    );
+
+    expect(incomingPackages).toHaveLength(1);
+    expect(incomingPackages[0]?.passEventCount).toBe(fullEvents.length);
+  });
+
+  it("uses order.details.package for incoming pass image and total event count", () => {
+    const pass = demoPackageAccessPass();
+    const packageImage = { url: "/details-package-image.jpg" };
+    const pastEvent = {
+      uuid: "evt-nmstate-past-details",
+      name: "Past Home Opener",
+      start: "2025-09-01T19:00:00.000Z",
+      venue: pkg.venue,
+    };
+    const fullEvents = [pastEvent, ...pkg.events];
+
+    const wallet = buildWalletEventDetails([], "recipient@example.com", {
+      incomingTransfers: [
+        {
+          id: "incoming-pass-image",
+          status: "pending",
+          fromUserEmail: "jaimeconvery@hotmail.com",
+          transferType: "access_pass",
+          accessPassId: pass.uuid,
+          accessPassSnapshot: {
+            uuid: pass.uuid,
+            name: pass.name,
+            type: "package",
+            events: pkg.events.slice(1),
+          },
+          orderId: pass.orderId,
+          order: {
+            orderId: pass.orderId,
+            details: {
+              package: {
+                name: pkg.name,
+                image: packageImage,
+                events: fullEvents,
+                venue: pkg.venue,
+                organization: pkg.organization,
+              },
+            },
+          },
+        },
+      ],
+    });
+
+    const incomingPackages = summarizeIncomingPassPackageTransfers(
+      wallet.allDetails,
+    );
+    const detailKey = Object.keys(wallet.allDetails).find((key) =>
+      key.startsWith("incoming:pass:"),
+    );
+
+    expect(incomingPackages).toHaveLength(1);
+    expect(incomingPackages[0]?.passEventCount).toBe(fullEvents.length);
+    expect(incomingPackages[0]?.thumb).toContain("details-package-image.jpg");
+    expect(wallet.allDetails[detailKey!]?.heroImage).toContain(
+      "details-package-image.jpg",
     );
   });
 
@@ -1892,6 +2229,213 @@ describe("wallet season-package orders", () => {
         ],
         String(order.orderId),
       ),
+    ).toBe(true);
+  });
+
+  it("blocks only the season pass whose seat had a game ticket transferred", () => {
+    const order = demoCompletedPackageOrder();
+    const activeEvent = pkg.events[1];
+    const [seat21, seat22] = order.tickets;
+    const pass21 = demoPackageAccessPass({
+      uuid: "access-pass-seat-21",
+      seatNumber: seat21.seatNumber,
+    });
+    const pass22 = demoPackageAccessPass({
+      uuid: "access-pass-seat-22",
+      seatNumber: seat22.seatNumber,
+    });
+    const transferredTicket = {
+      ...seat22,
+      id: `${seat22.id}-${activeEvent.uuid}`,
+      eventUUID: activeEvent.uuid,
+      transferStatus: "transferred",
+    };
+    const packageOrder = demoCompletedPackageOrder({
+      tickets: [
+        { ...seat21, id: `${seat21.id}-${activeEvent.uuid}`, eventUUID: activeEvent.uuid },
+        transferredTicket,
+      ],
+    });
+    const sentTransfers = [
+      {
+        status: "pending",
+        orderId: order.orderId,
+        tickets: [transferredTicket],
+      },
+    ];
+
+    expect(
+      seasonPassHasTicketTransfers(pass21, {
+        orderId: String(order.orderId),
+        sentTransfers,
+        orders: [packageOrder],
+      }),
+    ).toBe(false);
+    expect(
+      seasonPassHasTicketTransfers(pass22, {
+        orderId: String(order.orderId),
+        sentTransfers,
+        orders: [packageOrder],
+      }),
+    ).toBe(true);
+  });
+
+  it("blocks season passes when package games show transferred in event details", () => {
+    const order = demoCompletedPackageOrder();
+    const [seat21, seat22] = order.tickets;
+    const pass21 = demoPackageAccessPass({
+      uuid: "access-pass-seat-21",
+      seatNumber: seat21.seatNumber,
+    });
+    const pass22 = demoPackageAccessPass({
+      uuid: "access-pass-seat-22",
+      seatNumber: seat22.seatNumber,
+    });
+    const transferredEvents = [pkg.events[1], pkg.events[4]];
+    const retainedEvents = pkg.events.filter(
+      (event) =>
+        !transferredEvents.some(
+          (transferred) => transferred.uuid === event.uuid,
+        ),
+    );
+    const tickets = retainedEvents.flatMap((event) =>
+      order.tickets.map((ticket) => ({
+        ...ticket,
+        id: `${ticket.id}-${event.uuid}`,
+        eventUUID: event.uuid,
+      })),
+    );
+    const eventDetails = buildWalletEventDetails([
+      demoCompletedPackageOrder({
+        package: { ...order.package, events: pkg.events },
+        tickets,
+      }),
+    ]).allDetails;
+
+    expect(
+      seasonPassHasTicketTransfers(pass21, {
+        orderId: String(order.orderId),
+        orders: [],
+        eventDetails,
+      }),
+    ).toBe(true);
+    expect(
+      seasonPassHasTicketTransfers(pass22, {
+        orderId: String(order.orderId),
+        orders: [],
+        eventDetails,
+      }),
+    ).toBe(true);
+  });
+
+  it("blocks a season pass from ticketless sent transfers matched by eventUUID", () => {
+    const order = demoCompletedPackageOrder();
+    const [seat21, seat22] = order.tickets;
+    const pass21 = demoPackageAccessPass({
+      uuid: "access-pass-seat-21",
+      seatNumber: seat21.seatNumber,
+    });
+    const pass22 = demoPackageAccessPass({
+      uuid: "access-pass-seat-22",
+      seatNumber: seat22.seatNumber,
+    });
+    const transferredEvent = pkg.events[4];
+    const packageOrder = demoCompletedPackageOrder({
+      tickets: order.tickets
+        .filter((ticket) => ticket.seatNumber !== seat22.seatNumber)
+        .map((ticket) => ({
+          ...ticket,
+          id: `${ticket.id}-${transferredEvent.uuid}`,
+          eventUUID: transferredEvent.uuid,
+        })),
+    });
+    const sentTransfers = [
+      {
+        status: "pending",
+        orderId: order.orderId,
+        eventUUID: transferredEvent.uuid,
+      },
+    ];
+
+    expect(
+      seasonPassHasTicketTransfers(pass21, {
+        orderId: String(order.orderId),
+        sentTransfers,
+        orders: [packageOrder],
+      }),
+    ).toBe(false);
+    expect(
+      seasonPassHasTicketTransfers(pass22, {
+        orderId: String(order.orderId),
+        sentTransfers,
+        orders: [packageOrder],
+      }),
+    ).toBe(true);
+  });
+
+  it("blocks a pending package ticket transfer when API uses order record id and linked access pass", () => {
+    const order = demoCompletedPackageOrder();
+    const activeEvent = pkg.events[1];
+    const [seat21, seat22] = order.tickets;
+    const pass21 = demoPackageAccessPass({
+      uuid: "access-pass-seat-21",
+      seatNumber: seat21.seatNumber,
+    });
+    const pass22 = demoPackageAccessPass({
+      uuid: "access-pass-seat-22",
+      sectionNumber: seat22.sectionNumber,
+      rowNumber: seat22.rowNumber,
+      seatNumber: seat22.seatNumber,
+    });
+    const transferredTicket = {
+      id: `${seat22.id}-${activeEvent.uuid}`,
+      eventUUID: activeEvent.uuid,
+    };
+    const packageOrder = demoCompletedPackageOrder({
+      tickets: [
+        {
+          ...seat21,
+          id: `${seat21.id}-${activeEvent.uuid}`,
+          eventUUID: activeEvent.uuid,
+        },
+      ],
+      originalTickets: [
+        {
+          ...seat22,
+          id: `${seat22.id}-${activeEvent.uuid}`,
+          eventUUID: activeEvent.uuid,
+        },
+      ],
+    });
+    const sentTransfers = [
+      {
+        status: "pending",
+        orderId: order.id,
+        tickets: [transferredTicket],
+        access_pass: {
+          uuid: pass22.uuid,
+          name: pass22.name,
+          type: "package",
+          sectionNumber: seat22.sectionNumber,
+          rowNumber: seat22.rowNumber,
+          seatNumber: seat22.seatNumber,
+        },
+      },
+    ];
+
+    expect(
+      seasonPassHasTicketTransfers(pass21, {
+        orderId: String(order.orderId),
+        sentTransfers,
+        orders: [packageOrder],
+      }),
+    ).toBe(false);
+    expect(
+      seasonPassHasTicketTransfers(pass22, {
+        orderId: String(order.orderId),
+        sentTransfers,
+        orders: [packageOrder],
+      }),
     ).toBe(true);
   });
 

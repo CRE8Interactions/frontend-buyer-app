@@ -1,11 +1,13 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   buildAccessPassSummaries,
+  resolveAccessPassTotalEventCount,
   formatPassDateRange,
   formatSeatNumberRanges,
   formatTicketHolderName,
   gaTicketSeatLine,
   groupedWalletSeatLines,
+  passMatchesTicketSeat,
   isScannedTicket,
   seatLabel,
   transferGroupLabel,
@@ -20,7 +22,11 @@ import {
   unwrapOrder,
   type AccessPassLike,
 } from "@/lib/wallet";
-import { demoAccessPass, demoPackageAccessPass } from "@/lib/demo/fixtures";
+import {
+  demoAccessPass,
+  demoPackageAccessPass,
+  demoSeasonPackage,
+} from "@/lib/demo/fixtures";
 
 describe("unwrapOrder", () => {
   it("reads the order whether it comes bare, wrapped, or in a list", () => {
@@ -61,6 +67,38 @@ describe("buildAccessPassSummaries", () => {
     expect(
       buildAccessPassSummaries([revoked], { includeInactive: true })[0].status,
     ).toBe("Revoked");
+  });
+
+  it("sorts season passes by seat number in ascending order", () => {
+    const passSeat10 = demoPackageAccessPass({
+      uuid: "pass-seat-10",
+      checkInCode: "PASS10",
+      seatNumber: 10,
+    }) as AccessPassLike;
+    const passSeat7 = demoPackageAccessPass({
+      uuid: "pass-seat-7",
+      checkInCode: "PASS7",
+      seatNumber: 7,
+    }) as AccessPassLike;
+
+    const rows = buildAccessPassSummaries([passSeat10, passSeat7]);
+
+    expect(rows.map((row) => row.pass.seatNumber)).toEqual([7, 10]);
+  });
+
+  it("uses the full package schedule when pass events omit past games", () => {
+    const pkg = demoSeasonPackage();
+    const pass = demoPackageAccessPass({
+      events: pkg.events.slice(1),
+    }) as AccessPassLike;
+
+    expect(
+      resolveAccessPassTotalEventCount(pass, { packageEvents: pkg.events }),
+    ).toBe(pkg.events.length);
+    expect(
+      buildAccessPassSummaries([pass], { packageEvents: pkg.events })[0]
+        .eventCount,
+    ).toBe(pkg.events.length);
   });
 });
 
@@ -118,6 +156,45 @@ describe("formatSeatNumberRanges", () => {
 
   it("returns a single seat number", () => {
     expect(formatSeatNumberRanges([6])).toBe("6");
+  });
+});
+
+describe("passMatchesTicketSeat", () => {
+  it("matches by section, row, and seat number", () => {
+    const pass = {
+      sectionNumber: "F",
+      rowNumber: 17,
+      seatNumber: 7,
+    };
+    expect(
+      passMatchesTicketSeat(pass, {
+        sectionNumber: "F",
+        rowNumber: 17,
+        seatNumber: 7,
+      }),
+    ).toBe(true);
+    expect(
+      passMatchesTicketSeat(pass, {
+        sectionNumber: "F",
+        rowNumber: 17,
+        seatNumber: 8,
+      }),
+    ).toBe(false);
+  });
+
+  it("matches section aliases and sectionName fields", () => {
+    const pass = {
+      sectionNumber: "E",
+      rowNumber: 23,
+      seatNumber: 7,
+    };
+    expect(
+      passMatchesTicketSeat(pass, {
+        sectionName: "Section E",
+        rowNumber: 23,
+        seatNumber: 7,
+      }),
+    ).toBe(true);
   });
 });
 

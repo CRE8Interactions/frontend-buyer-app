@@ -101,8 +101,15 @@ type DemoSentTransfer = {
   createdAt?: string;
   event?: DemoWalletOrder["event"];
   tickets?: DemoWalletOrder["tickets"];
+  order?: {
+    id?: string | number;
+    orderId?: string | number;
+    details?: { package?: DemoWalletOrder["package"] };
+    package?: DemoWalletOrder["package"];
+  };
   accessPassId?: string;
   transferType?: string;
+  accessPassSnapshot?: DemoSentTransfer["access_pass"];
   access_pass?: {
     uuid?: string;
     name?: string;
@@ -110,12 +117,39 @@ type DemoSentTransfer = {
     start?: string;
     end?: string;
     events?: DemoWalletOrder["event"][];
+    artwork?: unknown;
     sectionNumber?: string | number;
     rowNumber?: string | number;
     seatNumber?: string | number;
     generalAdmission?: boolean;
   };
 };
+
+function demoTransferOrderSnapshot(
+  order: DemoWalletOrder | undefined,
+  packageEvents?: DemoWalletOrder["event"][],
+) {
+  const pkg = order?.package ?? demoSeasonPackage();
+  const events = packageEvents?.length ? packageEvents : (pkg.events ?? []);
+  const packageSnapshot = {
+    ...pkg,
+    events,
+  };
+  return {
+    orderId: order?.orderId ?? order?.id,
+    id: order?.id,
+    details: {
+      package: packageSnapshot,
+    },
+    package: {
+      name: packageSnapshot.name,
+      image: packageSnapshot.image,
+      events: events.map((event, index) => ({
+        id: event.uuid ?? index + 1,
+      })),
+    },
+  };
+}
 
 function initialWalletOrders(): DemoWalletOrder[] {
   return [
@@ -462,6 +496,49 @@ const routes: Route[] = [
           });
           walletOrders().unshift(recipientOrder);
         }
+        if (
+          claimedTransfer.transferType === "access_pass" &&
+          claimedTransfer.accessPassId
+        ) {
+          const passSnapshot =
+            claimedTransfer.access_pass ??
+            claimedTransfer.accessPassSnapshot ??
+            demoPackageAccessPass({ uuid: String(claimedTransfer.accessPassId) });
+          const recipientOrderId = `1474-${transferId}-accepted`;
+          const recipientPackageOrder = demoCompletedPackageOrder({
+            id: Number(transferId) || Date.now(),
+            orderId: recipientOrderId,
+            source: "transfer",
+            email: String(
+              claimedTransfer.emailAddressToUser || claimedTransfer.email || "",
+            ),
+            tickets: [],
+          });
+          walletOrders().unshift(recipientPackageOrder);
+          demoPackageAccessPassesByOrder[recipientOrderId] = [
+            {
+              ...passSnapshot,
+              uuid: String(claimedTransfer.accessPassId),
+              orderId: recipientOrderId,
+              order: { orderId: recipientOrderId },
+              status: "active",
+            },
+          ];
+          return {
+            data: {
+              uuid: String(claimedTransfer.accessPassId),
+              type: passSnapshot.type || "package",
+              orderId: recipientOrderId,
+              order: { orderId: recipientOrderId },
+              name: passSnapshot.name,
+              events: passSnapshot.events,
+              sectionNumber: passSnapshot.sectionNumber,
+              rowNumber: passSnapshot.rowNumber,
+              seatNumber: passSnapshot.seatNumber,
+              status: "active",
+            },
+          };
+        }
       }
       const sentIndex = demoSentTransfers.findIndex(
         (row) => String(row.id) === transferId,
@@ -502,8 +579,22 @@ const routes: Route[] = [
         if (pass) {
           const recipientEmail = String(body.email || "");
           const pkg = demoSeasonPackage();
-          const events = pass.events ?? pkg.events ?? [];
+          const walletOrder = findDemoWalletOrder(pass.orderId);
+          const events = pkg.events ?? pass.events ?? [];
           const passTransferId = `demo-pass-transfer-${demoSentTransfers.length + 1}`;
+          const accessPassSnapshot = {
+            uuid: pass.uuid,
+            name: pass.name,
+            type: String(pass.type || ""),
+            start: pkg.start || events[0]?.start,
+            end: pkg.end || events.at(-1)?.start,
+            events,
+            artwork: pass.artwork ?? pkg.image,
+            sectionNumber: pass.sectionNumber,
+            rowNumber: pass.rowNumber,
+            seatNumber: pass.seatNumber,
+            generalAdmission: pass.generalAdmission,
+          };
           const transferRecord: DemoSentTransfer = {
             id: passTransferId,
             status: "pending",
@@ -513,18 +604,9 @@ const routes: Route[] = [
             fromUserEmail: DEMO_SESSION.user.email,
             accessPassId: pass.uuid,
             transferType: "access_pass",
-            access_pass: {
-              uuid: pass.uuid,
-              name: pass.name,
-              type: String(pass.type || ""),
-              start: pkg.start || events[0]?.start,
-              end: pkg.end || events.at(-1)?.start,
-              events,
-              sectionNumber: pass.sectionNumber,
-              rowNumber: pass.rowNumber,
-              seatNumber: pass.seatNumber,
-              generalAdmission: pass.generalAdmission,
-            },
+            order: demoTransferOrderSnapshot(walletOrder, events),
+            accessPassSnapshot,
+            access_pass: accessPassSnapshot,
             createdAt: new Date().toISOString(),
           };
           demoSentTransfers.unshift(transferRecord);
@@ -576,7 +658,20 @@ const routes: Route[] = [
           email: recipientEmail,
           emailAddressToUser: recipientEmail,
           fromUserEmail: DEMO_SESSION.user.email,
-          event,
+          event: event
+            ? {
+                ...event,
+                image:
+                  event.image ??
+                  order.event?.image ??
+                  order.package?.events?.find(
+                    (row) => String(row.uuid || "") === String(event.uuid || ""),
+                  )?.image,
+              }
+            : event,
+          ...(order.package
+            ? { order: demoTransferOrderSnapshot(order) }
+            : {}),
           createdAt: new Date().toISOString(),
           tickets: transferredTickets.map((ticket) => ({
             ...ticket,

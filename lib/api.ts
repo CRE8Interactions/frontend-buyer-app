@@ -357,13 +357,16 @@ export const savePassGoogle = () => instance.get("/aaa/google");
 export const removeBankAccount = () =>
   instance.get("/payment-information/deactive");
 
+/** Legacy wallet uses populate=* so transfer rows include tickets with seat fields. */
+export const TICKET_TRANSFER_POPULATE_QUERY = "populate=*";
+
 export const getMySentTransfers = (
   userEmail: string,
   page: number,
   options?: { signal?: AbortSignal },
 ) =>
   instance.get(
-    `/ticket-transfers?filters[fromUserEmail][$eq]=${userEmail}&populate=*&sort[0]=createdAt:desc&pagination[page]=${page}&pagination[pageSize]=50`,
+    `/ticket-transfers?filters[fromUserEmail][$eq]=${userEmail}&${TICKET_TRANSFER_POPULATE_QUERY}&sort[0]=createdAt:desc&pagination[page]=${page}&pagination[pageSize]=50`,
     { signal: options?.signal },
   );
 
@@ -373,7 +376,7 @@ export const getMyReceivedTransfers = (
   options?: { signal?: AbortSignal },
 ) =>
   instance.get(
-    `/ticket-transfers?filters[emailAddressToUser][$eq]=${userEmail}&populate=*&sort[0]=createdAt:desc&pagination[page]=${page}&pagination[pageSize]=50`,
+    `/ticket-transfers?filters[emailAddressToUser][$eq]=${userEmail}&${TICKET_TRANSFER_POPULATE_QUERY}&sort[0]=createdAt:desc&pagination[page]=${page}&pagination[pageSize]=50`,
     { signal: options?.signal },
   );
 
@@ -389,6 +392,7 @@ export const cancelMyTransfers = (data: unknown) => {
   return instance.post("/ticket-transfers/cancel", payload);
 };
 
+/** Custom route — backend populates order, event, and tickets; query populates are ignored. */
 export const getIncomingTransfers = (options?: { signal?: AbortSignal }) =>
   instance.get("/ticket-transfers/incoming", { signal: options?.signal });
 
