@@ -619,7 +619,7 @@ const routes: Route[] = [
             seatNumber?: string | number;
             generalAdmission?: boolean;
           };
-          const events = pkg.events ?? passFields.events ?? [];
+          const events = passFields.events ?? [];
           const passTransferId = `demo-pass-transfer-${demoSentTransfers.length + 1}`;
           const accessPassSnapshot = {
             uuid: pass.uuid,

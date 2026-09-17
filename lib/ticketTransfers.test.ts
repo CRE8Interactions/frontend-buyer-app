@@ -185,7 +185,7 @@ describe("ticketTransfers", () => {
     expect(rows[0]?.schedule).not.toContain("–");
   });
 
-  it("uses the full package schedule when pass events omit past games", () => {
+  it("uses accessPassSnapshot events when the package still includes past games", () => {
     const pkg = demoSeasonPackage();
     const pass = demoPackageAccessPass();
     const order = demoCompletedPackageOrder();
@@ -198,6 +198,12 @@ describe("ticketTransfers", () => {
           status: "pending",
           transferType: "access_pass",
           accessPassId: pass.uuid,
+          accessPassSnapshot: {
+            uuid: pass.uuid,
+            name: pass.name,
+            type: "package",
+            events: upcomingEvents,
+          },
           access_pass: {
             uuid: pass.uuid,
             name: pass.name,
@@ -211,7 +217,7 @@ describe("ticketTransfers", () => {
       [order],
     );
 
-    expect(rows[0]?.schedule).toBe(`${pkg.events.length} events`);
+    expect(rows[0]?.schedule).toBe(`${upcomingEvents.length} events`);
   });
 
   it("builds pass transfer order snapshots with package image and full events", () => {
@@ -354,7 +360,7 @@ describe("ticketTransfers", () => {
     ).toEqual(packageImage);
   });
 
-  it("uses the full package schedule on received pass transfers without wallet orders", () => {
+  it("uses accessPassSnapshot events on received pass transfers without wallet orders", () => {
     const pkg = demoSeasonPackage();
     const pass = demoPackageAccessPass();
     const order = demoCompletedPackageOrder();
@@ -368,6 +374,12 @@ describe("ticketTransfers", () => {
           transferType: "access_pass",
           accessPassId: pass.uuid,
           fromUserEmail: "jaimeconvery@hotmail.com",
+          accessPassSnapshot: {
+            uuid: pass.uuid,
+            name: pass.name,
+            type: "package",
+            events: upcomingEvents,
+          },
           access_pass: {
             uuid: pass.uuid,
             name: pass.name,
@@ -386,7 +398,7 @@ describe("ticketTransfers", () => {
       [],
     );
 
-    expect(rows[0]?.schedule).toBe(`${pkg.events.length} events`);
+    expect(rows[0]?.schedule).toBe(`${upcomingEvents.length} events`);
     expect(rows[0]?.title).toBe(pass.name);
     expect(rows[0]?.passKind).toBe("season pass");
   });
@@ -481,7 +493,7 @@ describe("ticketTransfers", () => {
     expect(rows[0]?.schedule).toBe(`${fullEvents.length} events`);
   });
 
-  it("uses season package totals when API order ids differ and pass events omit past games", () => {
+  it("ignores season package totals when accessPassSnapshot omits past games", () => {
     const pkg = demoSeasonPackage();
     const pass = demoPackageAccessPass();
     const order = demoCompletedPackageOrder();
@@ -499,6 +511,13 @@ describe("ticketTransfers", () => {
           status: "pending",
           transferType: "access_pass",
           accessPassId: pass.uuid,
+          accessPassSnapshot: {
+            uuid: pass.uuid,
+            name: pass.name,
+            type: "package",
+            orderId: order.orderId,
+            events: upcomingEvents,
+          },
           access_pass: {
             uuid: pass.uuid,
             name: pass.name,
@@ -522,7 +541,7 @@ describe("ticketTransfers", () => {
       { packageEventCounts },
     );
 
-    expect(rows[0]?.schedule).toBe(`${totalEvents} events`);
+    expect(rows[0]?.schedule).toBe(`${upcomingEvents.length} events`);
   });
 
   it("shows pass name and event count for API access_pass transfers that include tickets", () => {
@@ -569,7 +588,18 @@ describe("ticketTransfers", () => {
           id: "pass-with-tickets-no-type",
           status: "pending",
           accessPassId: pass.uuid,
-          access_pass: { uuid: pass.uuid, name: pass.name, type: "package" },
+          accessPassSnapshot: {
+            uuid: pass.uuid,
+            name: pass.name,
+            type: "package",
+            events: pkg.events.slice(1),
+          },
+          access_pass: {
+            uuid: pass.uuid,
+            name: pass.name,
+            type: "package",
+            events: pkg.events.slice(1),
+          },
           orderId: order.orderId,
           event: pkg.events[0],
           tickets: order.tickets,
@@ -579,7 +609,7 @@ describe("ticketTransfers", () => {
     );
 
     expect(rows[0]?.title).toBe(pass.name);
-    expect(rows[0]?.schedule).toBe(`${pkg.events.length} events`);
+    expect(rows[0]?.schedule).toBe(`${pkg.events.slice(1).length} events`);
     expect(rows[0]?.schedule).not.toMatch(/PM|–/);
     expect(rows[0]?.seatLines[0]).toContain(String(order.tickets[0]?.sectionNumber));
   });

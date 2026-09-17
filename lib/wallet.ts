@@ -40,6 +40,9 @@ export type EventLike = {
   categoryName?: string;
   attractions?: { name?: string; artwork?: ApiImage }[];
   summary?: string;
+  scanned?: boolean;
+  checkedIn?: boolean;
+  wasScanned?: boolean;
 };
 
 export type TicketLike = {
@@ -210,6 +213,29 @@ function compareAccessPassSeats(a: AccessPassLike, b: AccessPassLike) {
   );
 }
 
+export function sortAccessPassSummaries<
+  T extends { pass?: AccessPassLike; accessPassUUID?: string },
+>(rows: T[]): T[] {
+  return [...rows].sort((a, b) =>
+    compareAccessPassSeats(a.pass ?? {}, b.pass ?? {}),
+  );
+}
+
+export function mergeAccessPassSummaries<
+  T extends { pass?: AccessPassLike; accessPassUUID?: string },
+>(existing: T[], incoming: T[]): T[] {
+  const incomingIds = new Set(
+    incoming
+      .map((row) => String(row.accessPassUUID || row.pass?.uuid || "").trim())
+      .filter(Boolean),
+  );
+  const kept = existing.filter(
+    (row) =>
+      !incomingIds.has(String(row.accessPassUUID || row.pass?.uuid || "").trim()),
+  );
+  return sortAccessPassSummaries([...kept, ...incoming]);
+}
+
 /** Match a season pass to a package ticket seat, mirroring backend access-pass logic. */
 export function passMatchesTicketSeat(
   pass: SeatMatchLike | null | undefined,
@@ -271,14 +297,12 @@ export function accessPassWalletOrderId(pass: AccessPassLike) {
   return String(pass.orderId || "").trim() || nested || undefined;
 }
 
-/** Total games on a pass, preferring the full package schedule when available. */
+/** Total games on a pass from the access-pass schedule, not the package. */
 export function resolveAccessPassTotalEventCount(
   pass?: { events?: EventLike[] } | null,
-  options: { packageEvents?: EventLike[] } = {},
+  _options: { packageEvents?: EventLike[] } = {},
 ): number {
-  const packageCount = options.packageEvents?.length ?? 0;
-  const passCount = pass?.events?.length ?? 0;
-  return Math.max(packageCount, passCount);
+  return pass?.events?.length ?? 0;
 }
 
 export type AccessPassSummary = {
@@ -686,10 +710,16 @@ export function formatPassDateRange(
 
 /** Whether a ticket was scanned at the gate (Blocktickets scan payloads vary). */
 export function isScannedTicket(
-  ticket?: TicketLike | Record<string, unknown> | null,
+  ticket?: TicketLike | EventLike | Record<string, unknown> | null,
 ): boolean {
   if (!ticket) return false;
-  if (ticket.scanned === true || ticket.checkedIn === true) return true;
+  if (
+    ticket.scanned === true ||
+    ticket.checkedIn === true ||
+    ticket.wasScanned === true
+  ) {
+    return true;
+  }
   const status = String(
     ticket.status || ticket.checkInStatus || ticket.on_sale_status || "",
   )

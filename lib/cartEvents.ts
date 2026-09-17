@@ -85,6 +85,9 @@ export type EventLike = {
   enableResale?: boolean;
   subCategory?: { name?: string };
   attractions?: { name?: string; primary?: boolean; artwork?: ApiImage }[];
+  scanned?: boolean;
+  checkedIn?: boolean;
+  wasScanned?: boolean;
 };
 
 export type AttractionCard = {
@@ -1426,10 +1429,9 @@ function mergeTicketsIntoWalletOrder(
 
   return {
     ...order,
-    tickets: [
-      ...orderTickets,
-      ...toAdd.map(stripPendingTransferTicketFields),
-    ],
+    tickets: [...orderTickets, ...toAdd.map(stripPendingTransferTicketFields)].sort(
+      compareWalletTickets,
+    ),
   };
 }
 
@@ -1804,17 +1806,15 @@ export function promoteRecipientPackageUpcomingRows(
   return out;
 }
 
-/** Past package games show Attended when scanned; Transferred when outbound transfer completed. */
+/** Past or scanned access-pass / package games show Attended, like Blocktickets. */
 export function walletEventAvailabilityBadge(
-  detail: Pick<CartEventDetail, "availability" | "tickets">,
+  detail: Pick<CartEventDetail, "availability" | "tickets" | "event">,
 ): "available" | "past" | "transferred" | "attended" {
   if (detail.availability === "transferred") return "transferred";
-  if (detail.availability === "past") {
-    const scanned = detail.tickets.some((ticket) =>
-      isScannedTicket(ticket.raw ?? ticket),
-    );
-    return scanned ? "attended" : "past";
-  }
+  const scanned =
+    isScannedTicket(detail.event) ||
+    detail.tickets.some((ticket) => isScannedTicket(ticket.raw ?? ticket));
+  if (detail.availability === "past" || scanned) return "attended";
   return detail.availability;
 }
 
@@ -2434,9 +2434,12 @@ export function walletAccessPassPath(
   orderId?: string | null,
   accessPassUUID?: string | null,
 ) {
-  const base = walletOrderBase(orderId);
   const uuid = String(accessPassUUID || "").trim();
-  return base && uuid ? `${base}access-pass/${uuid}/` : "";
+  if (!uuid) return "";
+  const base = walletOrderBase(orderId);
+  return base
+    ? `${base}access-pass/${uuid}/`
+    : `${walletSectionHref("events")}access-pass/${uuid}/`;
 }
 
 /** Wallet package detail for a purchased season package. */
@@ -2512,6 +2515,7 @@ export function walletRouteFromPath(
     path.match(
       /^\/wallet\/my-tickets\/order\/[^/]+\/access-pass\/([^/]+)$/,
     )?.[1] ||
+    path.match(/^\/wallet\/my-tickets\/access-pass\/([^/]+)$/)?.[1] ||
     firstRouteParam(params?.accessPassUUID);
   return {
     ...(orderId ? { orderId } : {}),

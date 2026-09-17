@@ -179,8 +179,11 @@ import {
 } from "@/lib/ticketTransfers";
 import {
   buildAccessPassSummaries,
+  mergeAccessPassSummaries,
+  sortAccessPassSummaries,
   eventWhenLabel,
   isPhoneDevice,
+  isScannedTicket,
   isUpcomingEvent,
   groupedWalletSeatLines,
   transferGroupLabel,
@@ -235,6 +238,8 @@ const CODE_BOXES = [0, 1, 2, 3, 4, 5];
 const SEATMAP_THUMB = "/nmstate/seatmap-thumb.svg";
 const PACKAGE_PASS_ATTEMPTS = 2;
 const PACKAGE_PASS_RETRY_MS = 600;
+const PASS_PHONE_QR_HINT =
+  "Tap the QR code to scan at entry for any included event or add this pass to your Apple/Google wallet.";
 
 const card: React.CSSProperties = {
   background: "#fff",
@@ -1003,15 +1008,14 @@ function upcomingAvailabilityLabel(
   availabilityBadge?: CartEventSummary["availabilityBadge"],
 ) {
   const badge = walletAvailabilityBadgeKind(availability, availabilityBadge);
-  if (badge === "attended") return "Attended";
+  if (badge === "attended" || badge === "past") return "Attended";
   if (badge === "transferred") return "Transferred";
-  if (badge === "past") return "Past";
   return "";
 }
 
 /** Filled pill badges for non-actionable games — same weight as the Today chip. */
 function walletAvailabilityBadgeStyle(
-  kind: NonNullable<CartEventSummary["availabilityBadge"]>,
+  kind: NonNullable<CartEventSummary["availabilityBadge"]> | "upcoming",
 ): CSSProperties {
   const base: CSSProperties = {
     display: "inline-flex",
@@ -1025,11 +1029,11 @@ function walletAvailabilityBadgeStyle(
     whiteSpace: "nowrap",
     alignSelf: "flex-start",
   };
-  if (kind === "attended") {
-    return { ...base, color: INK, background: ACCENT };
-  }
   if (kind === "transferred") {
     return { ...base, color: "#8a5300", background: "#fff0c8" };
+  }
+  if (kind === "upcoming" || kind === "available") {
+    return { ...base, color: INK, background: ACCENT };
   }
   return { ...base, color: INK, background: "#d8deea" };
 }
@@ -2730,9 +2734,11 @@ export default function SeasonTickets({
     : [];
   const visiblePackagePasses = useMemo(
     () =>
-      filterAccessPassSummariesBySentTransfers(
-        selectedPackagePasses,
-        sentTransferRecords,
+      sortAccessPassSummaries(
+        filterAccessPassSummariesBySentTransfers(
+          selectedPackagePasses,
+          sentTransferRecords,
+        ),
       ),
     [selectedPackagePasses, sentTransferRecords],
   );
@@ -2790,18 +2796,10 @@ export default function SeasonTickets({
           includeInactive: true,
           packageEvents: packageOrder?.package?.events,
         }).map((pass) => ({ ...pass, orderId: pass.orderId || orderId }));
-        setPackageAccessPasses((current) => {
-          const mergedIds = new Set(
-            passes
-              .map((pass) => String(pass.accessPassUUID || "").trim())
-              .filter(Boolean),
-          );
-          const kept = (current[key] ?? []).filter(
-            (pass) =>
-              !mergedIds.has(String(pass.accessPassUUID || "").trim()),
-          );
-          return { ...current, [key]: [...kept, ...passes] };
-        });
+        setPackageAccessPasses((current) => ({
+          ...current,
+          [key]: mergeAccessPassSummaries(current[key] ?? [], passes),
+        }));
       } catch {
         /* keep cached passes when the fetch fails or lags behind a cancel */
         const attempts = (packagePassAttempts.current[key] ?? 0) + 1;
@@ -2873,23 +2871,14 @@ export default function SeasonTickets({
           ...pass,
           orderId: pass.orderId || packageOrderId,
         }));
-        const restoredIds = new Set(
-          summaries
-            .map((pass) => String(pass.accessPassUUID || "").trim())
-            .filter(Boolean),
-        );
         packagePassRequested.current[packageKey] = true;
-        setPackageAccessPasses((current) => {
-          const existing = current[packageKey] ?? [];
-          const kept = existing.filter(
-            (pass) =>
-              !restoredIds.has(String(pass.accessPassUUID || "").trim()),
-          );
-          return {
-            ...current,
-            [packageKey]: [...kept, ...summaries],
-          };
-        });
+        setPackageAccessPasses((current) => ({
+          ...current,
+          [packageKey]: mergeAccessPassSummaries(
+            current[packageKey] ?? [],
+            summaries,
+          ),
+        }));
         setPackagePassChecked((current) => ({
           ...current,
           [packageKey]: true,
@@ -3650,7 +3639,10 @@ export default function SeasonTickets({
       ? eventWhenLabel(row.nextEvent, row.nextEvent.venue?.timezone)
       : "";
     const foreground = row.fontColor || "#ffffff";
-    const href = walletAccessPassPath(row.orderId, row.accessPassUUID);
+    const href = walletAccessPassPath(
+      row.orderId,
+      row.accessPassUUID || row.key,
+    );
     const rowStyle = {
       ...card,
       borderRadius: 20,
@@ -3701,19 +3693,11 @@ export default function SeasonTickets({
                 <div style={{ marginTop: 4, fontSize: fluidSize(13), fontWeight: 600 }}>{row.seat}</div>
               ) : null}
             </div>
-            {row.checkInCode ? (
-              <div
-                role="img"
-                aria-label={`QR code for ${row.name}`}
-                style={{ background: "#fff", borderRadius: 10, padding: 6, lineHeight: 0 }}
-              >
-                <QRCodeSVG value={row.checkInCode} size={54} />
-              </div>
-            ) : (
+            {!row.checkInCode ? (
               <div style={{ fontSize: fluidSize(12), fontWeight: 600 }}>
                 {row.eventCount} {row.eventCount === 1 ? "event" : "events"}
               </div>
-            )}
+            ) : null}
           </div>
         </div>
         <div style={{ padding: mobile ? 20 : 24, display: "flex", flexDirection: "column", justifyContent: "center", gap: 7 }}>
@@ -3737,7 +3721,11 @@ export default function SeasonTickets({
       </>
     );
     return href ? (
-      <Link href={href} style={rowStyle}>
+      <Link
+        href={href}
+        aria-label={`View ${row.name}`}
+        style={{ ...rowStyle, cursor: "pointer" }}
+      >
         {body}
       </Link>
     ) : (
@@ -3773,9 +3761,7 @@ export default function SeasonTickets({
       (fullOrderChecked[selectedPackageOrderId]
         ? formatSeasonPassHolderName(null, { email: row.holderEmail })
         : "");
-    const helperCopy = showPhoneQr
-      ? "Tap the QR code to scan at entry for any included event or add this pass to your Apple/Google wallet."
-      : "Show the QR code straight from your phone to scan at entry for any included event, or add the pass to your Apple/Google wallet.";
+    const helperCopy = showPhoneQr ? PASS_PHONE_QR_HINT : "";
     const seasonPassTransferBlocked = seasonPassHasTicketTransfers(row.pass, {
       orderId: selectedPackageOrderId,
       sentTransfers: sentTransferRecords,
@@ -3832,9 +3818,11 @@ export default function SeasonTickets({
           {holderName ? (
             <div style={{ fontSize: fluidSize(15), fontWeight: 600 }}>{holderName}</div>
           ) : null}
-          <div style={{ marginTop: holderName ? 5 : 0, fontSize: fluidSize(13), color: SUB }}>
-            {helperCopy}
-          </div>
+          {helperCopy ? (
+            <div style={{ marginTop: holderName ? 5 : 0, fontSize: fluidSize(13), color: SUB }}>
+              {helperCopy}
+            </div>
+          ) : null}
         </div>
       </div>
 
@@ -3916,6 +3904,7 @@ export default function SeasonTickets({
       0,
       pass.eventCount - pass.attendedCount,
     );
+    const showPhoneQr = phoneDevice && Boolean(pass.checkInCode);
 
     const eventRow = (
       event: AccessPassSummary["events"][number],
@@ -3932,17 +3921,17 @@ export default function SeasonTickets({
       const availability =
         matchingDetail?.availability ||
         (isUpcomingEvent(event) ? "available" : "past");
-      const badge = matchingDetail
+      const rawBadge = matchingDetail
         ? walletEventAvailabilityBadge(matchingDetail)
         : availability;
+      const badge =
+        rawBadge === "past" || isScannedTicket(event) ? "attended" : rawBadge;
       const status =
         badge === "transferred"
           ? "Transferred"
           : badge === "attended"
             ? "Attended"
-            : badge === "past"
-              ? "Past"
-              : "Upcoming";
+            : "Upcoming";
       const clickable =
         pass.typeLabel === "Season pass" &&
         availability === "available" &&
@@ -3951,11 +3940,13 @@ export default function SeasonTickets({
         <div
           key={`${highlighted ? "next-" : ""}${event.uuid || event.name}`}
           style={{
-            ...card,
+            boxSizing: "border-box",
+            width: "100%",
+            background: highlighted ? FIELD : "transparent",
             borderRadius: highlighted ? 14 : 0,
             border: highlighted ? `1px solid ${LINE}` : "none",
-            borderBottom: highlighted ? undefined : `1px solid ${LINE}`,
-            boxShadow: highlighted ? undefined : "none",
+            borderBottom: `1px solid ${LINE}`,
+            boxShadow: "none",
             padding: highlighted ? 14 : "13px 0",
             display: "flex",
             alignItems: "center",
@@ -3990,17 +3981,14 @@ export default function SeasonTickets({
                     color: INK,
                     background: ACCENT,
                   }
-                : badge === "transferred" || badge === "attended" || badge === "past"
-                  ? { flexShrink: 0, ...walletAvailabilityBadgeStyle(badge) }
-                  : {
-                      flexShrink: 0,
-                      borderRadius: 999,
-                      padding: "4px 10px",
-                      fontSize: fluidSize(11),
-                      fontWeight: 600,
-                      color: INK,
-                      background: ACCENT,
-                    }
+                : {
+                    flexShrink: 0,
+                    ...walletAvailabilityBadgeStyle(
+                      badge === "transferred" || badge === "attended"
+                        ? badge
+                        : "upcoming",
+                    ),
+                  }
             }
           >
             {highlighted && pass.seat !== "Ticket" ? pass.seat : status}
@@ -4061,7 +4049,7 @@ export default function SeasonTickets({
                   </div>
                 ) : null}
               </div>
-              {pass.checkInCode ? (
+              {showPhoneQr ? (
                 <button
                   type="button"
                   aria-label={`Show QR code for ${pass.name}`}
@@ -4079,6 +4067,11 @@ export default function SeasonTickets({
                 </button>
               ) : null}
             </div>
+            {showPhoneQr ? (
+              <div style={{ marginTop: 12, fontSize: fluidSize(13), opacity: 0.88, lineHeight: 1.45 }}>
+                {PASS_PHONE_QR_HINT}
+              </div>
+            ) : null}
             <div style={{ marginTop: 18, paddingTop: 16, borderTop: "1px solid rgba(255,255,255,0.18)", display: "flex", justifyContent: "space-between", gap: 18 }}>
               <div>
                 <div style={{ fontSize: fluidSize(10), opacity: 0.72 }}>Events included</div>
@@ -5548,7 +5541,7 @@ export default function SeasonTickets({
               <QRCodeSVG value={detail.code} size={mobile ? 220 : 256} fgColor={INK} />
             </div>
             <p style={{ margin: 0, color: SUB, fontSize: fluidSize(15), lineHeight: 1.5, textAlign: "center" }}>
-              Show this code at the gate.
+              Scan this code at entry
             </p>
           </div>
           <div style={{ padding: "18px 24px 24px", borderTop: `1px solid ${LINE}`, display: "flex", justifyContent: "flex-end" }}>
@@ -5667,17 +5660,11 @@ export default function SeasonTickets({
               String(order.orderId || "") === passOrderId ||
               String(order.id || "") === passOrderId,
           );
-          const packageEventsForPass = packageOrder?.package?.events;
           const stubPassEvents = mergeUniquePackageEvents(
             tf.pass.events,
             tf.pass.pass.events,
-            packageEventsForPass,
           );
-          const totalPassEvents = Math.max(
-            tf.pass.eventCount ?? 0,
-            selectedSeasonPackage?.eventCount ?? 0,
-            stubPassEvents.length,
-          );
+          const totalPassEvents = stubPassEvents.length;
           const eventCountLine =
             totalPassEvents === 1
               ? "1 event"

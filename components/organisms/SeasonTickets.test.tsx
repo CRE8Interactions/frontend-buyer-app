@@ -498,11 +498,17 @@ describe("SeasonTickets empty wallet", () => {
     expect(screen.queryByText(packageName)).not.toBeInTheDocument();
     expect(screen.queryByText(activeEvent.name)).not.toBeInTheDocument();
     expect(
-      screen.getByText(`${pkg.events.length} ${pkg.events.length === 1 ? "game" : "games"}`),
+      screen.getByText(
+        `${pkg.events.slice(1).length} ${pkg.events.slice(1).length === 1 ? "game" : "games"}`,
+      ),
     ).toBeInTheDocument();
     expect(screen.getByText("Season tickets")).toBeInTheDocument();
     expect(screen.queryByText("1 ticket")).not.toBeInTheDocument();
-    expect(screen.queryByText(/5 events/i)).not.toBeInTheDocument();
+    expect(
+      screen.queryByText(
+        `${pkg.events.length} ${pkg.events.length === 1 ? "game" : "games"}`,
+      ),
+    ).not.toBeInTheDocument();
     expect(screen.getByText(seatLabel(ticket))).toBeInTheDocument();
   });
 
@@ -1414,10 +1420,10 @@ describe("SeasonTickets package tab", () => {
       screen.getByText(`${DEMO_USER.firstName} ${DEMO_USER.lastName.charAt(0)}.`),
     ).toBeInTheDocument();
     expect(
-      screen.getByText(
+      screen.queryByText(
         "Show the QR code straight from your phone to scan at entry for any included event, or add the pass to your Apple/Google wallet.",
       ),
-    ).toBeInTheDocument();
+    ).not.toBeInTheDocument();
     expect(
       screen.queryByRole("button", { name: `Show QR code for ${pass.name}` }),
     ).not.toBeInTheDocument();
@@ -1492,6 +1498,42 @@ describe("SeasonTickets package tab", () => {
     expect(
       screen.queryByText(DEMO_USER.email.split("@")[0]),
     ).not.toBeInTheDocument();
+  });
+
+  it("shows Games included from the access pass when the package still lists past games", async () => {
+    const order = demoCompletedPackageOrder();
+    const pastEvent = {
+      uuid: "evt-nmstate-past-games-included",
+      name: "Past Home Opener",
+      start: "2025-09-01T19:00:00.000Z",
+      venue: pkg.venue,
+    };
+    const packageEvents = [pastEvent, ...pkg.events];
+    const passEvents = pkg.events.slice(1);
+    navigationMocks.pathname = `/wallet/my-tickets/order/${packageOrderId}/package/${pkg.uuid}/`;
+    mockedGetMyEvents.mockResolvedValue({
+      data: [
+        {
+          ...order,
+          package: {
+            ...order.package,
+            events: packageEvents,
+          },
+        },
+      ],
+    } as never);
+    mockedGetAccessPassesByOrder.mockResolvedValue({
+      data: { data: [demoPackageAccessPass({ events: passEvents })] },
+    } as never);
+
+    render(<SeasonTickets />);
+
+    expect(await screen.findByText("Games included")).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        `${passEvents.length} ${passEvents.length === 1 ? "game" : "games"}`,
+      ),
+    ).toBeInTheDocument();
   });
 
   it("shows the season-pass QR and wallet add on a phone", async () => {
@@ -1633,7 +1675,8 @@ describe("SeasonTickets package tab", () => {
     expect(
       screen.queryByRole("link", { name: `View ${transferredEvent.name}` }),
     ).not.toBeInTheDocument();
-    expect(screen.getByText("Past")).toBeInTheDocument();
+    expect(screen.getByText("Attended")).toBeInTheDocument();
+    expect(screen.queryByText("Past")).not.toBeInTheDocument();
     expect(screen.getByText("Transferred")).toBeInTheDocument();
   });
 
@@ -1846,7 +1889,7 @@ describe("SeasonTickets package tab", () => {
     );
   });
 
-  it("keeps full package event count on My Transfers after sending a season pass and refetching", async () => {
+  it("keeps access-pass event count on My Transfers after sending a season pass and refetching", async () => {
     const user = userEvent.setup();
     const order = demoCompletedPackageOrder();
     const pastEvent = {
@@ -2134,6 +2177,95 @@ describe("SeasonTickets package tab", () => {
     expect(
       screen.getByRole("tab", { name: new RegExp(`Game tickets \\(${pkg.events.length}\\)`) }),
     ).toBeInTheDocument();
+  });
+
+  it("keeps season passes in seat order after cancelling one transfer", async () => {
+    const user = userEvent.setup();
+    const order = demoCompletedPackageOrder();
+    const [seat21, seat22] = order.tickets;
+    const pass21 = demoPackageAccessPass({
+      uuid: "access-pass-seat-21",
+      seatNumber: seat21.seatNumber,
+      sectionNumber: seat21.sectionNumber,
+      rowNumber: seat21.rowNumber,
+    });
+    const pass22 = demoPackageAccessPass({
+      uuid: "access-pass-seat-22",
+      seatNumber: seat22.seatNumber,
+      sectionNumber: seat22.sectionNumber,
+      rowNumber: seat22.rowNumber,
+    });
+    const sentList = mockMutableSentTransferList();
+    navigationMocks.pathname = `/wallet/my-tickets/order/${packageOrderId}/package/${pkg.uuid}/`;
+    mockedGetMyEvents.mockResolvedValue({ data: [order] } as never);
+    mockedGetAccessPassesByOrder.mockResolvedValue({
+      data: { data: [pass22, pass21] },
+    } as never);
+    mockedCreateTicketTransfer.mockImplementation(async () => {
+      sentList.prepend({
+        id: 902,
+        status: "pending",
+        fromUserEmail: DEMO_SESSION.user.email,
+        emailAddressToUser: "recipient@example.com",
+        transferType: "access_pass",
+        accessPassId: pass21.uuid,
+        orderId: order.orderId,
+        access_pass: {
+          uuid: pass21.uuid,
+          name: pass21.name,
+          type: "package",
+          orderId: order.orderId,
+          events: pass21.events,
+          sectionNumber: pass21.sectionNumber,
+          rowNumber: pass21.rowNumber,
+          seatNumber: pass21.seatNumber,
+        },
+        createdAt: "2026-09-13T12:00:00.000Z",
+      } as never);
+      return { data: { id: 902, status: "pending" } } as never;
+    });
+    mockedCancelMyTransfers.mockImplementation(async () => {
+      sentList.clear();
+      return { data: { status: "cancelled" } } as never;
+    });
+
+    const { rerender } = render(<SeasonTickets />);
+
+    const transferButtons = await screen.findAllByRole("button", {
+      name: "Transfer season pass",
+    });
+    expect(screen.getAllByText(/Seat 21|Seat 22/).map((node) => node.textContent)).toEqual([
+      expect.stringContaining("Seat 21"),
+      expect.stringContaining("Seat 22"),
+    ]);
+    await user.click(transferButtons[0]!);
+    await user.type(
+      screen.getByRole("textbox", { name: "Email address" }),
+      "recipient@example.com",
+    );
+    await user.click(screen.getByRole("button", { name: "Next" }));
+    await user.click(screen.getByRole("button", { name: "Transfer" }));
+    await screen.findByText("Season pass transfer pending");
+    await user.click(screen.getAllByRole("button", { name: "Close" }).at(-1)!);
+
+    navigationMocks.pathname = "/wallet/my-transfers/";
+    rerender(<SeasonTickets />);
+    await user.click(
+      (await screen.findAllByRole("button", { name: "Cancel transfer" }))[0]!,
+    );
+    await user.click(
+      screen.getAllByRole("button", { name: "Cancel transfer" }).at(-1)!,
+    );
+    expect(await screen.findByText("Transfer cancelled")).toBeInTheDocument();
+
+    navigationMocks.pathname = `/wallet/my-tickets/order/${packageOrderId}/package/${pkg.uuid}/`;
+    rerender(<SeasonTickets />);
+
+    await screen.findAllByRole("button", { name: "Transfer season pass" });
+    expect(screen.getAllByText(/Seat 21|Seat 22/).map((node) => node.textContent)).toEqual([
+      expect.stringContaining("Seat 21"),
+      expect.stringContaining("Seat 22"),
+    ]);
   });
 
   it("shows remaining package tickets on the Packages tab after a season pass transfer", async () => {
@@ -2658,7 +2790,7 @@ describe("SeasonTickets package tab", () => {
     );
     expect(screen.getByText(pass.name)).toBeInTheDocument();
     expect(
-      screen.getByRole("link", { name: new RegExp(pass.name) }),
+      screen.getByRole("link", { name: `View ${pass.name}` }),
     ).toHaveAttribute(
       "href",
       expect.stringMatching(
@@ -2667,8 +2799,8 @@ describe("SeasonTickets package tab", () => {
     );
     expect(screen.getByText(`Pass #${pass.checkInCode}`)).toBeInTheDocument();
     expect(
-      screen.getByRole("img", { name: `QR code for ${pass.name}` }),
-    ).toBeInTheDocument();
+      screen.queryByRole("img", { name: `QR code for ${pass.name}` }),
+    ).not.toBeInTheDocument();
     expect(
       screen.getAllByText(pass.events.at(-1)!.name).length,
     ).toBeGreaterThan(0);
@@ -2686,29 +2818,84 @@ describe("SeasonTickets package tab", () => {
       screen.getAllByText(pass.events.at(-1)!.name).length,
     ).toBeGreaterThan(0);
     expect(mockedGetMyAccessPass).toHaveBeenCalledWith(pass.uuid);
+    expect(
+      screen.queryByText(
+        "Show the QR code straight from your phone to scan at entry for any included event.",
+      ),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByText(
+        "Tap the QR code to scan at entry for any included event or add this pass to your Apple/Google wallet.",
+      ),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: `Show QR code for ${pass.name}` }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("img", { name: `QR code for ${pass.name}` }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("shows Attended instead of Past on past access-pass events", async () => {
+    const pastEvent = {
+      ...printableEvent,
+      uuid: "evt-access-pass-past",
+      name: "NMSU Soccer vs. Past Opponent",
+      start: "2020-08-15T23:00:00.000Z",
+      status: "complete",
+    };
+    const accessPass = demoAccessPass({ events: [pastEvent] });
+    navigationMocks.pathname =
+      `/wallet/my-tickets/order/${accessPass.orderId}/access-pass/${accessPass.uuid}/`;
+    mockedGetMyEvents.mockResolvedValue({ data: [] } as never);
+    mockedGetMyAccessPass.mockResolvedValue({
+      data: { data: accessPass },
+    } as never);
+
+    render(<SeasonTickets />);
+
+    expect(
+      (await screen.findAllByText(pastEvent.name)).length,
+    ).toBeGreaterThan(0);
+    expect(screen.getAllByText("Attended").length).toBeGreaterThan(0);
+    expect(screen.queryByText("Past")).not.toBeInTheDocument();
+  });
+
+  it("opens access pass details from the tab when the pass has no order id", async () => {
+    const user = userEvent.setup();
+    const pass = demoAccessPass({
+      orderId: "",
+      events: [printableEvent],
+    });
+    mockedGetMyEvents.mockResolvedValue({ data: [] } as never);
+    mockedGetMyAccessPasses.mockResolvedValue({
+      data: { data: [pass] },
+    } as never);
+    mockedGetMyAccessPass.mockResolvedValue({
+      data: { data: pass },
+    } as never);
+
+    const { rerender } = render(<SeasonTickets />);
 
     await user.click(
-      screen.getByRole("button", {
-        name: `Show QR code for ${pass.name}`,
-      }),
+      await screen.findByRole("button", { name: /Access passes.*1/i }),
+    );
+    expect(
+      screen.getByRole("link", { name: `View ${pass.name}` }),
+    ).toHaveAttribute(
+      "href",
+      expect.stringMatching(`^/wallet/my-tickets/access-pass/${pass.uuid}/?$`),
     );
 
-    const qrDialog = screen.getByRole("dialog", { name: pass.name });
-    expect(qrDialog).toBeInTheDocument();
-    expect(
-      screen.getByRole("img", {
-        name: `Enlarged QR code for ${pass.name}`,
-      }),
-    ).toBeInTheDocument();
-    expect(
-      screen.getByText("Show this code at entry for any included event."),
-    ).toBeInTheDocument();
-    expect(
-      screen.queryByRole("button", { name: /Add to (Apple|Google) Wallet/i }),
-    ).not.toBeInTheDocument();
+    navigationMocks.pathname = `/wallet/my-tickets/access-pass/${pass.uuid}/`;
+    rerender(<SeasonTickets />);
 
-    await user.click(screen.getByRole("button", { name: "Close" }));
-    expect(screen.queryByRole("dialog", { name: pass.name })).not.toBeInTheDocument();
+    expect(
+      await screen.findByRole("heading", { name: pass.name }),
+    ).toBeInTheDocument();
+    expect(screen.getByText("Next up")).toBeInTheDocument();
+    expect(screen.getByText("All events")).toBeInTheDocument();
+    expect(screen.getByText("Events included")).toBeInTheDocument();
   });
 
   it("only links eligible events from a season-pass detail", async () => {
@@ -2761,6 +2948,8 @@ describe("SeasonTickets package tab", () => {
     expect(
       screen.queryByRole("link", { name: `View ${transferredEvent.name}` }),
     ).not.toBeInTheDocument();
+    expect(screen.getByText("Attended")).toBeInTheDocument();
+    expect(screen.queryByText("Past")).not.toBeInTheDocument();
     expect(screen.getByText("Transferred")).toBeInTheDocument();
   });
 
@@ -3978,6 +4167,74 @@ describe("SeasonTickets routed event screen", { timeout: 20_000 }, () => {
     const seatButtons = screen.getAllByRole("button", { name: /^Seat / });
     expect(seatButtons[0]).toHaveAccessibleName(`Seat ${first.seatNumber}`);
     expect(seatButtons[1]).toHaveAccessibleName(`Seat ${second.seatNumber}`);
+  });
+
+  it("keeps ticket seats in order after cancelling a transfer", async () => {
+    const user = userEvent.setup();
+    const [first, second] = demoCheckoutCart({ ticketCount: 2 }).tickets;
+    const order = demoCompletedTicketOrder({
+      event: icedogs,
+      tickets: [second, first],
+    });
+    const sentList = mockMutableSentTransferList();
+    mockedGetMyEvents.mockResolvedValue({ data: [order] } as never);
+    mockedCreateTicketTransfer.mockImplementation(async () => {
+      sentList.prepend({
+        id: 903,
+        status: "pending",
+        fromUserEmail: DEMO_SESSION.user.email,
+        emailAddressToUser: "recipient@example.com",
+        orderId: order.orderId,
+        event: icedogs,
+        tickets: [first],
+        createdAt: "2026-09-13T12:00:00.000Z",
+      } as never);
+      return { data: { id: 903, status: "pending" } } as never;
+    });
+    mockedCancelMyTransfers.mockImplementation(async () => {
+      sentList.clear();
+      return { data: { status: "cancelled" } } as never;
+    });
+
+    const { rerender } = render(
+      <SeasonTickets initialScreen="event" eventUUID={icedogs.uuid} />,
+    );
+
+    await user.click(await screen.findByRole("button", { name: "Transfer" }));
+    await user.click(
+      screen.getByRole("button", { name: `Seat ${first.seatNumber}` }),
+    );
+    await user.click(screen.getByRole("button", { name: "Next" }));
+    await user.type(
+      screen.getByRole("textbox", { name: "Email address" }),
+      "recipient@example.com",
+    );
+    await user.click(screen.getByRole("button", { name: "Next" }));
+    await user.click(screen.getAllByRole("button", { name: "Transfer" }).at(-1)!);
+    await user.click(screen.getAllByRole("button", { name: "Close" }).at(-1)!);
+
+    navigationMocks.pathname = "/wallet/my-transfers/";
+    rerender(<SeasonTickets />);
+    await user.click(
+      (await screen.findAllByRole("button", { name: "Cancel transfer" }))[0]!,
+    );
+    await user.click(
+      screen.getAllByRole("button", { name: "Cancel transfer" }).at(-1)!,
+    );
+    expect(await screen.findByText("Transfer cancelled")).toBeInTheDocument();
+
+    navigationMocks.pathname = `/wallet/my-tickets/order/${order.orderId}/`;
+    rerender(
+      <SeasonTickets initialScreen="event" eventUUID={icedogs.uuid} />,
+    );
+
+    const seatLines = await screen.findAllByText(/Sec .+ · Row .+ · Seat /);
+    expect(seatLines[0]).toHaveTextContent(
+      `Sec ${first.sectionNumber} · Row ${first.rowNumber} · Seat ${first.seatNumber}`,
+    );
+    expect(seatLines[1]).toHaveTextContent(
+      `Sec ${second.sectionNumber} · Row ${second.rowNumber} · Seat ${second.seatNumber}`,
+    );
   });
 
   it("shows live ticket and order data in ticket details", async () => {
@@ -5969,7 +6226,7 @@ describe("SeasonTickets routed event screen", { timeout: 20_000 }, () => {
       expect(mockedGetMySentTransfers).toHaveBeenCalled();
     });
 
-    it("shows full package event count on pending sent season pass transfers", async () => {
+    it("shows accessPassSnapshot event count on pending sent season pass transfers", async () => {
       sessionMocks.getSession.mockReturnValue(DEMO_SESSION);
       const pkg = demoSeasonPackage();
       const pass = demoPackageAccessPass();
@@ -5988,6 +6245,15 @@ describe("SeasonTickets routed event screen", { timeout: 20_000 }, () => {
             status: "pending",
             transferType: "access_pass",
             accessPassId: pass.uuid,
+            accessPassSnapshot: {
+              uuid: pass.uuid,
+              name: pass.name,
+              type: "package",
+              events: pkg.events.slice(1),
+              sectionNumber: pass.sectionNumber,
+              rowNumber: pass.rowNumber,
+              seatNumber: pass.seatNumber,
+            },
             access_pass: {
               uuid: pass.uuid,
               name: pass.name,
@@ -6015,9 +6281,9 @@ describe("SeasonTickets routed event screen", { timeout: 20_000 }, () => {
       render(<SeasonTickets />);
 
       expect(
-        await screen.findByText(`${fullEvents.length} events`),
+        await screen.findByText(`${pkg.events.slice(1).length} events`),
       ).toBeInTheDocument();
-      expect(screen.queryByText(`${pkg.events.slice(1).length} events`)).not.toBeInTheDocument();
+      expect(screen.queryByText(`${fullEvents.length} events`)).not.toBeInTheDocument();
       expect(mockedGetAccessPassesByOrder).not.toHaveBeenCalled();
     });
 
@@ -6819,6 +7085,24 @@ describe("SeasonTickets pass wallet", () => {
     return user;
   }
 
+  it("shows the access-pass QR on a phone instead of the desktop scan hint", async () => {
+    render(<SeasonTickets />);
+
+    expect(
+      await screen.findByRole("button", { name: `Show QR code for ${pass.name}` }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        "Tap the QR code to scan at entry for any included event or add this pass to your Apple/Google wallet.",
+      ),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByText(
+        "Show the QR code straight from your phone to scan at entry for any included event.",
+      ),
+    ).not.toBeInTheDocument();
+  });
+
   it("adds the pass to the phone wallet from the QR popup", async () => {
     mockedDownloadApplePass.mockResolvedValue({
       data: new Blob(["pkpass"], { type: "application/vnd.apple.pkpass" }),
@@ -7168,6 +7452,7 @@ describe("SeasonTickets mobile ticket actions", () => {
       screen.getByRole("heading", { name: "Scan at entrance" }),
     ).toBeInTheDocument();
     expect(screen.getByRole("img", { name: /QR code/i })).toBeInTheDocument();
+    expect(screen.getByText("Scan this code at entry")).toBeInTheDocument();
     expect(
       screen.queryByRole("heading", { name: "Ticket details" }),
     ).not.toBeInTheDocument();

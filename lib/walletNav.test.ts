@@ -28,6 +28,9 @@ describe("wallet nav", () => {
       walletSectionFromPath("/wallet/my-tickets/order/ord-1/package/pkg-1/"),
     ).toBe("events");
     expect(
+      walletSectionFromPath("/wallet/my-tickets/access-pass/access-pass-1/"),
+    ).toBe("events");
+    expect(
       walletSectionFromPath(
         "/wallet/my-tickets/order/ord-1/package/pkg-1/event/event-1/",
       ),

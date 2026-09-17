@@ -329,25 +329,6 @@ function findWalletOrderForTransfer(
   return undefined;
 }
 
-function lookupPackageEventCount(
-  transfer: TransferLike,
-  orders: OrderLike[],
-  packageEventCounts: Map<string, number>,
-): number {
-  const keys = new Set<string>();
-  for (const transferOrderId of transferOrderLookupIds(transfer)) {
-    keys.add(transferOrderId);
-  }
-  const order = findWalletOrderForTransfer(transfer, orders);
-  if (order?.orderId != null) keys.add(String(order.orderId));
-  if (order?.id != null) keys.add(String(order.id));
-  for (const key of keys) {
-    const count = packageEventCounts.get(key);
-    if (count && count > 0) return count;
-  }
-  return 0;
-}
-
 export function mergeUniquePackageEvents(
   ...sources: Array<EventLike[] | undefined>
 ): EventLike[] {
@@ -618,28 +599,15 @@ export function buildPackageEventCountLookup(
   return map;
 }
 
+/** Season-pass transfer cards use the snapshot schedule, not the package. */
 export function resolvePassTransferEventCount(
   transfer: TransferLike,
-  context: WalletTransferBuildContext = {},
+  _context: WalletTransferBuildContext = {},
 ): number {
-  const orders = context.orders ?? [];
-  const packageEvents = resolvePassTransferPackageEvents(transfer, orders);
-  const pass = resolveTransferPass(transfer);
-  const order = findWalletOrderForTransfer(transfer, orders);
-  const transferPackageEvents = resolveTransferOrderPackage(transfer.order)?.events;
-  const walletPackageEvents = resolveTransferOrderPackage(order)?.events;
-  const fromPassSchedule = resolveAccessPassTotalEventCount(pass, {
-    packageEvents:
-      packageEvents.length > 0
-        ? packageEvents
-        : walletPackageEvents ?? transferPackageEvents,
-  });
-  const fromSeasonPackage = lookupPackageEventCount(
-    transfer,
-    orders,
-    context.packageEventCounts ?? new Map(),
-  );
-  return Math.max(fromPassSchedule, fromSeasonPackage, packageEvents.length);
+  const snapshotEvents = transfer.accessPassSnapshot?.events;
+  if (snapshotEvents?.length) return snapshotEvents.length;
+  const relation = transfer.access_pass ?? transfer.accessPass;
+  return relation?.events?.length ?? 0;
 }
 
 function passEventCountLine(
@@ -813,10 +781,10 @@ function mergeTransferRecord(
   const primaryPass = primary.access_pass ?? primary.accessPass;
   const secondaryPass = secondary.access_pass ?? secondary.accessPass;
   const mergedPassEvents = mergeUniquePackageEvents(
+    primary.accessPassSnapshot?.events,
+    secondary.accessPassSnapshot?.events,
     primaryPass?.events,
     secondaryPass?.events,
-    primary.order?.package?.events,
-    secondary.order?.package?.events,
   );
   const basePass = primaryPass?.name
     ? primaryPass
@@ -1334,16 +1302,12 @@ export function enrichTransferRecordsFromOrders(
     const orderPackage = resolveTransferOrderPackage(order);
     if (isPassTransferRowPresentation(enrichedTransfer) && orderPackage) {
       const pkg = orderPackage;
-      const mergedEvents = resolvePassTransferPackageEvents(
-        { ...enrichedTransfer, order: order as TransferOrderLike },
-        orders,
-      );
       access_pass = {
         ...pass,
         name: pass?.name || pkg.name,
         start: pass?.start || pkg.start,
         end: pass?.end || pkg.end,
-        events: mergedEvents.length ? mergedEvents : pass?.events,
+        ...(pass?.events?.length ? { events: pass.events } : {}),
         artwork: pass?.artwork ?? pkg.image,
         type: pass?.type || "package",
       };
