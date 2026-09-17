@@ -77,6 +77,7 @@ import {
   transferAcceptConfirmCopy,
   transferCancelReturnCopy,
   transferKindFromWalletRow,
+  transferModalDetailLines,
   transferWalletRemovalCopy,
   type TransferModalKind,
 } from "@/lib/transferModalCopy";
@@ -109,6 +110,7 @@ import {
   removeTicketsFromWalletOrders,
   restoreCancelledTransferTicketsToOrders,
   summarizeEventDetails,
+  summarizeIncomingAccessPassTransfers,
   summarizeIncomingPassPackageTransfers,
   summarizeUpcomingWalletEvents,
   ticketIdsForPassSeat,
@@ -155,6 +157,9 @@ import {
   markIncomingTransferLocallyResolved,
   filterAccessPassSummariesBySentTransfers,
   filterWalletAccessPassesBySentTransfers,
+  formatAccessPassRemainingLine,
+  isAccessPassHiddenBySentTransfers,
+  mergeWalletAccessPassesPreservingLocal,
   mergeWalletReceivedTransferRecords,
   appendLocalSentTransferStubs,
   mergeWalletSentTransferRecords,
@@ -173,14 +178,18 @@ import {
   resolveCancelTransferIdForApi,
   resolveCancelTransferIdWithSentLookup,
   resolveCreatedTransferMeta,
+  transferPartyDateLine,
   unwrapTransferRecords,
   type TransferLike,
   type WalletTransferRow,
 } from "@/lib/ticketTransfers";
 import {
   buildAccessPassSummaries,
+  mergeAccessPassSummaries,
+  sortAccessPassSummaries,
   eventWhenLabel,
   isPhoneDevice,
+  isScannedTicket,
   isUpcomingEvent,
   groupedWalletSeatLines,
   transferGroupLabel,
@@ -235,6 +244,8 @@ const CODE_BOXES = [0, 1, 2, 3, 4, 5];
 const SEATMAP_THUMB = "/nmstate/seatmap-thumb.svg";
 const PACKAGE_PASS_ATTEMPTS = 2;
 const PACKAGE_PASS_RETRY_MS = 600;
+const PASS_PHONE_QR_HINT =
+  "Tap the QR code to scan at entry for any included event or add this pass to your Apple/Google wallet.";
 
 const card: React.CSSProperties = {
   background: "#fff",
@@ -756,6 +767,7 @@ type EventT = {
   pendingIncomingTransfer?: boolean;
   incomingTransferId?: string | number;
   incomingTransferFrom?: string;
+  incomingTransferOn?: string;
 };
 
 function detailToEventT(d: CartEventDetail, isCart = false): EventT {
@@ -792,6 +804,7 @@ function detailToEventT(d: CartEventDetail, isCart = false): EventT {
     pendingIncomingTransfer: d.pendingIncomingTransfer,
     incomingTransferId: d.incomingTransferId,
     incomingTransferFrom: d.incomingTransferFrom,
+    incomingTransferOn: d.incomingTransferOn,
   };
 }
 
@@ -873,14 +886,23 @@ type ConfirmAcceptTransfer = {
   title: string;
   seat: string;
   from?: string;
+  to?: string;
+  on?: string;
   passKind?: TransferModalKind;
   ticketCount?: number;
   seatLines?: string[];
   accessPassId?: string;
   id?: string;
+  eventCount?: number;
+  remainingCount?: number;
+  when?: string;
 };
 
-type ConfirmAcceptSource = "wallet-upcoming" | "wallet-event" | "transfers-received";
+type ConfirmAcceptSource =
+  | "wallet-upcoming"
+  | "wallet-event"
+  | "wallet-access"
+  | "transfers-received";
 
 function incomingPassEventCountLabel(count?: number) {
   if (!count || count <= 0) return "";
@@ -910,22 +932,25 @@ function buildWalletTransferRowContext(
 
 function acceptTargetFromUpcoming(row: CartEventSummary): ConfirmAcceptTransfer {
   const seatLines = row.ticketSeats ?? [];
-  const passCountLabel = incomingPassEventCountLabel(row.passEventCount);
   return {
     transferId: String(row.incomingTransferId ?? ""),
     title: row.name,
     seat:
       seatLines.join(" · ") ||
-      (row.incomingPassTransfer && passCountLabel
-        ? passCountLabel
+      (row.incomingPassTransfer
+        ? ""
         : `${row.ticketCount} ${row.ticketCount === 1 ? "ticket" : "tickets"}`),
     from: row.incomingTransferFrom,
+    on: row.incomingTransferOn,
     passKind: row.passKind,
     accessPassId: row.accessPassId,
     ticketCount: row.incomingPassTransfer
       ? row.passEventCount ?? row.ticketCount
       : row.ticketCount,
     seatLines,
+    eventCount: row.passEventCount,
+    remainingCount: row.passRemainingCount,
+    when: row.when,
   };
 }
 
@@ -935,11 +960,16 @@ function acceptTargetFromWalletRow(row: WalletTransferRow): ConfirmAcceptTransfe
     title: row.title,
     seat: row.seat,
     from: row.from,
+    to: row.to,
+    on: row.on,
     passKind: row.passKind,
     ticketCount: row.ticketCount,
     seatLines: row.seatLines,
     accessPassId: row.accessPassId,
     id: row.id,
+    eventCount: row.eventCount,
+    remainingCount: row.remainingCount,
+    when: row.schedule,
   };
 }
 
@@ -954,8 +984,10 @@ function acceptTargetFromEventDetail(ev: EventT): ConfirmAcceptTransfer {
       seatLines.join(" · ") ||
       `${ev.tickets.length} ${ev.tickets.length === 1 ? "ticket" : "tickets"}`,
     from: ev.incomingTransferFrom,
+    on: ev.incomingTransferOn,
     ticketCount: ev.tickets.length,
     seatLines,
+    when: ev.when,
   };
 }
 
@@ -1003,15 +1035,14 @@ function upcomingAvailabilityLabel(
   availabilityBadge?: CartEventSummary["availabilityBadge"],
 ) {
   const badge = walletAvailabilityBadgeKind(availability, availabilityBadge);
-  if (badge === "attended") return "Attended";
+  if (badge === "attended" || badge === "past") return "Attended";
   if (badge === "transferred") return "Transferred";
-  if (badge === "past") return "Past";
   return "";
 }
 
 /** Filled pill badges for non-actionable games — same weight as the Today chip. */
 function walletAvailabilityBadgeStyle(
-  kind: NonNullable<CartEventSummary["availabilityBadge"]>,
+  kind: NonNullable<CartEventSummary["availabilityBadge"]> | "upcoming",
 ): CSSProperties {
   const base: CSSProperties = {
     display: "inline-flex",
@@ -1025,11 +1056,11 @@ function walletAvailabilityBadgeStyle(
     whiteSpace: "nowrap",
     alignSelf: "flex-start",
   };
-  if (kind === "attended") {
-    return { ...base, color: INK, background: ACCENT };
-  }
   if (kind === "transferred") {
     return { ...base, color: "#8a5300", background: "#fff0c8" };
+  }
+  if (kind === "upcoming" || kind === "available") {
+    return { ...base, color: INK, background: ACCENT };
   }
   return { ...base, color: INK, background: "#d8deea" };
 }
@@ -1209,6 +1240,7 @@ export default function SeasonTickets({
   const [packageView, setPackageView] = useState<"pass" | "events">("pass");
   const [flexPacks, setFlexPacks] = useState<FlexPackSummary[]>([]);
   const [accessPasses, setAccessPasses] = useState<AccessPassSummary[]>([]);
+  const accessPassesRef = useRef<AccessPassSummary[]>([]);
   const [accessPassDetails, setAccessPassDetails] = useState<
     Record<string, AccessPassSummary>
   >({});
@@ -1277,6 +1309,10 @@ export default function SeasonTickets({
       setEmail(String(session.user.email));
     }
   }, []);
+
+  useEffect(() => {
+    accessPassesRef.current = accessPasses;
+  }, [accessPasses]);
 
   // One wallet instance serves every section route, so a nav click only changes
   // the URL — the screen follows it here.
@@ -1378,14 +1414,14 @@ export default function SeasonTickets({
         ),
       );
       if (snapshot.accessPasses) {
-        setAccessPasses(
-          buildAccessPassSummaries(
-            filterWalletAccessPassesBySentTransfers(
-              snapshot.accessPasses,
-              sentAsPending,
-            ),
-          ),
+        const mergedPasses = mergeWalletAccessPassesPreservingLocal(
+          snapshot.accessPasses,
+          accessPassesRef.current.map((row) => row.pass),
+          sentAsPending,
         );
+        const nextAccessPasses = buildAccessPassSummaries(mergedPasses);
+        accessPassesRef.current = nextAccessPasses;
+        setAccessPasses(nextAccessPasses);
       }
     },
     [email],
@@ -1770,7 +1806,8 @@ export default function SeasonTickets({
     if (
       !uuid ||
       accessPassDetails[uuid] ||
-      accessPassDetailChecked[uuid]
+      accessPassDetailChecked[uuid] ||
+      isAccessPassHiddenBySentTransfers(uuid, sentTransferRecords)
     ) {
       return;
     }
@@ -1813,6 +1850,7 @@ export default function SeasonTickets({
     accessPassDetails,
     routedAccessPassUUID,
     routedOrderId,
+    sentTransferRecords,
   ]);
 
   const mobile = vw < 900;
@@ -1927,6 +1965,14 @@ export default function SeasonTickets({
   );
   const routedAccessPass = useMemo(() => {
     if (!routedAccessPassUUID) return null;
+    if (
+      isAccessPassHiddenBySentTransfers(
+        routedAccessPassUUID,
+        sentTransferRecords,
+      )
+    ) {
+      return null;
+    }
     const byOrder = (row: AccessPassSummary) =>
       !routedOrderId || row.orderId === routedOrderId;
     return (
@@ -1941,7 +1987,13 @@ export default function SeasonTickets({
       accessPasses.find((row) => row.key === routedAccessPassUUID) ||
       null
     );
-  }, [routedAccessPassUUID, routedOrderId, accessPassDetails, accessPasses]);
+  }, [
+    routedAccessPassUUID,
+    routedOrderId,
+    accessPassDetails,
+    accessPasses,
+    sentTransferRecords,
+  ]);
   const routedAccessPassPending = Boolean(
     routedAccessPassUUID &&
       !routedAccessPass &&
@@ -2209,6 +2261,56 @@ export default function SeasonTickets({
     [email, syncWalletAfterTransferAction],
   );
 
+  const promoteAcceptedIncomingAccessPassToWallet = useCallback(
+    async (
+      transferId: string,
+      acceptedRecord?: TransferLike | null,
+      acceptResponse?: unknown,
+    ) => {
+      const nextIncoming = incomingTransferRecordsRef.current.filter(
+        (transfer) => String(transfer.id ?? "") !== transferId,
+      );
+      const nextReceived = promoteAcceptedIncomingTransferToReceived(
+        receivedTransferRecordsRef.current,
+        acceptedRecord ?? undefined,
+        acceptResponse,
+      );
+      markIncomingTransferLocallyResolved(transferId);
+      await syncWalletAfterTransferAction({
+        incomingTransfers: nextIncoming,
+        receivedTransfers: nextReceived,
+      });
+
+      const acceptedPass = unwrapAcceptTransferAccessPass(acceptResponse);
+      const pass = (acceptedPass ??
+        acceptedRecord?.access_pass ??
+        acceptedRecord?.accessPass) as AccessPassLike | undefined;
+      const needsPassRefetch = !pass?.uuid || !(pass.events?.length ?? 0);
+      let rawPasses: AccessPassLike[] = pass?.uuid ? [pass] : [];
+
+      if (needsPassRefetch) {
+        try {
+          const res = await getMyAccessPasses("organizer");
+          rawPasses = unwrapList<AccessPassLike>(res.data);
+        } catch {
+          /* keep incoming snapshot */
+        }
+      }
+
+      if (!rawPasses.length) return;
+      const owned = filterWalletAccessPassesBySentTransfers(
+        rawPasses,
+        sentTransferRecordsRef.current,
+      );
+      const summaries = buildAccessPassSummaries(owned);
+      if (!summaries.length) return;
+      setAccessPasses((current) =>
+        mergeAccessPassSummaries(current, summaries),
+      );
+    },
+    [syncWalletAfterTransferAction],
+  );
+
   const refreshReceivedTransferRowsFromRefs = useCallback(() => {
     const receivedRecords = receivedTransferRecordsRef.current;
     const incomingRecords = incomingTransferRecordsRef.current;
@@ -2327,6 +2429,16 @@ export default function SeasonTickets({
         await dropPendingTransfer(res?.data);
         return;
       }
+      if (source === "wallet-access") {
+        await promoteAcceptedIncomingAccessPassToWallet(
+          id,
+          acceptedRecord,
+          res?.data,
+        );
+        setConfirmAccept(null);
+        flashToast("Transfer accepted");
+        return;
+      }
       if (source === "wallet-upcoming" || source === "wallet-event") {
         await completeMyTicketsAccept(res?.data);
         return;
@@ -2435,6 +2547,17 @@ export default function SeasonTickets({
         cancelledRecord,
         confirmCancel,
       );
+      if (confirmCancel.passKind === "access pass") {
+        const passSnapshot = (cancelledRecord?.access_pass ??
+          cancelledRecord?.accessPass ??
+          cancelledRecord?.accessPassSnapshot) as AccessPassLike | undefined;
+        if (passSnapshot?.uuid) {
+          const summaries = buildAccessPassSummaries([passSnapshot]);
+          setAccessPasses((current) =>
+            mergeAccessPassSummaries(current, summaries),
+          );
+        }
+      }
     };
     try {
       let resolvedCancelId = resolveCancelTransferIdForApi(
@@ -2602,7 +2725,11 @@ export default function SeasonTickets({
   const authed = screen !== "login" && screen !== "code";
   const showHeader = !(mobileTicketView && showingEventDetail);
   const showTabBar =
-    mobile && authed && !showingEventDetail && !showingSeasonPackage;
+    mobile &&
+    authed &&
+    !showingEventDetail &&
+    !showingSeasonPackage &&
+    !showingAccessPass;
 
   const Header = () => (
     <WalletChrome
@@ -2684,16 +2811,22 @@ export default function SeasonTickets({
   );
 
   /* ---------- My Tickets (events list) ---------- */
+  const incomingPassPackages = summarizeIncomingPassPackageTransfers(eventDetails);
+  const incomingAccessPasses = summarizeIncomingAccessPassTransfers(eventDetails);
+  const visibleAccessPasses = filterAccessPassSummariesBySentTransfers(
+    accessPasses,
+    sentTransferRecords,
+  );
   const showDemoSchedule =
     eventsChecked &&
     isHolder &&
     upcomingEvents.length === 0 &&
     seasonPackages.length === 0 &&
     flexPacks.length === 0 &&
-    accessPasses.length === 0 &&
+    visibleAccessPasses.length === 0 &&
+    incomingAccessPasses.length === 0 &&
     !eventsLoading;
   const listPending = !eventsChecked || eventsLoading;
-  const incomingPassPackages = summarizeIncomingPassPackageTransfers(eventDetails);
   const upcomingCount = upcomingEvents.length;
   const seasonCount =
     seasonPackages.length +
@@ -2703,7 +2836,11 @@ export default function SeasonTickets({
     { id: "upcoming" as const, label: "Upcoming", n: upcomingCount },
     { id: "season" as const, label: "Packages", n: seasonCount },
     { id: "flex" as const, label: "Flex packs", n: flexPacks.length + (showDemoSchedule ? 1 : 0) },
-    { id: "access" as const, label: "Access passes", n: accessPasses.length },
+    {
+      id: "access" as const,
+      label: "Access passes",
+      n: visibleAccessPasses.length + incomingAccessPasses.length,
+    },
   ];
   const selectedSeasonPackage =
     routedSeasonPackage ??
@@ -2730,9 +2867,11 @@ export default function SeasonTickets({
     : [];
   const visiblePackagePasses = useMemo(
     () =>
-      filterAccessPassSummariesBySentTransfers(
-        selectedPackagePasses,
-        sentTransferRecords,
+      sortAccessPassSummaries(
+        filterAccessPassSummariesBySentTransfers(
+          selectedPackagePasses,
+          sentTransferRecords,
+        ),
       ),
     [selectedPackagePasses, sentTransferRecords],
   );
@@ -2790,18 +2929,10 @@ export default function SeasonTickets({
           includeInactive: true,
           packageEvents: packageOrder?.package?.events,
         }).map((pass) => ({ ...pass, orderId: pass.orderId || orderId }));
-        setPackageAccessPasses((current) => {
-          const mergedIds = new Set(
-            passes
-              .map((pass) => String(pass.accessPassUUID || "").trim())
-              .filter(Boolean),
-          );
-          const kept = (current[key] ?? []).filter(
-            (pass) =>
-              !mergedIds.has(String(pass.accessPassUUID || "").trim()),
-          );
-          return { ...current, [key]: [...kept, ...passes] };
-        });
+        setPackageAccessPasses((current) => ({
+          ...current,
+          [key]: mergeAccessPassSummaries(current[key] ?? [], passes),
+        }));
       } catch {
         /* keep cached passes when the fetch fails or lags behind a cancel */
         const attempts = (packagePassAttempts.current[key] ?? 0) + 1;
@@ -2873,23 +3004,14 @@ export default function SeasonTickets({
           ...pass,
           orderId: pass.orderId || packageOrderId,
         }));
-        const restoredIds = new Set(
-          summaries
-            .map((pass) => String(pass.accessPassUUID || "").trim())
-            .filter(Boolean),
-        );
         packagePassRequested.current[packageKey] = true;
-        setPackageAccessPasses((current) => {
-          const existing = current[packageKey] ?? [];
-          const kept = existing.filter(
-            (pass) =>
-              !restoredIds.has(String(pass.accessPassUUID || "").trim()),
-          );
-          return {
-            ...current,
-            [packageKey]: [...kept, ...summaries],
-          };
-        });
+        setPackageAccessPasses((current) => ({
+          ...current,
+          [packageKey]: mergeAccessPassSummaries(
+            current[packageKey] ?? [],
+            summaries,
+          ),
+        }));
         setPackagePassChecked((current) => ({
           ...current,
           [packageKey]: true,
@@ -3170,6 +3292,101 @@ export default function SeasonTickets({
             width: "100%",
             textAlign: "center",
           }, "footer")}
+        </div>
+      </div>
+    );
+  };
+
+  const IncomingAccessPassRow = ({ row }: { row: CartEventSummary }) => {
+    const eventCount = row.passEventCount ?? row.incomingAccessPass?.eventCount ?? 0;
+    const remainingCount =
+      row.passRemainingCount ??
+      row.incomingAccessPass?.eventCount ??
+      eventCount;
+    const fallbackPass: AccessPassSummary = row.incomingAccessPass ?? {
+      key: row.key,
+      pass: {},
+      name: row.name,
+      typeLabel: "All-access pass",
+      checkInCode: "",
+      seat: "",
+      eventCount,
+      attendedCount: Math.max(0, eventCount - remainingCount),
+      season: "",
+      status: "Active",
+      validThrough: "",
+      events: [],
+      artwork: row.thumb,
+    };
+    const sibling = visibleAccessPasses.find(
+      (owned) => owned.name === fallbackPass.name,
+    );
+    const pass: AccessPassSummary = {
+      ...fallbackPass,
+      backgroundColor:
+        fallbackPass.backgroundColor || sibling?.backgroundColor || CRIMSON,
+    };
+    return (
+      <div
+        style={{
+          ...card,
+          borderRadius: 20,
+          overflow: "hidden",
+          color: "inherit",
+          cursor: "default",
+        }}
+      >
+        <div
+          style={{
+            padding: mobile ? "12px 16px" : "12px 18px",
+            display: "flex",
+            flexDirection: "column",
+            gap: 2,
+            fontSize: fluidSize(12),
+            fontWeight: 600,
+            color: "#c07a12",
+            borderBottom: "1px solid rgba(192,122,18,0.14)",
+            background: "#fffaf2",
+          }}
+        >
+          <span
+            style={{
+              minWidth: 0,
+              overflow: "hidden",
+              textOverflow: "ellipsis",
+              whiteSpace: "nowrap",
+            }}
+          >
+            {`Pending transfer from ${row.incomingTransferFrom || "Someone"}`}
+          </span>
+        </div>
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: mobile ? "1fr" : "minmax(220px, 0.8fr) 1.2fr",
+          }}
+        >
+          <AccessPassCardBody row={pass} hideEventCount />
+        </div>
+        <div
+          style={{
+            borderTop: "1px solid rgba(5,27,53,0.08)",
+            padding: mobile ? "12px 16px" : "12px 18px",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            background: "#fff",
+          }}
+        >
+          {renderAcceptTransferButton(
+            acceptTargetFromUpcoming(row),
+            "wallet-access",
+            {
+              width: "100%",
+              textAlign: "center",
+            },
+            "footer",
+          )}
         </div>
       </div>
     );
@@ -3645,22 +3862,18 @@ export default function SeasonTickets({
     );
   };
 
-  const AccessPassRow = ({ row }: { row: AccessPassSummary }) => {
+  const AccessPassCardBody = ({
+    row,
+    hideEventCount = false,
+  }: {
+    row: AccessPassSummary;
+    hideEventCount?: boolean;
+  }) => {
     const nextEventWhen = row.nextEvent
       ? eventWhenLabel(row.nextEvent, row.nextEvent.venue?.timezone)
       : "";
     const foreground = row.fontColor || "#ffffff";
-    const href = walletAccessPassPath(row.orderId, row.accessPassUUID);
-    const rowStyle = {
-      ...card,
-      borderRadius: 20,
-      overflow: "hidden",
-      display: "grid",
-      gridTemplateColumns: mobile ? "1fr" : "minmax(220px, 0.8fr) 1.2fr",
-      color: "inherit",
-      textDecoration: "none",
-    };
-    const body = (
+    return (
       <>
         <div
           style={{
@@ -3686,7 +3899,7 @@ export default function SeasonTickets({
             <div style={{ minWidth: 0 }}>
               <div style={{ fontSize: fluidSize(11), fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.08em", opacity: 0.8 }}>
                 {row.typeLabel}
-      </div>
+              </div>
               <div style={{ marginTop: 5, fontSize: fluidSize(19), fontWeight: 600, lineHeight: 1.2 }}>
                 {row.name}
               </div>
@@ -3701,19 +3914,11 @@ export default function SeasonTickets({
                 <div style={{ marginTop: 4, fontSize: fluidSize(13), fontWeight: 600 }}>{row.seat}</div>
               ) : null}
             </div>
-            {row.checkInCode ? (
-              <div
-                role="img"
-                aria-label={`QR code for ${row.name}`}
-                style={{ background: "#fff", borderRadius: 10, padding: 6, lineHeight: 0 }}
-              >
-                <QRCodeSVG value={row.checkInCode} size={54} />
-              </div>
-            ) : (
+            {!hideEventCount && !row.checkInCode ? (
               <div style={{ fontSize: fluidSize(12), fontWeight: 600 }}>
                 {row.eventCount} {row.eventCount === 1 ? "event" : "events"}
               </div>
-            )}
+            ) : null}
           </div>
         </div>
         <div style={{ padding: mobile ? 20 : 24, display: "flex", flexDirection: "column", justifyContent: "center", gap: 7 }}>
@@ -3736,12 +3941,34 @@ export default function SeasonTickets({
         </div>
       </>
     );
+  };
+
+  const AccessPassRow = ({ row }: { row: AccessPassSummary }) => {
+    const href = walletAccessPassPath(
+      row.orderId,
+      row.accessPassUUID || row.key,
+    );
+    const rowStyle = {
+      ...card,
+      borderRadius: 20,
+      overflow: "hidden",
+      display: "grid",
+      gridTemplateColumns: mobile ? "1fr" : "minmax(220px, 0.8fr) 1.2fr",
+      color: "inherit",
+      textDecoration: "none",
+    };
     return href ? (
-      <Link href={href} style={rowStyle}>
-        {body}
+      <Link
+        href={href}
+        aria-label={`View ${row.name}`}
+        style={{ ...rowStyle, cursor: "pointer" }}
+      >
+        <AccessPassCardBody row={row} />
       </Link>
     ) : (
-      <div style={rowStyle}>{body}</div>
+      <div style={rowStyle}>
+        <AccessPassCardBody row={row} />
+      </div>
     );
   };
 
@@ -3773,9 +4000,7 @@ export default function SeasonTickets({
       (fullOrderChecked[selectedPackageOrderId]
         ? formatSeasonPassHolderName(null, { email: row.holderEmail })
         : "");
-    const helperCopy = showPhoneQr
-      ? "Tap the QR code to scan at entry for any included event or add this pass to your Apple/Google wallet."
-      : "Show the QR code straight from your phone to scan at entry for any included event, or add the pass to your Apple/Google wallet.";
+    const helperCopy = showPhoneQr ? PASS_PHONE_QR_HINT : "";
     const seasonPassTransferBlocked = seasonPassHasTicketTransfers(row.pass, {
       orderId: selectedPackageOrderId,
       sentTransfers: sentTransferRecords,
@@ -3832,9 +4057,11 @@ export default function SeasonTickets({
           {holderName ? (
             <div style={{ fontSize: fluidSize(15), fontWeight: 600 }}>{holderName}</div>
           ) : null}
-          <div style={{ marginTop: holderName ? 5 : 0, fontSize: fluidSize(13), color: SUB }}>
-            {helperCopy}
-          </div>
+          {helperCopy ? (
+            <div style={{ marginTop: holderName ? 5 : 0, fontSize: fluidSize(13), color: SUB }}>
+              {helperCopy}
+            </div>
+          ) : null}
         </div>
       </div>
 
@@ -3916,6 +4143,9 @@ export default function SeasonTickets({
       0,
       pass.eventCount - pass.attendedCount,
     );
+    const showPhoneQr = phoneDevice && Boolean(pass.checkInCode);
+    const canTransferAccessPass =
+      pass.status === "Active" && Boolean(pass.accessPassUUID);
 
     const eventRow = (
       event: AccessPassSummary["events"][number],
@@ -3932,17 +4162,17 @@ export default function SeasonTickets({
       const availability =
         matchingDetail?.availability ||
         (isUpcomingEvent(event) ? "available" : "past");
-      const badge = matchingDetail
+      const rawBadge = matchingDetail
         ? walletEventAvailabilityBadge(matchingDetail)
         : availability;
+      const badge =
+        rawBadge === "past" || isScannedTicket(event) ? "attended" : rawBadge;
       const status =
         badge === "transferred"
           ? "Transferred"
           : badge === "attended"
             ? "Attended"
-            : badge === "past"
-              ? "Past"
-              : "Upcoming";
+            : "Upcoming";
       const clickable =
         pass.typeLabel === "Season pass" &&
         availability === "available" &&
@@ -3951,11 +4181,13 @@ export default function SeasonTickets({
         <div
           key={`${highlighted ? "next-" : ""}${event.uuid || event.name}`}
           style={{
-            ...card,
+            boxSizing: "border-box",
+            width: "100%",
+            background: highlighted ? FIELD : "transparent",
             borderRadius: highlighted ? 14 : 0,
             border: highlighted ? `1px solid ${LINE}` : "none",
-            borderBottom: highlighted ? undefined : `1px solid ${LINE}`,
-            boxShadow: highlighted ? undefined : "none",
+            borderBottom: `1px solid ${LINE}`,
+            boxShadow: "none",
             padding: highlighted ? 14 : "13px 0",
             display: "flex",
             alignItems: "center",
@@ -3990,17 +4222,14 @@ export default function SeasonTickets({
                     color: INK,
                     background: ACCENT,
                   }
-                : badge === "transferred" || badge === "attended" || badge === "past"
-                  ? { flexShrink: 0, ...walletAvailabilityBadgeStyle(badge) }
-                  : {
-                      flexShrink: 0,
-                      borderRadius: 999,
-                      padding: "4px 10px",
-                      fontSize: fluidSize(11),
-                      fontWeight: 600,
-                      color: INK,
-                      background: ACCENT,
-                    }
+                : {
+                    flexShrink: 0,
+                    ...walletAvailabilityBadgeStyle(
+                      badge === "transferred" || badge === "attended"
+                        ? badge
+                        : "upcoming",
+                    ),
+                  }
             }
           >
             {highlighted && pass.seat !== "Ticket" ? pass.seat : status}
@@ -4032,100 +4261,170 @@ export default function SeasonTickets({
       ) : content;
     };
 
+    const transferButton = (placement: "header" | "footer") => (
+      <button
+        type="button"
+        onClick={() => openPassTransfer(pass, "access pass")}
+        style={{
+          fontFamily: "inherit",
+          width: placement === "footer" ? "100%" : "auto",
+          alignSelf: placement === "header" ? "flex-start" : undefined,
+          marginTop: placement === "header" ? 12 : undefined,
+          fontSize: fluidSize(placement === "footer" ? 16 : 13),
+          fontWeight: 600,
+          color: INK,
+          background: "#fff",
+          border: placement === "footer" ? "1px solid rgba(5,27,53,0.14)" : "none",
+          borderRadius: placement === "footer" ? 14 : 999,
+          padding: placement === "footer" ? "12px 16px" : "9px 14px",
+          minHeight: placement === "footer" ? 50 : undefined,
+          cursor: "pointer",
+        }}
+      >
+        Transfer access pass
+      </button>
+    );
+
     return (
-      <div style={{ maxWidth: 760, margin: "0 auto", padding: bodyPad, display: "flex", flexDirection: "column", gap: 16 }}>
-        <Link href={walletSectionHref("events")} style={{ ...backBtn, textDecoration: "none" }}>
-          <BackArrow />All tickets
-        </Link>
-        <div style={{ ...card, borderRadius: 22, overflow: "hidden" }}>
-          <div style={{ padding: mobile ? 18 : 24, color: foreground, background }}>
-            <div style={{ display: "flex", alignItems: "flex-start", gap: 14 }}>
-              {pass.artwork ? (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img
-                  src={pass.artwork}
-                  alt=""
-                  style={{ width: mobile ? 58 : 70, height: mobile ? 58 : 70, flexShrink: 0, borderRadius: 12, objectFit: "contain", background: "#fff", padding: 7, boxSizing: "border-box" }}
-                />
-              ) : null}
-              <div style={{ minWidth: 0, flex: 1 }}>
-                <div style={{ fontSize: fluidSize(10), fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.08em", opacity: 0.82 }}>
-                  {pass.typeLabel}
+      <>
+        <div
+          style={{
+            flex: 1,
+            minHeight: 0,
+            width: "100%",
+            maxWidth: mobile ? 760 : 1100,
+            margin: "0 auto",
+            padding:
+              canTransferAccessPass && mobile
+                ? `16px 18px ${mobileStickyFooterReservePx(74)}`
+                : mobile
+                  ? "16px 18px 16px"
+                  : "24px 32px 32px",
+            display: "flex",
+            flexDirection: "column",
+            gap: 16,
+            boxSizing: "border-box",
+          }}
+        >
+          <Link href={walletSectionHref("events")} style={{ ...backBtn, textDecoration: "none", flexShrink: 0 }}>
+            <BackArrow />All tickets
+          </Link>
+          <div
+            style={{
+              ...card,
+              borderRadius: mobile ? "22px 22px 0 0" : 22,
+              overflow: "hidden",
+              display: "flex",
+              flexDirection: "column",
+              minHeight: 0,
+              flex: 1,
+            }}
+          >
+              <div style={{ flexShrink: 0, padding: mobile ? 18 : 24, color: foreground, background }}>
+                <div style={{ display: "flex", alignItems: "flex-start", gap: 14 }}>
+                  {pass.artwork ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img
+                      src={pass.artwork}
+                      alt=""
+                      style={{ width: mobile ? 58 : 70, height: mobile ? 58 : 70, flexShrink: 0, borderRadius: 12, objectFit: "contain", background: "#fff", padding: 7, boxSizing: "border-box" }}
+                    />
+                  ) : null}
+                  <div style={{ minWidth: 0, flex: 1 }}>
+                    <div style={{ fontSize: fluidSize(10), fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.08em", opacity: 0.82 }}>
+                      {pass.typeLabel}
+                    </div>
+                    <h1 style={{ margin: "4px 0 0", fontSize: fluidSize(25), fontWeight: 600, letterSpacing: "-0.025em", lineHeight: 1.1 }}>
+                      {pass.name}
+                    </h1>
+                    {pass.checkInCode ? (
+                      <div style={{ marginTop: 6, fontSize: fluidSize(12), opacity: 0.82 }}>
+                        Pass #{pass.checkInCode}
+                      </div>
+                    ) : null}
+                    {canTransferAccessPass && !mobile ? transferButton("header") : null}
+                  </div>
+                  {showPhoneQr ? (
+                    <button
+                      type="button"
+                      aria-label={`Show QR code for ${pass.name}`}
+                      onClick={() => setQrPass({ pass, kind: "access pass" })}
+                      style={{ flexShrink: 0, borderRadius: 10, padding: 6, lineHeight: 0, border: "1px solid rgba(255,255,255,0.25)", background: "transparent", cursor: "pointer" }}
+                    >
+                      <span role="img" aria-label={`QR code for ${pass.name}`} style={{ display: "block" }}>
+                        <QRCodeSVG
+                          value={pass.checkInCode}
+                          size={mobile ? 48 : 58}
+                          fgColor={foreground}
+                          bgColor={background}
+                        />
+                      </span>
+                    </button>
+                  ) : null}
                 </div>
-                <h1 style={{ margin: "4px 0 0", fontSize: fluidSize(25), fontWeight: 600, letterSpacing: "-0.025em", lineHeight: 1.1 }}>
-                  {pass.name}
-                </h1>
-                {pass.checkInCode ? (
-                  <div style={{ marginTop: 6, fontSize: fluidSize(12), opacity: 0.82 }}>
-                    Pass #{pass.checkInCode}
+                {showPhoneQr ? (
+                  <div style={{ marginTop: 12, fontSize: fluidSize(13), opacity: 0.88, lineHeight: 1.45 }}>
+                    {PASS_PHONE_QR_HINT}
                   </div>
                 ) : null}
-              </div>
-              {pass.checkInCode ? (
-                <button
-                  type="button"
-                  aria-label={`Show QR code for ${pass.name}`}
-                  onClick={() => setQrPass({ pass, kind: "access pass" })}
-                  style={{ flexShrink: 0, borderRadius: 10, padding: 6, lineHeight: 0, border: "1px solid rgba(255,255,255,0.25)", background: "transparent", cursor: "pointer" }}
-                >
-                  <span role="img" aria-label={`QR code for ${pass.name}`} style={{ display: "block" }}>
-                    <QRCodeSVG
-                      value={pass.checkInCode}
-                      size={mobile ? 48 : 58}
-                      fgColor={foreground}
-                      bgColor={background}
-                    />
-                  </span>
-                </button>
-              ) : null}
-            </div>
-            <div style={{ marginTop: 18, paddingTop: 16, borderTop: "1px solid rgba(255,255,255,0.18)", display: "flex", justifyContent: "space-between", gap: 18 }}>
-              <div>
-                <div style={{ fontSize: fluidSize(10), opacity: 0.72 }}>Events included</div>
-                <div style={{ marginTop: 3, fontSize: fluidSize(13), fontWeight: 600 }}>
-                  {remainingCount} of {pass.eventCount} remaining
-                </div>
-              </div>
-              {pass.validThrough ? (
-                <div style={{ textAlign: "right" }}>
-                  <div style={{ fontSize: fluidSize(10), opacity: 0.72 }}>Valid through</div>
-                  <div style={{ marginTop: 3, fontSize: fluidSize(13), fontWeight: 600 }}>
-                    {pass.validThrough}
+                <div style={{ marginTop: 18, paddingTop: 16, borderTop: "1px solid rgba(255,255,255,0.18)", display: "flex", justifyContent: "space-between", gap: 18 }}>
+                  <div>
+                    <div style={{ fontSize: fluidSize(10), opacity: 0.72 }}>Events included</div>
+                    <div style={{ marginTop: 3, fontSize: fluidSize(13), fontWeight: 600 }}>
+                      {remainingCount} of {pass.eventCount} remaining
+                    </div>
                   </div>
+                  {pass.validThrough ? (
+                    <div style={{ textAlign: "right" }}>
+                      <div style={{ fontSize: fluidSize(10), opacity: 0.72 }}>Valid through</div>
+                      <div style={{ marginTop: 3, fontSize: fluidSize(13), fontWeight: 600 }}>
+                        {pass.validThrough}
+                      </div>
+                    </div>
+                  ) : null}
                 </div>
-              ) : null}
-            </div>
-          </div>
-
-          <div style={{ padding: mobile ? 18 : 24 }}>
-            {pass.nextEvent ? (
-              <section>
-                <div style={{ ...eyebrow, marginBottom: 9 }}>Next up</div>
-                {eventRow(pass.nextEvent, true)}
-              </section>
-            ) : null}
-            {pass.events.length > 0 ? (
-              <section style={{ marginTop: pass.nextEvent ? 22 : 0 }}>
-                <div style={{ ...eyebrow, marginBottom: 2 }}>All events</div>
-                {pass.events.map((event) => eventRow(event))}
-              </section>
-            ) : (
-              <div style={{ fontSize: fluidSize(14), color: SUB }}>
-                No events are currently attached to this pass.
               </div>
-            )}
-            {pass.status === "Active" && pass.accessPassUUID ? (
-              <button
-                type="button"
-                onClick={() => openPassTransfer(pass, "access pass")}
-                style={{ fontFamily: "inherit", width: "100%", marginTop: 22, fontSize: fluidSize(14), fontWeight: 600, color: INK, background: "#fff", border: `1px solid ${LINE}`, borderRadius: 999, padding: "12px 16px", cursor: "pointer" }}
+
+              <div
+                style={{
+                  flex: 1,
+                  minHeight: 0,
+                  overflowY: "auto",
+                  WebkitOverflowScrolling: "touch",
+                  overscrollBehavior: "contain",
+                  padding: mobile ? 18 : 24,
+                }}
               >
-                Transfer access pass
-              </button>
-            ) : null}
-          </div>
+                {pass.nextEvent ? (
+                  <section>
+                    <div style={{ ...eyebrow, marginBottom: 9 }}>Next up</div>
+                    {eventRow(pass.nextEvent, true)}
+                  </section>
+                ) : null}
+                {pass.events.length > 0 ? (
+                  <section style={{ marginTop: pass.nextEvent ? 22 : 0 }}>
+                    <div style={{ ...eyebrow, marginBottom: 2 }}>All events</div>
+                    {pass.events.map((event) => eventRow(event))}
+                  </section>
+                ) : (
+                  <div style={{ fontSize: fluidSize(14), color: SUB }}>
+                    No events are currently attached to this pass.
+                  </div>
+                )}
+              </div>
+            </div>
         </div>
-      </div>
+        {canTransferAccessPass && mobile ? (
+          <MobileStickyFooter
+            zIndex={44}
+            background="#fff"
+            innerPadding="12px 16px"
+            data-testid="wallet-access-pass-actions-footer"
+          >
+            {transferButton("footer")}
+          </MobileStickyFooter>
+        ) : null}
+      </>
     );
   };
 
@@ -4210,10 +4509,14 @@ export default function SeasonTickets({
               </>
             ) : (
               <>
-                {accessPasses.map((row) => (
+                {incomingAccessPasses.map((row) => (
+                  <IncomingAccessPassRow key={row.key} row={row} />
+                ))}
+                {visibleAccessPasses.map((row) => (
                   <AccessPassRow key={row.key} row={row} />
                 ))}
-                {accessPasses.length === 0 ? (
+                {visibleAccessPasses.length === 0 &&
+                incomingAccessPasses.length === 0 ? (
                   <div style={walletEmptyState}>
                     <div style={{ fontSize: fluidSize(15), fontWeight: 600 }}>No access passes yet</div>
                     <div style={{ marginTop: 6, fontSize: fluidSize(13), color: SUB }}>Access passes you buy or receive will show up here.</div>
@@ -5137,7 +5440,11 @@ export default function SeasonTickets({
                   lines={transferSeatLines(t)}
                   style={{ fontSize: fluidSize(13), color: SUB }}
                 />
-                <div style={{ fontSize: fluidSize(13), color: SUB }}>{listTab === "received" ? "From " + t.from + (t.on ? " · received on " + t.on : "") : "To " + t.to + " · sent " + t.on}</div>
+                <div style={{ fontSize: fluidSize(13), color: SUB }}>{transferPartyDateLine({
+                  direction: listTab === "received" ? "received" : "sent",
+                  email: listTab === "received" ? t.from : t.to,
+                  on: t.on,
+                })}</div>
                 {t.passKind === "season pass" ? (
                   <div style={{ marginTop: 2 }}>
                     <SeasonTicketsBadge />
@@ -5548,7 +5855,7 @@ export default function SeasonTickets({
               <QRCodeSVG value={detail.code} size={mobile ? 220 : 256} fgColor={INK} />
             </div>
             <p style={{ margin: 0, color: SUB, fontSize: fluidSize(15), lineHeight: 1.5, textAlign: "center" }}>
-              Show this code at the gate.
+              Scan this code at entry
             </p>
           </div>
           <div style={{ padding: "18px 24px 24px", borderTop: `1px solid ${LINE}`, display: "flex", justifyContent: "flex-end" }}>
@@ -5654,9 +5961,7 @@ export default function SeasonTickets({
             { id: optimisticPassId, createdAt: passCreatedAt },
           );
           const seatLines =
-            tf.passKind === "season pass"
-              ? [tf.pass.seat]
-              : ["1 Access pass"];
+            tf.passKind === "season pass" ? [tf.pass.seat].filter(Boolean) : [];
           const passOrderId =
             tf.pass.orderId ||
             routedOrderId ||
@@ -5667,16 +5972,17 @@ export default function SeasonTickets({
               String(order.orderId || "") === passOrderId ||
               String(order.id || "") === passOrderId,
           );
-          const packageEventsForPass = packageOrder?.package?.events;
           const stubPassEvents = mergeUniquePackageEvents(
             tf.pass.events,
             tf.pass.pass.events,
-            packageEventsForPass,
           );
-          const totalPassEvents = Math.max(
-            tf.pass.eventCount ?? 0,
-            selectedSeasonPackage?.eventCount ?? 0,
-            stubPassEvents.length,
+          const totalPassEvents =
+            tf.passKind === "access pass"
+              ? tf.pass.eventCount || stubPassEvents.length
+              : stubPassEvents.length;
+          const remainingCount = Math.max(
+            0,
+            tf.pass.eventCount - tf.pass.attendedCount,
           );
           const eventCountLine =
             totalPassEvents === 1
@@ -5685,15 +5991,21 @@ export default function SeasonTickets({
           const entry: Sent = {
             id: transferId,
             to: tf.email,
+            from: String(getSession()?.user?.email || email || ""),
             title: tf.pass.name,
             seat: seatLines.join(" · "),
             seatLines,
-            schedule: eventCountLine,
+            schedule:
+              tf.passKind === "access pass"
+                ? formatAccessPassRemainingLine(remainingCount, totalPassEvents)
+                : eventCountLine,
             on: "Just now",
             createdAt,
             status: "pending",
             passKind: tf.passKind,
             accessPassId: tf.pass.accessPassUUID,
+            eventCount: totalPassEvents,
+            ...(tf.passKind === "access pass" ? { remainingCount } : {}),
           };
           const passOrderSnapshot = buildPassTransferOrderSnapshot(
             packageOrder,
@@ -5722,6 +6034,7 @@ export default function SeasonTickets({
             id: transferId,
             status: "pending",
             createdAt,
+            fromUserEmail: String(getSession()?.user?.email || email || ""),
             emailAddressToUser: tf.email,
             transferType: "access_pass",
             orderId: passOrderId || undefined,
@@ -5991,7 +6304,13 @@ export default function SeasonTickets({
             ) : (
             <div style={{ display: "flex", flexDirection: "column", gap: 4, background: FIELD, borderRadius: 14, padding: "14px 16px" }}>
               <div style={{ fontSize: transferModalType.fieldValue, fontWeight: 600 }}>{tf?.pass?.name}</div>
-              {tf?.pass?.seat && tf.pass.seat !== "Ticket" ? (
+              {tfKind === "access pass" ? (
+                (tf?.pass?.eventCount ?? 0) > 0 ? (
+                  <div style={{ fontSize: transferModalType.fieldLabel, color: MUTE }}>
+                    {formatAccessPassRemainingLine(0, tf?.pass?.eventCount ?? 0)}
+                  </div>
+                ) : null
+              ) : tf?.pass?.seat && tf.pass.seat !== "Ticket" ? (
                 <div style={{ fontSize: transferModalType.fieldLabel, color: MUTE }}>{tf.pass.seat}</div>
               ) : null}
           </div>
@@ -6116,10 +6435,31 @@ export default function SeasonTickets({
           </p>
         <div style={{ display: "flex", flexDirection: "column", gap: 3, background: FIELD, borderRadius: 14, padding: "14px 16px" }}>
             <div style={{ fontSize: fluidSize(14), fontWeight: 600 }}>{confirmAccept?.title}</div>
-            <div style={{ fontSize: fluidSize(13), color: SUB }}>{confirmAccept?.seat}</div>
-            {confirmAccept?.from ? (
-              <div style={{ fontSize: fluidSize(13), color: SUB }}>{`From ${confirmAccept.from}`}</div>
-            ) : null}
+            {(() => {
+              const lines = transferModalDetailLines({
+                ...(confirmAccept ?? {}),
+                direction: "received",
+              });
+              return (
+                <>
+                  {lines.when ? (
+                    <div style={{ fontSize: fluidSize(13), color: SUB }}>{lines.when}</div>
+                  ) : null}
+                  {lines.games ? (
+                    <div style={{ fontSize: fluidSize(13), color: SUB }}>{lines.games}</div>
+                  ) : null}
+                  {lines.remaining ? (
+                    <div style={{ fontSize: fluidSize(13), color: SUB }}>{lines.remaining}</div>
+                  ) : null}
+                  {lines.seats ? (
+                    <div style={{ fontSize: fluidSize(13), color: SUB }}>{lines.seats}</div>
+                  ) : null}
+                  {lines.from ? (
+                    <div style={{ fontSize: fluidSize(13), color: SUB }}>{lines.from}</div>
+                  ) : null}
+                </>
+              );
+            })()}
         </div>
           {confirmAcceptError ? (
             <div role="alert" style={{ fontSize: fluidSize(13), color: DANGER }}>
@@ -6231,7 +6571,31 @@ export default function SeasonTickets({
           <p style={{ margin: 0, fontSize: fluidSize(14), lineHeight: 1.6, color: SUB }}>{cancelReturnCopy}</p>
           <div style={{ display: "flex", flexDirection: "column", gap: 3, background: FIELD, borderRadius: 14, padding: "14px 16px" }}>
             <div style={{ fontSize: fluidSize(14), fontWeight: 600 }}>{confirmCancel?.title}</div>
-            <div style={{ fontSize: fluidSize(13), color: SUB }}>{confirmCancel?.seat}</div>
+            {(() => {
+              const lines = transferModalDetailLines({
+                ...(confirmCancel ?? {}),
+                direction: "sent",
+              });
+              return (
+                <>
+                  {lines.when ? (
+                    <div style={{ fontSize: fluidSize(13), color: SUB }}>{lines.when}</div>
+                  ) : null}
+                  {lines.games ? (
+                    <div style={{ fontSize: fluidSize(13), color: SUB }}>{lines.games}</div>
+                  ) : null}
+                  {lines.remaining ? (
+                    <div style={{ fontSize: fluidSize(13), color: SUB }}>{lines.remaining}</div>
+                  ) : null}
+                  {lines.seats ? (
+                    <div style={{ fontSize: fluidSize(13), color: SUB }}>{lines.seats}</div>
+                  ) : null}
+                  {lines.from ? (
+                    <div style={{ fontSize: fluidSize(13), color: SUB }}>{lines.from}</div>
+                  ) : null}
+                </>
+              );
+            })()}
           </div>
           {confirmCancelError ? (
             <div role="alert" style={{ fontSize: fluidSize(13), color: DANGER }}>
@@ -6303,9 +6667,11 @@ export default function SeasonTickets({
   };
 
   return (
-    <div className="shopper-page" style={{ width: "100%", maxWidth: "100%", overflowX: "clip", minHeight: "100vh", color: INK, background: "#eef1f8", backgroundImage: "radial-gradient(120% 80% at 50% -10%, #ffffff 0%, #f5f7fc 42%, #e9edf6 100%)", backgroundAttachment: "fixed", fontFamily: "'Geist', system-ui, -apple-system, sans-serif", WebkitFontSmoothing: "antialiased" }}>
+    <div className="shopper-page" style={{ width: "100%", maxWidth: "100%", overflowX: "clip", minHeight: "100vh", color: INK, background: "#eef1f8", backgroundImage: "radial-gradient(120% 80% at 50% -10%, #ffffff 0%, #f5f7fc 42%, #e9edf6 100%)", backgroundAttachment: "fixed", fontFamily: "'Geist', system-ui, -apple-system, sans-serif", WebkitFontSmoothing: "antialiased", ...(showingAccessPass ? { display: "flex", flexDirection: "column", height: "100dvh", maxHeight: "100dvh", overflow: "hidden" } : {}) }}>
       <style>{`${shopperPageTypeCss()}\n${MOBILE_TICKET_DESKTOP_TYPE}\n${MOBILE_TRANSFER_DESKTOP_TYPE}\n${MOBILE_DETAILS_DESKTOP_TYPE}\n${MOBILE_PASS_QR_DESKTOP_TYPE}\n.st-noscroll::-webkit-scrollbar{width:0;height:0;display:none}.st-noscroll{-ms-overflow-style:none;scrollbar-width:none}.st-sheet-up{animation:stUp .3s cubic-bezier(.22,.61,.36,1)}@keyframes stUp{from{transform:translateY(100%)}to{transform:translateY(0)}}${EVENT_CSS}`}</style>
-      {showHeader && Header()}
+      {showHeader ? (
+        <div style={showingAccessPass ? { flexShrink: 0 } : undefined}>{Header()}</div>
+      ) : null}
 
       {walletNavPending ? (
         <WalletTicketsBlocksLoading routeDestination />

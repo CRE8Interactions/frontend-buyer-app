@@ -8,6 +8,7 @@ import {
   demoCompletedPackageOrder,
   demoCompletedTicketOrder,
   demoFlexPack,
+  demoAccessPass,
   demoPackageAccessPass,
   demoSeasonPackage,
   DEMO_USER,
@@ -51,6 +52,7 @@ import {
   walletEventAvailabilityBadge,
   sortWalletEventSchedule,
   sortWalletUpcomingEvents,
+  summarizeIncomingAccessPassTransfers,
   summarizeIncomingPassPackageTransfers,
   summarizeUpcomingWalletEvents,
   ticketEntryLine,
@@ -66,6 +68,8 @@ import {
   walletRouteFromPath,
   withFullOrder,
 } from "@/lib/cartEvents";
+import { transferSentOnLabel } from "@/lib/ticketTransfers";
+import { buildAccessPassSummaries } from "@/lib/wallet";
 
 describe("cartEvents wallet schedule", () => {
   afterEach(() => {
@@ -982,6 +986,7 @@ describe("wallet season-package orders", () => {
           id: "incoming-1",
           status: "pending",
           fromUserEmail: "m.rivera@example.com",
+          createdAt: "2026-09-11T18:00:00.000Z",
           event: order.event,
           tickets: [ticket],
         },
@@ -999,6 +1004,12 @@ describe("wallet season-package orders", () => {
     expect(upcoming[0]?.pendingIncomingTransfer).toBe(true);
     expect(upcoming[0]?.incomingTransferId).toBe("incoming-1");
     expect(upcoming[0]?.incomingTransferFrom).toBe("m.rivera@example.com");
+    expect(upcoming[0]?.incomingTransferOn).toBe(
+      transferSentOnLabel(
+        "2026-09-11T18:00:00.000Z",
+        order.event?.venue?.timezone,
+      ),
+    );
   });
 
   it("adds pending package event transfers to upcoming wallet details", () => {
@@ -1079,9 +1090,47 @@ describe("wallet season-package orders", () => {
     expect(incomingPackages[0]?.name).not.toBe(activeEvent.name);
     expect(incomingPackages[0]?.incomingPassTransfer).toBe(true);
     expect(incomingPackages[0]?.passKind).toBe("season pass");
-    expect(incomingPackages[0]?.passEventCount).toBe(pkg.events.length);
+    expect(incomingPackages[0]?.passEventCount).toBe(pkg.events.slice(1).length);
     expect(incomingPackages[0]?.passTicketCount).toBe(1);
     expect(incomingPackages[0]?.ticketCount).toBe(1);
+  });
+
+  it("shows pending incoming organizer access passes on the Access Pass tab, not Packages", () => {
+    const pass = demoAccessPass();
+    const wallet = buildWalletEventDetails([], "recipient@example.com", {
+      incomingTransfers: [
+        {
+          id: "incoming-access-1",
+          status: "pending",
+          fromUserEmail: "sender@example.com",
+          transferType: "access_pass",
+          accessPassId: pass.uuid,
+          access_pass: {
+            uuid: pass.uuid,
+            name: pass.name,
+            type: "organizer",
+            events: pass.events,
+          },
+        },
+      ],
+    });
+
+    expect(summarizeIncomingPassPackageTransfers(wallet.allDetails)).toEqual([]);
+    const incomingAccess = summarizeIncomingAccessPassTransfers(
+      wallet.allDetails,
+    );
+    expect(incomingAccess).toHaveLength(1);
+    expect(incomingAccess[0]?.name).toBe(pass.name);
+    expect(incomingAccess[0]?.passKind).toBe("access pass");
+    expect(incomingAccess[0]?.passEventCount).toBe(pass.events.length);
+    expect(incomingAccess[0]?.passRemainingCount).toBe(pass.events.length);
+    expect(incomingAccess[0]?.ticketSeats ?? []).toEqual([]);
+    expect(incomingAccess[0]?.incomingAccessPass?.typeLabel).toBe(
+      "All-access pass",
+    );
+    expect(incomingAccess[0]?.incomingAccessPass?.nextEvent?.name).toBe(
+      buildAccessPassSummaries([pass])[0]?.nextEvent?.name,
+    );
   });
 
   it("shows full incoming season pass event counts from access pass schedules when past games are omitted", () => {
@@ -1130,7 +1179,7 @@ describe("wallet season-package orders", () => {
     expect(incomingPackages[0]?.passEventCount).toBe(fullEvents.length);
   });
 
-  it("uses order.details.package for incoming pass image and total event count", () => {
+  it("uses order.details.package for incoming pass image and snapshot event count", () => {
     const pass = demoPackageAccessPass();
     const packageImage = { url: "/details-package-image.jpg" };
     const pastEvent = {
@@ -1180,7 +1229,7 @@ describe("wallet season-package orders", () => {
     );
 
     expect(incomingPackages).toHaveLength(1);
-    expect(incomingPackages[0]?.passEventCount).toBe(fullEvents.length);
+    expect(incomingPackages[0]?.passEventCount).toBe(pkg.events.slice(1).length);
     expect(incomingPackages[0]?.thumb).toContain("details-package-image.jpg");
     expect(wallet.allDetails[detailKey!]?.heroImage).toContain(
       "details-package-image.jpg",
@@ -1885,6 +1934,25 @@ describe("wallet season-package orders", () => {
     expect(restored[0]?.tickets.map((row) => row.id)).toEqual([ticket.id]);
   });
 
+  it("keeps restored cancelled tickets in seat order", () => {
+    const event = DEMO_EVENTS.find((row) => row.shortCode === "NMST004")!;
+    const [first, second] = demoCheckoutCart({ ticketCount: 2 }).tickets;
+    const order = demoCompletedTicketOrder({
+      event,
+      tickets: [second],
+    });
+
+    const restored = restoreCancelledTransferTicketsToOrders([order], {
+      orderId: order.orderId,
+      tickets: [first],
+    });
+
+    expect(restored[0]?.tickets.map((row) => row.seatNumber)).toEqual([
+      first.seatNumber,
+      second.seatNumber,
+    ]);
+  });
+
   it("merges locally restored tickets into stale API wallet orders", () => {
     const order = demoCompletedTicketOrder();
     const [ticket] = order.tickets;
@@ -2186,7 +2254,7 @@ describe("wallet season-package orders", () => {
       schedule.find((row) => row.eventUUID === uuid);
 
     expect(rowFor(past.uuid)?.availability).toBe("past");
-    expect(rowFor(past.uuid)?.availabilityBadge).toBe("past");
+    expect(rowFor(past.uuid)?.availabilityBadge).toBe("attended");
     expect(rowFor(activeEvent.uuid)?.availability).toBe("transferred");
     expect(rowFor(activeEvent.uuid)?.availabilityBadge).toBe("transferred");
   });
@@ -2504,11 +2572,17 @@ describe("wallet season-package orders", () => {
     expect(wallet.upcomingEvents[0]?.pendingIncomingTransfer).toBeFalsy();
   });
 
-  it("shows attended for scanned past package games", () => {
+  it("shows attended for past or scanned package games", () => {
     const event = DEMO_EVENTS.find((row) => row.shortCode === "NMST004")!;
     const pastEvent = {
       ...event,
       start: demoDate({ days: -30 }, "19:00"),
+    };
+    const scannedUpcoming = {
+      ...event,
+      uuid: `${event.uuid}-scanned`,
+      start: demoDate({ days: 14 }, "19:00"),
+      wasScanned: true,
     };
     const order = demoCompletedTicketOrder({ event: pastEvent });
     const [ticket] = order.tickets;
@@ -2518,18 +2592,36 @@ describe("wallet season-package orders", () => {
         package: {
           uuid: "pkg-attended-test",
           name: "Test package",
-          events: [pastEvent],
+          events: [pastEvent, scannedUpcoming],
         },
-        tickets: [{ ...ticket, scanned: true, eventUUID: pastEvent.uuid }],
+        tickets: [
+          { ...ticket, eventUUID: pastEvent.uuid },
+          {
+            ...ticket,
+            id: `${ticket.id}-scanned`,
+            eventUUID: scannedUpcoming.uuid,
+          },
+        ],
       },
     ]);
-    const detail = Object.values(details)[0]!;
+    const pastDetail = Object.values(details).find(
+      (row) => row.eventUUID === pastEvent.uuid,
+    )!;
+    const scannedDetail = Object.values(details).find(
+      (row) => row.eventUUID === scannedUpcoming.uuid,
+    )!;
+    const schedule = summarizeEventDetails(details, "schedule");
 
-    expect(detail.availability).toBe("past");
-    expect(walletEventAvailabilityBadge(detail)).toBe("attended");
-    expect(summarizeEventDetails(details, "schedule")[0]?.availabilityBadge).toBe(
-      "attended",
-    );
+    expect(pastDetail.availability).toBe("past");
+    expect(walletEventAvailabilityBadge(pastDetail)).toBe("attended");
+    expect(walletEventAvailabilityBadge(scannedDetail)).toBe("attended");
+    expect(
+      schedule.find((row) => row.eventUUID === pastEvent.uuid)?.availabilityBadge,
+    ).toBe("attended");
+    expect(
+      schedule.find((row) => row.eventUUID === scannedUpcoming.uuid)
+        ?.availabilityBadge,
+    ).toBe("attended");
   });
 
   it("does not build a wallet event path without an order id", () => {
@@ -2539,6 +2631,14 @@ describe("wallet season-package orders", () => {
     expect(walletPackageEventPath("order-1", pkg.uuid, "")).toBe("");
     expect(walletPackageEventPath("order-1", "", icedogs.uuid)).toBe("");
     expect(walletAccessPassPath("order-1", "")).toBe("");
+    expect(walletAccessPassPath("", "access-pass-1")).toBe(
+      "/wallet/my-tickets/access-pass/access-pass-1/",
+    );
+    expect(
+      walletRouteFromPath("/wallet/my-tickets/access-pass/access-pass-1/"),
+    ).toEqual({
+      accessPassUUID: "access-pass-1",
+    });
   });
 });
 

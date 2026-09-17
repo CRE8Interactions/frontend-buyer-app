@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   buildAccessPassSummaries,
+  mergeAccessPassSummaries,
   resolveAccessPassTotalEventCount,
   formatPassDateRange,
   formatSeatNumberRanges,
@@ -86,19 +87,43 @@ describe("buildAccessPassSummaries", () => {
     expect(rows.map((row) => row.pass.seatNumber)).toEqual([7, 10]);
   });
 
-  it("uses the full package schedule when pass events omit past games", () => {
+  it("keeps season pass seat order when a cancelled pass is merged back", () => {
+    const passSeat15 = buildAccessPassSummaries([
+      demoPackageAccessPass({
+        uuid: "pass-seat-15",
+        checkInCode: "PASS15",
+        seatNumber: 15,
+      }) as AccessPassLike,
+    ])[0]!;
+    const passSeat16 = buildAccessPassSummaries([
+      demoPackageAccessPass({
+        uuid: "pass-seat-16",
+        checkInCode: "PASS16",
+        seatNumber: 16,
+      }) as AccessPassLike,
+    ])[0]!;
+
+    expect(
+      mergeAccessPassSummaries([passSeat16], [passSeat15]).map(
+        (row) => row.pass.seatNumber,
+      ),
+    ).toEqual([15, 16]);
+  });
+
+  it("counts games from the access pass even when the package still includes past games", () => {
     const pkg = demoSeasonPackage();
+    const passEvents = pkg.events.slice(1);
     const pass = demoPackageAccessPass({
-      events: pkg.events.slice(1),
+      events: passEvents,
     }) as AccessPassLike;
 
     expect(
       resolveAccessPassTotalEventCount(pass, { packageEvents: pkg.events }),
-    ).toBe(pkg.events.length);
+    ).toBe(passEvents.length);
     expect(
       buildAccessPassSummaries([pass], { packageEvents: pkg.events })[0]
         .eventCount,
-    ).toBe(pkg.events.length);
+    ).toBe(passEvents.length);
   });
 });
 
@@ -301,6 +326,7 @@ describe("formatPassDateRange", () => {
 describe("isScannedTicket", () => {
   it("detects scanned ticket statuses", () => {
     expect(isScannedTicket({ scanned: true })).toBe(true);
+    expect(isScannedTicket({ wasScanned: true })).toBe(true);
     expect(isScannedTicket({ status: "scanned" })).toBe(true);
     expect(isScannedTicket({ status: "active" })).toBe(false);
   });
