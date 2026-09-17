@@ -720,8 +720,9 @@ export function isScannedTicket(
   ) {
     return true;
   }
+  const row = ticket as Record<string, unknown>;
   const status = String(
-    ticket.status || ticket.checkInStatus || ticket.on_sale_status || "",
+    row.status || row.checkInStatus || row.on_sale_status || "",
   )
     .trim()
     .toLowerCase();
