@@ -2775,6 +2775,98 @@ describe("SeasonTickets package tab", () => {
     expect(screen.queryByText("Purchased")).not.toBeInTheDocument();
   });
 
+  it("shows organizer access passes nested under access_pass on myAccessPasses", async () => {
+    const user = userEvent.setup();
+    const pass = demoAccessPass();
+    mockedGetMyEvents.mockResolvedValue({ data: [] } as never);
+    mockedGetMyAccessPasses.mockResolvedValue({
+      data: {
+        data: [
+          {
+            id: 41,
+            createdAt: "2026-08-27T17:40:51.485Z",
+            access_pass: {
+              uuid: pass.uuid,
+              name: pass.name,
+              type: "organizer",
+              status: "accepted",
+              events: pass.events,
+            },
+          },
+        ],
+      },
+    } as never);
+
+    render(<SeasonTickets />);
+    await user.click(
+      await screen.findByRole("button", { name: /Access passes.*1/i }),
+    );
+
+    expect(screen.getByText(pass.name)).toBeInTheDocument();
+    expect(
+      screen.getByRole("link", { name: `View ${pass.name}` }),
+    ).toBeInTheDocument();
+  });
+
+  it("shows owned organizer passes from myAccessPasses after a claimed sent transfer", async () => {
+    const user = userEvent.setup();
+    const pass = demoAccessPass();
+    mockedGetMyEvents.mockResolvedValue({ data: [] } as never);
+    mockedGetMyAccessPasses.mockResolvedValue({
+      data: { data: [pass] },
+    } as never);
+    mockedGetMySentTransfers.mockResolvedValue({
+      data: [
+        {
+          id: 88,
+          status: "accepted",
+          transferType: "access_pass",
+          accessPassId: pass.uuid,
+          accessPassSnapshot: {
+            uuid: pass.uuid,
+            name: pass.name,
+            type: "organizer",
+          },
+        },
+      ],
+    } as never);
+
+    render(<SeasonTickets />);
+    await user.click(
+      await screen.findByRole("button", { name: /Access passes.*1/i }),
+    );
+
+    expect(screen.getByText(pass.name)).toBeInTheDocument();
+  });
+
+  it("shows organizer access passes from a nested myAccessPasses payload", async () => {
+    const user = userEvent.setup();
+    const pass = demoAccessPass();
+    mockedGetMyEvents.mockResolvedValue({ data: [] } as never);
+    mockedGetMyAccessPasses.mockResolvedValue({
+      data: {
+        data: {
+          data: [
+            {
+              id: 41,
+              attributes: pass,
+            },
+          ],
+        },
+      },
+    } as never);
+
+    render(<SeasonTickets />);
+    await user.click(
+      await screen.findByRole("button", { name: /Access passes.*1/i }),
+    );
+
+    expect(screen.getByText(pass.name)).toBeInTheDocument();
+    expect(
+      screen.getByRole("link", { name: `View ${pass.name}` }),
+    ).toBeInTheDocument();
+  });
+
   it("loads active access passes into their own tab", async () => {
     const user = userEvent.setup();
     const pass = demoAccessPass({ events: [printableEvent] });
@@ -3170,6 +3262,224 @@ describe("SeasonTickets package tab", () => {
     );
   });
 
+  it("shows a sent access pass on the Sent tab after My transfers refetch", async () => {
+    const user = userEvent.setup();
+    const pass = demoAccessPass();
+    mockedGetMyEvents.mockResolvedValue({ data: [] } as never);
+    mockedGetMyAccessPasses.mockResolvedValue({
+      data: { data: [pass] },
+    } as never);
+    mockedGetMyAccessPass.mockResolvedValue({
+      data: { data: pass },
+    } as never);
+    mockedCreateTicketTransfer.mockResolvedValue({
+      data: { id: 88, status: "pending" },
+    } as never);
+
+    navigationMocks.pathname =
+      `/wallet/my-tickets/order/${pass.orderId}/access-pass/${pass.uuid}/`;
+    const { rerender } = render(<SeasonTickets />);
+
+    await user.click(
+      await screen.findByRole("button", { name: "Transfer access pass" }),
+    );
+    await user.type(
+      screen.getByRole("textbox", { name: "Email address" }),
+      "recipient@example.com",
+    );
+    await user.click(screen.getByRole("button", { name: "Next" }));
+    await user.click(screen.getByRole("button", { name: "Transfer" }));
+    expect(
+      await screen.findByText("Access pass transfer pending"),
+    ).toBeInTheDocument();
+
+    mockedGetMySentTransfers.mockResolvedValue({
+      data: {
+        data: [
+          {
+            id: 88,
+            attributes: {
+              status: "pending",
+              transferType: "access_pass",
+              accessPassId: pass.uuid,
+              accessPassSnapshot: {
+                uuid: pass.uuid,
+                name: pass.name,
+                type: "organizer",
+                events: pass.events,
+              },
+              emailAddressToUser: "recipient@example.com",
+              fromUserEmail: DEMO_SESSION.user.email,
+              createdAt: "2026-09-17T18:00:00.000Z",
+              tickets: { data: [] },
+            },
+          },
+        ],
+      },
+    } as never);
+    navigationMocks.pathname = "/wallet/my-transfers/";
+    rerender(<SeasonTickets />);
+
+    expect(await screen.findByText(pass.name)).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Cancel transfer" }),
+    ).toBeInTheDocument();
+  });
+
+  it("keeps a just-sent access pass on Sent when the transfers refetch is empty", async () => {
+    const user = userEvent.setup();
+    const pass = demoAccessPass();
+    mockedGetMyEvents.mockResolvedValue({ data: [] } as never);
+    mockedGetMyAccessPasses.mockResolvedValue({
+      data: { data: [pass] },
+    } as never);
+    mockedGetMyAccessPass.mockResolvedValue({
+      data: { data: pass },
+    } as never);
+    mockedCreateTicketTransfer.mockResolvedValue({
+      data: { id: 88, status: "pending" },
+    } as never);
+    mockedGetMySentTransfers.mockResolvedValue({ data: { data: [] } } as never);
+
+    navigationMocks.pathname =
+      `/wallet/my-tickets/order/${pass.orderId}/access-pass/${pass.uuid}/`;
+    const { rerender } = render(<SeasonTickets />);
+
+    await user.click(
+      await screen.findByRole("button", { name: "Transfer access pass" }),
+    );
+    await user.type(
+      screen.getByRole("textbox", { name: "Email address" }),
+      "recipient@example.com",
+    );
+    await user.click(screen.getByRole("button", { name: "Next" }));
+    await user.click(screen.getByRole("button", { name: "Transfer" }));
+    expect(
+      await screen.findByText("Access pass transfer pending"),
+    ).toBeInTheDocument();
+
+    navigationMocks.pathname = "/wallet/my-transfers/";
+    rerender(<SeasonTickets />);
+
+    expect(await screen.findByText(pass.name)).toBeInTheDocument();
+    expect(screen.queryByText("No transfers sent")).not.toBeInTheDocument();
+  });
+
+  it("keeps a just-sent access pass on Sent when my-sent still only has the older claimed row", async () => {
+    const user = userEvent.setup();
+    const pass = demoAccessPass();
+    const claimedSent = {
+      id: 88,
+      status: "accepted",
+      transferType: "access_pass",
+      accessPassId: pass.uuid,
+      accessPassSnapshot: {
+        uuid: pass.uuid,
+        name: pass.name,
+        type: "organizer",
+        events: pass.events,
+      },
+      emailAddressToUser: "recipient@example.com",
+      fromUserEmail: DEMO_SESSION.user.email,
+      createdAt: "2026-09-10T18:00:00.000Z",
+    };
+    mockedGetMyEvents.mockResolvedValue({ data: [] } as never);
+    mockedGetMyAccessPasses.mockResolvedValue({
+      data: { data: [pass] },
+    } as never);
+    mockedGetMyAccessPass.mockResolvedValue({
+      data: { data: pass },
+    } as never);
+    mockedCreateTicketTransfer.mockResolvedValue({
+      data: { id: 89, status: "pending" },
+    } as never);
+    mockedGetMySentTransfers.mockResolvedValue({
+      data: { data: [claimedSent] },
+    } as never);
+
+    navigationMocks.pathname =
+      `/wallet/my-tickets/order/${pass.orderId}/access-pass/${pass.uuid}/`;
+    const { rerender } = render(<SeasonTickets />);
+
+    await user.click(
+      await screen.findByRole("button", { name: "Transfer access pass" }),
+    );
+    await user.type(
+      screen.getByRole("textbox", { name: "Email address" }),
+      "recipient@example.com",
+    );
+    await user.click(screen.getByRole("button", { name: "Next" }));
+    await user.click(screen.getByRole("button", { name: "Transfer" }));
+    expect(
+      await screen.findByText("Access pass transfer pending"),
+    ).toBeInTheDocument();
+
+    navigationMocks.pathname = "/wallet/my-transfers/";
+    rerender(<SeasonTickets />);
+
+    expect(
+      await screen.findByRole("button", { name: "Cancel transfer" }),
+    ).toBeInTheDocument();
+    expect(screen.getAllByText(pass.name).length).toBeGreaterThan(0);
+    expect(screen.getByText("Pending · awaiting claim")).toBeInTheDocument();
+  });
+
+  it("keeps a new pending received access pass beside an older claimed transfer for the same pass", async () => {
+    const user = userEvent.setup();
+    sessionMocks.getSession.mockReturnValue(DEMO_SESSION);
+    const pass = demoAccessPass();
+    const claimedReceived = {
+      id: "claimed-access-1",
+      status: "claimed",
+      transferType: "access_pass",
+      accessPassId: pass.uuid,
+      accessPassSnapshot: {
+        uuid: pass.uuid,
+        name: pass.name,
+        type: "organizer",
+        events: pass.events,
+      },
+      fromUserEmail: "sender@example.com",
+      createdAt: "2026-09-10T18:00:00.000Z",
+      transferedOn: "2026-09-10T18:05:00.000Z",
+    };
+    mockedGetMyEvents.mockResolvedValue({ data: [] } as never);
+    mockedGetMySentTransfers.mockResolvedValue({ data: [] } as never);
+    mockedGetMyReceivedTransfers.mockResolvedValue({
+      data: { data: [claimedReceived] },
+    } as never);
+    mockedGetIncomingTransfers.mockResolvedValue({
+      data: [
+        {
+          id: "incoming-access-2",
+          status: "pending",
+          transferType: "access_pass",
+          accessPassId: pass.uuid,
+          access_pass: {
+            uuid: pass.uuid,
+            name: pass.name,
+            type: "organizer",
+            events: pass.events,
+          },
+          fromUserEmail: "sender@example.com",
+          createdAt: "2026-09-17T18:05:00.000Z",
+        },
+      ],
+    } as never);
+
+    navigationMocks.pathname = "/wallet/my-transfers/";
+    render(<SeasonTickets />);
+
+    await user.click(await screen.findByRole("button", { name: /received/i }));
+
+    expect(
+      await screen.findByRole("button", { name: "Accept transfer" }),
+    ).toBeInTheDocument();
+    expect(screen.getByText("Pending · awaiting claim")).toBeInTheDocument();
+    expect(screen.getByText(/Claimed ·/)).toBeInTheDocument();
+    expect(screen.getAllByText(pass.name).length).toBeGreaterThan(1);
+  });
+
   it("shows a pending incoming access pass on the Access Pass tab", async () => {
     const user = userEvent.setup();
     sessionMocks.getSession.mockReturnValue(DEMO_SESSION);
@@ -3342,6 +3652,57 @@ describe("SeasonTickets package tab", () => {
     });
     expect(mockedGetMyEvents.mock.calls.length).toBe(eventsCallsBeforeAccept);
     expect(screen.queryByText("Pending transfer from sender@example.com")).not.toBeInTheDocument();
+    expect(screen.getByText(pass.name)).toBeInTheDocument();
+    expect(
+      screen.getByRole("link", { name: `View ${pass.name}` }),
+    ).toBeInTheDocument();
+  });
+
+  it("keeps an accepted access pass on the Access Pass tab when the list API is stale", async () => {
+    const user = userEvent.setup();
+    sessionMocks.getSession.mockReturnValue(DEMO_SESSION);
+    const pass = demoAccessPass();
+    mockedGetMyEvents.mockResolvedValue({ data: [] } as never);
+    mockedGetIncomingTransfers.mockResolvedValue({
+      data: [
+        {
+          id: "incoming-access-1",
+          status: "pending",
+          fromUserEmail: "sender@example.com",
+          transferType: "access_pass",
+          accessPassId: pass.uuid,
+          access_pass: {
+            uuid: pass.uuid,
+            name: pass.name,
+            type: "organizer",
+            events: pass.events,
+          },
+        },
+      ],
+    } as never);
+    mockedAcceptIncomingTransfers.mockResolvedValue({
+      data: { status: "accepted", transferedOn: "2026-09-13T19:21:48.735Z" },
+    } as never);
+    mockedGetMyAccessPasses.mockResolvedValue({
+      data: { data: [] },
+    } as never);
+
+    render(<SeasonTickets />);
+    await user.click(
+      await screen.findByRole("button", { name: /Access passes/i }),
+    );
+    expect(await screen.findByText(pass.name)).toBeInTheDocument();
+    await user.click(await screen.findByRole("button", { name: "Accept transfer" }));
+    await confirmAcceptTransferInPopup(user);
+
+    await waitFor(() => {
+      expect(mockedAcceptIncomingTransfers).toHaveBeenCalledWith({
+        transferId: "incoming-access-1",
+      });
+    });
+    expect(
+      screen.queryByText("Pending transfer from sender@example.com"),
+    ).not.toBeInTheDocument();
     expect(screen.getByText(pass.name)).toBeInTheDocument();
     expect(
       screen.getByRole("link", { name: `View ${pass.name}` }),

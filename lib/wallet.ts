@@ -334,6 +334,15 @@ export type AccessPassSummary = {
  * Package screens pass `includeInactive` so a revoked or expired season pass
  * still shows with its real status instead of disappearing.
  */
+const WALLET_VISIBLE_ACCESS_PASS_STATUSES = new Set([
+  "active",
+  "accepted",
+]);
+
+function isWalletVisibleAccessPassStatus(status: string) {
+  return !status || WALLET_VISIBLE_ACCESS_PASS_STATUSES.has(status);
+}
+
 export function buildAccessPassSummaries(
   passes: AccessPassLike[],
   {
@@ -342,9 +351,12 @@ export function buildAccessPassSummaries(
   }: { includeInactive?: boolean; packageEvents?: EventLike[] } = {},
 ): AccessPassSummary[] {
   return [...passes]
-    .filter(
-      (pass) => includeInactive || !pass.status || pass.status === "active",
-    )
+    .filter((pass) => {
+      const status = String(pass.status || "")
+        .trim()
+        .toLowerCase();
+      return includeInactive || isWalletVisibleAccessPassStatus(status);
+    })
     .sort(compareAccessPassSeats)
     .map((pass, index) => {
       const events = [...(pass.events ?? [])].sort((a, b) =>
@@ -885,8 +897,93 @@ export function unwrapList<T>(payload: unknown): T[] {
   if (payload && typeof payload === "object") {
     const obj = payload as { data?: unknown };
     if (Array.isArray(obj.data)) return obj.data as T[];
+    if (obj.data && typeof obj.data === "object") {
+      return unwrapList<T>(obj.data);
+    }
   }
   return [];
+}
+
+function listFromUnknown(payload: unknown): unknown[] {
+  if (Array.isArray(payload)) return payload;
+  if (!payload || typeof payload !== "object") return [];
+  const obj = payload as Record<string, unknown>;
+  for (const key of [
+    "data",
+    "accessPasses",
+    "access_passes",
+    "results",
+    "items",
+    "records",
+  ]) {
+    const value = obj[key];
+    if (Array.isArray(value)) return value;
+    if (value && typeof value === "object") {
+      const nested = listFromUnknown(value);
+      if (nested.length) return nested;
+    }
+  }
+  return [];
+}
+
+function firstPassText(...values: unknown[]): string {
+  for (const value of values) {
+    const text = String(value ?? "").trim();
+    if (text) return text;
+  }
+  return "";
+}
+
+function normalizeAccessPassRow(row: unknown): AccessPassLike {
+  const flat = strapiAttr<Record<string, unknown>>(row);
+  const nestedRaw =
+    flat.access_pass ?? flat.accessPass ?? flat.accessPassSnapshot;
+  const nested =
+    strapiRel<AccessPassLike>(nestedRaw) ??
+    (nestedRaw && typeof nestedRaw === "object"
+      ? strapiAttr<AccessPassLike>(nestedRaw)
+      : undefined);
+  const eventsRel = strapiRel<EventLike[]>(flat.events ?? nested?.events);
+  const events = Array.isArray(eventsRel)
+    ? eventsRel
+    : Array.isArray(flat.events)
+      ? (flat.events as EventLike[])
+      : Array.isArray(nested?.events)
+        ? nested.events
+        : undefined;
+  const uuid = firstPassText(
+    flat.uuid,
+    flat.accessPassUUID,
+    flat.access_pass_uuid,
+    nested?.uuid,
+  );
+  const checkInCode = firstPassText(
+    flat.checkInCode,
+    flat.check_in_code,
+    nested?.checkInCode,
+  );
+  const name = firstPassText(flat.name, flat.passName, nested?.name);
+  return {
+    ...flat,
+    ...(nested ?? {}),
+    ...(uuid ? { uuid } : {}),
+    ...(checkInCode ? { checkInCode } : {}),
+    ...(name ? { name } : {}),
+    ...(events ? { events } : {}),
+  };
+}
+
+/** GET /events/myAccessPasses may nest `data` and wrap rows in Strapi attributes. */
+export function unwrapAccessPassList(payload: unknown): AccessPassLike[] {
+  return listFromUnknown(payload)
+    .map(normalizeAccessPassRow)
+    .filter((pass) =>
+      Boolean(
+        String(pass.uuid || "").trim() ||
+          String(pass.checkInCode || "").trim() ||
+          String(pass.name || "").trim(),
+      ),
+    );
 }
 
 /** GET /orders answers with the order itself; some deployments wrap it like a list. */

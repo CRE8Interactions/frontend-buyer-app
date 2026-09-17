@@ -172,6 +172,7 @@ import {
   promoteAcceptedIncomingTransferToReceived,
   resolveAcceptedPassTransferWalletOrderId,
   resolveTransferOrderPackage,
+  incomingAccessPassSummaryFromTransfer,
   unwrapAcceptTransferAccessPass,
   walletOrdersIncludeAcceptedPassPackage,
   removeSentTransferRecordsForCancel,
@@ -198,6 +199,7 @@ import {
   ticketSeatValue,
   ticketSectionValue,
   unwrapList,
+  unwrapAccessPassList,
   unwrapOrder,
   type AccessPassLike,
   type AccessPassSummary,
@@ -1499,7 +1501,7 @@ export default function SeasonTickets({
       }
       prunePersistedCancelRestores(apiOrders);
       const passes = accessPassRes
-        ? unwrapList<AccessPassLike>(accessPassRes.data)
+        ? unwrapAccessPassList(accessPassRes.data)
         : [];
       if (reloadGeneration !== walletReloadGenerationRef.current) return;
       const apiSentTransfers = sentTransfersRes
@@ -2231,7 +2233,7 @@ export default function SeasonTickets({
       if (needsPassRefetch) {
         try {
           const res = await getAccessPassesByOrder(walletOrderId);
-          const rawPasses = unwrapList<AccessPassLike>(res.data);
+          const rawPasses = unwrapAccessPassList(res.data);
           const owned = filterWalletAccessPassesBySentTransfers(
             rawPasses,
             sentTransferRecordsRef.current,
@@ -2284,25 +2286,35 @@ export default function SeasonTickets({
       const acceptedPass = unwrapAcceptTransferAccessPass(acceptResponse);
       const pass = (acceptedPass ??
         acceptedRecord?.access_pass ??
-        acceptedRecord?.accessPass) as AccessPassLike | undefined;
+        acceptedRecord?.accessPass ??
+        acceptedRecord?.accessPassSnapshot) as AccessPassLike | undefined;
+      const snapshotSummary =
+        incomingAccessPassSummaryFromTransfer(acceptedRecord ?? {}) ??
+        (pass
+          ? buildAccessPassSummaries([pass], { includeInactive: true })[0]
+          : undefined);
+      let summaries = snapshotSummary ? [snapshotSummary] : [];
       const needsPassRefetch = !pass?.uuid || !(pass.events?.length ?? 0);
-      let rawPasses: AccessPassLike[] = pass?.uuid ? [pass] : [];
 
       if (needsPassRefetch) {
         try {
           const res = await getMyAccessPasses("organizer");
-          rawPasses = unwrapList<AccessPassLike>(res.data);
+          const fetched = unwrapAccessPassList(res.data);
+          const owned = filterWalletAccessPassesBySentTransfers(
+            fetched,
+            sentTransferRecordsRef.current,
+          );
+          const fetchedSummaries = buildAccessPassSummaries(owned, {
+            includeInactive: true,
+          });
+          if (fetchedSummaries.length) {
+            summaries = mergeAccessPassSummaries(summaries, fetchedSummaries);
+          }
         } catch {
           /* keep incoming snapshot */
         }
       }
 
-      if (!rawPasses.length) return;
-      const owned = filterWalletAccessPassesBySentTransfers(
-        rawPasses,
-        sentTransferRecordsRef.current,
-      );
-      const summaries = buildAccessPassSummaries(owned);
       if (!summaries.length) return;
       setAccessPasses((current) =>
         mergeAccessPassSummaries(current, summaries),
@@ -2915,7 +2927,7 @@ export default function SeasonTickets({
 
       try {
         const res = await getAccessPassesByOrder(orderId);
-        const rawPasses = unwrapList<AccessPassLike>(res.data);
+        const rawPasses = unwrapAccessPassList(res.data);
         const owned = filterWalletAccessPassesBySentTransfers(
           rawPasses,
           sentTransferRecordsRef.current,
