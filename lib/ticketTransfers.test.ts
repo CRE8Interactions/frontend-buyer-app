@@ -32,6 +32,7 @@ import {
   formatAccessPassRemainingLine,
   mergeWalletAccessPassesPreservingLocal,
   formatTransferSenderLabel,
+  transferPartyDateLine,
   mapReceivedTransferRows,
   mapSentTransferRows,
   buildCancelTransferRequestBody,
@@ -68,6 +69,38 @@ describe("ticketTransfers", () => {
 
   it("hides the access-pass game line when the snapshot has no games", () => {
     expect(formatAccessPassRemainingLine(0, 0)).toBe("");
+  });
+
+  it("puts the send date beside from and to emails", () => {
+    expect(
+      transferPartyDateLine({
+        direction: "received",
+        email: "sender@example.com",
+        on: "Sep 11, 2026",
+      }),
+    ).toBe("From sender@example.com · received on Sep 11, 2026");
+    expect(
+      transferPartyDateLine({
+        direction: "sent",
+        email: "recipient@example.com",
+        on: "Sep 11, 2026",
+      }),
+    ).toBe("To recipient@example.com · sent Sep 11, 2026");
+  });
+
+  it("omits the send date when the transfer has none", () => {
+    expect(
+      transferPartyDateLine({
+        direction: "received",
+        email: "sender@example.com",
+      }),
+    ).toBe("From sender@example.com");
+    expect(
+      transferPartyDateLine({
+        direction: "sent",
+        email: "recipient@example.com",
+      }),
+    ).toBe("To recipient@example.com");
   });
 
   it("sorts transfers newest first", () => {

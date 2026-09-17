@@ -1,6 +1,7 @@
 import {
   formatAccessPassRemainingLine,
   formatTransferredGamesLine,
+  transferPartyDateLine,
 } from "@/lib/ticketTransfers";
 
 export type TransferModalKind = "ticket" | "season pass" | "access pass";
@@ -134,26 +135,24 @@ export function transferKindFromWalletRow(row: {
   };
 }
 
-export function transferModalDetailLines(
-  row: {
-    passKind?: TransferModalKind;
-    seat?: string;
-    seatLines?: string[];
-    from?: string;
-    to?: string;
-    eventCount?: number;
-    remainingCount?: number;
-    when?: string;
-    schedule?: string;
-  },
-  options?: { counterpart?: "from" | "to" },
-): {
+export function transferModalDetailLines(row: {
+  passKind?: TransferModalKind;
+  seat?: string;
+  seatLines?: string[];
+  from?: string;
+  to?: string;
+  on?: string;
+  direction?: "sent" | "received";
+  eventCount?: number;
+  remainingCount?: number;
+  when?: string;
+  schedule?: string;
+}): {
   seats?: string;
   when?: string;
   games?: string;
   remaining?: string;
   from?: string;
-  to?: string;
 } {
   const kind = row.passKind;
   const rawSeats = (
@@ -185,16 +184,14 @@ export function transferModalDetailLines(
           row.eventCount ?? 0,
         ) || undefined
       : undefined;
-  const counterpart = options?.counterpart ?? "from";
+  const direction = row.direction ?? (row.to ? "sent" : "received");
   const from =
-    counterpart === "from" && String(row.from || "").trim()
-      ? `From ${String(row.from).trim()}`
-      : undefined;
-  const to =
-    counterpart === "to" && String(row.to || "").trim()
-      ? `To ${String(row.to).trim()}`
-      : undefined;
-  return { seats, when, games, remaining, from, to };
+    transferPartyDateLine({
+      direction,
+      email: direction === "sent" ? row.to : row.from,
+      on: row.on,
+    }) || undefined;
+  return { seats, when, games, remaining, from };
 }
 
 export function transferCancelReturnCopy(

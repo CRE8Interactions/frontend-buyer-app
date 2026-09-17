@@ -68,6 +68,7 @@ import {
   walletRouteFromPath,
   withFullOrder,
 } from "@/lib/cartEvents";
+import { transferSentOnLabel } from "@/lib/ticketTransfers";
 import { buildAccessPassSummaries } from "@/lib/wallet";
 
 describe("cartEvents wallet schedule", () => {
@@ -985,6 +986,7 @@ describe("wallet season-package orders", () => {
           id: "incoming-1",
           status: "pending",
           fromUserEmail: "m.rivera@example.com",
+          createdAt: "2026-09-11T18:00:00.000Z",
           event: order.event,
           tickets: [ticket],
         },
@@ -1002,6 +1004,12 @@ describe("wallet season-package orders", () => {
     expect(upcoming[0]?.pendingIncomingTransfer).toBe(true);
     expect(upcoming[0]?.incomingTransferId).toBe("incoming-1");
     expect(upcoming[0]?.incomingTransferFrom).toBe("m.rivera@example.com");
+    expect(upcoming[0]?.incomingTransferOn).toBe(
+      transferSentOnLabel(
+        "2026-09-11T18:00:00.000Z",
+        order.event?.venue?.timezone,
+      ),
+    );
   });
 
   it("adds pending package event transfers to upcoming wallet details", () => {

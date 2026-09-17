@@ -3681,10 +3681,18 @@ describe("SeasonTickets package transfers tab", () => {
     expect(
       screen.getByText(`${pkg.events.length} games`),
     ).toBeInTheDocument();
-    expect(screen.getByText("To recipient@example.com")).toBeInTheDocument();
     expect(
-      screen.queryByText(`From ${DEMO_SESSION.user.email}`),
-    ).not.toBeInTheDocument();
+      within(
+        screen.getByRole("heading", { name: "Cancel this transfer?" })
+          .parentElement!,
+      ).getByText(
+        `To recipient@example.com · sent ${formatEventWhen(
+          seasonTransfer.createdAt,
+          undefined,
+          "MMM D, YYYY",
+        )}`,
+      ),
+    ).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Keep it" }));
     await user.click(
       screen.getAllByRole("button", { name: "Cancel transfer" })[1]!,
@@ -3703,10 +3711,18 @@ describe("SeasonTickets package transfers tab", () => {
       ).length,
     ).toBeGreaterThan(1);
     expect(screen.queryByText("1 Access pass")).not.toBeInTheDocument();
-    expect(screen.getByText("To recipient@example.com")).toBeInTheDocument();
     expect(
-      screen.queryByText(`From ${DEMO_SESSION.user.email}`),
-    ).not.toBeInTheDocument();
+      within(
+        screen.getByRole("heading", { name: "Cancel this transfer?" })
+          .parentElement!,
+      ).getByText(
+        `To recipient@example.com · sent ${formatEventWhen(
+          accessTransfer.createdAt,
+          undefined,
+          "MMM D, YYYY",
+        )}`,
+      ),
+    ).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Keep it" }));
 
     await user.click(screen.getByRole("button", { name: /received/i }));
@@ -3716,19 +3732,6 @@ describe("SeasonTickets package transfers tab", () => {
     expect(
       screen.getAllByRole("button", { name: "Accept transfer" }),
     ).toHaveLength(2);
-
-    await user.click(
-      screen.getAllByRole("button", { name: "Accept transfer" })[0]!,
-    );
-    expect(
-      within(
-        screen.getByRole("heading", { name: "Accept this transfer?" })
-          .parentElement!,
-      ).getByText(`From ${DEMO_SESSION.user.email}`),
-    ).toBeInTheDocument();
-    expect(
-      screen.queryByText("To recipient@example.com"),
-    ).not.toBeInTheDocument();
   });
 
   it("shows single-event and package transfers on sent and received tabs", async () => {
@@ -3809,11 +3812,14 @@ describe("SeasonTickets package transfers tab", () => {
       within(
         screen.getByRole("heading", { name: "Cancel this transfer?" })
           .parentElement!,
-      ).getByText("To recipient@example.com"),
+      ).getByText(
+        `To recipient@example.com · sent ${formatEventWhen(
+          singleTransfer.createdAt,
+          ticketOrder.event?.venue?.timezone,
+          "MMM D, YYYY",
+        )}`,
+      ),
     ).toBeInTheDocument();
-    expect(
-      screen.queryByText(`From ${DEMO_SESSION.user.email}`),
-    ).not.toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Keep it" }));
     await user.click(
       screen.getAllByRole("button", { name: "Cancel transfer" })[1]!,
@@ -3823,6 +3829,18 @@ describe("SeasonTickets package transfers tab", () => {
         screen.getByRole("heading", { name: "Cancel this transfer?" })
           .parentElement!,
       ).getByText(packageWhen),
+    ).toBeInTheDocument();
+    expect(
+      within(
+        screen.getByRole("heading", { name: "Cancel this transfer?" })
+          .parentElement!,
+      ).getByText(
+        `To recipient@example.com · sent ${formatEventWhen(
+          packageTransfer.createdAt,
+          packageEvent.venue?.timezone,
+          "MMM D, YYYY",
+        )}`,
+      ),
     ).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Keep it" }));
 
@@ -3865,11 +3883,14 @@ describe("SeasonTickets package transfers tab", () => {
       within(
         screen.getByRole("heading", { name: "Accept this transfer?" })
           .parentElement!,
-      ).getByText(`From ${DEMO_SESSION.user.email}`),
+      ).getByText(
+        `From ${DEMO_SESSION.user.email} · received on ${formatEventWhen(
+          singleTransfer.createdAt,
+          ticketOrder.event?.venue?.timezone,
+          "MMM D, YYYY",
+        )}`,
+      ),
     ).toBeInTheDocument();
-    expect(
-      screen.queryByText("To recipient@example.com"),
-    ).not.toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Not now" }));
     await user.click(
       screen.getAllByRole("button", { name: "Accept transfer" })[1]!,
@@ -3879,6 +3900,18 @@ describe("SeasonTickets package transfers tab", () => {
         screen.getByRole("heading", { name: "Accept this transfer?" })
           .parentElement!,
       ).getByText(packageWhen),
+    ).toBeInTheDocument();
+    expect(
+      within(
+        screen.getByRole("heading", { name: "Accept this transfer?" })
+          .parentElement!,
+      ).getByText(
+        `From ${DEMO_SESSION.user.email} · received on ${formatEventWhen(
+          packageTransfer.createdAt,
+          packageEvent.venue?.timezone,
+          "MMM D, YYYY",
+        )}`,
+      ),
     ).toBeInTheDocument();
   });
 });

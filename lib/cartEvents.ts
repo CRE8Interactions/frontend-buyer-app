@@ -31,6 +31,7 @@ import {
   resolvePassTransferPackageImage,
   resolveTransferOrderPackage,
   transferSenderEmail,
+  transferSentOnLabel,
   unwrapAcceptTransferAccessPass,
 } from "@/lib/ticketTransfers";
 import {
@@ -139,6 +140,8 @@ export type CartEventSummary = {
   incomingTransferId?: string | number;
   /** Sender email shown on the Upcoming pending-transfer banner. */
   incomingTransferFrom?: string;
+  /** Send date shown beside From on accept, matching transfer cards. */
+  incomingTransferOn?: string;
   /** Sender row already shows tickets waiting for the recipient to claim. */
   pendingOutgoingTransfer?: boolean;
   ticketSeats?: string[];
@@ -250,6 +253,7 @@ export type CartEventDetail = {
   incomingTransferId?: string | number;
   /** Sender email shown on the Upcoming pending-transfer banner. */
   incomingTransferFrom?: string;
+  incomingTransferOn?: string;
   showInUpcomingTab?: boolean;
   incomingPassTransfer?: boolean;
   passKind?: "season pass" | "access pass";
@@ -1670,6 +1674,11 @@ export function reconcilePendingReceivedTransfers(
           pendingIncomingTransfer: true,
           incomingTransferId: transfer.id,
           incomingTransferFrom: transferSenderEmail(transfer) || undefined,
+          incomingTransferOn:
+            transferSentOnLabel(
+              transfer.createdAt,
+              transfer.event?.venue?.timezone,
+            ) || undefined,
           showInUpcomingTab: false,
           incomingPassTransfer: true,
           passKind: presentation.passKind,
@@ -1722,6 +1731,11 @@ export function reconcilePendingReceivedTransfers(
       pendingIncomingTransfer: true,
       incomingTransferId: transfer.id,
       incomingTransferFrom: transferSenderEmail(transfer) || undefined,
+      incomingTransferOn:
+        transferSentOnLabel(
+          transfer.createdAt,
+          transfer.event?.venue?.timezone,
+        ) || undefined,
       transfersEnabled: false,
       resaleEnabled: false,
       showInUpcomingTab: true,
@@ -1808,6 +1822,7 @@ export function promoteRecipientPackageUpcomingRows(
         pendingIncomingTransfer: false,
         incomingTransferId: undefined,
         incomingTransferFrom: undefined,
+        incomingTransferOn: undefined,
         showInUpcomingTab: true,
         packageName: undefined,
         ...(orderId ? { orderId } : {}),
@@ -2405,6 +2420,7 @@ export function summarizeEventDetails(
       pendingIncomingTransfer: d.pendingIncomingTransfer,
       incomingTransferId: d.incomingTransferId,
       incomingTransferFrom: d.incomingTransferFrom,
+      incomingTransferOn: d.incomingTransferOn,
       pendingOutgoingTransfer: ownedRowShowsPendingOutgoingTransfer(
         d,
         lookupDetails,
@@ -3070,6 +3086,7 @@ function mapIncomingPassTransferSummary(
     pendingIncomingTransfer: true,
     incomingTransferId: detail.incomingTransferId,
     incomingTransferFrom: detail.incomingTransferFrom,
+    incomingTransferOn: detail.incomingTransferOn,
     ticketSeats: detail.incomingTransferSeatLines,
     incomingPassTransfer: true,
     passKind: detail.passKind,

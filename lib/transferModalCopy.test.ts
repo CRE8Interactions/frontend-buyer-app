@@ -102,6 +102,7 @@ describe("transfer modal copy", () => {
         seatLines: ["Sec M · Row M3 · Seat 21"],
         eventCount: 5,
         from: "sender@example.com",
+        on: "Sep 11, 2026",
         schedule: "5 events",
       }),
     ).toEqual({
@@ -109,8 +110,7 @@ describe("transfer modal copy", () => {
       when: undefined,
       games: "5 games",
       remaining: undefined,
-      from: "From sender@example.com",
-      to: undefined,
+      from: "From sender@example.com · received on Sep 11, 2026",
     });
     expect(
       transferModalDetailLines({
@@ -119,6 +119,7 @@ describe("transfer modal copy", () => {
         eventCount: 3,
         remainingCount: 3,
         from: "sender@example.com",
+        on: "Sep 10, 2026",
         schedule: "3 games",
       }),
     ).toEqual({
@@ -126,13 +127,13 @@ describe("transfer modal copy", () => {
       when: undefined,
       games: "3 games",
       remaining: undefined,
-      from: "From sender@example.com",
-      to: undefined,
+      from: "From sender@example.com · received on Sep 10, 2026",
     });
     expect(
       transferModalDetailLines({
         seatLines: ["Sec A · Row 1 · Seat 12"],
         from: "sender@example.com",
+        on: "Sep 11, 2026",
         schedule: "Fri, Oct 30, 2026 7:00 PM",
       }),
     ).toEqual({
@@ -140,27 +141,22 @@ describe("transfer modal copy", () => {
       when: "Fri, Oct 30, 2026 7:00 PM",
       games: undefined,
       remaining: undefined,
-      from: "From sender@example.com",
-      to: undefined,
+      from: "From sender@example.com · received on Sep 11, 2026",
     });
     expect(
-      transferModalDetailLines(
-        {
-          passKind: "season pass",
-          seatLines: ["Sec M · Row M3 · Seat 21"],
-          eventCount: 5,
-          from: "sender@example.com",
-          to: "recipient@example.com",
-        },
-        { counterpart: "to" },
-      ),
+      transferModalDetailLines({
+        to: "recipient@example.com",
+        on: "Sep 11, 2026",
+        direction: "sent",
+        schedule: "Fri, Oct 30, 2026 7:00 PM",
+        seatLines: ["Sec A · Row 1 · Seat 12"],
+      }),
     ).toEqual({
-      seats: "Sec M · Row M3 · Seat 21",
-      when: undefined,
-      games: "5 games",
+      seats: "Sec A · Row 1 · Seat 12",
+      when: "Fri, Oct 30, 2026 7:00 PM",
+      games: undefined,
       remaining: undefined,
-      from: undefined,
-      to: "To recipient@example.com",
+      from: "To recipient@example.com · sent Sep 11, 2026",
     });
   });
 

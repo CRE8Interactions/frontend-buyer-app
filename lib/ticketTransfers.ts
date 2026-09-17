@@ -1889,8 +1889,33 @@ function transferEventTimezone(transfer: TransferLike) {
   return transfer.event?.venue?.timezone;
 }
 
+export function transferSentOnLabel(
+  createdAt?: string,
+  timezone?: string,
+): string {
+  return formatTransferTimestamp(createdAt, timezone);
+}
+
 function transferWhen(transfer: TransferLike) {
-  return formatTransferTimestamp(transfer.createdAt, transferEventTimezone(transfer));
+  return transferSentOnLabel(
+    transfer.createdAt,
+    transferEventTimezone(transfer),
+  );
+}
+
+/** Card and modal party line: `From email · received on DATE` / `To email · sent DATE`. */
+export function transferPartyDateLine(opts: {
+  direction: "sent" | "received";
+  email?: string;
+  on?: string;
+}): string {
+  const email = String(opts.email || "").trim();
+  if (!email) return "";
+  const on = String(opts.on || "").trim();
+  if (opts.direction === "sent") {
+    return on ? `To ${email} · sent ${on}` : `To ${email}`;
+  }
+  return on ? `From ${email} · received on ${on}` : `From ${email}`;
 }
 
 function transferClaimedWhen(transfer: TransferLike) {

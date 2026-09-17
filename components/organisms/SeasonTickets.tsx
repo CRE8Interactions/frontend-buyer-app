@@ -178,6 +178,7 @@ import {
   resolveCancelTransferIdForApi,
   resolveCancelTransferIdWithSentLookup,
   resolveCreatedTransferMeta,
+  transferPartyDateLine,
   unwrapTransferRecords,
   type TransferLike,
   type WalletTransferRow,
@@ -766,6 +767,7 @@ type EventT = {
   pendingIncomingTransfer?: boolean;
   incomingTransferId?: string | number;
   incomingTransferFrom?: string;
+  incomingTransferOn?: string;
 };
 
 function detailToEventT(d: CartEventDetail, isCart = false): EventT {
@@ -802,6 +804,7 @@ function detailToEventT(d: CartEventDetail, isCart = false): EventT {
     pendingIncomingTransfer: d.pendingIncomingTransfer,
     incomingTransferId: d.incomingTransferId,
     incomingTransferFrom: d.incomingTransferFrom,
+    incomingTransferOn: d.incomingTransferOn,
   };
 }
 
@@ -883,6 +886,8 @@ type ConfirmAcceptTransfer = {
   title: string;
   seat: string;
   from?: string;
+  to?: string;
+  on?: string;
   passKind?: TransferModalKind;
   ticketCount?: number;
   seatLines?: string[];
@@ -936,6 +941,7 @@ function acceptTargetFromUpcoming(row: CartEventSummary): ConfirmAcceptTransfer 
         ? ""
         : `${row.ticketCount} ${row.ticketCount === 1 ? "ticket" : "tickets"}`),
     from: row.incomingTransferFrom,
+    on: row.incomingTransferOn,
     passKind: row.passKind,
     accessPassId: row.accessPassId,
     ticketCount: row.incomingPassTransfer
@@ -954,6 +960,8 @@ function acceptTargetFromWalletRow(row: WalletTransferRow): ConfirmAcceptTransfe
     title: row.title,
     seat: row.seat,
     from: row.from,
+    to: row.to,
+    on: row.on,
     passKind: row.passKind,
     ticketCount: row.ticketCount,
     seatLines: row.seatLines,
@@ -976,6 +984,7 @@ function acceptTargetFromEventDetail(ev: EventT): ConfirmAcceptTransfer {
       seatLines.join(" · ") ||
       `${ev.tickets.length} ${ev.tickets.length === 1 ? "ticket" : "tickets"}`,
     from: ev.incomingTransferFrom,
+    on: ev.incomingTransferOn,
     ticketCount: ev.tickets.length,
     seatLines,
     when: ev.when,
@@ -5431,7 +5440,11 @@ export default function SeasonTickets({
                   lines={transferSeatLines(t)}
                   style={{ fontSize: fluidSize(13), color: SUB }}
                 />
-                <div style={{ fontSize: fluidSize(13), color: SUB }}>{listTab === "received" ? "From " + t.from + (t.on ? " · received on " + t.on : "") : "To " + t.to + " · sent " + t.on}</div>
+                <div style={{ fontSize: fluidSize(13), color: SUB }}>{transferPartyDateLine({
+                  direction: listTab === "received" ? "received" : "sent",
+                  email: listTab === "received" ? t.from : t.to,
+                  on: t.on,
+                })}</div>
                 {t.passKind === "season pass" ? (
                   <div style={{ marginTop: 2 }}>
                     <SeasonTicketsBadge />
@@ -6292,9 +6305,9 @@ export default function SeasonTickets({
             <div style={{ display: "flex", flexDirection: "column", gap: 4, background: FIELD, borderRadius: 14, padding: "14px 16px" }}>
               <div style={{ fontSize: transferModalType.fieldValue, fontWeight: 600 }}>{tf?.pass?.name}</div>
               {tfKind === "access pass" ? (
-                (tf.pass?.eventCount ?? 0) > 0 ? (
+                (tf?.pass?.eventCount ?? 0) > 0 ? (
                   <div style={{ fontSize: transferModalType.fieldLabel, color: MUTE }}>
-                    {formatAccessPassRemainingLine(0, tf.pass.eventCount)}
+                    {formatAccessPassRemainingLine(0, tf?.pass?.eventCount ?? 0)}
                   </div>
                 ) : null
               ) : tf?.pass?.seat && tf.pass.seat !== "Ticket" ? (
@@ -6423,7 +6436,10 @@ export default function SeasonTickets({
         <div style={{ display: "flex", flexDirection: "column", gap: 3, background: FIELD, borderRadius: 14, padding: "14px 16px" }}>
             <div style={{ fontSize: fluidSize(14), fontWeight: 600 }}>{confirmAccept?.title}</div>
             {(() => {
-              const lines = transferModalDetailLines(confirmAccept ?? {});
+              const lines = transferModalDetailLines({
+                ...(confirmAccept ?? {}),
+                direction: "received",
+              });
               return (
                 <>
                   {lines.when ? (
@@ -6432,11 +6448,11 @@ export default function SeasonTickets({
                   {lines.games ? (
                     <div style={{ fontSize: fluidSize(13), color: SUB }}>{lines.games}</div>
                   ) : null}
-                  {lines.seats ? (
-                    <div style={{ fontSize: fluidSize(13), color: SUB }}>{lines.seats}</div>
-                  ) : null}
                   {lines.remaining ? (
                     <div style={{ fontSize: fluidSize(13), color: SUB }}>{lines.remaining}</div>
+                  ) : null}
+                  {lines.seats ? (
+                    <div style={{ fontSize: fluidSize(13), color: SUB }}>{lines.seats}</div>
                   ) : null}
                   {lines.from ? (
                     <div style={{ fontSize: fluidSize(13), color: SUB }}>{lines.from}</div>
@@ -6556,8 +6572,9 @@ export default function SeasonTickets({
           <div style={{ display: "flex", flexDirection: "column", gap: 3, background: FIELD, borderRadius: 14, padding: "14px 16px" }}>
             <div style={{ fontSize: fluidSize(14), fontWeight: 600 }}>{confirmCancel?.title}</div>
             {(() => {
-              const lines = transferModalDetailLines(confirmCancel ?? {}, {
-                counterpart: "to",
+              const lines = transferModalDetailLines({
+                ...(confirmCancel ?? {}),
+                direction: "sent",
               });
               return (
                 <>
@@ -6567,14 +6584,14 @@ export default function SeasonTickets({
                   {lines.games ? (
                     <div style={{ fontSize: fluidSize(13), color: SUB }}>{lines.games}</div>
                   ) : null}
-                  {lines.seats ? (
-                    <div style={{ fontSize: fluidSize(13), color: SUB }}>{lines.seats}</div>
-                  ) : null}
                   {lines.remaining ? (
                     <div style={{ fontSize: fluidSize(13), color: SUB }}>{lines.remaining}</div>
                   ) : null}
-                  {lines.to ? (
-                    <div style={{ fontSize: fluidSize(13), color: SUB }}>{lines.to}</div>
+                  {lines.seats ? (
+                    <div style={{ fontSize: fluidSize(13), color: SUB }}>{lines.seats}</div>
+                  ) : null}
+                  {lines.from ? (
+                    <div style={{ fontSize: fluidSize(13), color: SUB }}>{lines.from}</div>
                   ) : null}
                 </>
               );
