@@ -8,7 +8,7 @@ import {
   demoSeasonPackage,
 } from "@/lib/demo/fixtures";
 import { formatEventWhen } from "@/lib/helpers";
-import { seatLabel } from "@/lib/wallet";
+import { buildAccessPassSummaries, seatLabel } from "@/lib/wallet";
 import {
   buildPassTransferOrderSnapshot,
   buildWalletReceivedTransferRows,
@@ -28,6 +28,9 @@ import {
   markIncomingTransferLocallyResolved,
   filterAccessPassSummariesBySentTransfers,
   filterWalletAccessPassesBySentTransfers,
+  incomingAccessPassSummaryFromTransfer,
+  formatAccessPassRemainingLine,
+  mergeWalletAccessPassesPreservingLocal,
   formatTransferSenderLabel,
   mapReceivedTransferRows,
   mapSentTransferRows,
@@ -56,6 +59,15 @@ import {
 describe("ticketTransfers", () => {
   afterEach(() => {
     vi.useRealTimers();
+  });
+
+  it("labels access-pass transfer cards with total games", () => {
+    expect(formatAccessPassRemainingLine(2, 5)).toBe("5 games");
+    expect(formatAccessPassRemainingLine(1, 1)).toBe("1 game");
+  });
+
+  it("hides the access-pass game line when the snapshot has no games", () => {
+    expect(formatAccessPassRemainingLine(0, 0)).toBe("");
   });
 
   it("sorts transfers newest first", () => {
@@ -401,6 +413,34 @@ describe("ticketTransfers", () => {
     expect(rows[0]?.schedule).toBe(`${upcomingEvents.length} events`);
     expect(rows[0]?.title).toBe(pass.name);
     expect(rows[0]?.passKind).toBe("season pass");
+  });
+
+  it("builds an owned-card summary from an incoming access pass snapshot", () => {
+    const pass = demoAccessPass();
+    const [owned] = buildAccessPassSummaries([pass]);
+    const summary = incomingAccessPassSummaryFromTransfer({
+      accessPassId: pass.uuid,
+      access_pass: pass,
+    });
+
+    expect(summary?.typeLabel).toBe("All-access pass");
+    expect(summary?.name).toBe(pass.name);
+    expect(summary?.nextEvent?.name).toBe(owned?.nextEvent?.name);
+    expect(summary?.attendedCount).toBe(owned?.attendedCount);
+    expect(summary?.eventCount).toBe(owned?.eventCount);
+  });
+
+  it("omits next event when the incoming access pass snapshot has no games", () => {
+    const pass = demoAccessPass();
+    const summary = incomingAccessPassSummaryFromTransfer({
+      access_pass: {
+        ...pass,
+        events: [],
+      },
+    });
+
+    expect(summary?.nextEvent).toBeUndefined();
+    expect(summary?.name).toBe(pass.name);
   });
 
   it("merges a fuller local pass schedule over API sent transfers", () => {
@@ -906,20 +946,24 @@ describe("ticketTransfers", () => {
     ]);
     expect(sentRows.map((row) => row.seat)).toEqual([
       seatLabel(seasonPass),
-      "1 Access pass",
+      "",
     ]);
     expect(sentRows.map((row) => row.schedule)).toEqual([
       `${pkg.events.length} events`,
-      `${accessPass.events.length} events`,
+      `${accessPass.events.length} games`,
     ]);
+    expect(sentRows[1]?.from).toBe("sender@example.com");
     expect(receivedRows.map((row) => row.title)).toEqual([
       seasonPass.name,
       accessPass.name,
     ]);
     expect(receivedRows.map((row) => row.seat)).toEqual([
       seatLabel(seasonPass),
-      "1 Access pass",
+      "",
     ]);
+    expect(receivedRows[1]?.schedule).toBe(
+      `${accessPass.events.length} games`,
+    );
   });
 
   it("promotes accepted season pass transfers with ambiguous API status as claimed rows", () => {
@@ -1022,7 +1066,7 @@ describe("ticketTransfers", () => {
 
     expect(merged[0]?.access_pass?.name).toBe(pass.name);
     expect(mapReceivedTransferRows(merged)[0]?.title).toBe(pass.name);
-    expect(mapReceivedTransferRows(merged)[0]?.seat).toBe("1 Access pass");
+    expect(mapReceivedTransferRows(merged)[0]?.seat).toBe("");
   });
 
   it("builds the Blocktickets cancel payload under data.transferId", () => {
@@ -1422,6 +1466,27 @@ describe("ticketTransfers", () => {
 
     expect(claimed).toHaveLength(0);
     expect(pending).toHaveLength(0);
+  });
+
+  it("keeps a local access pass when the list API is stale after cancel", () => {
+    const pass = demoAccessPass();
+    const merged = mergeWalletAccessPassesPreservingLocal([], [pass], []);
+
+    expect(merged.map((row) => row.uuid)).toEqual([pass.uuid]);
+  });
+
+  it("still hides a sent access pass when the list API is stale", () => {
+    const pass = demoAccessPass();
+    const merged = mergeWalletAccessPassesPreservingLocal([], [pass], [
+      {
+        id: "pending-pass",
+        status: "pending",
+        accessPassId: pass.uuid,
+        access_pass: { uuid: pass.uuid, name: pass.name, type: "organizer" },
+      },
+    ]);
+
+    expect(merged).toHaveLength(0);
   });
 
   it("resolves created transfer ids from API payloads", () => {

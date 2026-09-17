@@ -3,6 +3,7 @@ import { formatEventWhen } from "@/lib/helpers";
 import {
   eventTimezone,
   eventWhenLabel,
+  buildAccessPassSummaries,
   formatTicketHolderName,
   groupedWalletSeatLines,
   resolveAccessPassTotalEventCount,
@@ -12,7 +13,9 @@ import {
   accessPassWalletOrderId,
   unwrapAccessPassRecord,
   unwrapList,
+  isEventComplete,
   type AccessPassLike,
+  type AccessPassSummary,
   type EventLike,
   type OrderLike,
   type TicketLike,
@@ -34,6 +37,10 @@ export type WalletTransferRow = {
   accessPassId?: string;
   passKind?: "season pass" | "access pass";
   ticketCount?: number;
+  /** Games on the transferred snapshot (excludes past when the snapshot does). */
+  eventCount?: number;
+  /** Incomplete games on an access-pass snapshot. */
+  remainingCount?: number;
 };
 
 type TransferOrderPackageLike = {
@@ -72,6 +79,10 @@ type TransferPassLike = {
   sectionNumber?: string | number;
   rowNumber?: string | number;
   seatNumber?: string | number;
+  checkInCode?: string;
+  backgroundColor?: string;
+  fontColor?: string;
+  primaryColor?: string;
 };
 
 export type TransferLike = {
@@ -242,6 +253,32 @@ export function isPassTransferRowPresentation(transfer: TransferLike): boolean {
 function formatPassEventCount(count: number): string {
   if (count <= 0) return "";
   return count === 1 ? "1 event" : `${count} events`;
+}
+
+/** Access-pass transfer cards and modals: total games on the snapshot. */
+export function formatAccessPassRemainingLine(
+  remaining: number,
+  total: number,
+): string {
+  return formatTransferredGamesLine(total > 0 ? total : remaining);
+}
+
+/** Season-pass accept/cancel modal: games on the transfer snapshot. */
+export function formatTransferredGamesLine(count: number): string {
+  if (count <= 0) return "";
+  return count === 1 ? "1 game" : `${count} games`;
+}
+
+export function resolveAccessPassTransferCounts(transfer: TransferLike): {
+  remaining: number;
+  total: number;
+} {
+  const pass = resolveTransferPass(transfer);
+  const events =
+    transfer.accessPassSnapshot?.events ?? pass?.events ?? [];
+  const total = events.length;
+  const remaining = events.filter((event) => !isEventComplete(event)).length;
+  return { remaining, total };
 }
 
 function parsePassEventCount(schedule?: string): number {
@@ -622,19 +659,56 @@ export function resolveIncomingPassTicketCount(_transfer: TransferLike): number 
   return 1;
 }
 
+/** Wallet access-pass card fields from an incoming transfer snapshot. */
+export function incomingAccessPassSummaryFromTransfer(
+  transfer: TransferLike,
+): AccessPassSummary | undefined {
+  const pass = transfer.accessPassSnapshot ?? transfer.access_pass ?? transfer.accessPass;
+  const uuid = String(pass?.uuid || transfer.accessPassId || "").trim();
+  if (!pass && !uuid) return undefined;
+  const [summary] = buildAccessPassSummaries(
+    [
+      {
+        uuid: uuid || undefined,
+        name: pass?.name,
+        type: pass?.type || "organizer",
+        checkInCode: pass?.checkInCode,
+        generalAdmission: pass?.generalAdmission ?? pass?.GA,
+        sectionNumber: pass?.sectionNumber,
+        rowNumber: pass?.rowNumber,
+        seatNumber: pass?.seatNumber,
+        artwork: pass?.artwork as AccessPassLike["artwork"],
+        backgroundColor: pass?.backgroundColor,
+        fontColor: pass?.fontColor,
+        primaryColor: pass?.primaryColor,
+        events: pass?.events,
+      },
+    ],
+    { includeInactive: true },
+  );
+  return summary;
+}
+
 /** Pass-focused copy for pending incoming transfers on My Tickets. */
 export function incomingPassTransferPresentation(
   transfer: TransferLike,
   context: WalletTransferBuildContext = {},
 ) {
+  const kind = passTransferKind(transfer);
   const eventCount = resolvePassTransferEventCount(transfer, context);
+  const { remaining, total } = resolveAccessPassTransferCounts(transfer);
+  const snapshotTotal = total || eventCount;
   return {
     title: transferTitle(transfer),
-    seatLines: transferSeatLines(transfer),
-    schedule: passEventCountLine(transfer, context),
-    passKind: passTransferKind(transfer),
+    seatLines: kind === "access pass" ? [] : transferSeatLines(transfer),
+    schedule:
+      kind === "access pass"
+        ? formatAccessPassRemainingLine(remaining, snapshotTotal)
+        : passEventCountLine(transfer, context),
+    passKind: kind,
     accessPassId: transferAccessPassId(transfer) || undefined,
-    eventCount,
+    eventCount: snapshotTotal,
+    remainingCount: remaining,
     ticketCount: resolveIncomingPassTicketCount(transfer),
   };
 }
@@ -670,6 +744,40 @@ export function filterAccessPassSummariesBySentTransfers<
   return summaries.filter((summary) =>
     allowedIds.has(String(summary.accessPassUUID || "").trim()),
   );
+}
+
+export function isAccessPassHiddenBySentTransfers(
+  uuid: string | undefined,
+  sentTransfers: TransferLike[],
+): boolean {
+  const id = String(uuid || "").trim();
+  if (!id) return false;
+  return (
+    filterWalletAccessPassesBySentTransfers([{ uuid: id }], sentTransfers)
+      .length === 0
+  );
+}
+
+/** Keep local cancelled/accepted organizer passes when the list API is stale. */
+export function mergeWalletAccessPassesPreservingLocal<
+  T extends { uuid?: string },
+>(
+  apiPasses: T[],
+  localPasses: T[],
+  sentTransfers: TransferLike[] = [],
+): T[] {
+  const apiIds = new Set(
+    apiPasses
+      .map((pass) => String(pass.uuid || "").trim())
+      .filter(Boolean),
+  );
+  const merged = [...apiPasses];
+  for (const local of localPasses) {
+    const id = String(local.uuid || "").trim();
+    if (!id || apiIds.has(id)) continue;
+    merged.push(local);
+  }
+  return filterWalletAccessPassesBySentTransfers(merged, sentTransfers);
 }
 
 function transferTicketEventUUID(
@@ -1717,16 +1825,6 @@ function passTransferKind(
   return "access pass";
 }
 
-function passTransferSeatLabel(transfer: TransferLike) {
-  const pass = resolveTransferPass(transfer);
-  if (!pass) return "Tickets";
-  const type = String(pass.type || "").trim().toLowerCase();
-  if (type === "package" || type === "season_seat") return "1 Season pass";
-  if (type === "organizer") return "1 Access pass";
-  const passName = String(pass.name || "").trim();
-  return passName ? `1 ${passName}` : "1 Access pass";
-}
-
 function passTransferSeatLines(transfer: TransferLike): string[] {
   const kind = passTransferKind(transfer);
   const tickets = transfer.tickets ?? [];
@@ -1739,7 +1837,7 @@ function passTransferSeatLines(transfer: TransferLike): string[] {
     }
     return [];
   }
-  return [passTransferSeatLabel(transfer)];
+  return [];
 }
 
 function transferSeatLines(transfer: TransferLike): string[] {
@@ -1763,6 +1861,10 @@ function transferScheduleLine(
   context: WalletTransferBuildContext = {},
 ): string {
   if (isPassTransferRowPresentation(transfer)) {
+    if (passTransferKind(transfer) === "access pass") {
+      const { remaining, total } = resolveAccessPassTransferCounts(transfer);
+      return formatAccessPassRemainingLine(remaining, total);
+    }
     return passEventCountLine(transfer, context);
   }
 
@@ -1806,24 +1908,34 @@ function mapTransferRow(
   const id = String(transfer.id ?? "").trim();
   if (!id) return null;
   const status = transferStatusLabel(transfer.status);
+  const kind = passTransferKind(transfer);
+  const seatLines = transferSeatLines(transfer);
+  const { remaining, total } = resolveAccessPassTransferCounts(transfer);
+  const eventCount =
+    kind === "access pass"
+      ? total
+      : kind === "season pass"
+        ? resolvePassTransferEventCount(transfer, context)
+        : undefined;
+  const sender = transferSenderEmail(transfer);
   return {
     id,
     to: direction === "sent" ? transfer.emailAddressToUser : undefined,
     from:
-      direction === "received"
-        ? transferSenderEmail(transfer) || "Someone"
-        : undefined,
+      sender || (direction === "received" ? "Someone" : undefined),
     title: transferTitle(transfer),
-    seatLines: transferSeatLines(transfer),
-    seat: transferSeatLines(transfer).join(" · "),
+    seatLines,
+    seat: seatLines.join(" · "),
     schedule: transferScheduleLine(transfer, context) || undefined,
     on: transferWhen(transfer),
     claimedOn: transferClaimedWhen(transfer) || undefined,
     status,
     createdAt: transfer.createdAt,
     accessPassId: transferAccessPassId(transfer) || undefined,
-    passKind: passTransferKind(transfer),
+    passKind: kind,
     ticketCount: transfer.tickets?.length,
+    ...(eventCount != null && eventCount > 0 ? { eventCount } : {}),
+    ...(kind === "access pass" ? { remainingCount: remaining } : {}),
   };
 }
 

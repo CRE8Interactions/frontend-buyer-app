@@ -1,3 +1,8 @@
+import {
+  formatAccessPassRemainingLine,
+  formatTransferredGamesLine,
+} from "@/lib/ticketTransfers";
+
 export type TransferModalKind = "ticket" | "season pass" | "access pass";
 
 export function transferEntityNoun(
@@ -31,6 +36,7 @@ export function transferRecipientDescriptor(
 ): string {
   if (kind === "ticket") return transferThisThese(kind, count);
   const name = String(passName || "").trim();
+  if (kind === "access pass") return name;
   const seat = String(passSeat || "").trim();
   const seatLine = seat && seat !== "Ticket" ? seat : "";
   return [name, seatLine].filter(Boolean).join(" · ");
@@ -128,13 +134,76 @@ export function transferKindFromWalletRow(row: {
   };
 }
 
+export function transferModalDetailLines(
+  row: {
+    passKind?: TransferModalKind;
+    seat?: string;
+    seatLines?: string[];
+    from?: string;
+    to?: string;
+    eventCount?: number;
+    remainingCount?: number;
+    when?: string;
+    schedule?: string;
+  },
+  options?: { counterpart?: "from" | "to" },
+): {
+  seats?: string;
+  when?: string;
+  games?: string;
+  remaining?: string;
+  from?: string;
+  to?: string;
+} {
+  const kind = row.passKind;
+  const rawSeats = (
+    row.seatLines?.length ? row.seatLines : row.seat ? [row.seat] : []
+  )
+    .map((line) => String(line || "").trim())
+    .filter(Boolean)
+    .filter(
+      (line) =>
+        !/^1 Access pass$/i.test(line) && !/^1 Season pass$/i.test(line),
+    );
+  const seats =
+    kind === "access pass" || rawSeats.length === 0
+      ? undefined
+      : rawSeats.join(" · ");
+  const when =
+    kind === "season pass" || kind === "access pass"
+      ? undefined
+      : String(row.when || row.schedule || "").trim() || undefined;
+  const games =
+    (kind === "season pass" || kind === "access pass") &&
+    (row.eventCount ?? 0) > 0
+      ? formatTransferredGamesLine(row.eventCount ?? 0) || undefined
+      : undefined;
+  const remaining =
+    kind === "access pass" && !games
+      ? formatAccessPassRemainingLine(
+          row.remainingCount ?? 0,
+          row.eventCount ?? 0,
+        ) || undefined
+      : undefined;
+  const counterpart = options?.counterpart ?? "from";
+  const from =
+    counterpart === "from" && String(row.from || "").trim()
+      ? `From ${String(row.from).trim()}`
+      : undefined;
+  const to =
+    counterpart === "to" && String(row.to || "").trim()
+      ? `To ${String(row.to).trim()}`
+      : undefined;
+  return { seats, when, games, remaining, from, to };
+}
+
 export function transferCancelReturnCopy(
   kind: TransferModalKind,
   count = 1,
 ): string {
   const entity = transferCancelEntity(kind, count);
   const pronoun = kind === "ticket" && count !== 1 ? "them" : "it";
-  return `Cancelling the transfer returns ${entity} to your wallet and removes ${pronoun} from the recipient's account. If the recipient has claimed the transfer already, it can't be cancelled.`;
+  return `Cancelling this transfer returns ${entity} to your wallet and removes ${pronoun} from the recipient's account. If the recipient has claimed the transfer already, it can't be cancelled.`;
 }
 
 export function transferAcceptConfirmCopy(
@@ -143,10 +212,10 @@ export function transferAcceptConfirmCopy(
 ): string {
   if (kind === "ticket") {
     return count === 1
-      ? "Accepting adds this ticket to your wallet. Once accepted, the transfer is final and can't be undone."
-      : "Accepting adds these tickets to your wallet. Once accepted, the transfer is final and can't be undone.";
+      ? "Accepting this transfer adds this ticket to your wallet. Once accepted, the transfer is final and can't be undone."
+      : "Accepting this transfer adds these tickets to your wallet. Once accepted, the transfer is final and can't be undone.";
   }
-  return `Accepting adds this ${kind} to your wallet. Once accepted, the transfer is final and can't be undone.`;
+  return `Accepting this transfer adds this ${kind} to your wallet. Once accepted, the transfer is final and can't be undone.`;
 }
 
 export function transferSuccessBody(

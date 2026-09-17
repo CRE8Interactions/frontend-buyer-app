@@ -6,6 +6,7 @@ import {
   transferEntityNoun,
   transferKindFromWalletRow,
   transferLoadingTitle,
+  transferModalDetailLines,
   transferRecipientDescriptor,
   transferRecipientNotifyCopy,
   transferRecipientReceivedCopy,
@@ -36,16 +37,16 @@ describe("transfer modal copy", () => {
       "You are about to transfer 2 tickets",
     );
     expect(transferCancelReturnCopy("ticket", 1)).toBe(
-      "Cancelling the transfer returns this ticket to your wallet and removes it from the recipient's account. If the recipient has claimed the transfer already, it can't be cancelled.",
+      "Cancelling this transfer returns this ticket to your wallet and removes it from the recipient's account. If the recipient has claimed the transfer already, it can't be cancelled.",
     );
     expect(transferCancelReturnCopy("ticket", 2)).toBe(
-      "Cancelling the transfer returns these tickets to your wallet and removes them from the recipient's account. If the recipient has claimed the transfer already, it can't be cancelled.",
+      "Cancelling this transfer returns these tickets to your wallet and removes them from the recipient's account. If the recipient has claimed the transfer already, it can't be cancelled.",
     );
     expect(transferAcceptConfirmCopy("ticket", 1)).toBe(
-      "Accepting adds this ticket to your wallet. Once accepted, the transfer is final and can't be undone.",
+      "Accepting this transfer adds this ticket to your wallet. Once accepted, the transfer is final and can't be undone.",
     );
     expect(transferAcceptConfirmCopy("ticket", 2)).toBe(
-      "Accepting adds these tickets to your wallet. Once accepted, the transfer is final and can't be undone.",
+      "Accepting this transfer adds these tickets to your wallet. Once accepted, the transfer is final and can't be undone.",
     );
     expect(transferKindFromWalletRow({ ticketCount: 2 })).toEqual({
       kind: "ticket",
@@ -65,7 +66,7 @@ describe("transfer modal copy", () => {
     expect(
       transferRecipientDescriptor("access pass", {
         passName: "All-access",
-        passSeat: "Ticket",
+        passSeat: "GA",
       }),
     ).toBe("All-access");
     expect(transferWalletRemovalCopy("season pass")).toMatch(
@@ -81,13 +82,13 @@ describe("transfer modal copy", () => {
       "Access pass transfer pending",
     );
     expect(transferCancelReturnCopy("season pass", 1)).toBe(
-      "Cancelling the transfer returns this season pass to your wallet and removes it from the recipient's account. If the recipient has claimed the transfer already, it can't be cancelled.",
+      "Cancelling this transfer returns this season pass to your wallet and removes it from the recipient's account. If the recipient has claimed the transfer already, it can't be cancelled.",
     );
     expect(transferCancelReturnCopy("access pass", 1)).toBe(
-      "Cancelling the transfer returns this access pass to your wallet and removes it from the recipient's account. If the recipient has claimed the transfer already, it can't be cancelled.",
+      "Cancelling this transfer returns this access pass to your wallet and removes it from the recipient's account. If the recipient has claimed the transfer already, it can't be cancelled.",
     );
     expect(transferAcceptConfirmCopy("season pass", 1)).toBe(
-      "Accepting adds this season pass to your wallet. Once accepted, the transfer is final and can't be undone.",
+      "Accepting this transfer adds this season pass to your wallet. Once accepted, the transfer is final and can't be undone.",
     );
     expect(
       transferKindFromWalletRow({
@@ -95,6 +96,72 @@ describe("transfer modal copy", () => {
         seatLines: ["1 Season pass"],
       }),
     ).toEqual({ kind: "season pass", count: 1 });
+    expect(
+      transferModalDetailLines({
+        passKind: "season pass",
+        seatLines: ["Sec M · Row M3 · Seat 21"],
+        eventCount: 5,
+        from: "sender@example.com",
+        schedule: "5 events",
+      }),
+    ).toEqual({
+      seats: "Sec M · Row M3 · Seat 21",
+      when: undefined,
+      games: "5 games",
+      remaining: undefined,
+      from: "From sender@example.com",
+      to: undefined,
+    });
+    expect(
+      transferModalDetailLines({
+        passKind: "access pass",
+        seatLines: ["1 Access pass"],
+        eventCount: 3,
+        remainingCount: 3,
+        from: "sender@example.com",
+        schedule: "3 games",
+      }),
+    ).toEqual({
+      seats: undefined,
+      when: undefined,
+      games: "3 games",
+      remaining: undefined,
+      from: "From sender@example.com",
+      to: undefined,
+    });
+    expect(
+      transferModalDetailLines({
+        seatLines: ["Sec A · Row 1 · Seat 12"],
+        from: "sender@example.com",
+        schedule: "Fri, Oct 30, 2026 7:00 PM",
+      }),
+    ).toEqual({
+      seats: "Sec A · Row 1 · Seat 12",
+      when: "Fri, Oct 30, 2026 7:00 PM",
+      games: undefined,
+      remaining: undefined,
+      from: "From sender@example.com",
+      to: undefined,
+    });
+    expect(
+      transferModalDetailLines(
+        {
+          passKind: "season pass",
+          seatLines: ["Sec M · Row M3 · Seat 21"],
+          eventCount: 5,
+          from: "sender@example.com",
+          to: "recipient@example.com",
+        },
+        { counterpart: "to" },
+      ),
+    ).toEqual({
+      seats: "Sec M · Row M3 · Seat 21",
+      when: undefined,
+      games: "5 games",
+      remaining: undefined,
+      from: undefined,
+      to: "To recipient@example.com",
+    });
   });
 
   it("tells the recipient they will be emailed about the transferred entity", () => {

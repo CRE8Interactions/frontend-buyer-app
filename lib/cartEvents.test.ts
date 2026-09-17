@@ -8,6 +8,7 @@ import {
   demoCompletedPackageOrder,
   demoCompletedTicketOrder,
   demoFlexPack,
+  demoAccessPass,
   demoPackageAccessPass,
   demoSeasonPackage,
   DEMO_USER,
@@ -51,6 +52,7 @@ import {
   walletEventAvailabilityBadge,
   sortWalletEventSchedule,
   sortWalletUpcomingEvents,
+  summarizeIncomingAccessPassTransfers,
   summarizeIncomingPassPackageTransfers,
   summarizeUpcomingWalletEvents,
   ticketEntryLine,
@@ -66,6 +68,7 @@ import {
   walletRouteFromPath,
   withFullOrder,
 } from "@/lib/cartEvents";
+import { buildAccessPassSummaries } from "@/lib/wallet";
 
 describe("cartEvents wallet schedule", () => {
   afterEach(() => {
@@ -1082,6 +1085,44 @@ describe("wallet season-package orders", () => {
     expect(incomingPackages[0]?.passEventCount).toBe(pkg.events.slice(1).length);
     expect(incomingPackages[0]?.passTicketCount).toBe(1);
     expect(incomingPackages[0]?.ticketCount).toBe(1);
+  });
+
+  it("shows pending incoming organizer access passes on the Access Pass tab, not Packages", () => {
+    const pass = demoAccessPass();
+    const wallet = buildWalletEventDetails([], "recipient@example.com", {
+      incomingTransfers: [
+        {
+          id: "incoming-access-1",
+          status: "pending",
+          fromUserEmail: "sender@example.com",
+          transferType: "access_pass",
+          accessPassId: pass.uuid,
+          access_pass: {
+            uuid: pass.uuid,
+            name: pass.name,
+            type: "organizer",
+            events: pass.events,
+          },
+        },
+      ],
+    });
+
+    expect(summarizeIncomingPassPackageTransfers(wallet.allDetails)).toEqual([]);
+    const incomingAccess = summarizeIncomingAccessPassTransfers(
+      wallet.allDetails,
+    );
+    expect(incomingAccess).toHaveLength(1);
+    expect(incomingAccess[0]?.name).toBe(pass.name);
+    expect(incomingAccess[0]?.passKind).toBe("access pass");
+    expect(incomingAccess[0]?.passEventCount).toBe(pass.events.length);
+    expect(incomingAccess[0]?.passRemainingCount).toBe(pass.events.length);
+    expect(incomingAccess[0]?.ticketSeats ?? []).toEqual([]);
+    expect(incomingAccess[0]?.incomingAccessPass?.typeLabel).toBe(
+      "All-access pass",
+    );
+    expect(incomingAccess[0]?.incomingAccessPass?.nextEvent?.name).toBe(
+      buildAccessPassSummaries([pass])[0]?.nextEvent?.name,
+    );
   });
 
   it("shows full incoming season pass event counts from access pass schedules when past games are omitted", () => {

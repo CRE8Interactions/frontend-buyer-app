@@ -21,6 +21,7 @@ import {
   buildPackageEventCountLookupFromTransfers,
   enrichPassTransfersFromAccessPasses,
   enrichTransferRecordsFromOrders,
+  incomingAccessPassSummaryFromTransfer,
   incomingPassTransferPresentation,
   mergePackageEventCountLookups,
   mergeUniquePackageEvents,
@@ -46,6 +47,7 @@ import {
   ticketSeatValue,
   ticketSectionValue,
   type AccessPassLike,
+  type AccessPassSummary,
   type OrderLike,
   type TicketLike,
 } from "@/lib/wallet";
@@ -145,8 +147,10 @@ export type CartEventSummary = {
   incomingPassTransfer?: boolean;
   passKind?: "season pass" | "access pass";
   passEventCount?: number;
+  passRemainingCount?: number;
   passTicketCount?: number;
   accessPassId?: string;
+  incomingAccessPass?: AccessPassSummary;
 };
 
 export type SeasonPackageSummary = {
@@ -250,8 +254,10 @@ export type CartEventDetail = {
   incomingPassTransfer?: boolean;
   passKind?: "season pass" | "access pass";
   passEventCount?: number;
+  passRemainingCount?: number;
   passTicketCount?: number;
   accessPassId?: string;
+  incomingAccessPass?: AccessPassSummary;
   incomingTransferSeatLines?: string[];
   attractions: AttractionCard[];
   teams: {
@@ -1376,6 +1382,7 @@ export type PendingSentTransfer = {
   id?: string | number;
   status?: string;
   createdAt?: string;
+  fromUserEmail?: string;
   emailAddressToUser?: string;
   orderId?: string | number;
   eventUUID?: string;
@@ -1667,8 +1674,13 @@ export function reconcilePendingReceivedTransfers(
           incomingPassTransfer: true,
           passKind: presentation.passKind,
           passEventCount: presentation.eventCount,
+          passRemainingCount: presentation.remainingCount,
           passTicketCount: presentation.ticketCount,
           accessPassId: presentation.accessPassId,
+          incomingAccessPass:
+            presentation.passKind === "access pass"
+              ? incomingAccessPassSummaryFromTransfer(enriched)
+              : undefined,
           incomingTransferSeatLines: presentation.seatLines,
           attractions: [],
           teams: [],
@@ -2405,6 +2417,7 @@ export function summarizeEventDetails(
       incomingPassTransfer: d.incomingPassTransfer,
       passKind: d.passKind,
       passEventCount: d.passEventCount,
+      passRemainingCount: d.passRemainingCount,
       passTicketCount: d.passTicketCount,
       accessPassId: d.accessPassId,
     }));
@@ -3038,6 +3051,36 @@ function ownedRowShowsPendingOutgoingTransfer(
   return false;
 }
 
+function mapIncomingPassTransferSummary(
+  detail: CartEventDetail,
+): CartEventSummary {
+  return {
+    key: detail.key,
+    name: detail.title,
+    when: detail.when,
+    venueLine: detail.venueLine || detail.venue,
+    ticketCount: detail.passTicketCount ?? 1,
+    thumb: detail.heroImage || detail.posterSrc,
+    today: false,
+    doorsTime: "",
+    startTime: "",
+    eventUUID: detail.eventUUID,
+    orderId: detail.orderId,
+    availability: detail.availability,
+    pendingIncomingTransfer: true,
+    incomingTransferId: detail.incomingTransferId,
+    incomingTransferFrom: detail.incomingTransferFrom,
+    ticketSeats: detail.incomingTransferSeatLines,
+    incomingPassTransfer: true,
+    passKind: detail.passKind,
+    passEventCount: detail.passEventCount,
+    passRemainingCount: detail.passRemainingCount,
+    passTicketCount: detail.passTicketCount,
+    accessPassId: detail.accessPassId,
+    incomingAccessPass: detail.incomingAccessPass,
+  };
+}
+
 /** Pending incoming season pass transfers shown on the Packages tab. */
 export function summarizeIncomingPassPackageTransfers(
   details: Record<string, CartEventDetail>,
@@ -3046,31 +3089,24 @@ export function summarizeIncomingPassPackageTransfers(
     .filter(
       (detail) =>
         detail.incomingPassTransfer === true &&
-        detail.pendingIncomingTransfer === true,
+        detail.pendingIncomingTransfer === true &&
+        detail.passKind === "season pass",
     )
-    .map((detail) => ({
-      key: detail.key,
-      name: detail.title,
-      when: detail.when,
-      venueLine: detail.venueLine || detail.venue,
-      ticketCount: detail.passTicketCount ?? 1,
-      thumb: detail.heroImage || detail.posterSrc,
-      today: false,
-      doorsTime: "",
-      startTime: "",
-      eventUUID: detail.eventUUID,
-      orderId: detail.orderId,
-      availability: detail.availability,
-      pendingIncomingTransfer: true,
-      incomingTransferId: detail.incomingTransferId,
-      incomingTransferFrom: detail.incomingTransferFrom,
-      ticketSeats: detail.incomingTransferSeatLines,
-      incomingPassTransfer: true,
-      passKind: detail.passKind,
-      passEventCount: detail.passEventCount,
-      passTicketCount: detail.passTicketCount,
-      accessPassId: detail.accessPassId,
-    }));
+    .map(mapIncomingPassTransferSummary);
+}
+
+/** Pending incoming organizer access passes shown on the Access Pass tab. */
+export function summarizeIncomingAccessPassTransfers(
+  details: Record<string, CartEventDetail>,
+): CartEventSummary[] {
+  return Object.values(details)
+    .filter(
+      (detail) =>
+        detail.incomingPassTransfer === true &&
+        detail.pendingIncomingTransfer === true &&
+        detail.passKind === "access pass",
+    )
+    .map(mapIncomingPassTransferSummary);
 }
 
 export function summarizeUpcomingWalletEvents(
