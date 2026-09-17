@@ -64,7 +64,7 @@ export function persistCancelledTransferRestore(
     transferId,
     orderId,
     tickets,
-    ticketIdsKey: transferTicketIdsKey(transfer),
+    ticketIdsKey: transferTicketIdsKey(transfer ?? { tickets }),
   });
   writeRestores(restores);
 }

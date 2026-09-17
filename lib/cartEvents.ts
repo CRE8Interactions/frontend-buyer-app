@@ -49,6 +49,8 @@ import {
   type OrderLike,
   type TicketLike,
 } from "@/lib/wallet";
+
+export type { OrderLike, TicketLike, AccessPassLike };
 import { walletSectionHref } from "@/lib/walletNav";
 
 type VenueLike = {
@@ -58,6 +60,7 @@ type VenueLike = {
 };
 
 export type EventLike = {
+  id?: number | string;
   uuid?: string;
   name?: string;
   start?: string;
@@ -78,6 +81,8 @@ export type EventLike = {
   categoryName?: string;
   entryGate?: string;
   entry_gate?: string;
+  enableTransfers?: boolean;
+  enableResale?: boolean;
   subCategory?: { name?: string };
   attractions?: { name?: string; primary?: boolean; artwork?: ApiImage }[];
 };
@@ -720,11 +725,15 @@ export function isTransferReceivedOrder(order?: OrderLike | null): boolean {
   );
 }
 
+type TransferReceivedDetail = Pick<
+  CartEventDetail,
+  "pendingIncomingTransfer" | "incomingTransferId" | "key"
+> & {
+  tickets: Array<{ raw?: Record<string, unknown> }>;
+};
+
 export function isTransferReceivedDetail(
-  detail?: Pick<
-    CartEventDetail,
-    "pendingIncomingTransfer" | "incomingTransferId" | "key" | "tickets"
-  > | null,
+  detail?: TransferReceivedDetail | null,
   order?: OrderLike | null,
 ): boolean {
   if (isTransferReceivedOrder(order)) return true;
@@ -740,10 +749,7 @@ export function isTransferReceivedDetail(
 }
 
 export function orderAcquiredLabel(
-  detail?: Pick<
-    CartEventDetail,
-    "pendingIncomingTransfer" | "incomingTransferId" | "key" | "tickets"
-  > | null,
+  detail?: TransferReceivedDetail | null,
   order?: OrderLike | null,
 ): "Purchased" | "Transferred" {
   return isTransferReceivedDetail(detail, order) ? "Transferred" : "Purchased";
@@ -992,11 +998,15 @@ export function applyAcceptedIncomingPassTransferToOrders(
     (acceptedPass.order as { id?: unknown }).id != null
       ? (acceptedPass.order as { id?: unknown }).id
       : undefined) ?? transfer.id;
+  const orderIdValue =
+    typeof orderRecordId === "string" || typeof orderRecordId === "number"
+      ? orderRecordId
+      : undefined;
 
   return [
     ...orders,
     {
-      id: orderRecordId,
+      id: orderIdValue,
       orderId: acceptedOrderId,
       source: "transfer",
       email: recipientEmail,
@@ -1006,7 +1016,7 @@ export function applyAcceptedIncomingPassTransferToOrders(
         events: packageEvents,
       },
       tickets: [],
-    },
+    } as OrderLike,
   ];
 }
 
@@ -1346,6 +1356,19 @@ export function packageOrderHasTicketTransfers(
   );
 }
 
+type PendingTransferPass = {
+  uuid?: string;
+  name?: string;
+  type?: string;
+  events?: EventLike[];
+  sectionNumber?: string | number;
+  rowNumber?: string | number;
+  seatNumber?: string | number;
+  orderId?: string | number;
+  artwork?: unknown;
+  generalAdmission?: boolean;
+};
+
 export type PendingSentTransfer = {
   id?: string | number;
   status?: string;
@@ -1356,22 +1379,27 @@ export type PendingSentTransfer = {
   event?: EventLike | null;
   tickets?: TicketLike[];
   transferType?: string;
-  access_pass?: {
-    uuid?: string;
-    name?: string;
-    type?: string;
-    events?: EventLike[];
-    sectionNumber?: string | number;
-    rowNumber?: string | number;
-    seatNumber?: string | number;
-  };
-  accessPass?: { uuid?: string; name?: string; type?: string };
+  access_pass?: PendingTransferPass;
+  accessPass?: PendingTransferPass;
   accessPassId?: string | number;
+  accessPassSnapshot?: PendingTransferPass;
+  order?: {
+    id?: number | string;
+    orderId?: number | string;
+    event?: EventLike | null;
+    package?: {
+      uuid?: string;
+      name?: string;
+      image?: unknown;
+      events?: EventLike[];
+      venue?: EventLike["venue"];
+      organization?: { name?: string };
+    } | null;
+  } | null;
 };
 
 export type PendingReceivedTransfer = PendingSentTransfer & {
   fromUserEmail?: string;
-  order?: OrderLike | null;
 };
 
 function stripPendingTransferTicketFields(ticket: TicketLike): TicketLike {
@@ -2595,8 +2623,8 @@ function transferMatchesWalletOrder(
   const walletOrderId = String(order.orderId ?? "").trim();
   const walletRecordId = String(order.id ?? "").trim();
   return (
-    (walletOrderId && transferOrderId === walletOrderId) ||
-    (walletRecordId && transferOrderId === walletRecordId)
+    Boolean(walletOrderId && transferOrderId === walletOrderId) ||
+    Boolean(walletRecordId && transferOrderId === walletRecordId)
   );
 }
 
@@ -2643,8 +2671,7 @@ function passTransferSeatIdentity(
   const pass =
     transfer.access_pass ??
     transfer.accessPass ??
-    (transfer as { accessPassSnapshot?: PendingSentTransfer["access_pass"] })
-      .accessPassSnapshot;
+    transfer.accessPassSnapshot;
   if (
     pass &&
     (pass.sectionNumber != null ||

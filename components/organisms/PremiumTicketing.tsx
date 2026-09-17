@@ -229,7 +229,7 @@ const DEFAULT_GA_TIERS: GATier[] = [
   { name: "Aggie student", sub: "Valid NMSU student ID required at the gate", price: "Free", unit: 0, note: "All 800 student tickets claimed", state: "soldout" },
 ];
 
-type Pick = { sec: string; row: string; seat: string; zone: string; tier: string; unit: number; price: string };
+type SeatPick = { sec: string; row: string; seat: string; zone: string; tier: string; unit: number; price: string };
 
 function SeatViewImage({
   src,
@@ -377,7 +377,7 @@ export default function PremiumTicketing({
   const [mapExitConfirm, setMapExitConfirm] = useState(false);
   const [zoom, setZoom] = useState(100);
   const [legendOpen, setLegendOpen] = useState(false);
-  const [picks, setPicks] = useState<Pick[]>([]);
+  const [picks, setPicks] = useState<SeatPick[]>([]);
   const [detail, setDetail] = useState<number | null>(null);
   const [media, setMedia] = useState(0);
   const [info, setInfo] = useState(false);

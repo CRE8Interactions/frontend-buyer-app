@@ -37,7 +37,10 @@ export type WalletTransferRow = {
 };
 
 type TransferOrderPackageLike = {
+  uuid?: string;
   name?: string;
+  start?: string;
+  end?: string;
   image?: unknown;
   events?: EventLike[];
   venue?: EventLike["venue"];
@@ -87,7 +90,7 @@ export type TransferLike = {
     lastName?: string;
     email?: string;
   } | null;
-  event?: EventLike | { name?: string; venue?: { timezone?: string } } | null;
+  event?: EventLike | { uuid?: string; name?: string; start?: string; venue?: { timezone?: string } } | null;
   /** Authoritative game uuid on package transfers; the `event` relation may be order.event. */
   eventUUID?: string;
   tickets?: TicketLike[];

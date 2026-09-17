@@ -90,7 +90,39 @@ function cancelTransferIdFromBody(body: Record<string, unknown>): string {
   return String(nested?.transferId ?? body.transferId ?? "");
 }
 
-type DemoWalletOrder = ReturnType<typeof demoCompletedTicketOrder>;
+type DemoWalletEvent = {
+  uuid?: string;
+  name?: string;
+  start?: string;
+  image?: unknown;
+  [key: string]: unknown;
+};
+type DemoWalletPackage = {
+  uuid?: string;
+  name?: string;
+  image?: unknown;
+  events?: DemoWalletEvent[];
+  [key: string]: unknown;
+};
+type DemoTicket = {
+  id?: number | string;
+  eventUUID?: string;
+  eventId?: string;
+  transferStatus?: string;
+  ticketTransfer?: { status?: string };
+  transferredAt?: string;
+  [key: string]: unknown;
+};
+type DemoWalletOrder = {
+  id?: number | string;
+  orderId?: string;
+  email?: string;
+  event?: DemoWalletEvent | null;
+  package?: DemoWalletPackage | null;
+  tickets?: DemoTicket[];
+  flex_pack?: unknown;
+  [key: string]: unknown;
+};
 type DemoSentTransfer = {
   id: string;
   status: "pending" | "claimed" | "cancelled";
@@ -99,13 +131,14 @@ type DemoSentTransfer = {
   emailAddressToUser?: string;
   fromUserEmail?: string;
   createdAt?: string;
-  event?: DemoWalletOrder["event"];
-  tickets?: DemoWalletOrder["tickets"];
+  transferedOn?: string;
+  event?: DemoWalletEvent | null;
+  tickets?: DemoTicket[];
   order?: {
     id?: string | number;
     orderId?: string | number;
-    details?: { package?: DemoWalletOrder["package"] };
-    package?: DemoWalletOrder["package"];
+    details?: { package?: DemoWalletPackage };
+    package?: DemoWalletPackage | null;
   };
   accessPassId?: string;
   transferType?: string;
@@ -116,7 +149,7 @@ type DemoSentTransfer = {
     type?: string;
     start?: string;
     end?: string;
-    events?: DemoWalletOrder["event"][];
+    events?: DemoWalletEvent[];
     artwork?: unknown;
     sectionNumber?: string | number;
     rowNumber?: string | number;
@@ -127,8 +160,8 @@ type DemoSentTransfer = {
 
 function demoTransferOrderSnapshot(
   order: DemoWalletOrder | undefined,
-  packageEvents?: DemoWalletOrder["event"][],
-) {
+  packageEvents?: DemoWalletEvent[],
+): NonNullable<DemoSentTransfer["order"]> {
   const pkg = order?.package ?? demoSeasonPackage();
   const events = packageEvents?.length ? packageEvents : (pkg.events ?? []);
   const packageSnapshot = {
@@ -144,9 +177,7 @@ function demoTransferOrderSnapshot(
     package: {
       name: packageSnapshot.name,
       image: packageSnapshot.image,
-      events: events.map((event, index) => ({
-        id: event.uuid ?? index + 1,
-      })),
+      events: events.filter((event): event is DemoWalletEvent => Boolean(event)),
     },
   };
 }
@@ -173,10 +204,10 @@ let demoWalletOrdersState: DemoWalletOrder[] | null = null;
 const demoSentTransfers: DemoSentTransfer[] = [];
 const demoReceivedTransfers: DemoSentTransfer[] = [];
 let demoOrganizerAccessPasses = [demoAccessPass()];
-const demoPackageAccessPassesByOrder: Record<
-  string,
-  ReturnType<typeof demoPackageAccessPass>[]
-> = {
+type DemoPackageAccessPass = ReturnType<typeof demoPackageAccessPass> & {
+  order?: { orderId?: string };
+};
+const demoPackageAccessPassesByOrder: Record<string, DemoPackageAccessPass[]> = {
   [demoCompletedPackageOrder().orderId]: [demoPackageAccessPass()],
 };
 
@@ -522,7 +553,7 @@ const routes: Route[] = [
               orderId: recipientOrderId,
               order: { orderId: recipientOrderId },
               status: "active",
-            },
+            } as DemoPackageAccessPass,
           ];
           return {
             data: {
@@ -580,7 +611,15 @@ const routes: Route[] = [
           const recipientEmail = String(body.email || "");
           const pkg = demoSeasonPackage();
           const walletOrder = findDemoWalletOrder(pass.orderId);
-          const events = pkg.events ?? pass.events ?? [];
+          const passFields = pass as {
+            events?: DemoWalletEvent[];
+            artwork?: unknown;
+            sectionNumber?: string | number;
+            rowNumber?: string | number;
+            seatNumber?: string | number;
+            generalAdmission?: boolean;
+          };
+          const events = pkg.events ?? passFields.events ?? [];
           const passTransferId = `demo-pass-transfer-${demoSentTransfers.length + 1}`;
           const accessPassSnapshot = {
             uuid: pass.uuid,
@@ -589,11 +628,11 @@ const routes: Route[] = [
             start: pkg.start || events[0]?.start,
             end: pkg.end || events.at(-1)?.start,
             events,
-            artwork: pass.artwork ?? pkg.image,
-            sectionNumber: pass.sectionNumber,
-            rowNumber: pass.rowNumber,
-            seatNumber: pass.seatNumber,
-            generalAdmission: pass.generalAdmission,
+            artwork: passFields.artwork ?? pkg.image,
+            sectionNumber: passFields.sectionNumber,
+            rowNumber: passFields.rowNumber,
+            seatNumber: passFields.seatNumber,
+            generalAdmission: passFields.generalAdmission,
           };
           const transferRecord: DemoSentTransfer = {
             id: passTransferId,
@@ -631,12 +670,16 @@ const routes: Route[] = [
           ticketIds.includes(String(ticket.id)),
         ) ?? [];
       if (order && transferredTickets.length) {
-        order.tickets = order.tickets.filter(
+        order.tickets = (order.tickets ?? []).filter(
           (ticket) => !ticketIds.includes(String(ticket.id)),
         );
         const recipientEmail = String(body.email || "");
-        const eventUUID = String(body.eventUUID || body.event?.uuid || "").trim();
-        let event = body.event || order.event;
+        const bodyEvent =
+          body.event && typeof body.event === "object"
+            ? (body.event as DemoWalletEvent)
+            : undefined;
+        const eventUUID = String(body.eventUUID || bodyEvent?.uuid || "").trim();
+        let event: DemoWalletEvent | null | undefined = bodyEvent || order.event;
         if (!event && order.package?.events?.length) {
           event =
             order.package.events.find(
@@ -651,9 +694,9 @@ const routes: Route[] = [
             );
         }
         const ticketTransferId = `demo-ticket-transfer-${demoSentTransfers.length + 1}`;
-        const transferRecord = {
+        const transferRecord: DemoSentTransfer = {
           id: ticketTransferId,
-          status: "pending" as const,
+          status: "pending",
           orderId: order.id ?? order.orderId,
           email: recipientEmail,
           emailAddressToUser: recipientEmail,

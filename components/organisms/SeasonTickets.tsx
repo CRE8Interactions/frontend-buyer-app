@@ -151,8 +151,6 @@ import {
   filterActiveTransferRecords,
   clearLocallyResolvedIncomingTransfersForTests,
   filterIncomingTransfersForWallet,
-  filterPendingIncomingTransfers,
-  isPendingIncomingTransferRecord,
   filterVisibleWalletTransferRows,
   markIncomingTransferLocallyResolved,
   filterAccessPassSummariesBySentTransfers,
@@ -1131,16 +1129,17 @@ export default function SeasonTickets({
   const sentTransferRecordsRef = useRef<PendingSentTransfer[]>([]);
   const seasonPackagesRef = useRef<SeasonPackageSummary[]>([]);
   const walletOrdersRef = useRef<OrderLike[]>([]);
-  const [incomingTransferRecords, setIncomingTransferRecords] = useState<
-    TransferLike[]
-  >([]);
+  const [, setIncomingTransferRecords] = useState<TransferLike[]>([]);
   const incomingTransferRecordsRef = useRef<TransferLike[]>([]);
-  const [receivedTransferRecords, setReceivedTransferRecords] = useState<
-    TransferLike[]
-  >([]);
+  const [, setReceivedTransferRecords] = useState<TransferLike[]>([]);
   const receivedTransferRecordsRef = useRef<TransferLike[]>([]);
   const walletReloadGenerationRef = useRef(0);
   const walletReloadAbortRef = useRef<AbortController | null>(null);
+  const [eventsLoading, setEventsLoading] = useState(false);
+  const [resaleListingsLoading, setResaleListingsLoading] = useState(false);
+  const [sentTransferListLoading, setSentTransferListLoading] = useState(false);
+  const [receivedTransferListLoading, setReceivedTransferListLoading] =
+    useState(false);
   const cancelInFlightWalletSectionReloads = useCallback(() => {
     walletReloadGenerationRef.current += 1;
     walletReloadAbortRef.current?.abort();
@@ -1219,12 +1218,7 @@ export default function SeasonTickets({
   const [flexPackKey, setFlexPackKey] = useState<string | null>(null);
   const [eventDetails, setEventDetails] = useState<Record<string, CartEventDetail>>({});
   const [eventsChecked, setEventsChecked] = useState(false);
-  const [eventsLoading, setEventsLoading] = useState(false);
   const [resaleListingsChecked, setResaleListingsChecked] = useState(false);
-  const [resaleListingsLoading, setResaleListingsLoading] = useState(false);
-  const [sentTransferListLoading, setSentTransferListLoading] = useState(false);
-  const [receivedTransferListLoading, setReceivedTransferListLoading] =
-    useState(false);
   const [phoneDevice, setPhoneDevice] = useState(false);
   const passWalletTheme = passWallet ? phoneWalletTheme(passWallet) : null;
   const codeBoxes = useRef<(HTMLInputElement | null)[]>([]);
@@ -5816,7 +5810,9 @@ export default function SeasonTickets({
               eventUUID: transferEventUUID,
             })),
           };
-          const removedTicketIds = tfSelectedTickets.map(({ ticket }) => ticket.id);
+          const removedTicketIds = tfSelectedTickets
+            .map(({ ticket }) => ticket.id)
+            .filter((id): id is number | string => id != null && id !== "");
           const nextOrders = removeTicketsFromWalletOrders(
             walletOrders,
             removedTicketIds,

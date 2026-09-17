@@ -16,6 +16,7 @@ export type VenueLike = {
 };
 
 export type EventLike = {
+  id?: number | string;
   uuid?: string;
   name?: string;
   start?: string;
@@ -78,6 +79,7 @@ export type OrderLike = {
     events?: EventLike[];
   } | null;
   tickets?: TicketLike[];
+  originalTickets?: TicketLike[];
   flex_pack?: {
     uuid?: string;
     id?: number | string;

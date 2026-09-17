@@ -101,6 +101,7 @@ vi.mock("@/lib/api", () => ({
   placeTicketsIntoCart: vi.fn(),
   placeGATicketsIntoCart: vi.fn(),
   checkAccessCode: vi.fn(),
+  validateEmail: vi.fn(async () => ({ data: { verdict: "Valid" } })),
 }));
 
 vi.mock("@/lib/auth", () => ({
@@ -129,6 +130,7 @@ import {
   checkAccessCode,
   placeGATicketsIntoCart,
   placeTicketsIntoCart,
+  validateEmail,
 } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { checkoutHref } from "@/lib/cart";
@@ -136,6 +138,7 @@ import { checkoutHref } from "@/lib/cart";
 const mockedCheckAccessCode = vi.mocked(checkAccessCode);
 const mockedPlaceGaTickets = vi.mocked(placeGATicketsIntoCart);
 const mockedPlaceTickets = vi.mocked(placeTicketsIntoCart);
+const mockedValidateEmail = vi.mocked(validateEmail);
 const mockedUseAuth = vi.mocked(useAuth);
 
 function authState(isAuthenticated: boolean) {
@@ -229,6 +232,10 @@ describe("Select tickets page (PremiumTicketing)", { timeout: 20_000 }, () => {
     mockedPlaceGaTickets.mockReset();
     mockedPlaceGaTickets.mockResolvedValue({
       data: { cartId: "cart-ga-1" },
+    } as never);
+    mockedValidateEmail.mockReset();
+    mockedValidateEmail.mockResolvedValue({
+      data: { verdict: "Valid" },
     } as never);
     useFiltersStore.setState({ loadingTicketGroups: false, eventTicketLimit: null });
     resetSeatmapBackgroundCache();
