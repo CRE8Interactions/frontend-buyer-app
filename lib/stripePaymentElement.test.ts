@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
+  checkoutPaymentElementDefaultValues,
+  checkoutPaymentElementOptions,
   checkoutPaymentElementOptionsForProtocol,
   paymentElementWalletsForProtocol,
 } from "./stripePaymentElement";
@@ -26,6 +28,28 @@ describe("stripePaymentElement wallets", () => {
       applePay: "never",
       googlePay: "never",
       link: "never",
+    });
+  });
+
+  it("lets Stripe collect country and postal inside the Payment Element", () => {
+    expect(checkoutPaymentElementOptions.fields.billingDetails.address).toEqual({
+      country: "auto",
+      postalCode: "auto",
+      line1: "never",
+      line2: "never",
+      city: "never",
+      state: "never",
+    });
+    expect(checkoutPaymentElementOptions.terms.card).toBe("auto");
+  });
+
+  it("prefills Stripe's country from the cart or shopper IP", () => {
+    expect(checkoutPaymentElementDefaultValues("CA")).toEqual({
+      billingDetails: {
+        address: {
+          country: "CA",
+        },
+      },
     });
   });
 });

@@ -216,7 +216,7 @@ export function codeSubmitError(cause: unknown): Exclude<CodeFieldError, null> {
 
 export function lightFieldClass(invalid: boolean) {
   return [
-    "h-[52px] w-full rounded-[14px] border bg-[#f7f8fc] px-4 text-[16px] text-[#051b35] outline-none placeholder:text-[#8a93a3]",
+    "h-[52px] w-full rounded-[14px] border bg-[#fff] px-4 text-[16px] text-[#051b35] outline-none placeholder:text-[#8a93a3]",
     invalid
       ? "border-[#c2394a]"
       : "border-[rgba(5,27,53,0.12)]",

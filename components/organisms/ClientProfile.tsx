@@ -599,6 +599,7 @@ export default function ClientProfile({
   return (
     <div
       className="shopper-page"
+      data-bt-scroll-page=""
       style={{
         background: "#f7f8fc",
         color: NAVY,

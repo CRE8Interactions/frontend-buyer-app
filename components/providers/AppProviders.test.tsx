@@ -40,6 +40,7 @@ vi.mock("@/components/molecules/GlobalRouteTransitionLoader", () => ({
 afterEach(() => {
   path.current = "/browse/";
   document.getElementById("bt-boot-loader")?.remove();
+  document.body.style.removeProperty("overflow");
 });
 
 describe("AppProviders", () => {
@@ -88,6 +89,7 @@ describe("AppProviders", () => {
       </AppProviders>,
     );
 
+    document.body.style.overflow = "hidden";
     path.current = `/${raptors.slug}/`;
     rerender(
       <AppProviders>
@@ -96,6 +98,7 @@ describe("AppProviders", () => {
     );
 
     expect(committed).toHaveBeenCalled();
+    expect(document.body.style.overflow).toBe("");
     window.removeEventListener(ROUTE_COMMITTED_EVENT, committed);
   });
 });

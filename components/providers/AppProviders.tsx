@@ -13,6 +13,7 @@ import {
 import { useAuth, displayName } from "@/lib/auth";
 import GlobalRouteTransitionLoader from "@/components/molecules/GlobalRouteTransitionLoader";
 import { markInAppNavigation } from "@/lib/inAppBack";
+import { restorePageScroll } from "@/lib/pageScroll";
 import { notifyRouteCommitted } from "@/lib/routeTransition";
 
 const HOTJAR_ID = 3697606;
@@ -97,9 +98,20 @@ export default function AppProviders({ children }: { children: ReactNode }) {
     if (seenPath.current != null && seenPath.current !== pathname) {
       markInAppNavigation();
       notifyRouteCommitted(pathname);
+      // In-app Back skips the route cover, so leftover tickets/wallet
+      // overflow:hidden would otherwise pin browse / team / venue.
+      if (!document.body.dataset.btRouteTransition) restorePageScroll();
     }
     seenPath.current = pathname;
   }, [pathname]);
+
+  useEffect(() => {
+    const onPageShow = () => {
+      if (!document.body.dataset.btRouteTransition) restorePageScroll();
+    };
+    window.addEventListener("pageshow", onPageShow);
+    return () => window.removeEventListener("pageshow", onPageShow);
+  }, []);
 
   useEffect(() => {
     const id = window.requestAnimationFrame(() => {

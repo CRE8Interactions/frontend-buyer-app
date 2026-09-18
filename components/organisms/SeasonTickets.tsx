@@ -36,6 +36,7 @@ import {
   WalletTicketsBlocksLoading,
 } from "@/components/organisms/WalletTicketsLoader";
 import { BLOCKTICKETS_GREEN, BLOCKTICKETS_NAVY } from "@/lib/branding";
+import { lockPageScroll, unlockPageScroll } from "@/lib/pageScroll";
 import EmailField from "@/components/molecules/EmailField";
 import SeasonTicketsBadge from "@/components/molecules/SeasonTicketsBadge";
 import useAutoFocus from "@/hooks/useAutoFocus";
@@ -2136,8 +2137,9 @@ export default function SeasonTickets({
 
   const anyModal = !!modal || !!tf || !!confirmCancel || !!confirmAccept || !!qrPass;
   useEffect(() => {
-    document.body.style.overflow = anyModal ? "hidden" : "";
-    return () => { document.body.style.overflow = ""; };
+    if (!anyModal) return;
+    lockPageScroll();
+    return () => unlockPageScroll();
   }, [anyModal]);
 
   const flashToast = (msg: string) => {
@@ -2781,7 +2783,7 @@ export default function SeasonTickets({
           }}
         >
           <label style={{ fontSize: fluidSize(12), fontWeight: 600, color: FAINT }}>Email address</label>
-          <input ref={autoFocusField} name="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="you@email.com" style={{ fontFamily: "inherit", width: "100%", boxSizing: "border-box", fontSize: fluidSize(16), color: INK, background: FIELD, border: "1px solid rgba(5,27,53,0.12)", borderRadius: 14, padding: "15px 16px", outline: "none" }} />
+          <input ref={autoFocusField} name="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="you@email.com" style={{ fontFamily: "inherit", width: "100%", boxSizing: "border-box", fontSize: fluidSize(16), color: INK, background: "#fff", border: "1px solid rgba(5,27,53,0.12)", borderRadius: 14, padding: "15px 16px", outline: "none" }} />
           <button type="submit" style={{ fontFamily: "inherit", width: "100%", fontSize: fluidSize(15), fontWeight: 600, color: INK, background: ACCENT, border: "none", borderRadius: 999, padding: 16, cursor: "pointer" }}>Send my code</button>
           <div style={{ fontSize: fluidSize(12), lineHeight: 1.5, color: MUTE, textAlign: "center" }}>By continuing you agree to the Blocktickets terms and privacy policy.</div>
         </form>
@@ -2806,7 +2808,7 @@ export default function SeasonTickets({
                 onChange={(e) => typeCodeBox(i, e.target.value)}
                 onKeyDown={(e) => moveCodeBox(i, e)}
                 onFocus={(e) => e.currentTarget.select()}
-                style={{ fontFamily: "inherit", width: "100%", boxSizing: "border-box", height: mobile ? 54 : 60, border: "1px solid rgba(5,27,53,0.12)", background: code[i] ? "#fff" : FIELD, borderRadius: 14, textAlign: "center", fontSize: fluidSize(22), fontWeight: 600, fontVariantNumeric: "tabular-nums", color: INK, outline: "none" }} />
+                style={{ fontFamily: "inherit", width: "100%", boxSizing: "border-box", height: mobile ? 54 : 60, border: "1px solid rgba(5,27,53,0.12)", background: "#fff", borderRadius: 14, textAlign: "center", fontSize: fluidSize(22), fontWeight: 600, fontVariantNumeric: "tabular-nums", color: INK, outline: "none" }} />
               ))}
             </div>
           <div style={{ display: "flex", flexDirection: "column", gap: 16, fontSize: fluidSize(13), color: MUTE, textAlign: "center" }}>
@@ -5906,7 +5908,7 @@ export default function SeasonTickets({
         >
         <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
           <label style={{ fontSize: fluidSize(12), fontWeight: 600, color: FAINT }}>{field?.label}</label>
-          <input ref={autoFocusField} name="fieldValue" value={fieldValue} onChange={(e) => setFieldValue(e.target.value)} style={{ fontFamily: "inherit", width: "100%", boxSizing: "border-box", fontSize: fluidSize(16), color: INK, background: FIELD, border: "1px solid rgba(5,27,53,0.12)", borderRadius: 14, padding: "14px 16px", outline: "none" }} />
+          <input ref={autoFocusField} name="fieldValue" value={fieldValue} onChange={(e) => setFieldValue(e.target.value)} style={{ fontFamily: "inherit", width: "100%", boxSizing: "border-box", fontSize: fluidSize(16), color: INK, background: "#fff", border: "1px solid rgba(5,27,53,0.12)", borderRadius: 14, padding: "14px 16px", outline: "none" }} />
           <div style={{ fontSize: fluidSize(12), lineHeight: 1.5, color: MUTE }}>{field?.help}</div>
         </div>
         <div style={{ display: "flex", gap: 8 }}>

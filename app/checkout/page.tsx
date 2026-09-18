@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Suspense, useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { loadStripe, type Stripe } from "@stripe/stripe-js";
@@ -32,6 +32,8 @@ import { beginRouteTransition } from "@/lib/routeTransition";
 import { useClientReady } from "@/lib/useClientReady";
 import { formString, normalizeRedemptionCode, promoCodeRedeemDisplayMessage, redemptionCodeBlurFieldError, redemptionCodeSubmitError, type RedemptionCodeFieldError } from "@/lib/fieldValidation";
 import RedemptionCodeField from "@/components/molecules/RedemptionCodeField";
+import { billingCountryFromCart } from "@/lib/billingPostal";
+import { fetchIpCountry } from "@/lib/ipCountry";
 import {
   flexPackSeasonLine,
   flexPackVoucherCount,
@@ -122,6 +124,7 @@ import {
 } from "@/lib/tracking";
 import {
   STRIPE_PAYMENT_ELEMENT_FONTS,
+  checkoutPaymentElementDefaultValues,
   checkoutPaymentElementOptionsForPage,
   paymentElementWalletsForProtocol,
   stripePaymentElementAppearance,
@@ -258,6 +261,9 @@ function CheckoutPaymentForm({
   const [removingPromo, setRemovingPromo] = useState(false);
   const [purchasing, setPurchasing] = useState(false);
   const [paymentReady, setPaymentReady] = useState(false);
+  const [billingCountry, setBillingCountry] = useState(
+    () => billingCountryFromCart(cart) || "US",
+  );
   const hasTrackedPaymentInfoRef = useRef(false);
   const linkWalletEnabled =
     paymentElementWalletsForProtocol(window.location.protocol).link !== "never";
@@ -289,6 +295,18 @@ function CheckoutPaymentForm({
   useEffect(() => {
     onTotalChange?.(displayTotal);
   }, [displayTotal, onTotalChange]);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    fetchIpCountry(controller.signal)
+      .then((code) => {
+        if (code) setBillingCountry(code);
+      })
+      .catch(() => {
+        /* Keep the cart / US default — geo must never block pay. */
+      });
+    return () => controller.abort();
+  }, []);
 
   const promoPricing = promoDetails?.promoPricingDetails as
     | {
@@ -366,7 +384,8 @@ function CheckoutPaymentForm({
     }
   };
 
-  const completePurchase = async () => {
+  const completePurchase = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
     if (!donationRequirementMet || isRefreshingIntent || purchasing) return;
     if (!stripe || !elements) return;
     setPurchasing(true);
@@ -380,7 +399,9 @@ function CheckoutPaymentForm({
       await processOrder({ cart, paymentIntentId: intentId });
       const confirmed = await stripe.confirmPayment({
         elements,
-        confirmParams: { return_url: checkoutSuccessReturnUrl(intentId) },
+        confirmParams: {
+          return_url: checkoutSuccessReturnUrl(intentId),
+        },
         redirect: "if_required",
       });
       const confirmError = await waitForPaymentIntentSucceeded(
@@ -407,13 +428,20 @@ function CheckoutPaymentForm({
   };
 
   const paymentElementOptions = useMemo(
-    () => checkoutPaymentElementOptionsForPage(),
-    [],
+    () => ({
+      ...checkoutPaymentElementOptionsForPage(),
+      defaultValues: checkoutPaymentElementDefaultValues(billingCountry),
+    }),
+    [billingCountry],
   );
 
   return (
     <div>
-      <div className="min-h-[280px]">
+      <form
+        id="checkout-payment"
+        noValidate
+        onSubmit={completePurchase}
+      >
         <PaymentElement
           onChange={(e) => {
             setPaymentReady(Boolean(e.complete));
@@ -435,7 +463,7 @@ function CheckoutPaymentForm({
           }}
           options={paymentElementOptions}
         />
-      </div>
+      </form>
 
       {!cart.flex_pack && !cart.package && !cart.access_pass_template ? (
         <div className="mt-6">
@@ -558,6 +586,8 @@ function CheckoutPaymentForm({
       >
         <div className="mx-auto flex max-w-[1140px] px-3.5 py-3 md:justify-end md:px-5">
           <BrandedActionButton
+            type="submit"
+            form="checkout-payment"
             primaryColor={buttonColor}
             textColor={buttonTextColor}
             loading={purchasing}
@@ -568,7 +598,6 @@ function CheckoutPaymentForm({
               isRefreshingIntent ||
               !stripe
             }
-            onClick={completePurchase}
             className="w-full px-[34px] py-4 text-[17px] md:ml-auto md:w-[340px]"
           >
             <svg

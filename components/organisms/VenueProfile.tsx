@@ -565,7 +565,7 @@ export default function VenueProfile({ slug }: { slug: string }) {
   );
 
   return (
-    <div className="shopper-page" style={{ background: "#f7f8fc", color: NAVY, minHeight: "100vh", fontFamily: "'Geist', system-ui, -apple-system, sans-serif", WebkitFontSmoothing: "antialiased", ["--vp-accent"]: ACC, ...fieldFocusVars(accent) } as CSSProperties}>
+    <div className="shopper-page" data-bt-scroll-page="" style={{ background: "#f7f8fc", color: NAVY, minHeight: "100vh", fontFamily: "'Geist', system-ui, -apple-system, sans-serif", WebkitFontSmoothing: "antialiased", ["--vp-accent"]: ACC, ...fieldFocusVars(accent) } as CSSProperties}>
       <style>{`${shopperPageTypeCss()}
 .vp-row{transition:box-shadow 150ms ease,border-color 150ms ease}.vp-row:hover{box-shadow:0 8px 30px rgba(5,27,53,0.09);border-color:rgba(5,27,53,0.20)}.vp-action{outline:2px solid transparent;outline-offset:2px;transition:outline-color 140ms ease}.vp-action:hover,.vp-action:focus-visible{outline-color:var(--vp-accent)}`}</style>
 

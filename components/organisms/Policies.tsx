@@ -43,7 +43,7 @@ export default function Policies({ initial = "purchase" }: { initial?: string })
   const doc = policies.find((d) => d.slug === slug) || policies[0];
 
   return (
-    <div style={{ minHeight: "100vh", display: "flex", flexDirection: "column", background: "#f7f8fc", color: NAVY, fontFamily: "'Geist', system-ui, -apple-system, sans-serif", WebkitFontSmoothing: "antialiased" }}>
+    <div data-bt-scroll-page="" style={{ minHeight: "100vh", display: "flex", flexDirection: "column", background: "#f7f8fc", color: NAVY, fontFamily: "'Geist', system-ui, -apple-system, sans-serif", WebkitFontSmoothing: "antialiased" }}>
       <style>{`.pol-nav::-webkit-scrollbar{height:0}`}</style>
 
       <header style={{ background: NAVY, position: "sticky", top: 0, zIndex: 20 }}>

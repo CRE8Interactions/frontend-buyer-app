@@ -107,7 +107,7 @@ function SearchResults() {
 
 export default function SearchPage() {
   return (
-    <div className="shopper-page min-h-screen bg-[#f7f8fc] text-[#051b35]">
+    <div className="shopper-page min-h-screen bg-[#f7f8fc] text-[#051b35]" data-bt-scroll-page="">
       <ShopperFluidTypeStyles />
       <Nav />
       <main className="mx-auto max-w-[1320px] px-5 pt-4 md:px-8 md:pt-7">

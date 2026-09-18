@@ -605,7 +605,7 @@ function LoginForm() {
 
 function LoginShell({ children }: { children: React.ReactNode }) {
   return (
-    <div className="shopper-page min-h-screen bg-[#f7f8fc] text-[#051b35]">
+    <div className="shopper-page min-h-screen bg-[#f7f8fc] text-[#051b35]" data-bt-scroll-page="">
       <ShopperFluidTypeStyles />
       <header
         className="sticky top-0 z-20"

@@ -223,6 +223,7 @@ describe("team and venue back buttons", () => {
     });
 
     expect(await screen.findByText(nmStateEvents[0].name)).toBeInTheDocument();
+    expect(document.querySelector("[data-bt-scroll-page]")).toBeTruthy();
     expect(
       screen.getByRole("link", { name: /visit venue website/i }),
     ).toHaveAttribute("href", venue.website);
@@ -847,6 +848,7 @@ describe("storefront categories", () => {
     render(<VenueProfile slug={venue.slug} />);
 
     expect(await screen.findByText(schedule[0].name)).toBeInTheDocument();
+    expect(document.querySelector("[data-bt-scroll-page]")).toBeTruthy();
     expect(screen.getAllByText(new RegExp(`${category} ·`)).length).toBeGreaterThan(
       0,
     );

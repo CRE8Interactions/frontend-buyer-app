@@ -11,6 +11,11 @@ import {
 } from "@/lib/orgBrandingCache";
 import { loaderMessageForPath } from "@/lib/loaderMessages";
 import {
+  lockPageScroll,
+  PAGE_SCROLL_READY_SELECTOR,
+  restorePageScroll,
+} from "@/lib/pageScroll";
+import {
   ROUTE_COMMITTED_EVENT,
   ROUTE_TRANSITION_EVENT,
   routePathKey,
@@ -19,7 +24,7 @@ import { beginWalletNavigation } from "@/lib/walletTransition";
 
 const MAX_VISIBLE_MS = 15000;
 
-/** Destination loader polls before the cover hands off (~3 × 40 ms). */
+/** Destination loader / ready page polls before the cover hands off (~3 × 40 ms). */
 const LOADER_HANDOFF_STABLE_POLLS = 3;
 
 /** Full-screen loader owned by the route that is loading — not this cover. */
@@ -32,8 +37,13 @@ function isPlatformLinkOrigin(pathname: string) {
 
 function setTransitionCover(active: boolean) {
   if (typeof document === "undefined") return;
-  if (active) document.body.dataset.btRouteTransition = "";
-  else delete document.body.dataset.btRouteTransition;
+  if (active) {
+    document.body.dataset.btRouteTransition = "";
+    lockPageScroll();
+    return;
+  }
+  delete document.body.dataset.btRouteTransition;
+  restorePageScroll();
 }
 
 /**
@@ -86,8 +96,15 @@ export default function GlobalRouteTransitionLoader() {
       ).some((el) => !own?.contains(el));
     };
 
-    const destinationLoaderReady = () => {
-      if (!destinationLoaderPainting()) {
+    const destinationPageReady = () => {
+      const own = overlayRef.current;
+      return Array.from(
+        document.querySelectorAll(PAGE_SCROLL_READY_SELECTOR),
+      ).some((el) => !own?.contains(el));
+    };
+
+    const destinationReady = () => {
+      if (!destinationLoaderPainting() && !destinationPageReady()) {
         destinationLoaderPollsRef.current = 0;
         return false;
       }
@@ -152,14 +169,14 @@ export default function GlobalRouteTransitionLoader() {
           return;
         }
         if (!committedRef.current) return;
-        if (destinationLoaderReady()) finish();
+        if (destinationReady()) finish();
       };
 
       const onRouteCommitted = (event: Event) => {
         const path = (event as CustomEvent<{ path?: string }>).detail?.path;
         if (!path || routePathKey(path) !== routePathKey(toPath)) return;
         committedRef.current = true;
-        if (destinationLoaderReady()) finish();
+        if (destinationReady()) finish();
       };
 
       routeCommittedRef.current = onRouteCommitted;

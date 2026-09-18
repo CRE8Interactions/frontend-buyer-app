@@ -395,7 +395,7 @@ export function ShopperSearchMobile() {
           type="button"
           onClick={() => setSheetOpen(true)}
           aria-label="Open search"
-          className="flex w-full cursor-text items-center gap-2.5 rounded-full border border-[rgba(5,27,53,0.10)] bg-[#f1f3f8] px-4 py-3 text-left"
+          className="flex w-full cursor-text items-center gap-2.5 rounded-full border border-[rgba(5,27,53,0.10)] bg-[#fff] px-4 py-3 text-left"
         >
           <SearchIcon stroke="#6e7180" />
           <span

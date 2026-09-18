@@ -50,6 +50,7 @@ import {
   ticketQuantityOptions,
 } from "@/lib/ticketListings";
 import { shopperShellVars } from "@/lib/branding";
+import { ORG_SCROLLBAR_CLASS, orgScrollbarCss } from "@/lib/orgScrollbar";
 import {
   selectionOfferDescription,
 } from "@/lib/ticketSummary";
@@ -66,6 +67,7 @@ import {
 } from "@/lib/fieldValidation";
 import { validateSubmittedEmail } from "@/lib/submitEmailValidation";
 import { LOADER_MESSAGE } from "@/lib/loaderMessages";
+import { lockPageScroll, unlockPageScroll } from "@/lib/pageScroll";
 import { beginRouteTransition } from "@/lib/routeTransition";
 import { walletSectionHref } from "@/lib/walletNav";
 import type { SeatmapBackground, SeatmapMapping } from "@/lib/seatmapLookups";
@@ -466,11 +468,8 @@ export default function PremiumTicketing({
   useEffect(() => {
     const overlayOpen = map || info || sel !== null;
     if (!overlayOpen) return;
-    const prev = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
-    return () => {
-      document.body.style.overflow = prev;
-    };
+    lockPageScroll();
+    return () => unlockPageScroll();
   }, [map, info, sel]);
 
   const mobile = vw < 900;
@@ -1394,7 +1393,7 @@ export default function PremiumTicketing({
     const icon = compact ? 14 : 17;
     return (
     <>
-      <div className="nmt-filter-scroll" style={{ display: "flex", alignItems: "center", gap: compact ? 8 : 10, minWidth: 0, overflowX: "auto", flexWrap: "nowrap", padding: compact ? "0 0 6px" : "2px 0 10px 2px" }}>
+      <div className={`nmt-filter-scroll ${ORG_SCROLLBAR_CLASS}`} style={{ display: "flex", alignItems: "center", gap: compact ? 8 : 10, minWidth: 0, overflowX: "auto", flexWrap: "nowrap", padding: compact ? "0 0 6px" : "2px 0 10px 2px" }}>
         <button ref={qtyBtn} onClick={() => setQtyMenu((v) => !v)} style={{ fontFamily: "inherit", display: "inline-flex", alignItems: "center", justifyContent: "space-between", gap: compact ? 6 : 8, minWidth: compact ? 108 : 132, minHeight: compact ? 40 : undefined, boxSizing: "border-box", fontSize: type, fontWeight: 600, color: "#fff", background: ACC, border: `1px solid ${ACC}`, borderRadius: 999, padding: chipPad, whiteSpace: "nowrap", cursor: "pointer", flexShrink: 0 }}>
           {want === 1 ? "1 ticket" : `${want} tickets`}
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" style={{ width: icon, height: icon, opacity: 0.8, transform: qtyMenu ? "rotate(180deg)" : "rotate(0deg)", transition: "transform 180ms ease" }}><polyline points="6 9 12 15 18 9" /></svg>
@@ -1497,10 +1496,7 @@ export default function PremiumTicketing({
         .nmt-filter:hover { border-color: ${NAVY}; background: #f1f3f8; }
         .nmt-filter.active { background: ${ACC}; border-color: ${ACC}; color: #fff; }
         .nmt-filter.active .nmt-star { color: #fff; }
-        .nmt-filter-scroll { scrollbar-width: thin; scrollbar-color: ${ACC} #e7eaf1; }
-        .nmt-filter-scroll::-webkit-scrollbar { height: 7px; }
-        .nmt-filter-scroll::-webkit-scrollbar-track { background: #e7eaf1; border-radius: 999px; }
-        .nmt-filter-scroll::-webkit-scrollbar-thumb { background: ${ACC}; border-radius: 999px; }
+        ${orgScrollbarCss(ACC)}
         .shopper-page .ga-soldout-notify-sheet h2 {
           font-size: var(--t-24) !important;
           letter-spacing: -0.01em;
@@ -1778,6 +1774,7 @@ export default function PremiumTicketing({
           <div
             ref={listingsScroll}
             data-testid="ticketing-listings"
+            className={ORG_SCROLLBAR_CLASS}
             style={{
               display: "flex",
               flexDirection: "column",

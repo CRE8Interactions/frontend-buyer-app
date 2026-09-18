@@ -432,10 +432,11 @@ export default function BrowseHome() {
 
   // Featured, rails, and the grid all come from the same fetch, so a partial
   // page is only empty chrome — hold the Blocktickets loader instead.
-  if (loading) return <BrandedLoader fallback="blocktickets" />;
+  if (loading) return <BrandedLoader fallback="blocktickets" routeDestination />;
 
   return (
     <div
+      data-bt-scroll-page=""
       style={{
         background: "#f7f8fc",
         color: NAVY,

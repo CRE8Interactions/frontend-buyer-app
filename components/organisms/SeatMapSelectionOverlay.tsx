@@ -3,6 +3,7 @@
 import { fluidSize } from "@/lib/shopperFluidType";
 
 import { useEffect, useState } from "react";
+import { lockPageScroll, unlockPageScroll } from "@/lib/pageScroll";
 import BrandedActionButton from "@/components/atoms/BrandedActionButton";
 import Modal from "@/components/molecules/Modal";
 import ExpandableDescription from "@/components/molecules/ExpandableDescription";
@@ -301,11 +302,8 @@ export default function SeatMapSelectionOverlay({
   }, [showMapLoader]);
 
   useEffect(() => {
-    const prev = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
-    return () => {
-      document.body.style.overflow = prev;
-    };
+    lockPageScroll();
+    return () => unlockPageScroll();
   }, []);
 
   const requestClose = () => {

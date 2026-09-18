@@ -18,6 +18,7 @@ import { DEMO_EVENTS, DEMO_ORGS } from "@/lib/demo/fixtures";
 
 import { cacheOrgBranding } from "@/lib/orgBrandingCache";
 
+import { __resetPageScrollForTests } from "@/lib/pageScroll";
 import { notifyRouteCommitted } from "@/lib/routeTransition";
 import {
   clearWalletNavigation,
@@ -91,6 +92,7 @@ afterEach(() => {
   sessionStorage.clear();
 
   delete document.body.dataset.btRouteTransition;
+  __resetPageScrollForTests();
 
   clearWalletNavigation();
 
@@ -306,7 +308,7 @@ describe("GlobalRouteTransitionLoader platform links", () => {
 
 
 
-  it("keeps the cover up after the destination route commits without a loader", async () => {
+  it("keeps the cover up briefly after commit until a ready page can scroll", async () => {
 
     cacheOrgBranding(raptors);
 
@@ -330,15 +332,93 @@ describe("GlobalRouteTransitionLoader platform links", () => {
 
     expect(coverActive()).toBe(true);
 
+    document.body.style.overflow = "hidden";
+
 
 
     commitNavigation(`/${raptors.slug}/`);
 
 
 
-    await new Promise((resolve) => setTimeout(resolve, 400));
+    await new Promise((resolve) => setTimeout(resolve, 150));
 
     expect(coverActive()).toBe(true);
+
+
+
+    const page = document.createElement("div");
+
+    page.setAttribute("data-bt-scroll-page", "");
+
+    act(() => {
+
+      document.body.appendChild(page);
+
+    });
+
+
+
+    await waitFor(() => {
+
+      expect(coverActive()).toBe(false);
+
+    });
+
+    expect(document.body.style.overflow).toBe("");
+
+    page.remove();
+
+  });
+
+
+
+  it("uncovers a committed route that painted without a destination loader", async () => {
+
+    cacheOrgBranding(raptors);
+
+    window.history.replaceState({}, "", "/");
+
+    render(
+
+      <>
+
+        <GlobalRouteTransitionLoader />
+
+        <a href="/browse/">Browse events</a>
+
+      </>,
+
+    );
+
+
+
+    fireEvent.click(screen.getByRole("link", { name: "Browse events" }));
+
+    commitNavigation("/browse/");
+
+
+
+    const page = document.createElement("div");
+
+    page.setAttribute("data-bt-scroll-page", "");
+
+    act(() => {
+
+      document.body.appendChild(page);
+
+    });
+
+
+
+    await waitFor(() => {
+
+      expect(coverActive()).toBe(false);
+
+    });
+
+    page.remove();
+
+    expect(document.body.style.overflow).toBe("");
 
   });
 
