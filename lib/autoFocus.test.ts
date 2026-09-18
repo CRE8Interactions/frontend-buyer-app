@@ -66,18 +66,18 @@ describe("focusFirstField", () => {
     expect(document.activeElement).toBe(code);
   });
 
-  it("holds the cursor on a phone without opening the keyboard", () => {
+  it("leaves a phone field unfocused and typable so a tap can raise the keyboard", () => {
     usePhone();
     const host = mount(`<input name="email" />`);
     const email = host.querySelector<HTMLInputElement>('[name="email"]')!;
 
-    expect(focusFirstField(host)).toBe(true);
+    expect(focusFirstField(host)).toBe(false);
+    expect(document.activeElement).not.toBe(email);
+    expect(email.readOnly).toBe(false);
+
+    email.focus();
+
     expect(document.activeElement).toBe(email);
-    // Read-only keeps the keyboard down until the shopper reaches for the field.
-    expect(email.readOnly).toBe(true);
-
-    email.dispatchEvent(new Event("pointerdown", { bubbles: true }));
-
     expect(email.readOnly).toBe(false);
   });
 });

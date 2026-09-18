@@ -1,9 +1,13 @@
 import { useState } from "react";
 import { fireEvent, render, screen } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import EmailField from "@/components/molecules/EmailField";
 import { DEMO_USER } from "@/lib/demo/fixtures";
 import { FIELD_COPY } from "@/lib/fieldValidation";
+
+afterEach(() => {
+  Reflect.deleteProperty(window, "matchMedia");
+});
 
 describe("EmailField", () => {
   it("mirrors native input events so Safari autofill updates the parent", () => {
@@ -30,6 +34,23 @@ describe("EmailField", () => {
     );
 
     expect(document.activeElement).toBe(screen.getByLabelText(/email address/i));
+  });
+
+  it("stays unfocused and typable on a phone so a tap can raise the keyboard", () => {
+    Object.defineProperty(window, "matchMedia", {
+      configurable: true,
+      writable: true,
+      value: (query: string) =>
+        ({ matches: query === "(pointer: coarse)" }) as MediaQueryList,
+    });
+
+    render(
+      <EmailField id="email" value="" onChange={() => {}} autoFocus />,
+    );
+
+    const field = screen.getByLabelText<HTMLInputElement>(/email address/i);
+    expect(document.activeElement).not.toBe(field);
+    expect(field.readOnly).toBe(false);
   });
 
   it("passes the current field value to blur", () => {

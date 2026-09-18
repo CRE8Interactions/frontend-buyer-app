@@ -98,13 +98,16 @@ html {
   -webkit-text-size-adjust: 100%;
   /* Kills the dark flash mobile browsers paint over tapped fields and controls. */
   -webkit-tap-highlight-color: transparent;
+  /* hidden + auto (not clip): clip on either html or body becomes a page-tall
+     sticky containing block, so wallet sidebars never pin while scrolling. */
+  overflow-x: hidden;
+  overflow-y: auto;
 }
 body {
   background: var(--bg);
   color: var(--fg);
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
-  overflow-x: clip;
 }
 
 /* ---------- layout helpers ---------- */

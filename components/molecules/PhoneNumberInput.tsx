@@ -92,10 +92,10 @@ export default function PhoneNumberInput({
           onBlur={() => onBlur?.(value)}
           disabled={disabled}
           required
-          autoComplete="tel"
+          autoComplete="off"
           aria-invalid={invalid}
-          countrySelectProps={{ "data-no-autofocus": true }}
-          numberInputProps={{ name }}
+          countrySelectProps={{ "data-no-autofocus": true, autoComplete: "off" }}
+          numberInputProps={{ name, autoComplete: "off" }}
           className={`phone-input flex h-[52px] items-center text-[16px] ${
             dark
               ? "phone-input-dark text-white"

@@ -123,6 +123,7 @@ export default function WalletChrome({
       <style>{CSS}</style>
       {showHeader ? (
         <header
+          data-wallet-header=""
           style={{
             background: BLOCKTICKETS_NAVY,
             position: "sticky",

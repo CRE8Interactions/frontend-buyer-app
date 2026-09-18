@@ -708,17 +708,16 @@ describe("Select tickets page (PremiumTicketing)", { timeout: 20_000 }, () => {
     const map = screen.getByTestId("ticketing-map");
     const trust = screen.getByText(/buyer protection/i);
     const offers = screen.getByTestId("ticketing-offers");
-    expect(map.compareDocumentPosition(trust) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-    expect(trust.compareDocumentPosition(offers) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(map.compareDocumentPosition(offers) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(offers.compareDocumentPosition(trust) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(screen.getByText(/securely stored in your account/i)).toBeInTheDocument();
     expect(screen.getByText(/safe from bots and scalpers/i)).toBeInTheDocument();
     expect(screen.getByText(/taxes and fees included/i)).toBeInTheDocument();
-    expect(within(offers).getByText(/select tickets/i)).toBeInTheDocument();
     expect(within(offers).getByText(/sort by price/i)).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /find on map/i })).toBeEnabled();
   });
 
-  it("keeps the org loader until the mobile select tickets panel is ready", async () => {
+  it("keeps listings hidden while the mobile select tickets page is refreshing", async () => {
     Object.defineProperty(window, "innerWidth", {
       configurable: true,
       writable: true,
@@ -728,43 +727,33 @@ describe("Select tickets page (PremiumTicketing)", { timeout: 20_000 }, () => {
       <PremiumTicketing data={seatedTicketingFixture} refreshing />,
     );
 
-    expect(document.querySelector("[data-bt-destination-loader]")).toBeTruthy();
+    expect(screen.getByLabelText("Loading listings")).toBeInTheDocument();
     expect(screen.queryByText(/sec m · row m3/i)).not.toBeInTheDocument();
 
     rerender(<PremiumTicketing data={seatedTicketingFixture} refreshing={false} />);
 
     expect(await screen.findByText(/sec m · row m3/i)).toBeInTheDocument();
-    expect(document.querySelector("[data-bt-destination-loader]")).toBeNull();
+    expect(screen.queryByLabelText("Loading listings")).not.toBeInTheDocument();
   });
 
-  it("opens the mobile Select tickets sheet under Find on map", async () => {
+  it("shows the offer list under Find on map on phone", async () => {
     Object.defineProperty(window, "innerWidth", {
       configurable: true,
       writable: true,
       value: 390,
     });
-    const user = await renderReady();
+    await renderReady();
 
     expect(screen.getByRole("button", { name: /find on map/i })).toBeEnabled();
-    expect(screen.getByRole("button", { name: /close/i })).toBeInTheDocument();
-    expect(screen.getByText(/select tickets/i)).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /close/i })).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: /select tickets/i }),
+    ).not.toBeInTheDocument();
     expect(screen.getByText(/sec m · row m3/i)).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /^all$/i })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /field club/i })).toBeInTheDocument();
     expect(screen.getByText(/sort by price/i)).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /^2 tickets$/i })).toBeInTheDocument();
-
-    await user.click(screen.getByRole("button", { name: /close/i }));
-
-    expect(screen.queryByRole("button", { name: /close/i })).not.toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /select tickets/i })).toBeInTheDocument();
-    expect(screen.queryByText(/sec m · row m3/i)).not.toBeInTheDocument();
-    expect(screen.queryByText(/sort by price/i)).not.toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /find on map/i })).toBeEnabled();
-
-    await user.click(screen.getByRole("button", { name: /select tickets/i }));
-    expect(await screen.findByText(/sec m · row m3/i)).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /find on map/i })).toBeEnabled();
   });
 
   it("does not offer quantities above the highest offer maxQuantity", async () => {

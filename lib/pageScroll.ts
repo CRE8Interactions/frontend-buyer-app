@@ -8,7 +8,7 @@ let lockCount = 0;
 function clearInlineScrollLock(el: HTMLElement) {
   // iOS Safari can keep the document non-scrollable after overflow:hidden is
   // removed. Nudge it back to auto, force a layout, then drop the inline style
-  // so the stylesheet (overflow-x: clip on body) owns scrolling again.
+  // so the stylesheet (overflow-x: hidden on html) owns scrolling again.
   el.style.overflow = "auto";
   el.style.overflowY = "auto";
   el.style.touchAction = "auto";

@@ -85,7 +85,7 @@ describe("Modal", () => {
     expect(onClose).not.toHaveBeenCalled();
   });
 
-  it("opens on a phone with the cursor set but the keyboard down", () => {
+  it("does not steal focus on a phone so a tap can raise the keyboard", () => {
     Object.defineProperty(window, "matchMedia", {
       configurable: true,
       writable: true,
@@ -100,11 +100,12 @@ describe("Modal", () => {
     );
 
     const email = screen.getByLabelText<HTMLInputElement>("Email address");
+    expect(document.activeElement).not.toBe(email);
+    expect(email.readOnly).toBe(false);
+
+    email.focus();
+
     expect(document.activeElement).toBe(email);
-    expect(email.readOnly).toBe(true);
-
-    fireEvent.pointerDown(email);
-
     expect(email.readOnly).toBe(false);
   });
 });

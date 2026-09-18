@@ -76,7 +76,6 @@ import {
   stickyOffsetBelowHeader,
   ticketingChromeReservePx,
   TICKETING_HEADER_FALLBACK_PX,
-  TICKETING_LISTINGS_MIN_PX,
   TICKETING_MAIN_PAD_BOTTOM_PX,
   TICKETING_MAIN_PAD_TOP_PX,
   TICKETING_STICKY_GAP_PX,
@@ -216,14 +215,8 @@ function initialViewportWidth() {
   return typeof window !== "undefined" ? window.innerWidth : 1440;
 }
 
-function usesListingsSheet(
-  viewportWidth: number,
-  data: Pick<TicketingData, "eventType" | "soldOut" | "scheduled" | "listings">,
-) {
-  if (data.eventType === "ga") return false;
-  const seatedScheduled = !!data.scheduled && data.listings.length === 0;
-  if (seatedScheduled || data.soldOut) return false;
-  return viewportWidth < 1120 && data.listings.length > 0;
+function usesListingsSheet() {
+  return false;
 }
 
 const DEFAULT_GA_TIERS: GATier[] = [
@@ -358,7 +351,7 @@ export default function PremiumTicketing({
   const [mounted, setMounted] = useState(false);
   const [vw, setVw] = useState(initialViewportWidth);
   const [listingsShellReady, setListingsShellReady] = useState(
-    () => !usesListingsSheet(initialViewportWidth(), d),
+    () => !usesListingsSheet(),
   );
   const [want, setWant] = useState(() => initialTicketQuantity(d.listings));
   const [zoneFilter, setZoneFilter] = useState<string[]>([]);
@@ -398,7 +391,7 @@ export default function PremiumTicketing({
   const [gaSheet, setGaSheet] = useState(false);
   const [eventSoldOutSheet, setEventSoldOutSheet] = useState(false);
   const [listingsExpanded, setListingsExpanded] = useState(
-    () => usesListingsSheet(initialViewportWidth(), d),
+    () => usesListingsSheet(),
   );
   const [mapTop, setMapTop] = useState(0);
   const headerRef = useRef<HTMLElement | null>(null);
@@ -476,8 +469,7 @@ export default function PremiumTicketing({
   const narrow = mobile || vw < 1120;
   const wide = !narrow;
   const gaDesktop = isGa && !narrow;
-  const listingsSheet =
-    !isGa && narrow && !d.soldOut && !eventScheduled && d.listings.length > 0;
+  const listingsSheet = usesListingsSheet();
 
   useEffect(() => {
     setListingsExpanded(listingsSheet);
@@ -1641,10 +1633,9 @@ export default function PremiumTicketing({
             data-testid="ticketing-map"
             style={{ flexShrink: 0, alignSelf: "stretch" }}
           >
-            {findOnMapBtn(mobile ? 140 : 260, mobile ? 16 : 14)}
+            {findOnMapBtn(mobile ? 200 : 260, mobile ? 16 : 14)}
           </div>
         )}
-        {narrow && <div style={{ flexShrink: 0, width: "100%", alignSelf: "stretch" }}>{compactTrustCard}</div>}
         {!(eventSoldOut && mobile) && (
         <section
           data-testid="ticketing-offers"
@@ -1695,12 +1686,10 @@ export default function PremiumTicketing({
               : {}),
             ...(narrow && !eventSoldOut && !listingsSheet
               ? {
-                  flex: "1 1 0",
-                  minHeight: TICKETING_LISTINGS_MIN_PX,
+                  width: "100%",
                   alignSelf: "stretch",
                   display: "flex",
                   flexDirection: "column",
-                  overflow: "hidden",
                 }
               : {}),
             ...(wide && !eventSoldOut
@@ -1725,6 +1714,20 @@ export default function PremiumTicketing({
           <>
           {wide && (
             <div style={{ flexShrink: 0, background: "#fff", margin: "0 -32px", padding: "16px 32px 12px", borderRadius: "20px 20px 0 0", boxShadow: pinned ? "0 12px 24px -18px rgba(5,27,53,0.55)" : "none", transition: "box-shadow 180ms ease" }}>
+              {filterToolbar}
+            </div>
+          )}
+          {!wide && !listingsSheet && (
+            <div
+              style={{
+                position: "sticky",
+                top: stickTop,
+                zIndex: 6,
+                background: "#fff",
+                margin: mobile ? "-16px -16px 0" : "-14px -22px 0",
+                padding: mobile ? "16px 16px 0" : "14px 22px 0",
+              }}
+            >
               {filterToolbar}
             </div>
           )}
@@ -1857,6 +1860,9 @@ export default function PremiumTicketing({
           </>
           )}
         </section>
+        )}
+        {narrow && !eventScheduled && !seatedSoldOut && (
+          <div style={{ flexShrink: 0, width: "100%", alignSelf: "stretch" }}>{compactTrustCard}</div>
         )}
 
         {wide && !eventScheduled && !seatedSoldOut && (

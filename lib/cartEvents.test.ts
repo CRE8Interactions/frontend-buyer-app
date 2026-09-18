@@ -130,10 +130,64 @@ describe("wallet order totals", () => {
     expect(detail.tickets.every((t) => t.holder === "Jaime Convery")).toBe(true);
   });
 
+  it("takes the buyer name from the linked account when the order has no name fields", () => {
+    const detail = withFullOrder(orderDetail(null), {
+      email: DEMO_USER.email,
+      users_permissions_user: {
+        firstName: DEMO_USER.firstName,
+        lastName: DEMO_USER.lastName,
+      },
+    });
+
+    expect(detail.tickets.every((t) => t.holder === `${DEMO_USER.firstName} ${DEMO_USER.lastName}`)).toBe(
+      true,
+    );
+  });
+
   it("leaves the listed order alone when there is nothing to fetch", () => {
     const listed = orderDetail("129.50");
 
     expect(withFullOrder(listed, null)).toEqual(listed);
+  });
+
+  it("copies name and offer from the fetched order onto listed tickets", () => {
+    const listed = orderDetail("129.50");
+    const thin = {
+      ...listed,
+      tickets: listed.tickets.map((ticket) => ({
+        ...ticket,
+        raw: {
+          id: ticket.id,
+          checkInCode: ticket.code,
+          sectionNumber: ticket.raw.sectionNumber,
+        },
+      })),
+    };
+    const detail = withFullOrder(thin, {
+      tickets: thin.tickets.map((ticket) => ({
+        id: ticket.id,
+        checkInCode: ticket.code,
+        name: "Prelims",
+        offer: { name: "Prelims", description: "Morning session" },
+      })),
+    });
+
+    expect(detail.tickets[0]?.raw).toMatchObject({
+      name: "Prelims",
+      offerName: "Prelims",
+      offer: { name: "Prelims", description: "Morning session" },
+    });
+  });
+
+  it("keeps listed tickets when the fetched order has no matching tickets", () => {
+    const listed = orderDetail("129.50");
+    const raw = listed.tickets[0]?.raw;
+
+    expect(
+      withFullOrder(listed, {
+        tickets: [{ id: "other", name: "Prelims" }],
+      }).tickets[0]?.raw,
+    ).toEqual(raw);
   });
 
   it("takes category and org branding from a fetched order", () => {

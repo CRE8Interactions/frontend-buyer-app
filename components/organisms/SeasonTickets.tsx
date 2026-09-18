@@ -225,7 +225,11 @@ import { isWalletNavigationPending } from "@/lib/walletTransition";
 import { useWalletNavigationPending } from "@/hooks/useWalletNavigationPending";
 import { Ticket } from "@/components/atoms/icons";
 import { ButtonBusyContents } from "@/components/atoms/BrandedActionButton";
-import { printTicketsPdf } from "@/lib/ticketPdf";
+import { printedTicketHolderName, printTicketsPdf } from "@/lib/ticketPdf";
+import {
+  formatPrintedOfferLine,
+  printedOfferBadgeName,
+} from "@/lib/printedOfferLabel";
 import { mobileStickyFooterReservePx } from "@/lib/mobileStickyFooter";
 import { googleMapsDirectionsUrl } from "@/lib/venueLocation";
 
@@ -863,7 +867,7 @@ const EVENT_CSS = `
 .st-ev{padding:40px 32px 96px}
 .st-ev-hero{aspect-ratio:3.4 / 1}
 .st-ev-grid{display:grid;grid-template-columns:minmax(0,1fr) 320px;gap:40px;align-items:start}
-.st-ev-aside{position:sticky;top:96px}
+.st-ev-aside{min-width:0;display:flex;flex-direction:column;gap:12px}
 .st-ev-title{font-size:30px}
 .st-ev-teams{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:10px}
 .st-ev-seat{display:flex;align-items:center;gap:16px;flex-wrap:wrap}
@@ -872,7 +876,6 @@ const EVENT_CSS = `
   .st-ev{padding:24px 16px 128px}
   .st-ev-hero{aspect-ratio:2.1 / 1}
   .st-ev-grid{grid-template-columns:minmax(0,1fr);gap:16px}
-  .st-ev-aside{position:static;top:auto}
   .st-ev-title{font-size:22px}
 }
 @media (max-width:560px){
@@ -1126,7 +1129,12 @@ export default function SeasonTickets({
   const [listTab, setListTab] = useState<"active" | "received">("active");
   const [saleTab, setSaleTab] = useState<"active" | "sold" | "expired">("active");
   const [modal, setModal] = useState<null | "details" | "qr" | "field" | "vouchers">(null);
-  const [detail, setDetail] = useState<{ seat?: string; holder?: string; code?: string } | null>(null);
+  const [detail, setDetail] = useState<{
+    seat?: string;
+    holder?: string;
+    code?: string;
+    raw?: Record<string, unknown>;
+  } | null>(null);
   const [printing, setPrinting] = useState<string | null>(null);
   const [printError, setPrintError] = useState("");
   const [field, setField] = useState<{ group: string; heading: string; label: string; help: string; key: string } | null>(null);
@@ -2027,12 +2035,32 @@ export default function SeasonTickets({
             String(order.orderId ?? order.id ?? "").trim() === activeOrderId,
         ) ?? null
       : null;
+  const sessionUser = getSession()?.user;
+  const ticketOrder = activeOrderId
+    ? fullOrders[activeOrderId] ?? activeWalletOrder
+    : null;
+  const ticketBuyer = {
+    firstName: ticketOrder?.firstName || sessionUser?.firstName,
+    lastName: ticketOrder?.lastName || sessionUser?.lastName,
+    email: ticketOrder?.email || sessionUser?.email,
+    users_permissions_user: ticketOrder?.users_permissions_user,
+    user: ticketOrder?.user ?? sessionUser,
+  };
   const ev =
     (activeDetail
       ? detailToEventT(
           withFullOrder(
             activeDetail,
-            fullOrders[activeOrderId] ?? activeWalletOrder,
+            ticketOrder || sessionUser
+              ? {
+                  ...(ticketOrder || {}),
+                  firstName: ticketBuyer.firstName,
+                  lastName: ticketBuyer.lastName,
+                  email: ticketBuyer.email,
+                  users_permissions_user: ticketBuyer.users_permissions_user,
+                  user: ticketBuyer.user,
+                }
+              : null,
           ),
         )
       : events[evId]) || events.lobos;
@@ -4546,15 +4574,17 @@ export default function SeasonTickets({
   /* ---------- event detail ---------- */
   const ticketRows = ev.tickets.map((t) => {
     const entryLine = ticketEntryLine(t.raw, ev.venue, ev.event);
+    const offerBadge = printedOfferBadgeName(t.raw);
     const raw = t.raw as TicketLike | undefined;
     const isGA = Boolean(raw?.generalAdmission || raw?.GA);
     if (isGA) {
       return {
         ...t,
         sec: ticketSectionValue(raw) || "GA",
-        row: ticketRowValue(raw) || "—",
-        seatNo: ticketSeatValue(raw) || "—",
+        row: ticketRowValue(raw) || "GA",
+        seatNo: ticketSeatValue(raw) || "GA",
         entryLine,
+        offerBadge,
       };
     }
     const parts = t.seat.split("·").map((p) => p.trim());
@@ -4569,15 +4599,17 @@ export default function SeasonTickets({
         row: peel(parts[1], /^Row\s*/i),
         seatNo: peel(parts[2], /^Seat\s*/i),
         entryLine,
+        offerBadge,
       };
     }
     if (parts.length === 2 && /^GA$/i.test(parts[1])) {
       return {
         ...t,
         sec: peel(parts[0], /^Sec\s*/i),
-        row: "—",
-        seatNo: "—",
+        row: "GA",
+        seatNo: "GA",
         entryLine,
+        offerBadge,
       };
     }
     if (parts.length === 2) {
@@ -4587,14 +4619,16 @@ export default function SeasonTickets({
         row: peel(parts[1], /^Row\s*/i),
         seatNo: "—",
         entryLine,
+        offerBadge,
       };
     }
     return {
       ...t,
       sec: peel(parts[0] || "GA", /^Sec\s*/i),
-      row: "—",
-      seatNo: "—",
+      row: "GA",
+      seatNo: "GA",
       entryLine,
+      offerBadge,
     };
   });
   const acquiredAtLabel = orderAcquiredLabel(
@@ -4647,6 +4681,7 @@ export default function SeasonTickets({
           venue: { name: ev.venue },
           organization: { name: ev.teams[0]?.name },
         },
+        buyer: ticketBuyer,
         tickets: tickets.map((ticket) => ({
           ...(ticket.raw || {}),
           id: ticket.id,
@@ -4899,11 +4934,14 @@ export default function SeasonTickets({
             <div style={{ display: "flex", alignItems: "stretch", borderBottom: "1px solid rgba(5,27,53,0.08)" }}>
               <div style={{ width: 5, background: ACCENT }} />
               <div style={{ flex: 1, minWidth: 0, padding: "16px 18px", display: "flex", flexDirection: "column", gap: 10 }}>
+                {t.offerBadge ? (
+                  <span style={{ alignSelf: "flex-start", fontSize: fluidSize(11), fontWeight: 600, color: INK, background: SOFT, borderRadius: 999, padding: "4px 10px" }}>{t.offerBadge}</span>
+                ) : null}
                 <div style={{ display: "flex", alignItems: "baseline", gap: 14 }}>
                   {[["Sec", t.sec], ["Row", t.row], ["Seat", t.seatNo]].map(([k, v]) => (
                     <div key={k} style={{ display: "flex", alignItems: "baseline", gap: 6 }}>
                       <span style={{ fontSize: fluidSize(12), fontWeight: 600, letterSpacing: "0.14em", textTransform: "uppercase", color: MUTE }}>{k}</span>
-                      <span style={{ fontSize: fluidSize(24), fontWeight: 600, letterSpacing: "-0.025em", fontVariantNumeric: "tabular-nums" }}>{v}</span>
+                      <span style={{ fontSize: fluidSize(24), fontWeight: 600, letterSpacing: "-0.025em", fontVariantNumeric: "tabular-nums" }}>{v === "—" ? "GA" : v}</span>
                     </div>
                   ))}
                 </div>
@@ -5076,7 +5114,7 @@ export default function SeasonTickets({
                   <img src={SEATMAP_THUMB} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
                 </div>
                 <div style={{ flex: 1, minWidth: 150, display: "flex", flexDirection: "column", gap: 5 }}>
-                  <span style={{ alignSelf: "flex-start", fontSize: fluidSize(11), fontWeight: 600, color: INK, background: SOFT, borderRadius: 999, padding: "4px 10px" }}>{ticketBadge}</span>
+                  <span style={{ alignSelf: "flex-start", fontSize: fluidSize(11), fontWeight: 600, color: INK, background: SOFT, borderRadius: 999, padding: "4px 10px" }}>{t.offerBadge || "Tickets"}</span>
                   <div style={{ fontSize: fluidSize(17), fontWeight: 600, letterSpacing: "-0.015em" }}>{t.seat}</div>
                 </div>
                 <div className="st-ev-seat-actions">
@@ -5117,7 +5155,7 @@ export default function SeasonTickets({
           </div>
         </div>
 
-        <aside className="st-ev-aside" style={{ minWidth: 0, display: "flex", flexDirection: "column", gap: 12 }}>
+        <aside className="st-ev-aside">
           {pendingIncomingEvent ? (
             <div style={{ ...card, borderRadius: 20, padding: cardPad, display: "flex", flexDirection: "column", gap: 10, border: "1px solid rgba(192,122,18,0.28)", background: "#fffaf2" }}>
               <div style={{ ...eyebrow, paddingBottom: 4, color: "#c07a12" }}>Pending transfer</div>
@@ -5817,9 +5855,21 @@ export default function SeasonTickets({
     );
   };
 
+  const offerLine = formatPrintedOfferLine(detail?.raw);
   const detailRows = [
     { k: "Ticket", v: detail?.seat || "" },
-    { k: "Holder", v: detail?.holder || email },
+    ...(offerLine ? [{ k: "Offer", v: offerLine }] : []),
+    {
+      k: "Holder",
+      v: printedTicketHolderName(
+        {
+          ...(detail?.raw || {}),
+          checkInCode: String(detail?.code || detail?.raw?.checkInCode || ""),
+          holder: detail?.holder,
+        },
+        ticketBuyer,
+      ),
+    },
     { k: "Barcode", v: detail?.code || "—" },
     { k: "Order", v: ev.orderId || "—" },
     { k: acquiredAtLabel, v: ev.purchasedAt || "—" },
@@ -6681,7 +6731,7 @@ export default function SeasonTickets({
   };
 
   return (
-    <div className="shopper-page" style={{ width: "100%", maxWidth: "100%", overflowX: "clip", minHeight: "100vh", color: INK, background: "#eef1f8", backgroundImage: "radial-gradient(120% 80% at 50% -10%, #ffffff 0%, #f5f7fc 42%, #e9edf6 100%)", backgroundAttachment: "fixed", fontFamily: "'Geist', system-ui, -apple-system, sans-serif", WebkitFontSmoothing: "antialiased", ...(showingAccessPass ? { display: "flex", flexDirection: "column", height: "100dvh", maxHeight: "100dvh", overflow: "hidden" } : {}) }}>
+    <div className="shopper-page" style={{ width: "100%", maxWidth: "100%", minHeight: "100vh", color: INK, background: "#eef1f8", backgroundImage: "radial-gradient(120% 80% at 50% -10%, #ffffff 0%, #f5f7fc 42%, #e9edf6 100%)", fontFamily: "'Geist', system-ui, -apple-system, sans-serif", WebkitFontSmoothing: "antialiased", ...(showingAccessPass ? { display: "flex", flexDirection: "column", height: "100dvh", maxHeight: "100dvh", overflow: "hidden" } : {}) }}>
       <style>{`${shopperPageTypeCss()}\n${MOBILE_TICKET_DESKTOP_TYPE}\n${MOBILE_TRANSFER_DESKTOP_TYPE}\n${MOBILE_DETAILS_DESKTOP_TYPE}\n${MOBILE_PASS_QR_DESKTOP_TYPE}\n.st-noscroll::-webkit-scrollbar{width:0;height:0;display:none}.st-noscroll{-ms-overflow-style:none;scrollbar-width:none}.st-sheet-up{animation:stUp .3s cubic-bezier(.22,.61,.36,1)}@keyframes stUp{from{transform:translateY(100%)}to{transform:translateY(0)}}${EVENT_CSS}`}</style>
       {showHeader ? (
         <div style={showingAccessPass ? { flexShrink: 0 } : undefined}>{Header()}</div>
