@@ -268,7 +268,7 @@ function ProfileOrganizationCard({
         <div className={`mt-4 grid ${statCols} gap-2 border-y border-white/10 py-3.5`}>
           {stats.map((stat) => (
             <div key={stat.label} className="min-w-0">
-              <p className="truncate text-[15px] font-semibold leading-none tracking-[-0.02em] sm:text-[16px]">
+              <p className="truncate text-[15px] font-semibold leading-none tracking-[-0.02em]">
                 {stat.value}
               </p>
               <p className="mt-1.5 text-[11px] leading-snug text-[#9DA2B3]">

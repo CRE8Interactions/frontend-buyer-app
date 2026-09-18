@@ -13,7 +13,8 @@ import ExpandableDescription from "@/components/molecules/ExpandableDescription"
 import InAppBackLink from "@/components/molecules/InAppBackLink";
 import NavAuthActions from "@/components/molecules/NavAuthActions";
 import RouteLoader from "@/components/molecules/RouteLoader";
-import { fluidSize, shopperPageTypeCss } from "@/lib/shopperFluidType";
+import { BROWSE_DISPLAY, BROWSE_TRACK, browseLeading, browsePageTypeCss } from "@/lib/browseType";
+import { fluidSize } from "@/lib/shopperFluidType";
 import {
   fieldFocusVars,
   resolveBrandLogo,
@@ -566,7 +567,7 @@ export default function VenueProfile({ slug }: { slug: string }) {
 
   return (
     <div className="shopper-page" data-bt-scroll-page="" style={{ background: "#f7f8fc", color: NAVY, minHeight: "100vh", fontFamily: "'Geist', system-ui, -apple-system, sans-serif", WebkitFontSmoothing: "antialiased", ["--vp-accent"]: ACC, ...fieldFocusVars(accent) } as CSSProperties}>
-      <style>{`${shopperPageTypeCss()}
+      <style>{`${browsePageTypeCss()}
 .vp-row{transition:box-shadow 150ms ease,border-color 150ms ease}.vp-row:hover{box-shadow:0 8px 30px rgba(5,27,53,0.09);border-color:rgba(5,27,53,0.20)}.vp-action{outline:2px solid transparent;outline-offset:2px;transition:outline-color 140ms ease}.vp-action:hover,.vp-action:focus-visible{outline-color:var(--vp-accent)}`}</style>
 
       <header
@@ -703,7 +704,7 @@ export default function VenueProfile({ slug }: { slug: string }) {
                   <img src={photoSrc} alt={venueName} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
                 </div>
                 <div style={{ display: "flex", flexDirection: "column", gap: 8, alignItems: "center", textAlign: "center", minWidth: 0 }}>
-                  <h1 style={{ margin: 0, fontSize: fluidSize(32), fontWeight: 600, letterSpacing: "-0.03em", lineHeight: 1.08 }}>{venueName}</h1>
+                  <h1 style={{ margin: 0, fontSize: fluidSize(32), fontWeight: 600, letterSpacing: BROWSE_TRACK.display, lineHeight: browseLeading("h2") }}>{venueName}</h1>
                   {venueMeta ? (
                     <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: fluidSize(13), color: "#6e7180", textAlign: "center", flexWrap: "wrap", justifyContent: "center" }}>
                       {city ? (
@@ -715,7 +716,7 @@ export default function VenueProfile({ slug }: { slug: string }) {
                 </div>
               </div>
 
-              <p style={{ margin: 0, paddingTop: 16, borderTop: "1px solid rgba(5,27,53,0.08)", fontSize: fluidSize(13), lineHeight: 1.6, color: "#6e7180" }}>{description}</p>
+              <p style={{ margin: 0, paddingTop: 16, borderTop: "1px solid rgba(5,27,53,0.08)", fontSize: fluidSize(13), lineHeight: browseLeading("body"), color: "#6e7180" }}>{description}</p>
 
               {venueActions}
               </aside>
@@ -754,7 +755,7 @@ export default function VenueProfile({ slug }: { slug: string }) {
                   <img src={photoSrc} alt={venueName} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
                 </div>
                 <div style={{ display: "flex", flexDirection: "column", gap: 3, minWidth: 0 }}>
-                  <h1 style={{ margin: 0, fontSize: fluidSize(21), fontWeight: 600, letterSpacing: "-0.025em", lineHeight: 1.15 }}>{venueName}</h1>
+                  <h1 style={{ margin: 0, fontSize: fluidSize(21), fontWeight: 600, letterSpacing: BROWSE_TRACK.display, lineHeight: browseLeading("h3") }}>{venueName}</h1>
                   <div style={{ fontSize: fluidSize(13), color: "#6e7180" }}>
                     {venueMeta}
                   </div>
@@ -769,7 +770,7 @@ export default function VenueProfile({ slug }: { slug: string }) {
                   style={{
                     margin: 0,
                     fontSize: fluidSize(13),
-                    lineHeight: 1.6,
+                    lineHeight: browseLeading("body"),
                     color: "#6e7180",
                   }}
                 />
@@ -779,17 +780,17 @@ export default function VenueProfile({ slug }: { slug: string }) {
             </div>
           )}
 
-          <h2 style={{ margin: 0, fontSize: fluidSize(mobile ? 20 : 26), fontWeight: 600, letterSpacing: "-0.025em" }}>Upcoming events</h2>
+          <h2 style={{ margin: 0, fontSize: BROWSE_DISPLAY.h2, fontWeight: 600, letterSpacing: BROWSE_TRACK.display }}>Upcoming events</h2>
 
           {!groups.length ? (
-            <div style={{ background: "#fff", border: "1px solid rgba(5,27,53,0.10)", borderRadius: 18, padding: 28, color: "#6e7180", fontSize: fluidSize(15) }}>
+            <div style={{ background: "#fff", border: "1px solid rgba(5,27,53,0.10)", borderRadius: 18, padding: 28, color: "#6e7180", fontSize: fluidSize(14) }}>
               No upcoming events for {venueName}.
             </div>
           ) : (
             groups.map((g) => (
               <div key={g.title} style={{ display: "flex", flexDirection: "column", gap: 10 }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "10px 2px 8px" }}>
-                  <div style={{ fontSize: fluidSize(13), fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.1em", color: accent || "#7fbe4d", whiteSpace: "nowrap" }}>{g.title}</div>
+                  <div style={{ fontSize: fluidSize(12), fontWeight: 600, textTransform: "uppercase", letterSpacing: BROWSE_TRACK.eyebrow, color: accent || "#7fbe4d", whiteSpace: "nowrap" }}>{g.title}</div>
                   <div style={{ fontSize: fluidSize(12), color: "#8a93a3", whiteSpace: "nowrap" }}>{g.meta}</div>
                   <div style={{ flex: 1, height: 1, background: "rgba(5,27,53,0.10)" }} />
                 </div>
@@ -799,15 +800,15 @@ export default function VenueProfile({ slug }: { slug: string }) {
                   return (
                     <Link key={e.key} href={e.href} className="vp-row" style={{ background: "#fff", border: "1px solid rgba(5,27,53,0.10)", borderRadius: 18, boxShadow: "0 1px 2px rgba(5,27,53,0.05)", padding: mobile ? 14 : "16px 20px", display: "grid", gridTemplateColumns: stacked ? "64px minmax(0, 1fr)" : "76px minmax(0, 1fr) auto", gap: mobile ? 14 : 20, alignItems: "center", cursor: "pointer", color: NAVY, textDecoration: "none" }}>
                       <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 2, width: dateW, height: dateW, borderRadius: 14, background: "#f1f3f8", border: "1px solid rgba(5,27,53,0.08)", flexShrink: 0 }}>
-                        <div style={{ fontSize: fluidSize(10), fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.1em", color: "#6e7180" }}>{e.mon}</div>
-                        <div style={{ fontSize: fluidSize(22), fontWeight: 600, letterSpacing: "-0.02em", fontVariantNumeric: "tabular-nums", lineHeight: 1 }}>{e.day}</div>
+                        <div style={{ fontSize: fluidSize(10), fontWeight: 600, textTransform: "uppercase", letterSpacing: BROWSE_TRACK.label, color: "#6e7180" }}>{e.mon}</div>
+                        <div style={{ fontSize: fluidSize(22), fontWeight: 600, letterSpacing: BROWSE_TRACK.statement, fontVariantNumeric: "tabular-nums", lineHeight: 1 }}>{e.day}</div>
                         <div style={{ fontSize: fluidSize(10), color: "#8a93a3" }}>{e.dow}</div>
                       </div>
                       <div style={{ display: "flex", flexDirection: "column", gap: 5, minWidth: 0 }}>
                         <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
                           <span style={{ fontSize: fluidSize(12), color: "#6e7180" }}>{e.sport}{e.time ? ` · ${e.time}` : ""}</span>
                         </div>
-                        <div style={{ fontSize: fluidSize(mobile ? 16 : 17), fontWeight: 600, letterSpacing: "-0.015em", lineHeight: 1.25 }}>{e.title}</div>
+                        <div style={{ fontSize: fluidSize(14), fontWeight: 600, letterSpacing: BROWSE_TRACK.card, lineHeight: browseLeading("h3") }}>{e.title}</div>
                         {e.host ? (
                           <div style={{ fontSize: fluidSize(13), color: "#6e7180", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{e.host}</div>
                         ) : null}

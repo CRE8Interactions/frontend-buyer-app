@@ -1217,6 +1217,36 @@ describe("SeasonTickets empty wallet", () => {
     ).toBeInTheDocument();
   });
 
+  it("does not show Close on the accept transfer popup", async () => {
+    const user = userEvent.setup();
+    sessionMocks.getSession.mockReturnValue(DEMO_SESSION);
+    const order = demoCompletedTicketOrder({ event: icedogs });
+    const [ticket] = order.tickets;
+    mockedGetMyEvents.mockResolvedValue({ data: [] } as never);
+    mockedGetIncomingTransfers.mockResolvedValue({
+      data: [
+        {
+          id: "incoming-1",
+          status: "pending",
+          fromUserEmail: "m.rivera@example.com",
+          event: order.event,
+          tickets: [ticket],
+        },
+      ],
+    } as never);
+
+    render(<SeasonTickets />);
+
+    await user.click(
+      await screen.findByRole("button", { name: "Accept transfer" }),
+    );
+    expect(
+      screen.getByRole("heading", { name: "Accept this transfer?" }),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Not now" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Close" })).not.toBeInTheDocument();
+  });
+
   it("shows Transfer has already been claimed in the accept popup when accept returns 226", async () => {
     const user = userEvent.setup();
     sessionMocks.getSession.mockReturnValue(DEMO_SESSION);
@@ -4336,6 +4366,7 @@ describe("SeasonTickets section routes", () => {
 
     const keepButton = screen.getByRole("button", { name: "Keep it" });
     expect(keepButton).toBeDisabled();
+    expect(screen.queryByRole("button", { name: "Close" })).not.toBeInTheDocument();
     expect(confirmCancelButton).toBeDisabled();
     expect(confirmCancelButton).toHaveAttribute("aria-busy", "true");
     expect(screen.getByText("Cancelling…")).toBeInTheDocument();
@@ -4453,6 +4484,39 @@ describe("SeasonTickets section routes", () => {
     expect(mockedGetAccessPassesByOrder).not.toHaveBeenCalled();
     expect(mockedGetMySentTransfers).not.toHaveBeenCalled();
     expect(mockedGetMyReceivedTransfers).not.toHaveBeenCalled();
+  });
+
+  it("does not show Close on the cancel transfer popup", async () => {
+    sessionMocks.getSession.mockReturnValue(DEMO_SESSION);
+    const user = userEvent.setup();
+    const order = demoCompletedTicketOrder({ event: icedogs });
+    const [ticket] = order.tickets;
+    navigationMocks.pathname = "/wallet/my-transfers/";
+    mockedGetMyEvents.mockResolvedValue({ data: [order] } as never);
+    mockedGetMySentTransfers.mockResolvedValue({
+      data: [
+        {
+          id: 901,
+          status: "pending",
+          emailAddressToUser: "recipient@example.com",
+          orderId: order.orderId,
+          event: order.event,
+          tickets: [ticket],
+          createdAt: "2026-01-01T12:00:00.000Z",
+        },
+      ],
+    } as never);
+
+    render(<SeasonTickets />);
+
+    await user.click(
+      (await screen.findAllByRole("button", { name: "Cancel transfer" }))[0]!,
+    );
+    expect(
+      screen.getByRole("heading", { name: "Cancel this transfer?" }),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Keep it" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Close" })).not.toBeInTheDocument();
   });
 
   it("shows Transfer has already been claimed in the cancel popup when the transfer was already claimed", async () => {

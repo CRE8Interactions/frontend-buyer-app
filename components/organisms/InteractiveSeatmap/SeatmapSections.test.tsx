@@ -1248,6 +1248,18 @@ describe("InteractiveSeatmap canvas", () => {
     expect(screen.getByText("Locked")).toBeInTheDocument();
   });
 
+  it("hides zoom and legend when hideChrome is set", async () => {
+    useFiltersStore.setState({ loadingTicketGroups: false });
+    render(<InteractiveSeatmap lookupsMode="external" compactChrome hideChrome />);
+
+    await waitFor(() => {
+      expect(screen.queryByLabelText(/loading seat map/i)).not.toBeInTheDocument();
+    });
+    expect(screen.queryByRole("button", { name: /zoom in/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /zoom out/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /^legend$/i })).not.toBeInTheDocument();
+  });
+
   it("shows a loading spinner in the Find on map canvas while inventory is loading", () => {
     useFiltersStore.setState({ loadingTicketGroups: true });
     render(<InteractiveSeatmap lookupsMode="external" />);

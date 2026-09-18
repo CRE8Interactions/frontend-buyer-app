@@ -33,6 +33,13 @@ import {
   imageUrl,
   type ApiImage,
 } from "@/lib/helpers";
+import {
+  BROWSE_DISPLAY,
+  BROWSE_TRACK,
+  browseLeading,
+  browsePageTypeCss,
+  browsePx,
+} from "@/lib/browseType";
 import { venueUpcomingEventCount } from "@/lib/eventFromPrice";
 import {
   categoryLabel,
@@ -402,7 +409,6 @@ export default function BrowseHome() {
     : narrow
       ? "repeat(3, minmax(0, 1fr))"
       : "repeat(4, minmax(0, 1fr))";
-  const h2 = mobile ? 22 : 28;
   const avSize = mobile ? 92 : 116;
 
   const railItems = useMemo(() => {
@@ -436,6 +442,7 @@ export default function BrowseHome() {
 
   return (
     <div
+      className="shopper-page"
       data-bt-scroll-page=""
       style={{
         background: "#f7f8fc",
@@ -446,7 +453,8 @@ export default function BrowseHome() {
         WebkitFontSmoothing: "antialiased",
       }}
     >
-      <style>{`.bh-ev,.bh-av{transition:box-shadow 160ms ease,transform 160ms ease}.bh-ev:hover{box-shadow:0 8px 30px rgba(5,27,53,0.10);transform:translateY(-2px);border-color:rgba(5,27,53,0.22)}.bh-av:hover{box-shadow:0 12px 28px -8px rgba(5,27,53,0.30);transform:scale(1.04)}`}</style>
+      <style>{`${browsePageTypeCss()}
+.bh-ev,.bh-av{transition:box-shadow 160ms ease,transform 160ms ease}.bh-ev:hover{box-shadow:0 8px 30px rgba(5,27,53,0.10);transform:translateY(-2px);border-color:rgba(5,27,53,0.22)}.bh-av:hover{box-shadow:0 12px 28px -8px rgba(5,27,53,0.30);transform:scale(1.04)}`}</style>
 
       <Nav />
 
@@ -478,7 +486,7 @@ export default function BrowseHome() {
                 alignItems: "flex-end",
                 padding: mobile ? 24 : 44,
                 color: "#cdd9ea",
-                fontSize: 15,
+                fontSize: BROWSE_DISPLAY.lede,
               }}
             >
               {error || "No featured events yet."}
@@ -538,9 +546,9 @@ export default function BrowseHome() {
                     color: GREEN,
                     borderRadius: 999,
                     padding: "6px 13px",
-                    fontSize: 11,
+                    fontSize: browsePx(12),
                     fontWeight: 600,
-                    letterSpacing: "0.1em",
+                    letterSpacing: BROWSE_TRACK.ctaEyebrow,
                     textTransform: "uppercase",
                   }}
                 >
@@ -564,15 +572,15 @@ export default function BrowseHome() {
                 >
                   <div
                     style={{
-                      fontSize: mobile ? 32 : narrow ? 40 : 50,
+                      fontSize: BROWSE_DISPLAY.cta,
                       fontWeight: 600,
-                      letterSpacing: "-0.03em",
-                      lineHeight: 1.03,
+                      letterSpacing: BROWSE_TRACK.display,
+                      lineHeight: browseLeading("h2"),
                     }}
                   >
                     {eventTitle(hero)}
                   </div>
-                  <div style={{ fontSize: mobile ? 14 : 16, color: "#cdd9ea" }}>
+                  <div style={{ fontSize: BROWSE_DISPLAY.lede, color: "#cdd9ea" }}>
                     {[eventWhen(hero), eventVenueLine(hero)]
                       .filter(Boolean)
                       .join(" · ")}
@@ -591,7 +599,7 @@ export default function BrowseHome() {
                     href={eventPurchasePath(hero)}
                     style={{
                       fontFamily: "inherit",
-                      fontSize: 15,
+                      fontSize: browsePx(15),
                       fontWeight: 600,
                       color: NAVY,
                       background: GREEN,
@@ -654,9 +662,9 @@ export default function BrowseHome() {
         <h2
           style={{
             margin: "0 0 18px",
-            fontSize: h2,
+            fontSize: BROWSE_DISPLAY.h2,
             fontWeight: 600,
-            letterSpacing: "-0.025em",
+            letterSpacing: BROWSE_TRACK.display,
           }}
         >
           Teams &amp; venues
@@ -670,7 +678,7 @@ export default function BrowseHome() {
           }}
         >
           {railItems.length === 0 && (
-            <div style={{ fontSize: 14, color: "#6e7180", padding: "12px 0" }}>
+            <div style={{ fontSize: browsePx(14), color: "#6e7180", padding: "12px 0" }}>
               No teams or venues on sale yet.
             </div>
           )}
@@ -755,11 +763,16 @@ export default function BrowseHome() {
                 }}
               >
                 <div
-                  style={{ fontSize: 13, fontWeight: 600, lineHeight: 1.3 }}
+                  style={{
+                    fontSize: browsePx(14),
+                    fontWeight: 600,
+                    letterSpacing: BROWSE_TRACK.card,
+                    lineHeight: browseLeading("h3"),
+                  }}
                 >
                   {v.name}
                 </div>
-                <div style={{ fontSize: 12, color: "#6e7180" }}>
+                <div style={{ fontSize: browsePx(12), color: "#6e7180" }}>
                   {v.count} {v.count === 1 ? "event" : "events"}
                 </div>
               </div>
@@ -788,14 +801,14 @@ export default function BrowseHome() {
           <h2
             style={{
               margin: 0,
-              fontSize: h2,
+              fontSize: BROWSE_DISPLAY.h2,
               fontWeight: 600,
-              letterSpacing: "-0.025em",
+              letterSpacing: BROWSE_TRACK.display,
             }}
           >
             Events
           </h2>
-          <span style={{ fontSize: 13, color: "#6e7180" }}>
+          <span style={{ fontSize: browsePx(13), color: "#6e7180" }}>
             {`${events.length} ${events.length === 1 ? "event" : "events"}`}
           </span>
         </div>
@@ -853,9 +866,9 @@ export default function BrowseHome() {
                       position: "absolute",
                       top: 12,
                       left: 12,
-                      fontSize: 10,
+                      fontSize: browsePx(10),
                       fontWeight: 600,
-                      letterSpacing: "0.12em",
+                      letterSpacing: BROWSE_TRACK.label,
                       textTransform: "uppercase",
                       color: tag.tagInk,
                       background: tag.tagBg,
@@ -886,10 +899,10 @@ export default function BrowseHome() {
                     {when && (
                       <div
                         style={{
-                          fontSize: 12,
+                          fontSize: browsePx(12),
                           fontWeight: 600,
                           textTransform: "uppercase",
-                          letterSpacing: "0.1em",
+                          letterSpacing: BROWSE_TRACK.eyebrow,
                           color: "#7fbe4d",
                         }}
                       >
@@ -898,17 +911,17 @@ export default function BrowseHome() {
                     )}
                     <div
                       style={{
-                        fontSize: 17,
+                        fontSize: browsePx(14),
                         fontWeight: 600,
-                        letterSpacing: "-0.015em",
-                        lineHeight: 1.25,
+                        letterSpacing: BROWSE_TRACK.card,
+                        lineHeight: browseLeading("h3"),
                       }}
                     >
                       {eventTitle(e)}
                     </div>
                     <div
                       style={{
-                        fontSize: 13,
+                        fontSize: browsePx(13),
                         color: "#6e7180",
                         overflow: "hidden",
                         textOverflow: "ellipsis",
@@ -931,7 +944,7 @@ export default function BrowseHome() {
                   >
                     <span
                       style={{
-                        fontSize: 13,
+                        fontSize: browsePx(14),
                         fontWeight: 600,
                         color: NAVY,
                         background: soon ? "#fff" : "#ecf8dd",
@@ -966,14 +979,14 @@ export default function BrowseHome() {
           >
             <div
               style={{
-                fontSize: 17,
+                fontSize: browsePx(14),
                 fontWeight: 600,
-                letterSpacing: "-0.015em",
+                letterSpacing: BROWSE_TRACK.card,
               }}
             >
               {error || "No events on sale right now"}
             </div>
-            <div style={{ fontSize: 14, color: "#6e7180" }}>
+            <div style={{ fontSize: browsePx(14), color: "#6e7180" }}>
               Check back soon or browse a team storefront.
             </div>
           </div>

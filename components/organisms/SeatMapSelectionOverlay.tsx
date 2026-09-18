@@ -1,5 +1,6 @@
 "use client";
 
+import { browseLeading } from "@/lib/browseType";
 import { fluidSize } from "@/lib/shopperFluidType";
 
 import { useEffect, useState } from "react";
@@ -628,6 +629,7 @@ export default function SeatMapSelectionOverlay({
                 buttonColor={buttonColor}
                 buttonTextColor={buttonTextColor}
                 compactChrome={mobile}
+                hideChrome={mobile && showMapSelectionPanel}
                 mapLegend={mapLegend}
                 hideLoadingSpinner
                 dismissTooltipKey={dismissTooltipKey}
@@ -1172,7 +1174,7 @@ export default function SeatMapSelectionOverlay({
                           maxWidth: 290,
                           fontSize: fluidSize(14),
                           color: "#6e7180",
-                          lineHeight: 1.55,
+                          lineHeight: browseLeading("body"),
                           textAlign: "center",
                         }}
                       >
@@ -1432,6 +1434,7 @@ export default function SeatMapSelectionOverlay({
         <Modal
           variant="light"
           sheet={false}
+          hideClose
           title={seatedError.title}
           onClose={() => {
             dismissMapTooltip();
@@ -1461,6 +1464,7 @@ export default function SeatMapSelectionOverlay({
         <Modal
           variant="light"
           sheet={false}
+          hideClose
           title="Are you sure you want to exit?"
           onClose={() => {
             dismissMapTooltip();
@@ -1468,7 +1472,7 @@ export default function SeatMapSelectionOverlay({
           }}
         >
           <p className="mt-4 text-[15px] leading-relaxed text-[#4a5567]">
-            You will lose your selected tickets....
+            You will lose your selected tickets.
           </p>
           <div className="mt-5 flex flex-col gap-3">
             <BrandedActionButton

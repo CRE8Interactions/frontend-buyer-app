@@ -1,4 +1,4 @@
-import { render, screen, waitFor, within } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ReactNode } from "react";
@@ -593,6 +593,33 @@ describe("Checkout page", { timeout: 20_000 }, () => {
     ).toBeInTheDocument();
     expect(
       screen.queryByText(/unable to complete purchase/i),
+    ).not.toBeInTheDocument();
+  });
+
+  it("dismisses the card declined popup from the backdrop without a header Close", async () => {
+    mockedProcessOrder.mockRejectedValue({ response: { status: 500 } });
+    const user = userEvent.setup();
+    render(<CheckoutPageRoute />);
+
+    await fillBillingAndPay(
+      user,
+      `Pay ${formatCurrency(demoCheckoutCart().total)}`,
+    );
+
+    const dialog = await screen.findByRole("dialog", { name: /card declined/i });
+    expect(
+      within(dialog).queryByRole("button", { name: "Close" }),
+    ).not.toBeInTheDocument();
+    expect(
+      within(dialog).getByRole("button", { name: /try again/i }),
+    ).toBeInTheDocument();
+
+    fireEvent.click(dialog);
+    expect(screen.getByRole("dialog", { name: /card declined/i })).toBeInTheDocument();
+
+    fireEvent.click(dialog.parentElement!.parentElement!);
+    expect(
+      screen.queryByRole("dialog", { name: /card declined/i }),
     ).not.toBeInTheDocument();
   });
 
@@ -1438,6 +1465,30 @@ describe("Checkout page", { timeout: 20_000 }, () => {
     expect(screen.getByText(raptorsEvent.name)).toBeInTheDocument();
   });
 
+  it("dismisses the leave confirmation from the backdrop without a header Close", async () => {
+    const user = userEvent.setup();
+    render(<CheckoutPageRoute />);
+    expect(await screen.findByText("Secure checkout")).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: /back/i }));
+    const dialog = await screen.findByRole("dialog", { name: /are you sure/i });
+    expect(
+      within(dialog).queryByRole("button", { name: "Close" }),
+    ).not.toBeInTheDocument();
+    expect(
+      within(dialog).getByRole("button", { name: /continue with checkout/i }),
+    ).toBeInTheDocument();
+
+    fireEvent.click(dialog);
+    expect(screen.getByRole("dialog", { name: /are you sure/i })).toBeInTheDocument();
+
+    fireEvent.click(dialog.parentElement!.parentElement!);
+    expect(
+      screen.queryByRole("dialog", { name: /are you sure/i }),
+    ).not.toBeInTheDocument();
+    expect(mockedDropUserCart).not.toHaveBeenCalled();
+  });
+
   it("drops the cart and returns to tickets when the order is cancelled", async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
     mockedGetCart.mockResolvedValue({
@@ -1641,6 +1692,36 @@ describe("Checkout page", { timeout: 20_000 }, () => {
     expect(routerMocks.replace).not.toHaveBeenCalledWith(
       `/${raptorsOrg.slug}/`,
     );
+  });
+
+  it("starts over from the cart expired backdrop without a header Close", async () => {
+    setCheckoutReturnPath(`/${raptorsOrg.slug}/`);
+    mockedGetCart.mockResolvedValue({
+      data: demoCheckoutCart({ remainingTime: 0 }),
+    } as never);
+    render(<CheckoutPageRoute />);
+
+    const dialog = await screen.findByRole("dialog", { name: /cart expired/i });
+    expect(
+      within(dialog).queryByRole("button", { name: "Close" }),
+    ).not.toBeInTheDocument();
+    expect(
+      within(dialog).getByRole("button", { name: /start over/i }),
+    ).toBeInTheDocument();
+
+    fireEvent.click(dialog);
+    expect(screen.getByRole("dialog", { name: /cart expired/i })).toBeInTheDocument();
+
+    fireEvent.click(dialog.parentElement!.parentElement!);
+    await waitFor(() => {
+      expect(mockedDropUserCart).toHaveBeenCalledWith({
+        eventUUID: raptorsEvent.uuid,
+        cartId: demoCheckoutCart().id,
+      });
+      expect(routerMocks.replace).toHaveBeenCalledWith(
+        eventPurchasePath(raptorsEvent),
+      );
+    });
   });
 
   it("drops package tickets and returns to the package page when the hold runs out", async () => {

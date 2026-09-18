@@ -4,6 +4,7 @@ import { useEffect, useRef } from "react";
 import Link from "next/link";
 import { ShopperFluidTypeStyles } from "@/components/templates/ShopperFluidType";
 import { BLOCKTICKETS_GREEN, BLOCKTICKETS_NAVY, SHOPPER_PAGE_CLASS } from "@/lib/branding";
+import { browseLeading } from "@/lib/browseType";
 import { useAuth } from "@/lib/auth";
 import { fluidSize } from "@/lib/shopperFluidType";
 
@@ -100,7 +101,7 @@ export default function SignOut() {
               fontSize: fluidSize(42),
               fontWeight: 600,
               letterSpacing: "-0.03em",
-              lineHeight: 1.05,
+              lineHeight: browseLeading("h2"),
             }}
           >
             You&rsquo;re signed out
@@ -109,7 +110,7 @@ export default function SignOut() {
             style={{
               margin: 0,
               fontSize: fluidSize(15),
-              lineHeight: 1.6,
+              lineHeight: browseLeading("body"),
               color: SUB,
             }}
           >

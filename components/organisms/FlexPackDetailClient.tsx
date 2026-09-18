@@ -1,5 +1,6 @@
 "use client";
 
+import { BROWSE_DISPLAY, BROWSE_TRACK, browseLeading } from "@/lib/browseType";
 import { fluidSize } from "@/lib/shopperFluidType";
 
 import { useEffect, useRef, useState } from "react";
@@ -336,10 +337,10 @@ export default function FlexPackDetailClient({
               <h1
                 style={{
                   margin: 0,
-                  fontSize: fluidSize(mobile ? 30 : 42),
+                  fontSize: BROWSE_DISPLAY.h2,
                   fontWeight: 600,
-                  letterSpacing: "-0.03em",
-                  lineHeight: 1.06,
+                  letterSpacing: BROWSE_TRACK.display,
+                  lineHeight: browseLeading("h2"),
                 }}
               >
                 {flexPack.name}
@@ -442,7 +443,7 @@ export default function FlexPackDetailClient({
                     {st.n}
                   </div>
                   <div style={{ fontSize: fluidSize(14), fontWeight: 600 }}>{st.title}</div>
-                  <div style={{ fontSize: fluidSize(13), color: SUB, lineHeight: 1.55 }}>
+                  <div style={{ fontSize: fluidSize(13), color: SUB, lineHeight: browseLeading("body") }}>
                     {st.body}
                   </div>
                 </div>
@@ -469,7 +470,7 @@ export default function FlexPackDetailClient({
                 >
                   More info
                 </div>
-                <p style={{ margin: 0, fontSize: fluidSize(15), lineHeight: 1.65, color: "#4a5567" }}>
+                <p style={{ margin: 0, fontSize: fluidSize(15), lineHeight: browseLeading("body"), color: "#4a5567" }}>
                   {flexPack.description}
                 </p>
               </div>

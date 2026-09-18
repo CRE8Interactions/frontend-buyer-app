@@ -1,5 +1,6 @@
 "use client";
 
+import { browseLeading } from "@/lib/browseType";
 import { fluidSize } from "@/lib/shopperFluidType";
 
 
@@ -65,7 +66,7 @@ export default function OnSaleSoonCard({
         />
         <span
           style={{
-            fontSize: fluidSize(desktop ? 16 : 12),
+            fontSize: fluidSize(12),
             fontWeight: 600,
             letterSpacing: "0.12em",
             textTransform: "uppercase",
@@ -79,11 +80,11 @@ export default function OnSaleSoonCard({
         <>
           <div
             style={{
-              fontSize: fluidSize(desktop ? 22 : 18),
+              fontSize: desktop ? 26 : 20,
               fontWeight: 600,
               color: "#051b35",
               letterSpacing: "-0.02em",
-              lineHeight: 1.25,
+              lineHeight: browseLeading("h3"),
               ...(!centered ? { paddingLeft: 16 } : {}),
             }}
           >
@@ -92,10 +93,10 @@ export default function OnSaleSoonCard({
           <p
             style={{
               margin: 0,
-              fontSize: fluidSize(desktop ? 17 : 15),
+              fontSize: fluidSize(16),
               fontWeight: 400,
               color: "#8a93a3",
-              lineHeight: 1.45,
+              lineHeight: browseLeading("body"),
               ...(!centered ? { paddingLeft: 16 } : {}),
             }}
           >
@@ -105,11 +106,11 @@ export default function OnSaleSoonCard({
       ) : (
         <div
           style={{
-            fontSize: fluidSize(desktop ? 22 : 18),
+            fontSize: desktop ? 26 : 20,
             fontWeight: 600,
             color: "#051b35",
             letterSpacing: "-0.02em",
-            lineHeight: 1.25,
+            lineHeight: browseLeading("h3"),
             ...(!centered ? { paddingLeft: 16 } : {}),
           }}
         >

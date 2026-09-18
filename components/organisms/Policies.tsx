@@ -11,6 +11,8 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import { ShopperFluidTypeStyles } from "@/components/templates/ShopperFluidType";
+import { BROWSE_DISPLAY, BROWSE_TRACK, browseLeading } from "@/lib/browseType";
 import { policies, type PolicyBlock } from "@/lib/policies-data";
 
 const NAVY = "#051b35";
@@ -21,10 +23,10 @@ const LOCKUP = "/nmstate/blocktickets-lockup-white.svg";
 
 const blockStyle = (type: PolicyBlock["type"]): React.CSSProperties => {
   switch (type) {
-    case "h2": return { fontSize: 21, fontWeight: 600, letterSpacing: "-0.02em", lineHeight: 1.3, color: NAVY, margin: "26px 0 8px" };
-    case "h3": return { fontSize: 16, fontWeight: 600, letterSpacing: "-0.01em", lineHeight: 1.4, color: NAVY, margin: "18px 0 4px" };
-    case "li": return { fontSize: 15, fontWeight: 400, lineHeight: 1.7, color: FAINT, margin: "0 0 10px", paddingLeft: 22, position: "relative" };
-    default: return { fontSize: 15, fontWeight: 400, lineHeight: 1.7, color: FAINT, margin: "0 0 12px" };
+    case "h2": return { fontSize: 21, fontWeight: 600, letterSpacing: "-0.02em", lineHeight: browseLeading("h3"), color: NAVY, margin: "26px 0 8px" };
+    case "h3": return { fontSize: 16, fontWeight: 600, letterSpacing: "-0.01em", lineHeight: browseLeading("body"), color: NAVY, margin: "18px 0 4px" };
+    case "li": return { fontSize: 15, fontWeight: 400, lineHeight: browseLeading("relaxed"), color: FAINT, margin: "0 0 10px", paddingLeft: 22, position: "relative" };
+    default: return { fontSize: 15, fontWeight: 400, lineHeight: browseLeading("relaxed"), color: FAINT, margin: "0 0 12px" };
   }
 };
 
@@ -43,7 +45,8 @@ export default function Policies({ initial = "purchase" }: { initial?: string })
   const doc = policies.find((d) => d.slug === slug) || policies[0];
 
   return (
-    <div data-bt-scroll-page="" style={{ minHeight: "100vh", display: "flex", flexDirection: "column", background: "#f7f8fc", color: NAVY, fontFamily: "'Geist', system-ui, -apple-system, sans-serif", WebkitFontSmoothing: "antialiased" }}>
+    <div className="shopper-page" data-bt-scroll-page="" style={{ minHeight: "100vh", display: "flex", flexDirection: "column", background: "#f7f8fc", color: NAVY, fontFamily: "'Geist', system-ui, -apple-system, sans-serif", WebkitFontSmoothing: "antialiased" }}>
+      <ShopperFluidTypeStyles />
       <style>{`.pol-nav::-webkit-scrollbar{height:0}`}</style>
 
       <header style={{ background: NAVY, position: "sticky", top: 0, zIndex: 20 }}>
@@ -69,7 +72,7 @@ export default function Policies({ initial = "purchase" }: { initial?: string })
         <article style={{ background: "#fff", border: "1px solid rgba(5,27,53,0.10)", borderRadius: 24, boxShadow: "0 1px 2px rgba(5,27,53,0.05), 0 20px 46px -26px rgba(5,27,53,0.30)", padding: narrow ? "22px 18px" : "36px 44px", minWidth: 0 }}>
           <div style={{ display: "flex", flexDirection: "column", gap: 6, paddingBottom: 20, borderBottom: "1px solid rgba(5,27,53,0.08)" }}>
             <div style={{ fontSize: 11, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.12em", color: MUTE }}>Legal</div>
-            <h1 style={{ margin: 0, fontSize: narrow ? 30 : 38, fontWeight: 600, letterSpacing: "-0.03em", lineHeight: 1.1 }}>{doc.title}</h1>
+            <h1 style={{ margin: 0, fontSize: BROWSE_DISPLAY.h2, fontWeight: 600, letterSpacing: BROWSE_TRACK.display, lineHeight: browseLeading("h2") }}>{doc.title}</h1>
             <div style={{ fontSize: 14, color: SUB }}>Last updated {doc.updated}</div>
           </div>
 

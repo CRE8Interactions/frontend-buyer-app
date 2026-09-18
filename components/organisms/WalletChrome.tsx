@@ -57,7 +57,7 @@ function itemStyle(active: boolean, where: "desktop" | "mobile"): CSSProperties 
     display: "flex",
     alignItems: "center",
     justifyContent: "center",
-    fontSize: fluidSize(13),
+    fontSize: fluidSize(14),
     fontWeight: 600,
     color: active ? BLOCKTICKETS_NAVY : "#8a93a3",
     background: active ? BLOCKTICKETS_GREEN : "transparent",

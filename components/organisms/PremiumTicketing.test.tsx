@@ -279,6 +279,22 @@ describe("Select tickets page (PremiumTicketing)", { timeout: 20_000 }, () => {
     expect(screen.getByText(/mobile tickets/i)).toBeInTheDocument();
   });
 
+  it("closes event information when the backdrop is clicked", async () => {
+    const user = await renderReady();
+
+    await user.click(screen.getByRole("button", { name: /event information/i }));
+    const dialog = screen.getByRole("dialog", { name: /event information/i });
+    fireEvent.click(dialog);
+    expect(
+      screen.getByRole("dialog", { name: /event information/i }),
+    ).toBeInTheDocument();
+
+    fireEvent.click(dialog.parentElement!.parentElement!);
+    expect(
+      screen.queryByRole("dialog", { name: /event information/i }),
+    ).not.toBeInTheDocument();
+  });
+
   it("keeps a branded GA header mark unlinked, and sends the Blocktickets lockup home", async () => {
     const gaData = {
       ...seatedTicketingFixture,
@@ -803,6 +819,18 @@ describe("Select tickets page (PremiumTicketing)", { timeout: 20_000 }, () => {
     expect(screen.getByText(/seat view/i)).toBeInTheDocument();
   });
 
+  it("closes the ticket details drawer from Back and does not show Close", async () => {
+    const user = await renderReady();
+    await user.click(screen.getByText(/sec m · row m3/i));
+    expect(await screen.findByText("Ticket details")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Back" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Close" })).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Back" }));
+
+    expect(screen.queryByText("Ticket details")).not.toBeInTheDocument();
+  });
+
   it("adjusts drawer quantity and checkout subtotal", async () => {
     const user = await renderReady();
     await user.click(screen.getByText(/sec m · row m3/i));
@@ -915,6 +943,42 @@ describe("Select tickets page (PremiumTicketing)", { timeout: 20_000 }, () => {
     ).not.toBeInTheDocument();
   });
 
+  it("closes the waitlist popup when the backdrop is clicked", async () => {
+    const user = userEvent.setup();
+    render(
+      <PremiumTicketing
+        data={{
+          ...seatedTicketingFixture,
+          eventType: "ga",
+          gaTiers: [
+            {
+              name: "Student Rush",
+              sub: "General admission · unreserved seating",
+              price: "Free",
+              unit: 0,
+              note: "All tickets claimed",
+              state: "soldout",
+            },
+          ],
+        }}
+      />,
+    );
+
+    await user.click(await screen.findByRole("button", { name: /join waitlist/i }));
+    const dialog = await screen.findByRole("dialog", {
+      name: /join the waitlist/i,
+    });
+    fireEvent.click(dialog);
+    expect(
+      screen.getByRole("dialog", { name: /join the waitlist/i }),
+    ).toBeInTheDocument();
+
+    fireEvent.click(dialog.parentElement!.parentElement!);
+    expect(
+      screen.queryByRole("dialog", { name: /join the waitlist/i }),
+    ).not.toBeInTheDocument();
+  });
+
   it("offers only the notify bar when a GA event is sold out with no inventory", async () => {
     render(
       <PremiumTicketing
@@ -1009,6 +1073,81 @@ describe("Select tickets page (PremiumTicketing)", { timeout: 20_000 }, () => {
     expect(
       await screen.findByRole("button", { name: /reminder set/i }),
     ).toBeDisabled();
+  });
+
+  it("closes the sold-out notify sheet when the backdrop is clicked", async () => {
+    Object.defineProperty(window, "innerWidth", {
+      configurable: true,
+      writable: true,
+      value: 390,
+    });
+    const user = userEvent.setup();
+    render(
+      <PremiumTicketing
+        data={{
+          ...seatedTicketingFixture,
+          eventType: "ga",
+          gaTiers: undefined,
+          soldOut: true,
+        }}
+      />,
+    );
+
+    await user.click(screen.getByRole("button", { name: /notify me/i }));
+    const dialog = screen.getByRole("dialog", { name: /get the first email/i });
+    expect(
+      within(dialog).queryByRole("button", { name: "Close" }),
+    ).not.toBeInTheDocument();
+    fireEvent.click(dialog);
+    expect(
+      screen.getByRole("dialog", { name: /get the first email/i }),
+    ).toBeInTheDocument();
+
+    fireEvent.click(dialog.parentElement!);
+    expect(
+      screen.queryByRole("dialog", { name: /get the first email/i }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("closes the GA ticket sheet when the backdrop is clicked", async () => {
+    Object.defineProperty(window, "innerWidth", {
+      configurable: true,
+      writable: true,
+      value: 390,
+    });
+    const user = userEvent.setup();
+    const gaGroup = demoTicketGroups().ticketGroups[0];
+    render(
+      <PremiumTicketing
+        data={{
+          ...seatedTicketingFixture,
+          eventType: "ga",
+          gaTiers: [
+            {
+              name: gaGroup.sectionName,
+              sub: "General admission",
+              price: "$25.00",
+              unit: 25,
+              note: "Ticket limit: 1–100 per order",
+              state: "live",
+              cartGroup: gaGroup,
+            },
+          ],
+        }}
+      />,
+    );
+
+    await user.click(screen.getByRole("button", { name: /buy tickets/i }));
+    const dialog = screen.getByRole("dialog", { name: /get tickets/i });
+    expect(within(dialog).getByText(gaGroup.sectionName)).toBeInTheDocument();
+
+    fireEvent.click(dialog);
+    expect(screen.getByRole("dialog", { name: /get tickets/i })).toBeInTheDocument();
+
+    fireEvent.click(dialog.parentElement!);
+    expect(
+      screen.queryByRole("dialog", { name: /get tickets/i }),
+    ).not.toBeInTheDocument();
   });
 
   it("shows the sold-out sticky bar on desktop GA sold-out events", async () => {
@@ -1909,9 +2048,15 @@ describe("Select tickets page (PremiumTicketing)", { timeout: 20_000 }, () => {
     expect(
       await screen.findByRole("dialog", { name: /are you sure you want to exit/i }),
     ).toBeInTheDocument();
+    const exitDialog = screen.getByRole("dialog", {
+      name: /are you sure you want to exit/i,
+    });
     expect(
-      screen.getByText(/you will lose your selected tickets/i),
+      screen.getByText("You will lose your selected tickets."),
     ).toBeInTheDocument();
+    expect(
+      within(exitDialog).queryByRole("button", { name: "Close" }),
+    ).not.toBeInTheDocument();
 
     await user.click(screen.getByRole("button", { name: /^cancel$/i }));
     expect(

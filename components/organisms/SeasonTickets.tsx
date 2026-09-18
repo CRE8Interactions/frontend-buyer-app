@@ -1,8 +1,8 @@
 "use client";
 
+import { browseLeading } from "@/lib/browseType";
 import {
   fluidSize,
-  shopperFluidDesktopPinVars,
   shopperPageTypeCss,
 } from "@/lib/shopperFluidType";
 
@@ -843,32 +843,12 @@ function buildEvents(): Record<string, EventT> {
  * width measurement — the sidebar cards drop under the tickets instead of
  * squeezing the event beside them.
  */
-/** Mobile wallet ticket cards match the handoff at full type scale on narrow viewports. */
-const MOBILE_TICKET_DESKTOP_TYPE = `.st-mobile-ticket{${shopperFluidDesktopPinVars([
-  10, 11, 12, 13, 14, 15, 16, 18, 20, 24, 28, 32,
-])}}`;
-
-/** Mobile transfer sheet keeps handoff type scale on narrow viewports. */
-const MOBILE_TRANSFER_DESKTOP_TYPE = `.st-transfer-sheet{${shopperFluidDesktopPinVars([
-  10, 11, 12, 13, 14, 15, 16, 17, 20, 21, 22, 24, 28,
-])}}`;
-
-/** Mobile access-pass QR sheet keeps a compact heading on phones. */
-const MOBILE_PASS_QR_DESKTOP_TYPE = `.st-access-pass-qr-sheet{${shopperFluidDesktopPinVars([
-  11, 13, 15,
-])}}`;
-
-/** Mobile ticket details modal matches desktop type scale. */
-const MOBILE_DETAILS_DESKTOP_TYPE = `.st-details-sheet{${shopperFluidDesktopPinVars([
-  13, 14, 15, 22,
-])}}`;
-
 const EVENT_CSS = `
 .st-ev{padding:40px 32px 96px}
 .st-ev-hero{aspect-ratio:3.4 / 1}
 .st-ev-grid{display:grid;grid-template-columns:minmax(0,1fr) 320px;gap:40px;align-items:start}
 .st-ev-aside{min-width:0;display:flex;flex-direction:column;gap:12px}
-.st-ev-title{font-size:30px}
+.st-ev-title{font-size:var(--t-30);letter-spacing:-0.025em;line-height:var(--bt-leading-h2)}
 .st-ev-teams{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:10px}
 .st-ev-seat{display:flex;align-items:center;gap:16px;flex-wrap:wrap}
 .st-ev-seat-actions{display:flex;gap:8px;flex-shrink:0}
@@ -876,7 +856,6 @@ const EVENT_CSS = `
   .st-ev{padding:24px 16px 128px}
   .st-ev-hero{aspect-ratio:2.1 / 1}
   .st-ev-grid{grid-template-columns:minmax(0,1fr);gap:16px}
-  .st-ev-title{font-size:22px}
 }
 @media (max-width:560px){
   .st-ev-seat-actions{width:100%}
@@ -2729,7 +2708,6 @@ export default function SeasonTickets({
   const padX = mobile ? 18 : 22;
   const cardPad = mobile ? "14px 16px" : "16px 20px";
   const bodyPad = mobile ? "22px 18px 104px" : "40px 32px 96px";
-  const h1Size = mobile ? 32 : 42;
 
   /* ---------- small building blocks ---------- */
   const chip = (on: boolean): React.CSSProperties => ({
@@ -2798,8 +2776,8 @@ export default function SeasonTickets({
             <img src={LOGO} alt="New Mexico State Athletics" style={{ maxWidth: "100%", maxHeight: "100%", display: "block" }} />
           </div>
           <div style={eyebrow}>NM State Athletics · Season ticket account</div>
-          <h1 style={{ margin: 0, fontSize: fluidSize(42), fontWeight: 600, letterSpacing: "-0.03em", lineHeight: 1.05 }}>Welcome Aggie Nation!</h1>
-          <p style={{ margin: 0, fontSize: fluidSize(15), lineHeight: 1.6, color: SUB }}>Sign in to the email on your NM State season ticket account and we&apos;ll send a six-digit code. No password to remember.</p>
+          <h1 style={{ margin: 0, fontSize: fluidSize(42), fontWeight: 600, letterSpacing: "-0.03em", lineHeight: browseLeading("h2") }}>Welcome Aggie Nation!</h1>
+          <p style={{ margin: 0, fontSize: fluidSize(15), lineHeight: browseLeading("body"), color: SUB }}>Sign in to the email on your NM State season ticket account and we&apos;ll send a six-digit code. No password to remember.</p>
         </div>
         <form
           noValidate
@@ -2813,7 +2791,7 @@ export default function SeasonTickets({
           <label style={{ fontSize: fluidSize(12), fontWeight: 600, color: FAINT }}>Email address</label>
           <input ref={autoFocusField} name="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="you@email.com" style={{ fontFamily: "inherit", width: "100%", boxSizing: "border-box", fontSize: fluidSize(16), color: INK, background: "#fff", border: "1px solid rgba(5,27,53,0.12)", borderRadius: 14, padding: "15px 16px", outline: "none" }} />
           <button type="submit" style={{ fontFamily: "inherit", width: "100%", fontSize: fluidSize(15), fontWeight: 600, color: INK, background: ACCENT, border: "none", borderRadius: 999, padding: 16, cursor: "pointer" }}>Send my code</button>
-          <div style={{ fontSize: fluidSize(12), lineHeight: 1.5, color: MUTE, textAlign: "center" }}>By continuing you agree to the Blocktickets terms and privacy policy.</div>
+          <div style={{ fontSize: fluidSize(12), lineHeight: browseLeading("body"), color: MUTE, textAlign: "center" }}>By continuing you agree to the Blocktickets terms and privacy policy.</div>
         </form>
       </div>
     </div>
@@ -2825,8 +2803,8 @@ export default function SeasonTickets({
       <div style={{ width: "100%", maxWidth: 420, display: "flex", flexDirection: "column", gap: 22 }}>
         <button onClick={() => setScreen("login")} style={backBtn}><BackArrow />Back</button>
         <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-          <h1 style={{ margin: 0, fontSize: fluidSize(42), fontWeight: 600, letterSpacing: "-0.03em", lineHeight: 1.05 }}>Enter your code</h1>
-          <p style={{ margin: 0, fontSize: fluidSize(15), lineHeight: 1.6, color: SUB }}>Sent to <strong style={{ fontWeight: 600, color: INK }}>{email}</strong></p>
+          <h1 style={{ margin: 0, fontSize: fluidSize(42), fontWeight: 600, letterSpacing: "-0.03em", lineHeight: browseLeading("h2") }}>Enter your code</h1>
+          <p style={{ margin: 0, fontSize: fluidSize(15), lineHeight: browseLeading("body"), color: SUB }}>Sent to <strong style={{ fontWeight: 600, color: INK }}>{email}</strong></p>
         </div>
         <div style={{ ...card, borderRadius: 24, padding: 22, display: "flex", flexDirection: "column", gap: 18 }}>
             <div style={{ display: "grid", gridTemplateColumns: "repeat(6, 1fr)", gap: 8 }}>
@@ -3942,7 +3920,7 @@ export default function SeasonTickets({
               <div style={{ fontSize: fluidSize(11), fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.08em", opacity: 0.8 }}>
                 {row.typeLabel}
               </div>
-              <div style={{ marginTop: 5, fontSize: fluidSize(19), fontWeight: 600, lineHeight: 1.2 }}>
+              <div style={{ marginTop: 5, fontSize: fluidSize(19), fontWeight: 600, lineHeight: browseLeading("h3") }}>
                 {row.name}
               </div>
             </div>
@@ -4163,7 +4141,7 @@ export default function SeasonTickets({
                 style={{
                   margin: 0,
                   fontSize: fluidSize(13),
-                  lineHeight: 1.55,
+                  lineHeight: browseLeading("body"),
                   color: DANGER,
                 }}
               >
@@ -4376,7 +4354,7 @@ export default function SeasonTickets({
                     <div style={{ fontSize: fluidSize(10), fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.08em", opacity: 0.82 }}>
                       {pass.typeLabel}
                     </div>
-                    <h1 style={{ margin: "4px 0 0", fontSize: fluidSize(25), fontWeight: 600, letterSpacing: "-0.025em", lineHeight: 1.1 }}>
+                    <h1 style={{ margin: "4px 0 0", fontSize: fluidSize(25), fontWeight: 600, letterSpacing: "-0.025em", lineHeight: browseLeading("h3") }}>
                       {pass.name}
                     </h1>
                     {pass.checkInCode ? (
@@ -4405,7 +4383,7 @@ export default function SeasonTickets({
                   ) : null}
                 </div>
                 {showPhoneQr ? (
-                  <div style={{ marginTop: 12, fontSize: fluidSize(13), opacity: 0.88, lineHeight: 1.45 }}>
+                  <div style={{ marginTop: 12, fontSize: fluidSize(13), opacity: 0.88, lineHeight: browseLeading("body") }}>
                     {PASS_PHONE_QR_HINT}
                   </div>
                 ) : null}
@@ -4472,7 +4450,7 @@ export default function SeasonTickets({
 
   const WalletPageTitle = (title: string) => (
     <div style={{ display: "flex", alignItems: "flex-end", justifyContent: "space-between", gap: 16 }}>
-      <h1 style={{ margin: 0, fontSize: fluidSize(42), fontWeight: 600, letterSpacing: "-0.03em", lineHeight: 1 }}>{title}</h1>
+      <h1 style={{ margin: 0, fontSize: fluidSize(42), fontWeight: 600, letterSpacing: "-0.03em", lineHeight: browseLeading("h2") }}>{title}</h1>
       {!mobile && <div style={{ fontSize: fluidSize(13), color: MUTE, whiteSpace: "nowrap" }}>{email}</div>}
     </div>
   );
@@ -4910,7 +4888,7 @@ export default function SeasonTickets({
             <span style={{ width: 5, height: 5, flexShrink: 0, borderRadius: 999, background: "#c07a12" }} />
             Pending transfer
           </div>
-          <div style={{ fontSize: fluidSize(13), lineHeight: 1.5, color: SUB }}>
+          <div style={{ fontSize: fluidSize(13), lineHeight: browseLeading("body"), color: SUB }}>
             Accept this transfer to add {ev.tickets.length === 1 ? "this ticket" : "these tickets"} to your account.
           </div>
         </div>
@@ -5091,7 +5069,7 @@ export default function SeasonTickets({
         <div style={{ minWidth: 0, display: "flex", flexDirection: "column", gap: 12 }}>
           <div style={{ ...card, borderRadius: 20, padding: cardPad, display: "flex", flexDirection: "column", gap: 12 }}>
             <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-              <h1 className="st-ev-title" style={{ margin: 0, fontWeight: 600, letterSpacing: "-0.03em", lineHeight: 1.1 }}>{ev.title}</h1>
+              <h1 className="st-ev-title" style={{ margin: 0, fontWeight: 600, letterSpacing: "-0.03em", lineHeight: browseLeading("h2") }}>{ev.title}</h1>
               <div style={{ display: "flex", flexWrap: "wrap", gap: "4px 20px", fontSize: fluidSize(14), color: SUB }}>
                 <span style={{ fontWeight: 600, color: INK }}>{ev.when}</span><span>Doors {ev.doors}</span>
               </div>
@@ -5101,7 +5079,7 @@ export default function SeasonTickets({
             {ev.blurb ? (
               <>
                 <div style={{ height: 1, background: "rgba(5,27,53,0.08)" }} />
-                <p style={{ margin: 0, fontSize: fluidSize(14), lineHeight: 1.6, color: FAINT }}>{ev.blurb}</p>
+                <p style={{ margin: 0, fontSize: fluidSize(14), lineHeight: browseLeading("body"), color: FAINT }}>{ev.blurb}</p>
               </>
             ) : null}
           </div>
@@ -5150,7 +5128,7 @@ export default function SeasonTickets({
             ))}
             <div style={{ padding: `14px ${padX}px`, background: "#fbfcfe", display: "flex", alignItems: "center", gap: 12 }}>
               <svg viewBox="0 0 24 24" fill="none" stroke={INK} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" style={{ width: 18, height: 18, flexShrink: 0 }}><rect x="3" y="3" width="7" height="7" /><rect x="14" y="3" width="7" height="7" /><rect x="3" y="14" width="7" height="7" /><line x1="14" y1="14" x2="21" y2="14" /><line x1="14" y1="18" x2="18" y2="18" /><line x1="18" y1="21" x2="21" y2="21" /></svg>
-              <div style={{ fontSize: fluidSize(13), lineHeight: 1.5, color: FAINT }}><strong style={{ fontWeight: 600, color: INK }}>Your phone is your ticket.</strong> Show the QR code straight from your phone to scan at entry, or add each ticket to your Apple/Google wallet ahead of time.</div>
+              <div style={{ fontSize: fluidSize(13), lineHeight: browseLeading("body"), color: FAINT }}><strong style={{ fontWeight: 600, color: INK }}>Your phone is your ticket.</strong> Show the QR code straight from your phone to scan at entry, or add each ticket to your Apple/Google wallet ahead of time.</div>
             </div>
           </div>
         </div>
@@ -5159,7 +5137,7 @@ export default function SeasonTickets({
           {pendingIncomingEvent ? (
             <div style={{ ...card, borderRadius: 20, padding: cardPad, display: "flex", flexDirection: "column", gap: 10, border: "1px solid rgba(192,122,18,0.28)", background: "#fffaf2" }}>
               <div style={{ ...eyebrow, paddingBottom: 4, color: "#c07a12" }}>Pending transfer</div>
-              <div style={{ fontSize: fluidSize(13), lineHeight: 1.5, color: SUB }}>
+              <div style={{ fontSize: fluidSize(13), lineHeight: browseLeading("body"), color: SUB }}>
                 Accept this transfer to add {ev.tickets.length === 1 ? "this ticket" : "these tickets"} to your account.
               </div>
               {renderAcceptTransferButton(acceptTargetFromEventDetail(ev), "wallet-event", {
@@ -5213,7 +5191,7 @@ export default function SeasonTickets({
           <div style={{ ...card, borderRadius: 20, padding: cardPad, display: "flex", flexDirection: "column", gap: 8 }}>
             <div style={eyebrow}>Getting there</div>
             <div style={{ fontSize: fluidSize(15), fontWeight: 600 }}>{ev.venue}</div>
-            <div style={{ fontSize: fluidSize(13), lineHeight: 1.5, color: SUB }}>{ev.address}</div>
+            <div style={{ fontSize: fluidSize(13), lineHeight: browseLeading("body"), color: SUB }}>{ev.address}</div>
             {directionsHref ? (
               <a
                 href={directionsHref}
@@ -5333,7 +5311,7 @@ export default function SeasonTickets({
         )}
         <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
           <div style={eyebrow}>Season tickets</div>
-          <h1 style={{ margin: 0, fontSize: fluidSize(28), fontWeight: 600, letterSpacing: "-0.025em", lineHeight: 1.12 }}>{title}</h1>
+          <h1 style={{ margin: 0, fontSize: fluidSize(28), fontWeight: 600, letterSpacing: "-0.025em", lineHeight: browseLeading("h3") }}>{title}</h1>
           <div style={{ fontSize: fluidSize(13), color: SUB }}>
             {eventCount} {eventCount === 1 ? "game" : "games"}
             {selectedSeasonPackage?.venueLine ? ` · ${selectedSeasonPackage.venueLine}` : ""}
@@ -5403,7 +5381,7 @@ export default function SeasonTickets({
       <div style={{ ...card, borderRadius: 24, boxShadow: "0 1px 2px rgba(5,27,53,0.05), 0 20px 46px -22px rgba(5,27,53,0.45)", padding: cardPad, display: "flex", flexDirection: "column", gap: 14 }}>
         <div style={{ display: "flex", flexDirection: "column", gap: 7 }}>
           <div style={eyebrow}>FLEX PACKAGE</div>
-          <h1 style={{ margin: 0, fontSize: fluidSize(28), fontWeight: 600, letterSpacing: "-0.025em", lineHeight: 1.12 }}>{selectedFlexPack?.name || "Aggie Pick-4 Flex Pack"}</h1>
+          <h1 style={{ margin: 0, fontSize: fluidSize(28), fontWeight: 600, letterSpacing: "-0.025em", lineHeight: browseLeading("h3") }}>{selectedFlexPack?.name || "Aggie Pick-4 Flex Pack"}</h1>
         </div>
         <div style={{ display: "grid", gridTemplateColumns: mobile ? "1fr 1fr" : "repeat(3, 1fr)", gap: 10 }}>
           {[{ k: "Vouchers", v: String(vouchers.length) }, { k: "Status", v: flexRemaining > 0 ? "Active" : "Redeemed" }, { k: "Credits left", v: `${flexRemaining} of ${vouchers.length}` }].map((s) => (
@@ -5416,7 +5394,7 @@ export default function SeasonTickets({
       </div>
       <div style={{ display: "flex", gap: 10, background: SOFT, borderRadius: 16, padding: "14px 16px" }}>
         <svg viewBox="0 0 24 24" fill="none" stroke={INK} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" style={{ width: 17, height: 17, flexShrink: 0, marginTop: 1 }}><circle cx="12" cy="12" r="10" /><line x1="12" y1="16" x2="12" y2="12" /><line x1="12" y1="8" x2="12.01" y2="8" /></svg>
-        <div style={{ fontSize: fluidSize(13), lineHeight: 1.5, color: INK }}>Redeem a voucher for a ticket at the Box Office for any available game.</div>
+        <div style={{ fontSize: fluidSize(13), lineHeight: browseLeading("body"), color: INK }}>Redeem a voucher for a ticket at the Box Office for any available game.</div>
       </div>
       <div style={{ ...card, borderRadius: 20, overflow: "hidden" }}>
         <div style={{ padding: `15px ${padX}px`, display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 12, borderBottom: "1px solid rgba(5,27,53,0.08)" }}>
@@ -5674,7 +5652,7 @@ export default function SeasonTickets({
   ] : [];
   const Profile = () => (
     <div style={{ maxWidth: 1100, margin: "0 auto", padding: bodyPad, display: "flex", flexDirection: "column", gap: 18 }}>
-      <h1 style={{ margin: 0, fontSize: fluidSize(42), fontWeight: 600, letterSpacing: "-0.03em", lineHeight: 1 }}>Profile</h1>
+      <h1 style={{ margin: 0, fontSize: fluidSize(42), fontWeight: 600, letterSpacing: "-0.03em", lineHeight: browseLeading("h2") }}>Profile</h1>
       <div style={{ ...card, borderRadius: 24, boxShadow: "0 1px 2px rgba(5,27,53,0.05), 0 20px 46px -22px rgba(5,27,53,0.45)", padding: cardPad, display: "flex", alignItems: "center", gap: 16 }}>
         <div style={{ width: 56, height: 56, borderRadius: 999, background: ACCENT, color: INK, display: "flex", alignItems: "center", justifyContent: "center", fontSize: fluidSize(19), fontWeight: 600, flexShrink: 0 }}>{isHolder ? "HC" : (email[0] || "?").toUpperCase()}</div>
         <div style={{ minWidth: 0, display: "flex", flexDirection: "column", gap: 3 }}>
@@ -5763,8 +5741,8 @@ export default function SeasonTickets({
       : "0 30px 70px -30px rgba(5,27,53,0.6)",
   };
   const mobileSheetClass = mobile ? "st-sheet-up" : undefined;
-  const closeX = (onClose: () => void, label = "Close") => (
-    <button onClick={onClose} aria-label={label} style={{ fontFamily: "inherit", flexShrink: 0, width: 34, height: 34, borderRadius: 999, background: "#f1f3f8", border: "none", color: FAINT, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}>
+  const closeX = (onClose: () => void, label = "Close", disabled = false) => (
+    <button onClick={onClose} aria-label={label} disabled={disabled} style={{ fontFamily: "inherit", flexShrink: 0, width: 34, height: 34, borderRadius: 999, background: "#f1f3f8", border: "none", color: FAINT, display: "flex", alignItems: "center", justifyContent: "center", cursor: disabled ? "default" : "pointer", opacity: disabled ? 0.45 : 1 }}>
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" style={{ width: 16, height: 16 }}><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
     </button>
   );
@@ -5814,7 +5792,7 @@ export default function SeasonTickets({
             <div role="img" aria-label={`Enlarged QR code for ${pass.name}`} style={{ padding: 10, background: "#fff", lineHeight: 0 }}>
               <QRCodeSVG value={pass.checkInCode} size={mobile ? 220 : 256} fgColor={INK} />
             </div>
-            <p style={{ margin: 0, color: SUB, fontSize: fluidSize(15), lineHeight: 1.5, textAlign: "center" }}>
+            <p style={{ margin: 0, color: SUB, fontSize: fluidSize(15), lineHeight: browseLeading("body"), textAlign: "center" }}>
               Show this code at entry for any included event.
             </p>
             {passWallet ? (
@@ -5838,7 +5816,7 @@ export default function SeasonTickets({
                   </ButtonBusyContents>
                 </button>
                 {passWalletError ? (
-                  <div role="alert" style={{ fontSize: fluidSize(13), lineHeight: 1.5, color: DANGER, textAlign: "center" }}>
+                  <div role="alert" style={{ fontSize: fluidSize(13), lineHeight: browseLeading("body"), color: DANGER, textAlign: "center" }}>
                     {passWalletError}
                   </div>
                 ) : null}
@@ -5918,7 +5896,7 @@ export default function SeasonTickets({
             <div role="img" aria-label={`QR code for ${detail.seat || "ticket"}`} style={{ padding: 10, background: "#fff", lineHeight: 0 }}>
               <QRCodeSVG value={detail.code} size={mobile ? 220 : 256} fgColor={INK} />
             </div>
-            <p style={{ margin: 0, color: SUB, fontSize: fluidSize(15), lineHeight: 1.5, textAlign: "center" }}>
+            <p style={{ margin: 0, color: SUB, fontSize: fluidSize(15), lineHeight: browseLeading("body"), textAlign: "center" }}>
               Scan this code at entry
             </p>
           </div>
@@ -5938,7 +5916,7 @@ export default function SeasonTickets({
         <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 12 }}>
           <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
             <div style={eyebrow}>{field?.group}</div>
-            <h2 style={{ margin: 0, fontSize: fluidSize(22), fontWeight: 600, letterSpacing: "-0.02em", lineHeight: 1.15 }}>{field?.heading}</h2>
+            <h2 style={{ margin: 0, fontSize: fluidSize(22), fontWeight: 600, letterSpacing: "-0.02em", lineHeight: browseLeading("h3") }}>{field?.heading}</h2>
           </div>
           {closeX(() => setModal(null))}
         </div>
@@ -5959,7 +5937,7 @@ export default function SeasonTickets({
         <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
           <label style={{ fontSize: fluidSize(12), fontWeight: 600, color: FAINT }}>{field?.label}</label>
           <input ref={autoFocusField} name="fieldValue" value={fieldValue} onChange={(e) => setFieldValue(e.target.value)} style={{ fontFamily: "inherit", width: "100%", boxSizing: "border-box", fontSize: fluidSize(16), color: INK, background: "#fff", border: "1px solid rgba(5,27,53,0.12)", borderRadius: 14, padding: "14px 16px", outline: "none" }} />
-          <div style={{ fontSize: fluidSize(12), lineHeight: 1.5, color: MUTE }}>{field?.help}</div>
+          <div style={{ fontSize: fluidSize(12), lineHeight: browseLeading("body"), color: MUTE }}>{field?.help}</div>
         </div>
         <div style={{ display: "flex", gap: 8 }}>
           <button type="button" onClick={() => setModal(null)} style={{ fontFamily: "inherit", flex: 1, fontSize: fluidSize(15), fontWeight: 600, color: INK, background: "#f1f3f8", border: "none", borderRadius: 999, padding: 14, minHeight: 48, cursor: "pointer" }}>Cancel</button>
@@ -6245,16 +6223,16 @@ export default function SeasonTickets({
     setTf({ ...tf, step: tfStep + 1 });
   };
   const transferModalType = {
-    title: fluidSize(mobile ? 24 : 22),
-    stepTitle: fluidSize(17),
+    title: fluidSize(22),
+    stepTitle: fluidSize(16),
     meta: fluidSize(14),
     metaMuted: fluidSize(13),
-    body: fluidSize(mobile ? 15 : 14),
-    fieldLabel: fluidSize(mobile ? 13 : 12),
-    fieldValue: fluidSize(mobile ? 16 : 15),
-    button: fluidSize(mobile ? 16 : 15),
-    error: fluidSize(mobile ? 14 : 13),
-    success: fluidSize(mobile ? 24 : 21),
+    body: fluidSize(14),
+    fieldLabel: fluidSize(12),
+    fieldValue: fluidSize(15),
+    button: fluidSize(15),
+    error: fluidSize(13),
+    success: fluidSize(26),
   };
   const transferChipStyle = {
     width: 92,
@@ -6309,7 +6287,7 @@ export default function SeasonTickets({
             }}
           >
             <div style={{ fontSize: transferModalType.stepTitle, fontWeight: 600, letterSpacing: "-0.015em" }}>Enter the recipient&apos;s email address</div>
-            <p style={{ margin: 0, fontSize: transferModalType.body, lineHeight: 1.55, color: SUB }}>
+            <p style={{ margin: 0, fontSize: transferModalType.body, lineHeight: browseLeading("body"), color: SUB }}>
               Enter the email address of the person receiving{" "}
               {tfKind === "ticket" ? (
                 tfPassDescriptor
@@ -6318,7 +6296,7 @@ export default function SeasonTickets({
               )}
               .
             </p>
-            <p style={{ margin: 0, fontSize: transferModalType.body, lineHeight: 1.55, color: SUB }}>
+            <p style={{ margin: 0, fontSize: transferModalType.body, lineHeight: browseLeading("body"), color: SUB }}>
               {transferRecipientNotifyCopy(tfKind, tfCount)}
             </p>
             <EmailField
@@ -6346,7 +6324,7 @@ export default function SeasonTickets({
             <div style={{ fontSize: transferModalType.stepTitle, fontWeight: 600, letterSpacing: "-0.015em", textAlign: "center" }}>
               {transferLoadingTitle(tfKind, tfCount)}
             </div>
-            <p style={{ margin: 0, fontSize: transferModalType.body, lineHeight: 1.55, color: SUB, textAlign: "center" }}>
+            <p style={{ margin: 0, fontSize: transferModalType.body, lineHeight: browseLeading("body"), color: SUB, textAlign: "center" }}>
               Stay on this screen until the transfer finishes.
             </p>
           </div>
@@ -6383,7 +6361,7 @@ export default function SeasonTickets({
               <div style={{ fontSize: transferModalType.fieldLabel, color: MUTE }}>Recipient email address</div>
               <div style={{ fontSize: transferModalType.fieldValue, fontWeight: 600, overflowWrap: "anywhere" }}>{tf?.email}</div>
             </div>
-            <p style={{ margin: 0, fontSize: transferModalType.body, lineHeight: 1.55, color: SUB }}>
+            <p style={{ margin: 0, fontSize: transferModalType.body, lineHeight: browseLeading("body"), color: SUB }}>
               {transferWalletRemovalCopy(tfKind, tfCount)}
             </p>
           </div>
@@ -6399,7 +6377,7 @@ export default function SeasonTickets({
               <svg viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth={2.6} strokeLinecap="round" strokeLinejoin="round" style={{ width: 38, height: 38 }}><polyline points="20 6 9 17 4 12" /></svg>
             </div>
             <div style={{ fontSize: transferModalType.success, fontWeight: 600, letterSpacing: "-0.02em", textAlign: "center" }}>{transferSuccessTitle(tfKind, tfCount)}</div>
-            <p style={{ margin: 0, fontSize: transferModalType.body, lineHeight: 1.6, color: SUB, textAlign: "center" }}>{transferSuccessBody(tfKind, tfCount)}</p>
+            <p style={{ margin: 0, fontSize: transferModalType.body, lineHeight: browseLeading("body"), color: SUB, textAlign: "center" }}>{transferSuccessBody(tfKind, tfCount)}</p>
           </div>
         )}
 
@@ -6493,8 +6471,8 @@ export default function SeasonTickets({
           }}
           aria-busy={confirmAcceptSaving || undefined}
         >
-          <h2 style={{ margin: 0, fontSize: fluidSize(21), fontWeight: 600, letterSpacing: "-0.02em", lineHeight: 1.2 }}>Accept this transfer?</h2>
-          <p style={{ margin: 0, fontSize: fluidSize(14), lineHeight: 1.6, color: SUB }}>
+          <h2 style={{ margin: 0, fontSize: fluidSize(21), fontWeight: 600, letterSpacing: "-0.02em", lineHeight: browseLeading("h3") }}>Accept this transfer?</h2>
+          <p style={{ margin: 0, fontSize: fluidSize(14), lineHeight: browseLeading("body"), color: SUB }}>
             {transferAcceptConfirmCopy(acceptEntity.kind, acceptEntity.count)}
           </p>
         <div style={{ display: "flex", flexDirection: "column", gap: 3, background: FIELD, borderRadius: 14, padding: "14px 16px" }}>
@@ -6631,8 +6609,8 @@ export default function SeasonTickets({
           }}
           aria-busy={confirmCancelSaving || undefined}
         >
-          <h2 style={{ margin: 0, fontSize: fluidSize(21), fontWeight: 600, letterSpacing: "-0.02em", lineHeight: 1.2 }}>Cancel this transfer?</h2>
-          <p style={{ margin: 0, fontSize: fluidSize(14), lineHeight: 1.6, color: SUB }}>{cancelReturnCopy}</p>
+          <h2 style={{ margin: 0, fontSize: fluidSize(21), fontWeight: 600, letterSpacing: "-0.02em", lineHeight: browseLeading("h3") }}>Cancel this transfer?</h2>
+          <p style={{ margin: 0, fontSize: fluidSize(14), lineHeight: browseLeading("body"), color: SUB }}>{cancelReturnCopy}</p>
           <div style={{ display: "flex", flexDirection: "column", gap: 3, background: FIELD, borderRadius: 14, padding: "14px 16px" }}>
             <div style={{ fontSize: fluidSize(14), fontWeight: 600 }}>{confirmCancel?.title}</div>
             {(() => {
@@ -6732,7 +6710,7 @@ export default function SeasonTickets({
 
   return (
     <div className="shopper-page" style={{ width: "100%", maxWidth: "100%", minHeight: "100vh", color: INK, background: "#eef1f8", backgroundImage: "radial-gradient(120% 80% at 50% -10%, #ffffff 0%, #f5f7fc 42%, #e9edf6 100%)", fontFamily: "'Geist', system-ui, -apple-system, sans-serif", WebkitFontSmoothing: "antialiased", ...(showingAccessPass ? { display: "flex", flexDirection: "column", height: "100dvh", maxHeight: "100dvh", overflow: "hidden" } : {}) }}>
-      <style>{`${shopperPageTypeCss()}\n${MOBILE_TICKET_DESKTOP_TYPE}\n${MOBILE_TRANSFER_DESKTOP_TYPE}\n${MOBILE_DETAILS_DESKTOP_TYPE}\n${MOBILE_PASS_QR_DESKTOP_TYPE}\n.st-noscroll::-webkit-scrollbar{width:0;height:0;display:none}.st-noscroll{-ms-overflow-style:none;scrollbar-width:none}.st-sheet-up{animation:stUp .3s cubic-bezier(.22,.61,.36,1)}@keyframes stUp{from{transform:translateY(100%)}to{transform:translateY(0)}}${EVENT_CSS}`}</style>
+      <style>{`${shopperPageTypeCss()}\n.st-noscroll::-webkit-scrollbar{width:0;height:0;display:none}.st-noscroll{-ms-overflow-style:none;scrollbar-width:none}.st-sheet-up{animation:stUp .3s cubic-bezier(.22,.61,.36,1)}@keyframes stUp{from{transform:translateY(100%)}to{transform:translateY(0)}}${EVENT_CSS}`}</style>
       {showHeader ? (
         <div style={showingAccessPass ? { flexShrink: 0 } : undefined}>{Header()}</div>
       ) : null}

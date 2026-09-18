@@ -107,6 +107,8 @@ type Props = {
   lookupsMode?: "auto" | "external";
   /** Mobile find-on-map: collapsed legend + zoom pill, no pinch hint. */
   compactChrome?: boolean;
+  /** Hide zoom / legend chrome (mobile Your selection covers the map). */
+  hideChrome?: boolean;
   /** Package seatmaps omit locked/exclusive legend rows; events show the full set. */
   mapLegend?: "event" | "package";
   /** Parent (seat-map modal) already shows the org loader. */
@@ -128,6 +130,7 @@ export default function InteractiveSeatmap({
   buttonTextColor = "#fff",
   lookupsMode = "auto",
   compactChrome = false,
+  hideChrome = false,
   mapLegend = "event",
   hideLoadingSpinner = false,
   dismissTooltipKey = 0,
@@ -921,7 +924,7 @@ export default function InteractiveSeatmap({
           </g>
         </svg>
 
-        {compactChrome ? (
+        {hideChrome ? null : compactChrome ? (
           <div className="absolute bottom-4 right-4 z-10 flex items-center gap-1 rounded-full border border-[#D9DEE7] bg-white/95 px-1.5 py-1 shadow-sm backdrop-blur">
             <button
               type="button"
@@ -991,12 +994,13 @@ export default function InteractiveSeatmap({
           </div>
         )}
 
-        {compactChrome ? null : (
+        {hideChrome || compactChrome ? null : (
           <div className="pointer-events-none absolute right-4 top-4 rounded-full border border-[#D9DEE7] bg-white/90 px-3 py-1.5 text-[12px] text-[#667085] shadow-sm backdrop-blur">
             Pinch or scroll to zoom · drag to pan
           </div>
         )}
 
+        {hideChrome ? null : (
         <div
           className={`absolute left-4 z-10 overflow-hidden rounded-xl border border-[#dfe3eb] bg-white text-[#051B35] shadow-lg ${compactChrome ? "bottom-4 w-auto min-w-[108px]" : "bottom-16 w-[154px]"}`}
           onPointerDown={(event) => event.stopPropagation()}
@@ -1058,6 +1062,7 @@ export default function InteractiveSeatmap({
             </div>
           ) : null}
         </div>
+        )}
       </div>
 
       <SeatmapTooltip

@@ -1616,6 +1616,8 @@ function CheckoutPage() {
           title="Cart expired"
           onClose={() => void startOver()}
           busy={restarting}
+          hideClose
+          closeOnBackdrop
         >
           <p className="mt-4 text-[15px] text-[#6e7180]">
             Your reserved tickets were released. Please select tickets again.
@@ -1639,6 +1641,8 @@ function CheckoutPage() {
           title="Are you sure?"
           onClose={() => setLeaveOpen(false)}
           busy={cancelling}
+          hideClose
+          closeOnBackdrop
         >
           <p className="mt-4 text-[15px] text-[#6e7180]">
             If you leave this page, you&apos;ll lose your chance to purchase
@@ -1672,6 +1676,8 @@ function CheckoutPage() {
           variant="light"
           title="Card declined"
           onClose={() => setDeclineMsg("")}
+          hideClose
+          closeOnBackdrop
         >
           <p className="mt-4 text-[15px] text-[#6e7180]">{declineMsg}</p>
           <BrandedActionButton
