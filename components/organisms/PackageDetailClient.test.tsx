@@ -51,6 +51,7 @@ vi.mock("next/navigation", () => ({
   useRouter: () => routerMocks,
   usePathname: () => "/nm-state/package/pkg-nms-level-a/",
   useParams: () => ({ slug: "nm-state" }),
+  useSearchParams: () => new URLSearchParams(),
 }));
 
 vi.mock("@/components/organisms/InteractiveSeatmap", async () => {

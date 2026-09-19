@@ -5,10 +5,10 @@ import { useSearchParams } from "next/navigation";
 import Nav from "@/components/organisms/Nav";
 import SearchEventList from "@/components/organisms/SearchEventList";
 import { BrandBlocks } from "@/components/molecules/BrandLoader";
-import { ShopperFluidTypeStyles } from "@/components/templates/ShopperFluidType";
 import { fetchSearchEvents, type ShopperSearchEvent } from "@/lib/searchEvents";
 import { getSingularOrPluralWord } from "@/lib/helpers";
-import { fluidSize } from "@/lib/shopperFluidType";
+import { ShopperFluidTypeStyles } from "@/components/templates/ShopperFluidType";
+import { BROWSE_DISPLAY, BROWSE_TRACK } from "@/lib/browseType";
 
 function SearchLoading({ label }: { label: string }) {
   return (
@@ -27,7 +27,12 @@ function SearchLoading({ label }: { label: string }) {
 function SearchNotice({ title, detail }: { title: string; detail: string }) {
   return (
     <div className="mt-10 flex flex-col items-center gap-2 rounded-[20px] border border-dashed border-[rgba(5,27,53,0.18)] bg-white px-6 py-11 text-center">
-      <p className="text-[17px] font-semibold tracking-[-0.015em]">{title}</p>
+      <p
+        className="font-semibold"
+        style={{ fontSize: "14px", letterSpacing: BROWSE_TRACK.card }}
+      >
+        {title}
+      </p>
       <p className="text-[14px] text-[#6e7180]">{detail}</p>
     </div>
   );
@@ -67,8 +72,8 @@ function SearchResultsInner({ query }: { query: string }) {
   return (
     <div className="pb-16">
       <h1
-        className="font-semibold tracking-[-0.02em]"
-        style={{ fontSize: fluidSize(40) }}
+        className="font-semibold"
+        style={{ fontSize: BROWSE_DISPLAY.h2, letterSpacing: BROWSE_TRACK.display }}
       >
         {`We found ${results.length} ${getSingularOrPluralWord(
           results.length,
@@ -107,7 +112,7 @@ function SearchResults() {
 
 export default function SearchPage() {
   return (
-    <div className="shopper-page min-h-screen bg-[#f7f8fc] text-[#051b35]">
+    <div className="shopper-page min-h-screen bg-[#f7f8fc] text-[#051b35]" data-bt-scroll-page="">
       <ShopperFluidTypeStyles />
       <Nav />
       <main className="mx-auto max-w-[1320px] px-5 pt-4 md:px-8 md:pt-7">

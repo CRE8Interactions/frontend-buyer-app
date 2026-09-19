@@ -27,6 +27,7 @@ import { selectionOfferName } from "@/lib/ticketSummary";
 import useFiltersStore from "@/stores/filtersStore";
 import useSeatmapStore from "@/stores/seatmapStore";
 import type { TicketGroup } from "@/stores/filtersStore";
+import { ORG_SCROLLBAR_CLASS, orgScrollbarCss } from "@/lib/orgScrollbar";
 import { isMobileSeatmapViewport } from "./SeatmapSeat";
 import {
   clampPopupToViewport,
@@ -146,15 +147,13 @@ function PopoverTicketLimit({
 
 const UNLOCK_OFFER_BTN_CLASS =
   "!h-auto min-h-0 rounded-full !px-2.5 !py-1 text-[11px] font-semibold leading-tight";
+/** Same size as Add now — used when the popup shows exactly one offer. */
+const SINGLE_OFFER_ACTION_BTN_CLASS =
+  "mt-4 w-full !h-auto min-h-11 rounded-full py-3 text-[16px] font-semibold";
+const MOBILE_SINGLE_OFFER_ACTION_BTN_CLASS =
+  "mt-5 w-full !h-auto min-h-11 rounded-full py-3 text-[16px] font-semibold";
 
-/** Matches the offer filter scrollbar on the select-tickets page. */
-const OFFER_SCROLL_CLASS = "seatmap-offer-scroll";
-const OFFER_SCROLL_CSS = `
-  .${OFFER_SCROLL_CLASS} { scrollbar-width: thin; scrollbar-color: var(--seatmap-offer-thumb) #e7eaf1; }
-  .${OFFER_SCROLL_CLASS}::-webkit-scrollbar { width: 7px; }
-  .${OFFER_SCROLL_CLASS}::-webkit-scrollbar-track { background: #e7eaf1; border-radius: 999px; }
-  .${OFFER_SCROLL_CLASS}::-webkit-scrollbar-thumb { background: var(--seatmap-offer-thumb); border-radius: 999px; }
-`;
+/** Same org-colored thumb + light track as the select-tickets filter bar. */
 
 function SeatOfferList({
   offerCount,
@@ -182,15 +181,12 @@ function SeatOfferList({
         <div
           className={`space-y-2 pr-1${
             scrollMaxHeight != null
-              ? ` overflow-y-auto overscroll-contain ${OFFER_SCROLL_CLASS}`
+              ? ` overflow-y-auto overscroll-contain ${ORG_SCROLLBAR_CLASS}`
               : ""
           }`}
           style={
             scrollMaxHeight != null
-              ? ({
-                  maxHeight: scrollMaxHeight,
-                  "--seatmap-offer-thumb": thumbColor,
-                } as React.CSSProperties)
+              ? { maxHeight: scrollMaxHeight }
               : undefined
           }
           data-testid={
@@ -200,7 +196,9 @@ function SeatOfferList({
           {scrollRows}
         </div>
       ) : null}
-      {scrollMaxHeight != null ? <style>{OFFER_SCROLL_CSS}</style> : null}
+      {scrollMaxHeight != null ? (
+        <style>{orgScrollbarCss(thumbColor)}</style>
+      ) : null}
     </div>
   );
 }
@@ -409,14 +407,16 @@ function MobileSingleOfferSeatPopup({
   seat,
   primary,
   accent,
-  onAdd,
+  actionLabel,
+  onAction,
   onRequestReveal,
 }: {
   target: { x: number; y: number };
   seat: SeatmapSeatData | null | undefined;
   primary: TicketGroup;
   accent: string;
-  onAdd: () => void;
+  actionLabel: string;
+  onAction: () => void;
   onRequestReveal?: (rect: PopupRect) => void;
 }) {
   const cardRef = useRef<HTMLDivElement>(null);
@@ -449,6 +449,7 @@ function MobileSingleOfferSeatPopup({
     cardHeight,
     desiredLeft,
     desiredTop,
+    actionLabel,
     offerName,
     onRequestReveal,
     price,
@@ -491,11 +492,11 @@ function MobileSingleOfferSeatPopup({
               ))}
             </div>
             <Button
-              className="mt-5 w-full rounded-full py-3 text-[16px] font-semibold"
+              className={MOBILE_SINGLE_OFFER_ACTION_BTN_CLASS}
               style={{ background: "#ffffff", color: accent }}
-              onClick={onAdd}
+              onClick={onAction}
             >
-              Add now
+              {actionLabel}
             </Button>
           </div>
         </div>
@@ -653,17 +654,24 @@ export default function SeatmapTooltip({
       isMobileSeatmapViewport() &&
       visibleSeatOffers.length === 1 &&
       primary &&
-      !isLockedOffer(primary);
+      (!isLockedOffer(primary) ||
+        Boolean(onUnlockOffer && primary.offer?.name));
 
     if (mobileSingleOffer && primary) {
+      const mobileLocked = isLockedOffer(primary);
       return (
         <MobileSingleOfferSeatPopup
           target={target}
           seat={seat}
           primary={primary}
           accent={accent}
+          actionLabel={mobileLocked ? "Unlock offer" : "Add now"}
           onRequestReveal={onRequestReveal}
-          onAdd={() => {
+          onAction={() => {
+            if (mobileLocked) {
+              onUnlockOffer!(primary.offer!.name!);
+              return;
+            }
             selectSpecificSeat(target.seatId, primary);
             onClose();
           }}
@@ -848,8 +856,8 @@ export default function SeatmapTooltip({
             </p>
             {showUnlockForLockedOffer(true) && primary?.offer?.name ? (
               <Button
-                className={`mt-4 w-full ${UNLOCK_OFFER_BTN_CLASS}`}
-                style={{ background: "#ffffff", color: accent }}
+                className={SINGLE_OFFER_ACTION_BTN_CLASS}
+                style={{ background: actionBg, color: actionInk }}
                 onClick={() => onUnlockOffer!(primary.offer!.name!)}
               >
                 Unlock offer
@@ -864,7 +872,7 @@ export default function SeatmapTooltip({
             </p>
             {!alreadySelected && showSeatActions && primary ? (
               <Button
-                className="mt-4 w-full"
+                className={SINGLE_OFFER_ACTION_BTN_CLASS}
                 style={{ background: actionBg, color: actionInk }}
                 onClick={() => {
                   selectSpecificSeat(target.seatId, primary);
@@ -935,10 +943,11 @@ export default function SeatmapTooltip({
       ref={gaCardRef}
       data-seatmap-tooltip="true"
       style={style}
-      className="w-[280px] rounded-2xl border p-4 shadow-2xl shadow-black/40"
+      className={`w-[280px] rounded-2xl border p-4 shadow-2xl shadow-black/40 ${ORG_SCROLLBAR_CLASS}`}
       onClick={(e) => e.stopPropagation()}
       {...hoverProps}
     >
+      <style>{orgScrollbarCss(accent)}</style>
       <div className="flex items-start justify-between gap-3">
         <div>
           <p
@@ -1063,8 +1072,8 @@ export default function SeatmapTooltip({
           </p>
           {showGaUnlockForLockedOffer(true) && primary?.offer?.name ? (
             <Button
-              className={`mt-4 w-full ${UNLOCK_OFFER_BTN_CLASS}`}
-              style={{ background: "#ffffff", color: accent }}
+              className={SINGLE_OFFER_ACTION_BTN_CLASS}
+              style={{ background: actionBg, color: actionInk }}
               onClick={() => onUnlockOffer!(primary.offer!.name!)}
             >
               Unlock offer
@@ -1103,7 +1112,7 @@ export default function SeatmapTooltip({
             />
           </div>
           <Button
-            className="mt-4 w-full disabled:opacity-50"
+            className={`${SINGLE_OFFER_ACTION_BTN_CLASS} disabled:opacity-50`}
             style={{ background: actionBg, color: actionInk }}
             disabled={!gaLimits.valid || selectedGaQty < gaLimits.min}
             onClick={() => {

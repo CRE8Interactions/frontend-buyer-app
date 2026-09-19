@@ -65,6 +65,13 @@ describe("PhoneNumberInput", () => {
     expect(countrySelect().value).toBe("GB");
   });
 
+  it("does not offer browser autofill on the number or country picker", () => {
+    render(<PhoneNumberInput value={undefined} onChange={() => {}} />);
+
+    expect(screen.getByRole("textbox")).toHaveAttribute("autocomplete", "off");
+    expect(countrySelect()).toHaveAttribute("autocomplete", "off");
+  });
+
   it("autofocuses the number, not the country picker", () => {
     render(
       <PhoneNumberInput value={undefined} onChange={() => {}} autoFocus />,

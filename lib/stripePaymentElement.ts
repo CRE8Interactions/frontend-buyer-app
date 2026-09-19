@@ -1,8 +1,8 @@
 /**
  * Shared Stripe Payment Element billing + appearance.
- * Country + ZIP/postal come from Stripe (auto). Street, city, and state stay on
- * `auto` as well: Stripe hides them on the card form, and marking them `never`
- * would require passing those values in `confirmPayment`, which we never collect.
+ * Country + ZIP/postal stay inside the Payment Element (`auto`), so they
+ * render above Stripe's consent with no extra row gap. `if_required` / `never`
+ * hide those fields; street/city/state stay off.
  */
 
 export const STRIPE_PAYMENT_ELEMENT_FONTS = [
@@ -17,6 +17,10 @@ export const paymentElementBillingFields = {
     address: {
       country: "auto" as const,
       postalCode: "auto" as const,
+      line1: "never" as const,
+      line2: "never" as const,
+      city: "never" as const,
+      state: "never" as const,
     },
   },
 };
@@ -123,8 +127,19 @@ export const checkoutPaymentElementOptions = {
   layout: { type: "tabs" as const },
   wallets: paymentElementWallets,
   fields: paymentElementBillingFields,
+  terms: { card: "auto" as const },
   paymentMethodOrder: checkoutPaymentMethodOrder,
 };
+
+export function checkoutPaymentElementDefaultValues(country: string) {
+  return {
+    billingDetails: {
+      address: {
+        country,
+      },
+    },
+  };
+}
 
 /** Apple Pay, Google Pay, and Link need HTTPS; skip them on plain HTTP dev. */
 export function paymentElementWalletsForProtocol(protocol: string) {

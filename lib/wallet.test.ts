@@ -25,6 +25,7 @@ import {
   type AccessPassLike,
 } from "@/lib/wallet";
 import {
+  DEMO_USER,
   demoAccessPass,
   demoPackageAccessPass,
   demoSeasonPackage,
@@ -529,6 +530,18 @@ describe("formatTicketHolderName", () => {
       "jaimeconvery@example.com",
     );
     expect(formatTicketHolderName({})).toBe("Guest");
+  });
+
+  it("uses the linked account name when the order itself has no first and last name", () => {
+    expect(
+      formatTicketHolderName({
+        email: DEMO_USER.email,
+        users_permissions_user: {
+          firstName: DEMO_USER.firstName,
+          lastName: DEMO_USER.lastName,
+        },
+      }),
+    ).toBe(`${DEMO_USER.firstName} ${DEMO_USER.lastName}`);
   });
 });
 

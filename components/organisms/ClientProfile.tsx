@@ -13,7 +13,8 @@ import ExpandableDescription from "@/components/molecules/ExpandableDescription"
 import InAppBackLink from "@/components/molecules/InAppBackLink";
 import NavAuthActions from "@/components/molecules/NavAuthActions";
 import RouteLoader from "@/components/molecules/RouteLoader";
-import { fluidSize, shopperPageTypeCss } from "@/lib/shopperFluidType";
+import { BROWSE_TRACK, browseLeading, browsePageTypeCss } from "@/lib/browseType";
+import { fluidSize } from "@/lib/shopperFluidType";
 import { getOrganizationStorefront, getVenueUpcomingEvents } from "@/lib/api";
 import {
   monthEventCountLabel,
@@ -599,6 +600,7 @@ export default function ClientProfile({
   return (
     <div
       className="shopper-page"
+      data-bt-scroll-page=""
       style={{
         background: "#f7f8fc",
         color: NAVY,
@@ -608,7 +610,7 @@ export default function ClientProfile({
         ["--cp-accent"]: ACC,
       } as React.CSSProperties}
     >
-      <style>{`${shopperPageTypeCss()}
+      <style>{`${browsePageTypeCss()}
 .cp-a{transition:background 140ms}.cp-row{transition:box-shadow 150ms ease}.cp-row:hover{box-shadow:0 8px 30px rgba(5,27,53,0.09)}.cp-action{outline:2px solid transparent;outline-offset:2px;transition:outline-color 140ms ease}.cp-action:hover,.cp-action:focus-visible{outline-color:var(--cp-accent)}`}</style>
 
       <header
@@ -767,7 +769,7 @@ export default function ClientProfile({
                     fontSize: fluidSize(10),
                     fontWeight: 600,
                     textTransform: "uppercase",
-                    letterSpacing: "0.12em",
+                    letterSpacing: BROWSE_TRACK.label,
                     color: ACC,
                     whiteSpace: "nowrap",
                   }}
@@ -775,7 +777,7 @@ export default function ClientProfile({
                   <span style={{ width: 5, height: 5, borderRadius: 999, background: ACC }} />
                   {categoryLabel(organization.category?.name) || "Organization"}
                 </div>
-                <h1 style={{ margin: 0, fontSize: fluidSize(32), fontWeight: 600, letterSpacing: "-0.03em", lineHeight: 1.08 }}>
+                <h1 style={{ margin: 0, fontSize: fluidSize(32), fontWeight: 600, letterSpacing: BROWSE_TRACK.display, lineHeight: browseLeading("h2") }}>
                   {orgName}
                 </h1>
                 {location && (
@@ -792,7 +794,7 @@ export default function ClientProfile({
 
             {showFilters && (
               <div style={{ display: "flex", flexDirection: "column", gap: 8, borderTop: "1px solid rgba(5,27,53,0.08)" }}>
-                <div style={{ fontSize: fluidSize(10), fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.12em", color: "#8a93a3", paddingTop: 14 }}>
+                <div style={{ fontSize: fluidSize(10), fontWeight: 600, textTransform: "uppercase", letterSpacing: BROWSE_TRACK.label, color: "#8a93a3", paddingTop: 14 }}>
                   {filterHeading}
                 </div>
                 <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
@@ -833,7 +835,7 @@ export default function ClientProfile({
                 paddingTop: 16,
                 borderTop: "1px solid rgba(5,27,53,0.08)",
                 fontSize: fluidSize(13),
-                lineHeight: 1.6,
+                lineHeight: browseLeading("body"),
                 color: "#6e7180",
               }}
             >
@@ -889,10 +891,10 @@ export default function ClientProfile({
                   <img src={logoSrc} alt={orgName} style={{ maxWidth: "100%", maxHeight: "100%", objectFit: "contain" }} />
                 </div>
                 <div style={{ display: "flex", flexDirection: "column", gap: 3, minWidth: 0 }}>
-                  <div style={{ fontSize: fluidSize(10), fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.12em", color: ACC }}>
+                  <div style={{ fontSize: fluidSize(10), fontWeight: 600, textTransform: "uppercase", letterSpacing: BROWSE_TRACK.label, color: ACC }}>
                     {categoryLabel(organization.category?.name) || "Organization"}
                   </div>
-                  <h1 style={{ margin: 0, fontSize: fluidSize(21), fontWeight: 600, letterSpacing: "-0.03em", lineHeight: 1.15 }}>
+                  <h1 style={{ margin: 0, fontSize: fluidSize(21), fontWeight: 600, letterSpacing: BROWSE_TRACK.display, lineHeight: browseLeading("h3") }}>
                     {orgName}
                   </h1>
                   {location ? (
@@ -909,7 +911,7 @@ export default function ClientProfile({
                   style={{
                     margin: 0,
                     fontSize: fluidSize(13),
-                    lineHeight: 1.6,
+                    lineHeight: browseLeading("body"),
                     color: "#6e7180",
                   }}
                 />
@@ -939,7 +941,7 @@ export default function ClientProfile({
                 style={{
                   fontFamily: "inherit",
                   flex: mobile ? "1 1 0" : "0 0 auto",
-                  fontSize: fluidSize(mobile ? 11 : 14),
+                  fontSize: fluidSize(14),
                   fontWeight: 600,
                   whiteSpace: "nowrap",
                   border: "none",
@@ -998,7 +1000,7 @@ export default function ClientProfile({
               {groups.map((g) => (
                 <div key={g.title} style={{ display: "flex", flexDirection: "column", gap: 10 }}>
                   <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "10px 2px 8px" }}>
-                    <div style={{ fontSize: fluidSize(13), fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.1em", color: ACC, whiteSpace: "nowrap" }}>
+                    <div style={{ fontSize: fluidSize(12), fontWeight: 600, textTransform: "uppercase", letterSpacing: BROWSE_TRACK.eyebrow, color: ACC, whiteSpace: "nowrap" }}>
                       {g.title}
                     </div>
                     <div style={{ fontSize: fluidSize(12), color: "#8a93a3", whiteSpace: "nowrap" }}>{g.meta}</div>
@@ -1038,10 +1040,10 @@ export default function ClientProfile({
                             flexShrink: 0,
                           }}
                         >
-                          <div style={{ fontSize: fluidSize(10), fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.1em", color: "#6e7180" }}>
+                          <div style={{ fontSize: fluidSize(10), fontWeight: 600, textTransform: "uppercase", letterSpacing: BROWSE_TRACK.label, color: "#6e7180" }}>
                             {e.mon}
                           </div>
-                          <div style={{ fontSize: fluidSize(22), fontWeight: 600, letterSpacing: "-0.02em", fontVariantNumeric: "tabular-nums", lineHeight: 1 }}>
+                          <div style={{ fontSize: fluidSize(22), fontWeight: 600, letterSpacing: BROWSE_TRACK.statement, fontVariantNumeric: "tabular-nums", lineHeight: 1 }}>
                             {e.day}
                           </div>
                           <div style={{ fontSize: fluidSize(10), color: "#8a93a3" }}>{e.dow}</div>
@@ -1053,7 +1055,7 @@ export default function ClientProfile({
                               {e.time ? ` · ${e.time}` : ""}
                             </span>
                           </div>
-                          <div style={{ fontSize: fluidSize(mobile ? 16 : 17), fontWeight: 600, letterSpacing: "-0.015em", lineHeight: 1.25 }}>
+                          <div style={{ fontSize: fluidSize(14), fontWeight: 600, letterSpacing: BROWSE_TRACK.card, lineHeight: browseLeading("h3") }}>
                             {e.title}
                           </div>
                           {e.venue && (
@@ -1165,10 +1167,10 @@ export default function ClientProfile({
                     }}
                   >
                     <div style={{ display: "flex", flexDirection: "column", gap: 6, minWidth: 0 }}>
-                      <div style={{ fontSize: fluidSize(10), fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.12em", color: ACC }}>
+                      <div style={{ fontSize: fluidSize(10), fontWeight: 600, textTransform: "uppercase", letterSpacing: BROWSE_TRACK.label, color: ACC }}>
                         {categoryLabel(p.category?.name) || "Season"}
                       </div>
-                      <div style={{ fontSize: fluidSize(mobile ? 16 : 17), fontWeight: 600, letterSpacing: "-0.015em" }}>
+                      <div style={{ fontSize: fluidSize(14), fontWeight: 600, letterSpacing: BROWSE_TRACK.card }}>
                         {p.name || "Season package"}
                       </div>
                       {range && <div style={{ fontSize: fluidSize(13), color: "#6e7180" }}>{range}</div>}
@@ -1176,8 +1178,8 @@ export default function ClientProfile({
                     </div>
                     <div style={{ display: "flex", alignItems: "center", gap: mobile ? 12 : 18, justifyContent: mobile ? "space-between" : "flex-end" }}>
                       <div style={{ display: "flex", flexDirection: "column", gap: 1, alignItems: mobile ? "baseline" : "flex-end" }}>
-                        <span style={{ fontSize: fluidSize(10), fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.12em", color: "#8a93a3" }}>From</span>
-                        <span style={{ fontSize: fluidSize(17), fontWeight: 600, fontVariantNumeric: "tabular-nums", letterSpacing: "-0.015em", color: price ? NAVY : "#8a93a3" }}>
+                        <span style={{ fontSize: fluidSize(10), fontWeight: 600, textTransform: "uppercase", letterSpacing: BROWSE_TRACK.label, color: "#8a93a3" }}>From</span>
+                        <span style={{ fontSize: fluidSize(15), fontWeight: 600, fontVariantNumeric: "tabular-nums", color: price ? NAVY : "#8a93a3" }}>
                           {price || "—"}
                         </span>
                       </div>
@@ -1277,7 +1279,7 @@ export default function ClientProfile({
                           style={{
                             fontSize: fluidSize(56),
                             fontWeight: 700,
-                            letterSpacing: "-0.04em",
+                            letterSpacing: BROWSE_TRACK.statement,
                             color: tone.ink,
                             fontVariantNumeric: "tabular-nums",
                           }}
@@ -1294,7 +1296,7 @@ export default function ClientProfile({
                         gap: 10,
                       }}
                     >
-                      <div style={{ fontSize: fluidSize(18), fontWeight: 600, letterSpacing: "-0.02em" }}>
+                      <div style={{ fontSize: fluidSize(14), fontWeight: 600, letterSpacing: BROWSE_TRACK.card }}>
                         {f.name || (count ? `${count} vouchers` : "Flex pack")}
                       </div>
                       {count > 0 ? (
@@ -1303,7 +1305,7 @@ export default function ClientProfile({
                         </div>
                       ) : null}
                       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
-                        <span style={{ fontSize: fluidSize(20), fontWeight: 600, fontVariantNumeric: "tabular-nums", letterSpacing: "-0.02em" }}>
+                        <span style={{ fontSize: fluidSize(15), fontWeight: 600, fontVariantNumeric: "tabular-nums" }}>
                           {price}
                         </span>
                         {each != null && (

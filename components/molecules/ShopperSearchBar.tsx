@@ -12,7 +12,7 @@ import {
   type MouseEvent as ReactMouseEvent,
   type ReactNode,
 } from "react";
-import { usePathname, useRouter } from "next/navigation";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import Spinner from "@/components/atoms/Spinner";
 import SearchEventList from "@/components/organisms/SearchEventList";
 import {
@@ -54,7 +54,9 @@ function useSearchApi() {
 function useShopperSearch(placeholder: string): SearchApi {
   const router = useRouter();
   const pathname = usePathname();
-  const [query, setQueryState] = useState("");
+  const searchParams = useSearchParams();
+  const urlQuery = (searchParams.get("query") || "").trim();
+  const [query, setQueryState] = useState(urlQuery);
   const [results, setResults] = useState<ShopperSearchEvent[]>([]);
   const [loading, setLoading] = useState(false);
   const [open, setOpen] = useState(false);
@@ -117,6 +119,10 @@ function useShopperSearch(placeholder: string): SearchApi {
 
     return () => window.clearTimeout(timer);
   }, [query]);
+
+  useEffect(() => {
+    if (urlQuery) setQueryState(urlQuery);
+  }, [urlQuery]);
 
   useEffect(() => {
     close();
@@ -395,7 +401,7 @@ export function ShopperSearchMobile() {
           type="button"
           onClick={() => setSheetOpen(true)}
           aria-label="Open search"
-          className="flex w-full cursor-text items-center gap-2.5 rounded-full border border-[rgba(5,27,53,0.10)] bg-[#f1f3f8] px-4 py-3 text-left"
+          className="flex w-full cursor-text items-center gap-2.5 rounded-full border border-[rgba(5,27,53,0.10)] bg-[#fff] px-4 py-3 text-left"
         >
           <SearchIcon stroke="#6e7180" />
           <span

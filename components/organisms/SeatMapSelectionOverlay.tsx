@@ -1,8 +1,10 @@
 "use client";
 
+import { browseLeading } from "@/lib/browseType";
 import { fluidSize } from "@/lib/shopperFluidType";
 
 import { useEffect, useState } from "react";
+import { lockPageScroll, unlockPageScroll } from "@/lib/pageScroll";
 import BrandedActionButton from "@/components/atoms/BrandedActionButton";
 import Modal from "@/components/molecules/Modal";
 import ExpandableDescription from "@/components/molecules/ExpandableDescription";
@@ -301,11 +303,8 @@ export default function SeatMapSelectionOverlay({
   }, [showMapLoader]);
 
   useEffect(() => {
-    const prev = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
-    return () => {
-      document.body.style.overflow = prev;
-    };
+    lockPageScroll();
+    return () => unlockPageScroll();
   }, []);
 
   const requestClose = () => {
@@ -630,6 +629,7 @@ export default function SeatMapSelectionOverlay({
                 buttonColor={buttonColor}
                 buttonTextColor={buttonTextColor}
                 compactChrome={mobile}
+                hideChrome={mobile && showMapSelectionPanel}
                 mapLegend={mapLegend}
                 hideLoadingSpinner
                 dismissTooltipKey={dismissTooltipKey}
@@ -1174,7 +1174,7 @@ export default function SeatMapSelectionOverlay({
                           maxWidth: 290,
                           fontSize: fluidSize(14),
                           color: "#6e7180",
-                          lineHeight: 1.55,
+                          lineHeight: browseLeading("body"),
                           textAlign: "center",
                         }}
                       >
@@ -1434,6 +1434,7 @@ export default function SeatMapSelectionOverlay({
         <Modal
           variant="light"
           sheet={false}
+          hideClose
           title={seatedError.title}
           onClose={() => {
             dismissMapTooltip();
@@ -1463,6 +1464,7 @@ export default function SeatMapSelectionOverlay({
         <Modal
           variant="light"
           sheet={false}
+          hideClose
           title="Are you sure you want to exit?"
           onClose={() => {
             dismissMapTooltip();
@@ -1470,7 +1472,7 @@ export default function SeatMapSelectionOverlay({
           }}
         >
           <p className="mt-4 text-[15px] leading-relaxed text-[#4a5567]">
-            You will lose your selected tickets....
+            You will lose your selected tickets.
           </p>
           <div className="mt-5 flex flex-col gap-3">
             <BrandedActionButton

@@ -1,4 +1,4 @@
-import { render, screen, waitFor, within } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ReactNode } from "react";
@@ -32,6 +32,7 @@ const stripeMocks = vi.hoisted(() => ({
       paymentIntent: { status: "requires_payment_method" },
     }),
   ),
+  paymentElementOptions: null as unknown,
 }));
 
 vi.mock("next/link", () => ({
@@ -78,22 +79,29 @@ vi.mock("@stripe/react-stripe-js", () => ({
   Elements: ({ children }: { children: ReactNode }) => <div>{children}</div>,
   PaymentElement: ({
     onChange,
+    options,
   }: {
-    onChange?: (event: { complete: boolean }) => void;
-  }) => (
-    <button
-      type="button"
-      data-testid="payment-element"
-      onClick={() => onChange?.({ complete: true })}
-    >
-      Payment
-    </button>
-  ),
+    onChange?: (event: { complete: boolean; value?: { type?: string } }) => void;
+    options?: unknown;
+  }) => {
+    stripeMocks.paymentElementOptions = options;
+    return (
+      <button
+        type="button"
+        data-testid="payment-element"
+        onClick={() => onChange?.({ complete: true, value: { type: "card" } })}
+      >
+        Payment
+      </button>
+    );
+  },
   useStripe: () => ({
     confirmPayment: stripeMocks.confirmPayment,
     retrievePaymentIntent: stripeMocks.retrievePaymentIntent,
   }),
-  useElements: () => ({ submit: stripeMocks.submit }),
+  useElements: () => ({
+    submit: stripeMocks.submit,
+  }),
 }));
 
 vi.mock("@/lib/api", () => ({
@@ -115,6 +123,10 @@ vi.mock("@/lib/auth", () => ({
 
 vi.mock("@/lib/intercom", () => ({
   hideIntercomLauncher: vi.fn(),
+}));
+
+vi.mock("@/lib/ipCountry", () => ({
+  fetchIpCountry: vi.fn(async () => null),
 }));
 
 vi.mock("@/lib/tracking", () => ({
@@ -150,6 +162,12 @@ import { cacheOrgBranding } from "@/lib/orgBrandingCache";
 import { getSeatViewImageCandidates } from "@/lib/seatView";
 import { markCheckoutLoginDetour, setCheckoutReturnPath } from "@/lib/cart";
 import { msUntilStripePaymentSyncReady } from "@/lib/stripePaymentSync";
+import type { UserEvent } from "@testing-library/user-event";
+
+async function fillBillingAndPay(user: UserEvent, payName: string) {
+  await user.click(await screen.findByTestId("payment-element"));
+  await user.click(screen.getByRole("button", { name: payName }));
+}
 
 const mockedGetCart = vi.mocked(getCart);
 const mockedGetPaymentIntent = vi.mocked(getPaymentIntent);
@@ -232,6 +250,7 @@ describe("Checkout page", { timeout: 20_000 }, () => {
     stripeMocks.retrievePaymentIntent.mockResolvedValue({
       paymentIntent: { status: "requires_payment_method" },
     });
+    stripeMocks.paymentElementOptions = null;
     routerMocks.push.mockReset();
     routerMocks.replace.mockReset();
     routerMocks.back.mockReset();
@@ -285,6 +304,29 @@ describe("Checkout page", { timeout: 20_000 }, () => {
     expect(
       await screen.findByTestId("payment-element"),
     ).toBeInTheDocument();
+    expect(stripeMocks.paymentElementOptions).toEqual(
+      expect.objectContaining({
+        fields: {
+          billingDetails: {
+            address: {
+              country: "auto",
+              postalCode: "auto",
+              line1: "never",
+              line2: "never",
+              city: "never",
+              state: "never",
+            },
+          },
+        },
+        terms: { card: "auto" },
+        defaultValues: {
+          billingDetails: { address: { country: "US" } },
+        },
+      }),
+    );
+    expect(screen.queryByLabelText("Billing country")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("ZIP")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("Postal code")).not.toBeInTheDocument();
     expect(screen.queryByText(/express checkout/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/pay securely with/i)).not.toBeInTheDocument();
     expect(
@@ -318,6 +360,65 @@ describe("Checkout page", { timeout: 20_000 }, () => {
     expect(screen.getByText("Secure checkout")).toBeInTheDocument();
     expect(screen.getByText(/Seats held \d+:\d{2}/)).toBeInTheDocument();
     expect(screen.queryByText(/you.?re so close/i)).not.toBeInTheDocument();
+  });
+
+  it("prefills Stripe's country from a Canadian venue", async () => {
+    const icedogsEvent =
+      DEMO_EVENTS.find((event) => event.shortCode === "ICEDOG1") || DEMO_EVENTS[0];
+    const cart = {
+      ...demoCheckoutCart(),
+      event: {
+        ...demoCheckoutCart().event,
+        venue: icedogsEvent.venue,
+      },
+    };
+    mockedGetCart.mockResolvedValue({ data: cart } as never);
+    render(<CheckoutPageRoute />);
+
+    expect(await screen.findByTestId("payment-element")).toBeInTheDocument();
+    expect(stripeMocks.paymentElementOptions).toEqual(
+      expect.objectContaining({
+        fields: {
+          billingDetails: {
+            address: {
+              country: "auto",
+              postalCode: "auto",
+              line1: "never",
+              line2: "never",
+              city: "never",
+              state: "never",
+            },
+          },
+        },
+        defaultValues: {
+          billingDetails: { address: { country: "CA" } },
+        },
+      }),
+    );
+    expect(screen.queryByLabelText("Billing country")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("Postal code")).not.toBeInTheDocument();
+  });
+
+  it("does not charge when Stripe rejects the card form", async () => {
+    stripeMocks.submit.mockResolvedValue({
+      error: { message: "Your postal code is incomplete." },
+    });
+    const user = userEvent.setup();
+    render(<CheckoutPageRoute />);
+
+    await fillBillingAndPay(
+      user,
+      `Pay ${formatCurrency(demoCheckoutCart().total)}`,
+    );
+
+    expect(
+      await screen.findByRole("heading", { name: /card declined/i }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(/your postal code is incomplete/i),
+    ).toBeInTheDocument();
+    expect(mockedProcessOrder).not.toHaveBeenCalled();
+    expect(stripeMocks.confirmPayment).not.toHaveBeenCalled();
   });
 
   it("offers Link save-info, purchase policy, and Stripe security on the payment form", async () => {
@@ -359,9 +460,9 @@ describe("Checkout page", { timeout: 20_000 }, () => {
       </>,
     );
 
-    await user.click(await screen.findByTestId("payment-element"));
-    await user.click(
-      screen.getByRole("button", { name: `Pay ${formatCurrency(demoCheckoutCart().total)}` }),
+    await fillBillingAndPay(
+      user,
+      `Pay ${formatCurrency(demoCheckoutCart().total)}`,
     );
 
     const processingBtn = await screen.findByRole("button", {
@@ -418,9 +519,9 @@ describe("Checkout page", { timeout: 20_000 }, () => {
       </>,
     );
 
-    await user.click(await screen.findByTestId("payment-element"));
-    await user.click(
-      screen.getByRole("button", { name: `Pay ${formatCurrency(demoCheckoutCart().total)}` }),
+    await fillBillingAndPay(
+      user,
+      `Pay ${formatCurrency(demoCheckoutCart().total)}`,
     );
 
     await waitFor(() => {
@@ -453,9 +554,9 @@ describe("Checkout page", { timeout: 20_000 }, () => {
       </>,
     );
 
-    await user.click(await screen.findByTestId("payment-element"));
-    await user.click(
-      screen.getByRole("button", { name: `Pay ${formatCurrency(demoCheckoutCart().total)}` }),
+    await fillBillingAndPay(
+      user,
+      `Pay ${formatCurrency(demoCheckoutCart().total)}`,
     );
 
     expect(
@@ -479,11 +580,9 @@ describe("Checkout page", { timeout: 20_000 }, () => {
     const user = userEvent.setup();
     render(<CheckoutPageRoute />);
 
-    await user.click(await screen.findByTestId("payment-element"));
-    await user.click(
-      screen.getByRole("button", {
-        name: `Pay ${formatCurrency(demoCheckoutCart().total)}`,
-      }),
+    await fillBillingAndPay(
+      user,
+      `Pay ${formatCurrency(demoCheckoutCart().total)}`,
     );
 
     expect(
@@ -497,16 +596,41 @@ describe("Checkout page", { timeout: 20_000 }, () => {
     ).not.toBeInTheDocument();
   });
 
+  it("dismisses the card declined popup from the backdrop without a header Close", async () => {
+    mockedProcessOrder.mockRejectedValue({ response: { status: 500 } });
+    const user = userEvent.setup();
+    render(<CheckoutPageRoute />);
+
+    await fillBillingAndPay(
+      user,
+      `Pay ${formatCurrency(demoCheckoutCart().total)}`,
+    );
+
+    const dialog = await screen.findByRole("dialog", { name: /card declined/i });
+    expect(
+      within(dialog).queryByRole("button", { name: "Close" }),
+    ).not.toBeInTheDocument();
+    expect(
+      within(dialog).getByRole("button", { name: /try again/i }),
+    ).toBeInTheDocument();
+
+    fireEvent.click(dialog);
+    expect(screen.getByRole("dialog", { name: /card declined/i })).toBeInTheDocument();
+
+    fireEvent.click(dialog.parentElement!.parentElement!);
+    expect(
+      screen.queryByRole("dialog", { name: /card declined/i }),
+    ).not.toBeInTheDocument();
+  });
+
   it("opens the cart expired popup when process order returns 410", async () => {
     mockedProcessOrder.mockRejectedValue({ response: { status: 410 } });
     const user = userEvent.setup();
     render(<CheckoutPageRoute />);
 
-    await user.click(await screen.findByTestId("payment-element"));
-    await user.click(
-      screen.getByRole("button", {
-        name: `Pay ${formatCurrency(demoCheckoutCart().total)}`,
-      }),
+    await fillBillingAndPay(
+      user,
+      `Pay ${formatCurrency(demoCheckoutCart().total)}`,
     );
 
     expect(
@@ -534,9 +658,9 @@ describe("Checkout page", { timeout: 20_000 }, () => {
       </>,
     );
 
-    await user.click(await screen.findByTestId("payment-element"));
-    await user.click(
-      screen.getByRole("button", { name: `Pay ${formatCurrency(demoCheckoutCart().total)}` }),
+    await fillBillingAndPay(
+      user,
+      `Pay ${formatCurrency(demoCheckoutCart().total)}`,
     );
 
     expect(
@@ -559,9 +683,9 @@ describe("Checkout page", { timeout: 20_000 }, () => {
       </>,
     );
 
-    await user.click(await screen.findByTestId("payment-element"));
-    await user.click(
-      screen.getByRole("button", { name: `Pay ${formatCurrency(demoCheckoutCart().total)}` }),
+    await fillBillingAndPay(
+      user,
+      `Pay ${formatCurrency(demoCheckoutCart().total)}`,
     );
 
     expect(
@@ -1041,10 +1165,7 @@ describe("Checkout page", { timeout: 20_000 }, () => {
     const user = userEvent.setup();
     render(<CheckoutPageRoute />);
 
-    await user.click(await screen.findByTestId("payment-element"));
-    await user.click(
-      screen.getByRole("button", { name: `Pay ${formatCurrency(cart.total)}` }),
-    );
+    await fillBillingAndPay(user, `Pay ${formatCurrency(cart.total)}`);
 
     await waitFor(() => {
       expect(mockedProcessOrder).toHaveBeenCalled();
@@ -1344,6 +1465,30 @@ describe("Checkout page", { timeout: 20_000 }, () => {
     expect(screen.getByText(raptorsEvent.name)).toBeInTheDocument();
   });
 
+  it("dismisses the leave confirmation from the backdrop without a header Close", async () => {
+    const user = userEvent.setup();
+    render(<CheckoutPageRoute />);
+    expect(await screen.findByText("Secure checkout")).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: /back/i }));
+    const dialog = await screen.findByRole("dialog", { name: /are you sure/i });
+    expect(
+      within(dialog).queryByRole("button", { name: "Close" }),
+    ).not.toBeInTheDocument();
+    expect(
+      within(dialog).getByRole("button", { name: /continue with checkout/i }),
+    ).toBeInTheDocument();
+
+    fireEvent.click(dialog);
+    expect(screen.getByRole("dialog", { name: /are you sure/i })).toBeInTheDocument();
+
+    fireEvent.click(dialog.parentElement!.parentElement!);
+    expect(
+      screen.queryByRole("dialog", { name: /are you sure/i }),
+    ).not.toBeInTheDocument();
+    expect(mockedDropUserCart).not.toHaveBeenCalled();
+  });
+
   it("drops the cart and returns to tickets when the order is cancelled", async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
     mockedGetCart.mockResolvedValue({
@@ -1547,6 +1692,36 @@ describe("Checkout page", { timeout: 20_000 }, () => {
     expect(routerMocks.replace).not.toHaveBeenCalledWith(
       `/${raptorsOrg.slug}/`,
     );
+  });
+
+  it("starts over from the cart expired backdrop without a header Close", async () => {
+    setCheckoutReturnPath(`/${raptorsOrg.slug}/`);
+    mockedGetCart.mockResolvedValue({
+      data: demoCheckoutCart({ remainingTime: 0 }),
+    } as never);
+    render(<CheckoutPageRoute />);
+
+    const dialog = await screen.findByRole("dialog", { name: /cart expired/i });
+    expect(
+      within(dialog).queryByRole("button", { name: "Close" }),
+    ).not.toBeInTheDocument();
+    expect(
+      within(dialog).getByRole("button", { name: /start over/i }),
+    ).toBeInTheDocument();
+
+    fireEvent.click(dialog);
+    expect(screen.getByRole("dialog", { name: /cart expired/i })).toBeInTheDocument();
+
+    fireEvent.click(dialog.parentElement!.parentElement!);
+    await waitFor(() => {
+      expect(mockedDropUserCart).toHaveBeenCalledWith({
+        eventUUID: raptorsEvent.uuid,
+        cartId: demoCheckoutCart().id,
+      });
+      expect(routerMocks.replace).toHaveBeenCalledWith(
+        eventPurchasePath(raptorsEvent),
+      );
+    });
   });
 
   it("drops package tickets and returns to the package page when the hold runs out", async () => {

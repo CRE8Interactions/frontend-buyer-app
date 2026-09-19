@@ -1,12 +1,12 @@
 /**
  * Shopper forms and popups drop the cursor straight into their first field, so a
  * login, create-account, or popup form can be typed into without a tap first.
- * Phones get the cursor too, but the software keyboard stays down until the
- * shopper reaches for the field — an unasked-for keyboard hides the form.
+ * Phones skip that focus — focusing a text field slides the software keyboard
+ * up and hides the form, and a read-only lock then blocks the keyboard when the
+ * shopper later taps the field.
  */
 
 type Field = HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement;
-type TypableField = HTMLInputElement | HTMLTextAreaElement;
 
 /** Controls that cannot be typed into, so they never win the initial focus. */
 const SKIP_INPUT_TYPES = new Set([
@@ -21,9 +21,6 @@ const SKIP_INPUT_TYPES = new Set([
   "reset",
   "submit",
 ]);
-
-/** First signs the shopper wants to type, so typing must be handed back. */
-const TYPING_INTENT_EVENTS = ["pointerdown", "touchstart", "keydown"] as const;
 
 /**
  * Touch devices slide a software keyboard up whenever a text field takes focus.
@@ -47,36 +44,18 @@ export function raisesSoftKeyboard(): boolean {
   return false;
 }
 
-function isTypable(field: Field): field is TypableField {
+function isTypable(field: Field) {
   return field.tagName === "INPUT" || field.tagName === "TEXTAREA";
 }
 
 /**
- * Puts the cursor in a field without summoning the keyboard: a touch browser
- * leaves it down for a read-only field, and the first tap or key press makes the
- * field typable again before the shopper's input can land.
+ * Desktop: put the cursor in the field. Phones: leave the field alone so the
+ * shopper's tap is what focuses it and raises the keyboard.
  */
 export function focusWithoutKeyboard(field?: Field | null): boolean {
   if (!field) return false;
-  if (!raisesSoftKeyboard() || !isTypable(field)) {
-    field.focus({ preventScroll: true });
-    return true;
-  }
-
-  const wasReadOnly = field.readOnly;
-  field.readOnly = true;
+  if (raisesSoftKeyboard() && isTypable(field)) return false;
   field.focus({ preventScroll: true });
-
-  const doc = field.ownerDocument;
-  const handOverTyping = () => {
-    field.readOnly = wasReadOnly;
-    TYPING_INTENT_EVENTS.forEach((type) =>
-      doc.removeEventListener(type, handOverTyping, true),
-    );
-  };
-  TYPING_INTENT_EVENTS.forEach((type) =>
-    doc.addEventListener(type, handOverTyping, true),
-  );
   return true;
 }
 

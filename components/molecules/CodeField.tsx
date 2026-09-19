@@ -164,7 +164,7 @@ export default function CodeField({
               boxInvalid
                 ? "border-[#c2394a]"
                 : "border-[rgba(5,27,53,0.12)] focus:border-[#a6e773]"
-            } ${value[i] ? "bg-white" : "bg-[#f7f8fc] focus:bg-white"}`}
+            } bg-[#fff]`}
           />
         ))}
       </div>

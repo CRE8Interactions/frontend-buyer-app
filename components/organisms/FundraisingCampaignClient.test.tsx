@@ -36,6 +36,7 @@ vi.mock("@stripe/react-stripe-js", () => ({
 vi.mock("next/navigation", () => ({
   useRouter: () => ({ push: vi.fn() }),
   usePathname: () => "/fundraise/demo-fundraiser/",
+  useSearchParams: () => new URLSearchParams(),
 }));
 
 vi.mock("@/lib/auth", () => ({

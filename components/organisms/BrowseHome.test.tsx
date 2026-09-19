@@ -106,6 +106,7 @@ describe("Browse page", () => {
 
     const loader = screen.getByRole("status", { name: /loading/i });
     expect(loader).toHaveAttribute("data-bt-platform-loader");
+    expect(loader).toHaveAttribute("data-bt-destination-loader");
     expect(
       screen.queryByRole("heading", { name: /^events$/i }),
     ).not.toBeInTheDocument();
@@ -113,6 +114,7 @@ describe("Browse page", () => {
     expect(
       await screen.findByRole("heading", { name: /teams & venues/i }),
     ).toBeInTheDocument();
+    expect(document.querySelector("[data-bt-scroll-page]")).toBeTruthy();
     expect(
       screen.queryByRole("status", { name: /loading/i }),
     ).not.toBeInTheDocument();

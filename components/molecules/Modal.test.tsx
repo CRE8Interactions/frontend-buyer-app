@@ -72,6 +72,27 @@ describe("Modal", () => {
     expect(screen.getByRole("dialog")).toHaveClass("rounded-2xl");
   });
 
+  it("shows a top-right Close control by default", () => {
+    render(
+      <Modal title="Transfer tickets" onClose={vi.fn()}>
+        <p>Confirm transfer</p>
+      </Modal>,
+    );
+
+    expect(screen.getByRole("button", { name: "Close" })).toBeInTheDocument();
+  });
+
+  it("hides the top-right Close control when hideClose is set", () => {
+    render(
+      <Modal title="Are you sure you want to exit?" onClose={vi.fn()} hideClose>
+        <p>You will lose your selected tickets.</p>
+      </Modal>,
+    );
+
+    expect(screen.queryByRole("button", { name: "Close" })).not.toBeInTheDocument();
+    expect(screen.getByText("You will lose your selected tickets.")).toBeInTheDocument();
+  });
+
   it("does not dismiss when the backdrop is clicked", () => {
     const onClose = vi.fn();
     render(
@@ -85,7 +106,33 @@ describe("Modal", () => {
     expect(onClose).not.toHaveBeenCalled();
   });
 
-  it("opens on a phone with the cursor set but the keyboard down", () => {
+  it("dismisses Event information when the backdrop is clicked", () => {
+    const onClose = vi.fn();
+    render(
+      <Modal title="Event information" onClose={onClose} closeOnBackdrop>
+        <p>Venue and lineup</p>
+      </Modal>,
+    );
+
+    fireEvent.click(screen.getByRole("dialog").parentElement!.parentElement!);
+
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not dismiss from the backdrop while busy", () => {
+    const onClose = vi.fn();
+    render(
+      <Modal title="Event information" onClose={onClose} closeOnBackdrop busy>
+        <p>Venue and lineup</p>
+      </Modal>,
+    );
+
+    fireEvent.click(screen.getByRole("dialog").parentElement!.parentElement!);
+
+    expect(onClose).not.toHaveBeenCalled();
+  });
+
+  it("does not steal focus on a phone so a tap can raise the keyboard", () => {
     Object.defineProperty(window, "matchMedia", {
       configurable: true,
       writable: true,
@@ -100,11 +147,12 @@ describe("Modal", () => {
     );
 
     const email = screen.getByLabelText<HTMLInputElement>("Email address");
+    expect(document.activeElement).not.toBe(email);
+    expect(email.readOnly).toBe(false);
+
+    email.focus();
+
     expect(document.activeElement).toBe(email);
-    expect(email.readOnly).toBe(true);
-
-    fireEvent.pointerDown(email);
-
     expect(email.readOnly).toBe(false);
   });
 });

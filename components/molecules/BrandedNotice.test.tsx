@@ -14,6 +14,7 @@ vi.mock("next/navigation", () => ({
   usePathname: () => mockPathname,
   useParams: () => ({}),
   useRouter: () => ({ back: vi.fn(), push: vi.fn() }),
+  useSearchParams: () => new URLSearchParams(),
 }));
 
 vi.mock("@/lib/api", () => ({

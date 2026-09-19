@@ -3,7 +3,7 @@
 import { SHOPPER_PAGE_CLASS, shopperShellVars } from "@/lib/branding";
 import { shopperPageTypeCss } from "@/lib/shopperFluidType";
 
-/** Injects scoped fluid type CSS vars for `.shopper-page` shells. */
+/** Injects scoped browse type CSS vars for `.shopper-page` shells. */
 export function ShopperFluidTypeStyles() {
   return <style>{shopperPageTypeCss()}</style>;
 }

@@ -6,6 +6,7 @@ vi.mock("next/navigation", () => ({
   useParams: () => ({ groupCode: "ABC12" }),
   useRouter: () => ({ push: vi.fn() }),
   usePathname: () => "/group/ABC12/",
+  useSearchParams: () => new URLSearchParams(),
 }));
 
 vi.mock("@/lib/auth", () => ({

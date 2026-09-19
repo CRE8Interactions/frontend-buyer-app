@@ -50,6 +50,7 @@ import {
   ticketQuantityOptions,
 } from "@/lib/ticketListings";
 import { shopperShellVars } from "@/lib/branding";
+import { ORG_SCROLLBAR_CLASS, orgScrollbarCss } from "@/lib/orgScrollbar";
 import {
   selectionOfferDescription,
 } from "@/lib/ticketSummary";
@@ -66,6 +67,7 @@ import {
 } from "@/lib/fieldValidation";
 import { validateSubmittedEmail } from "@/lib/submitEmailValidation";
 import { LOADER_MESSAGE } from "@/lib/loaderMessages";
+import { lockPageScroll, unlockPageScroll } from "@/lib/pageScroll";
 import { beginRouteTransition } from "@/lib/routeTransition";
 import { walletSectionHref } from "@/lib/walletNav";
 import type { SeatmapBackground, SeatmapMapping } from "@/lib/seatmapLookups";
@@ -74,7 +76,6 @@ import {
   stickyOffsetBelowHeader,
   ticketingChromeReservePx,
   TICKETING_HEADER_FALLBACK_PX,
-  TICKETING_LISTINGS_MIN_PX,
   TICKETING_MAIN_PAD_BOTTOM_PX,
   TICKETING_MAIN_PAD_TOP_PX,
   TICKETING_STICKY_GAP_PX,
@@ -82,7 +83,6 @@ import {
 import { mobileStickyFooterReservePx } from "@/lib/mobileStickyFooter";
 import {
   fluidSize,
-  shopperFluidDesktopPinVars,
   shopperPageTypeCss,
 } from "@/lib/shopperFluidType";
 import useFiltersStore from "@/stores/filtersStore";
@@ -214,14 +214,8 @@ function initialViewportWidth() {
   return typeof window !== "undefined" ? window.innerWidth : 1440;
 }
 
-function usesListingsSheet(
-  viewportWidth: number,
-  data: Pick<TicketingData, "eventType" | "soldOut" | "scheduled" | "listings">,
-) {
-  if (data.eventType === "ga") return false;
-  const seatedScheduled = !!data.scheduled && data.listings.length === 0;
-  if (seatedScheduled || data.soldOut) return false;
-  return viewportWidth < 1120 && data.listings.length > 0;
+function usesListingsSheet() {
+  return false;
 }
 
 const DEFAULT_GA_TIERS: GATier[] = [
@@ -356,7 +350,7 @@ export default function PremiumTicketing({
   const [mounted, setMounted] = useState(false);
   const [vw, setVw] = useState(initialViewportWidth);
   const [listingsShellReady, setListingsShellReady] = useState(
-    () => !usesListingsSheet(initialViewportWidth(), d),
+    () => !usesListingsSheet(),
   );
   const [want, setWant] = useState(() => initialTicketQuantity(d.listings));
   const [zoneFilter, setZoneFilter] = useState<string[]>([]);
@@ -396,7 +390,7 @@ export default function PremiumTicketing({
   const [gaSheet, setGaSheet] = useState(false);
   const [eventSoldOutSheet, setEventSoldOutSheet] = useState(false);
   const [listingsExpanded, setListingsExpanded] = useState(
-    () => usesListingsSheet(initialViewportWidth(), d),
+    () => usesListingsSheet(),
   );
   const [mapTop, setMapTop] = useState(0);
   const headerRef = useRef<HTMLElement | null>(null);
@@ -466,19 +460,15 @@ export default function PremiumTicketing({
   useEffect(() => {
     const overlayOpen = map || info || sel !== null;
     if (!overlayOpen) return;
-    const prev = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
-    return () => {
-      document.body.style.overflow = prev;
-    };
+    lockPageScroll();
+    return () => unlockPageScroll();
   }, [map, info, sel]);
 
   const mobile = vw < 900;
   const narrow = mobile || vw < 1120;
   const wide = !narrow;
   const gaDesktop = isGa && !narrow;
-  const listingsSheet =
-    !isGa && narrow && !d.soldOut && !eventScheduled && d.listings.length > 0;
+  const listingsSheet = usesListingsSheet();
 
   useEffect(() => {
     setListingsExpanded(listingsSheet);
@@ -928,7 +918,7 @@ export default function PremiumTicketing({
   const pill = (bg: string, color: string): React.CSSProperties => ({ display: "inline-flex", alignItems: "center", gap: 7, background: bg, color, fontSize: fluidSize(13), fontWeight: 600, padding: "4px 12px", borderRadius: 999, whiteSpace: "nowrap" });
   const primaryBtn: React.CSSProperties = { fontFamily: "inherit", fontWeight: 600, color: BTN_INK, background: BTN, border: "none", borderRadius: 999, cursor: "pointer" };
   const shimmer: React.CSSProperties = { background: "linear-gradient(90deg,#eef0f6 0%,#f7f8fc 50%,#eef0f6 100%)", backgroundSize: "420px 100%", animation: "nmt-shimmer 1.4s linear infinite" };
-  const thumbSize = mobile ? 52 : 96;
+  const thumbSize = 96;
 
   const findOnMapBtn = (h: number, radius: number) => (
     <button
@@ -1092,7 +1082,7 @@ export default function PremiumTicketing({
           />
           <span
             style={{
-              fontSize: fluidSize(mobile ? 12 : 16),
+              fontSize: fluidSize(12),
               fontWeight: 600,
               letterSpacing: "0.12em",
               textTransform: "uppercase",
@@ -1105,7 +1095,7 @@ export default function PremiumTicketing({
         {scheduledStickyWhen ? (
           <div
             style={{
-              fontSize: fluidSize(mobile ? 18 : 22),
+              fontSize: fluidSize(mobile ? 16 : 22),
               fontWeight: 600,
               color: "#051b35",
               letterSpacing: "-0.02em",
@@ -1119,7 +1109,7 @@ export default function PremiumTicketing({
         <p
           style={{
             margin: 0,
-            fontSize: fluidSize(mobile ? 15 : 17),
+            fontSize: fluidSize(16),
             fontWeight: 400,
             color: "#8a93a3",
             lineHeight: 1.45,
@@ -1175,7 +1165,7 @@ export default function PremiumTicketing({
         />
         <span
           style={{
-            fontSize: fluidSize(mobile ? 12 : 14),
+            fontSize: fluidSize(12),
             fontWeight: 600,
             letterSpacing: "0.12em",
             textTransform: "uppercase",
@@ -1187,7 +1177,7 @@ export default function PremiumTicketing({
       </div>
       <div
         style={{
-          fontSize: fluidSize(mobile ? 16 : 22),
+          fontSize: seatedSoldOut ? (mobile ? 20 : 26) : fluidSize(mobile ? 16 : 22),
           fontWeight: 600,
           color: seatedSoldOut ? "#051b35" : "#4a5567",
           letterSpacing: seatedSoldOut ? "-0.02em" : undefined,
@@ -1394,7 +1384,7 @@ export default function PremiumTicketing({
     const icon = compact ? 14 : 17;
     return (
     <>
-      <div className="nmt-filter-scroll" style={{ display: "flex", alignItems: "center", gap: compact ? 8 : 10, minWidth: 0, overflowX: "auto", flexWrap: "nowrap", padding: compact ? "0 0 6px" : "2px 0 10px 2px" }}>
+      <div className={`nmt-filter-scroll ${ORG_SCROLLBAR_CLASS}`} style={{ display: "flex", alignItems: "center", gap: compact ? 8 : 10, minWidth: 0, overflowX: "auto", flexWrap: "nowrap", padding: compact ? "0 0 6px" : "2px 0 10px 2px" }}>
         <button ref={qtyBtn} onClick={() => setQtyMenu((v) => !v)} style={{ fontFamily: "inherit", display: "inline-flex", alignItems: "center", justifyContent: "space-between", gap: compact ? 6 : 8, minWidth: compact ? 108 : 132, minHeight: compact ? 40 : undefined, boxSizing: "border-box", fontSize: type, fontWeight: 600, color: "#fff", background: ACC, border: `1px solid ${ACC}`, borderRadius: 999, padding: chipPad, whiteSpace: "nowrap", cursor: "pointer", flexShrink: 0 }}>
           {want === 1 ? "1 ticket" : `${want} tickets`}
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" style={{ width: icon, height: icon, opacity: 0.8, transform: qtyMenu ? "rotate(180deg)" : "rotate(0deg)", transition: "transform 180ms ease" }}><polyline points="6 9 12 15 18 9" /></svg>
@@ -1479,7 +1469,7 @@ export default function PremiumTicketing({
           message={LOADER_MESSAGE}
         />
       ) : null}
-    <div className="shopper-page" data-theme="light" style={{ position: "relative", ...(gaDesktop ? {} : { display: "flex", flexDirection: "column" }), background: "#f7f8fc", color: NAVY, width: "100%", minHeight: isGa && mobile ? "100vh" : "100dvh", fontFamily: "'Geist', system-ui, -apple-system, sans-serif", WebkitFontSmoothing: "antialiased", ...shopperShellVars(ACC), ...(isGa ? {} : { height: "100dvh", overflowY: listingsSheet ? "hidden" : "auto" }) }}>
+    <div className="shopper-page" data-theme="light" {...(isGa || (mobile && !listingsSheet) ? { "data-bt-scroll-page": "" } : {})} style={{ position: "relative", ...(gaDesktop ? {} : { display: "flex", flexDirection: "column" }), background: "#f7f8fc", color: NAVY, width: "100%", minHeight: isGa && mobile ? "100vh" : "100dvh", fontFamily: "'Geist', system-ui, -apple-system, sans-serif", WebkitFontSmoothing: "antialiased", ...shopperShellVars(ACC), ...(isGa || (mobile && !listingsSheet) ? {} : { height: "100dvh", overflowY: listingsSheet ? "hidden" : "auto" }) }}>
       <style>{`
         ${shopperPageTypeCss()}
         @keyframes nmt-shimmer { 0% { background-position: -420px 0 } 100% { background-position: 420px 0 } }
@@ -1497,10 +1487,7 @@ export default function PremiumTicketing({
         .nmt-filter:hover { border-color: ${NAVY}; background: #f1f3f8; }
         .nmt-filter.active { background: ${ACC}; border-color: ${ACC}; color: #fff; }
         .nmt-filter.active .nmt-star { color: #fff; }
-        .nmt-filter-scroll { scrollbar-width: thin; scrollbar-color: ${ACC} #e7eaf1; }
-        .nmt-filter-scroll::-webkit-scrollbar { height: 7px; }
-        .nmt-filter-scroll::-webkit-scrollbar-track { background: #e7eaf1; border-radius: 999px; }
-        .nmt-filter-scroll::-webkit-scrollbar-thumb { background: ${ACC}; border-radius: 999px; }
+        ${orgScrollbarCss(ACC)}
         .shopper-page .ga-soldout-notify-sheet h2 {
           font-size: var(--t-24) !important;
           letter-spacing: -0.01em;
@@ -1526,9 +1513,6 @@ export default function PremiumTicketing({
           font-size: var(--t-15) !important;
         }
         @media (max-width: 899px) {
-          .shopper-page .ga-soldout-notify-sheet {
-            ${shopperFluidDesktopPinVars([11, 12, 13, 15, 16, 24])}
-          }
           .ga-soldout-notify-sheet-overlay {
             width: 100vw !important;
             max-width: 100vw !important;
@@ -1645,10 +1629,9 @@ export default function PremiumTicketing({
             data-testid="ticketing-map"
             style={{ flexShrink: 0, alignSelf: "stretch" }}
           >
-            {findOnMapBtn(mobile ? 140 : 260, mobile ? 16 : 14)}
+            {findOnMapBtn(mobile ? 200 : 260, mobile ? 16 : 14)}
           </div>
         )}
-        {narrow && <div style={{ flexShrink: 0, width: "100%", alignSelf: "stretch" }}>{compactTrustCard}</div>}
         {!(eventSoldOut && mobile) && (
         <section
           data-testid="ticketing-offers"
@@ -1699,12 +1682,11 @@ export default function PremiumTicketing({
               : {}),
             ...(narrow && !eventSoldOut && !listingsSheet
               ? {
-                  flex: "1 1 0",
-                  minHeight: TICKETING_LISTINGS_MIN_PX,
+                  width: "100%",
                   alignSelf: "stretch",
                   display: "flex",
                   flexDirection: "column",
-                  overflow: "hidden",
+                  isolation: "isolate",
                 }
               : {}),
             ...(wide && !eventSoldOut
@@ -1729,6 +1711,20 @@ export default function PremiumTicketing({
           <>
           {wide && (
             <div style={{ flexShrink: 0, background: "#fff", margin: "0 -32px", padding: "16px 32px 12px", borderRadius: "20px 20px 0 0", boxShadow: pinned ? "0 12px 24px -18px rgba(5,27,53,0.55)" : "none", transition: "box-shadow 180ms ease" }}>
+              {filterToolbar}
+            </div>
+          )}
+          {!wide && !listingsSheet && (
+            <div
+              style={{
+                position: "sticky",
+                top: headerH,
+                zIndex: 8,
+                background: "#fff",
+                margin: mobile ? "-16px -16px 0" : "-14px -22px 0",
+                padding: mobile ? "16px 16px 0" : "14px 22px 0",
+              }}
+            >
               {filterToolbar}
             </div>
           )}
@@ -1778,6 +1774,7 @@ export default function PremiumTicketing({
           <div
             ref={listingsScroll}
             data-testid="ticketing-listings"
+            className={ORG_SCROLLBAR_CLASS}
             style={{
               display: "flex",
               flexDirection: "column",
@@ -1785,8 +1782,10 @@ export default function PremiumTicketing({
               marginTop: wide ? 18 : listingsSheet ? 14 : 0,
               flex: 1,
               minHeight: 0,
-              overflowY: "auto",
-              overscrollBehavior: "contain",
+              position: "relative",
+              zIndex: 0,
+              overflowY: wide || listingsSheet ? "auto" : "visible",
+              overscrollBehavior: wide || listingsSheet ? "contain" : undefined,
             }}
           >
             {busy && (
@@ -1837,22 +1836,44 @@ export default function PremiumTicketing({
 
             {!busy &&
               rows.map((l, idx) => (
-                <div key={`${l.sec}-${l.row}-${idx}`} className="nmt-listing" onClick={() => { setSel(idx); setPanelQty(clampQuantity(want, listingQtyLimits(l))); setMedia(0); }} style={{ display: "flex", alignItems: mobile ? "flex-start" : "center", gap: mobile ? 10 : 18, background: "#fff", border: "1px solid rgba(5,27,53,0.10)", borderRadius: mobile ? 12 : 16, padding: mobile ? "10px 12px" : "16px 20px", cursor: "pointer" }}>
-                  <div style={{ width: thumbSize, height: thumbSize, borderRadius: mobile ? 8 : 12, background: "#f1f3f8", border: "1px solid rgba(5,27,53,0.08)", flexShrink: 0, overflow: "hidden" }}>
-                    {listingThumb(l)}
-                  </div>
-                  <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: mobile ? 3 : 6, minWidth: 0 }}>
-                    <span style={{ alignSelf: "flex-start", ...pill(ACC_SOFT, ACC), ...(mobile ? { fontSize: fluidSize(12), padding: "3px 8px" } : {}) }}><Star s={mobile ? 12 : 14} /> {l.zone}</span>
-                    <div style={{ display: "flex", alignItems: "center", gap: mobile ? 6 : 9, minWidth: 0, fontSize: fluidSize(18), fontWeight: 600, letterSpacing: "-0.015em" }}>
-                      <span style={{ color: "#6e7180", flexShrink: 0, display: "flex", alignItems: "center" }}><TicketIcon s={mobile ? 14 : 18} /></span>
-                      <span style={{ minWidth: 0, overflowWrap: "anywhere" }}>Sec {l.sec} · Row {l.row}</span>
-                    </div>
-                    <div style={{ fontSize: fluidSize(15), color: "#6e7180" }}>{l.range}</div>
+                <div key={`${l.sec}-${l.row}-${idx}`} className="nmt-listing" onClick={() => { setSel(idx); setPanelQty(clampQuantity(want, listingQtyLimits(l))); setMedia(0); }} style={{ display: "flex", flexDirection: mobile ? "column" : "row", alignItems: mobile ? "stretch" : "center", gap: mobile ? 8 : 18, background: "#fff", border: "1px solid rgba(5,27,53,0.10)", borderRadius: mobile ? 12 : 16, padding: mobile ? "10px 12px" : "16px 20px", cursor: "pointer" }}>
+                  {mobile ? (
+                    <div style={{ display: "flex", alignItems: "center", gap: 10, minWidth: 0 }}>
+                      <div style={{ width: thumbSize, height: thumbSize, borderRadius: 8, background: "#f1f3f8", border: "1px solid rgba(5,27,53,0.08)", flexShrink: 0, overflow: "hidden" }}>
+                        {listingThumb(l)}
                       </div>
-                  <div style={{ textAlign: "right", flexShrink: 0, marginLeft: 8 }}>
-                    <div style={{ fontSize: fluidSize(20), fontWeight: 600, fontVariantNumeric: "tabular-nums", letterSpacing: "-0.015em", whiteSpace: "nowrap" }}>{l.price} each</div>
-                    <div style={{ fontSize: fluidSize(13), color: "#6e7180", marginTop: 2, whiteSpace: "nowrap" }}>{mobile ? "incl. fees" : "Incl. Taxes & Fees"}</div>
-                  </div>
+                      <div style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", gap: 10 }}>
+                        <span style={{ alignSelf: "flex-start", ...pill(ACC_SOFT, ACC), fontSize: fluidSize(12), padding: "3px 8px" }}><Star s={12} /> {l.zone}</span>
+                        <div style={{ display: "flex", alignItems: "center", gap: 6, minWidth: 0, fontSize: 18, fontWeight: 600, letterSpacing: "-0.015em" }}>
+                          <span style={{ color: "#6e7180", flexShrink: 0, display: "flex", alignItems: "center" }}><TicketIcon s={18} /></span>
+                          <span style={{ minWidth: 0, overflowWrap: "anywhere" }}>Sec {l.sec} · Row {l.row}</span>
+                        </div>
+                        <div style={{ fontSize: 15, color: "#6e7180" }}>{l.range}</div>
+                        <div style={{ display: "flex", alignItems: "baseline", flexWrap: "wrap", gap: "2px 6px" }}>
+                          <span style={{ fontSize: 17, fontWeight: 600, fontVariantNumeric: "tabular-nums", letterSpacing: "-0.015em" }}>{l.price} each</span>
+                          <span style={{ fontSize: 13, color: "#6e7180" }}>Incl. fees</span>
+                        </div>
+                      </div>
+                    </div>
+                  ) : (
+                    <>
+                      <div style={{ width: thumbSize, height: thumbSize, borderRadius: 12, background: "#f1f3f8", border: "1px solid rgba(5,27,53,0.08)", flexShrink: 0, overflow: "hidden" }}>
+                        {listingThumb(l)}
+                      </div>
+                      <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 6, minWidth: 0 }}>
+                        <span style={{ alignSelf: "flex-start", ...pill(ACC_SOFT, ACC) }}><Star s={14} /> {l.zone}</span>
+                        <div style={{ display: "flex", alignItems: "center", gap: 9, minWidth: 0, fontSize: 18, fontWeight: 600, letterSpacing: "-0.015em" }}>
+                          <span style={{ color: "#6e7180", flexShrink: 0, display: "flex", alignItems: "center" }}><TicketIcon s={18} /></span>
+                          <span style={{ minWidth: 0, overflowWrap: "anywhere" }}>Sec {l.sec} · Row {l.row}</span>
+                        </div>
+                        <div style={{ fontSize: 15, color: "#6e7180" }}>{l.range}</div>
+                      </div>
+                      <div style={{ textAlign: "right", flexShrink: 0, marginLeft: 8 }}>
+                        <div style={{ fontSize: 20, fontWeight: 600, fontVariantNumeric: "tabular-nums", letterSpacing: "-0.015em", whiteSpace: "nowrap" }}>{l.price} each</div>
+                        <div style={{ fontSize: 13, color: "#6e7180", marginTop: 2, whiteSpace: "nowrap" }}>Incl. Taxes & Fees</div>
+                      </div>
+                    </>
+                  )}
                 </div>
               ))}
           </div>
@@ -1860,6 +1881,9 @@ export default function PremiumTicketing({
           </>
           )}
         </section>
+        )}
+        {narrow && !eventScheduled && !seatedSoldOut && (
+          <div style={{ flexShrink: 0, width: "100%", alignSelf: "stretch" }}>{compactTrustCard}</div>
         )}
 
         {wide && !eventScheduled && !seatedSoldOut && (
@@ -2043,13 +2067,13 @@ export default function PremiumTicketing({
 
       {/* GA TIER SHEET (mobile) */}
       {isGa && gaSheet && !gaSoldOut && !gaScheduled && (
-        <div style={{ position: "fixed", inset: 0, zIndex: 55, background: "rgba(5,27,53,0.55)", backdropFilter: "blur(6px)", display: "flex", alignItems: "flex-end", justifyContent: "center" }}>
-          <div onClick={(e) => e.stopPropagation()} style={{ width: "100%", maxWidth: 560, maxHeight: "88vh", background: "#fff", borderTopLeftRadius: 24, borderTopRightRadius: 24, boxShadow: "0 -20px 60px -20px rgba(5,27,53,0.5)", display: "flex", flexDirection: "column", overflow: "hidden" }}>
+        <div onClick={() => setGaSheet(false)} style={{ position: "fixed", inset: 0, zIndex: 55, background: "rgba(5,27,53,0.55)", backdropFilter: "blur(6px)", display: "flex", alignItems: "flex-end", justifyContent: "center" }}>
+          <div role="dialog" aria-modal="true" aria-labelledby="ga-ticket-sheet-title" onClick={(e) => e.stopPropagation()} style={{ width: "100%", maxWidth: 560, maxHeight: "88vh", background: "#fff", borderTopLeftRadius: 24, borderTopRightRadius: 24, boxShadow: "0 -20px 60px -20px rgba(5,27,53,0.5)", display: "flex", flexDirection: "column", overflow: "hidden" }}>
             <div style={{ display: "flex", justifyContent: "center", paddingTop: 10, flexShrink: 0 }}>
               <div style={{ width: 40, height: 5, borderRadius: 999, background: "rgba(5,27,53,0.14)" }} />
             </div>
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16, padding: "14px 20px 16px", borderBottom: "1px solid rgba(5,27,53,0.08)", flexShrink: 0 }}>
-              <div style={{ fontSize: fluidSize(20), fontWeight: 600, letterSpacing: "-0.025em" }}>Get tickets</div>
+              <div id="ga-ticket-sheet-title" style={{ fontSize: fluidSize(20), fontWeight: 600, letterSpacing: "-0.025em" }}>Get tickets</div>
               <button onClick={() => setGaSheet(false)} aria-label="Close" style={{ fontFamily: "inherit", width: 40, height: 40, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", background: "#fff", border: "1px solid #d3d6e0", borderRadius: 999, color: NAVY, cursor: "pointer" }}>
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" style={{ width: 18, height: 18 }}><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
               </button>
@@ -2070,6 +2094,7 @@ export default function PremiumTicketing({
           const overlay = (
         <div
           className="ga-soldout-notify-sheet-overlay"
+          onClick={() => setEventSoldOutSheet(false)}
           style={{
             position: "fixed",
             inset: 0,
@@ -2317,7 +2342,7 @@ export default function PremiumTicketing({
           ? `You are on the waitlist for ${t.name}. We will email ${notifyEmail || "your account address"} if tickets are released.`
           : `Reminder set. We will email ${notifyEmail || "your account address"} before ${t.name} goes on sale.`;
         return (
-          <Modal variant="light" title={title} onClose={() => setNotifySubject(null)}>
+          <Modal variant="light" title={title} closeOnBackdrop onClose={() => setNotifySubject(null)}>
             <p className="mt-4 text-[14px] text-[#4a5567]">{body}</p>
             {!notifySent ? (
               <form
@@ -2462,11 +2487,12 @@ export default function PremiumTicketing({
       {mapExitConfirm && (
         <Modal
           variant="light"
+          hideClose
           title="Are you sure you want to exit?"
           onClose={() => setMapExitConfirm(false)}
         >
           <p className="mt-4 text-[15px] leading-relaxed text-[#4a5567]">
-            You will lose your selected tickets....
+            You will lose your selected tickets.
           </p>
           <div className="mt-5 flex flex-col gap-3">
             <BrandedActionButton
@@ -2669,6 +2695,7 @@ export default function PremiumTicketing({
       {seatedError && !map ? (
         <Modal
           variant="light"
+          hideClose
           title={seatedError.title}
           onClose={() => setSeatedError(null)}
         >
@@ -2687,7 +2714,7 @@ export default function PremiumTicketing({
       ) : null}
 
       {info && (
-        <Modal variant="light" title="Event information" onClose={() => setInfo(false)}>
+        <Modal variant="light" title="Event information" closeOnBackdrop onClose={() => setInfo(false)}>
           <div className={`mt-4 flex flex-col gap-[22px] ${mobile ? "" : "max-h-[min(70vh,640px)] overflow-y-auto"}`}>
             <div className="flex flex-col items-center gap-3.5 text-center">
               <div className="flex h-[132px] w-[132px] items-center justify-center overflow-hidden rounded-[22px] border border-[rgba(5,27,53,0.08)] bg-[#f1f3f8]">

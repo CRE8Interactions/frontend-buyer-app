@@ -65,6 +65,7 @@ type VenueLike = {
 export type EventLike = {
   id?: number | string;
   uuid?: string;
+  organizationUUID?: string;
   name?: string;
   start?: string;
   doorsOpen?: string;
@@ -548,6 +549,55 @@ function walletTicketKey(ticket: {
 }) {
   const raw = (ticket.raw ?? ticket) as Record<string, unknown>;
   return String(ticket.id ?? raw.id ?? ticket.code ?? raw.uuid ?? "").trim();
+}
+
+function printedOfferFromTicket(ticket: Record<string, unknown>) {
+  const raw = ticket.offer;
+  const offer = Array.isArray(raw) ? raw[0] : raw;
+  if (offer && typeof offer === "object") {
+    return offer as { name?: unknown; description?: unknown };
+  }
+  return undefined;
+}
+
+/** Fields legacy `formatPrintedOfferLine` / PDF reads on the sold ticket. */
+function printedTicketPayload(ticket: Record<string, unknown>) {
+  const offer = printedOfferFromTicket(ticket);
+  const name = String(ticket.name || "").trim();
+  const offerName = String(
+    ticket.offerName || ticket.offer_name || offer?.name || "",
+  ).trim();
+  return {
+    ...(name ? { name } : {}),
+    ...(offer ? { offer } : {}),
+    ...(offerName ? { offerName } : {}),
+  };
+}
+
+function mergeWalletTicketsFromFullOrder(
+  tickets: CartTicketDetail[],
+  orderTickets?: Array<Record<string, unknown>> | null,
+): CartTicketDetail[] {
+  if (!orderTickets?.length) return tickets;
+  const byKey = new Map<string, Record<string, unknown>>();
+  for (const ticket of orderTickets) {
+    const key = walletTicketKey({
+      raw: ticket,
+      id: ticket.id,
+      code: ticket.checkInCode,
+    });
+    if (key) byKey.set(key, ticket);
+  }
+  return tickets.map((ticket) => {
+    const match = byKey.get(walletTicketKey(ticket));
+    if (!match) return ticket;
+    const fields = printedTicketPayload(match);
+    if (!Object.keys(fields).length) return ticket;
+    return {
+      ...ticket,
+      raw: { ...ticket.raw, ...fields },
+    };
+  });
 }
 
 function walletTicketKeySet(
@@ -2593,6 +2643,8 @@ function attachOrderEventDetail(
     firstName: order.firstName,
     lastName: order.lastName,
     email: order.email || holderEmail,
+    users_permissions_user: order.users_permissions_user,
+    user: order.user,
   });
   const purchasedAt = order.createdAt
     ? formatEventWhen(
@@ -3378,7 +3430,8 @@ function refreshEventMatchupFields(
 
 /**
  * The wallet list endpoint returns trimmed orders, so the amount paid, the
- * buyer's name, and print branding only arrive with a single-order fetch.
+ * buyer's name, print branding, and ticket offer/name only arrive with a
+ * single-order fetch — the same payload legacy My Tickets prints from.
  */
 export function withFullOrder(
   detail: CartEventDetail,
@@ -3386,13 +3439,15 @@ export function withFullOrder(
 ): CartEventDetail {
   if (!order) return detail;
   const event = eventFromFullOrder(detail.event, order) ?? detail.event;
-  const holder =
-    order.firstName || order.lastName
-      ? formatTicketHolderName({
-          firstName: order.firstName,
-          lastName: order.lastName,
-        })
-      : "";
+  const holder = formatTicketHolderName({
+    firstName: order.firstName,
+    lastName: order.lastName,
+    email: order.email,
+    users_permissions_user: order.users_permissions_user,
+    user: order.user,
+  });
+  const namedHolder =
+    holder && holder !== String(order.email || "").trim() ? holder : "";
   const purchasedAt = order.createdAt
     ? formatEventWhen(
         order.createdAt,
@@ -3402,6 +3457,12 @@ export function withFullOrder(
         "ddd, MMM D · h:mm A",
       )
     : "";
+  const tickets = mergeWalletTicketsFromFullOrder(
+    namedHolder
+      ? detail.tickets.map((ticket) => ({ ...ticket, holder: namedHolder }))
+      : detail.tickets,
+    order.tickets as Array<Record<string, unknown>> | undefined,
+  );
   return {
     ...detail,
     ...refreshEventMatchupFields(event, detail.packageName),
@@ -3410,9 +3471,7 @@ export function withFullOrder(
     cartTotal: orderTotal(order.total) ?? detail.cartTotal,
     orderId: orderIdOf(order) || detail.orderId,
     purchasedAt: purchasedAt || detail.purchasedAt,
-    tickets: holder
-      ? detail.tickets.map((ticket) => ({ ...ticket, holder }))
-      : detail.tickets,
+    tickets,
   };
 }
 

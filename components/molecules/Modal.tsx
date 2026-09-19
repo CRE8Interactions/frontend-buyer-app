@@ -3,7 +3,7 @@
 import { useEffect, useId, useRef, type ReactNode } from "react";
 import { focusFirstField } from "@/lib/autoFocus";
 
-/** Modal — app-surface dialog with title bar; dismiss via the close control only. */
+/** Modal — app-surface dialog with title bar; dismiss via the close control by default. */
 export default function Modal({
   title,
   onClose,
@@ -11,6 +11,8 @@ export default function Modal({
   variant = "dark",
   busy = false,
   sheet,
+  closeOnBackdrop = false,
+  hideClose = false,
 }: {
   title: string;
   onClose: () => void;
@@ -20,6 +22,10 @@ export default function Modal({
   busy?: boolean;
   /** Bottom sheet layout. Omit to pin from the bottom on viewports under 900px. */
   sheet?: boolean;
+  /** When true, a click on the dimmed backdrop also dismisses. */
+  closeOnBackdrop?: boolean;
+  /** Hide the top-right Close control when the body already has dismiss actions. */
+  hideClose?: boolean;
 }) {
   const titleId = useId();
   const light = variant === "light";
@@ -75,7 +81,10 @@ export default function Modal({
       : `${centeredHeaderCls} max-[899px]:items-start max-[899px]:sm:-mx-6 max-[899px]:sm:px-6`;
 
   return (
-    <div className="fixed inset-0 z-[60] overflow-y-auto bg-black/70 backdrop-blur-sm">
+    <div
+      className="fixed inset-0 z-[60] overflow-y-auto bg-black/70 backdrop-blur-sm"
+      onClick={closeOnBackdrop ? requestClose : undefined}
+    >
       <div className={shellCls}>
         <div
           ref={dialogRef}
@@ -93,6 +102,7 @@ export default function Modal({
             >
               {title}
             </h2>
+            {hideClose ? null : (
             <button
               type="button"
               onClick={requestClose}
@@ -108,6 +118,7 @@ export default function Modal({
                 <path d="M6 6l12 12M18 6 6 18" />
               </svg>
             </button>
+            )}
           </div>
           {children}
         </div>

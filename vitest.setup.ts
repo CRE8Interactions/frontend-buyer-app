@@ -1,7 +1,9 @@
 import "@testing-library/jest-dom/vitest";
 import { afterEach, beforeEach, vi } from "vitest";
-import { cleanup } from "@testing-library/react";
+import { cleanup, configure } from "@testing-library/react";
 import { DEMO_FIXTURES_NOW, setDemoReferenceNow } from "@/lib/demo/now";
+
+configure({ asyncUtilTimeout: 5_000 });
 
 // Demo fixtures date themselves from the real clock; pin them before any test
 // module builds them so fixture dates never shift under the assertions.

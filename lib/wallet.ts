@@ -68,6 +68,11 @@ export type OrderLike = {
   firstName?: string;
   lastName?: string;
   email?: string;
+  users_permissions_user?: {
+    firstName?: string;
+    lastName?: string;
+  } | null;
+  user?: { firstName?: string; lastName?: string } | null;
   total?: number | string;
   /** Purchase origin; wallet inventory is intentionally not filtered by it. */
   source?: "website" | "box_office" | "ticket_assignment" | string;
@@ -396,18 +401,37 @@ export function buildAccessPassSummaries(
     });
 }
 
-/** Ticket holders read as "Joe Doe"; the email is only a last resort. */
-export function formatTicketHolderName(source?: {
-  firstName?: string;
-  lastName?: string;
-  name?: string;
-  email?: string;
-} | null): string {
-  const full = [source?.firstName, source?.lastName]
+type TicketHolderPerson = {
+  firstName?: unknown;
+  lastName?: unknown;
+  first_name?: unknown;
+  last_name?: unknown;
+};
+
+function ticketHolderPersonName(person?: TicketHolderPerson | null) {
+  return [person?.firstName ?? person?.first_name, person?.lastName ?? person?.last_name]
     .map((part) => String(part ?? "").trim())
     .filter(Boolean)
     .join(" ");
-  const named = full || String(source?.name ?? "").trim();
+}
+
+/** Ticket holders read as "Joe Doe"; the email is only a last resort. */
+export function formatTicketHolderName(source?: {
+  firstName?: unknown;
+  lastName?: unknown;
+  first_name?: unknown;
+  last_name?: unknown;
+  name?: unknown;
+  email?: unknown;
+  users_permissions_user?: TicketHolderPerson | null;
+  user?: TicketHolderPerson | null;
+} | null): string {
+  const full = ticketHolderPersonName(source);
+  const named =
+    full ||
+    ticketHolderPersonName(source?.users_permissions_user) ||
+    ticketHolderPersonName(source?.user) ||
+    String(source?.name ?? "").trim();
   if (named) {
     return named
       .toLowerCase()

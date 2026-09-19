@@ -7,6 +7,7 @@ import {
   demoSeasonPackage,
   demoTicketGroups,
 } from "@/lib/demo/fixtures";
+import { MIXED_MAP_SELECTION_ERROR } from "@/lib/mapSelection";
 import { selectionOfferName } from "@/lib/ticketSummary";
 import type { SeatmapBackground } from "@/lib/seatmapLookups";
 import { resetSeatmapBackgroundCache } from "@/tests/seatmap";
@@ -18,6 +19,7 @@ const icedogs = DEMO_ORGS.find((org) => org.slug === "niagara-icedogs")!;
 vi.mock("next/navigation", () => ({
   usePathname: () => `/${icedogs.slug}/`,
   useParams: () => ({ slug: icedogs.slug }),
+  useSearchParams: () => new URLSearchParams(),
 }));
 
 vi.mock("@/components/organisms/InteractiveSeatmap", async () => {
@@ -26,9 +28,11 @@ vi.mock("@/components/organisms/InteractiveSeatmap", async () => {
     InteractiveSeatmap: ({
       dismissTooltipKey,
       onPaintReady,
+      hideChrome,
     }: {
       dismissTooltipKey?: number;
       onPaintReady?: () => void;
+      hideChrome?: boolean;
     }) => {
       useEffect(() => {
         onPaintReady?.();
@@ -39,6 +43,14 @@ vi.mock("@/components/organisms/InteractiveSeatmap", async () => {
           data-dismiss-tooltip-key={String(dismissTooltipKey ?? 0)}
         >
           Interactive seat map
+          {hideChrome ? null : (
+            <>
+              <button type="button" aria-label="Zoom in">
+                +
+              </button>
+              <button type="button">Legend</button>
+            </>
+          )}
         </div>
       );
     },
@@ -263,6 +275,50 @@ describe("SeatMapSelectionOverlay map readiness", () => {
     expect(screen.queryByText("Ticket details")).not.toBeInTheDocument();
   });
 
+  it("hides map zoom and legend while Your selection is open on mobile", () => {
+    const group = DEMO_SEATED_TICKET_GROUPS[0];
+    useSeatmapStore.setState({
+      selectedFromMap: [{ ...group, seatId: "s1", seatNumber: 1, quantity: 1 }],
+      totalCount: 1,
+      totalPrice: Number(group.price || 0),
+    });
+    renderOverlay(
+      {
+        mapMapping: demoSeatmapMapping(),
+        mapBackground: BACKGROUND,
+      },
+      true,
+    );
+    fireEvent.load(backgroundPreload()!);
+
+    fireEvent.click(screen.getByRole("button", { name: /view selection/i }));
+
+    expect(screen.getByText("Your selection")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /zoom in/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /^legend$/i })).not.toBeInTheDocument();
+  });
+
+  it("keeps map zoom and legend on mobile until Your selection opens", () => {
+    const group = DEMO_SEATED_TICKET_GROUPS[0];
+    useSeatmapStore.setState({
+      selectedFromMap: [{ ...group, seatId: "s1", seatNumber: 1, quantity: 1 }],
+      totalCount: 1,
+      totalPrice: Number(group.price || 0),
+    });
+    renderOverlay(
+      {
+        mapMapping: demoSeatmapMapping(),
+        mapBackground: BACKGROUND,
+      },
+      true,
+    );
+    fireEvent.load(backgroundPreload()!);
+
+    expect(screen.getByRole("button", { name: /view selection/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /zoom in/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /^legend$/i })).toBeInTheDocument();
+  });
+
   it("shows one ticket in GA ticket details even when the group quantity is higher", () => {
     const ga = demoTicketGroups().ticketGroups.find((group) => group.GA);
     if (!ga) throw new Error("demo fixtures need a GA ticket group");
@@ -348,6 +404,31 @@ describe("SeatMapSelectionOverlay map readiness", () => {
       "data-dismiss-tooltip-key",
       "1",
     );
-    expect(screen.getByText(/Are you sure you want to exit/i)).toBeInTheDocument();
+    const exitDialog = screen.getByRole("dialog", {
+      name: /are you sure you want to exit/i,
+    });
+    expect(
+      screen.getByText("You will lose your selected tickets."),
+    ).toBeInTheDocument();
+    expect(
+      within(exitDialog).queryByRole("button", { name: "Close" }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("hides the top-right Close on the selected-tickets error popup", () => {
+    useSeatmapStore.setState({
+      seatedError: { ...MIXED_MAP_SELECTION_ERROR },
+    });
+    renderOverlay({
+      mapMapping: demoSeatmapMapping(),
+      mapBackground: BACKGROUND,
+    });
+    fireEvent.load(backgroundPreload()!);
+
+    const dialog = screen.getByRole("dialog", {
+      name: MIXED_MAP_SELECTION_ERROR.title,
+    });
+    expect(screen.getByText(MIXED_MAP_SELECTION_ERROR.message)).toBeInTheDocument();
+    expect(within(dialog).getAllByRole("button", { name: "Close" })).toHaveLength(1);
   });
 });

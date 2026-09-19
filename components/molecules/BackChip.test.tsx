@@ -26,6 +26,7 @@ vi.mock("next/link", () => ({
 
 vi.mock("next/navigation", () => ({
   useRouter: () => routerMocks,
+  useSearchParams: () => new URLSearchParams(),
 }));
 
 import BackChip from "@/components/molecules/BackChip";

@@ -16,10 +16,16 @@ import {
   resolveEventCategoryName,
   resolveTicketCategoryKey,
 } from "@/lib/eventCategory";
-import { eventAboutText, formatEventWhen } from "@/lib/helpers";
+import { formatEventWhen } from "@/lib/helpers";
 import type { EventLike } from "@/lib/cartEvents";
-import { ticketRowValue, ticketSeatValue, ticketSectionValue } from "@/lib/wallet";
+import {
+  formatTicketHolderName,
+  ticketRowValue,
+  ticketSeatValue,
+  ticketSectionValue,
+} from "@/lib/wallet";
 import { formatVenueCityState } from "@/lib/venueLocation";
+import { resolvePrintedOfferInfo } from "@/lib/printedOfferLabel";
 
 type PrintableTicket = {
   id?: string | number;
@@ -30,11 +36,34 @@ type PrintableTicket = {
   rowNumber?: unknown;
   seatNumber?: unknown;
   generalAdmission?: boolean;
+  name?: unknown;
+  firstName?: unknown;
+  lastName?: unknown;
+  email?: unknown;
+  offerName?: unknown;
+  offer?: { name?: unknown; description?: unknown };
+  package?: { name?: unknown } | Array<{ name?: unknown }>;
+  organizationUUID?: string;
+  organization?: { uuid?: string };
+};
+
+export type TicketPdfBuyer = {
+  firstName?: unknown;
+  lastName?: unknown;
+  first_name?: unknown;
+  last_name?: unknown;
+  email?: unknown;
+  users_permissions_user?: {
+    firstName?: unknown;
+    lastName?: unknown;
+  } | null;
+  user?: { firstName?: unknown; lastName?: unknown } | null;
 };
 
 export type TicketPdfRequest = {
   event: EventLike;
   tickets: PrintableTicket[];
+  buyer?: TicketPdfBuyer | null;
   packageName?: string;
   filename?: string;
   mode: "open" | "download";
@@ -49,11 +78,11 @@ const TICKET_GAP = 20;
 const TOP_TICKET_Y = PAGE_HEIGHT - 48 - TICKET_H;
 const BOTTOM_TICKET_Y = TOP_TICKET_Y - TICKET_GAP - TICKET_H;
 const TICKET_SLOTS = [TOP_TICKET_Y, BOTTOM_TICKET_Y];
+const HEADER_H = 64.8;
+const STRIPE_W = 13;
 const CORNER_R = 14;
-const SHELL_PAD = 12;
-const TITLE_BAND = 76;
-const TITLE_BAND_WITH_SUMMARY = 102;
 const DEFAULT_PRIMARY = "#1A365D";
+export const NM_STATE_ATHLETICS_ORG_UUID = "dbeea528-852e-43d0-b607-c8201d7a5f1c";
 
 function hexToRgb(hex?: string | null, fallback = DEFAULT_PRIMARY): RGB {
   const raw = String(hex || fallback).trim().replace("#", "");
@@ -145,45 +174,53 @@ function fitText(text: unknown, font: PDFFont, size: number, maxWidth: number) {
   return low > 0 ? `${value.slice(0, low)}…` : "…";
 }
 
-function wrapSummaryLines(
-  text: string,
-  font: PDFFont,
-  size: number,
-  maxWidth: number,
-  maxLines = 2,
+function richTextToPlain(value: unknown) {
+  return String(value ?? "")
+    .replace(/<[^>]*>/g, " ")
+    .replace(/^\s{0,3}#{1,6}\s+/gm, "")
+    .replace(/[*_`>]/g, "");
+}
+
+/** One-line header subtitle: summary, then attractions, then subcategory. */
+export function printedTicketSubtitle(event: EventLike) {
+  if (event.summary) return sanitizeText(richTextToPlain(event.summary));
+  const attractions = event.attractions;
+  if (Array.isArray(attractions) && attractions.length > 0) {
+    return sanitizeText(
+      attractions
+        .map((attraction) => attraction?.name)
+        .filter(Boolean)
+        .join("  •  "),
+    );
+  }
+  return sanitizeText(event.subCategory?.name || "");
+}
+
+function organizationUuid(ticket: PrintableTicket, event: EventLike) {
+  const organization = event.organization as
+    | { uuid?: string; organizationUUID?: string }
+    | undefined;
+  return String(
+    organization?.uuid ||
+      organization?.organizationUUID ||
+      event.organizationUUID ||
+      ticket.organizationUUID ||
+      ticket.organization?.uuid ||
+      "",
+  ).toLowerCase();
+}
+
+function isNmStateAthleticsTicket(ticket: PrintableTicket, event: EventLike) {
+  return organizationUuid(ticket, event) === NM_STATE_ATHLETICS_ORG_UUID;
+}
+
+/** TICKET ID on NM State Athletics stock. Other orgs omit it. */
+export function printedTicketIdLayout(
+  ticket: PrintableTicket,
+  event: EventLike,
 ) {
-  const words = sanitizeText(text).split(" ").filter(Boolean);
-  if (!words.length) return [];
-
-  const lines: string[] = [];
-  let current = "";
-  let wordIndex = 0;
-
-  while (wordIndex < words.length && lines.length < maxLines) {
-    const word = words[wordIndex];
-    const next = current ? `${current} ${word}` : word;
-    if (font.widthOfTextAtSize(next, size) <= maxWidth) {
-      current = next;
-      wordIndex += 1;
-      continue;
-    }
-    if (current) {
-      lines.push(current);
-      current = "";
-      continue;
-    }
-    lines.push(fitText(word, font, size, maxWidth));
-    wordIndex += 1;
-  }
-
-  if (current && lines.length < maxLines) lines.push(current);
-
-  if (wordIndex < words.length && lines.length > 0) {
-    const last = lines.length - 1;
-    lines[last] = fitText(`${lines[last]} …`, font, size, maxWidth);
-  }
-
-  return lines.slice(0, maxLines);
+  if (!isNmStateAthleticsTicket(ticket, event) || ticket.id == null) return null;
+  return { label: "TICKET ID" as const, value: String(ticket.id) };
 }
 
 export { resolveTicketCategoryKey } from "@/lib/eventCategory";
@@ -197,9 +234,58 @@ export function resolveTicketTheme(event: EventLike) {
 }
 
 /** Package purchases title the ticket with the package itself; don't repeat it. */
-function resolvePackageName(packageName: string | undefined, event: EventLike) {
-  const name = String(packageName || "").trim();
+function resolvePackageName(
+  packageName: string | undefined,
+  ticket: PrintableTicket,
+  event: EventLike,
+) {
+  const related = ticket.package;
+  const pkg = Array.isArray(related) ? related[0] : related;
+  const name = String(packageName || pkg?.name || "").trim();
   return name === String(event.name || "").trim() ? "" : name;
+}
+
+/** TICKET HOLDER on print stock: first + last name, then linked user, then email. */
+export function printedTicketHolderName(
+  ticket: PrintableTicket,
+  buyer?: TicketPdfBuyer | null,
+) {
+  const related = buyer?.users_permissions_user || buyer?.user;
+  const relatedName = [related?.firstName, related?.lastName]
+    .map((part) => String(part ?? "").trim())
+    .filter(Boolean)
+    .join(" ");
+  const holder = String(ticket.holder || "").trim();
+  const namedHolder =
+    holder && !holder.includes("@") && !/^guest$/i.test(holder) ? holder : "";
+  return formatTicketHolderName({
+    firstName: buyer?.firstName ?? buyer?.first_name ?? ticket.firstName,
+    lastName: buyer?.lastName ?? buyer?.last_name ?? ticket.lastName,
+    name: relatedName || namedHolder,
+    email:
+      buyer?.email ??
+      ticket.email ??
+      (holder.includes("@") ? holder : ""),
+  });
+}
+
+/** TIME + right-column OFFER/PACKAGE values drawn on a printed ticket. */
+export function printedTicketOfferLayout(
+  ticket: PrintableTicket,
+  eventTimeLabel: string,
+  packageName: string | undefined,
+  event: EventLike,
+) {
+  const offerInfo = resolvePrintedOfferInfo(ticket);
+  const resolvedPackage = resolvePackageName(packageName, ticket, event);
+  return {
+    timeValue: offerInfo?.window || eventTimeLabel,
+    secondary: offerInfo
+      ? { label: "OFFER", value: offerInfo.label }
+      : resolvedPackage
+        ? { label: "PACKAGE", value: resolvedPackage }
+        : null,
+  };
 }
 
 function drawRoundedRect(
@@ -306,6 +392,7 @@ async function drawBrandedTicket(
   {
     event,
     ticket,
+    buyer,
     packageName,
     fonts,
     logo,
@@ -314,29 +401,32 @@ async function drawBrandedTicket(
   }: {
     event: EventLike;
     ticket: PrintableTicket;
+    buyer?: TicketPdfBuyer | null;
     packageName?: string;
-    fonts: { regular: PDFFont; bold: PDFFont; oblique: PDFFont };
+    fonts: { regular: PDFFont; bold: PDFFont };
     logo: PDFImage | null;
     ticketY: number;
     showPageChrome: boolean;
   },
 ) {
-  const { regular, bold, oblique } = fonts;
+  const { regular, bold } = fonts;
   const theme = resolveTicketTheme(event);
-  const summary = eventAboutText(event);
-  const titleBand = summary ? TITLE_BAND_WITH_SUMMARY : TITLE_BAND;
   const primaryHex = theme.primaryColor;
   const primary = hexToRgb(primaryHex);
   const badgeColor = hexToRgb(theme.badgeColor);
-  const bodyBg = lightenHex(primaryHex, 0.92);
+  const bodyBg = theme.bodyTint
+    ? hexToRgb(theme.bodyTint)
+    : lightenHex(primaryHex, 0.94);
   const headerOnLight = relativeLuminance(primary) > CONTRAST_PIVOT;
-  const titleColor = headerOnLight ? hexToRgb("#1A1F2B") : rgb(1, 1, 1);
-  const summaryColor = headerOnLight ? hexToRgb("#41506B") : rgb(1, 1, 1);
+  const headerText = headerOnLight ? hexToRgb("#1A1F2B") : rgb(1, 1, 1);
+  const headerSubtleText = headerOnLight
+    ? hexToRgb("#41506B")
+    : hexToRgb("#E2E8EF");
   const textDark = hexToRgb("#1A1F2B");
   const textBody = hexToRgb("#2D3648");
   const textMuted = hexToRgb("#708095");
   const textFaint = hexToRgb("#A0AEBF");
-  const boxBorder = hexToRgb("#E2E8F0");
+  const seatBoxBorder = hexToRgb("#E2E8F0");
   const labelColor = accentOn(primary);
 
   if (showPageChrome) {
@@ -363,86 +453,89 @@ async function drawBrandedTicket(
     width: TICKET_W,
     height: TICKET_H,
     radius: CORNER_R,
+    color: bodyBg,
+    borderColor: primary,
+    borderWidth: 1.5,
+  });
+
+  const headerBottom = ticketY + TICKET_H - HEADER_H;
+  page.drawRectangle({
+    x: TICKET_X,
+    y: headerBottom,
+    width: TICKET_W,
+    height: HEADER_H,
     color: primary,
   });
-
-  const innerX = TICKET_X + SHELL_PAD;
-  const innerY = ticketY + SHELL_PAD;
-  const innerW = TICKET_W - SHELL_PAD * 2;
-  const innerH = TICKET_H - SHELL_PAD - titleBand;
+  page.drawRectangle({
+    x: TICKET_X,
+    y: ticketY,
+    width: STRIPE_W,
+    height: TICKET_H,
+    color: primary,
+  });
   drawRoundedRect(page, {
-    x: innerX,
-    y: innerY,
-    width: innerW,
-    height: innerH,
-    radius: 10,
-    color: bodyBg,
+    x: TICKET_X,
+    y: ticketY,
+    width: TICKET_W,
+    height: TICKET_H,
+    radius: CORNER_R,
+    borderColor: primary,
+    borderWidth: 1.5,
   });
 
-  const contentLeft = innerX + 14;
-  const shellTop = ticketY + TICKET_H;
+  const contentLeft = TICKET_X + 25;
+  const headerTop = ticketY + TICKET_H;
 
   const badgeTextWidth = bold.widthOfTextAtSize(theme.badgeLabel, 9);
   const badgeW = Math.max(111, badgeTextWidth + 24);
-  const badgeY = shellTop - 36;
+  const badgeY = headerTop - 42;
   drawRoundedRect(page, {
     x: contentLeft,
     y: badgeY,
     width: badgeW,
-    height: 22,
+    height: 23,
     radius: 11,
     color: badgeColor,
   });
   page.drawText(theme.badgeLabel, {
     x: contentLeft + (badgeW - badgeTextWidth) / 2,
-    y: badgeY + 6.5,
+    y: badgeY + 7,
     size: 9,
     font: bold,
     color: rgb(1, 1, 1),
   });
 
-  const titleSize = summary ? 16 : 18;
-  page.drawText(
-    fitText(event.name, bold, titleSize, TICKET_W - 150) || "Event",
-    {
-      x: contentLeft,
-      y: shellTop - (summary ? 56 : 62),
-      size: titleSize,
-      font: bold,
-      color: titleColor,
-    },
-  );
-
-  if (summary) {
-    const summaryLines = wrapSummaryLines(
-      summary,
-      oblique,
-      10,
-      TICKET_W - 36,
-      2,
-    );
-    summaryLines.forEach((line, index) => {
-      page.drawText(line, {
-        x: contentLeft,
-        y: shellTop - 74 - index * 12,
-        size: 10,
-        font: oblique,
-        color: summaryColor,
-      });
+  const subtitle = printedTicketSubtitle(event);
+  if (subtitle) {
+    const subtitleX = contentLeft + badgeW + 12;
+    const subtitleMax = TICKET_X + TICKET_W - 110 - subtitleX;
+    page.drawText(fitText(subtitle, regular, 9, subtitleMax), {
+      x: subtitleX,
+      y: badgeY + 7,
+      size: 9,
+      font: regular,
+      color: headerSubtleText,
     });
   }
 
+  page.drawText(fitText(event.name, bold, 20, TICKET_W - 140) || "Event", {
+    x: contentLeft,
+    y: headerTop - 58,
+    size: 20,
+    font: bold,
+    color: headerText,
+  });
+
   if (logo) {
-    const scale = Math.min(64 / logo.width, 36 / logo.height);
+    const scale = Math.min(70 / logo.width, 40 / logo.height);
     page.drawImage(logo, {
       x: TICKET_X + TICKET_W - logo.width * scale - 18,
-      y: shellTop - 50,
+      y: headerTop - 52,
       width: logo.width * scale,
       height: logo.height * scale,
     });
   }
 
-  const innerTop = innerY + innerH;
   const drawField = (label: string, value: unknown, x: number, y: number) => {
     page.drawText(label, { x, y: y + 16, size: 8, font: bold, color: labelColor });
     page.drawText(fitText(value, regular, 11, 230) || "—", {
@@ -455,52 +548,75 @@ async function drawBrandedTicket(
   };
 
   const timezone = event.venue?.timezone;
-  const dateFieldY = innerTop - 32;
-  const timeFieldY = innerTop - 68;
-  const venueFieldY = innerTop - 104;
-  drawField("DATE", formatEventWhen(event.start, timezone, "ddd, MMM D, YYYY"), contentLeft, dateFieldY);
-  drawField("TIME", formatEventWhen(event.start, timezone, "h:mm A"), contentLeft, timeFieldY);
-  drawField("VENUE", printedVenueLabel(event), contentLeft, venueFieldY);
+  const eventTimeLabel = formatEventWhen(event.start, timezone, "h:mm A");
+  const offerLayout = printedTicketOfferLayout(
+    ticket,
+    eventTimeLabel,
+    packageName,
+    event,
+  );
+  drawField(
+    "DATE",
+    formatEventWhen(event.start, timezone, "ddd, MMM D, YYYY"),
+    contentLeft,
+    headerBottom - 40,
+  );
+  drawField("TIME", offerLayout.timeValue, contentLeft, headerBottom - 80);
+  drawField("VENUE", printedVenueLabel(event), contentLeft, headerBottom - 120);
 
-  const holderX = innerX + innerW / 2 + 8;
+  const holderX = TICKET_X + 270;
   page.drawText("TICKET HOLDER", {
     x: holderX,
-    y: innerTop - 16,
+    y: headerBottom - 24,
     size: 8,
     font: bold,
     color: labelColor,
   });
-  page.drawText(fitText(ticket.holder, regular, 12, 150) || "Guest", {
+  page.drawText(
+    fitText(printedTicketHolderName(ticket, buyer), regular, 12, 140) || "Guest",
+    {
     x: holderX,
-    y: innerTop - 32,
+    y: headerBottom - 40,
     size: 12,
     font: regular,
     color: textBody,
   });
   page.drawLine({
-    start: { x: holderX, y: innerTop - 40 },
-    end: { x: holderX + 150, y: innerTop - 40 },
+    start: { x: holderX, y: headerBottom - 48 },
+    end: { x: holderX + 140, y: headerBottom - 48 },
     thickness: 0.75,
     color: hexToRgb("#CBCFD8"),
   });
 
-  const resolvedPackage = resolvePackageName(packageName, event);
-  if (resolvedPackage) {
-    drawField("PACKAGE", resolvedPackage, holderX, innerTop - 68);
+  if (offerLayout.secondary) {
+    drawField(
+      offerLayout.secondary.label,
+      offerLayout.secondary.value,
+      holderX,
+      headerBottom - 80,
+    );
+  }
+
+  const ticketId = printedTicketIdLayout(ticket, event);
+  if (ticketId) {
+    drawField(
+      ticketId.label,
+      ticketId.value,
+      holderX,
+      headerBottom - (offerLayout.secondary ? 120 : 80),
+    );
   }
 
   const seatBoxX = contentLeft;
-  const seatBoxHeight = 68;
-  const seatBoxGapBelowVenue = 14;
-  const seatBoxY = venueFieldY - seatBoxGapBelowVenue - seatBoxHeight;
+  const seatBoxY = ticketY + 28;
   drawRoundedRect(page, {
     x: seatBoxX,
     y: seatBoxY,
     width: 223,
-    height: seatBoxHeight,
+    height: 68,
     radius: 8,
     color: rgb(1, 1, 1),
-    borderColor: boxBorder,
+    borderColor: seatBoxBorder,
     borderWidth: 1,
   });
 
@@ -530,9 +646,19 @@ async function drawBrandedTicket(
     });
   });
 
-  const qrSize = 124;
-  const qrX = innerX + innerW - qrSize - 14;
-  const qrY = innerY + 22;
+  const qrSize = 118;
+  const qrX = TICKET_X + TICKET_W - qrSize - 24;
+  const qrY = ticketY + 40;
+  drawRoundedRect(page, {
+    x: qrX - 6,
+    y: qrY - 6,
+    width: qrSize + 12,
+    height: qrSize + 12,
+    radius: 8,
+    color: rgb(1, 1, 1),
+    borderColor: seatBoxBorder,
+    borderWidth: 1,
+  });
   const qrImage = await pdf.embedPng(
     await QRCode.toDataURL(ticket.checkInCode, { margin: 0, width: 512 }),
   );
@@ -541,7 +667,7 @@ async function drawBrandedTicket(
   const scanLabel = "SCAN AT ENTRANCE";
   page.drawText(scanLabel, {
     x: qrX + (qrSize - regular.widthOfTextAtSize(scanLabel, 7)) / 2,
-    y: qrY - 14,
+    y: qrY - 16,
     size: 7,
     font: regular,
     color: textMuted,
@@ -549,7 +675,7 @@ async function drawBrandedTicket(
 
   page.drawText("Valid ID required  •  Non-transferable  •  Subject to venue policies", {
     x: contentLeft,
-    y: Math.min(innerY + 10, seatBoxY - 12),
+    y: ticketY + 10,
     size: 7,
     font: regular,
     color: textFaint,
@@ -564,6 +690,7 @@ function safeFilename(name: string) {
 export async function printTicketsPdf({
   event,
   tickets,
+  buyer,
   packageName,
   filename,
   mode,
@@ -577,7 +704,6 @@ export async function printTicketsPdf({
   const fonts = {
     regular: await pdf.embedFont(StandardFonts.Helvetica),
     bold: await pdf.embedFont(StandardFonts.HelveticaBold),
-    oblique: await pdf.embedFont(StandardFonts.HelveticaOblique),
   };
   const logo = await embedLogo(pdf, event);
 
@@ -588,6 +714,7 @@ export async function printTicketsPdf({
     await drawBrandedTicket(pdf, page!, {
       event,
       ticket: tickets[index],
+      buyer,
       packageName,
       fonts,
       logo,

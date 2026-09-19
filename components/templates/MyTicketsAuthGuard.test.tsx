@@ -14,6 +14,7 @@ vi.mock("next/navigation", () => ({
   useRouter: () => routerMocks,
   usePathname: () => "/wallet/my-tickets/",
   useParams: () => ({}),
+  useSearchParams: () => new URLSearchParams(),
 }));
 
 vi.mock("@/lib/auth", () => ({

@@ -32,9 +32,12 @@ vi.mock("next/link", () => ({
   ),
 }));
 
+const searchParamsGet = vi.fn((_key: string) => null as string | null);
+
 vi.mock("next/navigation", () => ({
   useRouter: () => ({ push, replace: vi.fn(), back: vi.fn() }),
   usePathname: () => "/browse/",
+  useSearchParams: () => ({ get: searchParamsGet }),
 }));
 
 vi.mock("@/lib/api", () => ({
@@ -60,6 +63,8 @@ describe("ShopperSearchBar", () => {
     beginRouteTransition.mockReset();
     mockedSearch.mockReset();
     mockedSearch.mockResolvedValue({ data: DEMO_EVENTS } as never);
+    searchParamsGet.mockReset();
+    searchParamsGet.mockReturnValue(null);
     Object.defineProperty(window, "innerWidth", {
       configurable: true,
       writable: true,
@@ -115,6 +120,18 @@ describe("ShopperSearchBar", () => {
 
     expect(beginRouteTransition).toHaveBeenCalledWith("/search/?query=icedogs");
     expect(push).toHaveBeenCalledWith("/search/?query=icedogs");
+    expect(field).toHaveValue("icedogs");
+  });
+
+  it("shows the URL query in the field on the search page", () => {
+    searchParamsGet.mockImplementation((key: string) =>
+      key === "query" ? "icedogs" : null,
+    );
+    renderSearch();
+
+    expect(
+      screen.getByRole("textbox", { name: /search for events/i }),
+    ).toHaveValue("icedogs");
   });
 
   it("shows the no-match copy when the API returns nothing", async () => {

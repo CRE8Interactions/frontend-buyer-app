@@ -60,7 +60,7 @@ export default function SellWithUs() {
   );
 
   return (
-    <div style={{ minHeight: "100vh", display: "flex", flexDirection: "column", background: "#f7f8fc", color: NAVY, fontFamily: "'Geist', system-ui, -apple-system, sans-serif", WebkitFontSmoothing: "antialiased" }}>
+    <div data-bt-scroll-page="" style={{ minHeight: "100vh", display: "flex", flexDirection: "column", background: "#f7f8fc", color: NAVY, fontFamily: "'Geist', system-ui, -apple-system, sans-serif", WebkitFontSmoothing: "antialiased" }}>
       <header style={{ background: NAVY, position: "sticky", top: 0, zIndex: 20 }}>
         <div style={{ maxWidth: 1100, margin: "0 auto", padding: narrow ? "14px 16px" : "18px 32px", display: "flex", alignItems: "center", gap: 16 }}>
           <Link href="/" aria-label="Blocktickets home" style={{ display: "flex", alignItems: "center", flexShrink: 0 }}>

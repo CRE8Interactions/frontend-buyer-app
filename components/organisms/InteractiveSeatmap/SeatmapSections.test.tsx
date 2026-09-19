@@ -578,6 +578,39 @@ describe("SeatmapSeat", () => {
     expect(screen.getByTestId("seat-popup-caret")).toBeInTheDocument();
   });
 
+  it("shows Unlock offer on the mobile single-offer popup for a locked seat", () => {
+    const coded = DEMO_SEATED_TICKET_GROUPS.find((item) => item.offer?.accessCode);
+    expect(coded).toBeTruthy();
+    window.innerWidth = 390;
+    useSeatmapStore.setState({
+      data: mapping,
+      seatLookupTable: {
+        s1: { ...coded!, offer: { ...coded!.offer!, maxQuantity: 1 } },
+      },
+      seatOffersLookupTable: {
+        s1: [{ ...coded!, offer: { ...coded!.offer!, maxQuantity: 1 } }],
+      },
+      selectedFromMap: [],
+    });
+    const onUnlockOffer = vi.fn();
+    const onClose = vi.fn();
+
+    render(
+      <SeatmapTooltip
+        target={{ kind: "seat", seatId: "s1", x: 80, y: 120 }}
+        onClose={onClose}
+        onUnlockOffer={onUnlockOffer}
+      />,
+    );
+
+    expect(screen.getByText(coded!.offer!.name!)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /unlock offer/i })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /add now/i })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /unlock offer/i }));
+    expect(onUnlockOffer).toHaveBeenCalledWith(coded!.offer!.name);
+    expect(onClose).not.toHaveBeenCalled();
+  });
+
   it("adds the seat when Add now is pressed on the mobile single-offer popup", () => {
     const group = DEMO_SEATED_TICKET_GROUPS.find((item) =>
       item.seatIds?.includes("s1"),
@@ -1213,6 +1246,18 @@ describe("InteractiveSeatmap canvas", () => {
       expect(screen.queryByLabelText(/loading seat map/i)).not.toBeInTheDocument();
     });
     expect(screen.getByText("Locked")).toBeInTheDocument();
+  });
+
+  it("hides zoom and legend when hideChrome is set", async () => {
+    useFiltersStore.setState({ loadingTicketGroups: false });
+    render(<InteractiveSeatmap lookupsMode="external" compactChrome hideChrome />);
+
+    await waitFor(() => {
+      expect(screen.queryByLabelText(/loading seat map/i)).not.toBeInTheDocument();
+    });
+    expect(screen.queryByRole("button", { name: /zoom in/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /zoom out/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /^legend$/i })).not.toBeInTheDocument();
   });
 
   it("shows a loading spinner in the Find on map canvas while inventory is loading", () => {

@@ -1,5 +1,6 @@
 "use client";
 
+import { BROWSE_DISPLAY, BROWSE_TRACK, browseLeading } from "@/lib/browseType";
 import { fluidSize } from "@/lib/shopperFluidType";
 
 import { useEffect, useRef, useState } from "react";
@@ -550,10 +551,10 @@ export default function PackageDetailClient({
                   <h1
                     style={{
                       margin: 0,
-                      fontSize: fluidSize(mobile ? 30 : 42),
+                      fontSize: BROWSE_DISPLAY.h2,
                       fontWeight: 600,
-                      letterSpacing: "-0.03em",
-                      lineHeight: 1.06,
+                      letterSpacing: BROWSE_TRACK.display,
+                      lineHeight: browseLeading("h2"),
                     }}
                   >
                     {pkg.name}
@@ -900,6 +901,7 @@ export default function PackageDetailClient({
         <Modal
           variant="light"
           sheet={false}
+          hideClose
           title={seatedError.title}
           onClose={() => setSeatedError(null)}
           busy={checkingOut}

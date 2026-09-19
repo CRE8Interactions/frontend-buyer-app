@@ -106,7 +106,7 @@ export default function BrandedCheckoutShell({
         </button>
         <div className="hidden flex-1 md:block" aria-hidden />
         {hold ? (
-          <span className="pointer-events-none absolute left-1/2 top-1/2 inline-flex max-w-[calc(100%-11.5rem)] -translate-x-1/2 -translate-y-1/2 items-center gap-1.5 truncate rounded-full border border-white/22 bg-white/14 px-2.5 py-2 text-[12px] font-medium tabular-nums text-white md:static md:max-w-none md:translate-x-0 md:translate-y-0 md:px-3.5 md:text-[13px]">
+          <span className="pointer-events-none absolute left-1/2 top-1/2 inline-flex max-w-[calc(100%-11.5rem)] -translate-x-1/2 -translate-y-1/2 items-center gap-1.5 truncate rounded-full border border-white/22 bg-white/14 px-2.5 py-2 text-[12px] font-medium tabular-nums text-white md:static md:max-w-none md:translate-x-0 md:translate-y-0 md:px-3.5">
             <svg
               viewBox="0 0 24 24"
               fill="none"
@@ -123,7 +123,7 @@ export default function BrandedCheckoutShell({
             Seats held {hold}
           </span>
         ) : null}
-        <div className="relative z-[1] ml-auto flex shrink-0 items-center gap-1.5 whitespace-nowrap text-[11px] text-white/80 md:ml-0 md:gap-2 md:text-[13px]">
+        <div className="relative z-[1] ml-auto flex shrink-0 items-center gap-1.5 whitespace-nowrap text-[11px] text-white/80 md:ml-0 md:gap-2">
           <svg
             viewBox="0 0 24 24"
             fill="none"
