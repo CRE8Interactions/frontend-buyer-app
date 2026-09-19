@@ -55,6 +55,7 @@ vi.mock("@/lib/api", () => ({
   getMyReceivedTransfers: vi.fn(),
   getMyListings: vi.fn(),
   getOrder: vi.fn(),
+  searchEvents: vi.fn(async () => ({ data: [] })),
   validateEmail: vi.fn(async () => ({ data: { verdict: "Valid" } })),
 }));
 
@@ -239,6 +240,8 @@ async function confirmAcceptTransferInPopup(
   mockedGetMyReceivedTransfers.mockResolvedValue({ data: [] } as never);
   mockedGetMyListings.mockReset();
   mockedGetMyListings.mockResolvedValue({ data: [] } as never);
+  mockedGetMyEvents.mockReset();
+  mockedGetMyEvents.mockResolvedValue({ data: [] } as never);
   mockedGetOrder.mockReset();
   mockedGetOrder.mockResolvedValue({ data: null } as never);
   pdfMocks.printTicketsPdf.mockReset();

@@ -19,6 +19,7 @@ const icedogs = DEMO_ORGS.find((org) => org.slug === "niagara-icedogs")!;
 vi.mock("next/navigation", () => ({
   usePathname: () => `/${icedogs.slug}/`,
   useParams: () => ({ slug: icedogs.slug }),
+  useSearchParams: () => new URLSearchParams(),
 }));
 
 vi.mock("@/components/organisms/InteractiveSeatmap", async () => {

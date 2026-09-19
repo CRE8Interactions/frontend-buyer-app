@@ -57,6 +57,7 @@ vi.mock("next/navigation", () => ({
   useParams: () => ({ slug: "aggie-memorial-stadium" }),
   usePathname: () => "/venue/aggie-memorial-stadium/",
   useRouter: () => routerMocks,
+  useSearchParams: () => new URLSearchParams(),
 }));
 
 vi.mock("@/lib/auth", () => ({

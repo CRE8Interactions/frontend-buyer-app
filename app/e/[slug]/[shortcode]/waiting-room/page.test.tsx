@@ -15,6 +15,7 @@ vi.mock("next/navigation", () => ({
     shortcode: EVENT.shortCode,
   }),
   useRouter: () => router,
+  useSearchParams: () => new URLSearchParams(),
 }));
 
 vi.mock("@/components/molecules/RouteLoader", () => ({

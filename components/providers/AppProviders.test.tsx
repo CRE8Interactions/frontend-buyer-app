@@ -10,6 +10,7 @@ const raptors = DEMO_ORGS.find((org) => org.slug === "ogden-raptors")!;
 
 vi.mock("next/navigation", () => ({
   usePathname: () => path.current,
+  useSearchParams: () => new URLSearchParams(),
 }));
 
 vi.mock("@growthbook/growthbook-react", () => ({

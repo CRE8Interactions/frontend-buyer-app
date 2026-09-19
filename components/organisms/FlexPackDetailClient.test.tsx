@@ -38,6 +38,7 @@ vi.mock("next/navigation", () => ({
   useRouter: () => routerMocks,
   usePathname: () => "/niagara-icedogs/flex-pack/cfa9c3cb-e81c-4141-ac56-c8edcd0f0303/",
   useParams: () => ({ slug: "niagara-icedogs" }),
+  useSearchParams: () => new URLSearchParams(),
 }));
 
 vi.mock("@/lib/api", () => ({

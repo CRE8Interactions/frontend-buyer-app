@@ -159,6 +159,7 @@ export type BillingCountrySource = {
   access_pass_template?: {
     venue?: BillingVenueLike | null;
     organization?: BillingOrgLike | null;
+    currency?: string | null;
   } | null;
 };
 
@@ -279,11 +280,12 @@ function countryFromVenue(venue?: BillingVenueLike | null) {
 
 /** Shopper billing country hint from the cart (venue / org / currency). */
 export function billingCountryFromCart(
-  cart?: BillingCountrySource | null,
+  cart?: unknown,
 ): string | undefined {
-  if (!cart) return undefined;
-  const event = cart.event;
-  const pack = cart.package || cart.flex_pack || cart.access_pass_template;
+  if (!cart || typeof cart !== "object") return undefined;
+  const source = cart as BillingCountrySource;
+  const event = source.event;
+  const pack = source.package || source.flex_pack || source.access_pass_template;
   const org = event?.organization || pack?.organization;
   const fromVenue =
     countryFromVenue(event?.venue) ||
@@ -293,7 +295,7 @@ export function billingCountryFromCart(
     countryFromVenue(org?.venue);
   if (fromVenue) return fromVenue;
   const currency = String(
-    cart.currency || pack?.currency || org?.currency || "",
+    source.currency || pack?.currency || org?.currency || "",
   )
     .trim()
     .toUpperCase();

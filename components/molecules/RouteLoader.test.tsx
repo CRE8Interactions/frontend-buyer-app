@@ -14,6 +14,7 @@ let mockPathname = "/";
 vi.mock("next/navigation", () => ({
   usePathname: () => mockPathname,
   useParams: () => ({}),
+  useSearchParams: () => new URLSearchParams(),
 }));
 
 const raptors = DEMO_ORGS.find((org) => org.slug === "ogden-raptors")!;

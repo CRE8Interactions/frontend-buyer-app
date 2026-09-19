@@ -11,6 +11,7 @@ const authState = vi.hoisted(() => ({
 
 vi.mock("next/navigation", () => ({
   usePathname: () => "/browse/",
+  useSearchParams: () => new URLSearchParams(),
 }));
 
 vi.mock("next/link", () => ({

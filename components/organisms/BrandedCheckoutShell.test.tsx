@@ -10,6 +10,7 @@ import { DEMO_ORGS, demoCheckoutCart } from "@/lib/demo/fixtures";
 vi.mock("next/navigation", () => ({
   usePathname: () => "/checkout/",
   useParams: () => ({}),
+  useSearchParams: () => new URLSearchParams(),
 }));
 
 const raptors = DEMO_ORGS.find((org) => org.slug === "ogden-raptors")!;
