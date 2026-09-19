@@ -12,7 +12,7 @@ import {
   type MouseEvent as ReactMouseEvent,
   type ReactNode,
 } from "react";
-import { usePathname, useRouter } from "next/navigation";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import Spinner from "@/components/atoms/Spinner";
 import SearchEventList from "@/components/organisms/SearchEventList";
 import {
@@ -54,7 +54,9 @@ function useSearchApi() {
 function useShopperSearch(placeholder: string): SearchApi {
   const router = useRouter();
   const pathname = usePathname();
-  const [query, setQueryState] = useState("");
+  const searchParams = useSearchParams();
+  const urlQuery = (searchParams.get("query") || "").trim();
+  const [query, setQueryState] = useState(urlQuery);
   const [results, setResults] = useState<ShopperSearchEvent[]>([]);
   const [loading, setLoading] = useState(false);
   const [open, setOpen] = useState(false);
@@ -117,6 +119,10 @@ function useShopperSearch(placeholder: string): SearchApi {
 
     return () => window.clearTimeout(timer);
   }, [query]);
+
+  useEffect(() => {
+    if (urlQuery) setQueryState(urlQuery);
+  }, [urlQuery]);
 
   useEffect(() => {
     close();

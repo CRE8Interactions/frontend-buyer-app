@@ -69,6 +69,9 @@ describe("Search page", () => {
     ).toBeInTheDocument();
     expect(screen.getByText(hits[0].name)).toBeInTheDocument();
     expect(
+      screen.getByRole("textbox", { name: /search for events/i }),
+    ).toHaveValue("raptors");
+    expect(
       screen.getByRole("link", { name: new RegExp(hits[0].name, "i") }),
     ).toHaveAttribute("href", eventPurchasePath(hits[0]));
     const seated = hits.find((event) => event.shortCode === "RAPT006")!;
