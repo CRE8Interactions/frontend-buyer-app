@@ -78,7 +78,11 @@ vi.mock("@/components/organisms/InteractiveSeatmap", async () => {
         if (!loading) onPaintReady?.();
       }, [loading, onPaintReady]);
       return loading ? (
-        <div role="status" aria-label="Loading seat map">
+        <div
+          data-testid="interactive-seatmap"
+          role="status"
+          aria-label="Loading seat map"
+        >
           Loading seat map
         </div>
       ) : (
