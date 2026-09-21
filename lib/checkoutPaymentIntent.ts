@@ -55,11 +55,12 @@ export function buildProcessOrderRequest<T extends object>(
   cart: T,
   paymentIntentId: string,
 ) {
+  const nextCart = {
+    ...cart,
+    accessPassQuantity: null,
+  } as Omit<T, "accessPassQuantity"> & { accessPassQuantity: null };
   return {
-    cart: {
-      ...cart,
-      accessPassQuantity: null,
-    },
+    cart: nextCart,
     paymentIntentId,
   };
 }

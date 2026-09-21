@@ -92,7 +92,7 @@ describe("gaTierSubtitle", () => {
     expect(
       gaTierSubtitle({
         sectionNumber: "O-Town",
-        offer: { name: "Section M-N & GA" },
+        offer: { description: "Section M-N & GA" },
       }),
     ).toBe("O-Town · unreserved seating");
     expect(
@@ -196,7 +196,7 @@ describe("ticketSelectionSummary", () => {
       ...demoCheckoutCart({ ga: true }).tickets[0],
       sectionName: undefined,
       sectionNumber: "ga",
-      ticketGroup: group.ticketGroupUUID || group.id,
+      ticketGroup: group.id,
     };
     expect(ticketSelectionSummary([ticket]).subtitle).toBe(
       "Ga · unreserved seating",

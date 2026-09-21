@@ -324,7 +324,7 @@ describe("selectionPaneRestrictionLabel", () => {
     const sectionAB = DEMO_SEATED_TICKET_GROUPS[1];
     expect(
       selectionPaneRestrictionLabel(null, [
-        { ...sectionAB, seatId: "a1", quantity: 1 },
+        sectionAB,
       ]),
     ).toBe("2–6 per order");
   });
@@ -358,7 +358,7 @@ describe("selectionPaneRestrictionLabel", () => {
     expect(
       selectionPaneRestrictionLabel(
         null,
-        [{ seatId: "s1" }],
+        [{}],
         { minQuantity: 2, maxQuantity: 6, incrementsOf: 2 },
       ),
     ).toBe("2–6 per order");
@@ -370,12 +370,10 @@ describe("selectionPaneRestrictionLabel", () => {
 
     expect(
       selectionPaneRestrictionLabel(null, [
-        { ...ga, offer: { id: "off-standard", name: "Standard Admission" } },
+        { ...ga, offer: {} },
         {
           ...ga,
           offer: {
-            id: "off-early",
-            name: "EARLY BIRD",
             minQuantity: 5,
           },
         },
@@ -386,7 +384,7 @@ describe("selectionPaneRestrictionLabel", () => {
   it("keeps the offer's own limits when every selected seat shares that offer", () => {
     const ga = demoTicketGroups().ticketGroups.find((group) => group.GA);
     if (!ga) throw new Error("demo fixtures need a GA ticket group");
-    const offer = { id: "off-early", name: "EARLY BIRD", minQuantity: 2, maxQuantity: 5 };
+    const offer = { minQuantity: 2, maxQuantity: 5 };
 
     expect(
       selectionPaneRestrictionLabel(null, [
@@ -400,7 +398,7 @@ describe("selectionPaneRestrictionLabel", () => {
     const fieldClub = DEMO_SEATED_TICKET_GROUPS[0];
     expect(
       selectionPaneRestrictionLabel(4, [
-        { ...fieldClub, seatId: "s1", quantity: 1 },
+        fieldClub,
       ]),
     ).toBe("1–4 per order");
   });
@@ -572,7 +570,12 @@ describe("limitsFromTicketGroup", () => {
 
     expect(
       limitsFromTicketGroup(
-        { ...parent, offer: connected, availableCount: 240, GA: true },
+        {
+          ...parent,
+          offer: connected,
+          availableCount: 240,
+          GA: true,
+        } as Parameters<typeof limitsFromTicketGroup>[0],
         null,
       ),
     ).toMatchObject({ min: 2, max: 6, step: 2, valid: true });
@@ -585,7 +588,7 @@ describe("limitsFromTicketGroup", () => {
       {
         ...seated!,
         offer: seated!.offer!.connected_offers![0],
-      },
+      } as Parameters<typeof limitsFromTicketGroup>[0],
       null,
     );
     expect(companionLimits).toMatchObject({ min: 1, max: 2, step: 1, valid: true });

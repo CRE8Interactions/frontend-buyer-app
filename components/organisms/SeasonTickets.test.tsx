@@ -1,6 +1,6 @@
 import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from "vitest";
 import {
   DEMO_EVENTS,
   DEMO_SEATED_TICKET_GROUPS,
@@ -130,14 +130,18 @@ const mockedAcceptIncomingTransfers = vi.mocked(acceptIncomingTransfers);
 const mockedCancelMyTransfers = vi.mocked(cancelMyTransfers);
 const mockedDownloadApplePass = vi.mocked(downloadApplePass);
 const mockedDownloadGooglePass = vi.mocked(downloadGooglePass);
-const mockedCreateTicketTransfer = vi.mocked(createTicketTransfer);
+function looseApiMock<T>(fn: T) {
+  return fn as unknown as Mock<(...args: never[]) => Promise<{ data: unknown }>>;
+}
+
+const mockedCreateTicketTransfer = looseApiMock(vi.mocked(createTicketTransfer));
 const mockedGetAccessPassesByOrder = vi.mocked(getAccessPassesByOrder);
-const mockedGetMyAccessPass = vi.mocked(getMyAccessPass);
-const mockedGetMyAccessPasses = vi.mocked(getMyAccessPasses);
-const mockedGetMyEvents = vi.mocked(getMyEvents);
-const mockedGetMySentTransfers = vi.mocked(getMySentTransfers);
-const mockedGetIncomingTransfers = vi.mocked(getIncomingTransfers);
-const mockedGetMyReceivedTransfers = vi.mocked(getMyReceivedTransfers);
+const mockedGetMyAccessPass = looseApiMock(vi.mocked(getMyAccessPass));
+const mockedGetMyAccessPasses = looseApiMock(vi.mocked(getMyAccessPasses));
+const mockedGetMyEvents = looseApiMock(vi.mocked(getMyEvents));
+const mockedGetMySentTransfers = looseApiMock(vi.mocked(getMySentTransfers));
+const mockedGetIncomingTransfers = looseApiMock(vi.mocked(getIncomingTransfers));
+const mockedGetMyReceivedTransfers = looseApiMock(vi.mocked(getMyReceivedTransfers));
 const mockedGetMyListings = vi.mocked(getMyListings);
 const mockedGetOrder = vi.mocked(getOrder);
 const mockedValidateEmail = vi.mocked(validateEmail);
@@ -5061,6 +5065,10 @@ describe("SeasonTickets routed event screen", { timeout: 20_000 }, () => {
           generalAdmission: true,
           sectionName: "General Admission",
           sectionNumber: "Club",
+          rowNumber: "GA",
+          seatNumber: 1,
+          cost: 25,
+          price: 25,
           offerName: "General admission",
         },
         {
@@ -5071,6 +5079,10 @@ describe("SeasonTickets routed event screen", { timeout: 20_000 }, () => {
           generalAdmission: true,
           sectionName: "General Admission",
           sectionNumber: "Club",
+          rowNumber: "GA",
+          seatNumber: 1,
+          cost: 25,
+          price: 25,
           offerName: "General admission",
         },
       ],
@@ -5229,7 +5241,7 @@ describe("SeasonTickets routed event screen", { timeout: 20_000 }, () => {
     );
 
     expect(
-      await screen.findAllByText(DEMO_SEATED_TICKET_GROUPS[0].offer!.name),
+      await screen.findAllByText(DEMO_SEATED_TICKET_GROUPS[0].offer!.name!),
     ).toHaveLength(order.tickets.length);
 
     const detailsButtons = await screen.findAllByRole("button", {
@@ -5247,7 +5259,7 @@ describe("SeasonTickets routed event screen", { timeout: 20_000 }, () => {
     expect(details.getByText(/Tue, Sep 1 · 10:00 AM/)).toBeInTheDocument();
     expect(details.getByText("Offer")).toBeInTheDocument();
     expect(
-      details.getByText(DEMO_SEATED_TICKET_GROUPS[0].offer!.name),
+      details.getByText(DEMO_SEATED_TICKET_GROUPS[0].offer!.name!),
     ).toBeInTheDocument();
     expect(details.getByText("Mobile entry")).toBeInTheDocument();
   });
@@ -6170,6 +6182,10 @@ describe("SeasonTickets routed event screen", { timeout: 20_000 }, () => {
         generalAdmission: true,
         sectionName: "General Admission",
         sectionNumber: "Club",
+        rowNumber: "GA",
+        seatNumber: 1,
+        cost: 25,
+        price: 25,
         offerName: "General admission",
       },
       {
@@ -6180,6 +6196,10 @@ describe("SeasonTickets routed event screen", { timeout: 20_000 }, () => {
         generalAdmission: true,
         sectionName: "General Admission",
         sectionNumber: "Club",
+        rowNumber: "GA",
+        seatNumber: 1,
+        cost: 25,
+        price: 25,
         offerName: "General admission",
       },
     ];
@@ -7202,6 +7222,10 @@ describe("SeasonTickets routed event screen", { timeout: 20_000 }, () => {
           generalAdmission: true,
           sectionName: "General Admission",
           sectionNumber: "Club",
+          rowNumber: "GA",
+          seatNumber: 1,
+          cost: 25,
+          price: 25,
           offerName: "General admission",
         },
         {
@@ -7212,6 +7236,10 @@ describe("SeasonTickets routed event screen", { timeout: 20_000 }, () => {
           generalAdmission: true,
           sectionName: "General Admission",
           sectionNumber: "Club",
+          rowNumber: "GA",
+          seatNumber: 1,
+          cost: 25,
+          price: 25,
           offerName: "General admission",
         },
       ];
@@ -8533,7 +8561,7 @@ describe("SeasonTickets mobile ticket actions", () => {
     render(<SeasonTickets />);
 
     expect(
-      await screen.findAllByText(DEMO_SEATED_TICKET_GROUPS[0].offer!.name),
+      await screen.findAllByText(DEMO_SEATED_TICKET_GROUPS[0].offer!.name!),
     ).toHaveLength(order.tickets.length);
   });
 

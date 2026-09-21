@@ -113,6 +113,8 @@ describe("validateSubmittedEmail", () => {
   it("uses the same invalid copy path as login for malformed addresses", async () => {
     const result = await validateSubmittedEmail("not-an-email");
 
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
     expect(result.error).toBe("invalid");
     expect(FIELD_COPY.invalidEmail).toMatch(/invalid/i);
     expect(mockedValidateEmail).not.toHaveBeenCalled();

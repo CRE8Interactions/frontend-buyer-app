@@ -675,7 +675,7 @@ describe("Select tickets page (PremiumTicketing)", { timeout: 20_000 }, () => {
       /on sale soon/i,
     ],
     ["sold out", { soldOut: true }, /get notified if tickets become available/i],
-  ] as const)(
+  ])(
     "hides listing filters on mobile when the event is %s",
     async (_label, extra, ready) => {
       Object.defineProperty(window, "innerWidth", {
