@@ -3148,7 +3148,7 @@ export default function SeasonTickets({
   const RoutedEventMissing = () =>
     RoutedEventShell(
       <div style={{ ...card, borderRadius: 20, padding: mobile ? "28px 20px" : "40px 32px", display: "flex", flexDirection: "column", gap: 8 }}>
-        <div style={{ fontSize: fluidSize(24), fontWeight: 600, letterSpacing: "-0.02em" }}>
+        <div style={{ fontSize: fluidSize(16), fontWeight: 600, letterSpacing: "-0.02em" }}>
           {routedAccessPassUUID
             ? "We couldn't find that access pass"
             : routedPackageUUID && !routedEventUUID
@@ -3920,7 +3920,7 @@ export default function SeasonTickets({
               <div style={{ fontSize: fluidSize(11), fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.08em", opacity: 0.8 }}>
                 {row.typeLabel}
               </div>
-              <div style={{ marginTop: 5, fontSize: fluidSize(19), fontWeight: 600, lineHeight: browseLeading("h3") }}>
+              <div style={{ marginTop: 5, fontSize: fluidSize(16), fontWeight: 600, lineHeight: browseLeading("h3") }}>
                 {row.name}
               </div>
             </div>
@@ -4899,11 +4899,11 @@ export default function SeasonTickets({
           <div key={i} style={{ flex: "0 0 94%", scrollSnapAlign: "center", overflow: "hidden", borderRadius: 20, background: "#fff", boxShadow: "0 1px 2px rgba(5,27,53,0.06), 0 18px 38px -22px rgba(5,27,53,0.55)", display: "flex", flexDirection: "column" }}>
             {/* card header — matchup */}
             <div style={{ position: "relative", height: 210, overflow: "hidden", background: "#06203c" }}>
-              {renderEventHero({ radius: 0, logoSize: 72, compactTextSize: 20, fullTextSize: 20 })}
+              {renderEventHero({ radius: 0, logoSize: 72, compactTextSize: 16, fullTextSize: 16 })}
               <div style={{ position: "absolute", inset: 0, background: "linear-gradient(180deg, rgba(6,8,14,0.05) 30%, rgba(6,8,14,0.86) 100%)" }} />
               <div style={{ position: "absolute", left: 16, top: 16, fontSize: fluidSize(11), fontWeight: 600, letterSpacing: "0.16em", textTransform: "uppercase", color: "#fff", background: "rgba(10,12,18,0.55)", backdropFilter: "blur(6px)", borderRadius: 999, padding: "6px 11px" }}>{ticketBadge}</div>
               <div style={{ position: "absolute", left: 0, right: 0, bottom: 0, padding: 16, display: "flex", flexDirection: "column", gap: 4 }}>
-                <div style={{ fontSize: fluidSize(20), fontWeight: 600, color: "#fff", letterSpacing: "-0.02em", lineHeight: 1.25, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{ev.title}</div>
+                <div style={{ fontSize: fluidSize(16), fontWeight: 600, color: "#fff", letterSpacing: "-0.02em", lineHeight: 1.25, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{ev.title}</div>
                 <div style={{ fontSize: fluidSize(14), color: "rgba(255,255,255,0.74)" }}>{ev.when} · {ev.venue}</div>
               </div>
             </div>

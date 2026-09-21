@@ -251,12 +251,12 @@ function ProfileOrganizationCard({
               className="group/name inline-block"
               style={{ ["--org-brand" as string]: brand }}
             >
-              <h3 className="text-[20px] font-semibold leading-tight tracking-[-0.02em] text-white transition-colors duration-200 group-hover/name:text-[var(--org-brand)]">
+              <h3 className="text-[16px] font-semibold leading-tight tracking-[-0.02em] text-white transition-colors duration-200 group-hover/name:text-[var(--org-brand)]">
                 {name}
               </h3>
             </Link>
           ) : (
-            <h3 className="text-[20px] font-semibold leading-tight tracking-[-0.02em]">
+            <h3 className="text-[16px] font-semibold leading-tight tracking-[-0.02em]">
               {name}
             </h3>
           )}

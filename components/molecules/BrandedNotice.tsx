@@ -257,7 +257,7 @@ export default function BrandedNotice({
           <h1
             style={{
               margin: 0,
-              fontSize: 22,
+              fontSize: 16,
               fontWeight: 700,
               letterSpacing: "-0.02em",
             }}

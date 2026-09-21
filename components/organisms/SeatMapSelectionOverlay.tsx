@@ -316,6 +316,14 @@ export default function SeatMapSelectionOverlay({
     onClose();
   };
 
+  /** Backdrop and the action button dismiss the same way, map exit included. */
+  const dismissSeatedError = () => {
+    const leave = seatedError?.leaveMap;
+    dismissMapTooltip();
+    setSeatedError(null);
+    if (leave) onClose();
+  };
+
   const venueImage = (
     section: string | number,
     type: "thumbnail" | "seat-view",
@@ -335,11 +343,11 @@ export default function SeatMapSelectionOverlay({
   const trustRows = (
     <div
       style={{
-        background: "#fff",
-        border: "1px solid rgba(5,27,53,0.10)",
-        boxShadow: "0 1px 2px rgba(5,27,53,0.05)",
-        borderRadius: 20,
-        padding: 20,
+        background: "#f7f8fc",
+        border: "1px solid rgba(5,27,53,0.08)",
+        boxShadow: "none",
+        borderRadius: 14,
+        padding: 18,
         width: "100%",
         boxSizing: "border-box",
         display: "flex",
@@ -413,6 +421,11 @@ export default function SeatMapSelectionOverlay({
         boxSizing: "border-box",
       }}
     >
+      <style>{`
+        .shopper-page [role="dialog"] button.rounded-full.seatmap-panel-checkout {
+          font-size: 17px !important;
+        }
+      `}</style>
       <div
         role="dialog"
         aria-modal="true"
@@ -712,8 +725,8 @@ export default function SeatMapSelectionOverlay({
                     loadingLabel="Holding seats…"
                     disabled={checkoutDisabled}
                     onClick={handleCheckout}
-                    className="flex-1"
-                    style={{ ...checkoutBtnRow, fontSize: fluidSize(16), minHeight: 50, padding: "14px 18px" }}
+                    className="seatmap-panel-checkout flex-1"
+                    style={{ ...checkoutBtnRow, fontSize: "17px", minHeight: 50, padding: "14px 18px" }}
                   >
                     Checkout
                   </BrandedActionButton>
@@ -788,7 +801,7 @@ export default function SeatMapSelectionOverlay({
                         style={{
                           flex: 1,
                           textAlign: "center",
-                          fontSize: fluidSize(16),
+                          fontSize: "20px",
                           fontWeight: 600,
                           letterSpacing: "-0.015em",
                         }}
@@ -848,7 +861,7 @@ export default function SeatMapSelectionOverlay({
                             gap: 7,
                             background: "rgba(5,27,53,0.82)",
                             color: "#fff",
-                            fontSize: fluidSize(12),
+                            fontSize: "11px",
                             fontWeight: 600,
                             letterSpacing: "0.06em",
                             textTransform: "uppercase",
@@ -968,7 +981,7 @@ export default function SeatMapSelectionOverlay({
                           minWidth: 0,
                           maxWidth: "100%",
                           ...pill(accentSoft, accent, true),
-                          fontSize: fluidSize(14),
+                          fontSize: "13px",
                           padding: "5px 10px",
                         }}
                       >
@@ -984,7 +997,7 @@ export default function SeatMapSelectionOverlay({
                       >
                         <div
                           style={{
-                            fontSize: fluidSize(18),
+                            fontSize: "20px",
                             fontWeight: 600,
                             letterSpacing: "-0.02em",
                           }}
@@ -993,7 +1006,7 @@ export default function SeatMapSelectionOverlay({
                             ? gaTicketSeatLine(mapDetailGroup)
                             : `Sec ${mapDetailSection} · Row ${mapDetailGroup.rowNumber || mapDetailGroup.rowName || "—"} · Seat ${mapDetailGroup.seatNumber ?? "—"}`}
                         </div>
-                        <div style={{ fontSize: fluidSize(15), color: "#6e7180" }}>
+                        <div style={{ fontSize: "14px", color: "#6e7180" }}>
                           1 Ticket
                         </div>
                       </div>
@@ -1011,7 +1024,7 @@ export default function SeatMapSelectionOverlay({
                     >
                       <span
                         style={{
-                          fontSize: fluidSize(18),
+                          fontSize: "17px",
                           fontWeight: 600,
                           fontVariantNumeric: "tabular-nums",
                           letterSpacing: "-0.02em",
@@ -1019,8 +1032,8 @@ export default function SeatMapSelectionOverlay({
                       >
                         {money(Number(mapDetailGroup.price || 0))}
                       </span>
-                      <span style={{ fontSize: fluidSize(15), fontWeight: 600 }}>ea</span>
-                      <span style={{ fontSize: fluidSize(14), color: "#6e7180" }}>
+                      <span style={{ fontSize: "14px", fontWeight: 600 }}>ea</span>
+                      <span style={{ fontSize: "12px", color: "#6e7180" }}>
                         incl. fees
                       </span>
                     </div>
@@ -1035,7 +1048,7 @@ export default function SeatMapSelectionOverlay({
                       >
                         <div
                           style={{
-                            fontSize: fluidSize(13),
+                            fontSize: "12px",
                             fontWeight: 600,
                             letterSpacing: "0.12em",
                             textTransform: "uppercase",
@@ -1046,7 +1059,7 @@ export default function SeatMapSelectionOverlay({
                         </div>
                         <div
                           style={{
-                            fontSize: fluidSize(16),
+                            fontSize: "14px",
                             color: "#4a5567",
                             lineHeight: 1.6,
                           }}
@@ -1056,7 +1069,7 @@ export default function SeatMapSelectionOverlay({
                             mobile={mobile}
                             toggleColor={accent}
                             style={{
-                              fontSize: fluidSize(16),
+                              fontSize: "14px",
                               color: "#4a5567",
                               lineHeight: 1.6,
                             }}
@@ -1116,7 +1129,7 @@ export default function SeatMapSelectionOverlay({
                             style={{
                               flex: 1,
                               textAlign: "center",
-                              fontSize: fluidSize(20),
+                              fontSize: "20px",
                               fontWeight: 600,
                               letterSpacing: "-0.015em",
                             }}
@@ -1129,7 +1142,7 @@ export default function SeatMapSelectionOverlay({
                           <p
                             style={{
                               margin: "0 0 18px",
-                              fontSize: fluidSize(14),
+                              fontSize: "14px",
                               fontWeight: 600,
                               color: "#6e7180",
                               textAlign: "center",
@@ -1143,8 +1156,8 @@ export default function SeatMapSelectionOverlay({
                       <>
                         <div
                           style={{
-                            fontSize: fluidSize(24),
-                            fontWeight: 700,
+                            fontSize: "20px",
+                            fontWeight: 600,
                             textAlign: "center",
                             letterSpacing: "-0.025em",
                             marginBottom: paneRestrictionLabel ? 8 : 32,
@@ -1156,7 +1169,7 @@ export default function SeatMapSelectionOverlay({
                           <p
                             style={{
                               margin: "0 0 32px",
-                              fontSize: fluidSize(14),
+                              fontSize: "14px",
                               fontWeight: 600,
                               color: "#6e7180",
                               textAlign: "center",
@@ -1254,10 +1267,11 @@ export default function SeatMapSelectionOverlay({
                                   <div key={label}>
                                     <div
                                       style={{
-                                        fontSize: fluidSize(11),
-                                        fontWeight: 700,
+                                        fontSize: "11px",
+                                        fontWeight: 600,
                                         color: "#9DA2B3",
                                         textTransform: "uppercase",
+                                        letterSpacing: "0.12em",
                                       }}
                                     >
                                       {label}
@@ -1265,8 +1279,8 @@ export default function SeatMapSelectionOverlay({
                                     <div
                                       style={{
                                         marginTop: 1,
-                                        fontSize: fluidSize(16),
-                                        fontWeight: 700,
+                                        fontSize: "17px",
+                                        fontWeight: 600,
                                       }}
                                     >
                                       {value}
@@ -1274,7 +1288,7 @@ export default function SeatMapSelectionOverlay({
                                   </div>
                                 ))}
                                 <div style={{ textAlign: "right" }}>
-                                  <div style={{ fontSize: fluidSize(16), fontWeight: 700 }}>
+                                  <div style={{ fontSize: "17px", fontWeight: 600 }}>
                                     {money(itemPrice)}
                                   </div>
                                   <div
@@ -1326,13 +1340,15 @@ export default function SeatMapSelectionOverlay({
                                     fontFamily: "inherit",
                                     display: "inline-flex",
                                     alignItems: "center",
-                                    gap: 5,
+                                    gap: 7,
                                     border: 0,
-                                    background: "transparent",
-                                    color: NAVY,
-                                    fontSize: fluidSize(13),
+                                    background: "#f1f3f8",
+                                    borderRadius: 999,
+                                    color: "#4a5567",
+                                    fontSize: "13px",
+                                    fontWeight: 500,
                                     cursor: "pointer",
-                                    padding: 0,
+                                    padding: "6px 12px",
                                     flexShrink: 0,
                                   }}
                                 >
@@ -1392,14 +1408,14 @@ export default function SeatMapSelectionOverlay({
                   }}
                 >
                   <div>
-                    <div style={{ fontSize: fluidSize(16), fontWeight: 600, letterSpacing: "-0.01em" }}>Subtotal</div>
-                    <div style={{ marginTop: 2, fontSize: fluidSize(15), color: "#6e7180" }}>
+                    <div style={{ fontSize: "16px", fontWeight: 600, letterSpacing: "-0.01em" }}>Subtotal</div>
+                    <div style={{ marginTop: 2, fontSize: "14px", color: "#6e7180" }}>
                       {mapTicketLabel}
                     </div>
                   </div>
                   <div
                     style={{
-                      fontSize: fluidSize(22),
+                      fontSize: "26px",
                       fontWeight: 600,
                       letterSpacing: "-0.025em",
                     }}
@@ -1414,10 +1430,10 @@ export default function SeatMapSelectionOverlay({
                   loadingLabel="Holding seats…"
                   disabled={checkoutDisabled}
                   onClick={handleCheckout}
-                  className="w-full"
+                  className="seatmap-panel-checkout w-full"
                   style={{
                     ...checkoutBtnRow,
-                    fontSize: fluidSize(16),
+                    fontSize: "17px",
                     minHeight: 50,
                     padding: "14px 22px",
                   }}
@@ -1435,11 +1451,9 @@ export default function SeatMapSelectionOverlay({
           variant="light"
           sheet={false}
           hideClose
+          closeOnBackdrop
           title={seatedError.title}
-          onClose={() => {
-            dismissMapTooltip();
-            setSeatedError(null);
-          }}
+          onClose={dismissSeatedError}
         >
           <p className="mt-4 text-[15px] leading-relaxed text-[#4a5567]">
             {seatedError.message}
@@ -1447,12 +1461,7 @@ export default function SeatMapSelectionOverlay({
           <BrandedActionButton
             primaryColor={buttonColor || accent}
             textColor={buttonTextColor}
-            onClick={() => {
-              const leave = seatedError.leaveMap;
-              dismissMapTooltip();
-              setSeatedError(null);
-              if (leave) onClose();
-            }}
+            onClick={dismissSeatedError}
             className="mt-6 w-full"
           >
             {seatedError.buttonText || "Close"}

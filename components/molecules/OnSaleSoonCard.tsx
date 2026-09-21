@@ -10,12 +10,30 @@ export default function OnSaleSoonCard({
   desktop = false,
   fill = false,
   className = "",
+  messageSize = fluidSize(16),
+  dateSize,
+  labelSize = fluidSize(12),
+  gap,
+  message = "Tickets aren't on sale yet. Check back soon.",
+  emptyMessage = "Tickets aren't on sale yet. Check back soon.",
 }: {
   scheduledAt?: string;
   accentColor?: string;
   desktop?: boolean;
   fill?: boolean;
   className?: string;
+  /** Body copy size. Literal px — fluidSize(22) aliases to the 26px display step. */
+  messageSize?: string;
+  /** On-sale date. Seated keeps 26px desktop / 20px mobile. */
+  dateSize?: number | string;
+  /** "On sale soon" label. */
+  labelSize?: number | string;
+  /** Space between the label, date, and note. */
+  gap?: number;
+  /** Body under the on-sale time. */
+  message?: string;
+  /** Body when no on-sale time is available. */
+  emptyMessage?: string;
 }) {
   const centered = !desktop || fill;
 
@@ -31,7 +49,7 @@ export default function OnSaleSoonCard({
         padding: desktop && fill ? "32px" : desktop ? "18px 20px" : "16px 18px",
         display: "flex",
         flexDirection: "column",
-        gap: desktop ? 12 : 10,
+        gap: gap ?? (desktop ? 12 : 10),
         ...(centered
           ? { alignItems: "center", textAlign: "center" }
           : {}),
@@ -66,7 +84,7 @@ export default function OnSaleSoonCard({
         />
         <span
           style={{
-            fontSize: fluidSize(12),
+            fontSize: labelSize,
             fontWeight: 600,
             letterSpacing: "0.12em",
             textTransform: "uppercase",
@@ -80,33 +98,7 @@ export default function OnSaleSoonCard({
         <>
           <div
             style={{
-              fontSize: desktop ? 26 : 20,
-              fontWeight: 600,
-              color: "#051b35",
-              letterSpacing: "-0.02em",
-              lineHeight: browseLeading("h3"),
-              ...(!centered ? { paddingLeft: 16 } : {}),
-            }}
-          >
-            {scheduledAt}
-          </div>
-          <p
-            style={{
-              margin: 0,
-              fontSize: fluidSize(16),
-              fontWeight: 400,
-              color: "#8a93a3",
-              lineHeight: browseLeading("body"),
-              ...(!centered ? { paddingLeft: 16 } : {}),
-            }}
-          >
-            This event does not have any tickets on sale yet. Check back in later.
-          </p>
-        </>
-      ) : (
-        <div
-          style={{
-            fontSize: desktop ? 26 : 20,
+            fontSize: dateSize ?? messageSize,
             fontWeight: 600,
             color: "#051b35",
             letterSpacing: "-0.02em",
@@ -114,7 +106,33 @@ export default function OnSaleSoonCard({
             ...(!centered ? { paddingLeft: 16 } : {}),
           }}
         >
-          This event does not have tickets on sale yet. Check back in later.
+          {scheduledAt}
+          </div>
+          <p
+            style={{
+              margin: 0,
+              fontSize: messageSize,
+              fontWeight: 400,
+              color: "#8a93a3",
+              lineHeight: browseLeading("body"),
+              ...(!centered ? { paddingLeft: 16 } : {}),
+            }}
+          >
+            {message}
+          </p>
+        </>
+      ) : (
+        <div
+          style={{
+            fontSize: dateSize ?? messageSize,
+            fontWeight: 600,
+            color: "#051b35",
+            letterSpacing: "-0.02em",
+            lineHeight: browseLeading("h3"),
+            ...(!centered ? { paddingLeft: 16 } : {}),
+          }}
+        >
+          {emptyMessage}
         </div>
       )}
     </div>

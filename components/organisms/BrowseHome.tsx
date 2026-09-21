@@ -911,7 +911,7 @@ export default function BrowseHome() {
                     )}
                     <div
                       style={{
-                        fontSize: browsePx(14),
+                        fontSize: 16,
                         fontWeight: 600,
                         letterSpacing: BROWSE_TRACK.card,
                         lineHeight: browseLeading("h3"),

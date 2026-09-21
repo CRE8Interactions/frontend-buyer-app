@@ -570,7 +570,7 @@ export default function MenuExperience({
 
       {confirmation ? (
         <div className={`${lightCard} mt-8 p-6 text-center`}>
-          <h2 className="text-[22px] font-semibold">Order received</h2>
+          <h2 className="text-[16px] font-semibold">Order received</h2>
           <p className="mt-2 text-[#6e7180]">
             Order #{confirmation.orderNumber}
           </p>

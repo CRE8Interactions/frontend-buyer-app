@@ -11,8 +11,9 @@ import {
   demoCheckoutCart,
   demoFlexPackCheckoutCart,
   demoPackageCheckoutCart,
+  demoTicketGroups,
 } from "@/lib/demo/fixtures";
-import { packageOrderSummary, ticketSelectionSummary } from "@/lib/ticketSummary";
+import { packageOrderSummary, gaTierSubtitle, ticketSelectionSummary } from "@/lib/ticketSummary";
 import { formatVenueLocationFromVenue } from "@/lib/venueLocation";
 
 const navState = { cartId: "cart-raptors-1", extra: "" };
@@ -108,6 +109,7 @@ vi.mock("@/lib/api", () => ({
   dropUserCart: vi.fn(),
   getCart: vi.fn(),
   getPaymentIntent: vi.fn(),
+  getTicketGroups: vi.fn(),
   processFreeOrder: vi.fn(),
   processOrder: vi.fn(),
   redeemPromoCode: vi.fn(),
@@ -143,6 +145,7 @@ import {
   dropUserCart,
   getCart,
   getPaymentIntent,
+  getTicketGroups,
   processFreeOrder,
   processOrder,
   redeemPromoCode,
@@ -171,6 +174,7 @@ async function fillBillingAndPay(user: UserEvent, payName: string) {
 
 const mockedGetCart = vi.mocked(getCart);
 const mockedGetPaymentIntent = vi.mocked(getPaymentIntent);
+const mockedGetTicketGroups = vi.mocked(getTicketGroups);
 const mockedProcessFreeOrder = vi.mocked(processFreeOrder);
 const mockedDropUserCart = vi.mocked(dropUserCart);
 const mockedProcessOrder = vi.mocked(processOrder);
@@ -183,7 +187,24 @@ const mockedSetLastKnown = vi.mocked(setLastKnown);
 
 const raptorsEvent =
   DEMO_EVENTS.find((event) => event.shortCode === "RAPT006") || DEMO_EVENTS[0];
+const gaEvent =
+  DEMO_EVENTS.find((event) => event.seatmap?.ga_only) || DEMO_EVENTS[0];
 const raptorsOrg = DEMO_ORGS.find((org) => org.slug === "ogden-raptors")!;
+
+/** Live cart events often omit seatmap.ga_only even for GA-only shows. */
+function liveGaCheckoutCart(
+  overrides: Parameters<typeof demoCheckoutCart>[0] = {},
+) {
+  const cart = demoCheckoutCart({ ga: true, ...overrides });
+  return {
+    ...cart,
+    event: {
+      ...cart.event,
+      seatmap: undefined,
+      venue: { name: cart.event.venue.name, slug: cart.event.venue.slug },
+    },
+  };
+}
 
 function authState(isAuthenticated: boolean) {
   return {
@@ -227,6 +248,9 @@ describe("Checkout page", { timeout: 20_000 }, () => {
     mockedUseAuth.mockReturnValue(authState(true));
     mockedGetCart.mockResolvedValue({
       data: demoCheckoutCart(),
+    } as never);
+    mockedGetTicketGroups.mockResolvedValue({
+      data: { ticketGroups: demoTicketGroups().ticketGroups },
     } as never);
     mockedGetPaymentIntent.mockResolvedValue({
       data: { client_secret: "cs_test", id: "pi_test" },
@@ -399,10 +423,30 @@ describe("Checkout page", { timeout: 20_000 }, () => {
     expect(screen.queryByLabelText("Postal code")).not.toBeInTheDocument();
   });
 
-  it("does not charge when Stripe rejects the card form", async () => {
-    stripeMocks.submit.mockResolvedValue({
-      error: { message: "Your postal code is incomplete." },
+  it("sends a GA ticket cart to process with accessPassQuantity null", async () => {
+    const cart = { ...demoCheckoutCart({ ga: true }), accessPassQuantity: 1 };
+    navState.cartId = String(cart.id);
+    stubLocation("/checkout/", `?cartId=${cart.id}`);
+    mockedGetCart.mockResolvedValue({ data: cart } as never);
+    const user = userEvent.setup();
+    render(<CheckoutPageRoute />);
+
+    await fillBillingAndPay(user, `Pay ${formatCurrency(cart.total)}`);
+
+    expect(mockedProcessOrder).toHaveBeenCalledWith({
+      cart: expect.objectContaining({
+        id: cart.id,
+        accessPassQuantity: null,
+        total: cart.total,
+      }),
+      paymentIntentId: "pi_test",
     });
+  });
+
+  it("shows a thrown Stripe confirm error after process succeeds", async () => {
+    stripeMocks.confirmPayment.mockRejectedValue(
+      new Error("Your card was declined."),
+    );
     const user = userEvent.setup();
     render(<CheckoutPageRoute />);
 
@@ -414,11 +458,13 @@ describe("Checkout page", { timeout: 20_000 }, () => {
     expect(
       await screen.findByRole("heading", { name: /card declined/i }),
     ).toBeInTheDocument();
+    expect(screen.getByText(/your card was declined/i)).toBeInTheDocument();
     expect(
-      screen.getByText(/your postal code is incomplete/i),
-    ).toBeInTheDocument();
-    expect(mockedProcessOrder).not.toHaveBeenCalled();
-    expect(stripeMocks.confirmPayment).not.toHaveBeenCalled();
+      screen.queryByText(/unable to complete purchase/i),
+    ).not.toBeInTheDocument();
+    expect(mockedProcessOrder).toHaveBeenCalled();
+    expect(stripeMocks.submit).not.toHaveBeenCalled();
+    expect(routerMocks.replace).not.toHaveBeenCalled();
   });
 
   it("offers Link save-info, purchase policy, and Stripe security on the payment form", async () => {
@@ -471,6 +517,7 @@ describe("Checkout page", { timeout: 20_000 }, () => {
     expect(processingBtn).toBeDisabled();
     expect(routerMocks.replace).not.toHaveBeenCalled();
     expect(screen.queryByText(/getting payment ready/i)).not.toBeInTheDocument();
+    expect(stripeMocks.submit).not.toHaveBeenCalled();
     expect(stripeMocks.confirmPayment).not.toHaveBeenCalled();
 
     finishProcess({});
@@ -755,6 +802,32 @@ describe("Checkout page", { timeout: 20_000 }, () => {
       screen.getByText("2 tickets · seats are together"),
     ).toBeInTheDocument();
     expect(screen.queryByText(/Seat 7/)).not.toBeInTheDocument();
+  });
+
+  it("shows the GA offer subtitle instead of a ticket count", async () => {
+    const cart = demoCheckoutCart({ ga: true });
+    const group = demoTicketGroups().ticketGroups[0];
+    mockedGetCart.mockResolvedValue({ data: cart } as never);
+    render(<CheckoutPageRoute />);
+
+    expect(await screen.findByText(gaTierSubtitle(group))).toBeInTheDocument();
+    expect(screen.queryByText("1 ticket")).not.toBeInTheDocument();
+  });
+
+  it("replaces a generic ga section with the ticket-group section name", async () => {
+    const group = demoTicketGroups().ticketGroups[0];
+    const cart = demoCheckoutCart({ ga: true });
+    cart.tickets = cart.tickets.map((ticket) => ({
+      ...ticket,
+      sectionName: undefined,
+      sectionNumber: "ga",
+      ticketGroup: group.id,
+    }));
+    mockedGetCart.mockResolvedValue({ data: cart } as never);
+    render(<CheckoutPageRoute />);
+
+    expect(await screen.findByText(gaTierSubtitle(group))).toBeInTheDocument();
+    expect(screen.queryByText("Ga · unreserved seating")).not.toBeInTheDocument();
   });
 
   it("summarizes an event purchase with tickets and tax", async () => {
@@ -1173,6 +1246,16 @@ describe("Checkout page", { timeout: 20_000 }, () => {
         expect.objectContaining({
           confirmParams: {
             return_url: `https://localhost/checkout/success/?intentId=pi_test`,
+            payment_method_data: {
+              billing_details: {
+                address: {
+                  line1: "",
+                  line2: "",
+                  city: "",
+                  state: "",
+                },
+              },
+            },
           },
         }),
       );
@@ -1520,6 +1603,38 @@ describe("Checkout page", { timeout: 20_000 }, () => {
     vi.useRealTimers();
   });
 
+  it("drops a GA cart and returns to that GA event instead of a leftover seated event", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    const cart = liveGaCheckoutCart({ remainingTime: 3 });
+    setCheckoutReturnPath(eventPurchasePath(raptorsEvent));
+    mockedGetCart.mockResolvedValue({ data: cart } as never);
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+    render(<CheckoutPageRoute />);
+    expect(await screen.findByText("Secure checkout")).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: /back/i }));
+    expect(
+      await screen.findByRole("dialog", { name: /are you sure/i }),
+    ).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: /cancel order/i }));
+
+    await waitFor(() => {
+      expect(mockedDropUserCart).toHaveBeenCalledWith({
+        eventUUID: cart.event.uuid,
+        cartId: cart.id,
+      });
+      expect(routerMocks.replace).toHaveBeenCalledWith(
+        eventPurchasePath(gaEvent),
+      );
+    });
+    expect(routerMocks.replace).not.toHaveBeenCalledWith(
+      eventPurchasePath(raptorsEvent),
+    );
+
+    vi.useRealTimers();
+  });
+
   it("drops the cart and returns to the team page when a package order is cancelled", async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
     const cart = demoPackageCheckoutCart({ remainingTime: 3 });
@@ -1691,6 +1806,35 @@ describe("Checkout page", { timeout: 20_000 }, () => {
     });
     expect(routerMocks.replace).not.toHaveBeenCalledWith(
       `/${raptorsOrg.slug}/`,
+    );
+  });
+
+  it("starts over from an expired GA cart on that GA event, not a seated tickets page", async () => {
+    const cart = liveGaCheckoutCart({ remainingTime: 0 });
+    setCheckoutReturnPath(eventPurchasePath(raptorsEvent));
+    mockedGetCart.mockResolvedValue({ data: cart } as never);
+    const user = userEvent.setup();
+    render(<CheckoutPageRoute />);
+
+    expect(
+      await screen.findByRole("dialog", { name: /cart expired/i }),
+    ).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: /start over/i }));
+    await waitFor(() => {
+      expect(mockedDropUserCart).toHaveBeenCalledWith({
+        eventUUID: cart.event.uuid,
+        cartId: cart.id,
+      });
+      expect(routerMocks.replace).toHaveBeenCalledWith(
+        eventPurchasePath(gaEvent),
+      );
+    });
+    expect(routerMocks.replace).not.toHaveBeenCalledWith(
+      eventPurchasePath(raptorsEvent),
+    );
+    expect(routerMocks.replace).not.toHaveBeenCalledWith(
+      `/e/${gaEvent.slug}/${gaEvent.shortCode}/tickets/`,
     );
   });
 

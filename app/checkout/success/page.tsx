@@ -41,6 +41,7 @@ import {
   resolveCompletedOrderFees,
   ticketSelectionSummary,
 } from "@/lib/ticketSummary";
+import { ticketsWithGaSections } from "@/lib/gaTicketSections";
 import {
   flexPackSeasonLine,
   flexPackVoucherCount,
@@ -176,7 +177,12 @@ function CheckoutSuccessPage() {
     const abort = new AbortController();
     const cartId = getStoredCart()?.cartId || null;
 
-    const applyOrder = (orderData: OrderData) => {
+    const applyOrder = async (loaded: OrderData) => {
+      const tickets = loaded.tickets || [];
+      const gaTickets = await ticketsWithGaSections(tickets, loaded.event);
+      if (cancelled) return;
+      const orderData =
+        gaTickets === tickets ? loaded : { ...loaded, tickets: gaTickets };
       setOrder(orderData);
       setError("");
       clearStoredCart();
@@ -214,7 +220,7 @@ function CheckoutSuccessPage() {
           { ...orderPaymentDetailsPollOptions(), signal: abort.signal },
         );
         if (cancelled || !orderData) return;
-        applyOrder(orderData);
+        await applyOrder(orderData);
       } catch (err) {
         if (cancelled) return;
         if (isRequestCanceled(err)) {
@@ -224,7 +230,7 @@ function CheckoutSuccessPage() {
               { ...orderPaymentDetailsPollOptions(), signal: abort.signal },
             );
             if (cancelled || !orderData) return;
-            applyOrder(orderData);
+            await applyOrder(orderData);
             return;
           } catch (retryErr) {
             if (cancelled || isRequestCanceled(retryErr)) return;
@@ -496,7 +502,7 @@ function CheckoutSuccessPage() {
 
       {displayError || !order ? (
         <div className={`${CARD} mx-auto mt-10 max-w-lg p-8 text-center`}>
-          <h1 className="text-[22px] font-semibold">Order not found</h1>
+          <h1 className="text-[16px] font-semibold">Order not found</h1>
           <p className="mt-2 text-[15px]" style={{ color: MUTED }}>
             {displayError}
           </p>
@@ -525,7 +531,7 @@ function CheckoutSuccessPage() {
                 <polyline points="20 6 9 17 4 12" />
               </svg>
             </span>
-            <h1 className="text-[30px] font-semibold tracking-[-0.03em]">
+            <h1 className="font-semibold tracking-[-0.03em] [font-size:26px] md:[font-size:30px]">
               Order confirmation
             </h1>
           </div>
@@ -636,7 +642,7 @@ function CheckoutSuccessPage() {
                       {ticketSummary.offerName}
                     </span>
                   ) : null}
-                  <div className="text-[22px] font-semibold tracking-[-0.025em]">
+                  <div className="font-semibold tracking-[-0.025em] [font-size:22px]">
                     {ticketSummary.count ? ticketSummary.seatLine : title}
                   </div>
                   <div className="text-[14px]" style={{ color: MUTED }}>
@@ -658,7 +664,7 @@ function CheckoutSuccessPage() {
               </div>
               <div className="h-px bg-[rgba(5,27,53,0.08)]" />
               <div className="flex flex-col gap-1.5">
-                <div className="text-[19px] font-semibold tracking-[-0.02em]">
+                <div className="font-semibold tracking-[-0.02em] [font-size:19px]">
                   {ticketSummary.count ? title : event?.name || title}
                 </div>
                 {whenLine ? (

@@ -810,21 +810,26 @@ export function demoCheckoutCart(
     ticketCount?: number;
     serviceFee?: number;
     processingFee?: number;
+    ga?: boolean;
   } = {},
 ) {
-  const event =
-    DEMO_EVENTS.find((e) => e.shortCode === "RAPT006") || DEMO_EVENTS[0];
+  const ga = Boolean(overrides.ga);
+  const event = ga
+    ? DEMO_EVENTS.find((e) => e.seatmap?.ga_only) || DEMO_EVENTS[0]
+    : DEMO_EVENTS.find((e) => e.shortCode === "RAPT006") || DEMO_EVENTS[0];
   const organization =
     overrides.organization === null
       ? undefined
       : (overrides.organization ?? event.organization);
-  const listing = DEMO_SEATED_TICKET_GROUPS[0];
+  const listing = ga
+    ? demoTicketGroups().ticketGroups[0]
+    : DEMO_SEATED_TICKET_GROUPS[0];
   const unitPrice = listing.price ?? 0;
   const ticketCount = Math.max(1, overrides.ticketCount ?? 1);
   const serviceFee = overrides.serviceFee ?? 0;
   const processingFee = overrides.processingFee ?? 0;
   return {
-    id: "cart-raptors-1",
+    id: ga ? "cart-ga-1" : "cart-raptors-1",
     remainingTime:
       overrides.remainingTime === undefined
         ? CHECKOUT_HOLD_SECONDS
@@ -847,16 +852,21 @@ export function demoCheckoutCart(
     },
     tickets: Array.from({ length: ticketCount }, (_, index) => ({
       id: 7001 + index,
-      uuid: `ticket-raptors-${index + 1}`,
-      checkInCode: `RAPTORS-${index + 1}`,
+      uuid: `ticket-${ga ? "ga" : "raptors"}-${index + 1}`,
+      checkInCode: `${ga ? "GA" : "RAPTORS"}-${index + 1}`,
       eventUUID: event.uuid,
-      sectionName: listing.sectionNumber,
+      sectionName: ga
+        ? listing.sectionName || listing.sectionNumber
+        : listing.sectionNumber,
       sectionNumber: listing.sectionNumber,
       rowNumber: listing.rowNumber,
-      seatNumber: 7 + index,
+      seatNumber: ga ? undefined : 7 + index,
       cost: unitPrice,
       price: unitPrice,
       offerName: listing.offer?.name,
+      ...(ga
+        ? { GA: true, generalAdmission: true, offer: listing.offer }
+        : {}),
     })),
     total: unitPrice * ticketCount + serviceFee + processingFee,
     serviceFee,

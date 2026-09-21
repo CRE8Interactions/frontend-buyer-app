@@ -835,14 +835,13 @@ export default function PremiumTicketing({
   const runCheckoutWithGroup = async (
     group: Record<string, unknown>,
     quantity: number,
-    opts?: { closeGaSheet?: boolean; tierIndex?: number },
+    opts?: { tierIndex?: number },
   ) => {
     setHolding(true);
     setHoldingTier(opts?.tierIndex ?? null);
     setHoldError("");
     try {
       const cartId = await placeSelectedTickets([{ ...group, quantity }]);
-      if (opts?.closeGaSheet) setGaSheet(false);
       goToCheckout(cartId);
     } catch (err: unknown) {
       setSeatedError(checkoutHoldError(err));
@@ -902,7 +901,7 @@ export default function PremiumTicketing({
     await runCheckoutWithGroup(
       group,
       quantity ?? Math.max(1, chosen?.min || 1),
-      { closeGaSheet: true, tierIndex },
+      { tierIndex },
     );
   };
 
@@ -956,6 +955,17 @@ export default function PremiumTicketing({
     </button>
   );
 
+  // Sits above the listings sheet when that layout is on, otherwise inside the offers card.
+  const narrowMapBlock = narrow && !d.soldOut && (
+    <div
+      ref={sticky}
+      data-testid="ticketing-map"
+      style={{ flexShrink: 0, alignSelf: "stretch", marginBottom: listingsSheet ? 0 : 16 }}
+    >
+      {findOnMapBtn(150, 14)}
+    </div>
+  );
+
   const venueImage = (
     section: string | number,
     type: "thumbnail" | "seat-view",
@@ -1002,8 +1012,26 @@ export default function PremiumTicketing({
     </div>
   );
 
-  const compactTrustCard = (
-    <div style={{ ...card, width: "100%", boxSizing: "border-box", borderRadius: 20, padding: 20, display: "flex", flexDirection: "column", gap: 16 }}>
+  const compactTrustCard = (grey = false) => (
+    <div
+      style={{
+        ...card,
+        ...(grey
+          ? {
+              background: "#f7f8fc",
+              border: "1px solid rgba(5,27,53,0.08)",
+              boxShadow: "none",
+              borderRadius: 14,
+              padding: 18,
+            }
+          : { borderRadius: 20, padding: 20 }),
+        width: "100%",
+        boxSizing: "border-box",
+        display: "flex",
+        flexDirection: "column",
+        gap: 16,
+      }}
+    >
       {[
         { t: "Mobile tickets.", d: " Securely stored in your account.", icon: <><rect x="5" y="2" width="14" height="20" rx="3" /><line x1="10" y1="18.5" x2="14" y2="18.5" /></> },
         { t: "Buyer protection.", d: " Safe from bots and scalpers.", icon: <><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" /><polyline points="9 12 11 14 15 10" /></> },
@@ -1036,6 +1064,12 @@ export default function PremiumTicketing({
         scheduledAt={d.scheduledAt}
         accentColor={ACC}
         desktop={!mobile}
+        labelSize={12}
+        dateSize={!mobile ? 22 : 16}
+        messageSize="15px"
+        {...(!mobile ? { gap: 7 } : {})}
+        message="Tickets aren't on sale yet. Check back soon."
+        emptyMessage="Tickets aren't on sale yet. Check back soon."
       />
     </div>
   );
@@ -1056,6 +1090,7 @@ export default function PremiumTicketing({
         accentColor={ACC}
         desktop={desktop}
         fill
+        dateSize={desktop ? 26 : 20}
       />
     </div>
   );
@@ -1095,7 +1130,7 @@ export default function PremiumTicketing({
         {scheduledStickyWhen ? (
           <div
             style={{
-              fontSize: fluidSize(mobile ? 16 : 22),
+              fontSize: fluidSize(16),
               fontWeight: 600,
               color: "#051b35",
               letterSpacing: "-0.02em",
@@ -1109,14 +1144,14 @@ export default function PremiumTicketing({
         <p
           style={{
             margin: 0,
-            fontSize: fluidSize(16),
+            fontSize: 15,
             fontWeight: 400,
             color: "#8a93a3",
             lineHeight: 1.45,
             paddingLeft: 16,
           }}
         >
-          This event does not have any tickets on sale yet. Check back in later.
+          Tickets aren&apos;t on sale yet. Check back soon.
         </p>
       </div>
     </MobileStickyFooter>
@@ -1146,7 +1181,7 @@ export default function PremiumTicketing({
         ...(seatedSoldOut ? { width: "100%" } : {}),
       }}
     >
-      {notified[d.eventName] ? "Reminder set" : "Notify me"}
+      {notified[d.eventName] ? "Reminder set" : "Join waitlist"}
     </button>
   );
 
@@ -1177,7 +1212,13 @@ export default function PremiumTicketing({
       </div>
       <div
         style={{
-          fontSize: seatedSoldOut ? (mobile ? 20 : 26) : fluidSize(mobile ? 16 : 22),
+          fontSize: seatedSoldOut
+            ? mobile
+              ? 20
+              : 26
+            : isGa && !mobile
+              ? "22px"
+              : fluidSize(16),
           fontWeight: 600,
           color: seatedSoldOut ? "#051b35" : "#4a5567",
           letterSpacing: seatedSoldOut ? "-0.02em" : undefined,
@@ -1279,7 +1320,7 @@ export default function PremiumTicketing({
             : { label: "Sold out", dot: "#a9b0bd", pillBg: "#eef0f6", pillInk: "#6e7180" };
         const stepBtn: React.CSSProperties = { fontFamily: "inherit", width: 38, height: 38, display: "flex", alignItems: "center", justifyContent: "center", background: "#fff", border: "none", borderRadius: 999, color: NAVY, cursor: "pointer" };
         return (
-          <div key={t.name} style={{ border: live ? `1.5px solid ${ACC}` : locked ? "1.5px dashed rgba(201,150,46,0.55)" : "1px solid rgba(5,27,53,0.10)", background: soldout ? "#f7f8fc" : locked ? "#fffdf8" : "#fff", borderRadius: 16, padding: 18, display: "flex", flexDirection: "column", gap: 16 }}>
+          <div key={t.name} style={{ border: live ? `1.5px solid ${ACC}` : locked ? "1.5px dashed rgba(201,150,46,0.55)" : "1px solid rgba(5,27,53,0.10)", background: soldout ? "#f7f8fc" : locked ? "#fffdf8" : "#fff", borderRadius: 16, padding: 18, display: "flex", flexDirection: "column", gap: 16, minWidth: 0, overflow: "hidden" }}>
             <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 16 }}>
               <div style={{ display: "flex", flexDirection: "column", gap: 6, minWidth: 0 }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
@@ -1291,7 +1332,7 @@ export default function PremiumTicketing({
                 <div style={{ fontSize: fluidSize(14), color: "#6e7180" }}>{t.sub}</div>
               </div>
               <div style={{ textAlign: "right", flexShrink: 0 }}>
-                <div style={{ fontSize: fluidSize(26), fontWeight: 600, letterSpacing: "-0.03em", fontVariantNumeric: "tabular-nums", color: soldout ? "#6e7180" : NAVY }}>{t.price}</div>
+                <div style={{ fontSize: mobile ? 20 : 26, fontWeight: 600, letterSpacing: "-0.03em", fontVariantNumeric: "tabular-nums", color: soldout ? "#6e7180" : NAVY }}>{t.price}</div>
                 <div style={{ fontSize: fluidSize(13), color: "#6e7180" }}>Incl. taxes and fees</div>
               </div>
             </div>
@@ -1307,10 +1348,10 @@ export default function PremiumTicketing({
                 />
               </div>
             ) : null}
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16, flexWrap: "wrap" }}>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16, flexWrap: "wrap", minWidth: 0 }}>
               <div style={{ fontSize: fluidSize(13), color: "#6e7180" }}>{t.note}</div>
               {live ? (
-                <div style={{ display: "flex", alignItems: "center", gap: 14, ...(mobile ? { width: "100%" } : {}) }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 14, minWidth: 0, maxWidth: "100%", flexWrap: "wrap", ...(mobile ? { width: "100%" } : {}) }}>
                   <div style={{ display: "flex", alignItems: "center", gap: 6, border: "1px solid #d3d6e0", borderRadius: 999, padding: 5, flexShrink: 0 }}>
                     <button onClick={() => setTierQuantity(gaQty - limits.step)} aria-label="Remove a ticket" disabled={gaQty <= limits.min} style={{ ...stepBtn, opacity: gaQty <= limits.min ? 0.4 : 1 }}>
                       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" style={{ width: 18, height: 18 }}><line x1="5" y1="12" x2="19" y2="12" /></svg>
@@ -1330,8 +1371,10 @@ export default function PremiumTicketing({
                     className="text-[16px]"
                     style={{
                       ...checkoutBtnRow,
-                      padding: "15px 28px",
-                      ...(mobile ? { flex: 1 } : {}),
+                      padding: "15px 22px",
+                      flex: "1 1 auto",
+                      maxWidth: "100%",
+                      boxSizing: "border-box",
                     }}
                   >
                     Checkout {money(t.unit * gaQty)}
@@ -1435,7 +1478,7 @@ export default function PremiumTicketing({
         </div>
 
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: compact ? 10 : 16, marginTop: compact ? 10 : 22 }}>
-        {busy ? <div style={{ height: 20, width: 96, borderRadius: 999, ...shimmer }} /> : <div style={{ fontSize: type, fontWeight: 500, fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap" }}>{rows.length} Listings</div>}
+        {busy ? <div style={{ height: 20, width: 96, borderRadius: 999, ...shimmer }} /> : <div style={{ fontSize: 16, fontWeight: 500, fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap" }}>{rows.length} Listings</div>}
         <div style={{ display: "flex", alignItems: "center", gap: compact ? 12 : 20 }}>
           <div style={{ display: "flex", alignItems: "center", gap: compact ? 8 : 10, color: "#6e7180" }}>
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" style={{ width: compact ? 18 : 21, height: compact ? 18 : 21 }}><circle cx="16" cy="4" r="1" /><path d="m18 19 1-7-6 1" /><path d="m5 8 3-3 5.5 3-2.36 3.5" /><path d="M4.24 14.5a5 5 0 0 0 6.88 6" /><path d="M13.76 17.5a5 5 0 0 0-6.88-6" /></svg>
@@ -1494,9 +1537,6 @@ export default function PremiumTicketing({
           line-height: 1.25;
           margin: 0 !important;
         }
-        .shopper-page .ga-soldout-notify-sheet .ga-soldout-notify-eyebrow {
-          font-size: var(--t-11);
-        }
         .shopper-page .ga-soldout-notify-sheet .ga-soldout-notify-desc {
           font-size: var(--t-15);
         }
@@ -1509,19 +1549,24 @@ export default function PremiumTicketing({
         .shopper-page .ga-soldout-notify-sheet .ga-soldout-notify-submit {
           font-size: var(--t-16) !important;
         }
+        .shopper-page [role="dialog"].event-info-dialog h2 {
+          font-size: 24px !important;
+          letter-spacing: -0.03em;
+        }
         .shopper-page .ga-soldout-notify-sheet .ga-soldout-notify-action {
-          font-size: var(--t-15) !important;
+          font-size: var(--t-16) !important;
         }
         @media (max-width: 899px) {
           .ga-soldout-notify-sheet-overlay {
-            width: 100vw !important;
-            max-width: 100vw !important;
-            justify-content: flex-start !important;
+            align-items: center !important;
+            justify-content: center !important;
+            padding: 16px !important;
           }
           .shopper-page .ga-soldout-notify-sheet,
           .ga-soldout-notify-sheet-overlay .ga-soldout-notify-sheet {
             width: 100% !important;
-            max-width: none !important;
+            max-width: 480px !important;
+            border-radius: 24px !important;
           }
         }
       `}</style>
@@ -1622,16 +1667,7 @@ export default function PremiumTicketing({
           eventSoldOutBodyPanel()
         ) : (
         <>
-        {/* Scheduled and sold-out mobile have nothing to filter, so skip the listing chrome. */}
-        {narrow && !d.soldOut && (
-          <div
-            ref={sticky}
-            data-testid="ticketing-map"
-            style={{ flexShrink: 0, alignSelf: "stretch" }}
-          >
-            {findOnMapBtn(mobile ? 200 : 260, mobile ? 16 : 14)}
-          </div>
-        )}
+        {listingsSheet && narrowMapBlock}
         {!(eventSoldOut && mobile) && (
         <section
           data-testid="ticketing-offers"
@@ -1709,6 +1745,7 @@ export default function PremiumTicketing({
             !mobile ? eventSoldOutNotifyBar(false) : null
           ) : (
           <>
+          {!listingsSheet && narrowMapBlock}
           {wide && (
             <div style={{ flexShrink: 0, background: "#fff", margin: "0 -32px", padding: "16px 32px 12px", borderRadius: "20px 20px 0 0", boxShadow: pinned ? "0 12px 24px -18px rgba(5,27,53,0.55)" : "none", transition: "box-shadow 180ms ease" }}>
               {filterToolbar}
@@ -1721,8 +1758,8 @@ export default function PremiumTicketing({
                 top: headerH,
                 zIndex: 8,
                 background: "#fff",
-                margin: mobile ? "-16px -16px 0" : "-14px -22px 0",
-                padding: mobile ? "16px 16px 0" : "14px 22px 0",
+                margin: mobile ? "16px -16px 0" : "0 -22px",
+                padding: mobile ? "4px 16px 10px" : "14px 22px 12px",
               }}
             >
               {filterToolbar}
@@ -1843,7 +1880,7 @@ export default function PremiumTicketing({
                         {listingThumb(l)}
                       </div>
                       <div style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", gap: 10 }}>
-                        <span style={{ alignSelf: "flex-start", ...pill(ACC_SOFT, ACC), fontSize: fluidSize(12), padding: "3px 8px" }}><Star s={12} /> {l.zone}</span>
+                        <span style={{ alignSelf: "flex-start", ...pill(ACC_SOFT, ACC), fontSize: 13, padding: "3px 8px" }}><Star s={12} /> {l.zone}</span>
                         <div style={{ display: "flex", alignItems: "center", gap: 6, minWidth: 0, fontSize: 18, fontWeight: 600, letterSpacing: "-0.015em" }}>
                           <span style={{ color: "#6e7180", flexShrink: 0, display: "flex", alignItems: "center" }}><TicketIcon s={18} /></span>
                           <span style={{ minWidth: 0, overflowWrap: "anywhere" }}>Sec {l.sec} · Row {l.row}</span>
@@ -1883,7 +1920,7 @@ export default function PremiumTicketing({
         </section>
         )}
         {narrow && !eventScheduled && !seatedSoldOut && (
-          <div style={{ flexShrink: 0, width: "100%", alignSelf: "stretch" }}>{compactTrustCard}</div>
+          <div style={{ flexShrink: 0, width: "100%", alignSelf: "stretch" }}>{compactTrustCard()}</div>
         )}
 
         {wide && !eventScheduled && !seatedSoldOut && (
@@ -1926,8 +1963,9 @@ export default function PremiumTicketing({
                 style={{
                   ...card,
                   borderRadius: 20,
-                  padding: narrow ? 12 : 16,
+                  padding: 16,
                   width: "100%",
+                  maxWidth: "100%",
                   boxSizing: "border-box",
                 }}
               >
@@ -1936,7 +1974,7 @@ export default function PremiumTicketing({
                   style={{
                     position: "relative",
                     width: "100%",
-                    aspectRatio: narrow ? "16 / 9" : "1 / 1",
+                    aspectRatio: "1 / 1",
                     borderRadius: 14,
                     overflow: "hidden",
                     background: "#f1f3f8",
@@ -1947,7 +1985,7 @@ export default function PremiumTicketing({
                 <img src={POSTER} alt="" style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
               </div>
             </div>
-              {compactTrustCard}
+              {compactTrustCard()}
             </div>
           </div>
 
@@ -1970,7 +2008,7 @@ export default function PremiumTicketing({
               !mobile ? scheduledPanel(true) : null
             ) : !mobile ? (
               <div style={{ ...card, borderRadius: 20, padding: mobile ? 18 : 24, display: "flex", flexDirection: "column", gap: 16 }}>
-                <div style={{ fontSize: fluidSize(22), fontWeight: 600, letterSpacing: "-0.025em" }}>Get tickets</div>
+                <div style={{ fontSize: 16, fontWeight: 600, letterSpacing: "-0.025em" }}>Get tickets</div>
                 {gaTierCards}
                 {holdError ? (
                   <div style={{ fontSize: fluidSize(13), color: "#b91c1c", lineHeight: 1.4 }}>{holdError}</div>
@@ -2032,7 +2070,7 @@ export default function PremiumTicketing({
                   ) : null}
                 </div>
                 <div style={{ display: "flex", flexDirection: "column", gap: 8, minWidth: 0, flex: 1 }}>
-                  <div style={{ fontSize: fluidSize(19), fontWeight: 600, letterSpacing: "-0.02em" }}>{d.venueName}</div>
+                  <div style={{ fontSize: fluidSize(16), fontWeight: 600, letterSpacing: "-0.02em" }}>{d.venueName}</div>
                   <div style={{ fontSize: fluidSize(14), color: "#6e7180" }}>{d.venueAddress}</div>
                   <a href={`https://maps.google.com/?q=${encodeURIComponent(d.mapsQuery)}`} target="_blank" rel="noopener noreferrer" style={{ alignSelf: "flex-start", display: "inline-flex", alignItems: "center", gap: 9, fontSize: fluidSize(14), fontWeight: 600, color: NAVY, textDecoration: "none", background: "#fff", border: "1px solid #d3d6e0", borderRadius: 999, padding: "11px 18px" }}>
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" style={{ width: 16, height: 16 }}><line x1="22" y1="2" x2="11" y2="13" /><polygon points="22 2 15 22 11 13 2 9 22 2" /></svg>
@@ -2059,7 +2097,7 @@ export default function PremiumTicketing({
         >
           <div style={{ display: "flex", flexDirection: "column", gap: 1, minWidth: 0, flexShrink: 0 }}>
             <div style={{ fontSize: fluidSize(12), color: "#6e7180" }}>From</div>
-            <div style={{ fontSize: fluidSize(26), fontWeight: 600, letterSpacing: "-0.02em", fontVariantNumeric: "tabular-nums", color: "#000" }}>{money(gaFromNum)}</div>
+            <div style={{ fontSize: mobile ? 20 : 26, fontWeight: 600, letterSpacing: "-0.02em", fontVariantNumeric: "tabular-nums", color: "#000" }}>{money(gaFromNum)}</div>
           </div>
           <button className="nmt-primary" onClick={() => setGaSheet(true)} style={{ ...primaryBtn, marginLeft: "auto", flex: 1, maxWidth: 280, fontSize: fluidSize(16), padding: "16px 24px" }}>Buy tickets</button>
         </MobileStickyFooter>
@@ -2073,16 +2111,18 @@ export default function PremiumTicketing({
               <div style={{ width: 40, height: 5, borderRadius: 999, background: "rgba(5,27,53,0.14)" }} />
             </div>
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16, padding: "14px 20px 16px", borderBottom: "1px solid rgba(5,27,53,0.08)", flexShrink: 0 }}>
-              <div id="ga-ticket-sheet-title" style={{ fontSize: fluidSize(20), fontWeight: 600, letterSpacing: "-0.025em" }}>Get tickets</div>
+              <div id="ga-ticket-sheet-title" style={{ fontSize: 20, fontWeight: 600, letterSpacing: "-0.025em" }}>Get tickets</div>
               <button onClick={() => setGaSheet(false)} aria-label="Close" style={{ fontFamily: "inherit", width: 40, height: 40, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", background: "#fff", border: "1px solid #d3d6e0", borderRadius: 999, color: NAVY, cursor: "pointer" }}>
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" style={{ width: 18, height: 18 }}><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
               </button>
             </div>
-            <div style={{ flex: 1, minHeight: 0, overflowY: "auto", padding: 18, display: "flex", flexDirection: "column", gap: 14 }}>
-              {gaTierCards}
-              {holdError ? (
-                <div style={{ fontSize: fluidSize(13), color: "#b91c1c", lineHeight: 1.4 }}>{holdError}</div>
-              ) : null}
+            <div data-testid="ga-ticket-sheet-scroll" style={{ flex: "1 1 auto", minHeight: 0, overflowY: "auto", overscrollBehavior: "contain", WebkitOverflowScrolling: "touch", padding: 18 }}>
+              <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+                {gaTierCards}
+                {holdError ? (
+                  <div style={{ fontSize: fluidSize(13), color: "#b91c1c", lineHeight: 1.4 }}>{holdError}</div>
+                ) : null}
+              </div>
             </div>
           </div>
         </div>
@@ -2102,10 +2142,9 @@ export default function PremiumTicketing({
             background: "rgba(5,27,53,0.55)",
             backdropFilter: "blur(6px)",
             display: "flex",
-            alignItems: mobile ? "flex-end" : "center",
-            justifyContent: mobile ? "flex-start" : "center",
-            padding: mobile ? 0 : 24,
-            ...(mobile ? { width: "100vw", maxWidth: "100vw" } : {}),
+            alignItems: "center",
+            justifyContent: "center",
+            padding: 16,
           }}
         >
           <div
@@ -2116,64 +2155,31 @@ export default function PremiumTicketing({
             onClick={(e) => e.stopPropagation()}
             style={{
               width: "100%",
-              maxWidth: mobile ? "none" : 480,
-              maxHeight: mobile ? "88vh" : "min(88vh, 640px)",
+              maxWidth: 480,
+              maxHeight: "min(88vh, 640px)",
               background: "#fff",
-              borderRadius: mobile ? "24px 24px 0 0" : 24,
-              boxShadow: "0 -20px 60px -20px rgba(5,27,53,0.5)",
+              borderRadius: 24,
+              boxShadow: "rgba(5, 27, 53, 0.6) 0px 40px 90px -30px",
               display: "flex",
               flexDirection: "column",
               overflow: "hidden",
             }}
           >
-            <div style={{ display: "flex", justifyContent: "center", paddingTop: 10, flexShrink: 0 }}>
-              <div style={{ width: 40, height: 5, borderRadius: 999, background: "rgba(5,27,53,0.14)" }} />
-            </div>
-            <div style={{ flex: 1, minHeight: 0, overflowY: "auto", padding: "18px 20px calc(20px + env(safe-area-inset-bottom))" }}>
+            <div style={{ flex: 1, minHeight: 0, overflowY: "auto", padding: "22px 20px 20px" }}>
               {notified[d.eventName] || notifySent ? (
                 <>
-                  <div style={{ display: "flex", alignItems: "flex-start", gap: 12, marginBottom: 16 }}>
-                    <div
-                      aria-hidden
+                  <div style={{ marginBottom: 18 }}>
+                    <h2
+                      id="ga-soldout-sheet-title"
+                      className="text-[24px] font-semibold tracking-[-0.01em]"
                       style={{
-                        width: 44,
-                        height: 44,
-                        borderRadius: 12,
-                        background: ACC_SOFT,
-                        display: "flex",
-                        alignItems: "center",
-                        justifyContent: "center",
-                        flexShrink: 0,
+                        margin: 0,
+                        lineHeight: 1.25,
+                        color: NAVY,
                       }}
                     >
-                      <svg viewBox="0 0 24 24" fill="none" stroke={ACC} strokeWidth={2.4} strokeLinecap="round" strokeLinejoin="round" style={{ width: 22, height: 22 }} aria-hidden>
-                        <polyline points="20 6 9 17 4 12" />
-                      </svg>
-                    </div>
-                    <div style={{ minWidth: 0 }}>
-                      <div
-                        className="ga-soldout-notify-eyebrow"
-                        style={{
-                          fontWeight: 600,
-                          letterSpacing: "0.12em",
-                          textTransform: "uppercase",
-                          color: "#8a93a3",
-                        }}
-                      >
-                        Alert set
-                      </div>
-                      <h2
-                        id="ga-soldout-sheet-title"
-                        className="text-[24px] font-semibold tracking-[-0.01em]"
-                        style={{
-                          margin: 0,
-                          lineHeight: 1.25,
-                          color: NAVY,
-                        }}
-                      >
-                        You&rsquo;re on the list.
-                      </h2>
-                    </div>
+                      You&rsquo;re on the list.
+                    </h2>
                   </div>
                   <p className="ga-soldout-notify-desc" style={{ margin: "0 0 22px", lineHeight: 1.55, color: "#4a5567" }}>
                     We&rsquo;ll email{" "}
@@ -2228,46 +2234,18 @@ export default function PremiumTicketing({
                 </>
               ) : (
                 <>
-                  <div style={{ display: "flex", alignItems: "flex-start", gap: 12, marginBottom: 18 }}>
-                    <div
-                      aria-hidden
+                  <div style={{ marginBottom: 18 }}>
+                    <h2
+                      id="ga-soldout-sheet-title"
+                      className="text-[24px] font-semibold tracking-[-0.01em]"
                       style={{
-                        width: 44,
-                        height: 44,
-                        borderRadius: 12,
-                        background: ACC_SOFT,
-                        display: "flex",
-                        alignItems: "center",
-                        justifyContent: "center",
-                        flexShrink: 0,
+                        margin: 0,
+                        lineHeight: 1.25,
+                        color: NAVY,
                       }}
                     >
-                      <TicketIcon s={22} color={ACC} />
-                    </div>
-                    <div style={{ minWidth: 0 }}>
-                      <div
-                        className="ga-soldout-notify-eyebrow"
-                        style={{
-                          fontWeight: 600,
-                          letterSpacing: "0.12em",
-                          textTransform: "uppercase",
-                          color: "#8a93a3",
-                        }}
-                      >
-                        Sold out
-                      </div>
-                      <h2
-                        id="ga-soldout-sheet-title"
-                        className="text-[24px] font-semibold tracking-[-0.01em]"
-                        style={{
-                          margin: 0,
-                          lineHeight: 1.25,
-                          color: NAVY,
-                        }}
-                      >
-                        Get the first email.
-                      </h2>
-                    </div>
+                      Join the waitlist
+                    </h2>
                   </div>
                   <p className="ga-soldout-notify-desc" style={{ margin: "0 0 18px", lineHeight: 1.55, color: "#4a5567" }}>
                     Enter your email below to get notified in case a ticket becomes available.
@@ -2302,18 +2280,27 @@ export default function PremiumTicketing({
                         setNotifyEmailError(emailBlurInvalid(value) ? "invalid" : null)
                       }
                     />
-                    <BrandedActionButton
-                      type="submit"
-                      primaryColor={ACC}
-                      textColor={BTN_INK}
-                      className="ga-soldout-notify-submit w-full"
-                      style={{ padding: "16px 24px" }}
-                      loading={notifyEmailChecking}
-                      loadingLabel="Checking email…"
-                      disabled={notifyEmailChecking}
-                    >
-                      Notify me when tickets become available
-                    </BrandedActionButton>
+                    <div style={{ display: "flex", justifyContent: "flex-end", gap: 10 }}>
+                      <BrandedActionButton
+                        type="button"
+                        tone="secondary"
+                        onClick={() => setEventSoldOutSheet(false)}
+                        className="ga-soldout-notify-action"
+                      >
+                        Cancel
+                      </BrandedActionButton>
+                      <BrandedActionButton
+                        type="submit"
+                        primaryColor={ACC}
+                        textColor={BTN_INK}
+                        className="ga-soldout-notify-submit"
+                        loading={notifyEmailChecking}
+                        loadingLabel="Checking email…"
+                        disabled={notifyEmailChecking}
+                      >
+                        Join waitlist
+                      </BrandedActionButton>
+                    </div>
                   </form>
                 </>
               )}
@@ -2603,7 +2590,7 @@ export default function PremiumTicketing({
                   />
               </div>
               ) : null}
-              <div style={{ width: "100%", boxSizing: "border-box" }}>{compactTrustCard}</div>
+              <div style={{ width: "100%", boxSizing: "border-box" }}>{compactTrustCard(true)}</div>
             </div>
             <div style={{ flexShrink: 0, borderTop: "1px solid rgba(5,27,53,0.08)", padding: "18px 20px 22px", display: "flex", flexDirection: "column", gap: 14 }}>
               <div style={{ display: "flex", alignItems: "flex-end", justifyContent: "space-between" }}>
@@ -2696,6 +2683,7 @@ export default function PremiumTicketing({
         <Modal
           variant="light"
           hideClose
+          closeOnBackdrop
           title={seatedError.title}
           onClose={() => setSeatedError(null)}
         >
@@ -2714,7 +2702,18 @@ export default function PremiumTicketing({
       ) : null}
 
       {info && (
-        <Modal variant="light" title="Event information" closeOnBackdrop onClose={() => setInfo(false)}>
+        <Modal
+          variant="light"
+          title="Event information"
+          closeOnBackdrop
+          sheet={false}
+          className="event-info-dialog"
+          style={{
+            borderRadius: 24,
+            boxShadow: "rgba(5, 27, 53, 0.6) 0px 40px 90px -30px",
+          }}
+          onClose={() => setInfo(false)}
+        >
           <div className={`mt-4 flex flex-col gap-[22px] ${mobile ? "" : "max-h-[min(70vh,640px)] overflow-y-auto"}`}>
             <div className="flex flex-col items-center gap-3.5 text-center">
               <div className="flex h-[132px] w-[132px] items-center justify-center overflow-hidden rounded-[22px] border border-[rgba(5,27,53,0.08)] bg-[#f1f3f8]">
@@ -2722,23 +2721,24 @@ export default function PremiumTicketing({
                   /* eslint-disable-next-line @next/next/no-img-element */
                   <img src={d.homeLogoSrc || LOGO} alt={d.homeLabel} className="h-full w-full object-cover" />
                 ) : (
-                  <span className="text-[28px] font-semibold text-[#051b35]">{(d.homeLabel || "").slice(0, 3).toUpperCase()}</span>
+                  <span className="font-semibold text-[#051b35]" style={{ fontSize: 28 }}>{(d.homeLabel || "").slice(0, 3).toUpperCase()}</span>
                 )}
               </div>
-              <div className="text-[22px] font-semibold tracking-[-0.025em]">{d.eventName}</div>
-              <div className="text-[15px] text-[#6e7180]">{d.doorsLine}</div>
+              <div className="font-semibold" style={{ fontSize: 22, letterSpacing: "-0.025em" }}>{d.eventName}</div>
+              <div className="text-[#6e7180]" style={{ fontSize: 15 }}>{d.doorsLine}</div>
             </div>
             <div className="flex flex-wrap items-center justify-between gap-4 rounded-2xl border border-[rgba(5,27,53,0.08)] bg-[#f7f8fc] p-[18px]">
               <div className="flex min-w-0 flex-col gap-1">
-                <div className="text-[12px] font-semibold uppercase tracking-[0.12em] text-[#8a93a3]">Venue</div>
-                <div className="text-[17px] font-semibold tracking-[-0.015em]">{d.venueName}</div>
-                <div className="text-[14px] text-[#6e7180]">{d.venueAddress}</div>
+                <div className="font-semibold uppercase text-[#8a93a3]" style={{ fontSize: 12, letterSpacing: "0.12em" }}>Venue</div>
+                <div className="font-semibold" style={{ fontSize: 17, letterSpacing: "-0.015em" }}>{d.venueName}</div>
+                <div className="text-[#6e7180]" style={{ fontSize: 14 }}>{d.venueAddress}</div>
               </div>
               <a
                 href={`https://maps.google.com/?q=${encodeURIComponent(d.mapsQuery)}`}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="inline-flex items-center gap-2 whitespace-nowrap rounded-full border border-[#d3d6e0] bg-white px-[18px] py-[11px] text-[14px] font-semibold text-[#051b35] no-underline"
+                className="inline-flex items-center gap-2 whitespace-nowrap rounded-full border border-[#d3d6e0] bg-white px-[18px] py-[11px] font-semibold text-[#051b35] no-underline"
+                style={{ fontSize: 14 }}
               >
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4" aria-hidden>
                   <line x1="22" y1="2" x2="11" y2="13" />
@@ -2749,7 +2749,7 @@ export default function PremiumTicketing({
             </div>
             {showMatchupSection ? (
             <div className="flex flex-col gap-3.5 rounded-2xl border border-[rgba(5,27,53,0.08)] bg-[#f7f8fc] p-[18px]">
-              <div className="text-[12px] font-semibold uppercase tracking-[0.12em] text-[#8a93a3]">Who&rsquo;s playing</div>
+              <div className="font-semibold uppercase text-[#8a93a3]" style={{ fontSize: 12, letterSpacing: "0.12em" }}>Who&rsquo;s playing</div>
               <div className="flex flex-wrap items-center gap-6">
                 <div className="flex items-center gap-2.5">
                   <div className="flex h-[42px] w-[42px] items-center justify-center overflow-hidden rounded-full border border-[rgba(5,27,53,0.08)] bg-white">
@@ -2757,14 +2757,14 @@ export default function PremiumTicketing({
                       /* eslint-disable-next-line @next/next/no-img-element */
                       <img src={d.homeLogoSrc || LOGO} alt="" className="h-full w-full object-cover" />
                     ) : (
-                      <span className="text-[14px] font-semibold text-[#051b35]">{(d.homeLabel || "").slice(0, 3).toUpperCase()}</span>
+                      <span className="font-semibold text-[#051b35]" style={{ fontSize: 14 }}>{(d.homeLabel || "").slice(0, 3).toUpperCase()}</span>
                     )}
                   </div>
-                  <div className="text-[15px] font-medium">{d.homeLabel}</div>
+                  <div className="font-medium" style={{ fontSize: 15 }}>{d.homeLabel}</div>
                 </div>
                 {showAwayTeam ? (
                 <div className="flex items-center gap-2.5">
-                  <div className={`flex h-[42px] w-[42px] items-center justify-center overflow-hidden rounded-full text-[14px] font-semibold ${d.awayLogoSrc ? "border border-[rgba(5,27,53,0.08)] bg-white text-[#051b35]" : "bg-[#051b35] text-white"}`}>
+                  <div className={`flex h-[42px] w-[42px] items-center justify-center overflow-hidden rounded-full font-semibold ${d.awayLogoSrc ? "border border-[rgba(5,27,53,0.08)] bg-white text-[#051b35]" : "bg-[#051b35] text-white"}`} style={{ fontSize: 14 }}>
                     {d.awayLogoSrc ? (
                       /* eslint-disable-next-line @next/next/no-img-element */
                       <img src={d.awayLogoSrc} alt="" className="h-full w-full object-cover" />
@@ -2772,7 +2772,7 @@ export default function PremiumTicketing({
                       d.awayShort
                     )}
                   </div>
-                  <div className="text-[15px] font-medium">{d.awayLabel}</div>
+                  <div className="font-medium" style={{ fontSize: 15 }}>{d.awayLabel}</div>
                 </div>
                 ) : null}
               </div>
@@ -2780,13 +2780,13 @@ export default function PremiumTicketing({
                 <>
               <div className="h-px bg-[rgba(5,27,53,0.08)]" />
               <div className="flex flex-col gap-2">
-                <div className="text-[12px] font-semibold uppercase tracking-[0.12em] text-[#8a93a3]">About this event</div>
+                <div className="font-semibold uppercase text-[#8a93a3]" style={{ fontSize: 12, letterSpacing: "0.12em" }}>About this event</div>
                     <ExpandableDescription
                       text={d.aboutText}
                       mobile={mobile}
                       toggleColor={ACC}
                       className="leading-relaxed text-[#4a5567]"
-                      style={{ fontSize: fluidSize(14) }}
+                      style={{ fontSize: 14 }}
                     />
               </div>
                 </>
@@ -2794,12 +2794,13 @@ export default function PremiumTicketing({
             </div>
             ) : d.aboutText ? (
               <div className="flex flex-col gap-2 rounded-2xl border border-[rgba(5,27,53,0.08)] bg-[#f7f8fc] p-[18px]">
-                <div className="text-[12px] font-semibold uppercase tracking-[0.12em] text-[#8a93a3]">About this event</div>
+                <div className="font-semibold uppercase text-[#8a93a3]" style={{ fontSize: 12, letterSpacing: "0.12em" }}>About this event</div>
                 <ExpandableDescription
                   text={d.aboutText}
                   mobile={mobile}
                   toggleColor={ACC}
-                  className="text-[14px] leading-relaxed text-[#4a5567]"
+                  className="leading-relaxed text-[#4a5567]"
+                  style={{ fontSize: 14 }}
                 />
               </div>
             ) : null}

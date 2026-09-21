@@ -347,7 +347,7 @@ export function FundraisingCampaignClient({
   if (loadError || !campaign) {
     return shell(
       <div className={`${lightCard} mx-auto max-w-lg p-8 text-center`}>
-        <h1 className="text-[22px] font-semibold">Fundraiser not found</h1>
+        <h1 className="text-[16px] font-semibold">Fundraiser not found</h1>
         <p className={`mt-2 ${muted}`}>{loadError}</p>
       </div>,
     );

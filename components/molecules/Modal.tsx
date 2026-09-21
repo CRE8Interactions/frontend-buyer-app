@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useId, useRef, type ReactNode } from "react";
+import { useEffect, useId, useRef, type CSSProperties, type ReactNode } from "react";
 import { focusFirstField } from "@/lib/autoFocus";
 
 /** Modal — app-surface dialog with title bar; dismiss via the close control by default. */
@@ -13,6 +13,8 @@ export default function Modal({
   sheet,
   closeOnBackdrop = false,
   hideClose = false,
+  className,
+  style,
 }: {
   title: string;
   onClose: () => void;
@@ -20,18 +22,19 @@ export default function Modal({
   variant?: "dark" | "light";
   /** When true, the close control cannot dismiss (in-flight action). */
   busy?: boolean;
-  /** Bottom sheet layout. Omit to pin from the bottom on viewports under 900px. */
+  /** Bottom sheet layout. Omit or set false to center on every viewport. */
   sheet?: boolean;
   /** When true, a click on the dimmed backdrop also dismisses. */
   closeOnBackdrop?: boolean;
   /** Hide the top-right Close control when the body already has dismiss actions. */
   hideClose?: boolean;
+  className?: string;
+  style?: CSSProperties;
 }) {
   const titleId = useId();
   const light = variant === "light";
   const dialogRef = useRef<HTMLDivElement | null>(null);
   const forceSheet = sheet === true;
-  const forceCentered = sheet === false;
 
   useEffect(() => {
     focusFirstField(dialogRef.current);
@@ -44,9 +47,7 @@ export default function Modal({
 
   const shellCls = forceSheet
     ? "flex min-h-full items-end justify-center p-0"
-    : forceCentered
-      ? "flex min-h-full justify-center p-4 sm:p-6"
-      : "flex min-h-full justify-center p-4 sm:p-6 max-[899px]:items-end max-[899px]:p-0";
+    : "flex min-h-full items-center justify-center p-4 sm:p-6";
 
   const sheetDialogCls = light
     ? "m-0 w-full max-w-none overflow-y-auto rounded-t-[26px] rounded-b-none border border-b-0 border-[rgba(5,27,53,0.10)] bg-white p-6 pb-[calc(1.5rem+env(safe-area-inset-bottom))] text-[#051b35] shadow-[0_-20px_60px_-20px_rgba(5,27,53,0.5)] max-h-[92vh]"
@@ -56,15 +57,7 @@ export default function Modal({
     ? "m-auto w-full max-w-[560px] rounded-2xl border border-[rgba(5,27,53,0.10)] bg-white p-6 text-[#051b35] shadow-2xl shadow-black/20 sm:p-8"
     : "m-auto w-full max-w-[560px] rounded-2xl border border-white/15 bg-[#0a2747] p-6 text-white shadow-2xl shadow-black/60 sm:p-8";
 
-  const autoMobileSheetCls = light
-    ? "max-[899px]:m-0 max-[899px]:w-full max-[899px]:max-w-none max-[899px]:overflow-y-auto max-[899px]:rounded-t-[26px] max-[899px]:rounded-b-none max-[899px]:border-b-0 max-[899px]:pb-[calc(1.5rem+env(safe-area-inset-bottom))] max-[899px]:shadow-[0_-20px_60px_-20px_rgba(5,27,53,0.5)] max-[899px]:max-h-[92vh]"
-    : "max-[899px]:m-0 max-[899px]:w-full max-[899px]:max-w-none max-[899px]:overflow-y-auto max-[899px]:rounded-t-[26px] max-[899px]:rounded-b-none max-[899px]:border-b-0 max-[899px]:pb-[calc(1.5rem+env(safe-area-inset-bottom))] max-[899px]:shadow-[0_-20px_60px_-20px_rgba(5,27,53,0.5)] max-[899px]:max-h-[92vh]";
-
-  const dialogCls = forceSheet
-    ? sheetDialogCls
-    : forceCentered
-      ? centeredDialogCls
-      : `${centeredDialogCls} ${autoMobileSheetCls}`;
+  const dialogCls = forceSheet ? sheetDialogCls : centeredDialogCls;
 
   const sheetHeaderCls = `-mx-6 flex items-start justify-between gap-4 border-b px-6 pb-4 ${
     light ? "border-[rgba(5,27,53,0.10)]" : "border-white/10"
@@ -74,11 +67,7 @@ export default function Modal({
     light ? "border-[rgba(5,27,53,0.10)]" : "border-white/10"
   }`;
 
-  const headerCls = forceSheet
-    ? sheetHeaderCls
-    : forceCentered
-      ? centeredHeaderCls
-      : `${centeredHeaderCls} max-[899px]:items-start max-[899px]:sm:-mx-6 max-[899px]:sm:px-6`;
+  const headerCls = forceSheet ? sheetHeaderCls : centeredHeaderCls;
 
   return (
     <div
@@ -92,7 +81,8 @@ export default function Modal({
           aria-modal="true"
           aria-labelledby={titleId}
           aria-busy={busy || undefined}
-          className={dialogCls}
+          className={className ? `${dialogCls} ${className}` : dialogCls}
+          style={style}
           onClick={(e) => e.stopPropagation()}
         >
           <div className={headerCls}>

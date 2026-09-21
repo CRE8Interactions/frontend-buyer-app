@@ -474,7 +474,7 @@ function MobileSingleOfferSeatPopup({
             {offerName}
           </div>
           <div className="px-5 pb-5 pt-4 text-white">
-            <p className="text-center text-[32px] font-bold leading-none tracking-tight">
+            <p className="text-center text-[26px] font-bold leading-none tracking-tight">
               {price}
             </p>
             <div className="mt-5 grid grid-cols-3 gap-3 text-center">

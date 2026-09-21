@@ -902,6 +902,7 @@ export default function PackageDetailClient({
           variant="light"
           sheet={false}
           hideClose
+          closeOnBackdrop
           title={seatedError.title}
           onClose={() => setSeatedError(null)}
           busy={checkingOut}

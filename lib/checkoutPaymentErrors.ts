@@ -51,6 +51,30 @@ export function processOrderDisplayMessage(error: unknown) {
   return processOrderApiMessage(error) || CHECKOUT_PAYMENT_COPY.completeFailed;
 }
 
+function thrownMessage(error: unknown) {
+  if (error instanceof Error) return error.message;
+  if (
+    error &&
+    typeof error === "object" &&
+    "message" in error &&
+    typeof error.message === "string"
+  ) {
+    return error.message;
+  }
+  return undefined;
+}
+
+/**
+ * Process failures come back as HTTP responses. A Stripe confirm rejection
+ * throws in the page and has no response body.
+ */
+export function purchaseFailureDisplayMessage(error: unknown) {
+  if (error && typeof error === "object" && "response" in error) {
+    return processOrderDisplayMessage(error);
+  }
+  return stripeConfirmDisplayMessage(thrownMessage(error));
+}
+
 export async function waitForPaymentIntentSucceeded(
   stripe: {
     retrievePaymentIntent: (clientSecret: string) => Promise<{

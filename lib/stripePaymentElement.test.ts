@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  checkoutConfirmBillingDetails,
   checkoutPaymentElementDefaultValues,
   checkoutPaymentElementOptions,
   checkoutPaymentElementOptionsForProtocol,
@@ -41,6 +42,17 @@ describe("stripePaymentElement wallets", () => {
       state: "never",
     });
     expect(checkoutPaymentElementOptions.terms.card).toBe("auto");
+  });
+
+  it("sends the hidden address fields when confirming so Stripe accepts never", () => {
+    expect(checkoutConfirmBillingDetails()).toEqual({
+      address: {
+        line1: "",
+        line2: "",
+        city: "",
+        state: "",
+      },
+    });
   });
 
   it("prefills Stripe's country from the cart or shopper IP", () => {

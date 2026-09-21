@@ -569,7 +569,7 @@ describe("SeatmapSeat", () => {
     );
 
     expect(screen.getByText("Field Club")).toBeInTheDocument();
-    expect(screen.getByText("$33.59")).toBeInTheDocument();
+    expect(screen.getByText("$33.59")).toHaveClass("text-[26px]");
     expect(screen.getByText("Section")).toBeInTheDocument();
     expect(screen.getByText("Row")).toBeInTheDocument();
     expect(screen.getByText("Seat")).toBeInTheDocument();

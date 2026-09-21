@@ -141,6 +141,22 @@ export function checkoutPaymentElementDefaultValues(country: string) {
   };
 }
 
+/**
+ * Address parts set to `never` are not collected in the Payment Element.
+ * Stripe rejects confirmPayment unless those parts are passed here.
+ * Country and postal stay on the Element, so they are not overridden.
+ */
+export function checkoutConfirmBillingDetails() {
+  return {
+    address: {
+      line1: "",
+      line2: "",
+      city: "",
+      state: "",
+    },
+  };
+}
+
 /** Apple Pay, Google Pay, and Link need HTTPS; skip them on plain HTTP dev. */
 export function paymentElementWalletsForProtocol(protocol: string) {
   return protocol === "https:" ? paymentElementWallets : paymentElementWalletsOff;

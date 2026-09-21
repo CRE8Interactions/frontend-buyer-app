@@ -263,7 +263,8 @@ export default function WaitingRoomPage() {
             <h1
               style={{
                 margin: "0 0 12px",
-                fontSize: 26,
+                fontSize: 16,
+                fontWeight: 600,
                 letterSpacing: "-0.025em",
               }}
             >
@@ -286,7 +287,8 @@ export default function WaitingRoomPage() {
               </span>
               <strong
                 style={{
-                  fontSize: 52,
+                  fontSize: 36,
+                  fontWeight: 700,
                   lineHeight: 1,
                   fontVariantNumeric: "tabular-nums",
                 }}
