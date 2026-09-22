@@ -47,6 +47,24 @@ const paymentIntentTotalFromCart = (cart: CartLike) => {
   return cart.total;
 };
 
+/**
+ * Legacy checkout posts the cart as-is, with accessPassQuantity cleared.
+ * The cart API defaults that field to 1 even when there is no access pass.
+ */
+export function buildProcessOrderRequest<T extends object>(
+  cart: T,
+  paymentIntentId: string,
+) {
+  const nextCart = {
+    ...cart,
+    accessPassQuantity: null,
+  } as Omit<T, "accessPassQuantity"> & { accessPassQuantity: null };
+  return {
+    cart: nextCart,
+    paymentIntentId,
+  };
+}
+
 export const buildPaymentIntentRequest = (
   cart: CartLike,
   event: unknown,

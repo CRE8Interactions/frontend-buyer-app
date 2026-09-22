@@ -1022,7 +1022,7 @@ describe("wallet season-package orders", () => {
     ]);
 
     const merged = mergePendingTransferWalletDetails(refreshed, removed);
-    const seats = merged[key]?.tickets.map((ticket) => ticket.id);
+    const seats = merged[key]?.tickets?.map((ticket) => ticket.id);
 
     expect(seats).toEqual(order.tickets.slice(1).map((ticket) => ticket.id));
     expect(merged[key]?.availability).toBe("available");
@@ -1316,7 +1316,7 @@ describe("wallet season-package orders", () => {
     const activeEvent = pkg.events[1];
     const [ownedTicket, incomingTicket] = order.tickets.map((row, index) => ({
       ...row,
-      id: row.id + index,
+      id: (row.id ?? 0) + index,
       eventUUID: activeEvent.uuid,
     }));
     const packageOrder = demoCompletedPackageOrder({
@@ -1776,7 +1776,7 @@ describe("wallet season-package orders", () => {
     expect(nextOrders[0]?.source).toBe("transfer");
     expect(nextOrders[0]?.orderId).toBe("accepted-incoming-1");
     expect(isSyntheticAcceptWalletOrder(nextOrders[0])).toBe(true);
-    expect(nextOrders[0]?.tickets.map((row) => row.id)).toEqual([ticket.id]);
+    expect(nextOrders[0]?.tickets?.map((row) => row.id)).toEqual([ticket.id]);
     expect(wallet.upcomingEvents).toHaveLength(1);
     expect(wallet.upcomingEvents[0]?.name).toBe(event.name);
     expect(wallet.upcomingEvents[0]?.pendingIncomingTransfer).toBeFalsy();
@@ -1891,7 +1891,7 @@ describe("wallet season-package orders", () => {
 
     expect(merged).toHaveLength(1);
     expect(merged[0]?.orderId).toBe("1306-recipient-order");
-    expect(merged[0]?.tickets.map((row) => row.id)).toEqual([ticket.id]);
+    expect(merged[0]?.tickets?.map((row) => row.id)).toEqual([ticket.id]);
   });
 
   it("creates separate wallet orders when accepting same-event incoming transfers", () => {
@@ -1985,7 +1985,7 @@ describe("wallet season-package orders", () => {
       },
     );
 
-    expect(restored[0]?.tickets.map((row) => row.id)).toEqual([ticket.id]);
+    expect(restored[0]?.tickets?.map((row) => row.id)).toEqual([ticket.id]);
   });
 
   it("keeps restored cancelled tickets in seat order", () => {
@@ -2001,7 +2001,7 @@ describe("wallet season-package orders", () => {
       tickets: [first],
     });
 
-    expect(restored[0]?.tickets.map((row) => row.seatNumber)).toEqual([
+    expect(restored[0]?.tickets?.map((row) => row.seatNumber)).toEqual([
       first.seatNumber,
       second.seatNumber,
     ]);
@@ -2018,7 +2018,7 @@ describe("wallet season-package orders", () => {
 
     const merged = mergeWalletOrdersPreservingLocalTickets(apiOrders, localOrders);
 
-    expect(merged[0]?.tickets.map((row) => row.id)).toEqual([ticket.id]);
+    expect(merged[0]?.tickets?.map((row) => row.id)).toEqual([ticket.id]);
   });
 
   it("prefers locally removed tickets over stale API wallet orders", () => {
@@ -2031,7 +2031,7 @@ describe("wallet season-package orders", () => {
 
     const merged = mergeWalletOrdersPreservingLocalTickets(apiOrders, localOrders);
 
-    expect(merged[0]?.tickets.map((row) => row.id)).toEqual([kept.id]);
+    expect(merged[0]?.tickets?.map((row) => row.id)).toEqual([kept.id]);
   });
 
   it("returns cancelled transfer events to upcoming date order", () => {
@@ -2115,10 +2115,10 @@ describe("wallet season-package orders", () => {
 
     const stripped = removeTicketsFromWalletOrders([order], [transferredTicket.id]);
 
-    expect(stripped[0]?.tickets.map((ticket) => ticket.id)).toEqual(
+    expect(stripped[0]?.tickets?.map((ticket) => ticket.id)).toEqual(
       order.tickets.slice(1).map((ticket) => ticket.id),
     );
-    expect(stripped[0]?.tickets.some((ticket) => ticket.id === transferredTicket.id)).toBe(
+    expect(stripped[0]?.tickets?.some((ticket) => ticket.id === transferredTicket.id)).toBe(
       false,
     );
   });
@@ -2240,7 +2240,7 @@ describe("wallet season-package orders", () => {
     expect(upcoming).toHaveLength(1);
     expect(upcoming[0]?.key).toBe(ownedKey);
     expect(upcoming[0]?.ticketCount).toBe(1);
-    expect(merged[ownedKey]?.tickets.map((ticket) => ticket.id)).toEqual([
+    expect(merged[ownedKey]?.tickets?.map((ticket) => ticket.id)).toEqual([
       remainingTicket.id,
     ]);
     expect(merged[sentKey]?.heroImage || merged[sentKey]?.posterSrc).toBeTruthy();

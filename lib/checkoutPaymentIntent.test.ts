@@ -6,6 +6,7 @@ import {
 } from "@/lib/demo/fixtures";
 import {
   buildPaymentIntentRequest,
+  buildProcessOrderRequest,
   paymentEventFromCart,
 } from "@/lib/checkoutPaymentIntent";
 import { resolveFlexPackCheckoutTotals } from "@/lib/ticketSummary";
@@ -28,6 +29,19 @@ describe("paymentEventFromCart", () => {
     });
 
     expect(paymentEventFromCart(cart, null)).toBeNull();
+  });
+});
+
+describe("buildProcessOrderRequest", () => {
+  it("clears accessPassQuantity on a ticket cart before process", () => {
+    const cart = { ...demoCheckoutCart({ ga: true }), accessPassQuantity: 1 };
+    const request = buildProcessOrderRequest(cart, "pi_test");
+
+    expect(request.paymentIntentId).toBe("pi_test");
+    expect(request.cart.accessPassQuantity).toBeNull();
+    expect(request.cart.id).toBe(cart.id);
+    expect(request.cart.tickets).toEqual(cart.tickets);
+    expect(request.cart.total).toBe(cart.total);
   });
 });
 

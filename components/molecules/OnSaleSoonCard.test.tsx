@@ -11,7 +11,7 @@ describe("OnSaleSoonCard", () => {
     expect(screen.getByText("Fri, Aug 28 at 10:00 AM MDT")).toBeInTheDocument();
     expect(
       screen.getByText(
-        /this event does not have any tickets on sale yet\. check back in later\./i,
+        /tickets aren't on sale yet\. check back soon\./i,
       ),
     ).toBeInTheDocument();
   });
@@ -21,7 +21,7 @@ describe("OnSaleSoonCard", () => {
 
     expect(
       screen.getByText(
-        /this event does not have tickets on sale yet\. check back in later\./i,
+        /tickets aren't on sale yet\. check back soon\./i,
       ),
     ).toBeInTheDocument();
     expect(screen.queryByText(/on sale soon/i)).toBeInTheDocument();

@@ -108,6 +108,62 @@ function isGenericGaLabel(value: string) {
   return value.trim().toUpperCase() === "GA";
 }
 
+function ticketGroupLookupKeys(source?: Record<string, unknown> | null) {
+  return [
+    source?.ticketGroupUUID,
+    source?.ticketGroup,
+    source?.ticketGroupId,
+    source?.uuid,
+    source?.id,
+    source?.sectionId,
+  ]
+    .map((value) => String(value ?? "").trim())
+    .filter(Boolean);
+}
+
+/** True when a GA cart ticket has no real section name — only a generic "ga". */
+export function gaTicketsNeedGroupSection(
+  tickets: Array<Record<string, unknown>>,
+) {
+  if (!tickets.length) return false;
+  const allGa = tickets.every((ticket) =>
+    Boolean(ticket.generalAdmission || ticket.GA),
+  );
+  if (!allGa) return false;
+  return tickets.some((ticket) => {
+    const name = String(ticket.sectionName ?? "").trim();
+    return !name || isGenericGaLabel(name);
+  });
+}
+
+/** Copy ticket-group section names (e.g. "GA Floor") onto held GA tickets. */
+export function withGaTicketGroupSections(
+  tickets: Array<Record<string, unknown>>,
+  groups: Array<Record<string, unknown>>,
+) {
+  if (!tickets.length || !groups.length) return tickets;
+  const byKey = new Map<string, Record<string, unknown>>();
+  for (const group of groups) {
+    for (const key of ticketGroupLookupKeys(group)) {
+      byKey.set(key, group);
+    }
+  }
+  return tickets.map((ticket) => {
+    const group =
+      ticketGroupLookupKeys(ticket)
+        .map((key) => byKey.get(key))
+        .find(Boolean) ||
+      groups.find(
+        (row) =>
+          ticket.sectionId != null &&
+          String(row.sectionId ?? "") === String(ticket.sectionId),
+      );
+    const sectionName = String(group?.sectionName ?? "").trim();
+    if (!sectionName) return ticket;
+    return { ...ticket, sectionName };
+  });
+}
+
 /** GA quick-pick card subtitle: section name, else offer description, else General Admission. */
 export function gaTierSubtitle(source?: GaTierSubtitleSource | null): string {
   const sectionName = String(source?.sectionName ?? "").trim();
@@ -231,8 +287,12 @@ export function ticketSelectionSummary(
                 `Sec ${ticket.sectionName || ticket.sectionNumber} · Row ${ticket.rowNumber} · Seat ${ticket.seatNumber}`,
             )
             .join(", ");
-  const subtitle =
-    count === 1
+  const allGa =
+    tickets.length > 0 &&
+    tickets.every((ticket) => Boolean(ticket.generalAdmission || ticket.GA));
+  const subtitle = allGa
+    ? gaTierSubtitle(first)
+    : count === 1
       ? "1 ticket"
       : together
         ? `${count} tickets · seats are together`

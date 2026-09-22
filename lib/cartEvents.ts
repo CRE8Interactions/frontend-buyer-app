@@ -1459,6 +1459,15 @@ export type PendingSentTransfer = {
       venue?: EventLike["venue"];
       organization?: { name?: string };
     } | null;
+    details?: {
+      package?: {
+        name?: string;
+        image?: unknown;
+        events?: EventLike[];
+        venue?: EventLike["venue"];
+        organization?: { name?: string };
+      };
+    };
   } | null;
 };
 

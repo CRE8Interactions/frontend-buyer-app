@@ -46,6 +46,10 @@ type Choice = "email" | "phone-number";
 
 const NAVY = "#051b35";
 
+/** Demo login: 28px on phone, 34px from md. Avoid text-[Npx] tokens. */
+const loginTitleCls =
+  "font-semibold tracking-[-0.03em] leading-[1.05] [font-size:28px] md:[font-size:34px]";
+
 const greenBtnCls =
   "inline-flex w-full items-center justify-center gap-2.5 rounded-full bg-[#a6e773] px-5 py-4 text-[15px] font-semibold text-[#051b35] disabled:opacity-70";
 const cardCls =
@@ -330,7 +334,7 @@ function LoginForm() {
               <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-[#8a93a3]">
                 Sign in
               </p>
-              <h1 className="text-[34px] font-semibold leading-[1.05] tracking-[-0.03em]">
+              <h1 className={loginTitleCls}>
                 Your tickets, in one place
               </h1>
               <p className="text-[15px] leading-relaxed text-[#6e7180]">
@@ -398,7 +402,7 @@ function LoginForm() {
         {step === 1 && (
           <>
             <div className="flex flex-col gap-2">
-              <h1 className="text-[34px] font-semibold leading-[1.05] tracking-[-0.03em]">
+              <h1 className={loginTitleCls}>
                 Enter your code
               </h1>
               <p className="text-[15px] leading-relaxed text-[#6e7180]">
@@ -463,7 +467,7 @@ function LoginForm() {
         {step === 2 && (
           <>
             <div className="flex flex-col gap-2">
-              <h1 className="text-[34px] font-semibold leading-[1.05] tracking-[-0.03em]">
+              <h1 className={loginTitleCls}>
                 Let&apos;s set up your profile
               </h1>
             </div>

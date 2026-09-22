@@ -445,7 +445,7 @@ describe("venue page actions", () => {
     });
   });
 
-  it("links to the venue website and directions, and copies the page url", async () => {
+  it("shows Follow venue, directions, and copies the page url", async () => {
     const venue = nmState.homeVenue;
     mockedGetVenue.mockResolvedValue({ data: [venue] } as never);
     mockedGetVenues.mockResolvedValue({ data: [venue] } as never);
@@ -456,8 +456,11 @@ describe("venue page actions", () => {
     render(<VenueProfile slug={venue.slug} />);
 
     expect(
-      await screen.findByRole("link", { name: /visit venue website/i }),
+      await screen.findByRole("link", { name: /follow venue/i }),
     ).toHaveAttribute("href", venue.website);
+    expect(
+      screen.queryByRole("link", { name: /visit venue website/i }),
+    ).not.toBeInTheDocument();
     expect(screen.getByRole("link", { name: /directions/i })).toHaveAttribute(
       "href",
       googleMapsDirectionsUrl(nmState.homeVenue.address),
@@ -465,25 +468,6 @@ describe("venue page actions", () => {
 
     await userEvent.click(screen.getByRole("button", { name: /share/i }));
     expect(writeText).toHaveBeenCalledWith(window.location.href);
-  });
-
-  it("takes the venue website from upcoming-events when the venue record omits it", async () => {
-    const venue = nmState.homeVenue;
-    mockedGetVenue.mockResolvedValue({
-      data: [withoutWebsite(venue)],
-    } as never);
-    mockedGetVenues.mockResolvedValue({
-      data: [withoutWebsite(venue)],
-    } as never);
-    mockedGetUpcoming.mockResolvedValue({
-      data: demoVenueUpcomingEvents(venue.slug),
-    } as never);
-
-    render(<VenueProfile slug={venue.slug} />);
-
-    expect(
-      await screen.findByRole("link", { name: /visit venue website/i }),
-    ).toHaveAttribute("href", venue.website);
   });
 
   it("shows the venue description with Show more on mobile", async () => {
@@ -548,7 +532,7 @@ describe("venue page actions", () => {
     vi.restoreAllMocks();
   });
 
-  it("hides website and directions when the venue has neither", async () => {
+  it("hides Follow venue when the venue has no website", async () => {
     const venue = {
       name: raptors.homeVenue.name,
       slug: raptors.homeVenue.slug,
@@ -559,6 +543,9 @@ describe("venue page actions", () => {
     render(<VenueProfile slug={venue.slug} />);
 
     await screen.findByText(venue.name);
+    expect(
+      screen.queryByRole("link", { name: /follow venue/i }),
+    ).not.toBeInTheDocument();
     expect(
       screen.queryByRole("link", { name: /visit venue website/i }),
     ).not.toBeInTheDocument();

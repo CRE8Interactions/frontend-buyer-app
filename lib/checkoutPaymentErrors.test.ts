@@ -3,6 +3,7 @@ import {
   CHECKOUT_PAYMENT_COPY,
   paymentIntentLoadOutcome,
   processOrderDisplayMessage,
+  purchaseFailureDisplayMessage,
   stripeConfirmDisplayMessage,
   stripeSubmitDisplayMessage,
   waitForPaymentIntentSucceeded,
@@ -50,6 +51,21 @@ describe("checkout payment copy", () => {
     expect(processOrderDisplayMessage(new Error("failed"))).toBe(
       CHECKOUT_PAYMENT_COPY.completeFailed,
     );
+  });
+
+  it("shows a thrown Stripe confirm message and keeps process HTTP errors", () => {
+    expect(
+      purchaseFailureDisplayMessage(new Error("Your card was declined.")),
+    ).toBe("Your card was declined.");
+    expect(purchaseFailureDisplayMessage(new Error("failed"))).toBe("failed");
+    expect(purchaseFailureDisplayMessage(axiosError(500))).toBe(
+      CHECKOUT_PAYMENT_COPY.completeFailed,
+    );
+    expect(
+      purchaseFailureDisplayMessage(
+        axiosError(400, { error: { message: "Order could not be processed" } }),
+      ),
+    ).toBe("Order could not be processed");
   });
 });
 

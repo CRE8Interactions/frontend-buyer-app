@@ -5,10 +5,12 @@ import {
   demoFlexPackCheckoutCart,
   demoPackageCheckoutCart,
   demoSeasonPackage,
+  demoTicketGroups,
 } from "@/lib/demo/fixtures";
 import {
   completedOrderPromoCode,
   gaTierSubtitle,
+  gaTicketsNeedGroupSection,
   packageOrderSummary,
   packageSeatLines,
   promoSummaryLabel,
@@ -19,6 +21,7 @@ import {
   selectionOfferName,
   selectionTicketCards,
   ticketSelectionSummary,
+  withGaTicketGroupSections,
   withPackageCheckoutSeatPrices,
 } from "@/lib/ticketSummary";
 
@@ -89,7 +92,7 @@ describe("gaTierSubtitle", () => {
     expect(
       gaTierSubtitle({
         sectionNumber: "O-Town",
-        offer: { name: "Section M-N & GA" },
+        offer: { description: "Section M-N & GA" },
       }),
     ).toBe("O-Town · unreserved seating");
     expect(
@@ -176,6 +179,58 @@ describe("ticketSelectionSummary", () => {
       ticketSelectionSummary(cart.tickets, { defaultOffer: "Standard admission" })
         .offerName,
     ).toBe(cart.tickets[0].offerName);
+  });
+
+  it("uses the GA offer subtitle instead of a ticket count", () => {
+    const cart = demoCheckoutCart({ ga: true });
+    const group = demoTicketGroups().ticketGroups[0];
+    expect(ticketSelectionSummary(cart.tickets).subtitle).toBe(
+      gaTierSubtitle(group),
+    );
+    expect(ticketSelectionSummary(cart.tickets).subtitle).not.toBe("1 ticket");
+  });
+
+  it("copies the ticket-group section name onto a GA cart ticket that only has ga", () => {
+    const group = demoTicketGroups().ticketGroups[0];
+    const ticket = {
+      ...demoCheckoutCart({ ga: true }).tickets[0],
+      sectionName: undefined,
+      sectionNumber: "ga",
+      ticketGroup: group.id,
+    };
+    expect(ticketSelectionSummary([ticket]).subtitle).toBe(
+      "Ga · unreserved seating",
+    );
+    expect(gaTicketsNeedGroupSection([ticket])).toBe(true);
+
+    const enriched = withGaTicketGroupSections(
+      [ticket],
+      demoTicketGroups().ticketGroups as unknown as Array<
+        Record<string, unknown>
+      >,
+    );
+    expect(ticketSelectionSummary(enriched).subtitle).toBe(
+      gaTierSubtitle(group),
+    );
+    expect(gaTicketsNeedGroupSection(enriched)).toBe(false);
+  });
+
+  it("does not look up ticket groups for reserved seats", () => {
+    const cart = demoCheckoutCart();
+    expect(gaTicketsNeedGroupSection(cart.tickets)).toBe(false);
+    expect(
+      withGaTicketGroupSections(
+        cart.tickets,
+        demoTicketGroups().ticketGroups as unknown as Array<
+          Record<string, unknown>
+        >,
+      ),
+    ).toEqual(cart.tickets);
+  });
+
+  it("keeps a ticket-count subtitle for reserved seats", () => {
+    const cart = demoCheckoutCart();
+    expect(ticketSelectionSummary(cart.tickets).subtitle).toBe("1 ticket");
   });
 
   it("keeps seats-are-together copy when selected seats are consecutive", () => {

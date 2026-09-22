@@ -20,6 +20,26 @@ import { clearCheckoutReturnPath, setCheckoutReturnPath } from "@/lib/cart";
 
 const raptorsEvent =
   DEMO_EVENTS.find((event) => event.shortCode === "RAPT006") || DEMO_EVENTS[0];
+const gaEvent =
+  DEMO_EVENTS.find((event) => event.seatmap?.ga_only) || DEMO_EVENTS[0];
+
+/** Live cart events often omit seatmap.ga_only even for GA-only shows. */
+function cartEventWithoutGaFlags(event: {
+  slug?: string;
+  seoUrl?: string;
+  shortCode?: string;
+  shortcode?: string;
+  venue?: { name?: string; slug?: string; [key: string]: unknown };
+  [key: string]: unknown;
+}) {
+  const { seatmap: _seatmap, ...rest } = event;
+  return {
+    ...rest,
+    venue: event.venue
+      ? { name: event.venue.name, slug: event.venue.slug }
+      : undefined,
+  };
+}
 
 afterEach(() => {
   clearCheckoutReturnPath();
@@ -29,6 +49,25 @@ describe("checkoutLeavePath", () => {
   it("returns the event tickets page for a ticket cart", () => {
     const cart = demoCheckoutCart();
     expect(checkoutLeavePath(cart, cart.event)).toBe(
+      eventPurchasePath(raptorsEvent),
+    );
+  });
+
+  it("returns the GA event page when tickets are general admission even if the cart event has no seatmap", () => {
+    const cart = demoCheckoutCart({ ga: true });
+    const event = cartEventWithoutGaFlags(cart.event);
+    expect(checkoutLeavePath({ ...cart, event }, event)).toBe(
+      eventPurchasePath(gaEvent),
+    );
+    expect(checkoutLeavePath({ ...cart, event }, event)).not.toBe(
+      `/e/${gaEvent.slug}/${gaEvent.shortCode}/tickets/`,
+    );
+  });
+
+  it("still returns the seated tickets page when reserved-seat tickets have no seatmap", () => {
+    const cart = demoCheckoutCart();
+    const event = cartEventWithoutGaFlags(cart.event);
+    expect(checkoutLeavePath({ ...cart, event }, event)).toBe(
       eventPurchasePath(raptorsEvent),
     );
   });
@@ -126,6 +165,15 @@ describe("resolveCheckoutReturnPath", () => {
     const cart = demoPackageCheckoutCart();
     expect(resolveCheckoutReturnPath(cart)).toBe(
       packagePurchasePath(cart.package),
+    );
+  });
+
+  it("ignores a leftover seated event path when the cart is for a GA event", () => {
+    const cart = demoCheckoutCart({ ga: true });
+    const event = cartEventWithoutGaFlags(cart.event);
+    setCheckoutReturnPath(eventPurchasePath(raptorsEvent));
+    expect(resolveCheckoutReturnPath({ ...cart, event }, event)).toBe(
+      eventPurchasePath(gaEvent),
     );
   });
 

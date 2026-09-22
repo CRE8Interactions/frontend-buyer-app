@@ -569,7 +569,7 @@ describe("SeatmapSeat", () => {
     );
 
     expect(screen.getByText("Field Club")).toBeInTheDocument();
-    expect(screen.getByText("$33.59")).toBeInTheDocument();
+    expect(screen.getByText("$33.59")).toHaveClass("text-[26px]");
     expect(screen.getByText("Section")).toBeInTheDocument();
     expect(screen.getByText("Row")).toBeInTheDocument();
     expect(screen.getByText("Seat")).toBeInTheDocument();
@@ -1617,8 +1617,12 @@ describe("InteractiveSeatmap canvas", () => {
 });
 
 describe("SeatmapTooltip GA stepper", () => {
-  const ga = demoTicketGroups().ticketGroups.find((group) => group.GA);
-  if (!ga) throw new Error("demo fixtures need a GA ticket group");
+  function requireDemoGaGroup() {
+    const group = demoTicketGroups().ticketGroups.find((row) => row.GA);
+    if (!group) throw new Error("demo fixtures need a GA ticket group");
+    return group;
+  }
+  const ga = requireDemoGaGroup();
 
   function renderGaTooltip(
     source: {

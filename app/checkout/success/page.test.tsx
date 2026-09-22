@@ -3,13 +3,16 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ReactNode } from "react";
 import {
+  DEMO_GA_SECTION_ID,
   DEMO_ORGS,
   DEMO_SEATED_TICKET_GROUPS,
   DEMO_USER,
+  demoCheckoutCart,
   demoCompletedFlexPackOrder,
   demoCompletedPackageOrder,
   demoCompletedTicketOrder,
   demoFlexPack,
+  demoTicketGroups,
 } from "@/lib/demo/fixtures";
 import { formatCurrency } from "@/lib/helpers";
 import { resolveCompletedOrderFees } from "@/lib/ticketSummary";
@@ -44,6 +47,7 @@ vi.mock("@/lib/api", () => ({
   getEventByUuid: vi.fn(),
   getEventByShortCode: vi.fn(),
   getOrganizationStorefront: vi.fn(),
+  getTicketGroups: vi.fn(),
   downloadApplePass: vi.fn(),
   downloadGooglePass: vi.fn(),
 }));
@@ -75,6 +79,7 @@ import {
   downloadGooglePass,
   getOrder,
   getOrderByPaymentIntentId,
+  getTicketGroups,
 } from "@/lib/api";
 import { seatLabel } from "@/lib/wallet";
 import { __resetCompletedOrderInflightForTests } from "@/lib/completedOrder";
@@ -91,6 +96,22 @@ import {
 
 const mockedGetOrderByPi = vi.mocked(getOrderByPaymentIntentId);
 const mockedGetOrder = vi.mocked(getOrder);
+const mockedGetTicketGroups = vi.mocked(getTicketGroups);
+
+/** Live GA orders come back with a generic "ga" section, not the tier name. */
+function gaCompletedOrder() {
+  const cart = demoCheckoutCart({ ga: true, ticketCount: 2 });
+  return demoCompletedTicketOrder({
+    event: cart.event,
+    organization: cart.event.organization,
+    tickets: cart.tickets.map((ticket) => ({
+      ...ticket,
+      sectionId: DEMO_GA_SECTION_ID,
+      sectionName: "ga",
+      sectionNumber: undefined,
+    })),
+  });
+}
 const mockedUseAuth = vi.mocked(useAuth);
 const mockedDownload = vi.mocked(downloadOrderReceipt);
 const mockedDownloadApplePass = vi.mocked(downloadApplePass);
@@ -114,6 +135,10 @@ describe("Checkout success receipt", () => {
       data: demoCompletedTicketOrder(),
     } as never);
     mockedGetOrder.mockReset();
+    mockedGetTicketGroups.mockReset();
+    mockedGetTicketGroups.mockResolvedValue({
+      data: { ticketGroups: demoTicketGroups().ticketGroups },
+    } as never);
     mockedDownload.mockReset();
     mockedDownload.mockResolvedValue(undefined);
   });
@@ -167,6 +192,36 @@ describe("Checkout success receipt", () => {
       await screen.findByText(
         `Sec ${listing.sectionNumber} · Row ${listing.rowNumber}`,
       ),
+    ).toBeInTheDocument();
+  });
+
+  it("names the GA tier from the event ticket groups instead of a bare ga", async () => {
+    mockedGetOrderByPi.mockResolvedValue({
+      data: gaCompletedOrder(),
+    } as never);
+    render(<CheckoutSuccessPageRoute />);
+
+    const gaGroup = demoTicketGroups().ticketGroups[0];
+    expect(
+      await screen.findByText(`${gaGroup.sectionName} · unreserved seating`),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByText(/^Ga · unreserved seating$/i),
+    ).not.toBeInTheDocument();
+  });
+
+  it("keeps the order readable when the ticket groups lookup fails", async () => {
+    mockedGetOrderByPi.mockResolvedValue({
+      data: gaCompletedOrder(),
+    } as never);
+    mockedGetTicketGroups.mockRejectedValue(new Error("offline"));
+    render(<CheckoutSuccessPageRoute />);
+
+    expect(
+      await screen.findByText(/unreserved seating/i),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(demoTicketGroups().ticketGroups[0].offer!.name!),
     ).toBeInTheDocument();
   });
 

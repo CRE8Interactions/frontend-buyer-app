@@ -431,4 +431,43 @@ describe("SeatMapSelectionOverlay map readiness", () => {
     expect(screen.getByText(MIXED_MAP_SELECTION_ERROR.message)).toBeInTheDocument();
     expect(within(dialog).getAllByRole("button", { name: "Close" })).toHaveLength(1);
   });
+
+  it("dismisses the selected-tickets error popup when the backdrop is clicked", () => {
+    useSeatmapStore.setState({
+      seatedError: { ...MIXED_MAP_SELECTION_ERROR },
+    });
+    renderOverlay({
+      mapMapping: demoSeatmapMapping(),
+      mapBackground: BACKGROUND,
+    });
+    fireEvent.load(backgroundPreload()!);
+
+    const dialog = screen.getByRole("dialog", {
+      name: MIXED_MAP_SELECTION_ERROR.title,
+    });
+    fireEvent.click(dialog.parentElement!.parentElement!);
+
+    expect(useSeatmapStore.getState().seatedError).toBeNull();
+    expect(
+      screen.queryByText(MIXED_MAP_SELECTION_ERROR.message),
+    ).not.toBeInTheDocument();
+  });
+
+  it("keeps the selected-tickets error popup open when the dialog itself is clicked", () => {
+    useSeatmapStore.setState({
+      seatedError: { ...MIXED_MAP_SELECTION_ERROR },
+    });
+    renderOverlay({
+      mapMapping: demoSeatmapMapping(),
+      mapBackground: BACKGROUND,
+    });
+    fireEvent.load(backgroundPreload()!);
+
+    fireEvent.click(
+      screen.getByRole("dialog", { name: MIXED_MAP_SELECTION_ERROR.title }),
+    );
+
+    expect(useSeatmapStore.getState().seatedError).not.toBeNull();
+    expect(screen.getByText(MIXED_MAP_SELECTION_ERROR.message)).toBeInTheDocument();
+  });
 });

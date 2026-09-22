@@ -87,7 +87,7 @@ export default function BrandedCheckoutShell({
           type="button"
           onClick={onBack}
           aria-label="Back"
-          className="relative z-[1] inline-flex shrink-0 items-center gap-2 rounded-full border border-white/22 bg-white/12 px-3 py-2.5 text-[14px] font-medium text-white md:px-[18px]"
+          className="relative z-[1] inline-flex shrink-0 items-center gap-2 rounded-full border border-white/22 bg-white/12 px-[18px] py-2.5 text-[14px] font-medium text-white"
         >
           <svg
             viewBox="0 0 24 24"
@@ -102,11 +102,11 @@ export default function BrandedCheckoutShell({
             <line x1="19" y1="12" x2="5" y2="12" />
             <polyline points="12 19 5 12 12 5" />
           </svg>
-          <span className="hidden sm:inline">Back</span>
+          Back
         </button>
         <div className="hidden flex-1 md:block" aria-hidden />
         {hold ? (
-          <span className="pointer-events-none absolute left-1/2 top-1/2 inline-flex max-w-[calc(100%-11.5rem)] -translate-x-1/2 -translate-y-1/2 items-center gap-1.5 truncate rounded-full border border-white/22 bg-white/14 px-2.5 py-2 text-[12px] font-medium tabular-nums text-white md:static md:max-w-none md:translate-x-0 md:translate-y-0 md:px-3.5">
+          <span className="relative z-[1] ml-auto inline-flex max-w-[calc(100%-8rem)] items-center gap-1.5 truncate rounded-full border border-white/22 bg-white/14 px-3.5 py-2 text-[12px] font-medium tabular-nums text-white md:ml-0 md:max-w-none">
             <svg
               viewBox="0 0 24 24"
               fill="none"
@@ -123,7 +123,7 @@ export default function BrandedCheckoutShell({
             Seats held {hold}
           </span>
         ) : null}
-        <div className="relative z-[1] ml-auto flex shrink-0 items-center gap-1.5 whitespace-nowrap text-[11px] text-white/80 md:ml-0 md:gap-2">
+        <div className="relative z-[1] hidden shrink-0 items-center gap-2 whitespace-nowrap text-[11px] text-white/80 md:flex">
           <svg
             viewBox="0 0 24 24"
             fill="none"
@@ -131,7 +131,7 @@ export default function BrandedCheckoutShell({
             strokeWidth={2}
             strokeLinecap="round"
             strokeLinejoin="round"
-            className="h-3.5 w-3.5 shrink-0 md:h-4 md:w-4"
+            className="h-4 w-4 shrink-0"
             aria-hidden
           >
             <rect x="3" y="11" width="18" height="11" rx="2" />

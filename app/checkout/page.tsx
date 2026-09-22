@@ -47,6 +47,7 @@ import {
   ticketSelectionSummary,
   withPackageCheckoutSeatPrices,
 } from "@/lib/ticketSummary";
+import { ticketsWithGaSections } from "@/lib/gaTicketSections";
 import {
   dropUserCart,
   getCart,
@@ -57,6 +58,7 @@ import {
   removePromoCode,
   resolveFundraisingCampaign,
 } from "@/lib/api";
+import { buildProcessOrderRequest } from "@/lib/checkoutPaymentIntent";
 import {
   buildFundraisingPayload,
   buildPaymentIntentRequest,
@@ -69,9 +71,8 @@ import {
 import {
   CHECKOUT_PAYMENT_COPY,
   paymentIntentLoadOutcome,
-  processOrderDisplayMessage,
+  purchaseFailureDisplayMessage,
   stripeConfirmDisplayMessage,
-  stripeSubmitDisplayMessage,
   waitForPaymentIntentSucceeded,
 } from "@/lib/checkoutPaymentErrors";
 import {
@@ -124,6 +125,7 @@ import {
 } from "@/lib/tracking";
 import {
   STRIPE_PAYMENT_ELEMENT_FONTS,
+  checkoutConfirmBillingDetails,
   checkoutPaymentElementDefaultValues,
   checkoutPaymentElementOptionsForPage,
   paymentElementWalletsForProtocol,
@@ -390,17 +392,17 @@ function CheckoutPaymentForm({
     if (!stripe || !elements) return;
     setPurchasing(true);
     try {
-      const submitted = await elements.submit();
-      if (submitted?.error) {
-        onDeclined(stripeSubmitDisplayMessage(submitted.error.message));
-        setPurchasing(false);
-        return;
-      }
-      await processOrder({ cart, paymentIntentId: intentId });
+      // Elements already has the PaymentIntent client secret. Legacy checkout
+      // confirms once; a prior elements.submit() makes confirmPayment reject
+      // in the browser before Stripe's confirm request.
+      await processOrder(buildProcessOrderRequest(cart, intentId));
       const confirmed = await stripe.confirmPayment({
         elements,
         confirmParams: {
           return_url: checkoutSuccessReturnUrl(intentId),
+          payment_method_data: {
+            billing_details: checkoutConfirmBillingDetails(),
+          },
         },
         redirect: "if_required",
       });
@@ -423,7 +425,7 @@ function CheckoutPaymentForm({
         onExpired();
         return;
       }
-      onDeclined(processOrderDisplayMessage(err));
+      onDeclined(purchaseFailureDisplayMessage(err));
     }
   };
 
@@ -858,6 +860,11 @@ function CheckoutPage() {
           setLoadError(CHECKOUT_PAYMENT_COPY.noCart);
           return;
         }
+        cartData.tickets = await ticketsWithGaSections(
+          cartData.tickets || [],
+          cartData.event,
+        );
+        if (cancelled) return;
         setCart(cartData);
         cartRef.current = cartData;
         const itemCount = countCartItems(cartData);
@@ -1240,7 +1247,7 @@ function CheckoutPage() {
     >
       {expiredOpen ? null : loadError ? (
         <div className={`${lightCard} mx-auto mt-10 max-w-lg p-8 text-center`}>
-          <h1 className="text-[22px] font-semibold">Checkout unavailable</h1>
+          <h1 className="text-[16px] font-semibold">Checkout unavailable</h1>
           <p className={`mt-2 ${muted}`}>{loadError}</p>
           <div className="mt-6 flex flex-col gap-3 sm:flex-row sm:justify-center">
             <BrandedActionButton
@@ -1261,7 +1268,7 @@ function CheckoutPage() {
             <div className={`${lightCard} flex flex-col gap-5 p-[22px]`}>
               {needsGuestContact ? null : (
               <div>
-                <h1 className="text-[24px] font-semibold tracking-[-0.03em]">
+                <h1 className="text-[16px] font-semibold tracking-[-0.03em]">
                   Payment
                 </h1>
                 <p className={`mt-1 text-[14px] ${muted}`}>

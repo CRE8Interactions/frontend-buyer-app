@@ -16,6 +16,11 @@ export type CheckoutLeaveCart = {
   id?: string | number;
   event?: CheckoutLeaveEvent | null;
   organization?: LeaveOrg;
+  tickets?: Array<{
+    generalAdmission?: boolean;
+    GA?: boolean;
+    [key: string]: unknown;
+  }>;
   package?: {
     uuid?: string | number;
     id?: string | number;
@@ -39,12 +44,52 @@ export type CheckoutLeaveEvent = {
   seoUrl?: string;
   shortCode?: string;
   shortcode?: string;
+  isGeneralAdmissionOnly?: boolean;
+  generalAdmissionOnly?: boolean;
   seatmap?: { ga_only?: boolean };
   venue?: { isGeneralAdmissionOnly?: boolean; [key: string]: unknown };
   [key: string]: unknown;
 } | null;
 
-export function ticketsPathFromEvent(eventData?: CheckoutLeaveEvent) {
+function eventIsGaOnly(eventData?: CheckoutLeaveEvent) {
+  return Boolean(
+    eventData?.isGeneralAdmissionOnly ||
+      eventData?.generalAdmissionOnly ||
+      eventData?.seatmap?.ga_only ||
+      eventData?.venue?.isGeneralAdmissionOnly,
+  );
+}
+
+function cartTicketsAreGaOnly(cart?: CheckoutLeaveCart) {
+  const tickets = cart?.tickets;
+  if (!Array.isArray(tickets) || tickets.length === 0) return false;
+  return tickets.every((ticket) => Boolean(ticket.generalAdmission || ticket.GA));
+}
+
+/** Cart events often omit seatmap.ga_only — held GA tickets still mean the GA page. */
+function leaveEventIsGaOnly(
+  cart?: CheckoutLeaveCart,
+  eventData?: CheckoutLeaveEvent,
+) {
+  return eventIsGaOnly(eventData) || cartTicketsAreGaOnly(cart);
+}
+
+function eventIdentityFromPath(path: string) {
+  const parts = (path.split(/[?#]/)[0] || "")
+    .replace(/\/+$/, "")
+    .split("/")
+    .filter(Boolean);
+  if (parts[0]?.toLowerCase() !== "e" || parts.length < 3) return null;
+  return {
+    slug: parts[1].toLowerCase(),
+    code: parts[2].toLowerCase(),
+  };
+}
+
+export function ticketsPathFromEvent(
+  eventData?: CheckoutLeaveEvent,
+  gaOnly = false,
+) {
   const slug =
     (eventData?.slug as string | undefined) ||
     (eventData?.seoUrl as string | undefined);
@@ -57,6 +102,8 @@ export function ticketsPathFromEvent(eventData?: CheckoutLeaveEvent) {
     seoUrl: eventData?.seoUrl,
     shortCode: code,
     shortcode: eventData?.shortcode,
+    isGeneralAdmissionOnly: eventData?.isGeneralAdmissionOnly || gaOnly,
+    generalAdmissionOnly: eventData?.generalAdmissionOnly,
     seatmap: eventData?.seatmap,
     venue: eventData?.venue,
   });
@@ -104,7 +151,10 @@ export function checkoutLeavePath(
           }
         : null,
     ) ||
-    ticketsPathFromEvent(eventData ?? cart?.event)
+    ticketsPathFromEvent(
+      eventData ?? cart?.event,
+      leaveEventIsGaOnly(cart, eventData ?? cart?.event),
+    )
   );
 }
 
@@ -129,15 +179,30 @@ export function shouldPopCheckoutHistory(
   return normalizePath(returnPath) === normalizePath(dest);
 }
 
+/**
+ * Ticket carts must return to this event's purchase page. A leftover /e/...
+ * path from another event, or the seated /tickets/ URL of a GA event, would
+ * send the shopper to the wrong listing.
+ */
+function usableStoredReturnPath(
+  stored: string,
+  cart?: CheckoutLeaveCart,
+) {
+  if (cart?.package || cart?.flex_pack) return stored;
+  if (eventIdentityFromPath(stored)) return null;
+  return stored;
+}
+
 /** Prefer the page the shopper came from; fall back to event/package purchase. */
 export function resolveCheckoutReturnPath(
   cart?: CheckoutLeaveCart,
   eventData?: CheckoutLeaveEvent,
   orgSlug?: string | null,
 ) {
-  return (
-    getCheckoutReturnPath() || checkoutLeavePath(cart, eventData, orgSlug)
-  );
+  const leave = checkoutLeavePath(cart, eventData, orgSlug);
+  const stored = getCheckoutReturnPath();
+  if (!stored) return leave;
+  return usableStoredReturnPath(stored, cart) || leave;
 }
 
 export function dropUserCartPayload(

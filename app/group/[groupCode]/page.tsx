@@ -112,7 +112,7 @@ export default function GroupManagePage() {
       <ShopperFluidPage className="min-h-0">
       {error || !data ? (
         <div className={`${lightCard} mx-auto max-w-lg p-8 text-center`}>
-          <h1 className="text-[22px] font-semibold">Group not found</h1>
+          <h1 className="text-[16px] font-semibold">Group not found</h1>
           <p className={`mt-2 ${muted}`}>{error}</p>
         </div>
       ) : (

@@ -178,6 +178,7 @@ type SeatMatchLike = {
   sectionId?: string | number;
   rowId?: string | number;
   sectionNumber?: string | number;
+  sectionName?: string;
   rowNumber?: string | number;
   seatNumber?: string | number;
 };

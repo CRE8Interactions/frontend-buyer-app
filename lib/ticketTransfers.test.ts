@@ -1556,7 +1556,6 @@ describe("ticketTransfers", () => {
           title: order.event?.name || "",
           seat: seatLabel(ticket),
           seatLines: [seatLabel(ticket)],
-          on: "",
           status: "pending",
         },
       ),
@@ -1764,7 +1763,7 @@ describe("ticketTransfers", () => {
 
   it("keeps owned pass cards that have no uuid when nothing was sent", () => {
     const visible = filterAccessPassSummariesBySentTransfers(
-      [{ key: "local-pass", name: demoAccessPass().name }],
+      [{ accessPassUUID: undefined }],
       [],
     );
 
@@ -1930,7 +1929,7 @@ describe("ticketTransfers", () => {
       emailAddressToUser: "recipient@example.com",
       orderId: order.id,
       event: packageEvent,
-      tickets: [{ id: ticket.seatNumber ? 8000 + ticket.seatNumber : 8022, eventUUID: packageEvent.uuid }],
+      tickets: [{ id: ticket.seatNumber ? 8000 + Number(ticket.seatNumber) : 8022, eventUUID: packageEvent.uuid }],
       createdAt: "2026-09-13T12:01:00.000Z",
     };
     const cancelRow = {

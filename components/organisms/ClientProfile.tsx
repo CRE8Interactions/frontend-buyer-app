@@ -548,7 +548,8 @@ export default function ClientProfile({
             height: 44,
             borderRadius: 999,
             background: "#fff",
-            border: "1px solid rgba(5,27,53,0.14)",
+            borderWidth: 1,
+            borderStyle: "solid",
             color: NAVY,
             display: "flex",
             alignItems: "center",
@@ -580,7 +581,8 @@ export default function ClientProfile({
           height: 44,
           borderRadius: 999,
           background: "#fff",
-          border: "1px solid rgba(5,27,53,0.14)",
+          borderWidth: 1,
+          borderStyle: "solid",
           color: NAVY,
           display: "flex",
           alignItems: "center",
@@ -611,7 +613,7 @@ export default function ClientProfile({
       } as React.CSSProperties}
     >
       <style>{`${browsePageTypeCss()}
-.cp-a{transition:background 140ms}.cp-row{transition:box-shadow 150ms ease}.cp-row:hover{box-shadow:0 8px 30px rgba(5,27,53,0.09)}.cp-action{outline:2px solid transparent;outline-offset:2px;transition:outline-color 140ms ease}.cp-action:hover,.cp-action:focus-visible{outline-color:var(--cp-accent)}`}</style>
+.cp-a{transition:background 140ms}.cp-row{transition:box-shadow 150ms ease}.cp-row:hover{box-shadow:0 8px 30px rgba(5,27,53,0.09)}.cp-action{outline:none;border-color:rgba(5,27,53,0.14);transition:border-color 140ms ease}.cp-action:hover,.cp-action:focus-visible{border-color:var(--cp-accent)}`}</style>
 
       <header
         ref={headerRef}
@@ -777,7 +779,7 @@ export default function ClientProfile({
                   <span style={{ width: 5, height: 5, borderRadius: 999, background: ACC }} />
                   {categoryLabel(organization.category?.name) || "Organization"}
                 </div>
-                <h1 style={{ margin: 0, fontSize: fluidSize(32), fontWeight: 600, letterSpacing: BROWSE_TRACK.display, lineHeight: browseLeading("h2") }}>
+                <h1 style={{ margin: 0, fontSize: 32, fontWeight: 600, letterSpacing: BROWSE_TRACK.display, lineHeight: browseLeading("h2") }}>
                   {orgName}
                 </h1>
                 {location && (
@@ -894,7 +896,7 @@ export default function ClientProfile({
                   <div style={{ fontSize: fluidSize(10), fontWeight: 600, textTransform: "uppercase", letterSpacing: BROWSE_TRACK.label, color: ACC }}>
                     {categoryLabel(organization.category?.name) || "Organization"}
                   </div>
-                  <h1 style={{ margin: 0, fontSize: fluidSize(21), fontWeight: 600, letterSpacing: BROWSE_TRACK.display, lineHeight: browseLeading("h3") }}>
+                  <h1 style={{ margin: 0, fontSize: 21, fontWeight: 600, letterSpacing: BROWSE_TRACK.display, lineHeight: browseLeading("h3") }}>
                     {orgName}
                   </h1>
                   {location ? (
@@ -941,7 +943,7 @@ export default function ClientProfile({
                 style={{
                   fontFamily: "inherit",
                   flex: mobile ? "1 1 0" : "0 0 auto",
-                  fontSize: fluidSize(14),
+                  fontSize: mobile ? 11 : fluidSize(14),
                   fontWeight: 600,
                   whiteSpace: "nowrap",
                   border: "none",
@@ -1043,7 +1045,7 @@ export default function ClientProfile({
                           <div style={{ fontSize: fluidSize(10), fontWeight: 600, textTransform: "uppercase", letterSpacing: BROWSE_TRACK.label, color: "#6e7180" }}>
                             {e.mon}
                           </div>
-                          <div style={{ fontSize: fluidSize(22), fontWeight: 600, letterSpacing: BROWSE_TRACK.statement, fontVariantNumeric: "tabular-nums", lineHeight: 1 }}>
+                          <div style={{ fontSize: 22, fontWeight: 600, letterSpacing: BROWSE_TRACK.statement, fontVariantNumeric: "tabular-nums", lineHeight: 1 }}>
                             {e.day}
                           </div>
                           <div style={{ fontSize: fluidSize(10), color: "#8a93a3" }}>{e.dow}</div>
@@ -1055,7 +1057,7 @@ export default function ClientProfile({
                               {e.time ? ` · ${e.time}` : ""}
                             </span>
                           </div>
-                          <div style={{ fontSize: fluidSize(14), fontWeight: 600, letterSpacing: BROWSE_TRACK.card, lineHeight: browseLeading("h3") }}>
+                          <div style={{ fontSize: 16, fontWeight: 600, letterSpacing: BROWSE_TRACK.card, lineHeight: browseLeading("h3") }}>
                             {e.title}
                           </div>
                           {e.venue && (

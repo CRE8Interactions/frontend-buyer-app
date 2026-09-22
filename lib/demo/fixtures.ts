@@ -23,6 +23,11 @@ import { demoDate } from "@/lib/demo/now";
 import type { SeatmapMapping } from "@/lib/seatmapLookups";
 import { groupsToListings, type RawTicketGroup } from "@/lib/ticketListings";
 
+/** Keep the base object's types when tests pass a partial override bag. */
+function applyOverrides<T extends object>(base: T, overrides?: object): T {
+  return { ...base, ...(overrides ?? {}) } as T;
+}
+
 export { DEMO_FIXTURES_NOW } from "@/lib/demo/now";
 
 export type DemoImage = { url: string };
@@ -810,21 +815,26 @@ export function demoCheckoutCart(
     ticketCount?: number;
     serviceFee?: number;
     processingFee?: number;
+    ga?: boolean;
   } = {},
 ) {
-  const event =
-    DEMO_EVENTS.find((e) => e.shortCode === "RAPT006") || DEMO_EVENTS[0];
+  const ga = Boolean(overrides.ga);
+  const event = ga
+    ? DEMO_EVENTS.find((e) => e.seatmap?.ga_only) || DEMO_EVENTS[0]
+    : DEMO_EVENTS.find((e) => e.shortCode === "RAPT006") || DEMO_EVENTS[0];
   const organization =
     overrides.organization === null
       ? undefined
       : (overrides.organization ?? event.organization);
-  const listing = DEMO_SEATED_TICKET_GROUPS[0];
+  const listing = ga
+    ? demoTicketGroups().ticketGroups[0]
+    : DEMO_SEATED_TICKET_GROUPS[0];
   const unitPrice = listing.price ?? 0;
   const ticketCount = Math.max(1, overrides.ticketCount ?? 1);
   const serviceFee = overrides.serviceFee ?? 0;
   const processingFee = overrides.processingFee ?? 0;
   return {
-    id: "cart-raptors-1",
+    id: ga ? "cart-ga-1" : "cart-raptors-1",
     remainingTime:
       overrides.remainingTime === undefined
         ? CHECKOUT_HOLD_SECONDS
@@ -847,16 +857,21 @@ export function demoCheckoutCart(
     },
     tickets: Array.from({ length: ticketCount }, (_, index) => ({
       id: 7001 + index,
-      uuid: `ticket-raptors-${index + 1}`,
-      checkInCode: `RAPTORS-${index + 1}`,
+      uuid: `ticket-${ga ? "ga" : "raptors"}-${index + 1}`,
+      checkInCode: `${ga ? "GA" : "RAPTORS"}-${index + 1}`,
       eventUUID: event.uuid,
-      sectionName: listing.sectionNumber,
+      sectionName: ga
+        ? listing.sectionName || listing.sectionNumber
+        : listing.sectionNumber,
       sectionNumber: listing.sectionNumber,
-      rowNumber: listing.rowNumber,
-      seatNumber: 7 + index,
+      rowNumber: "rowNumber" in listing ? listing.rowNumber : undefined,
+      seatNumber: ga ? undefined : 7 + index,
       cost: unitPrice,
       price: unitPrice,
       offerName: listing.offer?.name,
+      ...(ga
+        ? { GA: true, generalAdmission: true, offer: listing.offer }
+        : {}),
     })),
     total: unitPrice * ticketCount + serviceFee + processingFee,
     serviceFee,
@@ -1042,7 +1057,8 @@ export function demoSeasonPackage(
     },
   ];
 
-  return {
+  return applyOverrides(
+    {
     id: "pkg-nms-level-a",
     uuid: "pkg-nms-level-a",
     name: "NMS Football Season Seats - Pricing Level A",
@@ -1068,14 +1084,31 @@ export function demoSeasonPackage(
     package_tickets: DEMO_SEATED_TICKET_GROUPS.filter(
       (group) => !group.GA && (group.seatIds?.length || group.seatId),
     ) as Array<Record<string, unknown>>,
-    ...overrides,
-  };
+    },
+    overrides,
+  );
 }
+
+type DemoPackageCartTicket = {
+  id?: number;
+  uuid?: string;
+  checkInCode?: string;
+  eventUUID?: string;
+  sectionName?: string | number;
+  sectionNumber?: string | number;
+  rowNumber?: string | number;
+  seatNumber?: string | number;
+  cost?: number;
+  price?: number;
+  offerName?: string;
+  generalAdmission?: boolean;
+  GA?: boolean;
+};
 
 /** Checkout cart for a season package hold — NM State seats by default. */
 export function demoPackageCheckoutCart(
   overrides: {
-    tickets?: Array<Record<string, unknown>>;
+    tickets?: DemoPackageCartTicket[];
     serviceFee?: number;
     processingFee?: number;
     remainingTime?: number | null;
@@ -1087,7 +1120,7 @@ export function demoPackageCheckoutCart(
   const pkg = demoSeasonPackage(overrides.package);
   const listing = DEMO_SEATED_TICKET_GROUPS[0];
   const unit = Number(pkg.pricingTiers[0].price);
-  const tickets =
+  const tickets: DemoPackageCartTicket[] =
     overrides.tickets ??
     [
       {
@@ -1136,26 +1169,28 @@ export function demoCompletedTicketOrder(
   );
   const serviceFee = 14;
   const processingFee = 3.92;
-  return {
-    id: 1474,
-    orderId: "1474-643535-0700",
-    processedAt: demoDate({ days: -2 }, "16:00"),
-    dateOfIssue: demoDate({ days: -2 }, "16:00"),
-    firstName: DEMO_USER.firstName,
-    lastName: DEMO_USER.lastName,
-    email: DEMO_USER.email,
-    paymentMethodType: "mastercard",
-    last4: "5652",
-    tickets: cart.tickets,
-    event: cart.event,
-    organization: cart.event.organization,
-    total: subtotal + serviceFee + processingFee,
-    serviceFee,
-    estimatedProcessingFee: processingFee,
-    processingFee,
-    salesTax: 0,
-    ...overrides,
-  };
+  return applyOverrides(
+    {
+      id: 1474,
+      orderId: "1474-643535-0700",
+      processedAt: demoDate({ days: -2 }, "16:00"),
+      dateOfIssue: demoDate({ days: -2 }, "16:00"),
+      firstName: DEMO_USER.firstName,
+      lastName: DEMO_USER.lastName,
+      email: DEMO_USER.email,
+      paymentMethodType: "mastercard",
+      last4: "5652",
+      tickets: cart.tickets,
+      event: cart.event,
+      organization: cart.event.organization,
+      total: subtotal + serviceFee + processingFee,
+      serviceFee,
+      estimatedProcessingFee: processingFee,
+      processingFee,
+      salesTax: 0,
+    },
+    overrides,
+  );
 }
 
 /** Completed season-package order used by checkout-success receipt PDFs. */
@@ -1179,7 +1214,8 @@ export function demoCompletedPackageOrder(
       offerName: listing.offer?.name,
     })),
   });
-  return {
+  return applyOverrides(
+    {
     id: 1474,
     orderId: "1474-601490-8744",
     processedAt: demoDate({ days: -3 }, "16:00"),
@@ -1197,8 +1233,9 @@ export function demoCompletedPackageOrder(
     estimatedProcessingFee: cart.processingFee,
     processingFee: cart.processingFee,
     salesTax: 0,
-    ...overrides,
-  };
+    },
+    overrides,
+  );
 }
 
 const DEMO_ICEDOGS_ORG =
@@ -1235,21 +1272,23 @@ export function demoAccessPass(overrides: Record<string, unknown> = {}) {
   const events = DEMO_EVENTS.filter(
     (event) => event.organization?.slug === org.slug,
   ).slice(0, 3);
-  return {
-    uuid: "access-pass-icedogs-1",
-    orderId: "1474-900001-0001",
-    checkInCode: "PASS2026",
-    type: "organizer",
-    name: "IceDogs All-Access Pass",
-    status: "active",
-    generalAdmission: true,
-    sectionNumber: "Club",
-    backgroundColor: org.branding.primaryColor,
-    fontColor: "#ffffff",
-    artwork: org.image,
-    events,
-    ...overrides,
-  };
+  return applyOverrides(
+    {
+      uuid: "access-pass-icedogs-1",
+      orderId: "1474-900001-0001",
+      checkInCode: "PASS2026",
+      type: "organizer",
+      name: "IceDogs All-Access Pass",
+      status: "active",
+      generalAdmission: true,
+      sectionNumber: "Club",
+      backgroundColor: org.branding.primaryColor,
+      fontColor: "#ffffff",
+      artwork: org.image,
+      events,
+    },
+    overrides,
+  );
 }
 
 /** Season pass linked to the demo package order. */
@@ -1259,30 +1298,32 @@ export function demoPackageAccessPass(
   const pkg = demoSeasonPackage();
   const order = demoCompletedPackageOrder();
   const ticket = order.tickets[0];
-  return {
-    uuid: "access-pass-nms-package-1",
-    orderId: order.orderId,
-    email: DEMO_USER.email,
-    checkInCode: "NMSPASS2026",
-    type: "package",
-    name: pkg.name,
-    status: "active",
-    generalAdmission: false,
-    sectionNumber: ticket.sectionNumber,
-    rowNumber: ticket.rowNumber,
-    seatNumber: ticket.seatNumber,
-    backgroundColor: "#8c0b42",
-    fontColor: "#ffffff",
-    artwork: pkg.image,
-    package: {
-      uuid: pkg.uuid,
+  return applyOverrides(
+    {
+      uuid: "access-pass-nms-package-1",
+      orderId: order.orderId,
+      email: DEMO_USER.email,
+      checkInCode: "NMSPASS2026",
+      type: "package",
       name: pkg.name,
-      image: pkg.image,
+      status: "active",
+      generalAdmission: false,
+      sectionNumber: ticket.sectionNumber,
+      rowNumber: ticket.rowNumber,
+      seatNumber: ticket.seatNumber,
+      backgroundColor: "#8c0b42",
+      fontColor: "#ffffff",
+      artwork: pkg.image,
+      package: {
+        uuid: pkg.uuid,
+        name: pkg.name,
+        image: pkg.image,
+        events: pkg.events,
+      },
       events: pkg.events,
     },
-    events: pkg.events,
-    ...overrides,
-  };
+    overrides,
+  );
 }
 
 /**

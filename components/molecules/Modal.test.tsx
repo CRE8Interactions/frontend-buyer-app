@@ -50,15 +50,17 @@ describe("Modal", () => {
     expect(screen.getByRole("dialog")).toHaveClass("rounded-t-[26px]");
   });
 
-  it("includes mobile bottom-sheet layout classes by default", () => {
+  it("stays centered on mobile by default", () => {
     render(
       <Modal title="Cart expired" onClose={vi.fn()} variant="light">
         <p>Your reserved tickets were released.</p>
       </Modal>,
     );
 
-    expect(screen.getByRole("dialog")).toHaveClass("max-[899px]:rounded-t-[26px]");
-    expect(screen.getByRole("dialog").parentElement).toHaveClass("max-[899px]:items-end");
+    expect(screen.getByRole("dialog")).not.toHaveClass("max-[899px]:rounded-t-[26px]");
+    expect(screen.getByRole("dialog")).toHaveClass("rounded-2xl");
+    expect(screen.getByRole("dialog").parentElement).toHaveClass("items-center");
+    expect(screen.getByRole("dialog").parentElement).not.toHaveClass("max-[899px]:items-end");
   });
 
   it("stays centered on mobile when sheet mode is disabled", () => {
