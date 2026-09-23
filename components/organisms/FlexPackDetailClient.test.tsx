@@ -115,6 +115,16 @@ describe("Flex pack detail (FlexPackDetailClient)", () => {
     ).toBeInTheDocument();
     expect(screen.getByText(formatCurrency(pack.price))).toBeInTheDocument();
     expect(screen.getByText("How the flex pack works")).toBeInTheDocument();
+    expect(screen.getByText("Redeem when you know")).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        "Trade a voucher for a seat at the Box Office for any available game.",
+      ),
+    ).toBeInTheDocument();
+    expect(screen.getByText("Share what you skip")).toBeInTheDocument();
+    expect(
+      screen.getByText("Can't make a game? Send your ticket to a friend."),
+    ).toBeInTheDocument();
     expect(screen.queryByText(/taxes and fees included/i)).not.toBeInTheDocument();
   });
 

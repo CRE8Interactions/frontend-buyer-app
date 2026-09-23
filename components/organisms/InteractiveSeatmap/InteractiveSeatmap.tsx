@@ -1075,6 +1075,7 @@ export default function InteractiveSeatmap({
         accent={accent}
         buttonColor={buttonColor}
         buttonTextColor={buttonTextColor}
+        pricesIncludeFees={mapLegend !== "package"}
       />
     </div>
   );

@@ -2127,8 +2127,6 @@ export default function SeasonTickets({
     };
   }, [eventOrderPending, matchupHeroKey, matchupHeroReadyKey]);
 
-  /* Only package inventory carries the hero badge — singles belong to no pack. */
-  const packagedTicketBadge = ev.packageName ? "Season Tickets" : "";
   const showMatchupCards = attractionCards.length >= 2;
   const eventPosterSrc =
     ev.posterSrc ||
@@ -4907,9 +4905,6 @@ export default function SeasonTickets({
             <div style={{ position: "relative", height: 210, overflow: "hidden", background: "#06203c" }}>
               {renderEventHero({ radius: 0, logoSize: 72, compactTextSize: 16, fullTextSize: 16 })}
               <div style={{ position: "absolute", inset: 0, zIndex: 5, background: "linear-gradient(180deg, rgba(6,8,14,0.05) 30%, rgba(6,8,14,0.86) 100%)" }} />
-              {packagedTicketBadge ? (
-                <div data-testid="wallet-ticket-card-badge" style={{ position: "absolute", zIndex: 6, left: 16, top: 16, fontSize: fluidSize(10), fontWeight: 600, lineHeight: 1.5, letterSpacing: "0.16em", textTransform: "uppercase", color: "#fff", background: "rgba(10,12,18,0.55)", backdropFilter: "blur(6px)", borderRadius: 999, padding: "6px 11px" }}>{packagedTicketBadge}</div>
-              ) : null}
               <div style={{ position: "absolute", zIndex: 6, left: 0, right: 0, bottom: 0, padding: 16, display: "flex", flexDirection: "column", gap: 4 }}>
                 <div style={{ fontSize: fluidSize(16), fontWeight: 600, color: "#fff", letterSpacing: "-0.02em", lineHeight: 1.25, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{ev.title}</div>
                 <div style={{ fontSize: fluidSize(12), lineHeight: 1.5, color: "rgba(255,255,255,0.74)" }}>{ev.when} · {ev.venue}</div>
@@ -5101,7 +5096,7 @@ export default function SeasonTickets({
                   <img src={SEATMAP_THUMB} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
                 </div>
                 <div style={{ flex: 1, minWidth: 150, display: "flex", flexDirection: "column", gap: 5 }}>
-                  <span style={{ alignSelf: "flex-start", fontSize: fluidSize(11), lineHeight: 1.5, fontWeight: 600, color: INK, background: SOFT, borderRadius: 999, padding: "4px 10px" }}>{t.offerBadge || (ev.packageName || routedPackageUUID ? "Season tickets" : "Tickets")}</span>
+                  <span style={{ alignSelf: "flex-start", fontSize: fluidSize(11), lineHeight: 1.5, fontWeight: 600, color: INK, background: SOFT, borderRadius: 999, padding: "4px 10px" }}>{t.offerBadge || "Tickets"}</span>
                   <div style={{ fontSize: mobile ? fluidSize(17) : 17, lineHeight: 1.5, fontWeight: 600, letterSpacing: "-0.015em" }}>{t.seat}</div>
                 </div>
                 <div className="st-ev-seat-actions">

@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   DEMO_SEATED_TICKET_GROUPS,
   demoCheckoutCart,
+  demoCompletedPackageOrder,
   demoFlexPackCheckoutCart,
   demoPackageCheckoutCart,
   demoSeasonPackage,
@@ -268,6 +269,29 @@ describe("ticketSelectionSummary", () => {
       cart.tickets.map((ticket) => ({ ...ticket, seatNumber: undefined })),
     );
     expect(summary.subtitle).toBe("2 tickets");
+  });
+
+  it("uses seat numbers and game count for a package order subtitle", () => {
+    const order = demoCompletedPackageOrder();
+    const games = (order.package as { events: unknown[] }).events.length;
+    const summary = ticketSelectionSummary(
+      order.tickets as Array<Record<string, unknown>>,
+      { gameCount: games },
+    );
+    expect(summary.subtitle).toBe(`Seats 21-22 · all ${games} games`);
+  });
+
+  it("keeps the package game count when tickets have no seat numbers", () => {
+    const order = demoCompletedPackageOrder();
+    const games = (order.package as { events: unknown[] }).events.length;
+    const summary = ticketSelectionSummary(
+      (order.tickets as Array<Record<string, unknown>>).map((ticket) => ({
+        ...ticket,
+        seatNumber: undefined,
+      })),
+      { gameCount: games },
+    );
+    expect(summary.subtitle).toBe(`all ${games} games`);
   });
 
   it("groups the checkout price breakdown by offer name and unit price", () => {

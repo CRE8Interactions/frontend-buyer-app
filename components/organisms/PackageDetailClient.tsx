@@ -1,6 +1,6 @@
 "use client";
 
-import { BROWSE_DISPLAY, BROWSE_TRACK, browseLeading } from "@/lib/browseType";
+import { BROWSE_TRACK } from "@/lib/browseType";
 import { fluidSize } from "@/lib/shopperFluidType";
 
 import { useEffect, useRef, useState } from "react";
@@ -28,7 +28,6 @@ import { hideIntercomLauncher } from "@/lib/intercom";
 import { cacheOrgBranding } from "@/lib/orgBrandingCache";
 import {
   formatPackageFromPrice,
-  formatPackageFromPriceAmount,
   packageFromPrice,
 } from "@/lib/eventFromPrice";
 import {
@@ -411,6 +410,7 @@ export default function PackageDetailClient({
               alignItems: "center",
               gap: 8,
               fontSize: fluidSize(14),
+              lineHeight: 1.5,
               fontWeight: 600,
               color: NAVY,
               textDecoration: "none",
@@ -419,7 +419,7 @@ export default function PackageDetailClient({
             Back
           </InAppBackLink>
           <p
-            style={{ marginTop: 24, fontSize: fluidSize(16), color: SUB }}
+            style={{ marginTop: 24, fontSize: fluidSize(16), lineHeight: 1.5, color: SUB }}
             role="status"
           >
             {error || "Package not found."}
@@ -494,6 +494,7 @@ export default function PackageDetailClient({
                 <div
                   style={{
                     fontSize: fluidSize(10),
+                    lineHeight: 1.5,
                     fontWeight: 600,
                     textTransform: "uppercase",
                     letterSpacing: "0.14em",
@@ -551,10 +552,10 @@ export default function PackageDetailClient({
                   <h1
                     style={{
                       margin: 0,
-                      fontSize: BROWSE_DISPLAY.h2,
+                      fontSize: mobile ? 30 : 46,
                       fontWeight: 600,
                       letterSpacing: BROWSE_TRACK.display,
-                      lineHeight: browseLeading("h2"),
+                      lineHeight: 1.06,
                     }}
                   >
                     {pkg.name}
@@ -568,6 +569,7 @@ export default function PackageDetailClient({
                           key={label}
                           style={{
                             fontSize: fluidSize(12),
+                            lineHeight: 1.5,
                             fontWeight: 600,
                             color: "#fff",
                             background: "rgba(255,255,255,0.14)",
@@ -629,6 +631,7 @@ export default function PackageDetailClient({
                     <div
                       style={{
                         fontSize: fluidSize(12),
+                        lineHeight: 1.5,
                         fontWeight: 600,
                         textTransform: "uppercase",
                         letterSpacing: "0.12em",
@@ -638,7 +641,7 @@ export default function PackageDetailClient({
                       {gameCount} game{gameCount === 1 ? "" : "s"} included
                     </div>
                     {dateRange ? (
-                      <div style={{ fontSize: fluidSize(13), color: MUTE }}>{dateRange}</div>
+                      <div style={{ fontSize: fluidSize(13), lineHeight: 1.5, color: MUTE }}>{dateRange}</div>
                     ) : null}
                   </div>
                   <div style={{ borderTop: "1px solid rgba(5,27,53,0.10)" }}>
@@ -671,6 +674,7 @@ export default function PackageDetailClient({
                             <div
                               style={{
                                 fontSize: fluidSize(10),
+                                lineHeight: 1.5,
                                 fontWeight: 600,
                                 textTransform: "uppercase",
                                 letterSpacing: "0.08em",
@@ -682,6 +686,7 @@ export default function PackageDetailClient({
                             <div
                               style={{
                                 fontSize: fluidSize(19),
+                                lineHeight: 1.5,
                                 fontWeight: 600,
                                 letterSpacing: "-0.02em",
                                 fontVariantNumeric: "tabular-nums",
@@ -702,6 +707,7 @@ export default function PackageDetailClient({
                             <div
                               style={{
                                 fontSize: fluidSize(15),
+                                lineHeight: 1.5,
                                 fontWeight: 600,
                                 letterSpacing: "-0.01em",
                                 overflow: "hidden",
@@ -714,6 +720,7 @@ export default function PackageDetailClient({
                               <div
                                 style={{
                                   fontSize: fluidSize(13),
+                                  lineHeight: 1.5,
                                   color: SUB,
                                   overflow: "hidden",
                                   textOverflow: "ellipsis",
@@ -731,7 +738,7 @@ export default function PackageDetailClient({
                 </div>
                 {error ? (
                   <p
-                    style={{ margin: 0, fontSize: fluidSize(14), color: "#b91c1c" }}
+                    style={{ margin: 0, fontSize: fluidSize(14), lineHeight: 1.5, color: "#b91c1c" }}
                     role="alert"
                   >
                     {error}
@@ -764,12 +771,12 @@ export default function PackageDetailClient({
                         gap: 4,
                       }}
                     >
-                      <span style={{ fontSize: fluidSize(13), color: MUTE }}>
+                      <span style={{ fontSize: fluidSize(13), lineHeight: 1.5, color: MUTE }}>
                         Season tickets
                       </span>
                       <span
                         style={{
-                          fontSize: fluidSize(34),
+                          fontSize: 34,
                           fontWeight: 600,
                           letterSpacing: "-0.03em",
                           lineHeight: 1,
@@ -786,11 +793,11 @@ export default function PackageDetailClient({
                       textColor={theme.buttonTextColor}
                       onClick={openSeatmap}
                       className="w-full text-[16px]"
-                      style={{ minHeight: 52, padding: 16, borderRadius: 999 }}
+                      style={{ minHeight: 52, padding: 16, borderRadius: 999, lineHeight: 1.5 }}
                     >
                       Choose your seats
                     </BrandedActionButton>
-                    <div style={{ fontSize: fluidSize(13), color: SUB }}>
+                    <div style={{ fontSize: fluidSize(13), lineHeight: 1.5, color: SUB }}>
                       Delivered to your wallet. Transfer any single game you
                       can&apos;t make.
                     </div>
@@ -824,26 +831,23 @@ export default function PackageDetailClient({
                 }}
               >
                 {fromPrice != null ? (
-                  <>
-                    <div style={{ fontSize: fluidSize(12), color: SUB }}>
-                      From
-                    </div>
-                    <div
-                      style={{
-                        fontSize: fluidSize(26),
-                        fontWeight: 600,
-                        letterSpacing: "-0.02em",
-                        fontVariantNumeric: "tabular-nums",
-                        color: "#000",
-                      }}
-                    >
-                      {formatPackageFromPriceAmount(fromPrice)}
-                    </div>
-                  </>
+                  <div
+                    style={{
+                      fontSize: 18,
+                      lineHeight: 1.5,
+                      fontWeight: 600,
+                      letterSpacing: "-0.02em",
+                      fontVariantNumeric: "tabular-nums",
+                      color: "#000",
+                    }}
+                  >
+                    {formatPackageFromPrice(fromPrice)}
+                  </div>
                 ) : (
                   <div
                     style={{
-                      fontSize: fluidSize(18),
+                      fontSize: 18,
+                      lineHeight: 1.5,
                       fontWeight: 600,
                       letterSpacing: "-0.02em",
                     }}
@@ -862,6 +866,7 @@ export default function PackageDetailClient({
                   minHeight: 48,
                   padding: "14px 22px",
                   borderRadius: 999,
+                  lineHeight: 1.5,
                 }}
               >
                 Choose your seats
@@ -882,7 +887,7 @@ export default function PackageDetailClient({
           onClose={closeSeatmap}
           onCheckout={() => void checkout()}
           checkoutLoading={checkingOut}
-          itemPriceNote={`All ${gameCount || 1} games · incl. fees`}
+          itemPriceNote={`All ${gameCount || 1} games`}
           subtotalCaption={(count) =>
             `${count} season seat${count === 1 ? "" : "s"} · ${gameCount || 1} games`
           }

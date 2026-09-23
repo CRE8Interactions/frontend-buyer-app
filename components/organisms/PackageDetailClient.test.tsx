@@ -10,7 +10,6 @@ import {
 import { formatCurrency } from "@/lib/helpers";
 import {
   formatPackageFromPrice,
-  formatPackageFromPriceAmount,
   packageFromPrice,
 } from "@/lib/eventFromPrice";
 import {
@@ -249,7 +248,7 @@ describe("Package detail (PackageDetailClient)", () => {
     expect(screen.queryByText(/select your seats/i)).not.toBeInTheDocument();
   });
 
-  it("shows the mobile footer from-price on two lines", async () => {
+  it("shows the mobile footer from-price on one line without a fees note", async () => {
     Object.defineProperty(window, "innerWidth", {
       configurable: true,
       writable: true,
@@ -260,13 +259,9 @@ describe("Package detail (PackageDetailClient)", () => {
     await screen.findByRole("heading", { name: pkg.name });
 
     const amount = packageFromPrice(pkg)!;
-    expect(screen.getByText("From")).toBeInTheDocument();
-    expect(
-      screen.getByText(formatPackageFromPriceAmount(amount)),
-    ).toBeInTheDocument();
-    expect(
-      screen.queryByText(formatPackageFromPrice(amount)),
-    ).not.toBeInTheDocument();
+    expect(screen.getByText(formatPackageFromPrice(amount))).toBeInTheDocument();
+    expect(screen.queryByText(/^From$/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/taxes (&|and) fees included/i)).not.toBeInTheDocument();
   });
 
   it("hides the mobile sticky footer while the package seat map is open", async () => {
