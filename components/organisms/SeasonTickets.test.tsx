@@ -1,4 +1,4 @@
-import { act, render, screen, waitFor, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from "vitest";
 import {
@@ -15,6 +15,7 @@ import {
   demoPackageAccessPass,
   demoSeasonPackage,
 } from "@/lib/demo/fixtures";
+import moment from "moment-timezone";
 import { googleMapsDirectionsUrl } from "@/lib/venueLocation";
 import { formatEventWhen } from "@/lib/helpers";
 import { buildAccessPassSummaries, eventWhenLabel, seatLabel } from "@/lib/wallet";
@@ -25,6 +26,7 @@ import {
   transferRecipientDescriptor,
   transferRecipientNotifyCopy,
   transferRecipientReceivedCopy,
+  transferSuccessTitle,
   transferWalletRemovalCopy,
 } from "@/lib/transferModalCopy";
 
@@ -1224,6 +1226,49 @@ describe("SeasonTickets empty wallet", () => {
     ).toBeInTheDocument();
   });
 
+  it("shows the event date instead of Tonight in the accept popup", async () => {
+    const user = userEvent.setup();
+    sessionMocks.getSession.mockReturnValue(DEMO_SESSION);
+    const timezone = icedogs.venue?.timezone;
+    const start = moment
+      .tz(timezone!)
+      .hour(19)
+      .minute(0)
+      .second(0)
+      .millisecond(0)
+      .toISOString();
+    const tonightEvent = { ...icedogs, start };
+    const order = demoCompletedTicketOrder({ event: tonightEvent });
+    const [ticket] = order.tickets;
+    mockedGetMyEvents.mockResolvedValue({ data: [] } as never);
+    mockedGetIncomingTransfers.mockResolvedValue({
+      data: [
+        {
+          id: "incoming-1",
+          status: "pending",
+          fromUserEmail: "m.rivera@example.com",
+          event: order.event,
+          tickets: [ticket],
+        },
+      ],
+    } as never);
+
+    render(<SeasonTickets />);
+
+    await user.click(
+      await screen.findByRole("button", { name: "Accept transfer" }),
+    );
+    const popup = screen.getByRole("heading", {
+      name: "Accept this transfer?",
+    }).parentElement!;
+    expect(
+      within(popup).getByText(
+        formatEventWhen(start, timezone, "ddd, MMM D · h:mm A"),
+      ),
+    ).toBeInTheDocument();
+    expect(within(popup).queryByText(/Tonight/)).not.toBeInTheDocument();
+  });
+
   it("does not show Close on the accept transfer popup", async () => {
     const user = userEvent.setup();
     sessionMocks.getSession.mockReturnValue(DEMO_SESSION);
@@ -1446,6 +1491,60 @@ describe("SeasonTickets package tab", () => {
     );
   });
 
+  it("shows the doors open time on a package game once the order is fetched", async () => {
+    const order = demoCompletedPackageOrder();
+    const packageEvent = pkg.events[0];
+    const { doorsOpen } = DEMO_EVENTS.find(
+      (row) => row.uuid === packageEvent.uuid,
+    )!;
+    navigationMocks.pathname = `/wallet/my-tickets/order/${packageOrderId}/package/${pkg.uuid}/event/${packageEvent.uuid}/`;
+    mockedGetMyEvents.mockResolvedValue({ data: [order] } as never);
+    mockedGetOrder.mockResolvedValue({
+      data: {
+        ...order,
+        package: {
+          ...order.package,
+          events: pkg.events.map((row) =>
+            row.uuid === packageEvent.uuid ? { ...row, doorsOpen } : row,
+          ),
+        },
+      },
+    } as never);
+
+    render(<SeasonTickets />);
+
+    expect(
+      await screen.findByText(
+        `Doors open ${formatEventWhen(doorsOpen, packageEvent.venue?.timezone, "h:mm A")}`,
+      ),
+    ).toBeInTheDocument();
+    expect(screen.queryByText("Doors")).not.toBeInTheDocument();
+  });
+
+  it("labels package game seats Season tickets instead of Tickets", async () => {
+    const order = demoCompletedPackageOrder({
+      tickets: demoCompletedPackageOrder().tickets.map((ticket) => ({
+        ...ticket,
+        offerName: "Standard Admission",
+        offer: { name: "Standard Admission" },
+      })),
+    });
+    const packageEvent = pkg.events[0];
+    navigationMocks.pathname = `/wallet/my-tickets/order/${packageOrderId}/package/${pkg.uuid}/event/${packageEvent.uuid}/`;
+    mockedGetMyEvents.mockResolvedValue({ data: [order] } as never);
+
+    render(<SeasonTickets />);
+
+    const printButtons = await screen.findAllByRole("button", {
+      name: "Print PDF",
+    });
+    for (const print of printButtons) {
+      const seatRow = print.closest(".st-ev-seat")!;
+      expect(within(seatRow).getByText("Season tickets")).toBeInTheDocument();
+      expect(within(seatRow).queryByText("Tickets")).not.toBeInTheDocument();
+    }
+  });
+
   it("shows an associated season pass before the package game tickets", async () => {
     const user = userEvent.setup();
     const order = demoCompletedPackageOrder();
@@ -1643,12 +1742,13 @@ describe("SeasonTickets package tab", () => {
       rowNumber: String(pass.rowNumber),
       seatNumber: String(pass.seatNumber),
     });
-    expect(
-      screen.getByRole("dialog", { name: `${pass.name} · ${seatLine}` }),
-    ).toBeInTheDocument();
+    expect(screen.getByRole("dialog", { name: seatLine })).toBeInTheDocument();
     expect(
       screen.getByRole("img", { name: `Enlarged QR code for ${pass.name}` }),
     ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: /^Close$/ }),
+    ).not.toBeInTheDocument();
 
     await user.click(
       screen.getByRole("button", { name: "Add to Apple Wallet" }),
@@ -1893,13 +1993,13 @@ describe("SeasonTickets package tab", () => {
       screen.getByText("Enter the recipient's email address"),
     ).toBeInTheDocument();
     expect(
-      screen.getByText(
+      screen.queryByText(
         transferRecipientDescriptor("season pass", {
           passName: pass.name,
           passSeat: seatLabel(pass),
         }),
       ),
-    ).toBeInTheDocument();
+    ).not.toBeInTheDocument();
     expect(
       screen.getByText(transferRecipientNotifyCopy("season pass")),
     ).toBeInTheDocument();
@@ -3146,14 +3246,14 @@ describe("SeasonTickets package tab", () => {
       await screen.findByRole("button", { name: "Transfer access pass" }),
     );
     expect(
-      screen.getByText((_, el) => {
+      screen.queryByText((_, el) => {
         const descriptor = transferRecipientDescriptor("access pass", {
           passName: pass.name,
           passSeat: seatLabel(pass),
         });
         return el?.tagName === "STRONG" && el.textContent === descriptor;
       }),
-    ).toBeInTheDocument();
+    ).not.toBeInTheDocument();
     expect(
       screen.queryByText(`${pass.name} · ${seatLabel(pass)}`),
     ).not.toBeInTheDocument();
@@ -4441,6 +4541,44 @@ describe("SeasonTickets section routes", () => {
     ).toBeInTheDocument();
   });
 
+  it("says these tickets in the accept modal when more than one ticket was received", async () => {
+    const user = userEvent.setup();
+    sessionMocks.getSession.mockReturnValue(DEMO_SESSION);
+    const order = demoCompletedTicketOrder({ event: icedogs });
+    const tickets = order.tickets.slice(0, 2);
+    navigationMocks.pathname = "/wallet/my-transfers/";
+    mockedGetMyEvents.mockResolvedValue({ data: [] } as never);
+    mockedGetMySentTransfers.mockResolvedValue({ data: [] } as never);
+    mockedGetMyReceivedTransfers.mockResolvedValue({
+      data: [
+        {
+          id: "received-2",
+          status: "pending",
+          fromUserEmail: DEMO_SESSION.user.email,
+          emailAddressToUser: DEMO_USER.email,
+          orderId: order.orderId,
+          event: order.event,
+          tickets,
+          createdAt: "2026-01-01T12:00:00.000Z",
+        },
+      ],
+    } as never);
+    mockedGetIncomingTransfers.mockResolvedValue({ data: [] } as never);
+
+    render(<SeasonTickets />);
+
+    await user.click(await screen.findByRole("button", { name: /received/i }));
+    await user.click(
+      await screen.findByRole("button", { name: "Accept transfer" }),
+    );
+    expect(
+      screen.getByText(transferAcceptConfirmCopy("ticket", 2)),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByText(transferAcceptConfirmCopy("ticket", 1)),
+    ).not.toBeInTheDocument();
+  });
+
   it("only calls the cancel API when confirming cancel", async () => {
     sessionMocks.getSession.mockReturnValue(DEMO_SESSION);
     const user = userEvent.setup();
@@ -5307,7 +5445,10 @@ describe("SeasonTickets routed event screen", { timeout: 20_000 }, () => {
       within(modal!).getByText("PRELIMS • MORNING UNTIL 4:00"),
     ).toBeInTheDocument();
 
-    await user.click(screen.getByRole("button", { name: "Done" }));
+    fireEvent.click(modal!.parentElement!);
+    expect(
+      screen.queryByRole("heading", { name: "Ticket details" }),
+    ).not.toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Print PDF" }));
     await waitFor(() => {
       expect(pdfMocks.printTicketsPdf).toHaveBeenCalled();
@@ -5724,8 +5865,8 @@ describe("SeasonTickets routed event screen", { timeout: 20_000 }, () => {
     );
     await user.click(screen.getByRole("button", { name: "Next" }));
     expect(
-      screen.getByText(/person receiving this ticket/i),
-    ).toBeInTheDocument();
+      screen.queryByText(/person receiving this ticket/i),
+    ).not.toBeInTheDocument();
     expect(
       screen.getByText(transferRecipientNotifyCopy("ticket", 1)),
     ).toBeInTheDocument();
@@ -5742,7 +5883,7 @@ describe("SeasonTickets routed event screen", { timeout: 20_000 }, () => {
     );
 
     expect(
-      await screen.findByText("Transfer sent"),
+      await screen.findByText(transferSuccessTitle("ticket", 1)),
     ).toBeInTheDocument();
     expect(screen.queryByLabelText("Loading tickets")).not.toBeInTheDocument();
     expect(
@@ -5779,13 +5920,17 @@ describe("SeasonTickets routed event screen", { timeout: 20_000 }, () => {
     await user.click(screen.getByRole("button", { name: "Next" }));
 
     expect(
-      screen.getByText(/person receiving these tickets/i),
-    ).toBeInTheDocument();
+      screen.queryByText(/person receiving these tickets/i),
+    ).not.toBeInTheDocument();
+    expect(order.tickets.length).toBeGreaterThan(1);
     expect(
       screen.getByText(
         transferRecipientNotifyCopy("ticket", order.tickets.length),
       ),
     ).toBeInTheDocument();
+    expect(
+      screen.queryByText(/you sent them a ticket/i),
+    ).not.toBeInTheDocument();
     await user.type(
       screen.getByRole("textbox", { name: "Email address" }),
       "recipient@example.com",
@@ -5822,8 +5967,8 @@ describe("SeasonTickets routed event screen", { timeout: 20_000 }, () => {
     await user.click(screen.getByRole("button", { name: "Next" }));
 
     expect(
-      screen.getByText(/person receiving this ticket/i),
-    ).toBeInTheDocument();
+      screen.queryByText(/person receiving this ticket/i),
+    ).not.toBeInTheDocument();
     expect(
       screen.getByText(transferRecipientNotifyCopy("ticket", 1)),
     ).toBeInTheDocument();
@@ -5868,7 +6013,7 @@ describe("SeasonTickets routed event screen", { timeout: 20_000 }, () => {
     );
 
     expect(
-      await screen.findByText("Transfer sent"),
+      await screen.findByText(transferSuccessTitle("ticket", 1)),
     ).toBeInTheDocument();
     expect(screen.queryByLabelText("Loading tickets")).not.toBeInTheDocument();
     expect(screen.queryByText(seatLabel(ticket))).not.toBeInTheDocument();
@@ -5912,7 +6057,7 @@ describe("SeasonTickets routed event screen", { timeout: 20_000 }, () => {
     await user.click(
       screen.getAllByRole("button", { name: "Transfer" }).at(-1)!,
     );
-    expect(await screen.findByText("Transfer sent")).toBeInTheDocument();
+    expect(await screen.findByText(transferSuccessTitle("ticket", 1))).toBeInTheDocument();
     await user.click(
       screen.getAllByRole("button", { name: "Close" }).at(-1)!,
     );
@@ -5979,7 +6124,7 @@ describe("SeasonTickets routed event screen", { timeout: 20_000 }, () => {
     await user.click(
       screen.getAllByRole("button", { name: "Transfer" }).at(-1)!,
     );
-    expect(await screen.findByText("Transfer sent")).toBeInTheDocument();
+    expect(await screen.findByText(transferSuccessTitle("ticket", 1))).toBeInTheDocument();
     await user.click(
       screen.getAllByRole("button", { name: "Close" }).at(-1)!,
     );
@@ -6050,7 +6195,7 @@ describe("SeasonTickets routed event screen", { timeout: 20_000 }, () => {
     await user.click(
       screen.getAllByRole("button", { name: "Transfer" }).at(-1)!,
     );
-    expect(await screen.findByText("Transfer sent")).toBeInTheDocument();
+    expect(await screen.findByText(transferSuccessTitle("ticket", 1))).toBeInTheDocument();
     await user.click(
       screen.getAllByRole("button", { name: "Close" }).at(-1)!,
     );
@@ -6145,7 +6290,7 @@ describe("SeasonTickets routed event screen", { timeout: 20_000 }, () => {
     await user.click(
       screen.getAllByRole("button", { name: "Transfer" }).at(-1)!,
     );
-    expect(await screen.findByText("Transfer sent")).toBeInTheDocument();
+    expect(await screen.findByText(transferSuccessTitle("ticket", 1))).toBeInTheDocument();
     await user.click(
       screen.getAllByRole("button", { name: "Close" }).at(-1)!,
     );
@@ -6240,7 +6385,7 @@ describe("SeasonTickets routed event screen", { timeout: 20_000 }, () => {
       await user.click(
         screen.getAllByRole("button", { name: "Transfer" }).at(-1)!,
       );
-      expect(await screen.findByText("Transfer sent")).toBeInTheDocument();
+      expect(await screen.findByText(transferSuccessTitle("ticket", 1))).toBeInTheDocument();
       await user.click(
         screen.getAllByRole("button", { name: "Close" }).at(-1)!,
       );
@@ -6377,7 +6522,7 @@ describe("SeasonTickets routed event screen", { timeout: 20_000 }, () => {
     await user.click(
       screen.getAllByRole("button", { name: "Transfer" }).at(-1)!,
     );
-    expect(await screen.findByText("Transfer sent")).toBeInTheDocument();
+    expect(await screen.findByText(transferSuccessTitle("ticket", 1))).toBeInTheDocument();
     await user.click(
       screen.getAllByRole("button", { name: "Close" }).at(-1)!,
     );
@@ -6496,7 +6641,7 @@ describe("SeasonTickets routed event screen", { timeout: 20_000 }, () => {
     await user.click(
       screen.getAllByRole("button", { name: "Transfer" }).at(-1)!,
     );
-    expect(await screen.findByText("Transfer sent")).toBeInTheDocument();
+    expect(await screen.findByText(transferSuccessTitle("ticket", 1))).toBeInTheDocument();
     await user.click(
       screen.getAllByRole("button", { name: "Close" }).at(-1)!,
     );
@@ -6555,7 +6700,7 @@ describe("SeasonTickets routed event screen", { timeout: 20_000 }, () => {
     await user.click(
       screen.getAllByRole("button", { name: "Transfer" }).at(-1)!,
     );
-    expect(await screen.findByText("Transfer sent")).toBeInTheDocument();
+    expect(await screen.findByText(transferSuccessTitle("ticket", 1))).toBeInTheDocument();
 
     navigationMocks.pathname = "/wallet/my-tickets/";
     rerender(<SeasonTickets />);
@@ -6630,7 +6775,7 @@ describe("SeasonTickets routed event screen", { timeout: 20_000 }, () => {
       await user.click(
         screen.getAllByRole("button", { name: "Transfer" }).at(-1)!,
       );
-      expect(await screen.findByText("Transfer sent")).toBeInTheDocument();
+      expect(await screen.findByText(transferSuccessTitle("ticket", 1))).toBeInTheDocument();
       await user.click(
         screen.getAllByRole("button", { name: "Close" }).at(-1)!,
       );
@@ -7280,7 +7425,7 @@ describe("SeasonTickets routed event screen", { timeout: 20_000 }, () => {
       await user.click(
         screen.getAllByRole("button", { name: "Transfer" }).at(-1)!,
       );
-      expect(await screen.findByText("Transfer sent")).toBeInTheDocument();
+      expect(await screen.findByText(transferSuccessTitle("ticket", 1))).toBeInTheDocument();
       await user.click(
         screen.getAllByRole("button", { name: "Close" }).at(-1)!,
       );
@@ -7337,7 +7482,7 @@ describe("SeasonTickets routed event screen", { timeout: 20_000 }, () => {
       await user.click(
         screen.getAllByRole("button", { name: "Transfer" }).at(-1)!,
       );
-      expect(await screen.findByText("Transfer sent")).toBeInTheDocument();
+      expect(await screen.findByText(transferSuccessTitle("ticket", 1))).toBeInTheDocument();
       expect(mockedGetMySentTransfers.mock.calls.length).toBe(
         sentCallsAfterMount,
       );
@@ -7531,7 +7676,7 @@ describe("SeasonTickets routed event screen", { timeout: 20_000 }, () => {
       await user.click(
         screen.getAllByRole("button", { name: "Transfer" }).at(-1)!,
       );
-      expect(await screen.findByText("Transfer sent")).toBeInTheDocument();
+      expect(await screen.findByText(transferSuccessTitle("ticket", 1))).toBeInTheDocument();
       expect(mockedCreateTicketTransfer).toHaveBeenCalledTimes(1);
       expect(mockedGetMySentTransfers.mock.calls.length).toBe(
         sentCallsAfterMount,
@@ -7788,7 +7933,7 @@ describe("SeasonTickets routed event screen", { timeout: 20_000 }, () => {
     await user.click(
       screen.getAllByRole("button", { name: "Transfer" }).at(-1)!,
     );
-    expect(await screen.findByText("Transfer sent")).toBeInTheDocument();
+    expect(await screen.findByText(transferSuccessTitle("ticket", 1))).toBeInTheDocument();
 
     navigationMocks.pathname = "/wallet/my-tickets/";
     rerender(<SeasonTickets />);
@@ -7824,7 +7969,7 @@ describe("SeasonTickets routed event screen", { timeout: 20_000 }, () => {
       await screen.findByRole("alert"),
     ).toHaveTextContent(FIELD_COPY.network);
     expect(
-      screen.queryByText("Transfer sent"),
+      screen.queryByText(transferSuccessTitle("ticket", 1)),
     ).not.toBeInTheDocument();
     expect(
       screen.getByText("You are about to transfer 1 ticket"),
@@ -7866,7 +8011,7 @@ describe("SeasonTickets routed event screen", { timeout: 20_000 }, () => {
     expect(await screen.findByRole("alert")).toHaveTextContent(
       ticketTransferScannedCopy(1),
     );
-    expect(screen.queryByText("Transfer sent")).not.toBeInTheDocument();
+    expect(screen.queryByText(transferSuccessTitle("ticket", 1))).not.toBeInTheDocument();
   });
 
   it("shows assigned copy when ticket transfer is rejected because tickets are already assigned", async () => {
@@ -7904,7 +8049,7 @@ describe("SeasonTickets routed event screen", { timeout: 20_000 }, () => {
     expect(await screen.findByRole("alert")).toHaveTextContent(
       ticketTransferAssignedCopy(1),
     );
-    expect(screen.queryByText("Transfer sent")).not.toBeInTheDocument();
+    expect(screen.queryByText(transferSuccessTitle("ticket", 1))).not.toBeInTheDocument();
   });
 
   it("shows a retry message when ticket transfer fails with an unmapped 402", async () => {
@@ -7938,7 +8083,7 @@ describe("SeasonTickets routed event screen", { timeout: 20_000 }, () => {
     expect(await screen.findByRole("alert")).toHaveTextContent(
       TICKET_TRANSFER_DISPLAY_COPY.failed,
     );
-    expect(screen.queryByText("Transfer sent")).not.toBeInTheDocument();
+    expect(screen.queryByText(transferSuccessTitle("ticket", 1))).not.toBeInTheDocument();
   });
 
   it("does not transfer a single ticket back to its owner", async () => {
@@ -8382,6 +8527,56 @@ describe("SeasonTickets ticket screen responsive layout", () => {
     Reflect.deleteProperty(navigator, "userAgent");
   });
 
+  it("badges phone ticket cards that came from a package", async () => {
+    Object.defineProperty(window, "matchMedia", {
+      configurable: true,
+      writable: true,
+      value: (query: string) =>
+        ({ matches: query === "(pointer: coarse)" }) as MediaQueryList,
+    });
+    Object.defineProperty(navigator, "userAgent", {
+      configurable: true,
+      writable: true,
+      value: "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X)",
+    });
+    mockedGetMyEvents.mockResolvedValue({
+      data: [demoCompletedPackageOrder()],
+    } as never);
+    navigationMocks.pathname = `/wallet/my-tickets/order/${packageOrderId}/package/${pkg.uuid}/event/${pkg.events[1].uuid}/`;
+
+    render(<SeasonTickets />);
+
+    const badges = await screen.findAllByTestId("wallet-ticket-card-badge");
+    expect(badges[0]).toHaveTextContent("Season Tickets");
+
+    Reflect.deleteProperty(navigator, "userAgent");
+  });
+
+  it("leaves the badge off phone ticket cards bought as single tickets", async () => {
+    Object.defineProperty(window, "matchMedia", {
+      configurable: true,
+      writable: true,
+      value: (query: string) =>
+        ({ matches: query === "(pointer: coarse)" }) as MediaQueryList,
+    });
+    Object.defineProperty(navigator, "userAgent", {
+      configurable: true,
+      writable: true,
+      value: "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X)",
+    });
+
+    render(<SeasonTickets />);
+
+    expect(
+      (await screen.findAllByRole("button", { name: "View QR-Code" })).length,
+    ).toBeGreaterThan(0);
+    expect(
+      screen.queryAllByTestId("wallet-ticket-card-badge"),
+    ).toHaveLength(0);
+
+    Reflect.deleteProperty(navigator, "userAgent");
+  });
+
   it("shows GA section values without a duplicate Sec prefix on phone", async () => {
     mockedGetMyEvents.mockResolvedValue({
       data: [
@@ -8608,10 +8803,11 @@ describe("SeasonTickets mobile ticket actions", () => {
     );
 
     expect(
-      screen.getByRole("heading", { name: "Scan at entrance" }),
+      screen.getByRole("heading", { name: seatLabel(ticket) }),
     ).toBeInTheDocument();
     expect(screen.getByRole("img", { name: /QR code/i })).toBeInTheDocument();
     expect(screen.getByText("Scan this code at entry")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Close" })).not.toBeInTheDocument();
     expect(
       screen.queryByRole("heading", { name: "Ticket details" }),
     ).not.toBeInTheDocument();
@@ -8631,10 +8827,23 @@ describe("SeasonTickets mobile ticket actions", () => {
     ).toBeInTheDocument();
     expect(screen.getByText("Holder")).toBeInTheDocument();
     expect(screen.getByText(ticket.checkInCode)).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Done" })).not.toBeInTheDocument();
     expect(
-      screen.queryByRole("heading", { name: "Scan at entrance" }),
+      screen.queryByRole("heading", { name: seatLabel(ticket) }),
     ).not.toBeInTheDocument();
     expect(screen.queryByRole("img", { name: /QR code/i })).not.toBeInTheDocument();
+
+    const sheet = screen
+      .getByRole("heading", { name: "Ticket details" })
+      .closest("div")?.parentElement;
+    fireEvent.click(sheet!);
+    expect(
+      screen.getByRole("heading", { name: "Ticket details" }),
+    ).toBeInTheDocument();
+    fireEvent.click(sheet!.parentElement!);
+    expect(
+      screen.queryByRole("heading", { name: "Ticket details" }),
+    ).not.toBeInTheDocument();
   });
 
   it("adds the ticket to Apple Wallet on iPhone", async () => {
@@ -8678,5 +8887,20 @@ describe("SeasonTickets mobile ticket actions", () => {
     expect(
       screen.queryByRole("button", { name: /Add to (Apple|Google) Wallet/ }),
     ).not.toBeInTheDocument();
+  });
+});
+
+describe("SeasonTickets code screen", () => {
+  it("tells the shopper codes expire after 5 minutes", async () => {
+    sessionMocks.getSession.mockReturnValue(DEMO_SESSION);
+    render(<SeasonTickets initialScreen="code" />);
+
+    expect(
+      await screen.findByRole("heading", { name: /enter your code/i }),
+    ).toBeInTheDocument();
+    expect(screen.getByText(DEMO_USER.email)).toBeInTheDocument();
+    expect(
+      screen.getByText(/codes expire after 5 minutes/i),
+    ).toBeInTheDocument();
   });
 });

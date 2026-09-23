@@ -1548,7 +1548,7 @@ describe("Checkout page", { timeout: 20_000 }, () => {
     expect(screen.getByText(raptorsEvent.name)).toBeInTheDocument();
   });
 
-  it("dismisses the leave confirmation from the backdrop without a header Close", async () => {
+  it("keeps the leave confirmation open when the backdrop is clicked", async () => {
     const user = userEvent.setup();
     render(<CheckoutPageRoute />);
     expect(await screen.findByText("Secure checkout")).toBeInTheDocument();
@@ -1567,8 +1567,8 @@ describe("Checkout page", { timeout: 20_000 }, () => {
 
     fireEvent.click(dialog.parentElement!.parentElement!);
     expect(
-      screen.queryByRole("dialog", { name: /are you sure/i }),
-    ).not.toBeInTheDocument();
+      screen.getByRole("dialog", { name: /are you sure/i }),
+    ).toBeInTheDocument();
     expect(mockedDropUserCart).not.toHaveBeenCalled();
   });
 

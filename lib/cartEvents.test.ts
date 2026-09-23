@@ -14,6 +14,7 @@ import {
   DEMO_USER,
 } from "@/lib/demo/fixtures";
 import { demoDate } from "@/lib/demo/now";
+import { formatEventWhen } from "@/lib/helpers";
 import {
   buildFlexPackSummaries,
   buildOrderEventDetails,
@@ -84,7 +85,9 @@ describe("cartEvents wallet schedule", () => {
     const [summary] = summarizeCartEvents(cart, cart.id);
 
     expect(summary.today).toBe(true);
-    expect(walletEventScheduleLine(summary)).toMatch(/^Gates open · /);
+    expect(summary.when).toBe("Tonight · 7:35 PM");
+    expect(summary.whenDate).toBe("Sat, Aug 15 · 7:35 PM");
+    expect(walletEventScheduleLine(summary)).toMatch(/^Doors open · /);
     expect(walletEventScheduleLine(summary)).toContain("6:35 PM");
   });
 
@@ -96,7 +99,64 @@ describe("cartEvents wallet schedule", () => {
     const [summary] = summarizeCartEvents(cart, cart.id);
 
     expect(summary.today).toBe(false);
+    expect(summary.whenDate).toBe("Sat, Aug 15 · 7:35 PM");
     expect(walletEventScheduleLine(summary)).toBe("Sat, Aug 15 · 7:35 PM");
+  });
+});
+
+describe("wallet event detail venue and summary", () => {
+  const withStreet = DEMO_EVENTS.find((event) => event.shortCode === "NMST004")!;
+  const withoutStreet = DEMO_EVENTS.find(
+    (event) => event.shortCode === "ICEDOG5",
+  )!;
+  const detailFor = (event: Record<string, unknown>) =>
+    Object.values(buildOrderEventDetails([demoCompletedTicketOrder({ event })]))[0];
+
+  it("shows the venue street address, city, and state", () => {
+    expect(detailFor(withStreet).address).toBe(
+      "1810 E University Ave, Las Cruces, NM",
+    );
+  });
+
+  it("falls back to city and state when the venue has no street address", () => {
+    expect(detailFor(withoutStreet).address).toBe("St. Catharines, ON");
+  });
+
+  it("shows the event summary", () => {
+    expect(
+      detailFor({ ...withStreet, summary: "Senior day at Aggie Memorial." })
+        .blurb,
+    ).toBe("Senior day at Aggie Memorial.");
+  });
+
+  it("falls back to the description without its markup", () => {
+    expect(
+      detailFor({
+        ...withStreet,
+        description: "<p>Doors open early.</p><p>Clear bags <b>only</b>.</p>",
+      }).blurb,
+    ).toBe("Doors open early.\nClear bags only.");
+  });
+
+  it("leaves the summary empty when the event has neither", () => {
+    expect(detailFor(withStreet).blurb).toBe("");
+  });
+
+  it("takes the summary and street address from a fetched order", () => {
+    const listed = detailFor({
+      ...withStreet,
+      summary: undefined,
+      venue: { name: withStreet.venue.name, timezone: withStreet.venue.timezone },
+    });
+
+    expect(listed.blurb).toBe("");
+
+    const detail = withFullOrder(listed, {
+      event: { ...withStreet, summary: "Senior day at Aggie Memorial." },
+    });
+
+    expect(detail.blurb).toBe("Senior day at Aggie Memorial.");
+    expect(detail.address).toBe("1810 E University Ave, Las Cruces, NM");
   });
 });
 
@@ -717,6 +777,28 @@ describe("wallet season-package orders", () => {
     });
 
     expect(detail.event?.category?.name).toBe("sports");
+  });
+
+  it("takes the doors open time for a package game from a fetched order", () => {
+    const listed = Object.values(
+      buildSeasonPackageEventDetails([demoCompletedPackageOrder()]),
+    )[0];
+
+    expect(listed.doors).toBe("");
+
+    const doorsOpen = DEMO_EVENTS.find(
+      (row) => row.uuid === listed.event?.uuid,
+    )!.doorsOpen;
+    const detail = withFullOrder(listed, {
+      package: {
+        events: [{ ...listed.event, doorsOpen }],
+      },
+    });
+
+    expect(detail.doors).toBe(
+      formatEventWhen(doorsOpen, listed.event?.venue?.timezone, "h:mm A"),
+    );
+    expect(detail.when).toBe(listed.when);
   });
 
   it("does not list a single-event order as season tickets", () => {

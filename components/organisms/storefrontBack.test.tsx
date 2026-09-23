@@ -470,7 +470,7 @@ describe("venue page actions", () => {
     expect(writeText).toHaveBeenCalledWith(window.location.href);
   });
 
-  it("shows the venue description with Show more on mobile", async () => {
+  it("shows the venue description on mobile", async () => {
     Object.defineProperty(window, "innerWidth", {
       configurable: true,
       writable: true,
@@ -488,29 +488,22 @@ describe("venue page actions", () => {
     mockedGetVenues.mockResolvedValue({ data: [venue] } as never);
     mockedGetUpcoming.mockResolvedValue({ data: { allEvents: [] } } as never);
 
-    vi.spyOn(HTMLElement.prototype, "scrollHeight", "get").mockReturnValue(240);
-    vi.spyOn(HTMLElement.prototype, "clientHeight", "get").mockReturnValue(80);
-
     render(<VenueProfile slug={venue.slug} />);
 
     expect(await screen.findByTestId("venue-profile-mobile-card")).toBeInTheDocument();
     expect(screen.getByText(venueDescription)).toBeInTheDocument();
     expect(
-      screen.getByRole("button", { name: /show more/i }),
-    ).toBeInTheDocument();
-
-    vi.restoreAllMocks();
+      screen.queryByRole("button", { name: /show more/i }),
+    ).not.toBeInTheDocument();
   });
 
-  it("shows the team description with Show more on mobile", async () => {
+  it("shows the team description on mobile", async () => {
     Object.defineProperty(window, "innerWidth", {
       configurable: true,
       writable: true,
       value: 390,
     });
     const about = teamStorefrontDescription(nmState.name, nmState.venues);
-    vi.spyOn(HTMLElement.prototype, "scrollHeight", "get").mockReturnValue(240);
-    vi.spyOn(HTMLElement.prototype, "clientHeight", "get").mockReturnValue(80);
 
     render(
       <ClientProfile
@@ -526,10 +519,8 @@ describe("venue page actions", () => {
     expect(screen.getByTestId("team-profile-mobile-card")).toBeInTheDocument();
     expect(screen.getByText(about)).toBeInTheDocument();
     expect(
-      screen.getByRole("button", { name: /show more/i }),
-    ).toBeInTheDocument();
-
-    vi.restoreAllMocks();
+      screen.queryByRole("button", { name: /show more/i }),
+    ).not.toBeInTheDocument();
   });
 
   it("hides Follow venue when the venue has no website", async () => {

@@ -17,6 +17,7 @@ import {
   isPhoneDevice,
   isTabletDevice,
   isEventComplete,
+  eventDayLabel,
   isToday,
   isUpcomingEvent,
   isWalletListedEvent,
@@ -556,6 +557,32 @@ describe("isToday", () => {
 
     expect(isToday("2026-08-16T01:35:00.000Z", "America/Denver")).toBe(true);
     expect(isToday("2026-08-17T01:35:00.000Z", "America/Denver")).toBe(false);
+  });
+});
+
+describe("eventDayLabel", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("says Today for a daytime kickoff and Tonight for an evening one", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-08-15T18:00:00.000Z"));
+
+    // 1:00 PM and 7:35 PM the same day in Denver.
+    expect(eventDayLabel("2026-08-15T19:00:00.000Z", "America/Denver")).toBe(
+      "Today",
+    );
+    expect(eventDayLabel("2026-08-16T01:35:00.000Z", "America/Denver")).toBe(
+      "Tonight",
+    );
+  });
+
+  it("has no label for another day, so the date keeps showing", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-08-15T18:00:00.000Z"));
+
+    expect(eventDayLabel("2026-08-17T01:35:00.000Z", "America/Denver")).toBe("");
   });
 });
 

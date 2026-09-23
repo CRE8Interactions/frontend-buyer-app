@@ -160,6 +160,19 @@ describe("eventAboutText", () => {
   it("returns empty when neither field is set", () => {
     expect(eventAboutText({})).toBe("");
   });
+
+  it("keeps line breaks and spacing in the event description", () => {
+    expect(
+      eventAboutText({
+        description: "<p>Gates open at 5.</p><p>Bring a <strong>valid</strong> ID.</p>",
+      }),
+    ).toBe("Gates open at 5.\nBring a valid ID.");
+    expect(
+      eventAboutText({
+        summary: "Line one\n  Line two",
+      }),
+    ).toBe("Line one\n  Line two");
+  });
 });
 
 describe("normalizeApiImage", () => {

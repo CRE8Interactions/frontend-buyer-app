@@ -1268,7 +1268,7 @@ function CheckoutPage() {
             <div className={`${lightCard} flex flex-col gap-5 p-[22px]`}>
               {needsGuestContact ? null : (
               <div>
-                <h1 className="text-[16px] font-semibold tracking-[-0.03em]">
+                <h1 className="font-semibold tracking-[-0.03em] [font-size:24px]">
                   Payment
                 </h1>
                 <p className={`mt-1 text-[14px] ${muted}`}>
@@ -1649,7 +1649,6 @@ function CheckoutPage() {
           onClose={() => setLeaveOpen(false)}
           busy={cancelling}
           hideClose
-          closeOnBackdrop
         >
           <p className="mt-4 text-[15px] text-[#6e7180]">
             If you leave this page, you&apos;ll lose your chance to purchase

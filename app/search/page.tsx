@@ -8,7 +8,7 @@ import { BrandBlocks } from "@/components/molecules/BrandLoader";
 import { fetchSearchEvents, type ShopperSearchEvent } from "@/lib/searchEvents";
 import { getSingularOrPluralWord } from "@/lib/helpers";
 import { ShopperFluidTypeStyles } from "@/components/templates/ShopperFluidType";
-import { BROWSE_DISPLAY, BROWSE_TRACK } from "@/lib/browseType";
+import { BROWSE_TRACK } from "@/lib/browseType";
 
 function SearchLoading({ label }: { label: string }) {
   return (
@@ -73,7 +73,7 @@ function SearchResultsInner({ query }: { query: string }) {
     <div className="pb-16">
       <h1
         className="font-semibold"
-        style={{ fontSize: BROWSE_DISPLAY.h2, letterSpacing: BROWSE_TRACK.display }}
+        style={{ fontSize: "clamp(28px, 3.5vw, 40px)", lineHeight: 1.5, letterSpacing: BROWSE_TRACK.display }}
       >
         {`We found ${results.length} ${getSingularOrPluralWord(
           results.length,

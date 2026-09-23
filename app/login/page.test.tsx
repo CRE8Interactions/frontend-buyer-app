@@ -194,7 +194,7 @@ describe("Login page", () => {
     expect(screen.getByLabelText(/six-digit code/i)).toHaveFocus();
     expect(screen.getByText(/check your spam folder/i)).toBeInTheDocument();
     expect(
-      screen.getByText(/codes expire after 10 minutes/i),
+      screen.getByText(/codes expire after 5 minutes/i),
     ).toBeInTheDocument();
     expect(screen.queryByText(/localhost:1080/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/open http/i)).not.toBeInTheDocument();

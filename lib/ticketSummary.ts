@@ -2,7 +2,11 @@
 
 import { packageFromPrice } from "@/lib/eventFromPrice";
 import { flexPackVoucherFee } from "@/lib/flexPackDisplay";
-import { formatEventWhen, type TimezoneLike } from "@/lib/helpers";
+import {
+  descriptionPlainText,
+  formatEventWhen,
+  type TimezoneLike,
+} from "@/lib/helpers";
 import {
   formatSeatNumberRanges,
   gaTicketSeatLine,
@@ -77,7 +81,7 @@ export function selectionOfferName(
 function offerDescriptionFromSource(source?: OfferNameSource | null): string {
   if (!source) return "";
   if (String(source.description || "").trim()) {
-    return stripRichText(source.description);
+    return descriptionPlainText(source.description);
   }
   const offer = source.offer;
   if (offer && typeof offer === "object") {
@@ -86,7 +90,7 @@ function offerDescriptionFromSource(source?: OfferNameSource | null): string {
       offer.data?.attributes?.description ||
       offer.data?.description ||
       "";
-    if (String(nested).trim()) return stripRichText(String(nested));
+    if (String(nested).trim()) return descriptionPlainText(String(nested));
   }
   return "";
 }

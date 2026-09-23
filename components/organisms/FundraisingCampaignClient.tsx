@@ -17,7 +17,6 @@ import {
   getPublicFundraisingCampaign,
 } from "@/lib/api";
 import AppShell from "@/components/templates/AppShell";
-import ShopperFluidPage from "@/components/templates/ShopperFluidType";
 import { BrandedLoader } from "@/components/molecules/RouteLoader";
 import useAutoFocus from "@/hooks/useAutoFocus";
 import useOrgBranding from "@/hooks/useOrgBranding";
@@ -318,7 +317,7 @@ export function FundraisingCampaignClient({
       }
       brandName={organizationSlug ? brandedOrg?.name || null : undefined}
     >
-      <ShopperFluidPage className="min-h-0">{body}</ShopperFluidPage>
+      {body}
     </AppShell>
   );
 
@@ -347,7 +346,7 @@ export function FundraisingCampaignClient({
   if (loadError || !campaign) {
     return shell(
       <div className={`${lightCard} mx-auto max-w-lg p-8 text-center`}>
-        <h1 className="text-[16px] font-semibold">Fundraiser not found</h1>
+        <h1 className="text-[22px] font-semibold">Fundraiser not found</h1>
         <p className={`mt-2 ${muted}`}>{loadError}</p>
       </div>,
     );
@@ -378,7 +377,7 @@ export function FundraisingCampaignClient({
           </div>
         ) : null}
         <div className="p-6">
-          <h1 className="text-[36px] font-semibold tracking-[-0.03em]">
+          <h1 className="text-[clamp(28px,4vw,36px)] font-semibold tracking-[-0.03em]">
             {campaign.title}
           </h1>
           {campaign.description ? (

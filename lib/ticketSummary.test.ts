@@ -76,6 +76,16 @@ describe("selectionOfferDescription", () => {
       }),
     ).toBe("Premium club access.");
   });
+
+  it("keeps line breaks in the offer description", () => {
+    expect(
+      selectionOfferDescription({
+        offer: {
+          description: "Includes club access.\n\nNo re-entry.",
+        },
+      }),
+    ).toBe("Includes club access.\n\nNo re-entry.");
+  });
 });
 
 describe("gaTierSubtitle", () => {
