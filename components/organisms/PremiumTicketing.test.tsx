@@ -886,11 +886,15 @@ describe("Select tickets page (PremiumTicketing)", { timeout: 20_000 }, () => {
   });
 
   it("steps seated quantities by the offer multiple within min and max", async () => {
+    const fieldClub = seatedTicketingFixture.listings.find(
+      (listing) => listing.sec === "M" && listing.row === "M3",
+    );
+    if (!fieldClub) throw new Error("demo fixtures need a Field Club seated listing");
     const restricted = {
       ...seatedTicketingFixture,
       listings: [
         {
-          ...seatedTicketingFixture.listings[0],
+          ...fieldClub,
           min: 2,
           max: 6,
           multipleOf: 2,
@@ -2228,19 +2232,37 @@ describe("Select tickets page (PremiumTicketing)", { timeout: 20_000 }, () => {
     });
   });
 
+  it("shows resale inventory first with a Verified Resale badge", async () => {
+    await renderReady();
+
+    const prices = screen
+      .getAllByText(/\$[\d,]+\.\d{2} each/i)
+      .map((el) => el.textContent);
+    expect(prices[0]).toMatch(/\$45\.00/);
+    expect(screen.getAllByTestId("verified-resale-badge")[0]).toHaveTextContent(
+      /verified resale/i,
+    );
+    expect(screen.getByText(/^sec a · row 1$/i)).toBeInTheDocument();
+    expect(screen.getByText(/sec m · row m3/i)).toBeInTheDocument();
+  });
+
   it("sorts listings by price ascending then descending on the client", async () => {
     const user = await renderReady();
 
-    const firstPrice = () =>
-      screen.getAllByText(/\$[\d,]+\.\d{2} each/i)[0].textContent;
+    const prices = () =>
+      screen.getAllByText(/\$[\d,]+\.\d{2} each/i).map((el) => el.textContent);
 
-    expect(firstPrice()).toMatch(/\$11\.64/);
+    expect(prices()[0]).toMatch(/\$45\.00/);
+    expect(prices()).toContain("$11.64 each");
 
     await user.click(
       screen.getByRole("button", { name: /sorted by lowest price/i }),
     );
     await waitFor(() => {
-      expect(firstPrice()).toMatch(/\$33\.59/);
+      expect(prices()[0]).toMatch(/\$45\.00/);
+      expect(prices()).toContain("$33.59 each");
+      const primary = prices().filter((text) => text !== "$45.00 each");
+      expect(primary[0]).toMatch(/\$33\.59/);
     });
   });
 

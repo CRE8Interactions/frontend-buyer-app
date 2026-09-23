@@ -10,6 +10,7 @@ import PremiumTicketing, {
 } from "@/components/organisms/PremiumTicketing";
 import {
   getEventByShortCode,
+  getResaleTickets,
   getSeatmapByShortCode,
   getTicketGroups,
 } from "@/lib/api";
@@ -44,6 +45,7 @@ import {
 import {
   groupsToListings,
   lockedZonesFromGroups,
+  mergeResaleTicketGroups,
   normalizeGlobalTicketLimit,
   offerChipNames,
   type OfferSummary,
@@ -76,6 +78,7 @@ type EventData = {
   slug?: string;
   globalTicketLimit?: number | string | null;
   waitingRoomEnabled?: boolean | null;
+  enableResale?: boolean;
   attractions?: Array<{
     name?: string;
     primary?: boolean;
@@ -242,6 +245,7 @@ function hydrateSeatmapStores(
     name: event.name,
     id: event.id,
     uuid: event.uuid,
+    enableResale: event.enableResale,
   });
   setTicketGroups(groups);
   setLoadingTicketGroups(false);
@@ -272,6 +276,28 @@ const BASELINE_FILTERS: TicketingFilters = {
   accessible: false,
   sort: "price",
 };
+
+function resaleGroupsFromPayload(payload: unknown): RawGroup[] {
+  if (Array.isArray(payload)) return payload as RawGroup[];
+  if (!payload || typeof payload !== "object") return [];
+  const record = payload as Record<string, unknown>;
+  if (Array.isArray(record.data)) return record.data as RawGroup[];
+  if (Array.isArray(record.tickets)) return record.tickets as RawGroup[];
+  return [];
+}
+
+async function withResaleInventory(event: EventData, groups: RawGroup[]) {
+  if (groups.some((group) => group.resale || group.on_sale_status === "resaleAvailable")) {
+    return groups;
+  }
+  if (event.id == null && !event.uuid) return groups;
+  try {
+    const res = await getResaleTickets(String(event.id ?? event.uuid));
+    return mergeResaleTicketGroups(groups, resaleGroupsFromPayload(res.data));
+  } catch {
+    return groups;
+  }
+}
 
 function fetchInventory(event: EventData, filters: TicketingFilters) {
   return getTicketGroups({
@@ -360,7 +386,10 @@ function SeatedTickets() {
         ]);
         if (cancelled) return;
 
-        const nextGroups = (groupsRes?.data?.ticketGroups || []) as RawGroup[];
+        const nextGroups = await withResaleInventory(
+          event,
+          (groupsRes?.data?.ticketGroups || []) as RawGroup[],
+        );
         const seatmapRaw = (seatmapRes?.data || null) as {
           mapping?: SeatmapMapping;
           background?: unknown;
@@ -417,7 +446,10 @@ function SeatedTickets() {
     // A newer filter change already went out — its response wins.
     if (refetchId.current !== requestId) return;
 
-    const nextGroups = (res?.data?.ticketGroups || []) as RawGroup[];
+    const nextGroups = await withResaleInventory(
+      event,
+      (res?.data?.ticketGroups || []) as RawGroup[],
+    );
     const usable =
       groupsToListings(
         nextGroups,

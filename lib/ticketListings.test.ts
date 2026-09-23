@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  mergeResaleTicketGroups,
   groupsToGaTiers,
   groupsToListings,
   limitsFromTicketGroup,
@@ -150,8 +151,15 @@ describe("groupsToListings", () => {
   it("maps sellable DEMO groups into listing rows with min/max and zone names", () => {
     const listings = groupsToListings(DEMO_SEATED_TICKET_GROUPS);
 
-    expect(listings).toHaveLength(4);
+    expect(listings).toHaveLength(5);
     expect(listings[0]).toMatchObject({
+      zone: "Section A-B",
+      sec: "A",
+      row: "1",
+      resale: true,
+      price: "$45.00",
+    });
+    expect(listings[1]).toMatchObject({
       zone: "Field Club",
       sec: "M",
       row: "M3",
@@ -159,19 +167,19 @@ describe("groupsToListings", () => {
       max: 4,
       price: "$33.59",
     });
-    expect(listings[1]).toMatchObject({
+    expect(listings[2]).toMatchObject({
       zone: "Section A-B",
       min: 2,
       max: 6,
       price: "$21.94",
     });
-    expect(listings[2]).toMatchObject({
+    expect(listings[3]).toMatchObject({
       zone: "Companion Seat",
       min: 1,
       max: 2,
       price: "$12.00",
     });
-    expect(listings[3]).toMatchObject({
+    expect(listings[4]).toMatchObject({
       zone: "Section M-N & GA",
       sec: "N",
       row: "I",
@@ -181,11 +189,23 @@ describe("groupsToListings", () => {
     });
   });
 
+  it("sorts resale inventory first and merges omitted resale groups", () => {
+    const listings = groupsToListings(DEMO_SEATED_TICKET_GROUPS);
+    expect(listings[0]?.resale).toBe(true);
+    const primary = DEMO_SEATED_TICKET_GROUPS.filter((g) => !g.resale);
+    const resale = DEMO_SEATED_TICKET_GROUPS.filter((g) => g.resale);
+    const merged = mergeResaleTicketGroups(primary, resale);
+    expect(merged[0]?.resale).toBe(true);
+    expect(mergeResaleTicketGroups(DEMO_SEATED_TICKET_GROUPS, resale)).toBe(
+      DEMO_SEATED_TICKET_GROUPS,
+    );
+  });
+
   it("skips access-coded offers, empty inventory, and duplicate groups", () => {
     const listings = groupsToListings(DEMO_SEATED_TICKET_GROUPS);
     expect(listings.some((l) => l.zone === CODED_OFFER.name)).toBe(false);
     expect(listings.some((l) => l.zone === "Sold Out Row")).toBe(false);
-    expect(listings.filter((l) => l.zone === "Section A-B")).toHaveLength(1);
+    expect(listings.filter((l) => l.zone === "Section A-B")).toHaveLength(2);
   });
 
   it("keeps access-coded offers when the caller gates them behind a code", () => {
@@ -286,7 +306,9 @@ describe("groupsToListings", () => {
       globalMax: 3,
     });
     const fieldClub = listings.find((listing) => listing.zone === "Field Club");
-    const sectionAB = listings.find((listing) => listing.zone === "Section A-B");
+    const sectionAB = listings.find(
+      (listing) => listing.zone === "Section A-B" && !listing.resale,
+    );
 
     expect(fieldClub?.max).toBe(3);
     expect(sectionAB?.max).toBe(DEMO_SEATED_TICKET_GROUPS[1].offer?.maxQuantity);

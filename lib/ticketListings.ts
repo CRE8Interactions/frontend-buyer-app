@@ -655,6 +655,40 @@ export function offerChipNames(
  * Skips groups with nothing sellable, and coded offers unless the caller pairs
  * them with `lockedZones` so the page can gate them behind an access code.
  */
+export function ticketGroupIsResale(group: {
+  resale?: boolean;
+  on_sale_status?: string;
+}): boolean {
+  return (
+    group.resale === true ||
+    String(group.on_sale_status || "").trim() === "resaleAvailable"
+  );
+}
+
+/** Merge GET /tickets resaleAvailable rows when ticket groups omit resale. */
+export function mergeResaleTicketGroups(
+  groups: RawTicketGroup[],
+  resaleGroups: RawTicketGroup[],
+): RawTicketGroup[] {
+  if (groups.some(ticketGroupIsResale) || !resaleGroups.length) return groups;
+  const seen = new Set(
+    groups.map((group) => String(group.id ?? group.ticketGroupUUID ?? "")),
+  );
+  const extra = resaleGroups
+    .map((group) => ({
+      ...group,
+      resale: true,
+      on_sale_status: group.on_sale_status || "resaleAvailable",
+    }))
+    .filter((group) => {
+      const key = String(group.id ?? group.ticketGroupUUID ?? "");
+      if (!key || seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+  return extra.length ? [...extra, ...groups] : groups;
+}
+
 export function groupsToListings(
   groups: RawTicketGroup[],
   {
@@ -663,7 +697,7 @@ export function groupsToListings(
   }: { includeLocked?: boolean; globalMax?: number | null } = {},
 ): TicketingListing[] {
   const seen = new Set<string>();
-  return expandGroupsWithConnectedOffers(groups)
+  const listings = expandGroupsWithConnectedOffers(groups)
     .filter((g) => includeLocked || !g.offer?.accessCode)
     .filter((g) => sellableCount(g) > 0)
     .filter((g) => {
@@ -690,9 +724,11 @@ export function groupsToListings(
         price: money(Number(g.price || 0)),
         sectionId: g.sectionId != null ? String(g.sectionId) : undefined,
         cartGroup: g as Record<string, unknown>,
+        resale: ticketGroupIsResale(g),
       };
     })
     .filter((listing) => listing.min <= listing.max);
+  return [...listings].sort((a, b) => Number(b.resale) - Number(a.resale));
 }
 
 /**
@@ -744,10 +780,13 @@ export function groupsToGaTiers(
         max: limits.max,
         multipleOf: limits.step,
         cartGroup: g as Record<string, unknown>,
+        resale: ticketGroupIsResale(g),
       } satisfies GATier;
     })
     .filter((tier) => tier.state === "soldout" || tier.state === "locked" || tier.min <= tier.max)
     .sort((a, b) => {
+      const resaleDelta = Number(b.resale) - Number(a.resale);
+      if (resaleDelta) return resaleDelta;
       const rank: Record<GATier["state"], number> = {
         live: 0,
         locked: 1,

@@ -1248,6 +1248,32 @@ describe("InteractiveSeatmap canvas", () => {
     expect(screen.getByText("Locked")).toBeInTheDocument();
   });
 
+  it("adds a Resale legend row when the event enables resale", async () => {
+    useFiltersStore.setState({
+      loadingTicketGroups: false,
+      event: { enableResale: true },
+    });
+    render(<InteractiveSeatmap lookupsMode="external" />);
+
+    await waitFor(() => {
+      expect(screen.queryByLabelText(/loading seat map/i)).not.toBeInTheDocument();
+    });
+    expect(screen.getByTestId("seatmap-legend-resale")).toHaveTextContent("Resale");
+  });
+
+  it("hides the Resale legend row when enableResale is false", async () => {
+    useFiltersStore.setState({
+      loadingTicketGroups: false,
+      event: { enableResale: false },
+    });
+    render(<InteractiveSeatmap lookupsMode="external" />);
+
+    await waitFor(() => {
+      expect(screen.queryByLabelText(/loading seat map/i)).not.toBeInTheDocument();
+    });
+    expect(screen.queryByTestId("seatmap-legend-resale")).not.toBeInTheDocument();
+  });
+
   it("hides zoom and legend when hideChrome is set", async () => {
     useFiltersStore.setState({ loadingTicketGroups: false });
     render(<InteractiveSeatmap lookupsMode="external" compactChrome hideChrome />);

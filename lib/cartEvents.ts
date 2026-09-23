@@ -92,6 +92,9 @@ export type EventLike = {
   entry_gate?: string;
   enableTransfers?: boolean;
   enableResale?: boolean;
+  resaleMinimum?: number;
+  resaleMinimumPercent?: number;
+  secondaryServiceFeeSeller?: number;
   subCategory?: { name?: string };
   attractions?: { name?: string; primary?: boolean; artwork?: ApiImage }[];
   scanned?: boolean;
@@ -864,6 +867,25 @@ export function restoreCancelledTransferTicketsToOrders(
       String(order.id ?? "") === orderKey;
     if (!matches) return order;
 
+    return mergeTicketsIntoWalletOrder(order, tickets);
+  });
+}
+
+/** Restore listed tickets to wallet inventory after a listing is removed. */
+export function restoreTicketsToWalletOrders(
+  orders: OrderLike[],
+  tickets: TicketLike[],
+  orderId?: string | number,
+): OrderLike[] {
+  if (!tickets.length) return orders;
+  const orderKey = String(orderId ?? "").trim();
+  if (!orderKey) return orders;
+
+  return orders.map((order) => {
+    const matches =
+      String(order.orderId ?? "") === orderKey ||
+      String(order.id ?? "") === orderKey;
+    if (!matches) return order;
     return mergeTicketsIntoWalletOrder(order, tickets);
   });
 }

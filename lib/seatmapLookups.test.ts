@@ -62,4 +62,9 @@ describe("createSeatLookupTables", () => {
       [...expected].sort(),
     );
   });
+
+  it("keeps resale seats in the lookup so the map can paint them", () => {
+    expect(seatLookupTable["a-resale-1"]?.resale).toBe(true);
+    expect(seatLookupTable["a-resale-2"]?.resale).toBe(true);
+  });
 });

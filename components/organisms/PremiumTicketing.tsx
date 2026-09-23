@@ -107,6 +107,7 @@ export type TicketingListing = {
   sectionId?: string;
   /** Strapi ticket-group payload used by place-tickets-into-cart */
   cartGroup?: Record<string, unknown>;
+  resale?: boolean;
 };
 
 export type TicketingData = {
@@ -193,6 +194,7 @@ export type GATier = {
   multipleOf?: number;
   onSaleAt?: string;
   cartGroup?: Record<string, unknown>;
+  resale?: boolean;
 };
 
 /**
@@ -628,9 +630,11 @@ export default function PremiumTicketing({
     parseFloat(l.price.replace(/[^0-9.]/g, "")) || 0;
   const rows = useMemo(() => {
     const filtered = d.listings.filter((l) => quantityIsAllowed(want, listingQtyLimits(l)) && (!zoneFilter.length || zoneFilter.includes(l.zone)) && !(!!lockedMap[l.zone] && !unlocked.includes(l.zone)) && (!ada || Boolean(l.cartGroup?.accessible)));
-    const sorted = [...filtered].sort((a, b) =>
-      sortDir === "price" ? priceOf(a) - priceOf(b) : priceOf(b) - priceOf(a),
-    );
+    const sorted = [...filtered].sort((a, b) => {
+      const resaleDelta = Number(Boolean(b.resale)) - Number(Boolean(a.resale));
+      if (resaleDelta) return resaleDelta;
+      return sortDir === "price" ? priceOf(a) - priceOf(b) : priceOf(b) - priceOf(a);
+    });
     return sorted.map((l) => ({
       ...l,
       range: `${l.min} – ${l.max} Tickets`,
@@ -919,6 +923,14 @@ export default function PremiumTicketing({
 
   const card: React.CSSProperties = { background: "#fff", border: "1px solid rgba(5,27,53,0.10)", boxShadow: "0 1px 2px rgba(5,27,53,0.05)" };
   const pill = (bg: string, color: string): React.CSSProperties => ({ display: "inline-flex", alignItems: "center", gap: 7, background: bg, color, fontSize: fluidSize(13), fontWeight: 600, padding: "4px 12px", borderRadius: 999, whiteSpace: "nowrap" });
+  const listingOfferBadges = (listing: TicketingListing, compact = false) => (
+    <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap", alignSelf: "flex-start" }}>
+      <span style={{ ...pill(ACC_SOFT, ACC), ...(compact ? { fontSize: 13, padding: "3px 8px" } : {}) }}><Star s={compact ? 12 : 14} /> {listing.zone}</span>
+      {listing.resale ? (
+        <span data-testid="verified-resale-badge" style={{ ...pill("#FDE8D8", "#C25A28"), ...(compact ? { fontSize: 13, padding: "3px 8px" } : {}) }}>Verified Resale</span>
+      ) : null}
+    </div>
+  );
   const primaryBtn: React.CSSProperties = { fontFamily: "inherit", fontWeight: 600, color: BTN_INK, background: BTN, border: "none", borderRadius: 999, cursor: "pointer" };
   const shimmer: React.CSSProperties = { background: "linear-gradient(90deg,#eef0f6 0%,#f7f8fc 50%,#eef0f6 100%)", backgroundSize: "420px 100%", animation: "nmt-shimmer 1.4s linear infinite" };
   const thumbSize = 96;
@@ -1278,6 +1290,9 @@ export default function PremiumTicketing({
               <div style={{ display: "flex", flexDirection: "column", gap: 6, minWidth: 0 }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
                   <div style={{ fontSize: 18, fontWeight: 600, letterSpacing: "-0.015em", color: soldout ? "#6e7180" : NAVY }}>{t.name}</div>
+                  {t.resale ? (
+                    <span data-testid="verified-resale-badge" style={{ display: "inline-flex", alignItems: "center", background: "#FDE8D8", color: "#C25A28", fontSize: fluidSize(11), fontWeight: 600, letterSpacing: "0.1em", textTransform: "uppercase", padding: "5px 11px", borderRadius: 999 }}>Verified Resale</span>
+                  ) : null}
                   <span style={{ display: "inline-flex", alignItems: "center", gap: 7, background: s.pillBg, color: s.pillInk, fontSize: fluidSize(11), fontWeight: 600, letterSpacing: "0.1em", textTransform: "uppercase", padding: "5px 11px", borderRadius: 999 }}>
                     <span style={{ width: 6, height: 6, borderRadius: 999, background: s.dot }} />{s.label}
                   </span>
@@ -1832,7 +1847,7 @@ export default function PremiumTicketing({
                         {listingThumb(l)}
                       </div>
                       <div style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", gap: 10 }}>
-                        <span style={{ alignSelf: "flex-start", ...pill(ACC_SOFT, ACC), fontSize: 13, padding: "3px 8px" }}><Star s={12} /> {l.zone}</span>
+                        {listingOfferBadges(l, true)}
                         <div style={{ display: "flex", alignItems: "center", gap: 6, minWidth: 0, fontSize: 18, fontWeight: 600, letterSpacing: "-0.015em" }}>
                           <span style={{ color: "#6e7180", flexShrink: 0, display: "flex", alignItems: "center" }}><TicketIcon s={18} /></span>
                           <span style={{ minWidth: 0, overflowWrap: "anywhere" }}>Sec {l.sec} · Row {l.row}</span>
@@ -1850,7 +1865,7 @@ export default function PremiumTicketing({
                         {listingThumb(l)}
                       </div>
                       <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 6, minWidth: 0 }}>
-                        <span style={{ alignSelf: "flex-start", ...pill(ACC_SOFT, ACC) }}><Star s={14} /> {l.zone}</span>
+                        {listingOfferBadges(l)}
                         <div style={{ display: "flex", alignItems: "center", gap: 9, minWidth: 0, fontSize: 18, fontWeight: 600, letterSpacing: "-0.015em" }}>
                           <span style={{ color: "#6e7180", flexShrink: 0, display: "flex", alignItems: "center" }}><TicketIcon s={18} /></span>
                           <span style={{ minWidth: 0, overflowWrap: "anywhere" }}>Sec {l.sec} · Row {l.row}</span>
@@ -2493,7 +2508,12 @@ export default function PremiumTicketing({
                 </button>
               </div>
               <div style={{ display: "flex", flexDirection: "column", gap: 8, padding: "18px 0 16px" }}>
-                <span style={{ alignSelf: "flex-start", flexShrink: 0, ...pill(ACC_SOFT, ACC), ...(mobile ? { padding: "5px 10px" } : {}) }}><Star s={14} /> {selRow.tier || selRow.zone}</span>
+                <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+                  <span style={{ flexShrink: 0, ...pill(ACC_SOFT, ACC), ...(mobile ? { padding: "5px 10px" } : {}) }}><Star s={14} /> {selRow.tier || selRow.zone}</span>
+                  {selRow.resale ? (
+                    <span data-testid="verified-resale-badge" style={{ flexShrink: 0, ...pill("#FDE8D8", "#C25A28"), ...(mobile ? { padding: "5px 10px" } : {}) }}>Verified Resale</span>
+                  ) : null}
+                </div>
                 <div style={{ display: "flex", flexDirection: "column", gap: 5, minWidth: 0 }}>
                   <div style={{ fontSize: 22, fontWeight: 600, letterSpacing: "-0.02em", lineHeight: 1.5 }}>Sec {selRow.sec} · Row {selRow.row}</div>
                   <div style={{ fontSize: 14, lineHeight: 1.5, color: "#6e7180" }}>{listingDetailAvailabilityLabel(selRow.min, selRow.max, selRow.multipleOf)}</div>

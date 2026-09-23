@@ -54,6 +54,7 @@ export type TicketGroup = {
   GA?: boolean;
   accessible?: boolean;
   resale?: boolean;
+  on_sale_status?: string;
   ticketGroupUUID?: string;
   offer?: {
     id?: string | number;
