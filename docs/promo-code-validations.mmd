@@ -2,7 +2,7 @@
 
 %% Source: app/checkout/page.tsx, components/molecules/RedemptionCodeField.tsx,
 
-%%         lib/fieldValidation.ts (promoCodeRedeemDisplayMessage, redemptionCodeSubmitError)
+%%         lib/fieldValidation.ts (promoCodeRedeemDisplayMessage, redemptionCodeBlurFieldError)
 
 %% API:    blocktickets POST /promo-code/redeem
 
@@ -28,13 +28,17 @@
 
 %% --- POST /promo-code/redeem ---
 
-%% Display wraps error.message with "Please try again." (adds a period if the API
+%% Checkout keys off the request outcome and error.message, not the HTTP status.
 
-%% message has none).
+%% A failed redeem wraps the API message with "Please try again." (adds a period
+
+%% if the API message has none).
 
 %%
 
 %% | Status | API message | Displayed copy |
+
+%% | 200 | promoPricingDetails | Promo code applied |
 
 %% | (any error) | Promo code not found | Promo code not found. Please try again. |
 
@@ -46,44 +50,21 @@
 
 %% | (any error) | (no message) | Promo code could not be applied. Please try again. |
 
-
-
 flowchart TD
-
   typeCode[Type promo code] --> blurField[Blur]
-
-
-
   subgraph blurValidations [blur]
-
     bEmpty{Non-empty?}
-
     bEmpty -->|no| bQuiet[No error]
-
     bEmpty -->|yes| bQuiet
-
   end
-
-
-
   blurField -.-> blurValidations
-
-
-
   typeCode --> apply{Promo entered?}
-
   apply -->|no| applyDisabled[Apply disabled]
-
   apply -->|yes| redeem[POST /promo-code/redeem]
-
-  redeem --> redeemFail{API message?}
-
-  redeemFail -->|Promo code not found| notFound["Promo code not found. Please try again."]
-
-  redeemFail -->|Promo code already applied to order| alreadyApplied["Promo code already applied to order. Please try again."]
-
-  redeemFail -->|Promo code no longer valid| noLongerValid["Promo code no longer valid. Please try again."]
-
-  redeemFail -->|other message| apiMsg["{API message}. Please try again."]
-
-  redeemFail -->|no message| fallback["Promo code could not be applied. Please try again."]
+  redeem --> redeemFail{API response?}
+  redeemFail -->|200| applied["Promo code applied"]
+  redeemFail -->|any error: Promo code not found| notFound["Promo code not found. Please try again."]
+  redeemFail -->|any error: Promo code already applied to order| alreadyApplied["Promo code already applied to order. Please try again."]
+  redeemFail -->|any error: Promo code no longer valid| noLongerValid["Promo code no longer valid. Please try again."]
+  redeemFail -->|any error with message| apiMsg["{API message}. Please try again."]
+  redeemFail -->|any error no message| fallback["Promo code could not be applied. Please try again."]

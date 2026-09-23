@@ -1,6 +1,8 @@
 %% Ticket transfer — single event or package game
 
-%% Source: components/organisms/SeasonTickets.tsx, lib/submitEmailValidation.ts, lib/fieldValidation.ts
+%% Source: components/organisms/SeasonTickets.tsx, lib/submitEmailValidation.ts,
+
+%%         lib/fieldValidation.ts, lib/ticketTransferErrors.ts
 
 %% API:    blocktickets/tickets/src/api/registration/controllers/registration.js (validateEmail)
 
@@ -11,6 +13,10 @@
 %% Blur: optional hint on a non-empty email only. Empty blur is quiet. SendGrid is not called.
 
 %% Submit: validateSubmittedEmail — trim, empty, blocked/syntax, then POST /registration/validate-email.
+
+%% Wallet maps 400 startFailed to the network banner, not invalid-email copy.
+
+%% Transfer errors key off API message first, then HTTP status.
 
 %%
 
@@ -46,7 +52,11 @@
 
 %% | 200 | SendGrid verdict Invalid (or Risky with suggestion) | Email is invalid. Please try again. |
 
+%% | 400 | (any) | We're experiencing technical difficulties. Please try again later. |
+
 %% | 402 | Bad email | Email is invalid. Please try again. |
+
+%% | 500 / other | (any other) | We're experiencing technical difficulties. Please try again later. |
 
 %%
 
@@ -56,111 +66,55 @@
 
 %% | 200 | Transfer created | Step 4: success |
 
-%% | 402 | Cannot transfer tickets that have already been scanned | This ticket has already been scanned and can't be transferred. (1) / These tickets have already been scanned and can't be transferred. (2+) |
+%% | (any error) | Cannot transfer tickets that have already been scanned | This ticket has already been scanned and can't be transferred. (1) / These tickets have already been scanned and can't be transferred. (2+) |
 
-%% | 402 | TICKETS ARE ALREADY ASSIGNED TO THIS EMAIL ADDRESS | This ticket is already assigned to this email address. (1) / These tickets are already assigned to this email address. (2+) |
+%% | (any error) | TICKETS ARE ALREADY ASSIGNED TO THIS EMAIL ADDRESS | This ticket is already assigned to this email address. (1) / These tickets are already assigned to this email address. (2+) |
 
 %% | 402 | (any other) | We couldn't transfer those tickets. Please try again. |
 
 %% | 500 / other | (any other) | We're experiencing technical difficulties. Please try again later. |
 
-
-
 flowchart TD
-
   start[Step 1: select tickets] --> step2[Step 2: recipient email]
-
   step2 --> typeEmail[Type email]
-
   typeEmail --> blurField[Blur field]
-
   blurField --> blurValidate[emailBlurInvalid]
-
   blurValidate --> blurHint[Show inline hint if non-empty invalid]
-
   blurHint --> typeEmail
-
   typeEmail --> sendClick[Submit email]
-
   sendClick --> readDom[Read submitted email]
-
   readDom --> validate[validateSubmittedEmail]
-
-
-
   validate --> valFail{Result?}
-
   valFail -->|ok| selfCheck{Same as signed-in email?}
-
-  valFail -->|500| network["We're experiencing technical difficulties. Please try again later."]
-
+  valFail -->|400 / 500 / other| network["We're experiencing technical difficulties. Please try again later."]
   selfCheck -->|yes| assignedError["This ticket / These tickets are already assigned to this email address."]
-
   selfCheck -->|no| step3[Step 3: confirm]
-
-
-
   step3 --> transferApi[POST /ticket-transfers ticketIds]
-
   transferApi --> apiFail{API response?}
-
   apiFail -->|200| step4[Step 4: success]
-
-  apiFail -->|402| api402{API message?}
-
-  api402 -->|402 Cannot transfer tickets that have already been scanned| scannedError["This ticket / These tickets have already been scanned and can't be transferred."]
-
-  api402 -->|402 TICKETS ARE ALREADY ASSIGNED TO THIS EMAIL ADDRESS| assignedError
-
-  api402 -->|402 other| transferError["We couldn't transfer those tickets. Please try again."]
-
-  apiFail -->|500| network
-
-
-
+  apiFail -->|message: already scanned| scannedError["This ticket / These tickets have already been scanned and can't be transferred."]
+  apiFail -->|message: already assigned| assignedError
+  apiFail -->|402 other| transferError["We couldn't transfer those tickets. Please try again."]
+  apiFail -->|500 / other| network
   subgraph blurClientChecks [blur — client check]
-
     bNonEmpty{Email non-empty on blur?}
-
     bNonEmpty -->|no| bQuiet[No error]
-
     bNonEmpty -->|yes| bBlocked{Blocked domain or bad syntax?}
-
     bBlocked -->|yes| bInvalid["Email is invalid. Please try again."]
-
     bBlocked -->|no| bQuiet
-
   end
-
-
-
   subgraph validateSubmittedEmail [submit — validateSubmittedEmail]
-
     vNorm[Trim and lowercase]
-
     vNorm --> vEmpty{Empty?}
-
     vEmpty -->|yes| vEmailRequired["Email address is required."]
-
     vEmpty -->|no| vBlocked{Blocked domain or bad syntax?}
-
     vBlocked -->|yes| vEmailInvalid["Email is invalid. Please try again."]
-
     vBlocked -->|no| vSendgrid[POST /registration/validate-email]
-
     vSendgrid --> vSgStatus{HTTP status?}
-
     vSgStatus -->|200 Valid| vOk[ok]
-
     vSgStatus -->|200 Invalid or Risky with suggestion| vEmailInvalid
-
     vSgStatus -->|402| vEmailInvalid
-
+    vSgStatus -->|400 / 500 / other| vNetwork["We're experiencing technical difficulties. Please try again later."]
   end
-
-
-
   blurValidate -.-> blurClientChecks
-
   validate -.-> validateSubmittedEmail
-
