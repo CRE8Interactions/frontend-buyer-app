@@ -31,6 +31,30 @@ function shopperDialogFluidCss(): string {
 }
 .${SHOPPER_PAGE_CLASS} [role="dialog"] button.rounded-full {
   font-size: var(--t-16) !important;
+}
+.${SHOPPER_PAGE_CLASS} [role="dialog"].unlock-code-dialog h2 {
+  flex: none;
+  font-size: 22px !important;
+  letter-spacing: -0.02em;
+  line-height: 1.5;
+}
+.${SHOPPER_PAGE_CLASS} [role="dialog"].st-entry-qr-sheet h2 {
+  flex: 1 1 0%;
+  min-width: 0;
+  font-size: 21px !important;
+  letter-spacing: -0.02em;
+  line-height: 1.5;
+  text-align: left;
+}
+.${SHOPPER_PAGE_CLASS} [role="dialog"].unlock-code-dialog p {
+  font-size: 14px;
+  line-height: 1.5;
+}
+.${SHOPPER_PAGE_CLASS} [role="dialog"].unlock-code-dialog button.rounded-full {
+  line-height: 24px;
+}
+.${SHOPPER_PAGE_CLASS} .ticket-details-sheet button.rounded-full {
+  font-size: 17px !important;
 }`;
 }
 

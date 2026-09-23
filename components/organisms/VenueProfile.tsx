@@ -9,7 +9,6 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import ExpandableDescription from "@/components/molecules/ExpandableDescription";
 import InAppBackLink from "@/components/molecules/InAppBackLink";
 import NavAuthActions from "@/components/molecules/NavAuthActions";
 import RouteLoader from "@/components/molecules/RouteLoader";
@@ -533,8 +532,9 @@ export default function VenueProfile({ slug }: { slug: string }) {
           rel="noopener noreferrer"
           style={{
             fontFamily: "inherit",
-            fontSize: fluidSize(14),
+            fontSize: 14,
             fontWeight: 600,
+            lineHeight: 1.5,
             color: BTN_INK,
             background: BTN,
             border: `1px solid ${BTN}`,
@@ -716,9 +716,9 @@ export default function VenueProfile({ slug }: { slug: string }) {
                   <img src={photoSrc} alt={venueName} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
                 </div>
                 <div style={{ display: "flex", flexDirection: "column", gap: 8, alignItems: "center", textAlign: "center", minWidth: 0 }}>
-                  <h1 style={{ margin: 0, fontSize: 32, fontWeight: 600, letterSpacing: BROWSE_TRACK.display, lineHeight: browseLeading("h2") }}>{venueName}</h1>
+                  <h1 style={{ margin: 0, fontSize: 32, fontWeight: 600, letterSpacing: BROWSE_TRACK.display, lineHeight: 1.08 }}>{venueName}</h1>
                   {venueMeta ? (
-                    <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: fluidSize(13), color: "#6e7180", textAlign: "center", flexWrap: "wrap", justifyContent: "center" }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13, lineHeight: 1.5, color: "#6e7180", textAlign: "center", flexWrap: "wrap", justifyContent: "center" }}>
                       {city ? (
                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" style={{ width: 13, height: 13, flexShrink: 0 }}><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z" /><circle cx="12" cy="10" r="3" /></svg>
                       ) : null}
@@ -767,32 +767,22 @@ export default function VenueProfile({ slug }: { slug: string }) {
                   <img src={photoSrc} alt={venueName} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
                 </div>
                 <div style={{ display: "flex", flexDirection: "column", gap: 3, minWidth: 0 }}>
-                  <h1 style={{ margin: 0, fontSize: 21, fontWeight: 600, letterSpacing: BROWSE_TRACK.display, lineHeight: browseLeading("h3") }}>{venueName}</h1>
-                  <div style={{ fontSize: fluidSize(13), color: "#6e7180" }}>
+                  <h1 style={{ margin: 0, fontSize: 21, fontWeight: 600, letterSpacing: BROWSE_TRACK.display, lineHeight: 1.15 }}>{venueName}</h1>
+                  <div style={{ fontSize: 13, lineHeight: 1.5, color: "#6e7180" }}>
                     {venueMeta}
                   </div>
                 </div>
               </div>
 
               <div style={{ paddingTop: 14, borderTop: "1px solid rgba(5,27,53,0.08)" }}>
-                <ExpandableDescription
-                  text={description}
-                  mobile
-                  toggleColor={ACC}
-                  style={{
-                    margin: 0,
-                    fontSize: fluidSize(13),
-                    lineHeight: browseLeading("body"),
-                    color: "#6e7180",
-                  }}
-                />
+                <pre style={{ margin: 0, fontFamily: "inherit", whiteSpace: "pre-wrap", overflowWrap: "anywhere", fontSize: fluidSize(13), lineHeight: browseLeading("body"), color: "#6e7180" }}>{description}</pre>
               </div>
 
               {venueActions}
             </div>
           )}
 
-          <h2 style={{ margin: 0, fontSize: mobile ? 20 : 26, fontWeight: 600, letterSpacing: BROWSE_TRACK.display }}>Upcoming events</h2>
+          <h2 style={{ margin: 0, fontSize: mobile ? 20 : 26, fontWeight: 600, letterSpacing: BROWSE_TRACK.display, lineHeight: 1.5 }}>Upcoming events</h2>
 
           {!groups.length ? (
             <div style={{ background: "#fff", border: "1px solid rgba(5,27,53,0.10)", borderRadius: 18, padding: 28, color: "#6e7180", fontSize: fluidSize(14) }}>
@@ -802,8 +792,8 @@ export default function VenueProfile({ slug }: { slug: string }) {
             groups.map((g) => (
               <div key={g.title} style={{ display: "flex", flexDirection: "column", gap: 10 }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "10px 2px 8px" }}>
-                  <div style={{ fontSize: fluidSize(12), fontWeight: 600, textTransform: "uppercase", letterSpacing: BROWSE_TRACK.eyebrow, color: accent || "#7fbe4d", whiteSpace: "nowrap" }}>{g.title}</div>
-                  <div style={{ fontSize: fluidSize(12), color: "#8a93a3", whiteSpace: "nowrap" }}>{g.meta}</div>
+                  <div style={{ fontSize: 13, fontWeight: 600, lineHeight: 1.5, textTransform: "uppercase", letterSpacing: BROWSE_TRACK.eyebrow, color: accent || "#7fbe4d", whiteSpace: "nowrap" }}>{g.title}</div>
+                  <div style={{ fontSize: 12, lineHeight: 1.5, color: "#8a93a3", whiteSpace: "nowrap" }}>{g.meta}</div>
                   <div style={{ flex: 1, height: 1, background: "rgba(5,27,53,0.10)" }} />
                 </div>
                 {g.rows.map((e) => {
@@ -812,21 +802,21 @@ export default function VenueProfile({ slug }: { slug: string }) {
                   return (
                     <Link key={e.key} href={e.href} className="vp-row" style={{ background: "#fff", border: "1px solid rgba(5,27,53,0.10)", borderRadius: 18, boxShadow: "0 1px 2px rgba(5,27,53,0.05)", padding: mobile ? 14 : "16px 20px", display: "grid", gridTemplateColumns: stacked ? "64px minmax(0, 1fr)" : "76px minmax(0, 1fr) auto", gap: mobile ? 14 : 20, alignItems: "center", cursor: "pointer", color: NAVY, textDecoration: "none" }}>
                       <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 2, width: dateW, height: dateW, borderRadius: 14, background: "#f1f3f8", border: "1px solid rgba(5,27,53,0.08)", flexShrink: 0 }}>
-                        <div style={{ fontSize: fluidSize(10), fontWeight: 600, textTransform: "uppercase", letterSpacing: BROWSE_TRACK.label, color: "#6e7180" }}>{e.mon}</div>
+                        <div style={{ fontSize: 10, fontWeight: 600, lineHeight: 1.5, textTransform: "uppercase", letterSpacing: BROWSE_TRACK.label, color: "#6e7180" }}>{e.mon}</div>
                         <div style={{ fontSize: 22, fontWeight: 600, letterSpacing: BROWSE_TRACK.statement, fontVariantNumeric: "tabular-nums", lineHeight: 1 }}>{e.day}</div>
-                        <div style={{ fontSize: fluidSize(10), color: "#8a93a3" }}>{e.dow}</div>
+                        <div style={{ fontSize: 10, lineHeight: 1.5, color: "#8a93a3" }}>{e.dow}</div>
                       </div>
                       <div style={{ display: "flex", flexDirection: "column", gap: 5, minWidth: 0 }}>
                         <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-                          <span style={{ fontSize: fluidSize(12), color: "#6e7180" }}>{e.sport}{e.time ? ` · ${e.time}` : ""}</span>
+                          <span style={{ fontSize: 12, lineHeight: 1.5, color: "#6e7180" }}>{e.sport}{e.time ? ` · ${e.time}` : ""}</span>
                         </div>
-                        <div style={{ fontSize: 16, fontWeight: 600, letterSpacing: BROWSE_TRACK.card, lineHeight: browseLeading("h3") }}>{e.title}</div>
+                        <div style={{ fontSize: mobile ? 16 : 17, fontWeight: 600, letterSpacing: BROWSE_TRACK.card, lineHeight: 1.25 }}>{e.title}</div>
                         {e.host ? (
-                          <div style={{ fontSize: fluidSize(13), color: "#6e7180", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{e.host}</div>
+                          <div style={{ fontSize: 13, lineHeight: 1.5, color: "#6e7180", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{e.host}</div>
                         ) : null}
                       </div>
                       <div style={{ gridColumn: stacked ? "1 / -1" : "auto", display: "flex", alignItems: "center", gap: 16, justifyContent: "flex-end", paddingTop: stacked ? 12 : 0, borderTop: stacked ? "1px solid rgba(5,27,53,0.08)" : "none" }}>
-                        <span style={{ fontFamily: "inherit", fontSize: fluidSize(14), fontWeight: 600, color: soon ? NAVY : BTN_INK, background: soon ? "#fff" : BTN, border: `1px solid ${soon ? "rgba(5,27,53,0.14)" : BTN}`, borderRadius: 999, padding: "12px 22px", minHeight: 44, display: "inline-flex", alignItems: "center", cursor: "pointer", whiteSpace: "nowrap" }}>{soon ? "Remind me" : "Get tickets"}</span>
+                        <span style={{ fontFamily: "inherit", fontSize: 14, fontWeight: 600, lineHeight: 1.5, color: soon ? NAVY : BTN_INK, background: soon ? "#fff" : BTN, border: `1px solid ${soon ? "rgba(5,27,53,0.14)" : BTN}`, borderRadius: 999, padding: "12px 22px", minHeight: 44, display: "inline-flex", alignItems: "center", cursor: "pointer", whiteSpace: "nowrap" }}>{soon ? "Remind me" : "Get tickets"}</span>
                       </div>
                     </Link>
                   );

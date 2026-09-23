@@ -1,11 +1,10 @@
 "use client";
 
-import { fluidSize } from "@/lib/shopperFluidType";
-
 import type { CSSProperties, ReactNode } from "react";
 import Link from "next/link";
 import MobileStickyFooter from "@/components/molecules/MobileStickyFooter";
 import { BLOCKTICKETS_GREEN, BLOCKTICKETS_LOCKUP, BLOCKTICKETS_NAVY } from "@/lib/branding";
+import { fluidSize } from "@/lib/shopperFluidType";
 
 export type WalletChromeItem = {
   id: string;
@@ -40,6 +39,7 @@ function itemStyle(active: boolean, where: "desktop" | "mobile"): CSSProperties 
       fontFamily: "inherit",
       fontSize: fluidSize(14),
       fontWeight: 600,
+      lineHeight: 1.5,
       color: active ? BLOCKTICKETS_NAVY : "rgba(255,255,255,0.78)",
       background: active ? BLOCKTICKETS_GREEN : "transparent",
       border: "none",
@@ -57,8 +57,9 @@ function itemStyle(active: boolean, where: "desktop" | "mobile"): CSSProperties 
     display: "flex",
     alignItems: "center",
     justifyContent: "center",
-    fontSize: fluidSize(14),
+    fontSize: fluidSize(13),
     fontWeight: 600,
+    lineHeight: 1.5,
     color: active ? BLOCKTICKETS_NAVY : "#8a93a3",
     background: active ? BLOCKTICKETS_GREEN : "transparent",
     border: "none",

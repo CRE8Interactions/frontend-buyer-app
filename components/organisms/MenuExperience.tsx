@@ -14,7 +14,6 @@ import MobileStickyFooter from "@/components/molecules/MobileStickyFooter";
 import PageLoader from "@/components/molecules/PageLoader";
 import { BrandedLoader } from "@/components/molecules/RouteLoader";
 import Modal from "@/components/molecules/Modal";
-import ShopperFluidPage from "@/components/templates/ShopperFluidType";
 import useAutoFocus from "@/hooks/useAutoFocus";
 import {
   createPublicMenuPaymentIntent,
@@ -475,8 +474,8 @@ export default function MenuExperience({
 
   if (showGate) {
     return (
-      <ShopperFluidPage className="mx-auto max-w-md pb-16">
-        <h1 className="text-[36px] font-semibold tracking-[-0.02em]">
+      <div className="mx-auto max-w-md pb-16">
+        <h1 className="text-[clamp(28px,4vw,36px)] font-semibold tracking-[-0.02em]">
           Where are you sitting?
         </h1>
         <p className={`mt-2 text-[15px] ${muted}`}>
@@ -550,16 +549,16 @@ export default function MenuExperience({
             Continue
           </BrandedActionButton>
         </form>
-      </ShopperFluidPage>
+      </div>
     );
   }
 
   return (
-    <ShopperFluidPage className="mx-auto max-w-2xl pb-28">
+    <div className="mx-auto max-w-2xl pb-28">
       <p className="text-[12px] font-semibold uppercase tracking-[0.12em] text-[#6e7180]">
         {isPickup ? "Pickup menu" : "Seat delivery"}
       </p>
-      <h1 className="mt-2 text-[36px] font-semibold tracking-[-0.02em]">
+      <h1 className="mt-2 text-[clamp(28px,4vw,36px)] font-semibold tracking-[-0.02em]">
         {locationName || menuKeyLabel}
       </h1>
       {!isPickup ? (
@@ -570,7 +569,7 @@ export default function MenuExperience({
 
       {confirmation ? (
         <div className={`${lightCard} mt-8 p-6 text-center`}>
-          <h2 className="text-[16px] font-semibold">Order received</h2>
+          <h2 className="text-[22px] font-semibold">Order received</h2>
           <p className="mt-2 text-[#6e7180]">
             Order #{confirmation.orderNumber}
           </p>
@@ -782,7 +781,7 @@ export default function MenuExperience({
           )}
         </Modal>
       ) : null}
-    </ShopperFluidPage>
+    </div>
   );
 }
 

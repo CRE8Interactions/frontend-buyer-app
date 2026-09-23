@@ -3,7 +3,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import AppShell from "@/components/templates/AppShell";
-import ShopperFluidPage from "@/components/templates/ShopperFluidType";
 import BackChip from "@/components/molecules/BackChip";
 import EmptyState from "@/components/molecules/EmptyState";
 import PageLoader from "@/components/molecules/PageLoader";
@@ -135,7 +134,6 @@ export default function AccessPassDetailClient({
 
   return (
     <AppShell>
-      <ShopperFluidPage className="min-h-0">
       <div className="mx-auto max-w-[720px] pb-16">
         <BackChip href={backHref} />
 
@@ -246,7 +244,6 @@ export default function AccessPassDetailClient({
           </>
         )}
       </div>
-      </ShopperFluidPage>
     </AppShell>
   );
 }

@@ -30,6 +30,7 @@ import {
 import Link from "next/link";
 import { useParams, usePathname, useSearchParams } from "next/navigation";
 import { QRCodeSVG } from "qrcode.react";
+import EntryQrSheet from "@/components/molecules/EntryQrSheet";
 import MobileStickyFooter from "@/components/molecules/MobileStickyFooter";
 import WalletChrome from "@/components/organisms/WalletChrome";
 import {
@@ -71,7 +72,6 @@ import {
 import {
   transferConfirmTitle,
   transferLoadingTitle,
-  transferRecipientDescriptor,
   transferRecipientNotifyCopy,
   transferSuccessBody,
   transferSuccessTitle,
@@ -267,7 +267,7 @@ const walletEmptyState: React.CSSProperties = {
   textAlign: "center",
 };
 const eyebrow: React.CSSProperties = {
-  fontSize: fluidSize(10), fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.12em", color: MUTE,
+  fontSize: fluidSize(10), fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.12em", lineHeight: 1.5, color: MUTE,
 };
 
 function EventScheduleMeta({
@@ -285,6 +285,7 @@ function EventScheduleMeta({
         gap: 8,
         fontSize: fluidSize(12),
         fontWeight: 600,
+        lineHeight: 1.5,
         color: today ? INK : SUB,
       }}
     >
@@ -293,6 +294,7 @@ function EventScheduleMeta({
           style={{
             fontSize: fluidSize(11),
             fontWeight: 600,
+            lineHeight: 1.5,
             textTransform: "uppercase",
             letterSpacing: "0.10em",
             color: INK,
@@ -376,7 +378,7 @@ function LogoTile({ logo, brand, initials, size, big }: { logo?: string; brand: 
         // eslint-disable-next-line @next/next/no-img-element
         <img src={logo} alt={initials} onError={() => setErr(true)} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
       ) : (
-        <span style={{ fontSize: big ? 13 : 11, fontWeight: 600, letterSpacing: "0.04em", color: "rgba(255,255,255,0.94)", textAlign: "center", padding: 4, lineHeight: 1.1 }}>{initials}</span>
+        <span style={{ fontSize: big ? fluidSize(13) : fluidSize(11), fontWeight: 600, letterSpacing: "0.04em", color: "rgba(255,255,255,0.94)", textAlign: "center", padding: 4, lineHeight: 1.1 }}>{initials}</span>
       )}
     </div>
   );
@@ -752,7 +754,7 @@ function SplitAttractionHero({
 }
 
 type EventT = {
-  title: string; when: string; doors: string; venue: string; city: string; address: string;
+  title: string; when: string; whenDate?: string; doors: string; venue: string; city: string; address: string;
   id: string; brand: string; initials: string; blurb: string; rec: string; opp: string;
   teams: { name: string; role: string; rec: string; initials: string; brand: string; logo?: string }[];
   tickets: { id?: number | string; seat: string; holder: string; code: string; raw?: Record<string, unknown> }[];
@@ -782,6 +784,7 @@ function detailToEventT(d: CartEventDetail, isCart = false): EventT {
     id: d.key,
     title: d.title,
     when: d.when,
+    whenDate: d.whenDate,
     doors: d.doors,
     venue: d.venue,
     city: d.city,
@@ -935,7 +938,7 @@ function acceptTargetFromUpcoming(row: CartEventSummary): ConfirmAcceptTransfer 
     seatLines,
     eventCount: row.passEventCount,
     remainingCount: row.passRemainingCount,
-    when: row.when,
+    when: row.whenDate || row.when,
   };
 }
 
@@ -972,7 +975,7 @@ function acceptTargetFromEventDetail(ev: EventT): ConfirmAcceptTransfer {
     on: ev.incomingTransferOn,
     ticketCount: ev.tickets.length,
     seatLines,
-    when: ev.when,
+    when: ev.whenDate || ev.when,
   };
 }
 
@@ -2124,7 +2127,8 @@ export default function SeasonTickets({
     };
   }, [eventOrderPending, matchupHeroKey, matchupHeroReadyKey]);
 
-  const ticketBadge = ev.ticketLabel || "Season Tickets";
+  /* Only package inventory carries the hero badge — singles belong to no pack. */
+  const packagedTicketBadge = ev.packageName ? "Season Tickets" : "";
   const showMatchupCards = attractionCards.length >= 2;
   const eventPosterSrc =
     ev.posterSrc ||
@@ -2711,14 +2715,14 @@ export default function SeasonTickets({
 
   /* ---------- small building blocks ---------- */
   const chip = (on: boolean): React.CSSProperties => ({
-    fontFamily: "inherit", flexShrink: 0, display: "flex", alignItems: "center", gap: 8, fontSize: fluidSize(14), fontWeight: 600,
+    fontFamily: "inherit", flexShrink: 0, display: "flex", alignItems: "center", gap: 8, fontSize: fluidSize(14), fontWeight: 600, lineHeight: 1.5,
     whiteSpace: "nowrap", background: on ? INK : "#fff", color: on ? "#fff" : INK,
     border: `1px solid ${on ? INK : "rgba(5,27,53,0.12)"}`, borderRadius: 999,
     padding: mobile ? "13px 16px" : "10px 16px", minHeight: mobile ? 46 : undefined, cursor: "pointer",
   });
   const accentBtn: React.CSSProperties = { fontFamily: "inherit", fontSize: fluidSize(14), fontWeight: 600, color: INK, background: ACCENT, border: "none", borderRadius: 999, padding: "13px 20px", cursor: "pointer" };
   const ghostBtn: React.CSSProperties = { fontFamily: "inherit", fontSize: fluidSize(14), fontWeight: 600, color: INK, background: "#fff", border: "1px solid rgba(5,27,53,0.14)", borderRadius: 999, padding: "13px 20px", cursor: "pointer" };
-  const backBtn: React.CSSProperties = { fontFamily: "inherit", alignSelf: "flex-start", display: "flex", alignItems: "center", gap: 8, fontSize: fluidSize(14), fontWeight: 600, color: INK, background: "#fff", border: "1px solid rgba(5,27,53,0.12)", borderRadius: 999, padding: "9px 16px 9px 12px", cursor: "pointer" };
+  const backBtn: React.CSSProperties = { fontFamily: "inherit", alignSelf: "flex-start", display: "flex", alignItems: "center", gap: 8, fontSize: fluidSize(14), lineHeight: 1.5, fontWeight: 600, color: INK, background: "#fff", border: "1px solid rgba(5,27,53,0.12)", borderRadius: 999, padding: "9px 16px 9px 12px", cursor: "pointer" };
   const mobileEventBackBtn: React.CSSProperties = {
     fontFamily: "inherit",
     flexShrink: 0,
@@ -3121,6 +3125,7 @@ export default function SeasonTickets({
   const pillCountStyle = (on: boolean): React.CSSProperties => ({
     fontSize: fluidSize(12),
     fontWeight: 500,
+    lineHeight: 1.5,
     fontVariantNumeric: "tabular-nums",
     minWidth: "2ch",
     textAlign: "center",
@@ -3199,7 +3204,7 @@ export default function SeasonTickets({
           <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: fluidSize(12), fontWeight: 600, color: SUB }}>
             {gameCount} {gameCount === 1 ? "game" : "games"}
           </div>
-          <div style={{ fontSize: fluidSize(17), fontWeight: 600, letterSpacing: "-0.015em", lineHeight: 1.2, overflow: "hidden", textOverflow: "ellipsis" }}>
+          <div style={{ fontSize: mobile ? fluidSize(15) : 17, fontWeight: 600, letterSpacing: "-0.015em", lineHeight: 1.2, overflow: "hidden", textOverflow: "ellipsis" }}>
             {row.name}
           </div>
           {!mobile && row.venueLine ? (
@@ -3436,7 +3441,7 @@ export default function SeasonTickets({
         <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: fluidSize(12), fontWeight: 600, color: SUB }}>
           {row.eventCount} {row.eventCount === 1 ? "game" : "games"}
         </div>
-        <div style={{ fontSize: fluidSize(17), fontWeight: 600, letterSpacing: "-0.015em", lineHeight: 1.2, overflow: "hidden", textOverflow: "ellipsis" }}>
+        <div style={{ fontSize: mobile ? fluidSize(15) : 17, fontWeight: 600, letterSpacing: "-0.015em", lineHeight: 1.2, overflow: "hidden", textOverflow: "ellipsis" }}>
           {row.name}
         </div>
         {!mobile && row.venueLine ? (
@@ -3548,11 +3553,11 @@ export default function SeasonTickets({
     };
     const body = (
       <>
-      <div style={{ minWidth: 0, display: "flex", flexDirection: "column", gap: 5, flex: 1 }}>
+      <div style={{ minWidth: 0, display: "flex", flexDirection: "column", gap: 5, flex: 1, lineHeight: 1.5 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: fluidSize(12), fontWeight: 600, color: SUB }}>
           {row.remainingCount} of {row.voucherCount} {row.voucherCount === 1 ? "voucher" : "vouchers"} left
         </div>
-        <div style={{ fontSize: fluidSize(17), fontWeight: 600, letterSpacing: "-0.015em", lineHeight: 1.2, overflow: "hidden", textOverflow: "ellipsis" }}>
+        <div style={{ fontSize: mobile ? fluidSize(15) : 17, fontWeight: 600, letterSpacing: "-0.015em", lineHeight: 1.2, overflow: "hidden", textOverflow: "ellipsis" }}>
           {row.name}
         </div>
         {!mobile && row.venueLine ? (
@@ -3586,7 +3591,7 @@ export default function SeasonTickets({
         }}
       >
         {!row.thumb ? (
-          <span style={{ position: "relative", fontSize: fluidSize(17), fontWeight: 600, letterSpacing: "0.06em", color: "rgba(255,255,255,0.94)", whiteSpace: "nowrap" }}>
+          <span style={{ position: "relative", fontSize: 17, fontWeight: 600, letterSpacing: "0.06em", lineHeight: 1.5, color: "rgba(255,255,255,0.94)", whiteSpace: "nowrap" }}>
             FLEX
           </span>
         ) : null}
@@ -3633,7 +3638,7 @@ export default function SeasonTickets({
     >
       <div style={{ minWidth: 0, display: "flex", flexDirection: "column", gap: 5, flex: 1 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: fluidSize(12), fontWeight: 600, color: SUB }}>6 games</div>
-        <div style={{ fontSize: fluidSize(17), fontWeight: 600, letterSpacing: "-0.015em", lineHeight: 1.2 }}>NMS Football Season Seats</div>
+        <div style={{ fontSize: mobile ? fluidSize(15) : 17, fontWeight: 600, letterSpacing: "-0.015em", lineHeight: 1.2 }}>NMS Football Season Seats</div>
         {!mobile && <div style={{ fontSize: fluidSize(13), color: SUB }}>Aggie Memorial Stadium · Las Cruces, NM</div>}
         <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 2, flexWrap: "wrap" }}>
           <span style={{ fontSize: fluidSize(12), fontWeight: 600, color: INK, border: "1px solid rgba(5,27,53,0.16)", borderRadius: 8, padding: "5px 10px", whiteSpace: "nowrap" }}>Season tickets</span>
@@ -3705,22 +3710,22 @@ export default function SeasonTickets({
               : walletEventScheduleLine(row)
           }
         />
-        <div style={{ fontSize: fluidSize(17), fontWeight: 600, letterSpacing: "-0.015em", lineHeight: 1.2, overflow: "hidden", textOverflow: "ellipsis" }}>
+        <div style={{ fontSize: mobile ? fluidSize(15) : 17, fontWeight: 600, letterSpacing: "-0.015em", lineHeight: 1.2, overflow: "hidden", textOverflow: "ellipsis" }}>
           {row.name}
         </div>
         {!incomingPass && !mobile && row.venueLine ? (
-          <div style={{ fontSize: fluidSize(13), color: SUB, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+          <div style={{ fontSize: fluidSize(13), lineHeight: 1.5, color: SUB, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
             {row.venueLine}
           </div>
         ) : null}
         <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 2, flexWrap: "wrap" }}>
           {available ? (
             incomingPass && passEventCountLabel ? (
-              <span style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: fluidSize(12), fontWeight: 600, color: INK, border: "1px solid rgba(5,27,53,0.16)", borderRadius: 8, padding: "5px 10px", whiteSpace: "nowrap", alignSelf: "flex-start" }}>
+              <span style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: fluidSize(12), fontWeight: 600, lineHeight: 1.5, color: INK, border: "1px solid rgba(5,27,53,0.16)", borderRadius: 8, padding: "5px 10px", whiteSpace: "nowrap", alignSelf: "flex-start" }}>
                 {passEventCountLabel}
               </span>
             ) : (
-            <span style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: fluidSize(12), fontWeight: 600, color: INK, border: "1px solid rgba(5,27,53,0.16)", borderRadius: 8, padding: "5px 10px", whiteSpace: "nowrap", alignSelf: "flex-start" }}>
+            <span style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: fluidSize(12), fontWeight: 600, lineHeight: 1.5, color: INK, border: "1px solid rgba(5,27,53,0.16)", borderRadius: 8, padding: "5px 10px", whiteSpace: "nowrap", alignSelf: "flex-start" }}>
               <TicketIcon />
             {row.ticketCount} {row.ticketCount === 1 ? "ticket" : "tickets"}
           </span>
@@ -3920,7 +3925,7 @@ export default function SeasonTickets({
               <div style={{ fontSize: fluidSize(11), fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.08em", opacity: 0.8 }}>
                 {row.typeLabel}
               </div>
-              <div style={{ marginTop: 5, fontSize: fluidSize(16), fontWeight: 600, lineHeight: browseLeading("h3") }}>
+              <div style={{ marginTop: 5, fontSize: mobile ? fluidSize(15) : 17, fontWeight: 600, lineHeight: 1.25 }}>
                 {row.name}
               </div>
             </div>
@@ -3947,7 +3952,7 @@ export default function SeasonTickets({
           </div>
           {row.nextEvent ? (
             <>
-              <div style={{ fontSize: fluidSize(17), fontWeight: 600 }}>{row.nextEvent.name || "Upcoming event"}</div>
+              <div style={{ fontSize: mobile ? fluidSize(15) : 17, fontWeight: 600 }}>{row.nextEvent.name || "Upcoming event"}</div>
               <div style={{ fontSize: fluidSize(13), color: SUB }}>
                 {[row.nextEvent.venue?.name, nextEventWhen].filter(Boolean).join(" · ")}
               </div>
@@ -4040,9 +4045,9 @@ export default function SeasonTickets({
             />
           ) : null}
           <div style={{ minWidth: 0 }}>
-            <div style={{ fontSize: fluidSize(15), fontWeight: 600, lineHeight: 1.25 }}>{row.name}</div>
+            <div style={{ fontSize: mobile ? fluidSize(15) : 17, fontWeight: 600, lineHeight: 1.25 }}>{row.name}</div>
             {row.seat && row.seat !== "Ticket" ? (
-              <div style={{ marginTop: 4, fontSize: fluidSize(12), color: SUB }}>{row.seat}</div>
+              <div style={{ marginTop: 4, fontSize: mobile ? fluidSize(12) : fluidSize(14), color: SUB }}>{row.seat}</div>
             ) : null}
           </div>
         </div>
@@ -4221,10 +4226,10 @@ export default function SeasonTickets({
             style={{ width: 48, height: 48, borderRadius: 10, objectFit: "cover", background: FIELD }}
           />
           <div style={{ minWidth: 0, flex: 1 }}>
-            <div style={{ fontSize: fluidSize(14), fontWeight: 600, lineHeight: 1.25 }}>
+            <div style={{ fontSize: mobile ? fluidSize(15) : 17, fontWeight: 600, letterSpacing: "-0.015em", lineHeight: 1.2 }}>
               {event.name || "Event"}
             </div>
-            <div style={{ marginTop: 4, fontSize: fluidSize(12), color: SUB }}>
+            <div style={{ marginTop: 4, fontSize: fluidSize(13), lineHeight: 1.5, color: SUB }}>
               {highlighted
                 ? [event.venue?.name, when].filter(Boolean).join(" · ")
                 : when}
@@ -4354,7 +4359,7 @@ export default function SeasonTickets({
                     <div style={{ fontSize: fluidSize(10), fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.08em", opacity: 0.82 }}>
                       {pass.typeLabel}
                     </div>
-                    <h1 style={{ margin: "4px 0 0", fontSize: fluidSize(25), fontWeight: 600, letterSpacing: "-0.025em", lineHeight: browseLeading("h3") }}>
+                    <h1 style={{ margin: "4px 0 0", fontSize: mobile ? fluidSize(15) : 17, fontWeight: 600, letterSpacing: "-0.015em", lineHeight: 1.2 }}>
                       {pass.name}
                     </h1>
                     {pass.checkInCode ? (
@@ -4450,8 +4455,8 @@ export default function SeasonTickets({
 
   const WalletPageTitle = (title: string) => (
     <div style={{ display: "flex", alignItems: "flex-end", justifyContent: "space-between", gap: 16 }}>
-      <h1 style={{ margin: 0, fontSize: fluidSize(42), fontWeight: 600, letterSpacing: "-0.03em", lineHeight: browseLeading("h2") }}>{title}</h1>
-      {!mobile && <div style={{ fontSize: fluidSize(13), color: MUTE, whiteSpace: "nowrap" }}>{email}</div>}
+      <h1 style={{ margin: 0, fontSize: mobile ? 32 : 42, fontWeight: 600, letterSpacing: "-0.03em", lineHeight: 1 }}>{title}</h1>
+      {!mobile && <div style={{ fontSize: fluidSize(13), lineHeight: 1.5, color: MUTE, whiteSpace: "nowrap" }}>{email}</div>}
     </div>
   );
 
@@ -4507,16 +4512,16 @@ export default function SeasonTickets({
                 ))}
                 {showDemoSchedule ? (
                 <div onClick={() => openFlexPack(null)} style={{ ...card, borderRadius: 20, position: "relative", overflow: "hidden", minHeight: mobile ? 124 : undefined, boxSizing: "border-box", padding: cardPad, paddingRight: mobile ? 112 : 240, display: "flex", alignItems: "center", gap: mobile ? 14 : 18, cursor: "pointer" }}>
-                  <div style={{ minWidth: 0, display: "flex", flexDirection: "column", gap: 5, flex: 1 }}>
+                  <div style={{ minWidth: 0, display: "flex", flexDirection: "column", gap: 5, flex: 1, lineHeight: 1.5 }}>
                     <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: fluidSize(12), fontWeight: 600, color: "#b5791e" }}><span style={{ width: 5, height: 5, borderRadius: 999, background: "#b5791e" }} />2 of 4 credits left</div>
-                    <div style={{ fontSize: fluidSize(17), fontWeight: 600, letterSpacing: "-0.015em", lineHeight: 1.2 }}>Aggie Pick-4 Flex Pack</div>
+                    <div style={{ fontSize: mobile ? fluidSize(15) : 17, fontWeight: 600, letterSpacing: "-0.015em", lineHeight: 1.2 }}>Aggie Pick-4 Flex Pack</div>
                     {!mobile && <div style={{ fontSize: fluidSize(13), color: SUB }}>Redeem any four home games</div>}
                     <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 2, flexWrap: "wrap" }}>
                       <span style={{ fontSize: fluidSize(12), fontWeight: 600, color: INK, border: "1px solid rgba(5,27,53,0.16)", borderRadius: 8, padding: "5px 10px" }}>Flex pack</span>
                     </div>
                   </div>
                   <div style={{ position: "absolute", top: 0, right: 0, bottom: 0, width: mobile ? 124 : 268, background: CRIMSON, clipPath: `polygon(${mobile ? "14%" : "17%"} 0, 100% 0, 100% 100%, 0 100%)`, display: "flex", alignItems: "center", justifyContent: "center", padding: `14px 14px 14px ${mobile ? 24 : 46}px`, boxSizing: "border-box" }}>
-                    <span style={{ position: "relative", fontSize: fluidSize(17), fontWeight: 600, letterSpacing: "0.06em", color: "rgba(255,255,255,0.94)", whiteSpace: "nowrap" }}>PICK-4</span>
+                    <span style={{ position: "relative", fontSize: 17, fontWeight: 600, letterSpacing: "0.06em", lineHeight: 1.5, color: "rgba(255,255,255,0.94)", whiteSpace: "nowrap" }}>PICK-4</span>
                   </div>
                 </div>
                 ) : null}
@@ -4714,6 +4719,7 @@ export default function SeasonTickets({
     width: "100%",
     textAlign: "left",
     fontSize: fluidSize(14),
+    lineHeight: 1.5,
     fontWeight: 600,
     color: INK,
     background: "#fff",
@@ -4859,7 +4865,7 @@ export default function SeasonTickets({
           >
             <LogoTile logo={tm.logo} brand={tm.brand} initials={tm.initials} size={56} big />
             <div style={{ minWidth: 0, display: "flex", flexDirection: "column", gap: 2 }}>
-              <div style={{ ...eyebrow, letterSpacing: "0.10em" }}>{tm.role}</div>
+              <div style={{ ...eyebrow, letterSpacing: "0.10em", lineHeight: 1.5 }}>{tm.role}</div>
               <div style={{ fontSize: fluidSize(16), fontWeight: 600, letterSpacing: "-0.01em", lineHeight: 1.2 }}>
                 {tm.name}
               </div>
@@ -4876,8 +4882,8 @@ export default function SeasonTickets({
       <div style={{ position: "fixed", left: 0, right: 0, top: 0, zIndex: 45, boxSizing: "border-box", background: INK, boxShadow: "0 12px 30px -18px rgba(3,16,31,0.9)", padding: "calc(env(safe-area-inset-top) + 12px) 16px 12px", display: "flex", alignItems: "center", gap: 12 }}>
         {EventBackControl(mobileEventBackBtn, <BackArrow />, "Back")}
         <div style={{ minWidth: 0, display: "flex", flexDirection: "column", gap: 2 }}>
-          <div style={{ fontSize: fluidSize(16), fontWeight: 600, color: "#fff", letterSpacing: "-0.015em", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{ev.title}</div>
-          <div style={{ fontSize: fluidSize(12), color: "rgba(255,255,255,0.78)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{ev.when} · {ev.venue}</div>
+          <div style={{ fontSize: fluidSize(16), fontWeight: 600, lineHeight: 1.5, color: "#fff", letterSpacing: "-0.015em", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{ev.title}</div>
+          <div style={{ fontSize: fluidSize(12), lineHeight: 1.5, color: "rgba(255,255,255,0.78)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{ev.when} · {ev.venue}</div>
         </div>
       </div>
 
@@ -4889,7 +4895,7 @@ export default function SeasonTickets({
             Pending transfer
           </div>
           <div style={{ fontSize: fluidSize(13), lineHeight: browseLeading("body"), color: SUB }}>
-            Accept this transfer to add {ev.tickets.length === 1 ? "this ticket" : "these tickets"} to your account.
+            Accept this transfer to add {ev.tickets.length > 1 ? "these tickets" : "this ticket"} to your account.
           </div>
         </div>
       ) : null}
@@ -4900,11 +4906,13 @@ export default function SeasonTickets({
             {/* card header — matchup */}
             <div style={{ position: "relative", height: 210, overflow: "hidden", background: "#06203c" }}>
               {renderEventHero({ radius: 0, logoSize: 72, compactTextSize: 16, fullTextSize: 16 })}
-              <div style={{ position: "absolute", inset: 0, background: "linear-gradient(180deg, rgba(6,8,14,0.05) 30%, rgba(6,8,14,0.86) 100%)" }} />
-              <div style={{ position: "absolute", left: 16, top: 16, fontSize: fluidSize(11), fontWeight: 600, letterSpacing: "0.16em", textTransform: "uppercase", color: "#fff", background: "rgba(10,12,18,0.55)", backdropFilter: "blur(6px)", borderRadius: 999, padding: "6px 11px" }}>{ticketBadge}</div>
-              <div style={{ position: "absolute", left: 0, right: 0, bottom: 0, padding: 16, display: "flex", flexDirection: "column", gap: 4 }}>
+              <div style={{ position: "absolute", inset: 0, zIndex: 5, background: "linear-gradient(180deg, rgba(6,8,14,0.05) 30%, rgba(6,8,14,0.86) 100%)" }} />
+              {packagedTicketBadge ? (
+                <div data-testid="wallet-ticket-card-badge" style={{ position: "absolute", zIndex: 6, left: 16, top: 16, fontSize: fluidSize(10), fontWeight: 600, lineHeight: 1.5, letterSpacing: "0.16em", textTransform: "uppercase", color: "#fff", background: "rgba(10,12,18,0.55)", backdropFilter: "blur(6px)", borderRadius: 999, padding: "6px 11px" }}>{packagedTicketBadge}</div>
+              ) : null}
+              <div style={{ position: "absolute", zIndex: 6, left: 0, right: 0, bottom: 0, padding: 16, display: "flex", flexDirection: "column", gap: 4 }}>
                 <div style={{ fontSize: fluidSize(16), fontWeight: 600, color: "#fff", letterSpacing: "-0.02em", lineHeight: 1.25, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{ev.title}</div>
-                <div style={{ fontSize: fluidSize(14), color: "rgba(255,255,255,0.74)" }}>{ev.when} · {ev.venue}</div>
+                <div style={{ fontSize: fluidSize(12), lineHeight: 1.5, color: "rgba(255,255,255,0.74)" }}>{ev.when} · {ev.venue}</div>
               </div>
             </div>
 
@@ -4918,13 +4926,13 @@ export default function SeasonTickets({
                 <div style={{ display: "flex", alignItems: "baseline", gap: 14 }}>
                   {[["Sec", t.sec], ["Row", t.row], ["Seat", t.seatNo]].map(([k, v]) => (
                     <div key={k} style={{ display: "flex", alignItems: "baseline", gap: 6 }}>
-                      <span style={{ fontSize: fluidSize(12), fontWeight: 600, letterSpacing: "0.14em", textTransform: "uppercase", color: MUTE }}>{k}</span>
-                      <span style={{ fontSize: fluidSize(24), fontWeight: 600, letterSpacing: "-0.025em", fontVariantNumeric: "tabular-nums" }}>{v === "—" ? "GA" : v}</span>
+                      <span style={{ fontSize: fluidSize(10), fontWeight: 600, lineHeight: 1.5, letterSpacing: "0.14em", textTransform: "uppercase", color: MUTE }}>{k}</span>
+                      <span style={{ fontSize: 24, fontWeight: 600, lineHeight: 1.5, letterSpacing: "-0.025em", fontVariantNumeric: "tabular-nums" }}>{v === "—" ? "GA" : v}</span>
                     </div>
                   ))}
                 </div>
                 {t.entryLine ? (
-                  <div style={{ fontSize: fluidSize(15), color: SUB }}>{t.entryLine}</div>
+                  <div style={{ fontSize: fluidSize(13), lineHeight: 1.5, color: SUB }}>{t.entryLine}</div>
                 ) : null}
               </div>
             </div>
@@ -4937,7 +4945,7 @@ export default function SeasonTickets({
                   disabled={ticketWalletSaving !== null}
                   aria-busy={ticketWalletSaving === String(t.id || t.code) || undefined}
                   onClick={() => void addTicketCardToWallet(t)}
-                  style={{ fontFamily: "inherit", width: "100%", display: "flex", alignItems: "center", justifyContent: "center", gap: 10, minHeight: 50, fontSize: fluidSize(16), fontWeight: 600, color: passWalletTheme?.buttonColor, background: passWalletTheme?.buttonBg, border: "none", borderRadius: 12, cursor: ticketWalletSaving ? "default" : "pointer", opacity: ticketWalletSaving ? 0.7 : 1 }}
+                  style={{ fontFamily: "inherit", width: "100%", display: "flex", alignItems: "center", justifyContent: "center", gap: 10, minHeight: 50, fontSize: fluidSize(15), fontWeight: 600, lineHeight: 1.5, color: passWalletTheme?.buttonColor, background: passWalletTheme?.buttonBg, border: "none", borderRadius: 12, cursor: ticketWalletSaving ? "default" : "pointer", opacity: ticketWalletSaving ? 0.7 : 1 }}
                 >
                   <ButtonBusyContents
                     loading={ticketWalletSaving === String(t.id || t.code)}
@@ -4951,8 +4959,8 @@ export default function SeasonTickets({
               </button>
               ) : null}
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
-                <button onClick={() => { setDetail(t); setModal("qr"); }} style={{ fontFamily: "inherit", minHeight: 48, fontSize: fluidSize(16), fontWeight: 600, color: INK, background: "#fff", border: `1px solid ${ACCENT}`, borderRadius: 12, cursor: "pointer" }}>View QR-Code</button>
-                <button onClick={() => { setDetail(t); setModal("details"); }} style={{ fontFamily: "inherit", minHeight: 48, fontSize: fluidSize(16), fontWeight: 600, color: INK, background: "#fff", border: "1px solid rgba(5,27,53,0.14)", borderRadius: 12, cursor: "pointer" }}>Ticket details</button>
+                <button onClick={() => { setDetail(t); setModal("qr"); }} style={{ fontFamily: "inherit", minHeight: 48, fontSize: fluidSize(14), fontWeight: 600, lineHeight: 1.5, color: INK, background: "#fff", border: `1px solid ${ACCENT}`, borderRadius: 12, cursor: "pointer" }}>View QR-Code</button>
+                <button onClick={() => { setDetail(t); setModal("details"); }} style={{ fontFamily: "inherit", minHeight: 48, fontSize: fluidSize(14), fontWeight: 600, lineHeight: 1.5, color: INK, background: "#fff", border: "1px solid rgba(5,27,53,0.14)", borderRadius: 12, cursor: "pointer" }}>Ticket details</button>
               </div>
               {ticketWalletError ? (
                 <p role="alert" style={{ margin: 0, color: DANGER, fontSize: fluidSize(13) }}>{ticketWalletError}</p>
@@ -4963,7 +4971,7 @@ export default function SeasonTickets({
             <div style={{ borderTop: "1px dashed rgba(5,27,53,0.16)", padding: "11px 18px", display: "flex", alignItems: "center", justifyContent: "center" }}>
               <div style={{ display: "flex", alignItems: "center", gap: 7 }}>
                 <svg viewBox="0 0 24 24" fill="none" stroke={INK} strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" style={{ width: 14, height: 14 }}><path d="M12 3l7 3v5c0 4.4-2.9 8.3-7 10-4.1-1.7-7-5.6-7-10V6l7-3z" /><path d="M9 12l2 2 4-4" /></svg>
-                <span style={{ fontSize: fluidSize(12), fontWeight: 600, letterSpacing: "0.12em", textTransform: "uppercase", color: INK }}>Verified Ticket</span>
+                <span style={{ fontSize: fluidSize(11), fontWeight: 600, lineHeight: 1.5, letterSpacing: "0.12em", textTransform: "uppercase", color: INK }}>Verified Ticket</span>
               </div>
             </div>
           </div>
@@ -5011,8 +5019,9 @@ export default function SeasonTickets({
                 fontFamily: "inherit",
                 width: "100%",
                 minHeight: 50,
-                fontSize: fluidSize(16),
+                fontSize: fluidSize(14),
                 fontWeight: 600,
+                lineHeight: 1.5,
                 color: INK,
                 background: "#fff",
                 border: "1px solid rgba(5,27,53,0.14)",
@@ -5069,9 +5078,9 @@ export default function SeasonTickets({
         <div style={{ minWidth: 0, display: "flex", flexDirection: "column", gap: 12 }}>
           <div style={{ ...card, borderRadius: 20, padding: cardPad, display: "flex", flexDirection: "column", gap: 12 }}>
             <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-              <h1 className="st-ev-title" style={{ margin: 0, fontWeight: 600, letterSpacing: "-0.03em", lineHeight: browseLeading("h2") }}>{ev.title}</h1>
-              <div style={{ display: "flex", flexWrap: "wrap", gap: "4px 20px", fontSize: fluidSize(14), color: SUB }}>
-                <span style={{ fontWeight: 600, color: INK }}>{ev.when}</span><span>Doors {ev.doors}</span>
+              <h1 className="st-ev-title" style={{ margin: 0, fontWeight: 600, letterSpacing: "-0.03em", ...(mobile ? { lineHeight: browseLeading("h2") } : { fontSize: 30, lineHeight: 1.1 }) }}>{ev.title}</h1>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: "4px 20px", fontSize: fluidSize(14), lineHeight: 1.5, color: SUB }}>
+                <span style={{ fontWeight: 600, color: INK }}>{ev.when}</span>{ev.doors ? <span>Doors open {ev.doors}</span> : null}
               </div>
             </div>
             <div style={{ height: 1, background: "rgba(5,27,53,0.08)" }} />
@@ -5079,7 +5088,7 @@ export default function SeasonTickets({
             {ev.blurb ? (
               <>
                 <div style={{ height: 1, background: "rgba(5,27,53,0.08)" }} />
-                <p style={{ margin: 0, fontSize: fluidSize(14), lineHeight: browseLeading("body"), color: FAINT }}>{ev.blurb}</p>
+                <p style={{ margin: 0, fontSize: fluidSize(14), lineHeight: browseLeading("body"), color: FAINT, whiteSpace: "pre-line" }}>{ev.blurb}</p>
               </>
             ) : null}
           </div>
@@ -5092,8 +5101,8 @@ export default function SeasonTickets({
                   <img src={SEATMAP_THUMB} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
                 </div>
                 <div style={{ flex: 1, minWidth: 150, display: "flex", flexDirection: "column", gap: 5 }}>
-                  <span style={{ alignSelf: "flex-start", fontSize: fluidSize(11), fontWeight: 600, color: INK, background: SOFT, borderRadius: 999, padding: "4px 10px" }}>{t.offerBadge || "Tickets"}</span>
-                  <div style={{ fontSize: fluidSize(17), fontWeight: 600, letterSpacing: "-0.015em" }}>{t.seat}</div>
+                  <span style={{ alignSelf: "flex-start", fontSize: fluidSize(11), lineHeight: 1.5, fontWeight: 600, color: INK, background: SOFT, borderRadius: 999, padding: "4px 10px" }}>{t.offerBadge || (ev.packageName || routedPackageUUID ? "Season tickets" : "Tickets")}</span>
+                  <div style={{ fontSize: mobile ? fluidSize(17) : 17, lineHeight: 1.5, fontWeight: 600, letterSpacing: "-0.015em" }}>{t.seat}</div>
                 </div>
                 <div className="st-ev-seat-actions">
                   <button
@@ -5104,6 +5113,7 @@ export default function SeasonTickets({
                     style={{
                       ...ghostBtn,
                       fontSize: fluidSize(13),
+                      lineHeight: 1.5,
                       padding: "11px 18px",
                       display: "inline-flex",
                       alignItems: "center",
@@ -5122,13 +5132,13 @@ export default function SeasonTickets({
                       Print PDF
                     </ButtonBusyContents>
                   </button>
-                  <button onClick={() => { setDetail(t); setModal("details"); }} style={{ fontFamily: "inherit", fontSize: fluidSize(13), fontWeight: 600, color: INK, background: "#f1f3f8", border: "none", borderRadius: 999, padding: "11px 18px", cursor: "pointer" }}>Details</button>
+                  <button onClick={() => { setDetail(t); setModal("details"); }} style={{ fontFamily: "inherit", fontSize: fluidSize(13), lineHeight: 1.5, fontWeight: 600, color: INK, background: "#f1f3f8", border: "none", borderRadius: 999, padding: "11px 18px", cursor: "pointer" }}>Details</button>
                 </div>
               </div>
             ))}
             <div style={{ padding: `14px ${padX}px`, background: "#fbfcfe", display: "flex", alignItems: "center", gap: 12 }}>
               <svg viewBox="0 0 24 24" fill="none" stroke={INK} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" style={{ width: 18, height: 18, flexShrink: 0 }}><rect x="3" y="3" width="7" height="7" /><rect x="14" y="3" width="7" height="7" /><rect x="3" y="14" width="7" height="7" /><line x1="14" y1="14" x2="21" y2="14" /><line x1="14" y1="18" x2="18" y2="18" /><line x1="18" y1="21" x2="21" y2="21" /></svg>
-              <div style={{ fontSize: fluidSize(13), lineHeight: browseLeading("body"), color: FAINT }}><strong style={{ fontWeight: 600, color: INK }}>Your phone is your ticket.</strong> Show the QR code straight from your phone to scan at entry, or add each ticket to your Apple/Google wallet ahead of time.</div>
+              <div style={{ fontSize: fluidSize(13), lineHeight: mobile ? browseLeading("body") : 1.5, color: FAINT }}><strong style={{ fontWeight: 600, color: INK }}>Your phone is your ticket.</strong> Show the QR code straight from your phone to scan at entry, or add each ticket to your Apple/Google wallet ahead of time.</div>
             </div>
           </div>
         </div>
@@ -5136,9 +5146,9 @@ export default function SeasonTickets({
         <aside className="st-ev-aside">
           {pendingIncomingEvent ? (
             <div style={{ ...card, borderRadius: 20, padding: cardPad, display: "flex", flexDirection: "column", gap: 10, border: "1px solid rgba(192,122,18,0.28)", background: "#fffaf2" }}>
-              <div style={{ ...eyebrow, paddingBottom: 4, color: "#c07a12" }}>Pending transfer</div>
-              <div style={{ fontSize: fluidSize(13), lineHeight: browseLeading("body"), color: SUB }}>
-                Accept this transfer to add {ev.tickets.length === 1 ? "this ticket" : "these tickets"} to your account.
+              <div style={{ ...eyebrow, paddingBottom: 4, lineHeight: 1.5, color: "#c07a12" }}>Pending transfer</div>
+              <div style={{ fontSize: fluidSize(13), lineHeight: mobile ? browseLeading("body") : 1.5, color: SUB }}>
+                Accept this transfer to add {ev.tickets.length > 1 ? "these tickets" : "this ticket"} to your account.
               </div>
               {renderAcceptTransferButton(acceptTargetFromEventDetail(ev), "wallet-event", {
                 width: "100%",
@@ -5147,7 +5157,7 @@ export default function SeasonTickets({
             </div>
           ) : null}
           <div style={{ ...card, borderRadius: 20, padding: cardPad, display: "flex", flexDirection: "column", gap: 10 }}>
-            <div style={{ ...eyebrow, paddingBottom: 4 }}>Manage</div>
+            <div style={{ ...eyebrow, paddingBottom: 4, lineHeight: 1.5 }}>Manage</div>
             {canTransferEvent ? (
               <button type="button" onClick={openTransfer} style={manageActionBtnStyle}>Transfer</button>
             ) : null}
@@ -5167,6 +5177,7 @@ export default function SeasonTickets({
                 gap: 8,
                 textAlign: "left",
                 fontSize: fluidSize(14),
+                lineHeight: 1.5,
                 fontWeight: 600,
                 color: INK,
                 background: "#fff",
@@ -5189,26 +5200,26 @@ export default function SeasonTickets({
             {printError ? <p role="alert" style={{ margin: 0, color: "#c2394a", fontSize: fluidSize(13) }}>{printError}</p> : null}
           </div>
           <div style={{ ...card, borderRadius: 20, padding: cardPad, display: "flex", flexDirection: "column", gap: 8 }}>
-            <div style={eyebrow}>Getting there</div>
-            <div style={{ fontSize: fluidSize(15), fontWeight: 600 }}>{ev.venue}</div>
-            <div style={{ fontSize: fluidSize(13), lineHeight: browseLeading("body"), color: SUB }}>{ev.address}</div>
+            <div style={{ ...eyebrow, lineHeight: 1.5 }}>Getting there</div>
+            <div style={{ fontSize: fluidSize(15), lineHeight: 1.5, fontWeight: 600 }}>{ev.venue}</div>
+            <div style={{ fontSize: fluidSize(13), lineHeight: mobile ? browseLeading("body") : 1.5, color: SUB }}>{ev.address}</div>
             {directionsHref ? (
               <a
                 href={directionsHref}
                 target="_blank"
                 rel="noopener noreferrer"
-                style={{ ...accentBtn, alignSelf: "flex-start", marginTop: 6, display: "flex", alignItems: "center", gap: 7, fontSize: fluidSize(13), padding: "11px 18px", textDecoration: "none" }}
+                style={{ ...accentBtn, alignSelf: "flex-start", marginTop: 6, display: "flex", alignItems: "center", gap: 7, fontSize: fluidSize(13), lineHeight: 1.5, padding: "11px 18px", textDecoration: "none" }}
               >
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" style={{ width: 14, height: 14 }}><polygon points="3 11 22 2 13 21 11 13 3 11" /></svg>Get directions
               </a>
             ) : null}
           </div>
           <div style={{ ...card, borderRadius: 20, padding: cardPad, display: "flex", flexDirection: "column" }}>
-            <div style={{ ...eyebrow, paddingBottom: 10 }}>Order</div>
+            <div style={{ ...eyebrow, paddingBottom: 10, lineHeight: 1.5 }}>Order</div>
             {orderRows.map((o) => (
               <div key={o.k} style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 14, padding: "9px 0", borderTop: "1px solid rgba(5,27,53,0.07)" }}>
-                <div style={{ fontSize: fluidSize(13), color: MUTE }}>{o.k}</div>
-                <div style={{ fontSize: fluidSize(13), fontWeight: 600, fontVariantNumeric: "tabular-nums", textAlign: "right" }}>{o.v}</div>
+                <div style={{ fontSize: fluidSize(13), lineHeight: 1.5, color: MUTE }}>{o.k}</div>
+                <div style={{ fontSize: fluidSize(13), lineHeight: 1.5, fontWeight: 600, fontVariantNumeric: "tabular-nums", textAlign: "right" }}>{o.v}</div>
               </div>
             ))}
           </div>
@@ -5242,7 +5253,7 @@ export default function SeasonTickets({
                 today={today}
                 scheduleLine={
                   today
-                    ? `Gates open · ${g.doors}`
+                    ? `Doors open · ${g.doors}`
                     : `${g.date} · ${g.time}`
                 }
               />
@@ -5311,7 +5322,7 @@ export default function SeasonTickets({
         )}
         <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
           <div style={eyebrow}>Season tickets</div>
-          <h1 style={{ margin: 0, fontSize: fluidSize(28), fontWeight: 600, letterSpacing: "-0.025em", lineHeight: browseLeading("h3") }}>{title}</h1>
+          <h1 style={{ margin: 0, fontSize: mobile ? fluidSize(26) : 30, fontWeight: 600, letterSpacing: "-0.025em", lineHeight: browseLeading("h3") }}>{title}</h1>
           <div style={{ fontSize: fluidSize(13), color: SUB }}>
             {eventCount} {eventCount === 1 ? "game" : "games"}
             {selectedSeasonPackage?.venueLine ? ` · ${selectedSeasonPackage.venueLine}` : ""}
@@ -5376,12 +5387,12 @@ export default function SeasonTickets({
   });
   const flexRemaining = vouchers.filter((v) => v.status === "Active").length;
   const Package = () => (
-    <div style={{ maxWidth: 1100, margin: "0 auto", padding: bodyPad, display: "flex", flexDirection: "column", gap: 16 }}>
+    <div style={{ maxWidth: 1100, margin: "0 auto", padding: bodyPad, display: "flex", flexDirection: "column", gap: 16, lineHeight: 1.5 }}>
       {EventBackControl(backBtn, <><BackArrow />All tickets</>, undefined, false)}
       <div style={{ ...card, borderRadius: 24, boxShadow: "0 1px 2px rgba(5,27,53,0.05), 0 20px 46px -22px rgba(5,27,53,0.45)", padding: cardPad, display: "flex", flexDirection: "column", gap: 14 }}>
         <div style={{ display: "flex", flexDirection: "column", gap: 7 }}>
           <div style={eyebrow}>FLEX PACKAGE</div>
-          <h1 style={{ margin: 0, fontSize: fluidSize(28), fontWeight: 600, letterSpacing: "-0.025em", lineHeight: browseLeading("h3") }}>{selectedFlexPack?.name || "Aggie Pick-4 Flex Pack"}</h1>
+          <h1 style={{ margin: 0, fontSize: mobile ? 22 : 28, fontWeight: 600, letterSpacing: "-0.025em", lineHeight: 1.12 }}>{selectedFlexPack?.name || "Aggie Pick-4 Flex Pack"}</h1>
         </div>
         <div style={{ display: "grid", gridTemplateColumns: mobile ? "1fr 1fr" : "repeat(3, 1fr)", gap: 10 }}>
           {[{ k: "Vouchers", v: String(vouchers.length) }, { k: "Status", v: flexRemaining > 0 ? "Active" : "Redeemed" }, { k: "Credits left", v: `${flexRemaining} of ${vouchers.length}` }].map((s) => (
@@ -5394,7 +5405,7 @@ export default function SeasonTickets({
       </div>
       <div style={{ display: "flex", gap: 10, background: SOFT, borderRadius: 16, padding: "14px 16px" }}>
         <svg viewBox="0 0 24 24" fill="none" stroke={INK} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" style={{ width: 17, height: 17, flexShrink: 0, marginTop: 1 }}><circle cx="12" cy="12" r="10" /><line x1="12" y1="16" x2="12" y2="12" /><line x1="12" y1="8" x2="12.01" y2="8" /></svg>
-        <div style={{ fontSize: fluidSize(13), lineHeight: browseLeading("body"), color: INK }}>Redeem a voucher for a ticket at the Box Office for any available game.</div>
+        <div style={{ fontSize: fluidSize(13), lineHeight: 1.5, color: INK }}>Redeem a voucher for a ticket at the Box Office for any available game.</div>
       </div>
       <div style={{ ...card, borderRadius: 20, overflow: "hidden" }}>
         <div style={{ padding: `15px ${padX}px`, display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 12, borderBottom: "1px solid rgba(5,27,53,0.08)" }}>
@@ -5768,68 +5779,46 @@ export default function SeasonTickets({
 
   const AccessPassQrModal = () => {
     if (!qrPass?.pass.checkInCode) return null;
-    const { pass, kind } = qrPass;
+    const { pass } = qrPass;
     const seatLine = pass.seat && pass.seat !== "Ticket" ? pass.seat : "";
-    const title =
-      kind === "season pass" && seatLine ? `${pass.name} · ${seatLine}` : pass.name;
+    const title = seatLine || pass.name;
     return (
-      <div style={overlay}>
-        <div
-          role="dialog"
-          aria-modal="true"
-          aria-labelledby="access-pass-qr-title"
-          onClick={(event) => event.stopPropagation()}
-          style={{ ...sheet, maxWidth: 500, padding: 0, gap: 0, overflow: "hidden" }}
-          className={mobileSheetClass ? `${mobileSheetClass} st-access-pass-qr-sheet` : "st-access-pass-qr-sheet"}
-        >
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, padding: "18px 22px", borderBottom: `1px solid ${LINE}` }}>
-            <h2 id="access-pass-qr-title" style={{ margin: 0, minWidth: 0, flex: 1, fontSize: fluidSize(11), fontWeight: 600, color: INK, letterSpacing: "-0.01em", lineHeight: 1.35 }}>
-              {title}
-            </h2>
-            {closeX(closeQrPass, "Close QR code")}
-          </div>
-          <div style={{ padding: mobile ? "26px 20px 30px" : "28px 28px 34px", display: "flex", flexDirection: "column", alignItems: "center", gap: 18 }}>
-            <div role="img" aria-label={`Enlarged QR code for ${pass.name}`} style={{ padding: 10, background: "#fff", lineHeight: 0 }}>
-              <QRCodeSVG value={pass.checkInCode} size={mobile ? 220 : 256} fgColor={INK} />
-            </div>
-            <p style={{ margin: 0, color: SUB, fontSize: fluidSize(15), lineHeight: browseLeading("body"), textAlign: "center" }}>
-              Show this code at entry for any included event.
-            </p>
-            {passWallet ? (
-              <div style={{ width: "100%", display: "flex", flexDirection: "column", alignItems: "center", gap: 10 }}>
-                <div style={eyebrow}>Add this pass to your phone wallet</div>
-                <button
-                  type="button"
-                  onClick={addQrPassToPhoneWallet}
-                  disabled={passWalletSaving}
-                  aria-busy={passWalletSaving || undefined}
-                  style={{ fontFamily: "inherit", width: "100%", display: "flex", alignItems: "center", justifyContent: "center", gap: 10, minHeight: 50, fontSize: fluidSize(15), fontWeight: 600, color: passWalletTheme?.buttonColor, background: passWalletTheme?.buttonBg, border: "none", borderRadius: 999, cursor: passWalletSaving ? "default" : "pointer", opacity: passWalletSaving ? 0.7 : 1 }}
-                >
-                  <ButtonBusyContents
-                    loading={passWalletSaving}
-                    loadingLabel="Adding…"
-                    spinnerColor={passWalletTheme?.buttonColor}
-                    trackColor="rgba(255,255,255,0.35)"
-                  >
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" style={{ width: 18, height: 18 }}><rect x="2" y="6" width="20" height="13" rx="3" /><path d="M2 11h20" /></svg>
-                    {phoneWalletLabel(passWallet)}
-                  </ButtonBusyContents>
-                </button>
-                {passWalletError ? (
-                  <div role="alert" style={{ fontSize: fluidSize(13), lineHeight: browseLeading("body"), color: DANGER, textAlign: "center" }}>
-                    {passWalletError}
-                  </div>
-                ) : null}
+      <EntryQrSheet
+        title={title}
+        value={pass.checkInCode}
+        qrAriaLabel={`Enlarged QR code for ${pass.name}`}
+        hint="Show this code at entry for any included event."
+        onClose={closeQrPass}
+        mobile={mobile}
+      >
+        {passWallet ? (
+          <div style={{ width: "100%", display: "flex", flexDirection: "column", alignItems: "center", gap: 10 }}>
+            <div style={eyebrow}>Add this pass to your phone wallet</div>
+            <button
+              type="button"
+              onClick={addQrPassToPhoneWallet}
+              disabled={passWalletSaving}
+              aria-busy={passWalletSaving || undefined}
+              style={{ fontFamily: "inherit", width: "100%", display: "flex", alignItems: "center", justifyContent: "center", gap: 10, minHeight: 50, fontSize: fluidSize(15), fontWeight: 600, color: passWalletTheme?.buttonColor, background: passWalletTheme?.buttonBg, border: "none", borderRadius: 999, cursor: passWalletSaving ? "default" : "pointer", opacity: passWalletSaving ? 0.7 : 1 }}
+            >
+              <ButtonBusyContents
+                loading={passWalletSaving}
+                loadingLabel="Adding…"
+                spinnerColor={passWalletTheme?.buttonColor}
+                trackColor="rgba(255,255,255,0.35)"
+              >
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" style={{ width: 18, height: 18 }}><rect x="2" y="6" width="20" height="13" rx="3" /><path d="M2 11h20" /></svg>
+                {phoneWalletLabel(passWallet)}
+              </ButtonBusyContents>
+            </button>
+            {passWalletError ? (
+              <div role="alert" style={{ fontSize: fluidSize(13), lineHeight: browseLeading("body"), color: DANGER, textAlign: "center" }}>
+                {passWalletError}
               </div>
             ) : null}
           </div>
-          <div style={{ padding: "18px 24px 24px", borderTop: `1px solid ${LINE}`, display: "flex", justifyContent: "flex-end" }}>
-            <button type="button" onClick={closeQrPass} style={{ fontFamily: "inherit", fontSize: fluidSize(15), fontWeight: 600, color: INK, background: ACCENT, border: "none", borderRadius: 999, padding: "12px 26px", minHeight: 44, cursor: "pointer" }}>
-              Close
-            </button>
-          </div>
-        </div>
-      </div>
+        ) : null}
+      </EntryQrSheet>
     );
   };
 
@@ -5855,21 +5844,23 @@ export default function SeasonTickets({
   ];
 
   const DetailsModal = () => (
-    <div style={overlay}>
-      <div className={mobile ? `st-details-sheet ${mobileSheetClass ?? ""}`.trim() : undefined} onClick={(e) => e.stopPropagation()} style={{ ...sheet, maxHeight: mobile ? "92vh" : "88vh", overflowY: "auto", gap: 16 }}>
+    <div
+      onClick={() => setModal(null)}
+      style={{ ...overlay, alignItems: "center", padding: 18 }}
+    >
+      <div className="st-details-sheet" onClick={(e) => e.stopPropagation()} style={{ ...sheet, maxWidth: 460, borderRadius: 26, padding: 22, paddingBottom: 22, maxHeight: "88vh", overflowY: "auto", gap: 16, boxShadow: "0 30px 70px -30px rgba(5,27,53,0.6)" }}>
         <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 12 }}>
-          <h2 style={{ margin: 0, fontSize: fluidSize(22), fontWeight: 600, letterSpacing: "-0.02em" }}>Ticket details</h2>
+          <h2 style={{ margin: 0, fontSize: 21, lineHeight: 1.5, fontWeight: 600, letterSpacing: "-0.02em" }}>Ticket details</h2>
           {closeX(() => setModal(null))}
         </div>
         <div style={{ display: "flex", flexDirection: "column" }}>
           {detailRows.map((d) => (
             <div key={d.k} style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 16, padding: "13px 0", borderBottom: "1px solid rgba(5,27,53,0.07)" }}>
-              <div style={{ fontSize: fluidSize(13), color: MUTE, flexShrink: 0 }}>{d.k}</div>
-              <div style={{ fontSize: fluidSize(14), fontWeight: 600, textAlign: "right", fontVariantNumeric: "tabular-nums", overflowWrap: "anywhere" }}>{d.v}</div>
+              <div style={{ fontSize: fluidSize(13), lineHeight: 1.5, color: MUTE, flexShrink: 0 }}>{d.k}</div>
+              <div style={{ fontSize: fluidSize(14), lineHeight: 1.5, fontWeight: 600, textAlign: "right", fontVariantNumeric: "tabular-nums", overflowWrap: "anywhere" }}>{d.v}</div>
             </div>
           ))}
         </div>
-        <button onClick={() => setModal(null)} style={{ fontFamily: "inherit", width: "100%", fontSize: fluidSize(15), fontWeight: 600, color: INK, background: "#f1f3f8", border: "none", borderRadius: 999, padding: 15, cursor: "pointer" }}>Done</button>
       </div>
     </div>
   );
@@ -5877,36 +5868,14 @@ export default function SeasonTickets({
   const TicketQrModal = () => {
     if (!detail?.code) return null;
     return (
-      <div style={overlay}>
-        <div
-          role="dialog"
-          aria-modal="true"
-          aria-labelledby="ticket-qr-title"
-          onClick={(event) => event.stopPropagation()}
-          className={mobileSheetClass}
-          style={{ ...sheet, maxWidth: mobile ? "100%" : 500, padding: 0, gap: 0, overflow: "hidden" }}
-        >
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, padding: "18px 22px", borderBottom: `1px solid ${LINE}` }}>
-            <h2 id="ticket-qr-title" style={{ margin: 0, fontSize: fluidSize(16), fontWeight: 600, color: INK, letterSpacing: "-0.01em" }}>
-              Scan at entrance
-            </h2>
-            {closeX(() => setModal(null), "Close QR code")}
-          </div>
-          <div style={{ padding: mobile ? "26px 20px 30px" : "28px 28px 34px", display: "flex", flexDirection: "column", alignItems: "center", gap: 18 }}>
-            <div role="img" aria-label={`QR code for ${detail.seat || "ticket"}`} style={{ padding: 10, background: "#fff", lineHeight: 0 }}>
-              <QRCodeSVG value={detail.code} size={mobile ? 220 : 256} fgColor={INK} />
-            </div>
-            <p style={{ margin: 0, color: SUB, fontSize: fluidSize(15), lineHeight: browseLeading("body"), textAlign: "center" }}>
-              Scan this code at entry
-            </p>
-          </div>
-          <div style={{ padding: "18px 24px 24px", borderTop: `1px solid ${LINE}`, display: "flex", justifyContent: "flex-end" }}>
-            <button type="button" onClick={() => setModal(null)} style={{ fontFamily: "inherit", fontSize: fluidSize(15), fontWeight: 600, color: INK, background: ACCENT, border: "none", borderRadius: 999, padding: "12px 26px", minHeight: 44, cursor: "pointer" }}>
-              Close
-            </button>
-          </div>
-        </div>
-      </div>
+      <EntryQrSheet
+        title={detail.seat || "Ticket"}
+        value={detail.code}
+        qrAriaLabel={`QR code for ${detail.seat || "ticket"}`}
+        hint="Scan this code at entry"
+        onClose={() => setModal(null)}
+        mobile={mobile}
+      />
     );
   };
 
@@ -5916,7 +5885,7 @@ export default function SeasonTickets({
         <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 12 }}>
           <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
             <div style={eyebrow}>{field?.group}</div>
-            <h2 style={{ margin: 0, fontSize: fluidSize(22), fontWeight: 600, letterSpacing: "-0.02em", lineHeight: browseLeading("h3") }}>{field?.heading}</h2>
+            <h2 style={{ margin: 0, fontSize: 21, lineHeight: 1.5, fontWeight: 600, letterSpacing: "-0.02em" }}>{field?.heading}</h2>
           </div>
           {closeX(() => setModal(null))}
         </div>
@@ -5967,12 +5936,7 @@ export default function SeasonTickets({
   const tfSel = tf?.sel || [];
   const tfSelectedTickets = tfTickets.filter(({ key }) => tfSel.includes(key));
   const tfKind: TransferModalKind = tf?.passKind ?? "ticket";
-  const tfCount = tfKind === "ticket" ? tfSel.length : 1;
-  const tfPassDescriptor = transferRecipientDescriptor(tfKind, {
-    count: tfCount,
-    passName: tf?.pass?.name,
-    passSeat: tf?.pass?.seat,
-  });
+  const tfCount = tfKind === "ticket" ? Math.max(tfSel.length, tfSelectedTickets.length) : 1;
   const tfCanNext =
     !tfSaving &&
     (tfStep === 1
@@ -6223,8 +6187,8 @@ export default function SeasonTickets({
     setTf({ ...tf, step: tfStep + 1 });
   };
   const transferModalType = {
-    title: fluidSize(22),
-    stepTitle: fluidSize(16),
+    title: 21,
+    stepTitle: 17,
     meta: fluidSize(14),
     metaMuted: fluidSize(13),
     body: fluidSize(14),
@@ -6232,7 +6196,7 @@ export default function SeasonTickets({
     fieldValue: fluidSize(15),
     button: fluidSize(15),
     error: fluidSize(13),
-    success: fluidSize(26),
+    success: 21,
   };
   const transferChipStyle = {
     width: 92,
@@ -6244,22 +6208,22 @@ export default function SeasonTickets({
   };
   const transferChipType = {
     seatLabel: fluidSize(12),
-    seatNo: fluidSize(22),
+    seatNo: 22,
   };
   const TransferModal = () => (
     <div style={{ ...overlay, zIndex: 85, alignItems: mobile ? "flex-end" : "center", padding: mobile ? 0 : 32 }}>
       <div className={mobile ? "st-sheet-up st-transfer-sheet" : undefined} onClick={(e) => e.stopPropagation()} style={{ ...sheet, maxWidth: mobile ? "100%" : 460, width: "100%", maxHeight: mobile ? "92vh" : "88vh", overflowY: "auto", borderRadius: mobile ? "26px 26px 0 0" : 26, paddingBottom: mobile ? "calc(22px + env(safe-area-inset-bottom))" : 22 }}>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, paddingBottom: 16, borderBottom: "1px solid rgba(5,27,53,0.08)" }}>
-          <h2 style={{ margin: 0, fontSize: transferModalType.title, fontWeight: 600, letterSpacing: "-0.02em" }}>Transfer</h2>
+          <h2 style={{ margin: 0, fontSize: transferModalType.title, lineHeight: 1.5, fontWeight: 600, letterSpacing: "-0.02em" }}>Transfer</h2>
           {tfSaving ? null : closeX(() => void closeTransferModal())}
         </div>
 
         {tfStep === 1 && (
           <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-            <div style={{ fontSize: transferModalType.stepTitle, fontWeight: 600, letterSpacing: "-0.015em" }}>Select tickets to transfer</div>
+            <div style={{ fontSize: transferModalType.stepTitle, lineHeight: 1.5, fontWeight: 600, letterSpacing: "-0.015em" }}>Select tickets to transfer</div>
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
-              <div style={{ fontSize: transferModalType.meta, fontWeight: 600, color: mobile ? SUB : FAINT }}>{tfRowLabel}</div>
-              <div style={{ fontSize: transferModalType.metaMuted, fontWeight: 600, color: mobile ? SUB : MUTE }}>{tfTickets.length} {tfTickets.length === 1 ? "ticket" : "tickets"}</div>
+              <div style={{ fontSize: transferModalType.meta, lineHeight: 1.5, fontWeight: 600, color: mobile ? SUB : FAINT }}>{tfRowLabel}</div>
+              <div style={{ fontSize: transferModalType.metaMuted, lineHeight: 1.5, fontWeight: 600, color: mobile ? SUB : MUTE }}>{tfTickets.length} {tfTickets.length === 1 ? "ticket" : "tickets"}</div>
             </div>
             <div style={{ display: "flex", flexWrap: "wrap", gap: 10 }}>
               {tfTickets.map(({ key, seatNo, isGA, ariaLabel }) => {
@@ -6267,9 +6231,9 @@ export default function SeasonTickets({
                 return (
                   <button key={key} type="button" aria-pressed={picked} aria-label={ariaLabel} onClick={() => setTf({ ...tf!, sel: picked ? tfSel.filter((x) => x !== key) : [...tfSel, key] })} style={{ fontFamily: "inherit", ...transferChipStyle, display: "flex", flexDirection: "column", alignItems: "center", gap: isGA ? 0 : 2, background: picked ? ACCENT : FIELD, color: INK, border: `1px solid ${picked ? ACCENT : "rgba(5,27,53,0.10)"}`, borderRadius: 16, cursor: "pointer" }}>
                     {!isGA ? (
-                      <span style={{ fontSize: transferChipType.seatLabel, fontWeight: 500, color: picked ? "rgba(255,255,255,0.72)" : MUTE }}>Seat</span>
+                      <span style={{ fontSize: transferChipType.seatLabel, lineHeight: 1.5, fontWeight: 500, color: picked ? "rgba(255,255,255,0.72)" : MUTE }}>Seat</span>
                     ) : null}
-                    <span style={{ fontSize: transferChipType.seatNo, fontWeight: 600, letterSpacing: "-0.02em", lineHeight: 1 }}>{seatNo}</span>
+                    <span style={{ fontSize: transferChipType.seatNo, fontWeight: 600, letterSpacing: "-0.02em", lineHeight: 1.5 }}>{seatNo}</span>
                   </button>
                 );
               })}
@@ -6287,15 +6251,6 @@ export default function SeasonTickets({
             }}
           >
             <div style={{ fontSize: transferModalType.stepTitle, fontWeight: 600, letterSpacing: "-0.015em" }}>Enter the recipient&apos;s email address</div>
-            <p style={{ margin: 0, fontSize: transferModalType.body, lineHeight: browseLeading("body"), color: SUB }}>
-              Enter the email address of the person receiving{" "}
-              {tfKind === "ticket" ? (
-                tfPassDescriptor
-              ) : (
-                <strong style={{ color: INK, fontWeight: 600 }}>{tfPassDescriptor}</strong>
-              )}
-              .
-            </p>
             <p style={{ margin: 0, fontSize: transferModalType.body, lineHeight: browseLeading("body"), color: SUB }}>
               {transferRecipientNotifyCopy(tfKind, tfCount)}
             </p>
@@ -6337,9 +6292,9 @@ export default function SeasonTickets({
               {tfSelectedTickets.map(({ key, seatNo, isGA }) => (
                 <div key={key} style={{ ...transferChipStyle, display: "flex", flexDirection: "column", alignItems: "center", gap: isGA ? 0 : 2, background: ACCENT, color: INK, borderRadius: 16 }}>
                   {!isGA ? (
-                    <span style={{ fontSize: transferChipType.seatLabel, fontWeight: 500, color: "rgba(255,255,255,0.72)" }}>Seat</span>
+                    <span style={{ fontSize: transferChipType.seatLabel, lineHeight: 1.5, fontWeight: 500, color: "rgba(255,255,255,0.72)" }}>Seat</span>
                   ) : null}
-                  <span style={{ fontSize: transferChipType.seatNo, fontWeight: 600, letterSpacing: "-0.02em", lineHeight: 1 }}>{seatNo}</span>
+                  <span style={{ fontSize: transferChipType.seatNo, fontWeight: 600, letterSpacing: "-0.02em", lineHeight: 1.5 }}>{seatNo}</span>
                 </div>
               ))}
             </div>
@@ -6376,14 +6331,14 @@ export default function SeasonTickets({
             <div style={{ width: 78, height: 78, borderRadius: 999, background: GREEN, display: "flex", alignItems: "center", justifyContent: "center" }}>
               <svg viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth={2.6} strokeLinecap="round" strokeLinejoin="round" style={{ width: 38, height: 38 }}><polyline points="20 6 9 17 4 12" /></svg>
             </div>
-            <div style={{ fontSize: transferModalType.success, fontWeight: 600, letterSpacing: "-0.02em", textAlign: "center" }}>{transferSuccessTitle(tfKind, tfCount)}</div>
+            <div style={{ fontSize: transferModalType.success, lineHeight: 1.5, fontWeight: 600, letterSpacing: "-0.02em", textAlign: "center" }}>{transferSuccessTitle(tfKind, tfCount)}</div>
             <p style={{ margin: 0, fontSize: transferModalType.body, lineHeight: browseLeading("body"), color: SUB, textAlign: "center" }}>{transferSuccessBody(tfKind, tfCount)}</p>
           </div>
         )}
 
         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
           {(tfStep === 2 && !tf?.passKind) || (tfStep === 3 && !tfSaving) ? (
-            <button type="button" onClick={() => { setTfEmailErr(null); setTfError(""); setTf({ ...tf!, step: tfStep - 1 }); }} style={{ fontFamily: "inherit", flexShrink: 0, display: "flex", alignItems: "center", gap: 8, fontSize: transferModalType.button, fontWeight: 600, color: INK, background: "#fff", border: "none", padding: "14px 12px", minHeight: 48, cursor: "pointer" }}><BackArrow />Back</button>
+            <button type="button" onClick={() => { setTfEmailErr(null); setTfError(""); setTf({ ...tf!, step: tfStep - 1 }); }} style={{ fontFamily: "inherit", flexShrink: 0, display: "flex", alignItems: "center", gap: 8, fontSize: transferModalType.button, lineHeight: 1.5, fontWeight: 600, color: INK, background: "#fff", border: "none", padding: "14px 12px", minHeight: 48, cursor: "pointer" }}><BackArrow />Back</button>
           ) : null}
           {tfStep === 4 && !tfSaving && (
             <Link href={walletSectionHref("listings")} onClick={() => { setListingsSnapshotStale(true); void closeTransferModal(); setListTab("active"); }} style={{ fontFamily: "inherit", flex: 1, display: "flex", alignItems: "center", justifyContent: "center", fontSize: transferModalType.button, fontWeight: 600, color: INK, background: "#f1f3f8", borderRadius: 999, padding: 14, minHeight: 48, textDecoration: "none", cursor: "pointer" }}>My transfers</Link>
@@ -6402,7 +6357,7 @@ export default function SeasonTickets({
             }}
             disabled={!tfCanNext || tfSaving}
             aria-busy={tfSaving || undefined}
-            style={{ fontFamily: "inherit", flex: 1, display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 8, fontSize: transferModalType.button, fontWeight: 600, color: tfCanNext ? INK : MUTE, background: tfCanNext ? ACCENT : "#d7dbe6", border: "none", borderRadius: 999, padding: 14, minHeight: 48, cursor: "pointer" }}
+            style={{ fontFamily: "inherit", flex: 1, display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 8, fontSize: transferModalType.button, lineHeight: 1.5, fontWeight: 600, color: tfCanNext ? INK : MUTE, background: tfCanNext ? ACCENT : "#d7dbe6", border: "none", borderRadius: 999, padding: 14, minHeight: 48, cursor: "pointer" }}
           >
             <ButtonBusyContents
               loading={tfSaving}
@@ -6422,7 +6377,7 @@ export default function SeasonTickets({
     <div style={overlay}>
       <div className={mobileSheetClass} onClick={(e) => e.stopPropagation()} style={{ ...sheet, maxHeight: mobile ? "92vh" : "88vh", gap: 16 }}>
         <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 12 }}>
-          <h2 style={{ margin: 0, fontSize: fluidSize(22), fontWeight: 600, letterSpacing: "-0.02em" }}>Your vouchers</h2>
+          <h2 style={{ margin: 0, fontSize: 21, lineHeight: 1.5, fontWeight: 600, letterSpacing: "-0.02em" }}>Your vouchers</h2>
           {closeX(() => setModal(null))}
         </div>
         <div style={{ flex: 1, minHeight: 0, overflowY: "auto", display: "flex", flexDirection: "column", gap: 8 }}>
@@ -6449,29 +6404,27 @@ export default function SeasonTickets({
         style={{
           ...overlay,
           zIndex: 88,
-          alignItems: mobile ? "flex-end" : "center",
-          padding: mobile ? 0 : 32,
+          alignItems: "center",
+          padding: mobile ? 18 : 32,
         }}
       >
         <div
-          className={mobile ? "st-transfer-sheet" : undefined}
           onClick={(e) => e.stopPropagation()}
           style={{
             ...sheet,
             maxWidth: mobile ? "100%" : 420,
             width: "100%",
-            maxHeight: mobile ? "92vh" : undefined,
+            maxHeight: mobile ? "88vh" : undefined,
             overflowY: mobile ? "auto" : undefined,
-            borderRadius: mobile ? "26px 26px 0 0" : 26,
+            borderRadius: 26,
             padding: 24,
-            paddingBottom: mobile
-              ? "calc(24px + env(safe-area-inset-bottom))"
-              : 24,
+            paddingBottom: 24,
             gap: 16,
+            boxShadow: "0 30px 70px -30px rgba(5,27,53,0.6)",
           }}
           aria-busy={confirmAcceptSaving || undefined}
         >
-          <h2 style={{ margin: 0, fontSize: fluidSize(21), fontWeight: 600, letterSpacing: "-0.02em", lineHeight: browseLeading("h3") }}>Accept this transfer?</h2>
+          <h2 style={{ margin: 0, fontSize: 21, lineHeight: 1.5, fontWeight: 600, letterSpacing: "-0.02em" }}>Accept this transfer?</h2>
           <p style={{ margin: 0, fontSize: fluidSize(14), lineHeight: browseLeading("body"), color: SUB }}>
             {transferAcceptConfirmCopy(acceptEntity.kind, acceptEntity.count)}
           </p>
@@ -6587,29 +6540,27 @@ export default function SeasonTickets({
         style={{
           ...overlay,
           zIndex: 88,
-          alignItems: mobile ? "flex-end" : "center",
-          padding: mobile ? 0 : 32,
+          alignItems: "center",
+          padding: mobile ? 18 : 32,
         }}
       >
         <div
-          className={mobile ? "st-transfer-sheet" : undefined}
           onClick={(e) => e.stopPropagation()}
           style={{
             ...sheet,
             maxWidth: mobile ? "100%" : 420,
             width: "100%",
-            maxHeight: mobile ? "92vh" : undefined,
+            maxHeight: mobile ? "88vh" : undefined,
             overflowY: mobile ? "auto" : undefined,
-            borderRadius: mobile ? "26px 26px 0 0" : 26,
+            borderRadius: 26,
             padding: 24,
-            paddingBottom: mobile
-              ? "calc(24px + env(safe-area-inset-bottom))"
-              : 24,
+            paddingBottom: 24,
             gap: 16,
+            boxShadow: "0 30px 70px -30px rgba(5,27,53,0.6)",
           }}
           aria-busy={confirmCancelSaving || undefined}
         >
-          <h2 style={{ margin: 0, fontSize: fluidSize(21), fontWeight: 600, letterSpacing: "-0.02em", lineHeight: browseLeading("h3") }}>Cancel this transfer?</h2>
+          <h2 style={{ margin: 0, fontSize: 21, lineHeight: 1.5, fontWeight: 600, letterSpacing: "-0.02em" }}>Cancel this transfer?</h2>
           <p style={{ margin: 0, fontSize: fluidSize(14), lineHeight: browseLeading("body"), color: SUB }}>{cancelReturnCopy}</p>
           <div style={{ display: "flex", flexDirection: "column", gap: 3, background: FIELD, borderRadius: 14, padding: "14px 16px" }}>
             <div style={{ fontSize: fluidSize(14), fontWeight: 600 }}>{confirmCancel?.title}</div>

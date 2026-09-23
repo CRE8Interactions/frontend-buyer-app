@@ -102,7 +102,7 @@ export default function GuestContact({
   return (
     <form className="flex flex-col gap-5" noValidate onSubmit={onSubmit}>
       <div>
-        <h1 className="font-semibold tracking-[-0.03em] [font-size:16px] min-[1120px]:[font-size:24px]">
+        <h1 className="font-semibold tracking-[-0.03em] [font-size:24px]">
           Where should we send your tickets?
         </h1>
         <p className="mt-1 text-[14px] text-[#6e7180]">

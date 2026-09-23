@@ -735,9 +735,9 @@ describe("Select tickets page (PremiumTicketing)", { timeout: 20_000 }, () => {
     expect(offers).toContainElement(map);
     expect(map.compareDocumentPosition(within(offers).getByText(/sort by price/i)) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(offers.compareDocumentPosition(trust) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-    expect(screen.getByText(/securely stored in your account/i)).toBeInTheDocument();
-    expect(screen.getByText(/safe from bots and scalpers/i)).toBeInTheDocument();
-    expect(screen.getByText(/taxes and fees included/i)).toBeInTheDocument();
+    expect(screen.getByText("Delivered to your account and scanned at the gate.")).toBeInTheDocument();
+    expect(screen.getByText("Every listing is verified inventory, safe from bots and scalpers.")).toBeInTheDocument();
+    expect(screen.getByText("Taxes and fees included on every listing. No surprises at checkout.")).toBeInTheDocument();
     expect(within(offers).getByText(/sort by price/i)).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /find on map/i })).toBeEnabled();
   });
@@ -814,6 +814,26 @@ describe("Select tickets page (PremiumTicketing)", { timeout: 20_000 }, () => {
     await user.click(screen.getByText(/sec m · row m3/i));
 
     expect(await screen.findByText("Ticket details")).toBeInTheDocument();
+    const details = document.querySelector(".ticket-details-sheet") as HTMLElement;
+    const inlineLine = (text: string) =>
+      within(details).getByText((_, node) => {
+        const el = node as HTMLElement | null;
+        return Boolean(
+          el &&
+            el.tagName === "DIV" &&
+            el.querySelector(":scope > span") &&
+            el.textContent === text,
+        );
+      });
+    expect(
+      inlineLine("Mobile tickets. Delivered to your account and scanned at the gate."),
+    ).toBeInTheDocument();
+    expect(
+      inlineLine("Buyer protection. Every listing is verified inventory, safe from bots and scalpers."),
+    ).toBeInTheDocument();
+    expect(
+      inlineLine("Prices are all-in. Taxes and fees included. No surprises at checkout."),
+    ).toBeInTheDocument();
     expect(screen.getByText(/seat location/i)).toBeInTheDocument();
     expect(screen.getByText(/1-4 tickets available/i)).toBeInTheDocument();
     expect(screen.getByText(/about this ticket/i)).toBeInTheDocument();
@@ -1583,9 +1603,10 @@ describe("Select tickets page (PremiumTicketing)", { timeout: 20_000 }, () => {
 
     await user.click(screen.getByRole("button", { name: /enter access code/i }));
     const unlockDialog = screen.getByRole("dialog");
-    expect(
-      within(unlockDialog).getByText(presaleGroup.offer.description),
-    ).toBeInTheDocument();
+    const unlockCopy = within(unlockDialog).getByText(
+      presaleGroup.offer.description,
+    );
+    expect(unlockCopy.tagName).toBe("PRE");
     expect(
       within(unlockDialog).getByText(
         /enter your access code to unlock this offer/i,
@@ -2261,13 +2282,11 @@ describe("Select tickets page (PremiumTicketing)", { timeout: 20_000 }, () => {
     expect(within(dialog).queryByText(/about this event/i)).not.toBeInTheDocument();
   });
 
-  it("truncates long event descriptions with Show more and Show less in event information", async () => {
+  it("shows the full event description without Show more", async () => {
     const longAbout = Array.from(
       { length: 12 },
       (_, i) => `Event detail paragraph ${i + 1}.`,
     ).join(" ");
-    vi.spyOn(HTMLElement.prototype, "scrollHeight", "get").mockReturnValue(240);
-    vi.spyOn(HTMLElement.prototype, "clientHeight", "get").mockReturnValue(80);
 
     const user = await renderReady({
       ...seatedTicketingFixture,
@@ -2276,14 +2295,9 @@ describe("Select tickets page (PremiumTicketing)", { timeout: 20_000 }, () => {
     await user.click(screen.getByText(/event information/i));
 
     const dialog = screen.getByRole("dialog", { name: /event information/i });
+    expect(within(dialog).getByText(longAbout)).toBeInTheDocument();
     expect(
-      within(dialog).getByRole("button", { name: /show more/i }),
-    ).toBeInTheDocument();
-    await user.click(within(dialog).getByRole("button", { name: /show more/i }));
-    expect(
-      within(dialog).getByRole("button", { name: /show less/i }),
-    ).toBeInTheDocument();
-
-    vi.restoreAllMocks();
+      within(dialog).queryByRole("button", { name: /show more/i }),
+    ).not.toBeInTheDocument();
   });
 });

@@ -34,9 +34,7 @@ import {
   type ApiImage,
 } from "@/lib/helpers";
 import {
-  BROWSE_DISPLAY,
   BROWSE_TRACK,
-  browseLeading,
   browsePageTypeCss,
   browsePx,
 } from "@/lib/browseType";
@@ -486,7 +484,8 @@ export default function BrowseHome() {
                 alignItems: "flex-end",
                 padding: mobile ? 24 : 44,
                 color: "#cdd9ea",
-                fontSize: BROWSE_DISPLAY.lede,
+                fontSize: mobile ? 14 : 16,
+                lineHeight: 1.5,
               }}
             >
               {error || "No featured events yet."}
@@ -546,8 +545,9 @@ export default function BrowseHome() {
                     color: GREEN,
                     borderRadius: 999,
                     padding: "6px 13px",
-                    fontSize: browsePx(12),
+                    fontSize: 11,
                     fontWeight: 600,
+                    lineHeight: 1.5,
                     letterSpacing: BROWSE_TRACK.ctaEyebrow,
                     textTransform: "uppercase",
                   }}
@@ -572,15 +572,15 @@ export default function BrowseHome() {
                 >
                   <div
                     style={{
-                      fontSize: BROWSE_DISPLAY.cta,
+                      fontSize: mobile ? 32 : 50,
                       fontWeight: 600,
-                      letterSpacing: BROWSE_TRACK.display,
-                      lineHeight: browseLeading("h2"),
+                      letterSpacing: "-0.03em",
+                      lineHeight: 1.03,
                     }}
                   >
                     {eventTitle(hero)}
                   </div>
-                  <div style={{ fontSize: BROWSE_DISPLAY.lede, color: "#cdd9ea" }}>
+                  <div style={{ fontSize: mobile ? 14 : 16, lineHeight: 1.5, color: "#cdd9ea" }}>
                     {[eventWhen(hero), eventVenueLine(hero)]
                       .filter(Boolean)
                       .join(" · ")}
@@ -599,8 +599,9 @@ export default function BrowseHome() {
                     href={eventPurchasePath(hero)}
                     style={{
                       fontFamily: "inherit",
-                      fontSize: browsePx(15),
+                      fontSize: 15,
                       fontWeight: 600,
+                      lineHeight: 1.5,
                       color: NAVY,
                       background: GREEN,
                       border: "none",
@@ -662,9 +663,10 @@ export default function BrowseHome() {
         <h2
           style={{
             margin: "0 0 18px",
-            fontSize: BROWSE_DISPLAY.h2,
+            fontSize: mobile ? 22 : 28,
             fontWeight: 600,
-            letterSpacing: BROWSE_TRACK.display,
+            letterSpacing: "-0.025em",
+            lineHeight: 1.5,
           }}
         >
           Teams &amp; venues
@@ -764,15 +766,15 @@ export default function BrowseHome() {
               >
                 <div
                   style={{
-                    fontSize: browsePx(14),
+                    fontSize: 13,
                     fontWeight: 600,
                     letterSpacing: BROWSE_TRACK.card,
-                    lineHeight: browseLeading("h3"),
+                    lineHeight: 1.3,
                   }}
                 >
                   {v.name}
                 </div>
-                <div style={{ fontSize: browsePx(12), color: "#6e7180" }}>
+                <div style={{ fontSize: 12, lineHeight: 1.5, color: "#6e7180" }}>
                   {v.count} {v.count === 1 ? "event" : "events"}
                 </div>
               </div>
@@ -801,14 +803,15 @@ export default function BrowseHome() {
           <h2
             style={{
               margin: 0,
-              fontSize: BROWSE_DISPLAY.h2,
+              fontSize: mobile ? 22 : 28,
               fontWeight: 600,
-              letterSpacing: BROWSE_TRACK.display,
+              letterSpacing: "-0.025em",
+              lineHeight: 1.5,
             }}
           >
             Events
           </h2>
-          <span style={{ fontSize: browsePx(13), color: "#6e7180" }}>
+          <span style={{ fontSize: 13, lineHeight: 1.5, color: "#6e7180" }}>
             {`${events.length} ${events.length === 1 ? "event" : "events"}`}
           </span>
         </div>
@@ -866,8 +869,9 @@ export default function BrowseHome() {
                       position: "absolute",
                       top: 12,
                       left: 12,
-                      fontSize: browsePx(10),
+                      fontSize: 10,
                       fontWeight: 600,
+                      lineHeight: 1.5,
                       letterSpacing: BROWSE_TRACK.label,
                       textTransform: "uppercase",
                       color: tag.tagInk,
@@ -899,8 +903,9 @@ export default function BrowseHome() {
                     {when && (
                       <div
                         style={{
-                          fontSize: browsePx(12),
+                          fontSize: 12,
                           fontWeight: 600,
+                          lineHeight: 1.5,
                           textTransform: "uppercase",
                           letterSpacing: BROWSE_TRACK.eyebrow,
                           color: "#7fbe4d",
@@ -911,17 +916,18 @@ export default function BrowseHome() {
                     )}
                     <div
                       style={{
-                        fontSize: 16,
+                        fontSize: 17,
                         fontWeight: 600,
-                        letterSpacing: BROWSE_TRACK.card,
-                        lineHeight: browseLeading("h3"),
+                        letterSpacing: "-0.015em",
+                        lineHeight: 1.25,
                       }}
                     >
                       {eventTitle(e)}
                     </div>
                     <div
                       style={{
-                        fontSize: browsePx(13),
+                        fontSize: 13,
+                        lineHeight: 1.5,
                         color: "#6e7180",
                         overflow: "hidden",
                         textOverflow: "ellipsis",
@@ -944,8 +950,9 @@ export default function BrowseHome() {
                   >
                     <span
                       style={{
-                        fontSize: browsePx(14),
+                        fontSize: 13,
                         fontWeight: 600,
+                        lineHeight: 1.5,
                         color: NAVY,
                         background: soon ? "#fff" : "#ecf8dd",
                         border: `1px solid ${soon ? "rgba(5,27,53,0.14)" : "#ecf8dd"}`,

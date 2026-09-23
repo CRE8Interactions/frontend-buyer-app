@@ -6,8 +6,8 @@ import { fluidSize } from "@/lib/shopperFluidType";
 import { useEffect, useState } from "react";
 import { lockPageScroll, unlockPageScroll } from "@/lib/pageScroll";
 import BrandedActionButton from "@/components/atoms/BrandedActionButton";
+import BuyerProtectionCard from "@/components/molecules/BuyerProtectionCard";
 import Modal from "@/components/molecules/Modal";
-import ExpandableDescription from "@/components/molecules/ExpandableDescription";
 import { BrandedLoader } from "@/components/molecules/RouteLoader";
 import SectionLocatorThumb from "@/components/molecules/SectionLocatorThumb";
 import { InteractiveSeatmap } from "@/components/organisms/InteractiveSeatmap";
@@ -340,73 +340,7 @@ export default function SeatMapSelectionOverlay({
         )
       : [];
 
-  const trustRows = (
-    <div
-      style={{
-        background: "#f7f8fc",
-        border: "1px solid rgba(5,27,53,0.08)",
-        boxShadow: "none",
-        borderRadius: 14,
-        padding: 18,
-        width: "100%",
-        boxSizing: "border-box",
-        display: "flex",
-        flexDirection: "column",
-        gap: 16,
-      }}
-    >
-      {[
-        {
-          t: "Mobile tickets.",
-          d: " Securely stored in your account.",
-          icon: (
-            <>
-              <rect x="5" y="2" width="14" height="20" rx="3" />
-              <line x1="10" y1="18.5" x2="14" y2="18.5" />
-            </>
-          ),
-        },
-        {
-          t: "Buyer protection.",
-          d: " Safe from bots and scalpers.",
-          icon: (
-            <>
-              <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
-              <polyline points="9 12 11 14 15 10" />
-            </>
-          ),
-        },
-        {
-          t: "Prices are all-in.",
-          d: " Taxes and fees included.",
-          icon: (
-            <>
-              <path d="M20.6 13.4l-7.2 7.2a2 2 0 0 1-2.8 0l-7.2-7.2a2 2 0 0 1-.6-1.4V4a1 1 0 0 1 1-1h8a2 2 0 0 1 1.4.6l7.4 7.4a2 2 0 0 1 0 2.8z" />
-              <line x1="7.5" y1="7.5" x2="7.51" y2="7.5" />
-            </>
-          ),
-        },
-      ].map((r) => (
-        <div key={r.t} style={{ display: "flex", alignItems: "center", gap: 12, minWidth: 0 }}>
-          <svg
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke={accent}
-            strokeWidth={2}
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            style={{ width: 18, height: 18, flexShrink: 0 }}
-          >
-            {r.icon}
-          </svg>
-          <div style={{ flex: 1, minWidth: 0, fontSize: fluidSize(14), color: "#4a5567" }}>
-            <span style={{ fontWeight: 600, color: NAVY }}>{r.t}</span>
-            {r.d}
-          </div>
-        </div>
-      ))}
-    </div>
-  );
+  const trustRows = <BuyerProtectionCard accent={accent} bg="#f7f8fc" />;
 
   return (
     <div
@@ -801,9 +735,10 @@ export default function SeatMapSelectionOverlay({
                         style={{
                           flex: 1,
                           textAlign: "center",
-                          fontSize: "20px",
+                          fontSize: 18,
                           fontWeight: 600,
                           letterSpacing: "-0.015em",
+                          lineHeight: 1.5,
                         }}
                       >
                         Ticket details
@@ -861,7 +796,7 @@ export default function SeatMapSelectionOverlay({
                             gap: 7,
                             background: "rgba(5,27,53,0.82)",
                             color: "#fff",
-                            fontSize: "11px",
+                            fontSize: 12,
                             fontWeight: 600,
                             letterSpacing: "0.06em",
                             textTransform: "uppercase",
@@ -997,16 +932,17 @@ export default function SeatMapSelectionOverlay({
                       >
                         <div
                           style={{
-                            fontSize: "20px",
+                            fontSize: 22,
                             fontWeight: 600,
                             letterSpacing: "-0.02em",
+                            lineHeight: 1.5,
                           }}
                         >
                           {mapDetailGroup.GA
                             ? gaTicketSeatLine(mapDetailGroup)
                             : `Sec ${mapDetailSection} · Row ${mapDetailGroup.rowNumber || mapDetailGroup.rowName || "—"} · Seat ${mapDetailGroup.seatNumber ?? "—"}`}
                         </div>
-                        <div style={{ fontSize: "14px", color: "#6e7180" }}>
+                        <div style={{ fontSize: 14, lineHeight: 1.5, color: "#6e7180" }}>
                           1 Ticket
                         </div>
                       </div>
@@ -1024,16 +960,16 @@ export default function SeatMapSelectionOverlay({
                     >
                       <span
                         style={{
-                          fontSize: "17px",
+                          fontSize: 22,
                           fontWeight: 600,
                           fontVariantNumeric: "tabular-nums",
                           letterSpacing: "-0.02em",
+                          lineHeight: 1.5,
                         }}
                       >
-                        {money(Number(mapDetailGroup.price || 0))}
+                        {money(Number(mapDetailGroup.price || 0))} ea
                       </span>
-                      <span style={{ fontSize: "14px", fontWeight: 600 }}>ea</span>
-                      <span style={{ fontSize: "12px", color: "#6e7180" }}>
+                      <span style={{ fontSize: 14, lineHeight: 1.5, color: "#6e7180" }}>
                         incl. fees
                       </span>
                     </div>
@@ -1064,16 +1000,19 @@ export default function SeatMapSelectionOverlay({
                             lineHeight: 1.6,
                           }}
                         >
-                          <ExpandableDescription
-                            text={mapDetailOfferDescription}
-                            mobile={mobile}
-                            toggleColor={accent}
+                          <pre
                             style={{
+                              margin: 0,
+                              fontFamily: "inherit",
+                              whiteSpace: "pre-wrap",
+                              overflowWrap: "anywhere",
                               fontSize: "14px",
                               color: "#4a5567",
                               lineHeight: 1.6,
                             }}
-                          />
+                          >
+                            {mapDetailOfferDescription}
+                          </pre>
                         </div>
                       </div>
                     ) : null}
@@ -1408,16 +1347,17 @@ export default function SeatMapSelectionOverlay({
                   }}
                 >
                   <div>
-                    <div style={{ fontSize: "16px", fontWeight: 600, letterSpacing: "-0.01em" }}>Subtotal</div>
-                    <div style={{ marginTop: 2, fontSize: "14px", color: "#6e7180" }}>
+                    <div style={{ fontSize: 16, fontWeight: 600, letterSpacing: "-0.01em", lineHeight: 1.5 }}>Subtotal</div>
+                    <div style={{ marginTop: 2, fontSize: 14, lineHeight: 1.5, color: "#6e7180" }}>
                       {mapTicketLabel}
                     </div>
                   </div>
                   <div
                     style={{
-                      fontSize: "26px",
+                      fontSize: 28,
                       fontWeight: 600,
                       letterSpacing: "-0.025em",
+                      lineHeight: 1.5,
                     }}
                   >
                     {money(totalPrice)}
@@ -1433,8 +1373,9 @@ export default function SeatMapSelectionOverlay({
                   className="seatmap-panel-checkout w-full"
                   style={{
                     ...checkoutBtnRow,
-                    fontSize: "17px",
-                    minHeight: 50,
+                    fontSize: 17,
+                    lineHeight: 1.5,
+                    minHeight: 48,
                     padding: "14px 22px",
                   }}
                 >

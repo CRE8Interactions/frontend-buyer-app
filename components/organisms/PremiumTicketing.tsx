@@ -16,10 +16,10 @@ import BrandedActionButton from "@/components/atoms/BrandedActionButton";
 import { BrandedLoader } from "@/components/molecules/RouteLoader";
 import { Ticket } from "@/components/atoms/icons";
 import EmailField from "@/components/molecules/EmailField";
-import ExpandableDescription from "@/components/molecules/ExpandableDescription";
 import LoginLink from "@/components/molecules/LoginLink";
 import Modal from "@/components/molecules/Modal";
 import MobileStickyFooter from "@/components/molecules/MobileStickyFooter";
+import BuyerProtectionCard from "@/components/molecules/BuyerProtectionCard";
 import OnSaleSoonCard from "@/components/molecules/OnSaleSoonCard";
 import ShopperBodyPortal from "@/components/templates/ShopperBodyPortal";
 import RedemptionCodeField from "@/components/molecules/RedemptionCodeField";
@@ -89,6 +89,10 @@ import useFiltersStore from "@/stores/filtersStore";
 import useSeatmapStore from "@/stores/seatmapStore";
 
 const NAVY = "#051b35";
+
+/** Hover lift on a listing row. The scroller reserves this much headroom so the
+ *  top row's border is not clipped while it is raised. */
+const LISTING_HOVER_LIFT_PX = 2;
 
 export type TicketingListing = {
   zone: string;
@@ -994,57 +998,6 @@ export default function PremiumTicketing({
     />
   );
 
-  const trustCard = (
-    <div style={{ ...card, borderRadius: 20, padding: 24, display: "flex", flexDirection: "column", gap: 20 }}>
-      {[
-        { t: "Mobile tickets", d: "Delivered to your account and scanned at the gate." },
-        { t: "Buyer protection", d: "Every listing is verified inventory, safe from bots and scalpers." },
-        { t: "Prices are all-in", d: "Taxes and fees included on every listing. No surprises at checkout." },
-      ].map((r) => (
-        <div key={r.t} style={{ display: "flex", gap: 14 }}>
-          <svg viewBox="0 0 24 24" fill="none" stroke={ACC} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" style={{ width: 22, height: 22, flexShrink: 0, marginTop: 2 }}><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" /><polyline points="9 12 11 14 15 10" /></svg>
-          <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
-            <div style={{ fontSize: fluidSize(16), fontWeight: 600, letterSpacing: "-0.01em" }}>{r.t}</div>
-            <div style={{ fontSize: fluidSize(14), color: "#6e7180" }}>{r.d}</div>
-          </div>
-        </div>
-      ))}
-    </div>
-  );
-
-  const compactTrustCard = (grey = false) => (
-    <div
-      style={{
-        ...card,
-        ...(grey
-          ? {
-              background: "#f7f8fc",
-              border: "1px solid rgba(5,27,53,0.08)",
-              boxShadow: "none",
-              borderRadius: 14,
-              padding: 18,
-            }
-          : { borderRadius: 20, padding: 20 }),
-        width: "100%",
-        boxSizing: "border-box",
-        display: "flex",
-        flexDirection: "column",
-        gap: 16,
-      }}
-    >
-      {[
-        { t: "Mobile tickets.", d: " Securely stored in your account.", icon: <><rect x="5" y="2" width="14" height="20" rx="3" /><line x1="10" y1="18.5" x2="14" y2="18.5" /></> },
-        { t: "Buyer protection.", d: " Safe from bots and scalpers.", icon: <><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" /><polyline points="9 12 11 14 15 10" /></> },
-        { t: "Prices are all-in.", d: " Taxes and fees included.", icon: <><path d="M20.6 13.4l-7.2 7.2a2 2 0 0 1-2.8 0l-7.2-7.2a2 2 0 0 1-.6-1.4V4a1 1 0 0 1 1-1h8a2 2 0 0 1 1.4.6l7.4 7.4a2 2 0 0 1 0 2.8z" /><line x1="7.5" y1="7.5" x2="7.51" y2="7.5" /></> },
-      ].map((r) => (
-        <div key={r.t} style={{ display: "flex", alignItems: "center", gap: 12, minWidth: 0 }}>
-          <svg viewBox="0 0 24 24" fill="none" stroke={ACC} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" style={{ width: 18, height: 18, flexShrink: 0 }}>{r.icon}</svg>
-          <div style={{ flex: 1, minWidth: 0, fontSize: fluidSize(14), color: "#4a5567" }}><span style={{ fontWeight: 600, color: NAVY }}>{r.t}</span>{r.d}</div>
-        </div>
-      ))}
-    </div>
-  );
-
   /** Event-level schedule shown only when no offer is currently active. */
   const scheduledPanel = (wideLayout: boolean) => (
     <div
@@ -1324,7 +1277,7 @@ export default function PremiumTicketing({
             <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 16 }}>
               <div style={{ display: "flex", flexDirection: "column", gap: 6, minWidth: 0 }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
-                  <div style={{ fontSize: fluidSize(18), fontWeight: 600, letterSpacing: "-0.015em", color: soldout ? "#6e7180" : NAVY }}>{t.name}</div>
+                  <div style={{ fontSize: 18, fontWeight: 600, letterSpacing: "-0.015em", color: soldout ? "#6e7180" : NAVY }}>{t.name}</div>
                   <span style={{ display: "inline-flex", alignItems: "center", gap: 7, background: s.pillBg, color: s.pillInk, fontSize: fluidSize(11), fontWeight: 600, letterSpacing: "0.1em", textTransform: "uppercase", padding: "5px 11px", borderRadius: 999 }}>
                     <span style={{ width: 6, height: 6, borderRadius: 999, background: s.dot }} />{s.label}
                   </span>
@@ -1332,7 +1285,7 @@ export default function PremiumTicketing({
                 <div style={{ fontSize: fluidSize(14), color: "#6e7180" }}>{t.sub}</div>
               </div>
               <div style={{ textAlign: "right", flexShrink: 0 }}>
-                <div style={{ fontSize: mobile ? 20 : 26, fontWeight: 600, letterSpacing: "-0.03em", fontVariantNumeric: "tabular-nums", color: soldout ? "#6e7180" : NAVY }}>{t.price}</div>
+                <div style={{ fontSize: mobile ? 22 : 26, fontWeight: 600, letterSpacing: "-0.03em", fontVariantNumeric: "tabular-nums", color: soldout ? "#6e7180" : NAVY }}>{t.price}</div>
                 <div style={{ fontSize: fluidSize(13), color: "#6e7180" }}>Incl. taxes and fees</div>
               </div>
             </div>
@@ -1340,12 +1293,7 @@ export default function PremiumTicketing({
             {tierOfferDescription ? (
               <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
                 <div style={{ fontSize: fluidSize(12), fontWeight: 600, letterSpacing: "0.12em", textTransform: "uppercase", color: "#8a93a3" }}>About this ticket</div>
-                <ExpandableDescription
-                  text={tierOfferDescription}
-                  mobile={mobile}
-                  toggleColor={ACC}
-                  style={{ fontSize: fluidSize(14), color: "#4a5567", lineHeight: 1.6 }}
-                />
+                <pre style={{ margin: 0, fontFamily: "inherit", whiteSpace: "pre-wrap", overflowWrap: "anywhere", fontSize: fluidSize(14), color: "#4a5567", lineHeight: 1.6 }}>{tierOfferDescription}</pre>
               </div>
             ) : null}
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16, flexWrap: "wrap", minWidth: 0 }}>
@@ -1356,7 +1304,7 @@ export default function PremiumTicketing({
                     <button onClick={() => setTierQuantity(gaQty - limits.step)} aria-label="Remove a ticket" disabled={gaQty <= limits.min} style={{ ...stepBtn, opacity: gaQty <= limits.min ? 0.4 : 1 }}>
                       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" style={{ width: 18, height: 18 }}><line x1="5" y1="12" x2="19" y2="12" /></svg>
                     </button>
-                    <span style={{ minWidth: 30, textAlign: "center", fontSize: fluidSize(17), fontWeight: 600, fontVariantNumeric: "tabular-nums" }}>{gaQty}</span>
+                    <span style={{ minWidth: 30, textAlign: "center", fontSize: 17, fontWeight: 600, fontVariantNumeric: "tabular-nums" }}>{gaQty}</span>
                     <button onClick={() => setTierQuantity(gaQty + limits.step)} aria-label="Add a ticket" disabled={gaQty >= limits.max} style={{ ...stepBtn, opacity: gaQty >= limits.max ? 0.4 : 1 }}>
                       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" style={{ width: 18, height: 18 }}><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></svg>
                     </button>
@@ -1520,7 +1468,7 @@ export default function PremiumTicketing({
         .nmt-primary:hover { transform: translateY(-1px); }
         .nmt-primary:active { transform: translateY(1px); background: ${ACC_DK}; }
         .nmt-listing { transition: transform 180ms cubic-bezier(0.2,0.8,0.2,1), box-shadow 180ms, border-color 180ms; }
-        .nmt-listing:hover { transform: translateY(-2px); border-color: ${ACC}; box-shadow: 0 10px 30px -12px rgba(5,27,53,0.2); }
+        .nmt-listing:hover { transform: translateY(-${LISTING_HOVER_LIFT_PX}px); border-color: ${ACC}; box-shadow: 0 10px 30px -12px rgba(5,27,53,0.2); }
         .nmt-map-btn { transition: box-shadow 180ms, border-color 180ms; }
         .nmt-map-btn:hover { border-color: ${ACC}; box-shadow: 0 10px 34px -10px rgba(5,27,53,0.25); }
         .nmt-chip { transition: border-color 140ms; }
@@ -1816,7 +1764,11 @@ export default function PremiumTicketing({
               display: "flex",
               flexDirection: "column",
               gap: 14,
-              marginTop: wide ? 18 : listingsSheet ? 14 : 0,
+              marginTop:
+                (wide ? 18 : listingsSheet ? 14 : 0) -
+                (wide || listingsSheet ? LISTING_HOVER_LIFT_PX : 0),
+              paddingTop:
+                wide || listingsSheet ? LISTING_HOVER_LIFT_PX : undefined,
               flex: 1,
               minHeight: 0,
               position: "relative",
@@ -1920,7 +1872,7 @@ export default function PremiumTicketing({
         </section>
         )}
         {narrow && !eventScheduled && !seatedSoldOut && (
-          <div style={{ flexShrink: 0, width: "100%", alignSelf: "stretch" }}>{compactTrustCard()}</div>
+          <div style={{ flexShrink: 0, width: "100%", alignSelf: "stretch" }}><BuyerProtectionCard accent={ACC} /></div>
         )}
 
         {wide && !eventScheduled && !seatedSoldOut && (
@@ -1929,7 +1881,7 @@ export default function PremiumTicketing({
             style={{ display: "flex", flexDirection: "column", gap: 20, position: "sticky", top: stickTop, alignSelf: "start" }}
           >
             {findOnMapBtn(260, 20)}
-            {trustCard}
+            <BuyerProtectionCard accent={ACC} />
           </aside>
         )}
         </>
@@ -1985,15 +1937,15 @@ export default function PremiumTicketing({
                 <img src={POSTER} alt="" style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
               </div>
             </div>
-              {compactTrustCard()}
+              <BuyerProtectionCard accent={ACC} />
             </div>
           </div>
 
           {/* right: title + tiers + about + who + venue */}
           <div style={{ display: "flex", flexDirection: "column", gap: 16, minWidth: 0, ...(narrow ? {} : { alignSelf: "start" }) }}>
             <div style={{ ...card, borderRadius: 20, padding: mobile ? 18 : 24, display: "flex", flexDirection: "column", gap: 12 }}>
-              <h1 style={{ margin: 0, fontSize: fluidSize(42), fontWeight: 600, letterSpacing: "-0.035em", lineHeight: 1.08 }}>{d.eventName}</h1>
-              <span style={{ alignSelf: "flex-start", fontSize: fluidSize(17), fontWeight: 600, color: ACC }}>{d.venueLine}</span>
+              <h1 style={{ margin: 0, fontSize: mobile ? 30 : 42, fontWeight: 600, letterSpacing: "-0.035em", lineHeight: 1.08 }}>{d.eventName}</h1>
+              <span style={{ alignSelf: "flex-start", fontSize: 17, fontWeight: 600, color: ACC }}>{d.venueLine}</span>
               <div style={{ fontSize: fluidSize(16), color: "#4a5567" }}>{d.whenLong}</div>
             </div>
 
@@ -2008,7 +1960,7 @@ export default function PremiumTicketing({
               !mobile ? scheduledPanel(true) : null
             ) : !mobile ? (
               <div style={{ ...card, borderRadius: 20, padding: mobile ? 18 : 24, display: "flex", flexDirection: "column", gap: 16 }}>
-                <div style={{ fontSize: 16, fontWeight: 600, letterSpacing: "-0.025em" }}>Get tickets</div>
+                <div style={{ fontSize: 22, fontWeight: 600, letterSpacing: "-0.025em" }}>Get tickets</div>
                 {gaTierCards}
                 {holdError ? (
                   <div style={{ fontSize: fluidSize(13), color: "#b91c1c", lineHeight: 1.4 }}>{holdError}</div>
@@ -2019,12 +1971,7 @@ export default function PremiumTicketing({
             {d.aboutText ? (
             <div style={{ ...card, borderRadius: 20, padding: mobile ? 18 : 24, display: "flex", flexDirection: "column", gap: 14 }}>
                 <div style={{ fontSize: fluidSize(12), fontWeight: 600, letterSpacing: "0.12em", textTransform: "uppercase", color: "#8a93a3" }}>About this event</div>
-                <ExpandableDescription
-                  text={d.aboutText}
-                  mobile={mobile}
-                  toggleColor={ACC}
-                  style={{ fontSize: fluidSize(15), lineHeight: 1.6, color: "#4a5567" }}
-                />
+                <pre style={{ margin: 0, fontFamily: "inherit", whiteSpace: "pre-wrap", overflowWrap: "anywhere", fontSize: fluidSize(15), lineHeight: 1.6, color: "#4a5567" }}>{d.aboutText}</pre>
             </div>
             ) : null}
 
@@ -2070,7 +2017,7 @@ export default function PremiumTicketing({
                   ) : null}
                 </div>
                 <div style={{ display: "flex", flexDirection: "column", gap: 8, minWidth: 0, flex: 1 }}>
-                  <div style={{ fontSize: fluidSize(16), fontWeight: 600, letterSpacing: "-0.02em" }}>{d.venueName}</div>
+                  <div style={{ fontSize: 19, fontWeight: 600, letterSpacing: "-0.02em" }}>{d.venueName}</div>
                   <div style={{ fontSize: fluidSize(14), color: "#6e7180" }}>{d.venueAddress}</div>
                   <a href={`https://maps.google.com/?q=${encodeURIComponent(d.mapsQuery)}`} target="_blank" rel="noopener noreferrer" style={{ alignSelf: "flex-start", display: "inline-flex", alignItems: "center", gap: 9, fontSize: fluidSize(14), fontWeight: 600, color: NAVY, textDecoration: "none", background: "#fff", border: "1px solid #d3d6e0", borderRadius: 999, padding: "11px 18px" }}>
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" style={{ width: 16, height: 16 }}><line x1="22" y1="2" x2="11" y2="13" /><polygon points="22 2 15 22 11 13 2 9 22 2" /></svg>
@@ -2505,12 +2452,12 @@ export default function PremiumTicketing({
       {panelOpen && selRow && (
         <>
           <div style={{ position: "fixed", inset: 0, zIndex: 20, background: "rgba(5,27,53,0.42)", backdropFilter: "blur(3px)" }} />
-          <div style={{ position: "fixed", zIndex: 21, display: "flex", flexDirection: "column", background: "#fff", overflow: "hidden", boxShadow: "-30px 0 80px -20px rgba(5,27,53,0.45)", top: mobile ? "auto" : 0, right: 0, bottom: 0, left: "auto", width: mobile ? "100%" : 480, height: mobile ? "86vh" : "auto", maxWidth: "100%", borderRadius: mobile ? "24px 24px 0 0" : 0 }}>
+          <div className="ticket-details-sheet" style={{ position: "fixed", zIndex: 21, display: "flex", flexDirection: "column", background: "#fff", overflow: "hidden", boxShadow: "-30px 0 80px -20px rgba(5,27,53,0.45)", top: mobile ? "auto" : 0, right: 0, bottom: 0, left: "auto", width: mobile ? "100%" : 480, height: mobile ? "86vh" : "auto", maxWidth: "100%", borderRadius: mobile ? "24px 24px 0 0" : 0 }}>
             <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "16px 20px", borderBottom: "1px solid rgba(5,27,53,0.08)", flexShrink: 0 }}>
               <button onClick={() => setSel(null)} aria-label="Back" style={{ fontFamily: "inherit", width: 44, height: 44, display: "flex", alignItems: "center", justifyContent: "center", background: "#fff", border: "1px solid #d3d6e0", borderRadius: 12, color: NAVY, cursor: "pointer", flexShrink: 0 }}>
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" style={{ width: 20, height: 20 }}><polyline points="15 18 9 12 15 6" /></svg>
               </button>
-              <div style={{ flex: 1, textAlign: "center", fontSize: fluidSize(18), fontWeight: 600, letterSpacing: "-0.015em" }}>Ticket details</div>
+              <div style={{ flex: 1, textAlign: "center", fontSize: 18, fontWeight: 600, letterSpacing: "-0.015em", lineHeight: 1.5 }}>Ticket details</div>
               <div style={{ width: 44, flexShrink: 0 }} />
             </div>
             <div style={{ flex: 1, overflowY: "auto", padding: 20 }}>
@@ -2546,59 +2493,49 @@ export default function PremiumTicketing({
                 </button>
               </div>
               <div style={{ display: "flex", flexDirection: "column", gap: 8, padding: "18px 0 16px" }}>
-                <span style={{ alignSelf: "flex-start", flexShrink: 0, ...pill(ACC_SOFT, ACC), ...(mobile ? { fontSize: fluidSize(14), padding: "5px 10px" } : {}) }}><Star s={14} /> {selRow.tier || selRow.zone}</span>
+                <span style={{ alignSelf: "flex-start", flexShrink: 0, ...pill(ACC_SOFT, ACC), ...(mobile ? { padding: "5px 10px" } : {}) }}><Star s={14} /> {selRow.tier || selRow.zone}</span>
                 <div style={{ display: "flex", flexDirection: "column", gap: 5, minWidth: 0 }}>
-                  <div style={{ fontSize: fluidSize(22), fontWeight: 600, letterSpacing: "-0.02em" }}>Sec {selRow.sec} · Row {selRow.row}</div>
-                  <div style={{ fontSize: fluidSize(14), color: "#6e7180" }}>{listingDetailAvailabilityLabel(selRow.min, selRow.max, selRow.multipleOf)}</div>
+                  <div style={{ fontSize: 22, fontWeight: 600, letterSpacing: "-0.02em", lineHeight: 1.5 }}>Sec {selRow.sec} · Row {selRow.row}</div>
+                  <div style={{ fontSize: 14, lineHeight: 1.5, color: "#6e7180" }}>{listingDetailAvailabilityLabel(selRow.min, selRow.max, selRow.multipleOf)}</div>
                 </div>
               </div>
               <div style={{ height: 1, background: "rgba(5,27,53,0.08)" }} />
               <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, padding: "18px 0" }}>
                 <div style={{ display: "flex", alignItems: "baseline", gap: 5, minWidth: 0, flexShrink: 1, whiteSpace: "nowrap" }}>
-                  <span style={{ fontSize: fluidSize(22), fontWeight: 600, fontVariantNumeric: "tabular-nums", letterSpacing: "-0.02em" }}>{selRow.price}</span>
-                  <span style={{ fontSize: fluidSize(13), fontWeight: 600 }}>ea</span>
-                  <span style={{ fontSize: fluidSize(12), color: "#6e7180" }}>incl. fees</span>
+                  <span style={{ fontSize: 22, fontWeight: 600, fontVariantNumeric: "tabular-nums", letterSpacing: "-0.02em", lineHeight: 1.5 }}>{selRow.price} ea</span>
+                  <span style={{ fontSize: 14, lineHeight: 1.5, color: "#6e7180" }}>incl. fees</span>
                 </div>
                 <div style={{ display: "flex", alignItems: "center", gap: 6, border: "1px solid #d3d6e0", borderRadius: 999, padding: mobile ? "4px 6px" : "5px 8px", flexShrink: 0 }}>
                   <button
                     onClick={() => setPanelQty((q) => clampQuantity(q - Math.max(1, selRow.multipleOf || 1), listingQtyLimits(selRow)))}
                     aria-label="Fewer tickets"
                     disabled={panelQty <= selRow.min}
-                    style={{ fontFamily: "inherit", width: mobile ? 40 : 36, height: mobile ? 40 : 36, borderRadius: 999, border: "none", background: "#f1f3f8", color: NAVY, fontSize: fluidSize(20), lineHeight: 1, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", opacity: panelQty <= selRow.min ? 0.4 : 1 }}
+                    style={{ fontFamily: "inherit", width: mobile ? 40 : 36, height: mobile ? 40 : 36, borderRadius: 999, border: "none", background: "#f1f3f8", color: NAVY, fontSize: 20, lineHeight: 1, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", opacity: panelQty <= selRow.min ? 0.4 : 1 }}
                   >−</button>
                   <span style={{ minWidth: mobile ? 82 : 74, textAlign: "center", fontSize: fluidSize(15), fontWeight: 600, fontVariantNumeric: "tabular-nums" }}>{panelQty === 1 ? "1 Ticket" : `${panelQty} Tickets`}</span>
                   <button
                     onClick={() => setPanelQty((q) => clampQuantity(q + Math.max(1, selRow.multipleOf || 1), listingQtyLimits(selRow)))}
                     aria-label="More tickets"
                     disabled={panelQty >= selRow.max}
-                    style={{ fontFamily: "inherit", width: mobile ? 40 : 36, height: mobile ? 40 : 36, borderRadius: 999, border: "none", background: "#f1f3f8", color: NAVY, fontSize: fluidSize(20), lineHeight: 1, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", opacity: panelQty >= selRow.max ? 0.4 : 1 }}
+                    style={{ fontFamily: "inherit", width: mobile ? 40 : 36, height: mobile ? 40 : 36, borderRadius: 999, border: "none", background: "#f1f3f8", color: NAVY, fontSize: 20, lineHeight: 1, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", opacity: panelQty >= selRow.max ? 0.4 : 1 }}
                   >+</button>
                 </div>
               </div>
               {panelOfferDescription ? (
               <div style={{ display: "flex", flexDirection: "column", gap: 8, paddingBottom: 18 }}>
                   <div style={{ fontSize: fluidSize(12), fontWeight: 600, letterSpacing: "0.12em", textTransform: "uppercase", color: "#8a93a3" }}>About this ticket</div>
-                  <ExpandableDescription
-                    text={panelOfferDescription}
-                    mobile={mobile}
-                    toggleColor={ACC}
-                    style={{
-                      fontSize: fluidSize(14),
-                      color: "#4a5567",
-                      lineHeight: 1.6,
-                    }}
-                  />
+                  <pre style={{ margin: 0, fontFamily: "inherit", whiteSpace: "pre-wrap", overflowWrap: "anywhere", fontSize: fluidSize(14), color: "#4a5567", lineHeight: 1.6 }}>{panelOfferDescription}</pre>
               </div>
               ) : null}
-              <div style={{ width: "100%", boxSizing: "border-box" }}>{compactTrustCard(true)}</div>
+              <div style={{ width: "100%", boxSizing: "border-box" }}><BuyerProtectionCard accent={ACC} bg="#f7f8fc" /></div>
             </div>
             <div style={{ flexShrink: 0, borderTop: "1px solid rgba(5,27,53,0.08)", padding: "18px 20px 22px", display: "flex", flexDirection: "column", gap: 14 }}>
               <div style={{ display: "flex", alignItems: "flex-end", justifyContent: "space-between" }}>
                 <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
-                  <span style={{ fontSize: fluidSize(16), fontWeight: 600, letterSpacing: "-0.01em" }}>Subtotal</span>
-                  <span style={{ fontSize: fluidSize(14), color: "#6e7180" }}>{panelQty === 1 ? "1 Ticket" : `${panelQty} Tickets`}</span>
+                  <span style={{ fontSize: 16, fontWeight: 600, letterSpacing: "-0.01em", lineHeight: 1.5 }}>Subtotal</span>
+                  <span style={{ fontSize: 14, lineHeight: 1.5, color: "#6e7180" }}>{panelQty === 1 ? "1 Ticket" : `${panelQty} Tickets`}</span>
                 </div>
-                <span style={{ fontSize: fluidSize(28), fontWeight: 600, fontVariantNumeric: "tabular-nums", letterSpacing: "-0.025em" }}>{money(unit * panelQty)}</span>
+                <span style={{ fontSize: 28, fontWeight: 600, fontVariantNumeric: "tabular-nums", letterSpacing: "-0.025em", lineHeight: 1.5 }}>{money(unit * panelQty)}</span>
               </div>
               {holdError ? (
                 <div style={{ fontSize: fluidSize(13), color: "#b91c1c", lineHeight: 1.4 }}>{holdError}</div>
@@ -2609,8 +2546,8 @@ export default function PremiumTicketing({
                 loading={holding}
                 loadingLabel="Holding seats…"
                 onClick={() => void startHold()}
-                className="w-full text-[16px]"
-                style={{ ...checkoutBtnRow, padding: mobile ? 16 : 17, minHeight: 48 }}
+                className="w-full"
+                style={{ ...checkoutBtnRow, padding: mobile ? 16 : 17, minHeight: 48, fontSize: 17, lineHeight: 1.5 }}
               >
                 Checkout
               </BrandedActionButton>
@@ -2622,34 +2559,53 @@ export default function PremiumTicketing({
       {unlockZone !== null && (
         <Modal
           variant="light"
+          hideHeader
+          hideClose
           title={isGa ? `${unlockZone} requires a code` : `${unlockZone} is locked`}
+          className="unlock-code-dialog !max-w-[400px] !p-6"
           onClose={() => setUnlockZone(null)}
         >
           <form
             noValidate
-            className="mt-4 flex flex-col gap-4"
+            className="flex flex-col gap-4"
             onSubmit={(e) => {
               e.preventDefault();
               void submitUnlockCode(formString(new FormData(e.currentTarget), "accessCode"));
             }}
           >
-            <div
-              className="flex h-[46px] w-[46px] items-center justify-center rounded-xl"
-              style={{ background: ACC_SOFT, color: ACC }}
-            >
-              <LockIcon s={22} />
+            <div className="flex items-center justify-between">
+              <div
+                className="flex h-[46px] w-[46px] items-center justify-center rounded-xl"
+                style={{ background: ACC_SOFT, color: ACC }}
+              >
+                <LockIcon s={22} />
+              </div>
+              <button
+                type="button"
+                aria-label="Close"
+                onClick={() => setUnlockZone(null)}
+                className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-[rgba(5,27,53,0.16)] text-[#051b35] transition-colors hover:bg-[rgba(5,27,53,0.06)]"
+              >
+                <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden>
+                  <path d="M6 6l12 12M18 6 6 18" />
+                </svg>
+              </button>
             </div>
+            <h2 className="m-0 font-semibold">
+              {isGa ? `${unlockZone} requires a code` : `${unlockZone} is locked`}
+            </h2>
             {unlockOfferDescription ? (
-              <p className="text-[14px] leading-relaxed text-[#4a5567]">
+              <pre className="m-0 whitespace-pre-wrap font-[inherit] text-[14px] leading-[1.5] text-[#4a5567] [overflow-wrap:anywhere]">
                 {unlockOfferDescription}
-              </p>
+              </pre>
             ) : null}
-            <p className="text-[14px] leading-relaxed text-[#6e7180]">
+            <p className="text-[14px] text-[#6e7180]">
               Enter your access code to unlock {isGa ? "this offer" : "these seats"}.
             </p>
             <RedemptionCodeField
               name="accessCode"
               label="Access code"
+              hideLabel
               value={unlockInput}
               autoFocus
               placeholder="Access code"
@@ -2781,13 +2737,7 @@ export default function PremiumTicketing({
               <div className="h-px bg-[rgba(5,27,53,0.08)]" />
               <div className="flex flex-col gap-2">
                 <div className="font-semibold uppercase text-[#8a93a3]" style={{ fontSize: 12, letterSpacing: "0.12em" }}>About this event</div>
-                    <ExpandableDescription
-                      text={d.aboutText}
-                      mobile={mobile}
-                      toggleColor={ACC}
-                      className="leading-relaxed text-[#4a5567]"
-                      style={{ fontSize: 14 }}
-                    />
+                    <pre className="m-0 whitespace-pre-wrap font-[inherit] leading-relaxed text-[#4a5567] [overflow-wrap:anywhere]" style={{ fontSize: 14 }}>{d.aboutText}</pre>
               </div>
                 </>
               ) : null}
@@ -2795,13 +2745,7 @@ export default function PremiumTicketing({
             ) : d.aboutText ? (
               <div className="flex flex-col gap-2 rounded-2xl border border-[rgba(5,27,53,0.08)] bg-[#f7f8fc] p-[18px]">
                 <div className="font-semibold uppercase text-[#8a93a3]" style={{ fontSize: 12, letterSpacing: "0.12em" }}>About this event</div>
-                <ExpandableDescription
-                  text={d.aboutText}
-                  mobile={mobile}
-                  toggleColor={ACC}
-                  className="leading-relaxed text-[#4a5567]"
-                  style={{ fontSize: 14 }}
-                />
+                <pre className="m-0 whitespace-pre-wrap font-[inherit] leading-relaxed text-[#4a5567] [overflow-wrap:anywhere]" style={{ fontSize: 14 }}>{d.aboutText}</pre>
               </div>
             ) : null}
           </div>
