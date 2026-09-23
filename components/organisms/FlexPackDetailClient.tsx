@@ -1,6 +1,5 @@
 "use client";
 
-import { BROWSE_DISPLAY, BROWSE_TRACK, browseLeading } from "@/lib/browseType";
 import { fluidSize } from "@/lib/shopperFluidType";
 
 import { useEffect, useRef, useState } from "react";
@@ -43,12 +42,12 @@ const STEPS = [
   {
     n: "2",
     title: "Redeem when you know",
-    body: "Choose a game any time before kickoff and pick your seat then.",
+    body: "Trade a voucher for a seat at the Box Office for any available game.",
   },
   {
     n: "3",
     title: "Share what you skip",
-    body: "Transfer a voucher to a friend if you cannot make a game.",
+    body: "Can't make a game? Send your ticket to a friend.",
   },
 ];
 
@@ -211,7 +210,11 @@ export default function FlexPackDetailClient({
   }
 
   return (
-    <div className="shopper-page" style={{ minHeight: "100vh", background: FIELD, color: NAVY }}>
+    // `.shopper-page` leads at 1.6; this page's type scale is built on 1.5.
+    <div
+      className="shopper-page"
+      style={{ minHeight: "100vh", background: FIELD, color: NAVY, lineHeight: 1.5 }}
+    >
       <ShopperFluidTypeStyles />
       <div
         ref={heroRef}
@@ -337,10 +340,10 @@ export default function FlexPackDetailClient({
               <h1
                 style={{
                   margin: 0,
-                  fontSize: BROWSE_DISPLAY.h2,
+                  fontSize: mobile ? 30 : 42,
                   fontWeight: 600,
-                  letterSpacing: BROWSE_TRACK.display,
-                  lineHeight: browseLeading("h2"),
+                  letterSpacing: "-0.03em",
+                  lineHeight: 1.06,
                 }}
               >
                 {flexPack.name}
@@ -443,7 +446,7 @@ export default function FlexPackDetailClient({
                     {st.n}
                   </div>
                   <div style={{ fontSize: fluidSize(14), fontWeight: 600 }}>{st.title}</div>
-                  <div style={{ fontSize: fluidSize(13), color: SUB, lineHeight: browseLeading("body") }}>
+                  <div style={{ fontSize: fluidSize(13), color: SUB, lineHeight: 1.55 }}>
                     {st.body}
                   </div>
                 </div>
@@ -470,7 +473,7 @@ export default function FlexPackDetailClient({
                 >
                   More info
                 </div>
-                <p style={{ margin: 0, fontSize: fluidSize(15), lineHeight: browseLeading("body"), color: "#4a5567" }}>
+                <p style={{ margin: 0, fontSize: fluidSize(15), lineHeight: 1.65, color: "#4a5567" }}>
                   {flexPack.description}
                 </p>
               </div>
@@ -507,7 +510,7 @@ export default function FlexPackDetailClient({
                   </span>
                   <span
                     style={{
-                      fontSize: fluidSize(34),
+                      fontSize: 34,
                       fontWeight: 600,
                       letterSpacing: "-0.03em",
                       lineHeight: 1,
@@ -545,7 +548,7 @@ export default function FlexPackDetailClient({
           background="rgba(255,255,255,0.96)"
           boxShadow="0 -12px 30px -24px rgba(5,27,53,0.6)"
           innerPadding="12px 16px 14px"
-          shellStyle={{ backdropFilter: "blur(10px)" }}
+          shellStyle={{ backdropFilter: "blur(10px)", lineHeight: 1.5 }}
           innerStyle={{
             display: "flex",
             alignItems: "center",
@@ -564,7 +567,7 @@ export default function FlexPackDetailClient({
           >
             <span
               style={{
-                fontSize: fluidSize(26),
+                fontSize: 18,
                 fontWeight: 600,
                 letterSpacing: "-0.02em",
                 fontVariantNumeric: "tabular-nums",

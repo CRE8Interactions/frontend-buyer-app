@@ -371,7 +371,14 @@ function CheckoutSuccessPage() {
     : true;
   const ticketSummary = ticketSelectionSummary(
     tickets,
-    order?.package ? { defaultOffer: "Standard admission" } : undefined,
+    order?.package
+      ? {
+          defaultOffer: "Standard admission",
+          gameCount: Array.isArray(order.package.events)
+            ? order.package.events.length
+            : undefined,
+        }
+      : undefined,
   );
   const thumbSrc = imageUrl(
     order?.flex_pack?.image || event?.image,
@@ -653,9 +660,9 @@ function CheckoutSuccessPage() {
                           ? "Your access pass is in your wallet"
                           : "Your access pass is on the way"
                         : order?.flex_pack
-                          ? `${flexVoucherCount} flex ${
+                          ? `${flexVoucherCount} ${
                               flexVoucherCount === 1 ? "voucher" : "vouchers"
-                            }${isAuthenticated ? " in your wallet" : " emailed to you"}`
+                            }`
                           : isAuthenticated
                             ? "Your tickets are in your wallet"
                             : "Your tickets have been emailed"}

@@ -76,6 +76,8 @@ type MapProps = {
   mapMapping?: ReturnType<typeof demoSeatmapMapping> | null;
   mapBackground?: SeatmapBackground | null;
   preparing?: boolean;
+  itemPriceNote?: string;
+  mapLegend?: "event" | "package";
 };
 
 function overlay(props: MapProps) {
@@ -236,9 +238,12 @@ describe("SeatMapSelectionOverlay map readiness", () => {
       totalCount: 2,
       totalPrice: Number(group.price || 0) * 2,
     });
+    const gameCount = pkg.events.length;
     renderOverlay({
       mapMapping: demoSeatmapMapping(),
       mapBackground: BACKGROUND,
+      mapLegend: "package",
+      itemPriceNote: `All ${gameCount} games`,
     });
     fireEvent.load(backgroundPreload()!);
 
@@ -249,6 +254,18 @@ describe("SeatMapSelectionOverlay map readiness", () => {
     expect(
       screen.getAllByText(`$${Number(group.price).toFixed(2)}`),
     ).toHaveLength(2);
+    expect(screen.getAllByText(`All ${gameCount} games`)).toHaveLength(2);
+    expect(screen.queryByText(/incl\. fees/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/prices are all-in/i)).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getAllByRole("button", { name: /details/i })[0]);
+    expect(screen.getByText("Ticket details")).toBeInTheDocument();
+    expect(
+      screen.getByText(`$${Number(group.price).toFixed(2)} ea`),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/incl\. fees/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/prices are all-in/i)).not.toBeInTheDocument();
+    expect(screen.getByText(/buyer protection/i)).toBeInTheDocument();
   });
 
   it("shows Your selection with the ticket limit when View selection opens on mobile", () => {
@@ -339,6 +356,7 @@ describe("SeatMapSelectionOverlay map readiness", () => {
     const detailHeading = screen.getByText(/Sec GA/);
     expect(within(detailHeading.parentElement!).getByText("1 Ticket")).toBeInTheDocument();
     expect(within(detailHeading.parentElement!).queryByText("6 Tickets")).not.toBeInTheDocument();
+    expect(screen.getByText(/incl\. fees/i)).toBeInTheDocument();
   });
 
   it("removes one GA card without dropping the rest of the quantity", () => {

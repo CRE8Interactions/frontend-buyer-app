@@ -219,10 +219,16 @@ export function selectionTicketCards<T extends SelectionCardGroup>(
   });
 }
 
+type TicketSelectionSummaryOptions = {
+  defaultOffer?: string;
+  /** Season-package game count; when set, the subtitle is seats • all n games. */
+  gameCount?: number;
+};
+
 /** Group cart tickets by offer name and unit price for the checkout breakdown. */
 export function ticketOfferPriceLines(
   tickets: Array<Record<string, unknown>>,
-  options?: { defaultOffer?: string },
+  options?: TicketSelectionSummaryOptions,
 ): TicketOfferPriceLine[] {
   const lines: TicketOfferPriceLine[] = [];
   const indexByKey = new Map<string, number>();
@@ -249,7 +255,7 @@ export function ticketOfferPriceLines(
 
 export function ticketSelectionSummary(
   tickets: Array<Record<string, unknown>>,
-  options?: { defaultOffer?: string },
+  options?: TicketSelectionSummaryOptions,
 ): TicketSelectionSummary {
   const count = tickets.length;
   const first = tickets[0] || {};
@@ -294,15 +300,28 @@ export function ticketSelectionSummary(
   const allGa =
     tickets.length > 0 &&
     tickets.every((ticket) => Boolean(ticket.generalAdmission || ticket.GA));
-  const subtitle = allGa
-    ? gaTierSubtitle(first)
-    : count === 1
-      ? "1 ticket"
-      : together
-        ? `${count} tickets · seats are together`
-        : sameBlock && seatList
-          ? `${count} tickets · ${seatList}`
-          : `${count} tickets`;
+  const gameCount = options?.gameCount;
+  const gamesLabel =
+    gameCount == null || gameCount < 1
+      ? ""
+      : gameCount === 1
+        ? "1 game"
+        : `all ${gameCount} games`;
+  const packageSeatLabel =
+    allGa || !seatList ? "" : `Seats ${seatList}`;
+  const subtitle = gamesLabel
+    ? [allGa ? gaTierSubtitle(first) : packageSeatLabel, gamesLabel]
+        .filter(Boolean)
+        .join(" · ")
+    : allGa
+      ? gaTierSubtitle(first)
+      : count === 1
+        ? "1 ticket"
+        : together
+          ? `${count} tickets · seats are together`
+          : sameBlock && seatList
+            ? `${count} tickets · ${seatList}`
+            : `${count} tickets`;
   const qtyLabel = `${count} ${count === 1 ? "ticket" : "tickets"}`;
   return {
     count,

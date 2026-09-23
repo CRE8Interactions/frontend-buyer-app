@@ -32,8 +32,6 @@ import { beginRouteTransition } from "@/lib/routeTransition";
 import { useClientReady } from "@/lib/useClientReady";
 import { formString, normalizeRedemptionCode, promoCodeRedeemDisplayMessage, redemptionCodeBlurFieldError, redemptionCodeSubmitError, type RedemptionCodeFieldError } from "@/lib/fieldValidation";
 import RedemptionCodeField from "@/components/molecules/RedemptionCodeField";
-import { billingCountryFromCart } from "@/lib/billingPostal";
-import { fetchIpCountry } from "@/lib/ipCountry";
 import {
   flexPackSeasonLine,
   flexPackVoucherCount,
@@ -125,10 +123,7 @@ import {
 } from "@/lib/tracking";
 import {
   STRIPE_PAYMENT_ELEMENT_FONTS,
-  checkoutConfirmBillingDetails,
-  checkoutPaymentElementDefaultValues,
-  checkoutPaymentElementOptionsForPage,
-  paymentElementWalletsForProtocol,
+  checkoutPaymentElementOptions,
   stripePaymentElementAppearance,
 } from "@/lib/stripePaymentElement";
 
@@ -263,12 +258,7 @@ function CheckoutPaymentForm({
   const [removingPromo, setRemovingPromo] = useState(false);
   const [purchasing, setPurchasing] = useState(false);
   const [paymentReady, setPaymentReady] = useState(false);
-  const [billingCountry, setBillingCountry] = useState(
-    () => billingCountryFromCart(cart) || "US",
-  );
   const hasTrackedPaymentInfoRef = useRef(false);
-  const linkWalletEnabled =
-    paymentElementWalletsForProtocol(window.location.protocol).link !== "never";
 
   const flexPackTotals = cart.flex_pack
     ? resolveFlexPackCheckoutTotals(cart)
@@ -297,18 +287,6 @@ function CheckoutPaymentForm({
   useEffect(() => {
     onTotalChange?.(displayTotal);
   }, [displayTotal, onTotalChange]);
-
-  useEffect(() => {
-    const controller = new AbortController();
-    fetchIpCountry(controller.signal)
-      .then((code) => {
-        if (code) setBillingCountry(code);
-      })
-      .catch(() => {
-        /* Keep the cart / US default — geo must never block pay. */
-      });
-    return () => controller.abort();
-  }, []);
 
   const promoPricing = promoDetails?.promoPricingDetails as
     | {
@@ -400,9 +378,6 @@ function CheckoutPaymentForm({
         elements,
         confirmParams: {
           return_url: checkoutSuccessReturnUrl(intentId),
-          payment_method_data: {
-            billing_details: checkoutConfirmBillingDetails(),
-          },
         },
         redirect: "if_required",
       });
@@ -428,14 +403,6 @@ function CheckoutPaymentForm({
       onDeclined(purchaseFailureDisplayMessage(err));
     }
   };
-
-  const paymentElementOptions = useMemo(
-    () => ({
-      ...checkoutPaymentElementOptionsForPage(),
-      defaultValues: checkoutPaymentElementDefaultValues(billingCountry),
-    }),
-    [billingCountry],
-  );
 
   return (
     <div>
@@ -463,7 +430,7 @@ function CheckoutPaymentForm({
               hasTrackedPaymentInfoRef.current = true;
             }
           }}
-          options={paymentElementOptions}
+          options={checkoutPaymentElementOptions}
         />
       </form>
 
@@ -532,23 +499,21 @@ function CheckoutPaymentForm({
         </div>
       ) : null}
 
-      {linkWalletEnabled ? (
-        <label className="mt-6 flex cursor-pointer items-start gap-2.5">
-          <input
-            type="checkbox"
-            defaultChecked
-            className="mt-0.5 h-[19px] w-[19px] shrink-0 rounded-[5px] border-[1.5px]"
-            style={{ accentColor: accent }}
-          />
-          <span className="text-[13px] text-[#4a5567]">
-            Save my info for one-click checkout with Link
-            {orgLabel && orgLabel !== "Blocktickets"
-              ? ` at ${orgLabel} venues`
-              : ""}
-            .
-          </span>
-        </label>
-      ) : null}
+      <label className="mt-6 flex cursor-pointer items-start gap-2.5">
+        <input
+          type="checkbox"
+          defaultChecked
+          className="mt-0.5 h-[19px] w-[19px] shrink-0 rounded-[5px] border-[1.5px]"
+          style={{ accentColor: accent }}
+        />
+        <span className="text-[13px] text-[#4a5567]">
+          Save my info for one-click checkout with Link
+          {orgLabel && orgLabel !== "Blocktickets"
+            ? ` at ${orgLabel} venues`
+            : ""}
+          .
+        </span>
+      </label>
       <div className="mt-4 flex flex-wrap items-center justify-between gap-3.5">
         <p className="max-w-[380px] text-[12px] leading-relaxed text-[#8a93a3]">
           By paying you agree to the Blocktickets{" "}

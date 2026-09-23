@@ -340,7 +340,20 @@ export default function SeatMapSelectionOverlay({
         )
       : [];
 
-  const trustRows = <BuyerProtectionCard accent={accent} bg="#f7f8fc" />;
+  const pricesIncludeFees = mapLegend !== "package";
+  const selectionPriceNote = pricesIncludeFees
+    ? itemPriceNote
+    : itemPriceNote
+        .replace(/\s*[·•]\s*incl\.?\s*(taxes\s*(and|&)\s*)?fees/i, "")
+        .replace(/^incl\.?\s*(taxes\s*(and|&)\s*)?fees$/i, "")
+        .trim();
+  const trustRows = (
+    <BuyerProtectionCard
+      accent={accent}
+      bg="#f7f8fc"
+      pricesIncludeFees={pricesIncludeFees}
+    />
+  );
 
   return (
     <div
@@ -969,9 +982,11 @@ export default function SeatMapSelectionOverlay({
                       >
                         {money(Number(mapDetailGroup.price || 0))} ea
                       </span>
-                      <span style={{ fontSize: 14, lineHeight: 1.5, color: "#6e7180" }}>
-                        incl. fees
-                      </span>
+                      {pricesIncludeFees ? (
+                        <span style={{ fontSize: 14, lineHeight: 1.5, color: "#6e7180" }}>
+                          incl. fees
+                        </span>
+                      ) : null}
                     </div>
                     {mapDetailOfferDescription ? (
                       <div
@@ -1230,6 +1245,7 @@ export default function SeatMapSelectionOverlay({
                                   <div style={{ fontSize: "17px", fontWeight: 600 }}>
                                     {money(itemPrice)}
                                   </div>
+                                  {selectionPriceNote ? (
                                   <div
                                     style={{
                                       marginTop: 1,
@@ -1238,8 +1254,9 @@ export default function SeatMapSelectionOverlay({
                                       whiteSpace: "nowrap",
                                     }}
                                   >
-                                    {itemPriceNote}
+                                    {selectionPriceNote}
                                   </div>
+                                  ) : null}
                                 </div>
                               </div>
                               <div

@@ -60,6 +60,8 @@ type Props = {
   accent?: string;
   buttonColor?: string;
   buttonTextColor?: string;
+  /** Event ticket prices include taxes and fees; package/flex prices do not. */
+  pricesIncludeFees?: boolean;
 };
 
 function inkOn(hex: string) {
@@ -100,8 +102,11 @@ function isLockedOffer(offer: TicketGroup) {
 }
 
 /** Single game ticket prices include taxes and fees; package prices do not. */
-function priceIncludesTaxesAndFees(offer: TicketGroup) {
-  return !offer.package;
+function priceIncludesTaxesAndFees(
+  offer: TicketGroup,
+  pricesIncludeFees: boolean,
+) {
+  return pricesIncludeFees && !offer.package;
 }
 
 function OfferPriceNote({ color }: { color: string }) {
@@ -516,6 +521,7 @@ export default function SeatmapTooltip({
   accent = "#0a2747",
   buttonColor = "#A6E773",
   buttonTextColor = "#051B35",
+  pricesIncludeFees = true,
 }: Props) {
   const data = useSeatmapStore((s) => s.data);
   const seatLookupTable = useSeatmapStore((s) => s.seatLookupTable);
@@ -786,7 +792,7 @@ export default function SeatmapTooltip({
                       <p className="text-[10px]" style={{ color: muted }}>
                         Requires access code
                       </p>
-                    ) : priceIncludesTaxesAndFees(offer) ? (
+                    ) : priceIncludesTaxesAndFees(offer, pricesIncludeFees) ? (
                       <OfferPriceNote color={muted} />
                     ) : null}
                     </div>
@@ -1008,7 +1014,7 @@ export default function SeatmapTooltip({
                       </p>
                     ) : (
                       <>
-                        {priceIncludesTaxesAndFees(group) ? (
+                        {priceIncludesTaxesAndFees(group, pricesIncludeFees) ? (
                           <OfferPriceNote color={muted} />
                         ) : null}
                         <GaOfferLimitNote
@@ -1092,7 +1098,7 @@ export default function SeatmapTooltip({
               <p className="mt-1 text-[12px] font-semibold" style={{ color: ink }}>
                 {formatOfferListPrice(primary?.price ?? 0, primary?.offer)} ea
               </p>
-              {primary && priceIncludesTaxesAndFees(primary) ? (
+              {primary && priceIncludesTaxesAndFees(primary, pricesIncludeFees) ? (
                 <OfferPriceNote color={muted} />
               ) : null}
               {primary ? (

@@ -1,8 +1,8 @@
 /**
  * Shared Stripe Payment Element billing + appearance.
- * Country + ZIP/postal stay inside the Payment Element (`auto`), so they
- * render above Stripe's consent with no extra row gap. `if_required` / `never`
- * hide those fields; street/city/state stay off.
+ * Billing collection is left entirely to Stripe, like legacy Payment.js: no
+ * `fields` overrides and no prefilled country, so the card form still asks for
+ * whatever that country and card BIN need.
  */
 
 export const STRIPE_PAYMENT_ELEMENT_FONTS = [
@@ -12,30 +12,11 @@ export const STRIPE_PAYMENT_ELEMENT_FONTS = [
   },
 ];
 
-export const paymentElementBillingFields = {
-  billingDetails: {
-    address: {
-      country: "auto" as const,
-      postalCode: "auto" as const,
-      line1: "never" as const,
-      line2: "never" as const,
-      city: "never" as const,
-      state: "never" as const,
-    },
-  },
-};
-
 /** Same as original Payment.js wallets={true}: leave wallets on. */
 export const paymentElementWallets = {
   applePay: "auto" as const,
   googlePay: "auto" as const,
   link: "auto" as const,
-};
-
-const paymentElementWalletsOff = {
-  applePay: "never" as const,
-  googlePay: "never" as const,
-  link: "never" as const,
 };
 
 /** Stripe's logo variables take "light" | "dark", not a color value. */
@@ -115,62 +96,8 @@ export function stripePaymentElementAppearance(
   };
 }
 
-/** Card + wallets first, same order as package/ticket Payment Element tabs. */
-export const checkoutPaymentMethodOrder = [
-  "card",
-  "apple_pay",
-  "google_pay",
-  "link",
-];
-
 export const checkoutPaymentElementOptions = {
   layout: { type: "tabs" as const },
   wallets: paymentElementWallets,
-  fields: paymentElementBillingFields,
   terms: { card: "auto" as const },
-  paymentMethodOrder: checkoutPaymentMethodOrder,
 };
-
-export function checkoutPaymentElementDefaultValues(country: string) {
-  return {
-    billingDetails: {
-      address: {
-        country,
-      },
-    },
-  };
-}
-
-/**
- * Address parts set to `never` are not collected in the Payment Element.
- * Stripe rejects confirmPayment unless those parts are passed here.
- * Country and postal stay on the Element, so they are not overridden.
- */
-export function checkoutConfirmBillingDetails() {
-  return {
-    address: {
-      line1: "",
-      line2: "",
-      city: "",
-      state: "",
-    },
-  };
-}
-
-/** Apple Pay, Google Pay, and Link need HTTPS; skip them on plain HTTP dev. */
-export function paymentElementWalletsForProtocol(protocol: string) {
-  return protocol === "https:" ? paymentElementWallets : paymentElementWalletsOff;
-}
-
-export function checkoutPaymentElementOptionsForProtocol(protocol: string) {
-  return {
-    ...checkoutPaymentElementOptions,
-    wallets: paymentElementWalletsForProtocol(protocol),
-  };
-}
-
-/** Client checkout: card-only on HTTP localhost, full wallets on HTTPS. */
-export function checkoutPaymentElementOptionsForPage() {
-  if (typeof window === "undefined") return checkoutPaymentElementOptions;
-  return checkoutPaymentElementOptionsForProtocol(window.location.protocol);
-}

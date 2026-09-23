@@ -330,23 +330,13 @@ describe("Checkout page", { timeout: 20_000 }, () => {
     ).toBeInTheDocument();
     expect(stripeMocks.paymentElementOptions).toEqual(
       expect.objectContaining({
-        fields: {
-          billingDetails: {
-            address: {
-              country: "auto",
-              postalCode: "auto",
-              line1: "never",
-              line2: "never",
-              city: "never",
-              state: "never",
-            },
-          },
-        },
+        wallets: { applePay: "auto", googlePay: "auto", link: "auto" },
         terms: { card: "auto" },
-        defaultValues: {
-          billingDetails: { address: { country: "US" } },
-        },
       }),
+    );
+    expect(stripeMocks.paymentElementOptions).not.toHaveProperty("fields");
+    expect(stripeMocks.paymentElementOptions).not.toHaveProperty(
+      "defaultValues",
     );
     expect(screen.queryByLabelText("Billing country")).not.toBeInTheDocument();
     expect(screen.queryByLabelText("ZIP")).not.toBeInTheDocument();
@@ -386,7 +376,7 @@ describe("Checkout page", { timeout: 20_000 }, () => {
     expect(screen.queryByText(/you.?re so close/i)).not.toBeInTheDocument();
   });
 
-  it("prefills Stripe's country from a Canadian venue", async () => {
+  it("does not lock Stripe's billing country for a Canadian venue", async () => {
     const icedogsEvent =
       DEMO_EVENTS.find((event) => event.shortCode === "ICEDOG1") || DEMO_EVENTS[0];
     const cart = {
@@ -400,25 +390,10 @@ describe("Checkout page", { timeout: 20_000 }, () => {
     render(<CheckoutPageRoute />);
 
     expect(await screen.findByTestId("payment-element")).toBeInTheDocument();
-    expect(stripeMocks.paymentElementOptions).toEqual(
-      expect.objectContaining({
-        fields: {
-          billingDetails: {
-            address: {
-              country: "auto",
-              postalCode: "auto",
-              line1: "never",
-              line2: "never",
-              city: "never",
-              state: "never",
-            },
-          },
-        },
-        defaultValues: {
-          billingDetails: { address: { country: "CA" } },
-        },
-      }),
+    expect(stripeMocks.paymentElementOptions).not.toHaveProperty(
+      "defaultValues",
     );
+    expect(stripeMocks.paymentElementOptions).not.toHaveProperty("fields");
     expect(screen.queryByLabelText("Billing country")).not.toBeInTheDocument();
     expect(screen.queryByLabelText("Postal code")).not.toBeInTheDocument();
   });
@@ -756,7 +731,7 @@ describe("Checkout page", { timeout: 20_000 }, () => {
     expect(screen.queryByText(/venues/i)).not.toBeInTheDocument();
   });
 
-  it("hides Link save-info on plain HTTP checkout", async () => {
+  it("keeps wallets and Link save-info on over plain HTTP", async () => {
     vi.stubGlobal("location", {
       href: "http://localhost/checkout/?cartId=cart-raptors-1",
       origin: "http://localhost",
@@ -770,10 +745,15 @@ describe("Checkout page", { timeout: 20_000 }, () => {
 
     await screen.findByTestId("payment-element");
     expect(
-      screen.queryByRole("checkbox", {
+      screen.getByRole("checkbox", {
         name: /one-click checkout with Link/i,
       }),
-    ).not.toBeInTheDocument();
+    ).toBeInTheDocument();
+    expect(stripeMocks.paymentElementOptions).toEqual(
+      expect.objectContaining({
+        wallets: { applePay: "auto", googlePay: "auto", link: "auto" },
+      }),
+    );
   });
 
   it("does not show a seat location image when the cart has no tickets", async () => {
@@ -1246,16 +1226,6 @@ describe("Checkout page", { timeout: 20_000 }, () => {
         expect.objectContaining({
           confirmParams: {
             return_url: `https://localhost/checkout/success/?intentId=pi_test`,
-            payment_method_data: {
-              billing_details: {
-                address: {
-                  line1: "",
-                  line2: "",
-                  city: "",
-                  state: "",
-                },
-              },
-            },
           },
         }),
       );

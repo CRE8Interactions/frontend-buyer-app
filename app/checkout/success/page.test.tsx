@@ -12,6 +12,7 @@ import {
   demoCompletedPackageOrder,
   demoCompletedTicketOrder,
   demoFlexPack,
+  demoSeasonPackage,
   demoTicketGroups,
 } from "@/lib/demo/fixtures";
 import { formatCurrency } from "@/lib/helpers";
@@ -233,6 +234,10 @@ describe("Checkout success receipt", () => {
     expect(
       await screen.findByText(DEMO_SEATED_TICKET_GROUPS[0].offer!.name!),
     ).toBeInTheDocument();
+    const games = demoSeasonPackage().events.length;
+    expect(
+      screen.getByText(`Seats 21-22 · all ${games} games`),
+    ).toBeInTheDocument();
   });
 
   it("shows Standard admission for a package order with no offer", async () => {
@@ -402,9 +407,7 @@ describe("Checkout success receipt", () => {
     render(<CheckoutSuccessPageRoute />);
 
     expect((await screen.findAllByText(pack.name)).length).toBeGreaterThan(0);
-    expect(
-      screen.queryByText(`${pack.gameTickets} flex vouchers`),
-    ).not.toBeInTheDocument();
+    expect(screen.getByText(`${pack.gameTickets} vouchers`)).toBeInTheDocument();
     expect(screen.getByText("Subtotal")).toBeInTheDocument();
     expect(screen.getAllByText(formatCurrency(totals.subtotal)).length).toBeGreaterThan(
       0,

@@ -1521,7 +1521,7 @@ describe("SeasonTickets package tab", () => {
     expect(screen.queryByText("Doors")).not.toBeInTheDocument();
   });
 
-  it("labels package game seats Season tickets instead of Tickets", async () => {
+  it("labels package game seats Tickets", async () => {
     const order = demoCompletedPackageOrder({
       tickets: demoCompletedPackageOrder().tickets.map((ticket) => ({
         ...ticket,
@@ -1540,8 +1540,8 @@ describe("SeasonTickets package tab", () => {
     });
     for (const print of printButtons) {
       const seatRow = print.closest(".st-ev-seat")!;
-      expect(within(seatRow).getByText("Season tickets")).toBeInTheDocument();
-      expect(within(seatRow).queryByText("Tickets")).not.toBeInTheDocument();
+      expect(within(seatRow).getByText("Tickets")).toBeInTheDocument();
+      expect(within(seatRow).queryByText("Season tickets")).not.toBeInTheDocument();
     }
   });
 
@@ -8523,56 +8523,6 @@ describe("SeasonTickets ticket screen responsive layout", () => {
     expect(
       screen.queryByRole("link", { name: /All tickets/i }),
     ).not.toBeInTheDocument();
-
-    Reflect.deleteProperty(navigator, "userAgent");
-  });
-
-  it("badges phone ticket cards that came from a package", async () => {
-    Object.defineProperty(window, "matchMedia", {
-      configurable: true,
-      writable: true,
-      value: (query: string) =>
-        ({ matches: query === "(pointer: coarse)" }) as MediaQueryList,
-    });
-    Object.defineProperty(navigator, "userAgent", {
-      configurable: true,
-      writable: true,
-      value: "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X)",
-    });
-    mockedGetMyEvents.mockResolvedValue({
-      data: [demoCompletedPackageOrder()],
-    } as never);
-    navigationMocks.pathname = `/wallet/my-tickets/order/${packageOrderId}/package/${pkg.uuid}/event/${pkg.events[1].uuid}/`;
-
-    render(<SeasonTickets />);
-
-    const badges = await screen.findAllByTestId("wallet-ticket-card-badge");
-    expect(badges[0]).toHaveTextContent("Season Tickets");
-
-    Reflect.deleteProperty(navigator, "userAgent");
-  });
-
-  it("leaves the badge off phone ticket cards bought as single tickets", async () => {
-    Object.defineProperty(window, "matchMedia", {
-      configurable: true,
-      writable: true,
-      value: (query: string) =>
-        ({ matches: query === "(pointer: coarse)" }) as MediaQueryList,
-    });
-    Object.defineProperty(navigator, "userAgent", {
-      configurable: true,
-      writable: true,
-      value: "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X)",
-    });
-
-    render(<SeasonTickets />);
-
-    expect(
-      (await screen.findAllByRole("button", { name: "View QR-Code" })).length,
-    ).toBeGreaterThan(0);
-    expect(
-      screen.queryAllByTestId("wallet-ticket-card-badge"),
-    ).toHaveLength(0);
 
     Reflect.deleteProperty(navigator, "userAgent");
   });

@@ -71,9 +71,12 @@ function RowIcon({ accent, children, size, marginTop }: { accent: string; childr
 export default function BuyerProtectionCard({
   accent,
   bg,
+  pricesIncludeFees = true,
 }: {
   accent: string;
   bg?: string;
+  /** Package and flex-pack prices do not include fees; hide the all-in row. */
+  pricesIncludeFees?: boolean;
 }) {
   const surface: CSSProperties = bg
     ? {
@@ -104,7 +107,7 @@ export default function BuyerProtectionCard({
       }}
     >
       {bg
-        ? INLINE.map((row) => (
+        ? INLINE.filter((row) => pricesIncludeFees || !row.title.startsWith("Prices are all-in")).map((row) => (
             <div key={row.title} style={{ display: "flex", alignItems: "flex-start", gap: 12, minWidth: 0 }}>
               <RowIcon accent={accent} size={18} marginTop={1}>
                 {row.icon}
@@ -114,7 +117,7 @@ export default function BuyerProtectionCard({
               </div>
             </div>
           ))
-        : STACKED.map((row) => (
+        : STACKED.filter((row) => pricesIncludeFees || row.title !== "Prices are all-in").map((row) => (
             <div key={row.title} style={{ display: "flex", gap: 14 }}>
               <RowIcon accent={accent} size={22} marginTop={2}>
                 <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
