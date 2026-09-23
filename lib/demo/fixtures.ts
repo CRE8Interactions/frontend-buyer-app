@@ -708,6 +708,28 @@ export const DEMO_SEATED_TICKET_GROUPS: RawTicketGroup[] = [
       maxQuantity: 8,
     },
   },
+  {
+    id: 90,
+    sectionId: "sec-a",
+    sectionNumber: "A",
+    rowNumber: "1",
+    price: 45,
+    availableCount: 2,
+    maxContiguous: 2,
+    seatIds: ["a-resale-1", "a-resale-2"],
+    GA: false,
+    accessible: false,
+    resale: true,
+    on_sale_status: "resaleAvailable",
+    offer: {
+      id: 90,
+      name: "Section A-B",
+      color: "#F58231",
+      inventoryType: "exclusive",
+      minQuantity: 1,
+      maxQuantity: 2,
+    },
+  },
 ];
 
 /** Attach sellable ticket inventory so FROM prices come from tickets, not tiers. */
@@ -715,6 +737,8 @@ for (const event of DEMO_EVENTS) {
   Object.assign(event, {
     enableTransfers: true,
     enableResale: true,
+    resaleMinimumPercent: 10,
+    secondaryServiceFeeSeller: 0.1,
     ticketGroups:
       event.seatmap?.ga_only === false
         ? DEMO_SEATED_TICKET_GROUPS
@@ -736,7 +760,7 @@ const DEMO_MAPPING_SECTIONS = [
     sectionId: "sec-a",
     sectionNumber: "A",
     rowId: "row-a12",
-    seats: ["a1", "a2", "a3", "a4", "a5", "a6"],
+    seats: ["a1", "a2", "a3", "a4", "a5", "a6", "a-resale-1", "a-resale-2"],
   },
   {
     sectionId: "sec-n",
@@ -1191,6 +1215,124 @@ export function demoCompletedTicketOrder(
     },
     overrides,
   );
+}
+
+function demoListingTicketsFromOrder(
+  order: ReturnType<typeof demoCompletedTicketOrder>,
+  ticketIds: number[],
+) {
+  return (order.tickets as Array<Record<string, unknown>>).filter((ticket) =>
+    ticketIds.includes(Number(ticket.id)),
+  );
+}
+
+/** Canonical wallet listing records: new / complete / expired (status only). */
+export function demoActiveListing(overrides: Record<string, unknown> = {}) {
+  const order = demoCompletedTicketOrder();
+  const event = {
+    ...(order.event as Record<string, unknown>),
+    start: demoDate({ days: 8 }, "23:00"),
+    resaleMinimumPercent: 10,
+    secondaryServiceFeeSeller: 0.1,
+  };
+  const tickets = demoListingTicketsFromOrder(order, [7001]);
+  return applyOverrides(
+    {
+      id: "listing-active-1",
+      status: "new",
+      askingPrice: 55,
+      quantity: tickets.length,
+      tickets,
+      event,
+      fromOrder: order.id,
+      createdAt: demoDate({ days: -1 }, "15:00"),
+    },
+    overrides,
+  );
+}
+
+export function demoActiveListingLater(overrides: Record<string, unknown> = {}) {
+  const order = demoCompletedTicketOrder();
+  const event = {
+    ...(order.event as Record<string, unknown>),
+    name: `${order.event.name} (later)`,
+    start: demoDate({ days: 21 }, "19:00"),
+    resaleMinimumPercent: 10,
+    secondaryServiceFeeSeller: 0.1,
+  };
+  const tickets = demoListingTicketsFromOrder(order, [7002]);
+  return applyOverrides(
+    {
+      id: "listing-active-2",
+      status: "new",
+      askingPrice: 48,
+      quantity: tickets.length,
+      tickets,
+      event,
+      fromOrder: order.id,
+      createdAt: demoDate({ days: -2 }, "12:00"),
+    },
+    overrides,
+  );
+}
+
+/** Sold listing whose event start is in the past stays `complete`. */
+export function demoSoldListing(overrides: Record<string, unknown> = {}) {
+  const order = demoCompletedTicketOrder();
+  const event = {
+    ...(order.event as Record<string, unknown>),
+    name: `${order.event.name} (sold)`,
+    start: demoDate({ days: -12 }, "23:00"),
+  };
+  const tickets = demoListingTicketsFromOrder(order, [7003]);
+  return applyOverrides(
+    {
+      id: "listing-sold-1",
+      status: "complete",
+      askingPrice: 60,
+      quantity: tickets.length,
+      tickets,
+      event,
+      fromOrder: order.id,
+      createdAt: demoDate({ days: -20 }, "14:00"),
+      soldAt: demoDate({ days: -14 }, "18:30"),
+      soldToEmail: "buyer@example.com",
+    },
+    overrides,
+  );
+}
+
+export function demoExpiredListing(overrides: Record<string, unknown> = {}) {
+  const order = demoCompletedTicketOrder();
+  const event = {
+    ...(order.event as Record<string, unknown>),
+    name: `${order.event.name} (expired)`,
+    start: demoDate({ days: 4 }, "19:00"),
+  };
+  const tickets = demoListingTicketsFromOrder(order, [7004]);
+  return applyOverrides(
+    {
+      id: "listing-expired-1",
+      status: "expired",
+      askingPrice: 40,
+      quantity: tickets.length,
+      tickets,
+      event,
+      fromOrder: order.id,
+      createdAt: demoDate({ days: -8 }, "10:00"),
+      expiredAt: demoDate({ days: -1 }, "09:00"),
+    },
+    overrides,
+  );
+}
+
+export function demoWalletListings() {
+  return [
+    demoActiveListingLater(),
+    demoSoldListing(),
+    demoExpiredListing(),
+    demoActiveListing(),
+  ];
 }
 
 /** Completed season-package order used by checkout-success receipt PDFs. */

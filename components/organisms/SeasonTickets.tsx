@@ -83,6 +83,38 @@ import {
   type TransferModalKind,
 } from "@/lib/transferModalCopy";
 import {
+  sellConfirmTitle,
+  sellLoadingTitle,
+  sellRemoveBody,
+  sellRemoveTitle,
+  sellRemovalLine,
+  sellStayOnScreenLine,
+  sellSuccessBody,
+  sellSuccessTitle,
+} from "@/lib/sellModalCopy";
+import {
+  LISTING_PRICE_COPY,
+  buildCreateListingPayload,
+  listingAskingPriceError,
+  listingEventName,
+  listingFaceValue,
+  listingMinimumAskingPrice,
+  listingNetPayout,
+  listingSchedule,
+  listingSeatLines,
+  listingSellerFeeAmount,
+  listingStatusDotLine,
+  listingsForTab,
+  mapWalletListing,
+  mergeListingsById,
+  parseAskingPrice,
+  parseListingApiError,
+  removeListingById,
+  unwrapListingRecords,
+  eventResaleMinimumPercent,
+  type WalletListing,
+} from "@/lib/walletListings";
+import {
   acceptIncomingTransfers,
   cancelMyTransfers,
   createTicketTransfer,
@@ -96,9 +128,12 @@ import {
   getMyReceivedTransfers,
   getMySentTransfers,
   getOrder,
+  createListing,
+  updateMyListings,
+  removeMyListings,
 } from "@/lib/api";
 import { getSession } from "@/lib/auth";
-import { imageUrl, isRequestCanceled } from "@/lib/helpers";
+import { imageUrl, isRequestCanceled, formatCurrency } from "@/lib/helpers";
 import {
   applyAcceptedIncomingPassTransferToOrders,
   buildFlexPackSummaries,
@@ -110,6 +145,7 @@ import {
   removeTicketsFromWalletDetails,
   removeTicketsFromWalletOrders,
   restoreCancelledTransferTicketsToOrders,
+  restoreTicketsToWalletOrders,
   summarizeEventDetails,
   summarizeIncomingAccessPassTransfers,
   summarizeIncomingPassPackageTransfers,
@@ -1061,6 +1097,13 @@ type TransferWizard = {
   passKind?: Exclude<TransferModalKind, "ticket">;
 };
 
+type SellWizard = {
+  step: number;
+  sel: string[];
+  evId: string;
+  price: string;
+};
+
 let walletApiHydratedInBrowserSession = false;
 
 /** Reset first-load API-only hydration (tests simulate a fresh browser session). */
@@ -1127,6 +1170,19 @@ export default function SeasonTickets({
   const [tfEmailErr, setTfEmailErr] = useState<EmailFieldError>(null);
   const [tfError, setTfError] = useState("");
   const [tfSaving, setTfSaving] = useState(false);
+  const [sell, setSell] = useState<SellWizard | null>(null);
+  const [sellError, setSellError] = useState("");
+  const [sellPriceErr, setSellPriceErr] = useState<string | null>(null);
+  const [sellSaving, setSellSaving] = useState(false);
+  const [walletListings, setWalletListings] = useState<WalletListing[]>([]);
+  const walletListingsRef = useRef<WalletListing[]>([]);
+  const [confirmRemoveListing, setConfirmRemoveListing] = useState<WalletListing | null>(null);
+  const [confirmRemoveSaving, setConfirmRemoveSaving] = useState(false);
+  const [confirmRemoveError, setConfirmRemoveError] = useState("");
+  const [editListing, setEditListing] = useState<WalletListing | null>(null);
+  const [editListingPrice, setEditListingPrice] = useState("");
+  const [editListingErr, setEditListingErr] = useState<string | null>(null);
+  const [editListingSaving, setEditListingSaving] = useState(false);
   const [qrPass, setQrPass] = useState<{
     pass: AccessPassSummary;
     kind: "season pass" | "access pass";
@@ -1258,6 +1314,10 @@ export default function SeasonTickets({
   );
   const toastT = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastSection = useRef(section);
+
+  useEffect(() => {
+    walletListingsRef.current = walletListings;
+  }, [walletListings]);
 
   const setCodeValue = (raw: string) => {
     const next = raw.replace(/\D/g, "").slice(0, 6);
@@ -1675,15 +1735,23 @@ export default function SeasonTickets({
     if (!session?.jwt) {
       setResaleListingsLoading(false);
       setResaleListingsChecked(true);
+      setWalletListings([]);
       return;
     }
     const { generation: reloadGeneration, signal } = acquireWalletReloadSignal();
+    setResaleListingsChecked(false);
     setResaleListingsLoading(true);
     try {
-      await walletReloadFetch(signal, () => getMyListings({ signal }));
+      const res = await walletReloadFetch(signal, () => getMyListings({ signal }));
       if (reloadGeneration !== walletReloadGenerationRef.current) return;
+      if (res) {
+        const mapped = unwrapListingRecords(res.data)
+          .map(mapWalletListing)
+          .filter((row): row is WalletListing => Boolean(row));
+        setWalletListings(mapped);
+      }
     } catch {
-      /* keep the current resale empty state on refresh failure */
+      /* keep current listings on refresh failure */
     } finally {
       if (reloadGeneration !== walletReloadGenerationRef.current) return;
       setResaleListingsLoading(false);
@@ -2144,7 +2212,7 @@ export default function SeasonTickets({
         initials: ev.teams[1]?.initials || ev.initials,
       };
 
-  const anyModal = !!modal || !!tf || !!confirmCancel || !!confirmAccept || !!qrPass;
+  const anyModal = !!modal || !!tf || !!sell || !!confirmCancel || !!confirmAccept || !!qrPass || !!confirmRemoveListing || !!editListing;
   useEffect(() => {
     if (!anyModal) return;
     lockPageScroll();
@@ -4647,6 +4715,13 @@ export default function SeasonTickets({
     setTfError("");
     setModal(null);
   };
+  const openSell = () => {
+    setSell({ step: 1, sel: [], evId: activeEvId, price: "" });
+    setSellError("");
+    setSellPriceErr(null);
+    setSellSaving(false);
+    setModal(null);
+  };
   const printTickets = async (
     tickets: EventT["tickets"],
     mode: "open" | "download",
@@ -5029,8 +5104,9 @@ export default function SeasonTickets({
             </button>
           ) : null}
           {canSellEvent ? (
-            <Link
-              href={walletSectionHref("resale")}
+            <button
+              type="button"
+              onClick={openSell}
               style={{
                 fontFamily: "inherit",
                 width: "100%",
@@ -5043,15 +5119,10 @@ export default function SeasonTickets({
                 borderRadius: 14,
                 padding: "12px 16px",
                 cursor: "pointer",
-                textDecoration: "none",
-                boxSizing: "border-box",
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
               }}
             >
               Sell
-            </Link>
+            </button>
           ) : null}
     </div>
       </MobileStickyFooter>
@@ -5157,7 +5228,7 @@ export default function SeasonTickets({
               <button type="button" onClick={openTransfer} style={manageActionBtnStyle}>Transfer</button>
             ) : null}
             {canSellEvent ? (
-              <Link href={walletSectionHref("resale")} style={manageActionBtnStyle}>Sell</Link>
+              <button type="button" onClick={openSell} style={manageActionBtnStyle}>Sell</button>
             ) : null}
             <button
               type="button"
@@ -5519,22 +5590,28 @@ export default function SeasonTickets({
       body: "Listings that end without a sale will move here.",
     },
   } as const;
+  const listingTabRows = {
+    active: listingsForTab(walletListings, "active"),
+    sold: listingsForTab(walletListings, "sold"),
+    expired: listingsForTab(walletListings, "expired"),
+  };
+  const listingsPagePending = !resaleListingsChecked || resaleListingsLoading;
+  const saleRows = listingTabRows[saleTab];
+  const openEditListing = (listing: WalletListing) => {
+    setEditListing(listing);
+    setEditListingPrice(String(listing.askingPrice || ""));
+    setEditListingErr(null);
+    setEditListingSaving(false);
+  };
+  const openRemoveListing = (listing: WalletListing) => {
+    setConfirmRemoveError("");
+    setConfirmRemoveSaving(false);
+    setConfirmRemoveListing(listing);
+  };
   const Resale = () => (
     <div style={{ maxWidth: 1100, margin: "0 auto", padding: bodyPad, display: "flex", flexDirection: "column", gap: 18 }}>
       {WalletPageTitle("Listings")}
-      <div
-        role="tablist"
-        aria-label="Listing status"
-        style={{
-          display: "inline-flex",
-          alignSelf: "flex-start",
-          alignItems: "center",
-          background: INK,
-          border: "1px solid rgba(255,255,255,0.10)",
-          borderRadius: 999,
-          padding: 4,
-        }}
-      >
+      <div role="tablist" aria-label="Listing status" style={{ display: "flex", gap: 6 }}>
         {([
           { id: "active" as const, label: "Active" },
           { id: "sold" as const, label: "Sold" },
@@ -5546,34 +5623,78 @@ export default function SeasonTickets({
               key={t.id}
               type="button"
               role="tab"
+              aria-label={t.label}
               aria-selected={on}
               onClick={() => setSaleTab(t.id)}
-              style={{
-                fontFamily: "inherit",
-                fontSize: fluidSize(14),
-                fontWeight: 600,
-                color: on ? INK : "rgba(184, 198, 220, 0.92)",
-                background: on ? ACCENT : "transparent",
-                border: "none",
-                borderRadius: 999,
-                padding: "10px 18px",
-                minWidth: 96,
-                minHeight: 40,
-                cursor: "pointer",
-                whiteSpace: "nowrap",
-              }}
+              style={chip(on)}
             >
               {t.label}
+              <span
+                aria-hidden={listingsPagePending || undefined}
+                style={{
+                  ...pillCountStyle(on),
+                  visibility: listingsPagePending ? "hidden" : "visible",
+                }}
+              >
+                {listingsPagePending ? "" : listingTabRows[t.id].length}
+              </span>
             </button>
           );
         })}
       </div>
-      {!resaleListingsChecked || resaleListingsLoading ? (
+      {listingsPagePending ? (
         <WalletTicketsBlocksLoading routeDestination />
       ) : (
-      <div style={walletEmptyState}>
-        <div style={{ fontSize: fluidSize(15), fontWeight: 600 }}>{saleEmpty[saleTab].title}</div>
-        <div style={{ marginTop: 6, fontSize: fluidSize(13), color: SUB }}>{saleEmpty[saleTab].body}</div>
+      <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+        {saleRows.length === 0 ? (
+          <div style={walletEmptyState}>
+            <div style={{ fontSize: fluidSize(15), fontWeight: 600 }}>{saleEmpty[saleTab].title}</div>
+            <div style={{ marginTop: 6, fontSize: fluidSize(13), color: SUB }}>{saleEmpty[saleTab].body}</div>
+          </div>
+        ) : saleRows.map((listing) => {
+          const active = saleTab === "active";
+          const schedule = listingSchedule(listing);
+          return (
+            <div key={listing.id} style={{ ...card, borderRadius: 20, padding: cardPad, display: "flex", alignItems: "center", gap: 14, flexWrap: "wrap" }}>
+              <div style={{ flex: 1, minWidth: 200, display: "flex", flexDirection: "column", gap: 5 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: fluidSize(12), fontWeight: 600, whiteSpace: "nowrap", color: active ? GREEN : SUB }}>
+                  <span style={{ width: 5, height: 5, flexShrink: 0, borderRadius: 999, background: active ? GREEN : MUTE }} />
+                  {listingStatusDotLine(listing)}
+                </div>
+                <div style={{ fontSize: fluidSize(17), fontWeight: 600, letterSpacing: "-0.015em" }}>{listingEventName(listing)}</div>
+                {schedule ? (
+                  <div style={{ fontSize: fluidSize(13), color: SUB }}>{schedule}</div>
+                ) : null}
+                <StackedSeatLines
+                  lines={listingSeatLines(listing)}
+                  style={{ fontSize: fluidSize(13), color: SUB }}
+                />
+                <div style={{ fontSize: fluidSize(13), color: SUB }}>
+                  Asking {formatCurrency(listing.askingPrice)}
+                  {listing.payout ? ` · Payout ${formatCurrency(listing.payout)}` : ""}
+                </div>
+              </div>
+              {active ? (
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+                  <button
+                    type="button"
+                    onClick={() => openEditListing(listing)}
+                    style={{ fontFamily: "inherit", flexShrink: 0, fontSize: fluidSize(13), fontWeight: 600, color: INK, background: "#fff", border: "1px solid rgba(5,27,53,0.14)", borderRadius: 999, padding: "10px 16px", minHeight: 42, whiteSpace: "nowrap", cursor: "pointer" }}
+                  >
+                    Edit
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => openRemoveListing(listing)}
+                    style={{ fontFamily: "inherit", flexShrink: 0, fontSize: fluidSize(13), fontWeight: 600, color: DANGER, background: "#fff", border: "1px solid rgba(194,57,74,0.28)", borderRadius: 999, padding: "10px 16px", minHeight: 42, whiteSpace: "nowrap", cursor: "pointer" }}
+                  >
+                    Remove
+                  </button>
+                </div>
+              ) : null}
+            </div>
+          );
+        })}
       </div>
       )}
     </div>
@@ -6368,6 +6489,511 @@ export default function SeasonTickets({
     </div>
   );
 
+  const sellEv = sell ? (events[sell.evId] || ev) : ev;
+  const sellTickets = (sellEv?.tickets || [])
+    .map((ticket, index) => {
+      const chip = transferSeatChip(ticket.raw, ticket.seat);
+      return {
+        ticket,
+        key: String(ticket.id ?? ticket.code ?? index),
+        ...chip,
+      };
+    })
+    .filter(({ ticket }) => ticket.id != null);
+  const sellRowLabel = transferGroupLabel(
+    sellEv?.tickets?.[0]?.raw as TicketLike | undefined,
+  );
+  const sellStep = sell?.step || 1;
+  const sellSel = sell?.sel || [];
+  const sellSelectedTickets = sellTickets.filter(({ key }) => sellSel.includes(key));
+  const sellCount = Math.max(sellSel.length, sellSelectedTickets.length, 1);
+  const sellFace = listingFaceValue(
+    sellSelectedTickets.map(({ ticket }) => (ticket.raw ?? ticket) as TicketLike),
+  );
+  const sellMinPercent = eventResaleMinimumPercent(sellEv?.event);
+  const sellMinPrice = listingMinimumAskingPrice(sellFace, sellMinPercent);
+  const sellAsking = parseAskingPrice(sell?.price || "") ?? 0;
+  const sellFee = listingSellerFeeAmount(sellAsking, sellEv?.event);
+  const sellPayout = listingNetPayout(sellAsking, sellSelectedTickets.length || 1, sellEv?.event);
+  const closeSellModal = () => {
+    if (sellSaving) return;
+    setSell(null);
+    setSellError("");
+    setSellPriceErr(null);
+    setSellSaving(false);
+  };
+  const sellCanNext =
+    !sellSaving &&
+    (sellStep === 1
+      ? sellSelectedTickets.length > 0
+      : sellStep === 5
+        ? true
+        : true);
+  const doSellPrimary = async () => {
+    if (!sell) return;
+    if (sellStep === 1 && sellSelectedTickets.length === 0) return;
+    if (sellStep === 1) {
+      setSell({ ...sell, step: 2 });
+      return;
+    }
+    if (sellStep === 5) {
+      closeSellModal();
+      return;
+    }
+    if (sellStep === 2) {
+      const error = listingAskingPriceError(sell.price, {
+        face: sellFace,
+        resaleMinimumPercent: sellMinPercent,
+        mode: "submit",
+      });
+      setSellPriceErr(error);
+      if (error) return;
+      setSell({ ...sell, step: 3 });
+      return;
+    }
+    if (sellStep === 3) {
+      setSell({ ...sell, step: 4 });
+      return;
+    }
+    if (sellStep === 4) {
+      const price = parseAskingPrice(sell.price);
+      const error = listingAskingPriceError(sell.price, {
+        face: sellFace,
+        resaleMinimumPercent: sellMinPercent,
+        mode: "submit",
+      });
+      if (error || price == null) {
+        setSellError(error || LISTING_PRICE_COPY.greaterThanZero);
+        return;
+      }
+      const selectedRaws = sellSelectedTickets.map(({ ticket }) => ({
+        ...(ticket.raw ?? {}),
+        id: ticket.id,
+      })) as TicketLike[];
+      const payload = buildCreateListingPayload({
+        tickets: selectedRaws,
+        askingPrice: price,
+        event: sellEv?.event,
+        fromOrder: sellEv?.orderRecordId,
+      });
+      setSellSaving(true);
+      setSellError("");
+      try {
+        const res = await createListing(payload);
+        const created =
+          mapWalletListing(res.data) ||
+          mapWalletListing({
+            ...(typeof res.data === "object" && res.data ? res.data : {}),
+            tickets: selectedRaws,
+            event: sellEv?.event,
+            fromOrder: sellEv?.orderRecordId,
+            askingPrice: price,
+            status: "new",
+            createdAt: new Date().toISOString(),
+          });
+        if (created) {
+          setWalletListings(
+            mergeListingsById(walletListingsRef.current, [created]),
+          );
+        }
+        const removedTicketIds = sellSelectedTickets
+          .map(({ ticket }) => ticket.id)
+          .filter((id): id is number | string => id != null && id !== "");
+        const nextOrders = removeTicketsFromWalletOrders(
+          walletOrders,
+          removedTicketIds,
+        );
+        await syncWalletAfterTransferAction({
+          orders: nextOrders,
+          removedTicketIds,
+        });
+        setSell({ ...sell, step: 5 });
+      } catch (err) {
+        setSellError(parseListingApiError(err, "create"));
+      } finally {
+        setSellSaving(false);
+      }
+    }
+  };
+
+  const SellModal = () => {
+    if (!sell) return null;
+    const inFlight = sellSaving && sellStep === 4;
+    return (
+      <div style={{ ...overlay, zIndex: 85, alignItems: mobile ? "flex-end" : "center", padding: mobile ? 0 : 32 }}>
+        <div className={mobile ? "st-sheet-up st-transfer-sheet" : undefined} onClick={(e) => e.stopPropagation()} style={{ ...sheet, maxWidth: mobile ? "100%" : 460, width: "100%", maxHeight: mobile ? "92vh" : "88vh", overflowY: "auto", borderRadius: mobile ? "26px 26px 0 0" : 26, paddingBottom: mobile ? "calc(22px + env(safe-area-inset-bottom))" : 22 }}>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, paddingBottom: 16, borderBottom: "1px solid rgba(5,27,53,0.08)" }}>
+            <h2 style={{ margin: 0, fontSize: transferModalType.title, lineHeight: 1.5, fontWeight: 600, letterSpacing: "-0.02em" }}>Sell</h2>
+            {sellSaving ? null : closeX(() => void closeSellModal())}
+          </div>
+          {sellStep === 1 && (
+            <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+              <div style={{ fontSize: transferModalType.stepTitle, lineHeight: 1.5, fontWeight: 600, letterSpacing: "-0.015em" }}>Select tickets to list</div>
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
+                <div style={{ fontSize: transferModalType.meta, lineHeight: 1.5, fontWeight: 600, color: mobile ? SUB : FAINT }}>{sellRowLabel}</div>
+                <div style={{ fontSize: transferModalType.metaMuted, lineHeight: 1.5, fontWeight: 600, color: mobile ? SUB : MUTE }}>{sellTickets.length} {sellTickets.length === 1 ? "ticket" : "tickets"}</div>
+              </div>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 10 }}>
+                {sellTickets.map(({ key, seatNo, isGA, ariaLabel }) => {
+                  const picked = sellSel.includes(key);
+                  return (
+                    <button key={key} type="button" aria-pressed={picked} aria-label={ariaLabel} onClick={() => setSell({ ...sell, sel: picked ? sellSel.filter((x) => x !== key) : [...sellSel, key] })} style={{ fontFamily: "inherit", ...transferChipStyle, display: "flex", flexDirection: "column", alignItems: "center", gap: isGA ? 0 : 2, background: picked ? ACCENT : FIELD, color: INK, border: `1px solid ${picked ? ACCENT : "rgba(5,27,53,0.10)"}`, borderRadius: 16, cursor: "pointer" }}>
+                      {!isGA ? (
+                        <span style={{ fontSize: transferChipType.seatLabel, lineHeight: 1.5, fontWeight: 500, color: picked ? "rgba(255,255,255,0.72)" : MUTE }}>Seat</span>
+                      ) : null}
+                      <span style={{ fontSize: transferChipType.seatNo, fontWeight: 600, letterSpacing: "-0.02em", lineHeight: 1.5 }}>{seatNo}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+          {sellStep === 2 && (
+            <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+              <div style={{ fontSize: transferModalType.stepTitle, lineHeight: 1.5, fontWeight: 600, letterSpacing: "-0.015em" }}>Set price</div>
+              <div style={{ display: "flex", flexDirection: "column", gap: 3, background: FIELD, borderRadius: 14, padding: "14px 16px" }}>
+                <div style={{ fontSize: transferModalType.fieldLabel, fontWeight: 600, color: FAINT }}>Face value</div>
+                <div style={{ fontSize: transferModalType.fieldValue, fontWeight: 600 }}>{formatCurrency(sellFace)}</div>
+              </div>
+              {sellMinPrice != null ? (
+                <div style={{ display: "flex", flexDirection: "column", gap: 3, background: FIELD, borderRadius: 14, padding: "14px 16px" }}>
+                  <div style={{ fontSize: transferModalType.fieldLabel, fontWeight: 600, color: FAINT }}>Minimum asking price</div>
+                  <div style={{ fontSize: transferModalType.fieldValue, fontWeight: 600 }}>{formatCurrency(sellMinPrice)}</div>
+                </div>
+              ) : null}
+              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                <label htmlFor="sell-asking-price" style={{ fontSize: transferModalType.fieldLabel, fontWeight: 600, color: FAINT }}>Asking price per ticket</label>
+                <input
+                  id="sell-asking-price"
+                  inputMode="decimal"
+                  value={sell.price}
+                  onChange={(e) => {
+                    setSell({ ...sell, price: e.target.value });
+                    if (sellPriceErr) setSellPriceErr(null);
+                  }}
+                  onBlur={() => {
+                    setSellPriceErr(
+                      listingAskingPriceError(sell.price, {
+                        face: sellFace,
+                        resaleMinimumPercent: sellMinPercent,
+                        mode: "blur",
+                      }),
+                    );
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      e.preventDefault();
+                      void doSellPrimary();
+                    }
+                  }}
+                  style={{ fontFamily: "inherit", width: "100%", boxSizing: "border-box", fontSize: fluidSize(16), color: INK, background: "#fff", border: `1px solid ${sellPriceErr ? DANGER : "rgba(5,27,53,0.12)"}`, borderRadius: 14, padding: "14px 16px", outline: "none" }}
+                />
+                {sellPriceErr ? (
+                  <div role="alert" style={{ fontSize: transferModalType.error, color: DANGER }}>{sellPriceErr}</div>
+                ) : null}
+              </div>
+              <div style={{ display: "flex", flexDirection: "column", gap: 3, background: FIELD, borderRadius: 14, padding: "14px 16px" }}>
+                <div style={{ fontSize: transferModalType.fieldLabel, fontWeight: 600, color: FAINT }}>Seller fee</div>
+                <div style={{ fontSize: transferModalType.fieldValue, fontWeight: 600 }}>{formatCurrency(listingSellerFeeAmount(parseAskingPrice(sell.price) || 0, sellEv?.event))}</div>
+              </div>
+            </div>
+          )}
+          {sellStep === 3 && (
+            <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+              <div style={{ fontSize: transferModalType.stepTitle, lineHeight: 1.5, fontWeight: 600, letterSpacing: "-0.015em" }}>Payout summary</div>
+              {[
+                { label: "Asking price per ticket", value: formatCurrency(sellAsking) },
+                { label: "Quantity", value: String(sellSelectedTickets.length) },
+                { label: "Seller fee", value: formatCurrency(sellFee) },
+                { label: "Net payout", value: formatCurrency(sellPayout) },
+              ].map((row) => (
+                <div key={row.label} style={{ display: "flex", flexDirection: "column", gap: 3, background: FIELD, borderRadius: 14, padding: "14px 16px" }}>
+                  <div style={{ fontSize: transferModalType.fieldLabel, fontWeight: 600, color: FAINT }}>{row.label}</div>
+                  <div style={{ fontSize: transferModalType.fieldValue, fontWeight: 600 }}>{row.value}</div>
+                </div>
+              ))}
+            </div>
+          )}
+          {sellStep === 4 && !inFlight ? (
+            <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+              <div style={{ fontSize: transferModalType.stepTitle, lineHeight: 1.5, fontWeight: 600, letterSpacing: "-0.015em" }}>{sellConfirmTitle(sellSelectedTickets.length)}</div>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 10 }}>
+                {sellSelectedTickets.map(({ key, seatNo, isGA, ariaLabel }) => (
+                  <div key={key} aria-label={ariaLabel} style={{ ...transferChipStyle, display: "flex", flexDirection: "column", alignItems: "center", gap: isGA ? 0 : 2, background: FIELD, color: INK, border: "1px solid rgba(5,27,53,0.10)", borderRadius: 16 }}>
+                    {!isGA ? (
+                      <span style={{ fontSize: transferChipType.seatLabel, lineHeight: 1.5, fontWeight: 500, color: MUTE }}>Seat</span>
+                    ) : null}
+                    <span style={{ fontSize: transferChipType.seatNo, fontWeight: 600, letterSpacing: "-0.02em", lineHeight: 1.5 }}>{seatNo}</span>
+                  </div>
+                ))}
+              </div>
+              <div style={{ display: "flex", flexDirection: "column", gap: 3, background: FIELD, borderRadius: 14, padding: "14px 16px" }}>
+                <div style={{ fontSize: transferModalType.fieldLabel, fontWeight: 600, color: FAINT }}>Asking price per ticket</div>
+                <div style={{ fontSize: transferModalType.fieldValue, fontWeight: 600 }}>{formatCurrency(sellAsking)}</div>
+              </div>
+              <p style={{ margin: 0, fontSize: transferModalType.body, lineHeight: browseLeading("body"), color: SUB }}>
+                {sellRemovalLine(sellSelectedTickets.length)}
+              </p>
+            </div>
+          ) : null}
+          {inFlight ? (
+            <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+              <div style={{ fontSize: transferModalType.stepTitle, lineHeight: 1.5, fontWeight: 600, letterSpacing: "-0.015em" }}>{sellLoadingTitle(sellSelectedTickets.length)}</div>
+              <p style={{ margin: 0, fontSize: transferModalType.body, lineHeight: browseLeading("body"), color: SUB }}>{sellStayOnScreenLine()}</p>
+            </div>
+          ) : null}
+          {sellError && sellStep !== 2 ? (
+            <div role="alert" style={{ fontSize: transferModalType.error, color: DANGER }}>{sellError}</div>
+          ) : null}
+          {sellStep === 5 && !sellSaving ? (
+            <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 14, padding: "6px 0 2px" }}>
+              <div style={{ width: 78, height: 78, borderRadius: 999, background: GREEN, display: "flex", alignItems: "center", justifyContent: "center" }}>
+                <svg viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth={2.6} strokeLinecap="round" strokeLinejoin="round" style={{ width: 38, height: 38 }}><polyline points="20 6 9 17 4 12" /></svg>
+              </div>
+              <div style={{ fontSize: transferModalType.success, lineHeight: 1.5, fontWeight: 600, letterSpacing: "-0.02em", textAlign: "center" }}>{sellSuccessTitle(sellCount)}</div>
+              <p style={{ margin: 0, fontSize: transferModalType.body, lineHeight: browseLeading("body"), color: SUB, textAlign: "center" }}>{sellSuccessBody(sellCount)}</p>
+            </div>
+          ) : null}
+          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            {(sellStep === 2 || sellStep === 3 || (sellStep === 4 && !sellSaving)) ? (
+              <button type="button" onClick={() => { setSellError(""); setSellPriceErr(null); setSell({ ...sell, step: sellStep - 1 }); }} style={{ fontFamily: "inherit", flexShrink: 0, display: "flex", alignItems: "center", gap: 8, fontSize: transferModalType.button, lineHeight: 1.5, fontWeight: 600, color: INK, background: "#fff", border: "none", padding: "14px 12px", minHeight: 48, cursor: "pointer" }}><BackArrow />Back</button>
+            ) : null}
+            {sellStep === 5 && !sellSaving && (
+              <Link href={walletSectionHref("resale")} onClick={() => { closeSellModal(); }} style={{ fontFamily: "inherit", flex: 1, display: "flex", alignItems: "center", justifyContent: "center", fontSize: transferModalType.button, fontWeight: 600, color: INK, background: "#f1f3f8", borderRadius: 999, padding: 14, minHeight: 48, textDecoration: "none", cursor: "pointer" }}>My listings</Link>
+            )}
+            <button
+              type="button"
+              onClick={() => void doSellPrimary()}
+              disabled={!sellCanNext || sellSaving}
+              aria-busy={sellSaving || undefined}
+              style={{ fontFamily: "inherit", flex: 1, display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 8, fontSize: transferModalType.button, lineHeight: 1.5, fontWeight: 600, color: sellCanNext ? INK : MUTE, background: sellCanNext ? ACCENT : "#d7dbe6", border: "none", borderRadius: 999, padding: 14, minHeight: 48, cursor: "pointer" }}
+            >
+              <ButtonBusyContents
+                loading={sellSaving}
+                loadingLabel="Listing…"
+                spinnerColor={INK}
+                trackColor="rgba(5,27,53,0.2)"
+              >
+                {sellStep === 4 ? "List tickets" : sellStep === 5 ? "Close" : "Next"}
+              </ButtonBusyContents>
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  const submitRemoveListing = async () => {
+    if (!confirmRemoveListing || confirmRemoveSaving) return;
+    setConfirmRemoveSaving(true);
+    setConfirmRemoveError("");
+    try {
+      await removeMyListings(confirmRemoveListing.id);
+      setWalletListings(
+        removeListingById(walletListingsRef.current, confirmRemoveListing.id),
+      );
+      const nextOrders = restoreTicketsToWalletOrders(
+        walletOrders,
+        confirmRemoveListing.tickets,
+        confirmRemoveListing.fromOrder,
+      );
+      await syncWalletAfterTransferAction({ orders: nextOrders });
+      setConfirmRemoveListing(null);
+      flashToast("Listing removed");
+    } catch (err) {
+      setConfirmRemoveError(parseListingApiError(err, "delete"));
+    } finally {
+      setConfirmRemoveSaving(false);
+    }
+  };
+
+  const ConfirmRemoveListing = () => {
+    if (!confirmRemoveListing) return null;
+    const count = Math.max(confirmRemoveListing.tickets.length, confirmRemoveListing.quantity, 1);
+    const popupBtnDisabled: CSSProperties = confirmRemoveSaving
+      ? { opacity: 0.55, cursor: "default" }
+      : {};
+    return (
+      <div
+        style={{
+          ...overlay,
+          zIndex: 88,
+          alignItems: "center",
+          padding: mobile ? 18 : 32,
+        }}
+      >
+        <div
+          onClick={(e) => e.stopPropagation()}
+          style={{
+            ...sheet,
+            maxWidth: mobile ? "100%" : 420,
+            width: "100%",
+            maxHeight: mobile ? "88vh" : undefined,
+            overflowY: mobile ? "auto" : undefined,
+            borderRadius: 26,
+            padding: 24,
+            paddingBottom: 24,
+            gap: 16,
+            boxShadow: "0 30px 70px -30px rgba(5,27,53,0.6)",
+          }}
+          aria-busy={confirmRemoveSaving || undefined}
+        >
+          <h2 style={{ margin: 0, fontSize: 21, lineHeight: 1.5, fontWeight: 600, letterSpacing: "-0.02em" }}>{sellRemoveTitle()}</h2>
+          <p style={{ margin: 0, fontSize: fluidSize(14), lineHeight: browseLeading("body"), color: SUB }}>{sellRemoveBody(count)}</p>
+          <div style={{ display: "flex", flexDirection: "column", gap: 3, background: FIELD, borderRadius: 14, padding: "14px 16px" }}>
+            <div style={{ fontSize: fluidSize(14), fontWeight: 600 }}>{listingEventName(confirmRemoveListing)}</div>
+            <StackedSeatLines
+              lines={listingSeatLines(confirmRemoveListing)}
+              style={{ fontSize: fluidSize(13), color: SUB }}
+            />
+            <div style={{ fontSize: fluidSize(13), color: SUB }}>Asking {formatCurrency(confirmRemoveListing.askingPrice)}</div>
+          </div>
+          {confirmRemoveError ? (
+            <div role="alert" style={{ fontSize: fluidSize(13), color: DANGER }}>
+              {confirmRemoveError}
+            </div>
+          ) : null}
+          <div style={{ display: "flex", gap: 8 }}>
+            <button
+              type="button"
+              disabled={confirmRemoveSaving}
+              onClick={() => {
+                if (confirmRemoveSaving) return;
+                setConfirmRemoveListing(null);
+              }}
+              style={{
+                fontFamily: "inherit",
+                flex: 1,
+                fontSize: fluidSize(15),
+                fontWeight: 600,
+                color: INK,
+                background: "#f1f3f8",
+                border: "none",
+                borderRadius: 999,
+                padding: 14,
+                minHeight: 48,
+                cursor: "pointer",
+                ...popupBtnDisabled,
+              }}
+            >
+              Keep it
+            </button>
+            <button
+              type="button"
+              disabled={confirmRemoveSaving}
+              aria-busy={confirmRemoveSaving || undefined}
+              onClick={() => void submitRemoveListing()}
+              style={{
+                fontFamily: "inherit",
+                flex: 1,
+                display: "inline-flex",
+                alignItems: "center",
+                justifyContent: "center",
+                gap: 8,
+                fontSize: fluidSize(15),
+                fontWeight: 600,
+                color: "#fff",
+                background: DANGER,
+                border: "none",
+                borderRadius: 999,
+                padding: 14,
+                minHeight: 48,
+                cursor: "pointer",
+                ...popupBtnDisabled,
+              }}
+            >
+              <ButtonBusyContents
+                loading={confirmRemoveSaving}
+                loadingLabel="Removing…"
+                spinnerColor="#fff"
+                trackColor="rgba(255,255,255,0.35)"
+              >
+                Remove listing
+              </ButtonBusyContents>
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  const EditListingModal = () => {
+    if (!editListing) return null;
+    const face = listingFaceValue(editListing.tickets);
+    const minPercent = eventResaleMinimumPercent(editListing.event);
+    return (
+      <div style={{ ...overlay, zIndex: 88, alignItems: mobile ? "flex-end" : "center", padding: mobile ? 0 : 32 }}>
+        <div className={mobileSheetClass} onClick={(e) => e.stopPropagation()} style={sheet} aria-busy={editListingSaving || undefined}>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
+            <h2 style={{ margin: 0, fontSize: 21, lineHeight: 1.5, fontWeight: 600, letterSpacing: "-0.02em" }}>Edit asking price</h2>
+            {editListingSaving ? null : closeX(() => setEditListing(null))}
+          </div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+            <label htmlFor="edit-listing-price" style={{ fontSize: fluidSize(12), fontWeight: 600, color: FAINT }}>Asking price per ticket</label>
+            <input
+              id="edit-listing-price"
+              inputMode="decimal"
+              value={editListingPrice}
+              onChange={(e) => {
+                setEditListingPrice(e.target.value);
+                if (editListingErr) setEditListingErr(null);
+              }}
+              onBlur={() => {
+                setEditListingErr(
+                  listingAskingPriceError(editListingPrice, {
+                    face,
+                    resaleMinimumPercent: minPercent,
+                    mode: "blur",
+                  }),
+                );
+              }}
+              style={{ fontFamily: "inherit", width: "100%", boxSizing: "border-box", fontSize: fluidSize(16), color: INK, background: "#fff", border: `1px solid ${editListingErr ? DANGER : "rgba(5,27,53,0.12)"}`, borderRadius: 14, padding: "14px 16px", outline: "none" }}
+            />
+            {editListingErr ? (
+              <div role="alert" style={{ fontSize: fluidSize(13), color: DANGER }}>{editListingErr}</div>
+            ) : null}
+          </div>
+          <div style={{ display: "flex", gap: 8 }}>
+            <button type="button" disabled={editListingSaving} onClick={() => { if (!editListingSaving) setEditListing(null); }} style={{ fontFamily: "inherit", flex: 1, fontSize: fluidSize(15), fontWeight: 600, color: INK, background: "#f1f3f8", border: "none", borderRadius: 999, padding: 14, minHeight: 48, cursor: "pointer" }}>Cancel</button>
+            <button
+              type="button"
+              disabled={editListingSaving}
+              aria-busy={editListingSaving || undefined}
+              onClick={async () => {
+                const error = listingAskingPriceError(editListingPrice, {
+                  face,
+                  resaleMinimumPercent: minPercent,
+                  mode: "submit",
+                });
+                setEditListingErr(error);
+                if (error) return;
+                const price = parseAskingPrice(editListingPrice);
+                if (price == null) return;
+                setEditListingSaving(true);
+                try {
+                  await updateMyListings(editListing.id, { askingPrice: price });
+                  setWalletListings(
+                    walletListingsRef.current.map((row) =>
+                      row.id === editListing.id ? { ...row, askingPrice: price } : row,
+                    ),
+                  );
+                  setEditListing(null);
+                } catch (err) {
+                  setEditListingErr(parseListingApiError(err, "update"));
+                } finally {
+                  setEditListingSaving(false);
+                }
+              }}
+              style={{ fontFamily: "inherit", flex: 1, display: "inline-flex", alignItems: "center", justifyContent: "center", fontSize: fluidSize(15), fontWeight: 600, color: INK, background: ACCENT, border: "none", borderRadius: 999, padding: 14, minHeight: 48, cursor: "pointer" }}
+            >
+              <ButtonBusyContents loading={editListingSaving} loadingLabel="Saving…" spinnerColor={INK} trackColor="rgba(5,27,53,0.2)">Save</ButtonBusyContents>
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
   const ConfirmAccept = () => {
     const acceptPopupBtnDisabled: CSSProperties = confirmAcceptSaving
       ? { opacity: 0.55, cursor: "default" }
@@ -6674,9 +7300,12 @@ export default function SeasonTickets({
       {modal === "qr" && TicketQrModal()}
       {modal === "field" && FieldModal()}
       {tf && TransferModal()}
+      {sell && SellModal()}
       {qrPass && AccessPassQrModal()}
       {confirmAccept && ConfirmAccept()}
       {confirmCancel && ConfirmCancel()}
+      {confirmRemoveListing && ConfirmRemoveListing()}
+      {editListing && EditListingModal()}
 
       {toast && (
         <div style={{ position: "fixed", left: "50%", transform: "translateX(-50%)", bottom: 92, zIndex: 90, display: "flex", alignItems: "center", gap: 9, background: INK, color: "#fff", borderRadius: 999, padding: "12px 18px", fontSize: fluidSize(14), fontWeight: 600, boxShadow: "0 20px 40px -18px rgba(5,27,53,0.8)" }}>

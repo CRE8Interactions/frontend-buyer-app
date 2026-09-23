@@ -28,8 +28,11 @@ export function WalletTicketsBlocksLoading({
 }
 
 /** Placeholder rows while wallet lists (transfers, listings) load. */
-export function WalletListSkeleton() {
-  const label = "Loading tickets";
+export function WalletListSkeleton({
+  label = "Loading tickets",
+}: {
+  label?: string;
+}) {
   return (
     <div
       role="status"

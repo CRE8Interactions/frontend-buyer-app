@@ -14,6 +14,11 @@ import {
   demoFlexPack,
   demoPackageAccessPass,
   demoSeasonPackage,
+  demoActiveListing,
+  demoActiveListingLater,
+  demoExpiredListing,
+  demoSoldListing,
+  demoWalletListings,
 } from "@/lib/demo/fixtures";
 import moment from "moment-timezone";
 import { googleMapsDirectionsUrl } from "@/lib/venueLocation";
@@ -29,6 +34,16 @@ import {
   transferSuccessTitle,
   transferWalletRemovalCopy,
 } from "@/lib/transferModalCopy";
+import {
+  listingStatusDotLine,
+  mapWalletListing,
+} from "@/lib/walletListings";
+import {
+  sellConfirmTitle,
+  sellRemoveBody,
+  sellRemovalLine,
+  sellSuccessTitle,
+} from "@/lib/sellModalCopy";
 
 const sessionMocks = vi.hoisted(() => ({
   getSession: vi.fn(),
@@ -56,6 +71,9 @@ vi.mock("@/lib/api", () => ({
   getIncomingTransfers: vi.fn(),
   getMyReceivedTransfers: vi.fn(),
   getMyListings: vi.fn(),
+  createListing: vi.fn(),
+  updateMyListings: vi.fn(),
+  removeMyListings: vi.fn(),
   getOrder: vi.fn(),
   searchEvents: vi.fn(async () => ({ data: [] })),
   validateEmail: vi.fn(async () => ({ data: { verdict: "Valid" } })),
@@ -119,6 +137,9 @@ import {
   getIncomingTransfers,
   getMyReceivedTransfers,
   getMyListings,
+  createListing,
+  updateMyListings,
+  removeMyListings,
   getOrder,
   validateEmail,
 } from "@/lib/api";
@@ -145,6 +166,9 @@ const mockedGetMySentTransfers = looseApiMock(vi.mocked(getMySentTransfers));
 const mockedGetIncomingTransfers = looseApiMock(vi.mocked(getIncomingTransfers));
 const mockedGetMyReceivedTransfers = looseApiMock(vi.mocked(getMyReceivedTransfers));
 const mockedGetMyListings = vi.mocked(getMyListings);
+const mockedCreateListing = vi.mocked(createListing);
+const mockedUpdateMyListings = vi.mocked(updateMyListings);
+const mockedRemoveMyListings = vi.mocked(removeMyListings);
 const mockedGetOrder = vi.mocked(getOrder);
 const mockedValidateEmail = vi.mocked(validateEmail);
 const printableEvent = DEMO_EVENTS.find((event) => event.shortCode === "NMST004")!;
@@ -246,6 +270,14 @@ async function confirmAcceptTransferInPopup(
   mockedGetMyReceivedTransfers.mockResolvedValue({ data: [] } as never);
   mockedGetMyListings.mockReset();
   mockedGetMyListings.mockResolvedValue({ data: [] } as never);
+  mockedCreateListing.mockReset();
+  mockedCreateListing.mockResolvedValue({
+    data: { id: "listing-created-1", status: "new", askingPrice: 55 },
+  } as never);
+  mockedUpdateMyListings.mockReset();
+  mockedUpdateMyListings.mockResolvedValue({ data: { askingPrice: 70 } } as never);
+  mockedRemoveMyListings.mockReset();
+  mockedRemoveMyListings.mockResolvedValue({ data: { id: "listing-active-1" } } as never);
   mockedGetMyEvents.mockReset();
   mockedGetMyEvents.mockResolvedValue({ data: [] } as never);
   mockedGetOrder.mockReset();
@@ -8496,8 +8528,8 @@ describe("SeasonTickets ticket screen responsive layout", () => {
       within(footer).queryByRole("button", { name: "Transfer" }),
     ).not.toBeInTheDocument();
     expect(
-      within(footer).getByRole("link", { name: "Sell" }),
-    ).toHaveAttribute("href", expect.stringMatching(/^\/wallet\/my-listings\/?$/));
+      within(footer).getByRole("button", { name: "Sell" }),
+    ).toBeInTheDocument();
 
     Reflect.deleteProperty(navigator, "userAgent");
   });
@@ -8852,5 +8884,141 @@ describe("SeasonTickets code screen", () => {
     expect(
       screen.getByText(/codes expire after 5 minutes/i),
     ).toBeInTheDocument();
+  });
+});
+
+describe("SeasonTickets listings and sell", { timeout: 30_000 }, () => {
+  beforeEach(() => {
+    sessionMocks.getSession.mockReturnValue(DEMO_SESSION);
+  });
+
+  it("buckets listings by status only and sorts Active by event start", async () => {
+    mockedGetMyListings.mockResolvedValue({
+      data: demoWalletListings(),
+    } as never);
+    navigationMocks.pathname = "/wallet/my-listings/";
+    const user = userEvent.setup();
+    render(<SeasonTickets />);
+
+    expect(await screen.findByRole("heading", { name: "Listings", level: 1 })).toBeInTheDocument();
+    expect(mockedGetMyListings).toHaveBeenCalled();
+    expect((await screen.findAllByText(/^active on /i)).length).toBe(2);
+    const active = mapWalletListing(demoActiveListing())!;
+    const later = mapWalletListing(demoActiveListingLater())!;
+    expect(screen.getByText(later.event!.name!)).toBeInTheDocument();
+    await user.click(screen.getByRole("tab", { name: /Sold/i }));
+    const sold = mapWalletListing(demoSoldListing())!;
+    expect(screen.getByText(listingStatusDotLine(sold))).toBeInTheDocument();
+    expect(screen.getByText(sold.event!.name!)).toBeInTheDocument();
+    await user.click(screen.getByRole("tab", { name: /Expired/i }));
+    const expired = mapWalletListing(demoExpiredListing())!;
+    expect(screen.getByText(listingStatusDotLine(expired))).toBeInTheDocument();
+  });
+
+  it("refetches listings every time My listings is opened", async () => {
+    mockedGetMyListings.mockResolvedValue({ data: [] } as never);
+    navigationMocks.pathname = "/wallet/my-listings/";
+    const { rerender } = render(<SeasonTickets />);
+    await waitFor(() => expect(mockedGetMyListings).toHaveBeenCalledTimes(1));
+    navigationMocks.pathname = "/wallet/my-tickets/";
+    rerender(<SeasonTickets />);
+    navigationMocks.pathname = "/wallet/my-listings/";
+    rerender(<SeasonTickets />);
+    await waitFor(() => expect(mockedGetMyListings).toHaveBeenCalledTimes(2));
+  });
+
+  it("opens sell from the event page, lists tickets, and does not refetch events", async () => {
+    const order = demoCompletedTicketOrder({
+      event: { ...icedogs, enableResale: true, resaleMinimumPercent: 10, secondaryServiceFeeSeller: 0.1 },
+    });
+    mockedGetMyEvents.mockResolvedValue({ data: [order] } as never);
+    navigationMocks.pathname = `/wallet/my-tickets/order/${order.orderId}/`;
+    const user = userEvent.setup();
+    render(<SeasonTickets />);
+
+    await user.click(await screen.findByRole("button", { name: "Sell" }));
+    const sellTitle = await screen.findByRole("heading", { name: "Sell" });
+    const sheet = sellTitle.parentElement?.parentElement as HTMLElement;
+    expect(within(sheet).getByText("Select tickets to list")).toBeInTheDocument();
+    const seatChip = within(sheet).getAllByRole("button", { name: /^Seat / })[0];
+    await user.click(seatChip);
+    expect(seatChip).toHaveAttribute("aria-pressed", "true");
+    await user.click(within(sheet).getByRole("button", { name: "Next" }));
+    expect(await screen.findByText("Set price")).toBeInTheDocument();
+    const price = screen.getByLabelText("Asking price per ticket");
+    fireEvent.blur(price);
+    expect(screen.queryByText("Enter a price greater than 0.")).not.toBeInTheDocument();
+    await user.type(price, "0");
+    fireEvent.blur(price);
+    expect(screen.getByText("Enter a price greater than 0.")).toBeInTheDocument();
+    await user.clear(price);
+    await user.type(price, "80");
+    const eventsCalls = mockedGetMyEvents.mock.calls.length;
+    await user.click(screen.getByRole("button", { name: "Next" }));
+    expect(screen.getByText("Payout summary")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Next" }));
+    expect(screen.getByText(sellConfirmTitle(1))).toBeInTheDocument();
+    expect(screen.getByText(sellRemovalLine(1))).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "List tickets" }));
+    expect(await screen.findByText(sellSuccessTitle(1))).toBeInTheDocument();
+    expect(mockedCreateListing).toHaveBeenCalledTimes(1);
+    const payload = mockedCreateListing.mock.calls[0][0] as Record<string, unknown>;
+    expect(payload).toMatchObject({
+      quantity: 1,
+      askingPrice: 80,
+      fromOrder: order.id,
+      type: expect.stringMatching(/GA|SEATED/),
+    });
+    expect(Array.isArray(payload.tickets)).toBe(true);
+    expect(mockedGetMyEvents.mock.calls.length).toBe(eventsCalls);
+    expect(mockedGetMyListings).not.toHaveBeenCalled();
+    expect(screen.getByRole("link", { name: "My listings" })).toHaveAttribute(
+      "href",
+      expect.stringMatching(/^\/wallet\/my-listings\/?$/),
+    );
+    expect(
+      screen.getByRole("button", {
+        name: (_accessible, el) => el?.textContent?.trim() === "Close",
+      }),
+    ).toBeInTheDocument();
+  });
+
+  it("removes an active listing without refetching listings", async () => {
+    const listing = demoActiveListing();
+    mockedGetMyListings.mockResolvedValue({ data: [listing] } as never);
+    mockedGetMyEvents.mockResolvedValue({
+      data: [demoCompletedTicketOrder({ event: icedogs, tickets: [] })],
+    } as never);
+    navigationMocks.pathname = "/wallet/my-listings/";
+    const user = userEvent.setup();
+    render(<SeasonTickets />);
+
+    await user.click(await screen.findByRole("button", { name: "Remove" }));
+    expect(screen.getByRole("heading", { name: "Remove this listing?" })).toBeInTheDocument();
+    expect(screen.getByText(sellRemoveBody(1))).toBeInTheDocument();
+    const listingCalls = mockedGetMyListings.mock.calls.length;
+    await user.click(screen.getByRole("button", { name: "Remove listing" }));
+    await waitFor(() => expect(mockedRemoveMyListings).toHaveBeenCalledWith(listing.id));
+    expect(mockedGetMyListings.mock.calls.length).toBe(listingCalls);
+    expect(await screen.findByText("Listing removed")).toBeInTheDocument();
+  });
+
+  it("patches asking price without refetching listings", async () => {
+    const listing = demoActiveListing();
+    mockedGetMyListings.mockResolvedValue({ data: [listing] } as never);
+    navigationMocks.pathname = "/wallet/my-listings/";
+    const user = userEvent.setup();
+    render(<SeasonTickets />);
+
+    await user.click(await screen.findByRole("button", { name: "Edit" }));
+    const field = screen.getByLabelText("Asking price per ticket");
+    await user.clear(field);
+    await user.type(field, "70");
+    const listingCalls = mockedGetMyListings.mock.calls.length;
+    await user.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() =>
+      expect(mockedUpdateMyListings).toHaveBeenCalledWith(listing.id, { askingPrice: 70 }),
+    );
+    expect(mockedGetMyListings.mock.calls.length).toBe(listingCalls);
   });
 });

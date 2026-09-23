@@ -22,6 +22,7 @@ import {
   demoPackageAccessPass,
   demoPublicMenu,
   demoSeasonPackage,
+  demoWalletListings,
 } from "./fixtures";
 
 type DemoResult = { data: unknown; status?: number };
@@ -203,6 +204,7 @@ function initialWalletOrders(): DemoWalletOrder[] {
 let demoWalletOrdersState: DemoWalletOrder[] | null = null;
 const demoSentTransfers: DemoSentTransfer[] = [];
 const demoReceivedTransfers: DemoSentTransfer[] = [];
+let demoListingsState: Array<Record<string, unknown>> | null = null;
 let demoOrganizerAccessPasses = [demoAccessPass()];
 type DemoPackageAccessPass = ReturnType<typeof demoPackageAccessPass> & {
   order?: { orderId?: string };
@@ -223,6 +225,18 @@ function findDemoWalletOrder(orderId: unknown) {
   return walletOrders().find(
     (row) => String(row.id) === target || String(row.orderId) === target,
   );
+}
+
+function demoListings() {
+  if (!demoListingsState) {
+    demoListingsState = demoWalletListings() as Array<Record<string, unknown>>;
+  }
+  return demoListingsState;
+}
+
+function listingIdFromPath(path: string) {
+  const segs = path.split("?")[0].split("/").filter(Boolean);
+  return String(segs[segs.length - 1] || "");
 }
 
 const routes: Route[] = [
@@ -249,6 +263,71 @@ const routes: Route[] = [
     methods: ["get"],
     match: endsWith("/events/myUpcomingEvents"),
     handle: () => ({ data: walletOrders() }),
+  },
+  {
+    methods: ["get"],
+    match: endsWith("/listings/mylisting"),
+    handle: () => ({ data: demoListings() }),
+  },
+  {
+    methods: ["post"],
+    match: (path) => path.split("?")[0].endsWith("/listings"),
+    handle: (_path, config) => {
+      const body = parseBody(config);
+      const tickets = Array.isArray(body.tickets) ? body.tickets : [];
+      const listing = {
+        id: `listing-created-${demoListings().length + 1}`,
+        status: "new",
+        askingPrice: body.askingPrice,
+        quantity: body.quantity ?? tickets.length,
+        tickets,
+        event: body.event,
+        fromOrder: body.fromOrder,
+        type: body.type,
+        rowId: body.rowId,
+        sectionId: body.sectionId,
+        sectionNumber: body.sectionNumber,
+        rowNumber: body.rowNumber,
+        createdAt: new Date().toISOString(),
+      };
+      const existing = demoListings().findIndex(
+        (row) => String(row.id) === String(listing.id),
+      );
+      if (existing >= 0) demoListings()[existing] = listing;
+      else demoListings().unshift(listing);
+      return { data: listing };
+    },
+  },
+  {
+    methods: ["put"],
+    match: (path) => {
+      const clean = path.split("?")[0];
+      return /\/listings\/[^/]+$/.test(clean) && !clean.endsWith("/mylisting");
+    },
+    handle: (path, config) => {
+      const id = listingIdFromPath(path);
+      const body = parseBody(config);
+      const listings = demoListings();
+      const index = listings.findIndex((row) => String(row.id) === id);
+      if (index < 0) return { data: { id, ...body }, status: 404 };
+      listings[index] = {
+        ...listings[index]!,
+        askingPrice: body.askingPrice ?? listings[index]!.askingPrice,
+      };
+      return { data: listings[index] };
+    },
+  },
+  {
+    methods: ["delete"],
+    match: (path) => {
+      const clean = path.split("?")[0];
+      return /\/listings\/[^/]+$/.test(clean) && !clean.endsWith("/mylisting");
+    },
+    handle: (path) => {
+      const id = listingIdFromPath(path);
+      demoListingsState = demoListings().filter((row) => String(row.id) !== id);
+      return { data: { id } };
+    },
   },
   {
     methods: ["get"],

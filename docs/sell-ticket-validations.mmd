@@ -1,0 +1,78 @@
+%% Sell tickets — wallet resale listing
+%% Source: components/organisms/SeasonTickets.tsx, lib/walletListings.ts, lib/sellModalCopy.ts, lib/fieldValidation.ts
+%% API:    POST /listings, PUT /listings/:id, DELETE /listings/:id
+%%
+%% --- Blur — asking price (empty quiet) ---
+%% | Field | Empty blur | Non-empty invalid |
+%% | Asking price | (no error) | Enter a price greater than 0. / Asking price must be at least {face × (1 + resaleMinimumPercent / 100)}. |
+%%
+%% --- Submit — Set price (step 2) ---
+%% | Step | Empty | Not > 0 | Below resale minimum (when set) |
+%% | Client | Enter a price greater than 0. | Enter a price greater than 0. | Asking price must be at least {floor}. |
+%%
+%% Seller fee = secondaryServiceFeeSeller × asking price (not face). Payout summary is after a valid price and does not POST.
+%%
+%% --- POST /listings ---
+%% | Status | API message | Displayed copy |
+%% | 200 | Listing created | Success step; tickets leave inventory in memory (no GET refetch) |
+%% | 4xx | (any) | We couldn't list those tickets. Please try again. |
+%% | network | (no response) | We're experiencing technical difficulties. Please try again later. |
+%% | 500 / other | (any other) | We're experiencing technical difficulties. Please try again later. |
+%%
+%% --- PUT /listings/:id ---
+%% | Status | API message | Displayed copy |
+%% | 200 | askingPrice patched | Asking price updated in memory (no GET) |
+%% | 4xx | (any) | We couldn't update that listing. Please try again. |
+%% | network | (no response) | We're experiencing technical difficulties. Please try again later. |
+%% | 500 / other | (any other) | We're experiencing technical difficulties. Please try again later. |
+%%
+%% --- DELETE /listings/:id ---
+%% | Status | API message | Displayed copy |
+%% | 200 | Listing deleted | Close popup + "Listing removed" toast; restore tickets in memory (no GET) |
+%% | 4xx | (any) | We couldn't remove that listing. Please try again. |
+%% | network | (no response) | We're experiencing technical difficulties. Please try again later. |
+%% | 500 / other | (any other) | We're experiencing technical difficulties. Please try again later. |
+
+flowchart TD
+  start[Eligible event with Sell] --> select[Select tickets]
+  select --> price[Set price]
+  price -.-> blur
+  price --> payout[Payout summary]
+  payout --> confirm[Confirm list]
+  confirm --> listBtn[List tickets]
+  listBtn -.-> submit
+  listBtn -.-> api
+
+subgraph blur["Blur"]
+  direction TB
+  bEmpty[Empty] --> bQuiet[No error]
+  bInvalid[Non-empty not greater than 0] --> bGt0["Enter a price greater than 0."]
+  bLow[Non-empty below face plus resale minimum] --> bFloor["Asking price must be at least {floor}."]
+end
+
+subgraph submit["Submit"]
+  direction TB
+  sEmpty[Empty] --> sGt0["Enter a price greater than 0."]
+  sInvalid[Not greater than 0] --> sGt0
+  sLow[Below resale minimum when set] --> sFloor["Asking price must be at least {floor}."]
+  sOk[Valid price] --> sPayout[Continue to Payout summary]
+end
+
+subgraph api["API"]
+  direction TB
+  post[POST /listings] --> postOk{Status}
+  postOk -->|200| listed[Success: tickets leave account]
+  postOk -->|4xx| postFail["We couldn't list those tickets. Please try again."]
+  postOk -->|network| net["We're experiencing technical difficulties. Please try again later."]
+  postOk -->|500 / other| net
+  put[PUT /listings/:id] --> putOk{Status}
+  putOk -->|200| patched[Patch askingPrice in memory]
+  putOk -->|4xx| putFail["We couldn't update that listing. Please try again."]
+  putOk -->|network| net
+  putOk -->|500 / other| net
+  del[DELETE /listings/:id] --> delOk{Status}
+  delOk -->|200| removed[Listing removed toast]
+  delOk -->|4xx| delFail["We couldn't remove that listing. Please try again."]
+  delOk -->|network| net
+  delOk -->|500 / other| net
+end

@@ -29,6 +29,9 @@ export type EventLike = {
   venue?: VenueLike;
   enableTransfers?: boolean;
   enableResale?: boolean;
+  resaleMinimum?: number;
+  resaleMinimumPercent?: number;
+  secondaryServiceFeeSeller?: number;
   organization?:
     | (BrandingOrganization & {
         email_logo?: ApiImage;
