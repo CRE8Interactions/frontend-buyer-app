@@ -6,12 +6,17 @@ import {
 
 export type TransferModalKind = "ticket" | "season pass" | "access pass";
 
+/** Plural ticket wording when more than one ticket is in play (0/1 stay singular). */
+export function transferTicketsArePlural(count = 1): boolean {
+  return count > 1;
+}
+
 export function transferEntityNoun(
   kind: TransferModalKind,
   count = 1,
 ): string {
   if (kind === "season pass" || kind === "access pass") return kind;
-  return count === 1 ? "ticket" : "tickets";
+  return transferTicketsArePlural(count) ? "tickets" : "ticket";
 }
 
 export function transferThisThese(
@@ -19,7 +24,7 @@ export function transferThisThese(
   count = 1,
 ): string {
   if (kind === "season pass" || kind === "access pass") return `the ${kind}`;
-  return count === 1 ? "this ticket" : "these tickets";
+  return transferTicketsArePlural(count) ? "these tickets" : "this ticket";
 }
 
 /** Recipient-screen identity: this/these tickets, or pass name · seat. */
@@ -47,7 +52,15 @@ export function transferRecipientNotifyCopy(
   kind: TransferModalKind,
   count = 1,
 ): string {
-  return `The recipient will get notified via email that you have transferred your ${transferEntityNoun(kind, count)} to them.`;
+  const what =
+    kind === "ticket"
+      ? transferTicketsArePlural(count)
+        ? "tickets"
+        : "a ticket"
+      : kind === "access pass"
+        ? "an access pass"
+        : `a ${kind}`;
+  return `They'll get an email saying you sent them ${what}.`;
 }
 
 export function transferRecipientReceivedCopy(
@@ -62,9 +75,9 @@ export function transferWalletRemovalCopy(
   count = 1,
 ): string {
   if (kind === "ticket") {
-    return count === 1
-      ? "This ticket leaves your wallet right away and returns only if you cancel the transfer before it's claimed."
-      : "These tickets leave your wallet right away and return only if you cancel the transfer before they're claimed.";
+    return transferTicketsArePlural(count)
+      ? "These tickets leave your wallet right away and return only if you cancel the transfer before they're claimed."
+      : "This ticket leaves your wallet right away and returns only if you cancel the transfer before it's claimed.";
   }
   return `The ${kind} leaves your wallet right away and returns only if you cancel the transfer before it's claimed.`;
 }
@@ -74,7 +87,7 @@ export function transferConfirmTitle(
   count = 1,
 ): string {
   if (kind === "ticket") {
-    return `You are about to transfer ${count} ${count === 1 ? "ticket" : "tickets"}`;
+    return `You are about to transfer ${count} ${transferEntityNoun(kind, count)}`;
   }
   return `You are about to transfer this ${kind}`;
 }
@@ -92,7 +105,9 @@ export function transferSuccessTitle(
 ): string {
   if (kind === "season pass") return "Season pass transfer pending";
   if (kind === "access pass") return "Access pass transfer pending";
-  return count === 1 ? "Transfer sent" : "Transfers sent";
+  return transferTicketsArePlural(count)
+    ? "Your tickets have been transferred"
+    : "Your ticket has been transferred";
 }
 
 export function transferCancelEntity(
@@ -100,7 +115,7 @@ export function transferCancelEntity(
   count = 1,
 ): string {
   if (kind === "season pass" || kind === "access pass") return `this ${kind}`;
-  return count === 1 ? "this ticket" : "these tickets";
+  return transferThisThese(kind, count);
 }
 
 export function transferKindFromWalletRow(row: {
@@ -199,7 +214,8 @@ export function transferCancelReturnCopy(
   count = 1,
 ): string {
   const entity = transferCancelEntity(kind, count);
-  const pronoun = kind === "ticket" && count !== 1 ? "them" : "it";
+  const pronoun =
+    kind === "ticket" && transferTicketsArePlural(count) ? "them" : "it";
   return `Cancelling this transfer returns ${entity} to your wallet and removes ${pronoun} from the recipient's account. If the recipient has claimed the transfer already, it can't be cancelled.`;
 }
 
@@ -208,9 +224,9 @@ export function transferAcceptConfirmCopy(
   count = 1,
 ): string {
   if (kind === "ticket") {
-    return count === 1
-      ? "Accepting this transfer adds this ticket to your wallet. Once accepted, the transfer is final and can't be undone."
-      : "Accepting this transfer adds these tickets to your wallet. Once accepted, the transfer is final and can't be undone.";
+    return transferTicketsArePlural(count)
+      ? "Accepting this transfer adds these tickets to your wallet. Once accepted, the transfer is final and can't be undone."
+      : "Accepting this transfer adds this ticket to your wallet. Once accepted, the transfer is final and can't be undone.";
   }
   return `Accepting this transfer adds this ${kind} to your wallet. Once accepted, the transfer is final and can't be undone.`;
 }
@@ -223,8 +239,8 @@ export function transferSuccessBody(
   if (kind === "season pass" || kind === "access pass") {
     return `${received} The ${kind} left your wallet. Manage or cancel the transfer from My transfers until the recipient claims it.`;
   }
-  if (count === 1) {
-    return `${received} The ticket left your wallet and is pending until the recipient claims it. Cancel from My transfers any time before then — once claimed, the transfer can't be cancelled.`;
+  if (transferTicketsArePlural(count)) {
+    return `${received} The tickets left your wallet and are pending until the recipient claims them. Cancel from My transfers any time before then — once claimed, the transfer can't be cancelled.`;
   }
-  return `${received} The tickets left your wallet and are pending until the recipient claims them. Cancel from My transfers any time before then — once claimed, the transfer can't be cancelled.`;
+  return `${received} The ticket left your wallet and is pending until the recipient claims it. Cancel from My transfers any time before then — once claimed, the transfer can't be cancelled.`;
 }

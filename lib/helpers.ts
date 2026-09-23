@@ -168,9 +168,30 @@ export const formatOfferListPrice = (
 export const formatNumber = (num?: number | string | null) =>
   parseFloat(String(num ?? 0)).toLocaleString("en-US");
 
-function stripRichText(value?: string | null): string {
+/**
+ * Description copy for a `<pre>`: keep newlines and spacing, turn HTML
+ * block breaks into newlines, and drop tags so markup is not shown raw.
+ */
+export function descriptionPlainText(value?: string | null): string {
   if (!value) return "";
-  return value.replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim();
+  const withBreaks = value
+    .replace(/\r\n?/g, "\n")
+    .replace(/<br\s*\/?>/gi, "\n")
+    .replace(/<\/(?:p|div|h[1-6]|li|tr|blockquote)>/gi, "\n")
+    .replace(/<[^>]*>/g, "");
+  const decoded = withBreaks
+    .replace(/&nbsp;/gi, " ")
+    .replace(/&amp;/gi, "&")
+    .replace(/&lt;/gi, "<")
+    .replace(/&gt;/gi, ">")
+    .replace(/&#39;|&apos;/gi, "'")
+    .replace(/&quot;/gi, '"');
+  return decoded
+    .split("\n")
+    .map((line) => line.replace(/[ \t]+$/g, ""))
+    .join("\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
 }
 
 /** Event "About" copy prefers summary, then description. Empty when neither is set. */
@@ -178,9 +199,9 @@ export function eventAboutText(ev?: {
   summary?: string | null;
   description?: string | null;
 }): string {
-  const raw = (ev?.summary || ev?.description || "").trim();
-  if (!raw) return "";
-  return stripRichText(raw);
+  const summary = descriptionPlainText(ev?.summary);
+  if (summary) return summary;
+  return descriptionPlainText(ev?.description);
 }
 
 export {

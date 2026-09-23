@@ -917,6 +917,14 @@ export function isToday(start?: string, timezone?: string) {
   return eventDay.isSame(today, "day");
 }
 
+/** "Tonight"/"Today" stands in for the calendar date once the event day arrives. */
+export function eventDayLabel(start?: string, timezone?: string) {
+  if (!isToday(start, timezone)) return "";
+  const tz = toIanaTimezone(timezone);
+  const eventDay = tz ? moment.tz(start!, tz) : moment(start);
+  return eventDay.hour() >= 17 ? "Tonight" : "Today";
+}
+
 export function unwrapList<T>(payload: unknown): T[] {
   if (Array.isArray(payload)) return payload as T[];
   if (payload && typeof payload === "object") {

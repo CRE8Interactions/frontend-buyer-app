@@ -828,11 +828,10 @@ function CheckoutSuccessPage() {
                   id="wallet-ticket-title"
                   className="text-[22px] font-semibold tracking-[-0.02em]"
                 >
-                  Add a ticket to your wallet.
+                  Choose a seat
                 </h2>
                 <p className="mt-1.5 text-[14px]" style={{ color: MUTED }}>
-                  Passes are added one ticket at a time. Pick a seat, then
-                  choose a wallet.
+                  Tickets are added one at a time.
                 </p>
               </div>
               <button

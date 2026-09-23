@@ -48,10 +48,28 @@ describe("transfer modal copy", () => {
     expect(transferAcceptConfirmCopy("ticket", 2)).toBe(
       "Accepting this transfer adds these tickets to your wallet. Once accepted, the transfer is final and can't be undone.",
     );
+    expect(transferSuccessTitle("ticket", 1)).toBe(
+      "Your ticket has been transferred",
+    );
+    expect(transferSuccessTitle("ticket", 2)).toBe(
+      "Your tickets have been transferred",
+    );
+    expect(transferSuccessBody("ticket", 1)).toContain("your ticket");
+    expect(transferSuccessBody("ticket", 1)).toMatch(/The ticket left your wallet/);
+    expect(transferSuccessBody("ticket", 2)).toContain("your tickets");
+    expect(transferSuccessBody("ticket", 2)).toMatch(/The tickets left your wallet/);
+    expect(transferLoadingTitle("ticket", 2)).toBe(
+      "Transferring your tickets…",
+    );
     expect(transferKindFromWalletRow({ ticketCount: 2 })).toEqual({
       kind: "ticket",
       count: 2,
     });
+    expect(
+      transferKindFromWalletRow({
+        seatLines: ["Sec A · Row 1 · Seat 1", "Sec A · Row 1 · Seat 2"],
+      }),
+    ).toEqual({ kind: "ticket", count: 2 });
   });
 
   it("names a season or access pass instead of a ticket", () => {
@@ -161,10 +179,20 @@ describe("transfer modal copy", () => {
   });
 
   it("tells the recipient they will be emailed about the transferred entity", () => {
-    expect(transferRecipientNotifyCopy("ticket", 1)).toContain("your ticket");
-    expect(transferRecipientNotifyCopy("ticket", 2)).toContain("your tickets");
+    expect(transferRecipientNotifyCopy("ticket", 1)).toBe(
+      "They'll get an email saying you sent them a ticket.",
+    );
+    expect(transferRecipientNotifyCopy("ticket", 2)).toBe(
+      "They'll get an email saying you sent them tickets.",
+    );
+    expect(transferRecipientNotifyCopy("ticket", 4)).toBe(
+      "They'll get an email saying you sent them tickets.",
+    );
     expect(transferRecipientNotifyCopy("season pass")).toContain(
-      "your season pass",
+      "you sent them a season pass",
+    );
+    expect(transferRecipientNotifyCopy("access pass")).toContain(
+      "you sent them an access pass",
     );
     expect(transferRecipientReceivedCopy("ticket", 1)).toBe(
       "The recipient has received an email that you have transferred your ticket to them.",

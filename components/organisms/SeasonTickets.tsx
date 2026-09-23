@@ -11,7 +11,7 @@ import {
  * Claude Design "My Tickets.dc.html" handoff. A self-contained, dummy-data
  * flow (no backend): login → code → My Tickets → event detail → flex package
  * → transfers → giving → profile, plus transfer wizard / details / field-edit
- * / vouchers / cancel modals. Blocktickets chrome; event copy stays as-is.
+ * / cancel modals. Blocktickets chrome; event copy stays as-is.
  *
  * Team-specific wedge/banner art isn't in the repo, so rows fall back to the
  * designed initials-on-brand-color wedge (exactly the design's own fallback).
@@ -1110,7 +1110,7 @@ export default function SeasonTickets({
   const [evId, setEvId] = useState("lobos");
   const [listTab, setListTab] = useState<"active" | "received">("active");
   const [saleTab, setSaleTab] = useState<"active" | "sold" | "expired">("active");
-  const [modal, setModal] = useState<null | "details" | "qr" | "field" | "vouchers">(null);
+  const [modal, setModal] = useState<null | "details" | "qr" | "field">(null);
   const [detail, setDetail] = useState<{
     seat?: string;
     holder?: string;
@@ -6373,26 +6373,6 @@ export default function SeasonTickets({
     </div>
   );
 
-  const VouchersModal = () => (
-    <div style={overlay}>
-      <div className={mobileSheetClass} onClick={(e) => e.stopPropagation()} style={{ ...sheet, maxHeight: mobile ? "92vh" : "88vh", gap: 16 }}>
-        <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 12 }}>
-          <h2 style={{ margin: 0, fontSize: 21, lineHeight: 1.5, fontWeight: 600, letterSpacing: "-0.02em" }}>Your vouchers</h2>
-          {closeX(() => setModal(null))}
-        </div>
-        <div style={{ flex: 1, minHeight: 0, overflowY: "auto", display: "flex", flexDirection: "column", gap: 8 }}>
-          {vouchers.map((v) => (
-            <div key={v.code} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, background: FIELD, border: "1px solid rgba(5,27,53,0.06)", borderRadius: 14, padding: "14px 16px" }}>
-              <div style={{ fontSize: fluidSize(16), fontWeight: 600, letterSpacing: "0.04em", fontVariantNumeric: "tabular-nums", color: v.ink }}>{v.code}</div>
-              <span style={{ flexShrink: 0, display: "flex", alignItems: "center", gap: 7, fontSize: fluidSize(12), fontWeight: 600, color: v.tagInk, background: v.tagBg, borderRadius: 999, padding: "6px 11px" }}>{v.status}<span style={{ width: 7, height: 7, borderRadius: 999, background: v.tagInk }} /></span>
-            </div>
-          ))}
-        </div>
-        <button onClick={() => setModal(null)} style={{ fontFamily: "inherit", width: "100%", fontSize: fluidSize(15), fontWeight: 600, color: INK, background: ACCENT, border: "none", borderRadius: 999, padding: 14, minHeight: 48, cursor: "pointer" }}>Close</button>
-      </div>
-    </div>
-  );
-
   const ConfirmAccept = () => {
     const acceptPopupBtnDisabled: CSSProperties = confirmAcceptSaving
       ? { opacity: 0.55, cursor: "default" }
@@ -6698,7 +6678,6 @@ export default function SeasonTickets({
       {modal === "details" && DetailsModal()}
       {modal === "qr" && TicketQrModal()}
       {modal === "field" && FieldModal()}
-      {modal === "vouchers" && VouchersModal()}
       {tf && TransferModal()}
       {qrPass && AccessPassQrModal()}
       {confirmAccept && ConfirmAccept()}

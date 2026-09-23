@@ -13,6 +13,7 @@ export default function Modal({
   sheet,
   closeOnBackdrop = false,
   hideClose = false,
+  hideHeader = false,
   className,
   style,
 }: {
@@ -28,6 +29,8 @@ export default function Modal({
   closeOnBackdrop?: boolean;
   /** Hide the top-right Close control when the body already has dismiss actions. */
   hideClose?: boolean;
+  /** Skip the title bar. The body supplies the heading; `title` stays the accessible name. */
+  hideHeader?: boolean;
   className?: string;
   style?: CSSProperties;
 }) {
@@ -79,12 +82,14 @@ export default function Modal({
           ref={dialogRef}
           role="dialog"
           aria-modal="true"
-          aria-labelledby={titleId}
+          aria-labelledby={hideHeader ? undefined : titleId}
+          aria-label={hideHeader ? title : undefined}
           aria-busy={busy || undefined}
           className={className ? `${dialogCls} ${className}` : dialogCls}
           style={style}
           onClick={(e) => e.stopPropagation()}
         >
+          {hideHeader ? null : (
           <div className={headerCls}>
             <h2
               id={titleId}
@@ -110,6 +115,7 @@ export default function Modal({
             </button>
             )}
           </div>
+          )}
           {children}
         </div>
       </div>

@@ -15,15 +15,15 @@ export const TICKET_TRANSFER_DISPLAY_COPY = {
 } as const;
 
 export function ticketTransferAssignedCopy(ticketCount: number) {
-  return ticketCount === 1
-    ? "This ticket is already assigned to this email address."
-    : "These tickets are already assigned to this email address.";
+  return ticketCount > 1
+    ? "These tickets are already assigned to this email address."
+    : "This ticket is already assigned to this email address.";
 }
 
 export function ticketTransferScannedCopy(ticketCount: number) {
-  return ticketCount === 1
-    ? "This ticket has already been scanned and can't be transferred."
-    : "These tickets have already been scanned and can't be transferred.";
+  return ticketCount > 1
+    ? "These tickets have already been scanned and can't be transferred."
+    : "This ticket has already been scanned and can't be transferred.";
 }
 
 function extractTicketTransferApiMessage(error: unknown): string | undefined {

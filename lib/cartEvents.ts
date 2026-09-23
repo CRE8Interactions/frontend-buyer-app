@@ -2,6 +2,7 @@ import { BLOCKTICKETS_NAVY, resolvePrimaryColor, type BrandingOrganization, type
 import { isSportingEvent } from "@/lib/eventCategory";
 import {
   attractionImageUrl,
+  descriptionPlainText,
   eventDoorsIso,
   formatCurrency,
   formatDoorsTime,
@@ -14,6 +15,8 @@ import {
 import {
   formatVenueCityState,
   formatVenueLocationLine,
+  formatVenueStreetAddress,
+  type VenueAddressLike,
 } from "@/lib/venueLocation";
 import {
   buildPackageEventCountLookup,
@@ -42,6 +45,7 @@ import {
   isEventComplete,
   isScannedTicket,
   isToday,
+  eventDayLabel,
   isUpcomingEvent,
   isWalletListedEvent,
   ticketRowValue,
@@ -59,7 +63,7 @@ import { walletSectionHref } from "@/lib/walletNav";
 type VenueLike = {
   name?: string;
   timezone?: string;
-  address?: { city?: string; state?: string; line1?: string }[];
+  address?: VenueAddressLike[];
 };
 
 export type EventLike = {
@@ -71,6 +75,7 @@ export type EventLike = {
   doorsOpen?: string;
   realDoorsOpen?: string;
   summary?: string;
+  description?: string;
   venue?: VenueLike;
   image?: ApiImage;
   organization?:
@@ -128,6 +133,8 @@ export type CartEventSummary = {
   key: string;
   name: string;
   when: string;
+  /** Always the calendar date — `when` says Tonight/Today on the event day. */
+  whenDate?: string;
   venueLine: string;
   ticketCount: number;
   thumb?: string;
@@ -224,6 +231,8 @@ export type CartEventDetail = {
   key: string;
   title: string;
   when: string;
+  /** Always the calendar date — `when` says Tonight/Today on the event day. */
+  whenDate?: string;
   doors: string;
   today: boolean;
   startTime: string;
@@ -1953,6 +1962,7 @@ function enrichDetailFromSibling(
     venue: detail.venue || sibling.venue,
     venueLine: detail.venueLine || sibling.venueLine,
     when: detail.when || sibling.when,
+    whenDate: detail.whenDate || sibling.whenDate,
     doors: detail.doors || sibling.doors,
     startTime: detail.startTime || sibling.startTime,
     today: detail.today || sibling.today,
@@ -2192,6 +2202,42 @@ function eventAvailability(
   return "available";
 }
 
+/** Event blurb — the summary, else the description with its markup stripped. */
+function eventBlurb(ev?: EventLike | null): string {
+  return (
+    descriptionPlainText(ev?.summary) || descriptionPlainText(ev?.description)
+  );
+}
+
+/** Venue lines for the wallet "Getting there" card. */
+function eventVenueLines(ev?: EventLike | null) {
+  const cityState = formatVenueCityState(ev?.venue?.address);
+  return {
+    venue: ev?.venue?.name || "",
+    venueLine: formatVenueLocationLine(ev?.venue?.name, ev?.venue?.address),
+    city: cityState,
+    address: formatVenueStreetAddress(ev?.venue?.address) || cityState,
+  };
+}
+
+/**
+ * Schedule line fields for a wallet event. Package events arrive as thin stubs
+ * without doors, so these are recomputed once the full order fills the event in.
+ */
+function eventScheduleFields(ev?: EventLike | null) {
+  const timezone = ev?.venue?.timezone;
+  const startTime = formatEventWhen(ev?.start, timezone, "h:mm A");
+  const dayLabel = eventDayLabel(ev?.start, timezone);
+  const whenDate = formatEventWhen(ev?.start, timezone, "ddd, MMM D · h:mm A");
+  return {
+    when: dayLabel ? `${dayLabel} · ${startTime}` : whenDate,
+    whenDate,
+    doors: formatDoors(ev),
+    today: isToday(ev?.start, timezone),
+    startTime,
+  };
+}
+
 function detailFromEvent(
   ev: EventLike,
   key: string,
@@ -2202,34 +2248,20 @@ function detailFromEvent(
   ticketLabel: string,
   packageName?: string,
 ): CartEventDetail {
-  const addr = ev.venue?.address?.[0];
-  const cityState = formatVenueCityState(ev.venue?.address);
-  const street = addr?.line1 || "";
-  const address = [street, cityState].filter(Boolean).join(", ");
   const offerName =
     tickets.length === 1
       ? String(tickets[0]?.offerName || "").trim()
       : "";
-  const timezone = ev.venue?.timezone;
-  const doors = formatDoors(ev);
-  const startTime = formatEventWhen(ev.start, timezone, "h:mm A");
-  const today = isToday(ev.start, timezone);
   const attractions = buildAttractionCards(ev, packageName);
   const posterSrc = resolvePosterSrc(attractions, ev);
   return {
     key,
     title: ev.name || packageName || "Event",
-    when: formatEventWhen(ev.start, timezone, "ddd, MMM D · h:mm A"),
-    doors,
-    today,
-    startTime,
-    venue: ev.venue?.name || "",
-    venueLine: formatVenueLocationLine(ev.venue?.name, ev.venue?.address),
-    city: cityState,
-    address,
+    ...eventScheduleFields(ev),
+    ...eventVenueLines(ev),
     brand: "#8c0b42",
     initials: eventInitials(ev.name || visitorShort(ev)),
-    blurb: ev.summary || "",
+    blurb: eventBlurb(ev),
     opp: ev.attractions?.[0]?.name || "",
     heroImage: imageUrl(ev.image, ""),
     posterSrc,
@@ -2467,6 +2499,7 @@ export function summarizeEventDetails(
       key: d.key,
       name: d.title,
       when: d.when,
+      whenDate: d.whenDate,
       venueLine: d.venueLine || d.venue,
       ticketCount: d.tickets.length,
       thumb: d.heroImage || d.posterSrc,
@@ -2619,8 +2652,8 @@ export function walletEventScheduleLine(
   row: Pick<CartEventSummary, "today" | "doorsTime" | "startTime" | "when">,
 ): string {
   if (row.today) {
-    const gates = row.doorsTime || row.startTime;
-    return gates ? `Gates open · ${gates}` : "Today";
+    const doors = row.doorsTime || row.startTime;
+    return doors ? `Doors open · ${doors}` : "Today";
   }
   return row.when;
 }
@@ -3135,6 +3168,7 @@ function mapIncomingPassTransferSummary(
     key: detail.key,
     name: detail.title,
     when: detail.when,
+    whenDate: detail.whenDate,
     venueLine: detail.venueLine || detail.venue,
     ticketCount: detail.passTicketCount ?? 1,
     thumb: detail.heroImage || detail.posterSrc,
@@ -3472,10 +3506,22 @@ export function withFullOrder(
       : detail.tickets,
     order.tickets as Array<Record<string, unknown>> | undefined,
   );
+  const venueLines = eventVenueLines(event);
+  const schedule = eventScheduleFields(event);
   return {
     ...detail,
     ...refreshEventMatchupFields(event, detail.packageName),
     ...eventWalletCommerceFlags(event),
+    when: schedule.when || detail.when,
+    whenDate: schedule.whenDate || detail.whenDate,
+    doors: schedule.doors || detail.doors,
+    startTime: schedule.startTime || detail.startTime,
+    today: event?.start ? schedule.today : detail.today,
+    blurb: eventBlurb(event) || detail.blurb,
+    venue: venueLines.venue || detail.venue,
+    venueLine: venueLines.venueLine || detail.venueLine,
+    city: venueLines.city || detail.city,
+    address: venueLines.address || detail.address,
     event,
     cartTotal: orderTotal(order.total) ?? detail.cartTotal,
     orderId: orderIdOf(order) || detail.orderId,

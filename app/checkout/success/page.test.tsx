@@ -835,11 +835,11 @@ describe("Checkout success guest wallet", () => {
     );
 
     const dialog = screen.getByRole("dialog", {
-      name: "Add a ticket to your wallet.",
+      name: "Choose a seat",
     });
     expect(
       within(dialog).getByText(
-        /Passes are added one ticket at a time/i,
+        /Tickets are added one at a time/i,
       ),
     ).toBeInTheDocument();
     expect(within(dialog).getAllByRole("radio")).toHaveLength(tickets.length);
@@ -860,7 +860,7 @@ describe("Checkout success guest wallet", () => {
       await screen.findByRole("button", { name: "Add to Apple Wallet" }),
     );
     const dialog = screen.getByRole("dialog", {
-      name: "Add a ticket to your wallet.",
+      name: "Choose a seat",
     });
     await user.click(
       within(dialog).getByRole("button", { name: "Add to Apple Wallet" }),
@@ -881,7 +881,7 @@ describe("Checkout success guest wallet", () => {
       await screen.findByRole("button", { name: "Add to Apple Wallet" }),
     );
     const dialog = screen.getByRole("dialog", {
-      name: "Add a ticket to your wallet.",
+      name: "Choose a seat",
     });
     await user.click(
       within(dialog).getByRole("button", { name: "Add to Apple Wallet" }),
@@ -929,7 +929,7 @@ describe("Checkout success guest wallet", () => {
       await screen.findByRole("button", { name: "Add to Apple Wallet" }),
     );
     const dialog = screen.getByRole("dialog", {
-      name: "Add a ticket to your wallet.",
+      name: "Choose a seat",
     });
     await user.click(
       within(dialog).getByRole("button", { name: "Add to Apple Wallet" }),
@@ -973,7 +973,7 @@ describe("Checkout success guest wallet", () => {
       await screen.findByRole("button", { name: "Add to Apple Wallet" }),
     );
     const dialog = screen.getByRole("dialog", {
-      name: "Add a ticket to your wallet.",
+      name: "Choose a seat",
     });
     await user.click(
       within(dialog).getByRole("button", { name: "Add to Apple Wallet" }),
