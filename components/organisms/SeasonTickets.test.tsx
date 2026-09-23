@@ -8889,3 +8889,18 @@ describe("SeasonTickets mobile ticket actions", () => {
     ).not.toBeInTheDocument();
   });
 });
+
+describe("SeasonTickets code screen", () => {
+  it("tells the shopper codes expire after 5 minutes", async () => {
+    sessionMocks.getSession.mockReturnValue(DEMO_SESSION);
+    render(<SeasonTickets initialScreen="code" />);
+
+    expect(
+      await screen.findByRole("heading", { name: /enter your code/i }),
+    ).toBeInTheDocument();
+    expect(screen.getByText(DEMO_USER.email)).toBeInTheDocument();
+    expect(
+      screen.getByText(/codes expire after 5 minutes/i),
+    ).toBeInTheDocument();
+  });
+});

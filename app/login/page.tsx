@@ -426,7 +426,7 @@ function LoginForm() {
               />
               <div className="flex flex-col gap-4 text-center text-[13px] text-[#8a93a3]">
                 <p>
-                  Codes expire after 10 minutes, so be sure to use the right one.
+                  Codes expire after 5 minutes, so be sure to use the right one.
                 </p>
                 <p>
                   {done ? (

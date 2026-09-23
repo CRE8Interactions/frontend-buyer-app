@@ -2822,7 +2822,7 @@ export default function SeasonTickets({
               ))}
             </div>
           <div style={{ display: "flex", flexDirection: "column", gap: 16, fontSize: fluidSize(13), color: MUTE, textAlign: "center" }}>
-            <div>Codes expire after 10 minutes, so be sure to use the right one.</div>
+            <div>Codes expire after 5 minutes, so be sure to use the right one.</div>
             <div>Haven&apos;t received your code? Check your spam folder or <a href="#" style={{ color: INK, fontWeight: 600 }}>Send a new code</a></div>
           </div>
         </div>
