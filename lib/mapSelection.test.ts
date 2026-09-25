@@ -38,6 +38,16 @@ describe("mixed and checkout map errors", () => {
     );
   });
 
+  it("names the capped offer when one is given", () => {
+    expect(maxTicketLimitError(6, "Student").message).toBe(
+      "Adding these tickets would exceed the ticket limit of 6 for Student.",
+    );
+    expect(maxTicketLimitError(6, "   ").message).toBe(
+      maxTicketLimitError(6).message,
+    );
+    expect(maxTicketLimitError(6, null)).toEqual(maxTicketLimitError(6));
+  });
+
   it("shows the API explanation when a hold is rejected", () => {
     const rejected = checkoutHoldError({
       response: {

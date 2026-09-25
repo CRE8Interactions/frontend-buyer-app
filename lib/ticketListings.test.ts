@@ -107,6 +107,38 @@ describe("offer quantity restrictions", () => {
     expect(normalizeGlobalTicketLimit(0)).toBeNull();
   });
 
+  it("treats an equal maximum and multiple as an exact limit", () => {
+    const limits = quantityLimits(
+      { maxQuantity: 3, multipleOf: 3, minQuantity: 1 },
+      { available: 20, defaultMax: 20, globalMax: 10 },
+    );
+
+    expect(limits).toEqual({ min: 3, max: 3, step: 1, valid: true });
+    expect(quantityIsAllowed(3, limits)).toBe(true);
+    expect(quantityIsAllowed(6, limits)).toBe(false);
+    expect(
+      quantityLimits(
+        { maxQuantity: 3, incrementsOf: 3 },
+        { available: 20, defaultMax: 20 },
+      ),
+    ).toEqual(limits);
+    expect(
+      quantityLimits(
+        { maxQuantity: 3, multipleOf: 3 },
+        { available: 2, defaultMax: 20 },
+      ).valid,
+    ).toBe(false);
+    expect(seatedOfferRowRestrictionLabel({ maxQuantity: 3, multipleOf: 3 })).toBe(
+      "Exact of 3",
+    );
+    expect(
+      offerRestrictionLimits(
+        { maxQuantity: 3, multipleOf: 3 },
+        { min: 3, max: 0, step: 1, valid: false },
+      ),
+    ).toEqual({ min: 3, max: 3, step: 1, valid: true });
+  });
+
   it("treats offer.limit as the exact quantity and ignores min, max, and multipleOf", () => {
     const limits = quantityLimits(
       { ...offer, limit: 4, minQuantity: 2, maxQuantity: 8, multipleOf: 2 },

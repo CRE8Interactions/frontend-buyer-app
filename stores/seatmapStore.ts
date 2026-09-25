@@ -9,6 +9,8 @@ import {
   exceededSelectionTicketLimit,
   limitsFromSeatedOfferRow,
   limitsFromTicketGroup,
+  offerDisplayName,
+  offerMaxQuantity,
   quantityIsAllowed,
   quantityRestrictionLabel,
 } from "@/lib/ticketListings";
@@ -35,6 +37,41 @@ const effectiveUnitPrice = (ticketGroup: TicketGroup) => {
   if (offer && "freeOffer" in offer && offer.freeOffer) return 0;
   return ticketGroup.price ?? 0;
 };
+
+function offerIdentity(group: TicketGroup) {
+  const source = group.package || group.offer;
+  const id = source?.id ?? source?.name;
+  return id == null || id === "" ? "" : String(id);
+}
+
+/** One row per offer, so a seat listed twice still counts as a single offer. */
+function distinctOfferGroups(groups: TicketGroup[]) {
+  const seen = new Set<string>();
+  const unique: TicketGroup[] = [];
+  groups.forEach((group, index) => {
+    const key = offerIdentity(group) || `row-${index}`;
+    if (seen.has(key)) return;
+    seen.add(key);
+    unique.push(group);
+  });
+  return unique;
+}
+
+/**
+ * Offer name for the max-ticket dialog. Name the offer only when the
+ * selection already mixes two or more offers and the blocked number is that
+ * offer's own cap. A single-offer selection, and a block from the event
+ * global limit, stay unnamed.
+ */
+function limitedOfferName(
+  selected: TicketGroup[],
+  incoming: TicketGroup[],
+  limit: number,
+) {
+  if (distinctOfferGroups([...selected, ...incoming]).length < 2) return null;
+  const match = incoming.find((group) => offerMaxQuantity(group) === limit);
+  return match ? offerDisplayName(match) : null;
+}
 
 const resetState = {
   scale: 1,
@@ -217,7 +254,12 @@ const useSeatmapStore = create<SeatmapState>((set, get) => ({
       totalNew,
     );
     if (gaLimit != null) {
-      set({ seatedError: maxTicketLimitError(gaLimit) });
+      set({
+        seatedError: maxTicketLimitError(
+          gaLimit,
+          limitedOfferName(get().selectedFromMap, selectedGroups, gaLimit),
+        ),
+      });
       return;
     }
     const organization = useFiltersStore.getState().event
@@ -248,7 +290,12 @@ const useSeatmapStore = create<SeatmapState>((set, get) => ({
       1,
     );
     if (seatLimit != null) {
-      set({ seatedError: maxTicketLimitError(seatLimit) });
+      set({
+        seatedError: maxTicketLimitError(
+          seatLimit,
+          limitedOfferName(get().selectedFromMap, [ticketGroup], seatLimit),
+        ),
+      });
       return;
     }
 
@@ -326,7 +373,12 @@ const useSeatmapStore = create<SeatmapState>((set, get) => ({
       qty,
     );
     if (offerLimit != null) {
-      set({ seatedError: maxTicketLimitError(offerLimit) });
+      set({
+        seatedError: maxTicketLimitError(
+          offerLimit,
+          limitedOfferName(get().selectedFromMap, picks, offerLimit),
+        ),
+      });
       return;
     }
     const alreadySelected = new Set(

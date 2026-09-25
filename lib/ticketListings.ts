@@ -1,6 +1,6 @@
 import type { GATier, TicketingListing } from "@/components/organisms/PremiumTicketing";
 import { expandGroupsWithConnectedOffers } from "@/lib/connectedOffers";
-import { gaTierSubtitle } from "@/lib/ticketSummary";
+import { gaTierSubtitle, selectionOfferName } from "@/lib/ticketSummary";
 import type { TicketGroup } from "@/stores/filtersStore";
 
 export type QuantityRestrictionSource = {
@@ -76,6 +76,24 @@ export function normalizeGlobalTicketLimit(value: unknown) {
   return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
 }
 
+/**
+ * Buy-exactly-N quantity. An explicit `limit` wins. Maximum and Multiple Of
+ * set to the same number mean the same thing: the shopper can only take that
+ * many, not a range of multiples up to it.
+ */
+function exactQuantityLimit(
+  source: QuantityRestrictionSource | null | undefined,
+): number | null {
+  const explicit = normalizeGlobalTicketLimit(source?.limit);
+  if (explicit != null) return explicit;
+  const max = normalizeGlobalTicketLimit(source?.maxQuantity);
+  const step = normalizeGlobalTicketLimit(
+    source?.multipleOf ?? source?.incrementsOf,
+  );
+  if (max != null && step != null && max === step) return max;
+  return null;
+}
+
 type QuantityCapSource = QuantityRestrictionSource & {
   id?: string | number | null;
   name?: string | null;
@@ -133,6 +151,24 @@ function groupMaxQuantity(group: QuantityCapGroup) {
     normalizeGlobalTicketLimit(group.package?.limit) ??
     normalizeGlobalTicketLimit(group.package?.maxQuantity)
   );
+}
+
+/** The offer/package's own per-order cap, or null when it sets none. */
+export function offerMaxQuantity(group: QuantityCapGroup) {
+  return groupMaxQuantity(group);
+}
+
+/** Shopper-facing name of the offer/package a group sells under. */
+export function offerDisplayName(group: QuantityCapGroup) {
+  const named = selectionOfferName(
+    group as Parameters<typeof selectionOfferName>[0],
+    "",
+  ).trim();
+  if (named) return named;
+  const packageName = group.package?.name;
+  return typeof packageName === "string" && packageName.trim()
+    ? packageName.trim()
+    : null;
 }
 
 /** Seated rows count as one ticket; GA rows count as their quantity. */
@@ -375,10 +411,9 @@ export function selectionPaneRestrictionLabel(
 
   if (!limits.valid) {
     if (cap == null) return null;
+    const exactLimit = exactQuantityLimit(source);
     const capped = quantityLimits(
-      normalizeGlobalTicketLimit(source?.limit) != null
-        ? { limit: source?.limit }
-        : { maxQuantity: cap },
+      exactLimit != null ? { limit: exactLimit } : { maxQuantity: cap },
       {
         available: undefined,
         defaultMax,
@@ -418,7 +453,7 @@ export function quantityLimits(
     globalMax?: number | null;
   },
 ): QuantityLimits {
-  const exactLimit = normalizeGlobalTicketLimit(source?.limit);
+  const exactLimit = exactQuantityLimit(source);
   if (exactLimit != null) {
     const inventoryMax =
       available == null
@@ -542,7 +577,7 @@ export function seatedOfferRowRestrictionLabel(
   source: QuantityRestrictionSource | null | undefined,
   _limits?: QuantityLimits,
 ): string | null {
-  const exactLimit = normalizeGlobalTicketLimit(source?.limit);
+  const exactLimit = exactQuantityLimit(source);
   if (exactLimit != null && exactLimit > 1) return `Exact of ${exactLimit}`;
   // A multiple is its own floor, and it rounds any configured minimum up to the
   // quantity the stepper will actually jump to.
@@ -672,7 +707,7 @@ export function offerRestrictionLimits(
   source: QuantityRestrictionSource | null | undefined,
   limits: QuantityLimits,
 ): QuantityLimits | null {
-  const exactLimit = normalizeGlobalTicketLimit(source?.limit);
+  const exactLimit = exactQuantityLimit(source);
   if (exactLimit != null) {
     return { min: exactLimit, max: exactLimit, step: 1, valid: true };
   }

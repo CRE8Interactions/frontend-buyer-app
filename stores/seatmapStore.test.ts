@@ -18,7 +18,10 @@ describe("seatmap ticket limits", () => {
       totalPrice: 0,
       data: null,
       eventTicketLimit: null,
+      seatOffersLookupTable: {},
+      sectionLookupTable: {},
     });
+    useFiltersStore.setState({ ticketGroups: [] });
   });
 
   it("adds a seat that stays under the offer max when the event has no limit", () => {
@@ -145,8 +148,115 @@ describe("seatmap ticket limits", () => {
 
     expect(useSeatmapStore.getState().selectedFromMap).toHaveLength(3);
     expect(useSeatmapStore.getState().seatedError).toEqual(
-      maxTicketLimitError(2),
+      maxTicketLimitError(2, "BOGO"),
     );
+  });
+
+  describe("naming the offer whose own limit a mixed selection exceeded", () => {
+    const student = {
+      ...sectionA,
+      offer: { id: "off-student", name: "Student", maxQuantity: 2 },
+      GA: false as const,
+    };
+    const standard = {
+      ...sectionA,
+      offer: { id: "off-standard", name: "Standard", maxQuantity: null },
+      GA: false as const,
+    };
+
+    it("names the offer when a mixed selection exceeds that offer's max", () => {
+      useSeatmapStore.getState().selectSpecificSeat("a1", standard);
+      useSeatmapStore.getState().selectSpecificSeat("a2", student);
+      useSeatmapStore.getState().selectSpecificSeat("a3", student);
+      useSeatmapStore.getState().selectSpecificSeat("a4", student);
+
+      expect(useSeatmapStore.getState().selectedFromMap).toHaveLength(3);
+      expect(useSeatmapStore.getState().seatedError).toEqual(
+        maxTicketLimitError(2, "Student"),
+      );
+      expect(useSeatmapStore.getState().seatedError?.message).toBe(
+        "Adding these tickets would exceed the ticket limit of 2 for Student.",
+      );
+    });
+
+    it("names the offer when the tooltip adds it past its max in a mixed selection", () => {
+      useSeatmapStore.getState().selectSpecificSeat("a1", standard);
+      useSeatmapStore.getState().selectSpecificSeat("a2", student);
+      useSeatmapStore.getState().selectSpecificSeat("a3", student);
+      useSeatmapStore
+        .getState()
+        .selectSeatedOffers("a4", [{ ...student, quantity: 1 }]);
+
+      expect(useSeatmapStore.getState().selectedFromMap).toHaveLength(3);
+      expect(useSeatmapStore.getState().seatedError).toEqual(
+        maxTicketLimitError(2, "Student"),
+      );
+    });
+
+    it("leaves the offer out when every selected ticket is the same offer", () => {
+      useSeatmapStore.getState().selectSpecificSeat("a1", student);
+      useSeatmapStore.getState().selectSpecificSeat("a2", student);
+      useSeatmapStore.getState().selectSpecificSeat("a3", student);
+
+      expect(useSeatmapStore.getState().selectedFromMap).toHaveLength(2);
+      expect(useSeatmapStore.getState().seatedError).toEqual(
+        maxTicketLimitError(2),
+      );
+    });
+
+    it("leaves the offer out when the event limit is what stopped the add", () => {
+      useFiltersStore.setState({ eventTicketLimit: 2 });
+      useSeatmapStore.getState().selectSpecificSeat("a1", standard);
+      useSeatmapStore.getState().selectSpecificSeat("a2", student);
+      useSeatmapStore.getState().selectSpecificSeat("a3", standard);
+
+      expect(useSeatmapStore.getState().selectedFromMap).toHaveLength(2);
+      expect(useSeatmapStore.getState().seatedError).toEqual(
+        maxTicketLimitError(2),
+      );
+    });
+
+    it("names the GA offer when a mixed section selection exceeds that offer's max", () => {
+      const studentGa = {
+        id: "g-student",
+        sectionId: "ga",
+        GA: true as const,
+        availableCount: 20,
+        offer: { id: "off-student", name: "Student", maxQuantity: 6 },
+      };
+      const standardGa = {
+        id: "g-standard",
+        sectionId: "ga",
+        GA: true as const,
+        availableCount: 20,
+        offer: { id: "off-standard", name: "Standard" },
+      };
+      useSeatmapStore.getState().selectGASeats([{ ...standardGa, quantity: 1 }]);
+      useSeatmapStore.getState().selectGASeats([{ ...studentGa, quantity: 6 }]);
+      expect(useSeatmapStore.getState().seatedError).toBeNull();
+
+      useSeatmapStore.getState().selectGASeats([{ ...studentGa, quantity: 1 }]);
+
+      expect(useSeatmapStore.getState().seatedError).toEqual(
+        maxTicketLimitError(6, "Student"),
+      );
+    });
+
+    it("leaves a GA offer unnamed when it is the only offer in the selection", () => {
+      const studentGa = {
+        id: "g-student",
+        sectionId: "ga",
+        GA: true as const,
+        availableCount: 20,
+        offer: { id: "off-student", name: "Student", maxQuantity: 6 },
+      };
+      useSeatmapStore.getState().selectGASeats([{ ...studentGa, quantity: 6 }]);
+      useSeatmapStore.getState().selectGASeats([{ ...studentGa, quantity: 1 }]);
+
+      expect(useSeatmapStore.getState().seatedError).toEqual(
+        maxTicketLimitError(6),
+      );
+    });
   });
 
   it("adds each GA offer from one multi-offer pick as separate selection rows", () => {

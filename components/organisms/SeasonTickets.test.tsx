@@ -8133,15 +8133,70 @@ describe("SeasonTickets routed event screen", { timeout: 20_000 }, () => {
       "recipient@example.com",
     );
     await user.click(screen.getByRole("button", { name: "Back" }));
-    await user.click(screen.getByRole("button", { name: "Next" }));
+    const before = screen.getByRole("button", { name: "Next" });
+    let submitted = false;
+    const onSubmit = () => {
+      submitted = true;
+    };
+    document.addEventListener("submit", onSubmit);
+    await act(async () => {
+      before.click();
+    });
+    document.removeEventListener("submit", onSubmit);
+    const after = screen.queryByRole("button", { name: "Next" });
+    throw new Error(
+      JSON.stringify({
+        submitted,
+        sameNode: after === before,
+        type: after?.getAttribute("type") ?? null,
+        connected: before.isConnected,
+      }),
+    );
 
     expect(
-      screen.getByText("Enter the recipient's email address"),
-    ).toBeInTheDocument();
+      screen.getByRole("textbox", { name: "Email address" }),
+    ).toHaveValue("recipient@example.com");
     expect(
       screen.queryByText("You are about to transfer 1 ticket"),
     ).not.toBeInTheDocument();
     expect(mockedValidateEmail).not.toHaveBeenCalled();
+  });
+
+  it("keeps the recipient email when going back to the email step without submitting it", async () => {
+    const user = userEvent.setup();
+    const order = demoCompletedTicketOrder({ event: icedogs });
+    const ticket = order.tickets[0];
+    mockedGetMyEvents.mockResolvedValue({ data: [order] } as never);
+    mockedValidateEmail.mockClear();
+
+    render(<SeasonTickets initialScreen="event" eventUUID={icedogs.uuid} />);
+
+    await user.click(await screen.findByRole("button", { name: "Transfer" }));
+    await user.click(
+      screen.getByRole("button", { name: `Seat ${ticket.seatNumber}` }),
+    );
+    await user.click(screen.getByRole("button", { name: "Next" }));
+    await user.type(
+      screen.getByRole("textbox", { name: "Email address" }),
+      "recipient@example.com",
+    );
+    await user.click(screen.getByRole("button", { name: "Next" }));
+    expect(
+      await screen.findByText("You are about to transfer 1 ticket"),
+    ).toBeInTheDocument();
+    const checksBeforeBack = mockedValidateEmail.mock.calls.length;
+
+    await act(async () => {
+      screen.getByRole("button", { name: "Back" }).click();
+    });
+
+    expect(
+      screen.getByRole("textbox", { name: "Email address" }),
+    ).toHaveValue("recipient@example.com");
+    expect(
+      screen.queryByText("You are about to transfer 1 ticket"),
+    ).not.toBeInTheDocument();
+    expect(mockedValidateEmail.mock.calls.length).toBe(checksBeforeBack);
   });
 
   it("does not show or retain an email error when entering the recipient step", async () => {

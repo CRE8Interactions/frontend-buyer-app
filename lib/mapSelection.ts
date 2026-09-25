@@ -37,10 +37,17 @@ export const MAX_TICKET_LIMIT_ERROR = {
   buttonText: "Close",
 } as const;
 
-export function maxTicketLimitError(limit: number) {
+/**
+ * `offerName` names the offer whose cap was hit; pass it when the seat sells
+ * under several offers so the shopper knows which one is full.
+ */
+export function maxTicketLimitError(limit: number, offerName?: string | null) {
+  const name = offerName?.trim();
   return {
     title: MAX_TICKET_LIMIT_ERROR.title,
-    message: `Adding these tickets would exceed the ticket limit of ${limit}.`,
+    message: name
+      ? `Adding these tickets would exceed the ticket limit of ${limit} for ${name}.`
+      : `Adding these tickets would exceed the ticket limit of ${limit}.`,
     buttonText: MAX_TICKET_LIMIT_ERROR.buttonText,
   };
 }
