@@ -168,8 +168,8 @@ type SentTransferStub = {
 function pendingSentTransferStub(input: {
   id: string | number;
   order: ReturnType<typeof demoCompletedTicketOrder>;
-  ticket?: (typeof input.order.tickets)[number];
-  tickets?: (typeof input.order.tickets)[number][];
+  ticket?: unknown;
+  tickets?: unknown[];
   email?: string;
   createdAt?: string;
 }): SentTransferStub {
@@ -1539,7 +1539,7 @@ describe("SeasonTickets package tab", () => {
       name: "Print PDF",
     });
     for (const print of printButtons) {
-      const seatRow = print.closest(".st-ev-seat")!;
+      const seatRow = print.closest(".st-ev-seat") as HTMLElement;
       expect(within(seatRow).getByText("Tickets")).toBeInTheDocument();
       expect(within(seatRow).queryByText("Season tickets")).not.toBeInTheDocument();
     }

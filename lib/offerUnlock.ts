@@ -22,25 +22,29 @@ function serverAccepted(body: unknown) {
  * Whether the shopper's code opens an access-coded offer.
  *
  * The backend is asked first so a code rotated after page load still resolves.
- * When it gives no verdict, the code that came down with the locked inventory
- * decides, which keeps unlocking working on events the endpoint doesn't cover.
+ * POST /tickets/checkAccessCode looks the code up on the offer, so it needs the
+ * offer itself. When it gives no verdict, the code that came down with the
+ * locked inventory decides, which keeps unlocking working on events the
+ * endpoint doesn't cover.
  */
 export async function verifyOfferAccessCode({
-  eventId,
+  offer,
   code,
   expected,
 }: {
-  eventId?: string | number;
+  offer?: { id?: string | number } | null;
   code: string;
   expected?: string;
 }) {
   const typed = code.trim();
   if (!typed) return false;
-  try {
-    const res = await checkAccessCode({ eventId, accessCode: typed });
-    if (serverAccepted(res?.data)) return true;
-  } catch {
-    // Fall through to the code from the inventory payload.
+  if (offer?.id != null) {
+    try {
+      const res = await checkAccessCode({ offer, userInputCode: typed });
+      if (serverAccepted(res?.data)) return true;
+    } catch {
+      // Fall through to the code from the inventory payload.
+    }
   }
   return !!expected && typed.toUpperCase() === expected.trim().toUpperCase();
 }

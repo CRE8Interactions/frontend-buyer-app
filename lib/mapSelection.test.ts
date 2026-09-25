@@ -37,6 +37,41 @@ describe("mixed and checkout map errors", () => {
       "Adding these tickets would exceed the ticket limit of 4.",
     );
   });
+
+  it("shows the API explanation when a hold is rejected", () => {
+    const rejected = checkoutHoldError({
+      response: {
+        status: 410,
+        data: {
+          data: null,
+          error: {
+            status: 410,
+            name: "GoneError",
+            message:
+              'Invalid quantity selected. Offer "BOGO OFFER" requires exactly 4 item(s).',
+          },
+        },
+      },
+    });
+    expect(rejected.title).toBe(CHECKOUT_UNAVAILABLE_ERROR.title);
+    expect(rejected.message).toBe(
+      'Invalid quantity selected. Offer "BOGO OFFER" requires exactly 4 item(s).',
+    );
+  });
+
+  it("falls back to the unavailable copy for an empty body or a 500", () => {
+    expect(
+      checkoutHoldError({ response: { status: 409, data: { data: null } } }).message,
+    ).toBe(CHECKOUT_UNAVAILABLE_ERROR.message);
+    expect(
+      checkoutHoldError({
+        response: {
+          status: 500,
+          data: { error: { status: 500, message: "Internal server error" } },
+        },
+      }).message,
+    ).toBe(CHECKOUT_UNAVAILABLE_ERROR.message);
+  });
 });
 
 describe("mixedMapSelectionError", () => {

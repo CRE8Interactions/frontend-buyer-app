@@ -20,15 +20,15 @@ describe("verifyOfferAccessCode", () => {
     mockedCheckAccessCode.mockReset();
   });
 
-  it("unlocks when the backend accepts the code", async () => {
+  it("asks the backend about the offer and unlocks when it accepts the code", async () => {
     mockedCheckAccessCode.mockResolvedValue({ data: { valid: true } } as never);
 
     await expect(
-      verifyOfferAccessCode({ eventId: 1, code: "rotated-code" }),
+      verifyOfferAccessCode({ offer: CODED_OFFER, code: "rotated-code" }),
     ).resolves.toBe(true);
     expect(mockedCheckAccessCode).toHaveBeenCalledWith({
-      eventId: 1,
-      accessCode: "rotated-code",
+      offer: CODED_OFFER,
+      userInputCode: "rotated-code",
     });
   });
 
@@ -37,21 +37,36 @@ describe("verifyOfferAccessCode", () => {
 
     await expect(
       verifyOfferAccessCode({
-        eventId: 1,
+        offer: CODED_OFFER,
         code: EXPECTED.toLowerCase(),
         expected: EXPECTED,
       }),
     ).resolves.toBe(true);
   });
 
+  it("checks the inventory code alone when the offer is unknown", async () => {
+    await expect(
+      verifyOfferAccessCode({ code: EXPECTED, expected: EXPECTED }),
+    ).resolves.toBe(true);
+    expect(mockedCheckAccessCode).not.toHaveBeenCalled();
+  });
+
   it("rejects a wrong or empty code the backend did not accept", async () => {
     mockedCheckAccessCode.mockResolvedValue({ data: "" } as never);
 
     await expect(
-      verifyOfferAccessCode({ eventId: 1, code: "nope", expected: EXPECTED }),
+      verifyOfferAccessCode({
+        offer: CODED_OFFER,
+        code: "nope",
+        expected: EXPECTED,
+      }),
     ).resolves.toBe(false);
     await expect(
-      verifyOfferAccessCode({ eventId: 1, code: "  ", expected: EXPECTED }),
+      verifyOfferAccessCode({
+        offer: CODED_OFFER,
+        code: "  ",
+        expected: EXPECTED,
+      }),
     ).resolves.toBe(false);
     expect(mockedCheckAccessCode).toHaveBeenCalledTimes(1);
   });

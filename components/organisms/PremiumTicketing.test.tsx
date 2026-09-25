@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within, act } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ReactNode } from "react";
@@ -67,31 +67,30 @@ vi.mock("next/navigation", () => ({
 vi.mock("@/components/organisms/InteractiveSeatmap", async () => {
   const { useEffect } = await import("react");
   const { default: useFiltersStore } = await import("@/stores/filtersStore");
-  return {
-    InteractiveSeatmap: ({
-      onPaintReady,
-    }: {
-      onPaintReady?: () => void;
-    }) => {
-      const loading = useFiltersStore.getState().loadingTicketGroups;
-      useEffect(() => {
-        if (!loading) onPaintReady?.();
-      }, [loading, onPaintReady]);
-      return loading ? (
-        <div
-          data-testid="interactive-seatmap"
-          role="status"
-          aria-label="Loading seat map"
-        >
-          Loading seat map
-        </div>
-      ) : (
-        <div data-testid="interactive-seatmap">Interactive seat map</div>
-      );
-    },
-    InteractiveSeatmapMemo: () => (
+  const InteractiveSeatmap = ({
+    onPaintReady,
+  }: {
+    onPaintReady?: () => void;
+  }) => {
+    const loading = useFiltersStore.getState().loadingTicketGroups;
+    useEffect(() => {
+      if (!loading) onPaintReady?.();
+    }, [loading, onPaintReady]);
+    return loading ? (
+      <div
+        data-testid="interactive-seatmap"
+        role="status"
+        aria-label="Loading seat map"
+      >
+        Loading seat map
+      </div>
+    ) : (
       <div data-testid="interactive-seatmap">Interactive seat map</div>
-    ),
+    );
+  };
+  return {
+    InteractiveSeatmap,
+    InteractiveSeatmapMemo: InteractiveSeatmap,
   };
 });
 
@@ -164,7 +163,9 @@ async function renderReady(
       quantity: number;
       accessible: boolean;
       sort: "price" | "-price";
-    }) => void;
+      offerIds?: Array<string | number>;
+      accessCodes?: string[];
+    }) => void | Promise<void>;
     refreshing?: boolean;
     waitForListing?: RegExp | string;
   } = {},
@@ -206,16 +207,19 @@ function seedMapSelection() {
   return selected;
 }
 
-async function openLiveMap() {
-  const user = await renderReady({
-    ...seatedTicketingFixture,
-    seatmapMapping: demoSeatmapMapping(),
-    mapBackground: {
-      url: "https://example.com/bg.svg",
-      width: 1000,
-      height: 800,
+async function openLiveMap(props: Parameters<typeof renderReady>[1] = {}) {
+  const user = await renderReady(
+    {
+      ...seatedTicketingFixture,
+      seatmapMapping: demoSeatmapMapping(),
+      mapBackground: {
+        url: "https://example.com/bg.svg",
+        width: 1000,
+        height: 800,
+      },
     },
-  });
+    props,
+  );
   await user.click(screen.getAllByText(/find on map/i)[0]);
   await finishSeatmapBackgroundLoad();
   await waitFor(() => {
@@ -241,7 +245,19 @@ describe("Select tickets page (PremiumTicketing)", { timeout: 20_000 }, () => {
     mockedValidateEmail.mockResolvedValue({
       data: { verdict: "Valid" },
     } as never);
-    useFiltersStore.setState({ loadingTicketGroups: false, eventTicketLimit: null });
+    useFiltersStore.setState({
+      loadingTicketGroups: false,
+      eventTicketLimit: null,
+      filters: {
+        quantity: 2,
+        sort: "price",
+        accessible: false,
+        priceRange: [0, 500],
+        selectedOfferIds: [],
+        accessCodes: [],
+      },
+      ticketGroups: DEMO_SEATED_TICKET_GROUPS,
+    });
     resetSeatmapBackgroundCache();
     useSeatmapStore.setState({
       selectedFromMap: [],
@@ -503,8 +519,13 @@ describe("Select tickets page (PremiumTicketing)", { timeout: 20_000 }, () => {
     await user.click(screen.getByRole("button", { name: /^4 tickets$/i }));
     expect(onFiltersChange).toHaveBeenCalledWith({
       quantity: 4,
+      // The starting quantity travels with the change so the URL can omit it.
+      defaultQuantity: 2,
       accessible: false,
       sort: "price",
+      offerIds: [],
+      accessCodes: [],
+      accessCodeTokens: [],
     });
 
     await user.click(
@@ -781,6 +802,21 @@ describe("Select tickets page (PremiumTicketing)", { timeout: 20_000 }, () => {
     expect(screen.getByRole("button", { name: /^2 tickets$/i })).toBeInTheDocument();
   });
 
+  it("omits the offer name from mobile listing cards", async () => {
+    Object.defineProperty(window, "innerWidth", {
+      configurable: true,
+      writable: true,
+      value: 390,
+    });
+    await renderReady();
+
+    const offerName = DEMO_SEATED_TICKET_GROUPS[0].offer!.name!;
+    document.querySelectorAll(".nmt-listing").forEach((listing) => {
+      expect(within(listing as HTMLElement).queryByText(offerName)).not.toBeInTheDocument();
+    });
+    expect(screen.getByRole("button", { name: offerName })).toBeInTheDocument();
+  });
+
   it("does not offer quantities above the highest offer maxQuantity", async () => {
     const fieldClub = DEMO_SEATED_TICKET_GROUPS[0];
     const user = await renderReady({
@@ -890,7 +926,9 @@ describe("Select tickets page (PremiumTicketing)", { timeout: 20_000 }, () => {
       ...seatedTicketingFixture,
       listings: [
         {
-          ...seatedTicketingFixture.listings[0],
+          ...seatedTicketingFixture.listings.find(
+            (listing) => listing.zone === "Field Club",
+          )!,
           min: 2,
           max: 6,
           multipleOf: 2,
@@ -1753,9 +1791,18 @@ describe("Select tickets page (PremiumTicketing)", { timeout: 20_000 }, () => {
     expect(routerMocks.push.mock.calls[0][0]).not.toMatch(/\/wallet\/|\/tickets\//);
   });
 
-  it("stays on tickets and shows an error when the cart cannot be created", async () => {
+  it("stays on tickets and shows the API reason when the cart cannot be created", async () => {
     mockedPlaceTickets.mockRejectedValue({
-      response: { data: { error: { message: "Unable to hold tickets." } } },
+      response: {
+        status: 410,
+        data: {
+          error: {
+            status: 410,
+            message:
+              'Invalid quantity selected. Offer "BOGO OFFER" requires exactly 4 item(s).',
+          },
+        },
+      },
     });
     const user = await renderReady();
     await user.click(screen.getByText(/sec m · row m3/i));
@@ -1769,7 +1816,9 @@ describe("Select tickets page (PremiumTicketing)", { timeout: 20_000 }, () => {
       }),
     ).toBeInTheDocument();
     expect(
-      screen.getByText(CHECKOUT_UNAVAILABLE_ERROR.message),
+      screen.getByText(
+        'Invalid quantity selected. Offer "BOGO OFFER" requires exactly 4 item(s).',
+      ),
     ).toBeInTheDocument();
     expect(routerMocks.push).not.toHaveBeenCalled();
     expect(screen.queryByText(/getting payment ready/i)).not.toBeInTheDocument();
@@ -2024,12 +2073,12 @@ describe("Select tickets page (PremiumTicketing)", { timeout: 20_000 }, () => {
   });
 
   it("shows the event ticket limit under Your selection", async () => {
-    useFiltersStore.setState({ eventTicketLimit: 6 });
+    useFiltersStore.setState({ eventTicketLimit: 3 });
     seedMapSelection();
     await openLiveMap();
 
     expect(screen.getByText(/your selection/i)).toBeInTheDocument();
-    expect(screen.getByText("Ticket limit: 1–6 per order")).toBeInTheDocument();
+    expect(screen.getByText("Ticket limit: 1–3 per order")).toBeInTheDocument();
   });
 
   it("shows the highest offer maxQuantity on Your selection when one is set", async () => {
@@ -2068,12 +2117,14 @@ describe("Select tickets page (PremiumTicketing)", { timeout: 20_000 }, () => {
     ).toBeInTheDocument();
   });
 
-  it("shows the seated default ticket limit when the event and offer have none", async () => {
-    seedMapSelection();
+  it("shows the seats left in the row when the event and offer set no limit", async () => {
+    const selected = seedMapSelection();
     await openLiveMap();
 
     expect(screen.getByText(/your selection/i)).toBeInTheDocument();
-    expect(screen.getByText("Ticket limit: 1–50 per order")).toBeInTheDocument();
+    expect(
+      screen.getByText(`Ticket limit: 1–${selected.seatIds!.length} per order`),
+    ).toBeInTheDocument();
   });
 
   it("shows the GA default ticket limit on Your selection for GA seats", async () => {
@@ -2182,6 +2233,91 @@ describe("Select tickets page (PremiumTicketing)", { timeout: 20_000 }, () => {
     expect(screen.queryByTestId("interactive-seatmap")).not.toBeInTheDocument();
   });
 
+  it("keeps Updating inventory on the open map until the offer inventory request answers", async () => {
+    let releaseInventory = () => {};
+    const onFiltersChange = vi.fn(
+      () =>
+        new Promise<void>((resolve) => {
+          releaseInventory = resolve;
+        }),
+    );
+    const user = await openLiveMap({ onFiltersChange });
+
+    await user.click(screen.getByRole("button", { name: /field club/i }));
+
+    expect(screen.getByText("Updating inventory")).toBeInTheDocument();
+    expect(screen.getByTestId("interactive-seatmap")).toBeInTheDocument();
+    await new Promise((resolve) => setTimeout(resolve, 600));
+    expect(screen.getByText("Updating inventory")).toBeInTheDocument();
+
+    await act(async () => {
+      releaseInventory();
+    });
+    await waitFor(() => {
+      expect(screen.queryByText("Updating inventory")).not.toBeInTheDocument();
+    });
+    expect(screen.getByTestId("interactive-seatmap")).toBeInTheDocument();
+  });
+
+  it("clears Updating inventory when the offer inventory request fails", async () => {
+    const onFiltersChange = vi.fn(() => Promise.reject(new Error("offline")));
+    const user = await openLiveMap({ onFiltersChange });
+
+    await user.click(screen.getByRole("button", { name: /field club/i }));
+
+    expect(screen.getByText("Updating inventory")).toBeInTheDocument();
+    await waitFor(
+      () => {
+        expect(
+          screen.queryByText("Updating inventory"),
+        ).not.toBeInTheDocument();
+      },
+      { timeout: 3000 },
+    );
+    expect(screen.getByTestId("interactive-seatmap")).toBeInTheDocument();
+  });
+
+  it("rebuilds the open map only once the access-code dialog is gone", async () => {
+    const dialogUpWhenRebuilt: boolean[] = [];
+    let releaseInventory = () => {};
+    const onFiltersChange = vi.fn(() => {
+      dialogUpWhenRebuilt.push(
+        Boolean(screen.queryByText(/field club is locked/i)),
+      );
+      return new Promise<void>((resolve) => {
+        releaseInventory = resolve;
+      });
+    });
+    const user = await renderReady(
+      {
+        ...lockedTicketingFixture,
+        seatmapMapping: demoSeatmapMapping(),
+        mapBackground: {
+          url: "https://example.com/bg.svg",
+          width: 1000,
+          height: 800,
+        },
+      },
+      { waitForListing: /sec a · row 12/i, onFiltersChange },
+    );
+    await user.click(screen.getAllByText(/find on map/i)[0]);
+    await finishSeatmapBackgroundLoad();
+
+    await user.click(screen.getByRole("button", { name: /field club/i }));
+    await user.type(screen.getByPlaceholderText(/access code/i), "CLUB26");
+    await user.click(screen.getByRole("button", { name: /unlock seats/i }));
+
+    await waitFor(() => {
+      expect(onFiltersChange).toHaveBeenCalled();
+    });
+    expect(dialogUpWhenRebuilt).toEqual([false]);
+    expect(screen.getByText("Updating inventory")).toBeInTheDocument();
+
+    await act(async () => {
+      releaseInventory();
+    });
+  });
+
   it("unlocks a passcode-locked offer and filters to it", async () => {
     const user = await renderReady(lockedTicketingFixture, {
       waitForListing: /sec a · row 12/i,
@@ -2225,6 +2361,32 @@ describe("Select tickets page (PremiumTicketing)", { timeout: 20_000 }, () => {
     await waitFor(() => {
       expect(screen.getAllByText(/sec a · row 12/i).length).toBeGreaterThan(0);
       expect(screen.queryByText(/sec m · row m3/i)).not.toBeInTheDocument();
+    });
+  });
+
+  it("asks the page for selected offer ids when an offer chip is used", async () => {
+    const onFiltersChange = vi.fn();
+    const user = await renderReady(seatedTicketingFixture, { onFiltersChange });
+    const fieldClub = DEMO_SEATED_TICKET_GROUPS.find(
+      (group) => group.offer?.name === "Field Club",
+    );
+
+    await user.click(screen.getByRole("button", { name: /field club/i }));
+
+    await waitFor(() => {
+      expect(onFiltersChange).toHaveBeenCalledWith(
+        expect.objectContaining({
+          offerIds: [fieldClub?.offer?.id],
+        }),
+      );
+    });
+    expect(useFiltersStore.getState().filters.selectedOfferIds).toEqual([
+      fieldClub?.offer?.id,
+    ]);
+
+    await user.click(screen.getByRole("button", { name: /^all$/i }));
+    await waitFor(() => {
+      expect(useFiltersStore.getState().filters.selectedOfferIds).toEqual([]);
     });
   });
 

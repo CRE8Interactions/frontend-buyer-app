@@ -3,7 +3,7 @@
 import { BROWSE_TRACK } from "@/lib/browseType";
 import { fluidSize } from "@/lib/shopperFluidType";
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import InAppBackLink from "@/components/molecules/InAppBackLink";
 import RouteLoader from "@/components/molecules/RouteLoader";
@@ -173,8 +173,6 @@ export default function PackageDetailClient({
     (s) => s.setLoadingTicketGroups,
   );
 
-  const selectedFromMap = useSeatmapStore((s) => s.selectedFromMap);
-  const totalCount = useSeatmapStore((s) => s.totalCount);
   const resetMapSelection = useSeatmapStore((s) => s.resetMapSelection);
   const seatedError = useSeatmapStore((s) => s.seatedError);
   const setSeatedError = useSeatmapStore((s) => s.setSeatedError);
@@ -265,12 +263,12 @@ export default function PackageDetailClient({
   const sameSeatLabel =
     gameCount === 1 ? "Same seat, 1 game" : `Same seat, ${gameCount} games`;
 
-  const closeSeatmap = () => {
+  const closeSeatmap = useCallback(() => {
     setSeatmapOpen(false);
     setMapReady(false);
     setPreparingMap(false);
     resetMapSelection();
-  };
+  }, [resetMapSelection]);
 
   const openSeatmap = () => {
     if (!pkg) return;
@@ -345,22 +343,24 @@ export default function PackageDetailClient({
     else window.setTimeout(hydrate, 50);
   };
 
-  const checkout = async () => {
-    if (!pkg || !selectedFromMap.length || checkingOutRef.current) return;
+  const checkout = useCallback(async () => {
+    const seats = useSeatmapStore.getState().selectedFromMap;
+    const count = useSeatmapStore.getState().totalCount;
+    if (!pkg || !seats.length || checkingOutRef.current) return;
     checkingOutRef.current = true;
     setCheckingOut(true);
     setError("");
     try {
       const res = await placePackageIntoCart({
         eventPackageId: pkg.id,
-        packageTickets: selectedFromMap,
+        packageTickets: seats,
       });
       const cartId =
         (res.data as { cartId?: string | number })?.cartId ??
         (res.data as { id?: string | number })?.id;
       if (cartId != null) {
         rememberCheckoutReturnPath();
-        setStoredCart(cartId, totalCount || selectedFromMap.length);
+        setStoredCart(cartId, count || seats.length);
         trackAddToCart({
           organization: pkg.organization,
           cart: res.data,
@@ -380,7 +380,17 @@ export default function PackageDetailClient({
     }
     checkingOutRef.current = false;
     setCheckingOut(false);
-  };
+  }, [pkg, router, setSeatedError]);
+
+  const subtotalCaption = useCallback(
+    (count: number) =>
+      `${count} season seat${count === 1 ? "" : "s"} · ${gameCount || 1} games`,
+    [gameCount],
+  );
+  const orderQuantitySource = useMemo(
+    () => (pkg ? packageQuantitySource(pkg) : null),
+    [pkg],
+  );
 
   const pills = [
     pkg?.venue?.name,
@@ -885,19 +895,17 @@ export default function PackageDetailClient({
           buttonTextColor={theme.buttonTextColor}
           mobile={mobile}
           onClose={closeSeatmap}
-          onCheckout={() => void checkout()}
+          onCheckout={checkout}
           checkoutLoading={checkingOut}
           itemPriceNote={`All ${gameCount || 1} games`}
-          subtotalCaption={(count) =>
-            `${count} season seat${count === 1 ? "" : "s"} · ${gameCount || 1} games`
-          }
+          subtotalCaption={subtotalCaption}
           mapBackground={background}
           mapMapping={storeMapping}
           venueSlug={pkg.venue?.slug}
           preparing={preparingMap || !mapReady}
           orgName={pkg.organization?.name}
           logoSrc={theme.brandLogoSrc || theme.logoSrc}
-          orderQuantitySource={packageQuantitySource(pkg)}
+          orderQuantitySource={orderQuantitySource}
           mapLegend="package"
         />
       ) : null}

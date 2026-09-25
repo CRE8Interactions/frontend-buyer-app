@@ -54,18 +54,70 @@ export function invalidOfferQuantityError(restrictionLabel: string) {
   };
 }
 
+export function adjacentSeatsUnavailableError(quantity: number) {
+  return {
+    title: "Adjacent seats unavailable",
+    message: `We couldn't find ${quantity} adjacent seats in this row for this offer. Choose another seat or quantity.`,
+    buttonText: "Close",
+    leaveMap: false,
+  };
+}
+
+/** A rejected hold comes back as `{ error: { status, name, message } }`. */
+function holdApiError(err: unknown) {
+  if (!err || typeof err !== "object") return {};
+  const response = (err as {
+    response?: { status?: number; data?: unknown };
+  }).response;
+  const data = response?.data;
+  let status = response?.status;
+  let message: unknown;
+  if (typeof data === "string") {
+    message = data;
+  } else if (data && typeof data === "object") {
+    const record = data as {
+      error?: { message?: unknown; status?: unknown } | string;
+      message?: unknown;
+    };
+    if (typeof record.error === "string") {
+      message = record.error;
+    } else {
+      message = record.error?.message ?? record.message;
+      if (typeof record.error?.status === "number") status = record.error.status;
+    }
+  }
+  return {
+    status,
+    message:
+      typeof message === "string" && message.trim() ? message.trim() : undefined,
+  };
+}
+
+function thrownHoldMessage(err: unknown) {
+  if (err instanceof Error) return err.message;
+  if (
+    err &&
+    typeof err === "object" &&
+    "message" in err &&
+    typeof (err as { message?: unknown }).message === "string"
+  ) {
+    return (err as { message: string }).message;
+  }
+  return "";
+}
+
 export function checkoutHoldError(err: unknown) {
-  const msg =
-    err instanceof Error
-      ? err.message
-      : typeof err === "object" &&
-          err &&
-          "message" in err &&
-          typeof (err as { message?: unknown }).message === "string"
-        ? (err as { message: string }).message
-        : "";
-  if (msg.includes("not ready for checkout")) {
+  const api = holdApiError(err);
+  const thrown = thrownHoldMessage(err);
+  if (
+    thrown.includes("not ready for checkout") ||
+    api.message?.includes("not ready for checkout")
+  ) {
     return { ...CHECKOUT_EVENT_NOT_READY_ERROR };
+  }
+  // A 500 has no shopper-facing explanation, so it keeps the generic copy.
+  if (api.message && api.status !== 500) {
+    return { ...CHECKOUT_UNAVAILABLE_ERROR, message: api.message };
   }
   return { ...CHECKOUT_UNAVAILABLE_ERROR };
 }

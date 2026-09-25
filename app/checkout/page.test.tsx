@@ -1573,6 +1573,64 @@ describe("Checkout page", { timeout: 20_000 }, () => {
     vi.useRealTimers();
   });
 
+  it("releases tickets when a guest cancels from the contact step", async () => {
+    mockedUseAuth.mockReturnValue(authState(false));
+    const cart = demoCheckoutCart();
+    mockedGetCart.mockResolvedValue({ data: cart } as never);
+    const user = userEvent.setup();
+    render(<CheckoutPageRoute />);
+
+    expect(
+      await screen.findByRole("heading", {
+        name: /where should we send your tickets/i,
+      }),
+    ).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: /back/i }));
+    await user.click(
+      await screen.findByRole("button", { name: /cancel order/i }),
+    );
+
+    await waitFor(() => {
+      expect(mockedDropUserCart).toHaveBeenCalledWith({
+        eventUUID: cart.event.uuid,
+        cartId: cart.id,
+      });
+      expect(routerMocks.replace).toHaveBeenCalledWith(
+        eventPurchasePath(raptorsEvent),
+      );
+    });
+  });
+
+  it("stays in checkout and allows retry when releasing tickets fails", async () => {
+    const cart = demoCheckoutCart();
+    mockedGetCart.mockResolvedValue({ data: cart } as never);
+    mockedDropUserCart.mockRejectedValueOnce(new Error("network unavailable"));
+    const user = userEvent.setup();
+    render(<CheckoutPageRoute />);
+    expect(await screen.findByText("Secure checkout")).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: /back/i }));
+    await user.click(
+      await screen.findByRole("button", { name: /cancel order/i }),
+    );
+
+    expect(
+      await screen.findByRole("alert"),
+    ).toHaveTextContent(/couldn't release your tickets/i);
+    expect(routerMocks.back).not.toHaveBeenCalled();
+    expect(routerMocks.replace).not.toHaveBeenCalled();
+
+    mockedDropUserCart.mockResolvedValue({} as never);
+    await user.click(screen.getByRole("button", { name: /cancel order/i }));
+
+    await waitFor(() => {
+      expect(mockedDropUserCart).toHaveBeenCalledTimes(2);
+      expect(routerMocks.replace).toHaveBeenCalledWith(
+        eventPurchasePath(raptorsEvent),
+      );
+    });
+  });
+
   it("drops a GA cart and returns to that GA event instead of a leftover seated event", async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
     const cart = liveGaCheckoutCart({ remainingTime: 3 });
@@ -1660,7 +1718,10 @@ describe("Checkout page", { timeout: 20_000 }, () => {
     await screen.findByRole("dialog", { name: /are you sure/i });
     await user.click(screen.getByRole("button", { name: /cancel order/i }));
 
-    expect(await screen.findByText(/cancelling/i)).toBeInTheDocument();
+    await waitFor(() => expect(mockedDropUserCart).toHaveBeenCalled());
+    expect(
+      screen.getByRole("button", { name: /cancelling/i }),
+    ).toHaveAttribute("aria-busy", "true");
     expect(screen.getByText(cart.package.name)).toBeInTheDocument();
     expect(screen.queryByText(/loading tickets/i)).not.toBeInTheDocument();
     expect(routerMocks.replace).not.toHaveBeenCalled();

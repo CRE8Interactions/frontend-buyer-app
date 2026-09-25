@@ -65,6 +65,28 @@ describe("seatmap ticket limits", () => {
     );
   });
 
+  it("blames the ticket limit, not the row, once an exact-limit offer is full", () => {
+    const group = {
+      ...sectionA,
+      offer: { id: sectionA.offer?.id, name: sectionA.offer?.name, limit: 5 },
+      GA: false,
+    };
+    ["a1", "a2", "a3", "a4", "a5"].forEach((seatId) => {
+      useSeatmapStore.getState().selectSpecificSeat(seatId, group);
+    });
+    useSeatmapStore.setState({ seatedError: null });
+
+    // Only a6 is left, so the row cannot seat another 5 either.
+    useSeatmapStore
+      .getState()
+      .selectSeatedOffers("a6", [{ ...group, quantity: 5 }]);
+
+    expect(useSeatmapStore.getState().selectedFromMap).toHaveLength(5);
+    expect(useSeatmapStore.getState().seatedError).toEqual(
+      maxTicketLimitError(5),
+    );
+  });
+
   it("caps at the offer max even when the event limit is lower", () => {
     useFiltersStore.setState({ eventTicketLimit: 3 });
     const group = {
@@ -97,6 +119,33 @@ describe("seatmap ticket limits", () => {
     expect(useSeatmapStore.getState().selectedFromMap).toHaveLength(1);
     expect(useSeatmapStore.getState().seatedError).toEqual(
       maxTicketLimitError(1),
+    );
+  });
+
+  it("blocks only the capped offer once it is full and still adds the uncapped offer", () => {
+    const capped = {
+      ...sectionA,
+      offer: { id: "off-bogo", name: "BOGO", maxQuantity: 2 },
+      GA: false as const,
+    };
+    const open = {
+      ...sectionA,
+      offer: { id: "off-standard", name: "Standard", maxQuantity: null },
+      GA: false as const,
+    };
+
+    useSeatmapStore.getState().selectSpecificSeat("a1", capped);
+    useSeatmapStore.getState().selectSpecificSeat("a2", capped);
+    useSeatmapStore.getState().selectSpecificSeat("a3", open);
+
+    expect(useSeatmapStore.getState().selectedFromMap).toHaveLength(3);
+    expect(useSeatmapStore.getState().seatedError).toBeNull();
+
+    useSeatmapStore.getState().selectSpecificSeat("a4", capped);
+
+    expect(useSeatmapStore.getState().selectedFromMap).toHaveLength(3);
+    expect(useSeatmapStore.getState().seatedError).toEqual(
+      maxTicketLimitError(2),
     );
   });
 

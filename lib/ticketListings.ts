@@ -34,6 +34,30 @@ function money(n: number) {
   return `$${n.toFixed(2)}`;
 }
 
+/** Numeric unit price from a listing's `$12.00` string. */
+export function listingUnitPrice(listing: { price?: string; cartGroup?: Record<string, unknown> }) {
+  const fromGroup = Number(listing.cartGroup?.price);
+  if (Number.isFinite(fromGroup) && fromGroup > 0) return fromGroup;
+  return parseFloat(String(listing.price || "").replace(/[^0-9.]/g, "")) || 0;
+}
+
+export function sortListingsByPrice<T extends { price?: string; cartGroup?: Record<string, unknown> }>(
+  listings: T[],
+  sort: "price" | "-price" = "price",
+): T[] {
+  const dir = sort === "-price" ? -1 : 1;
+  return [...listings].sort(
+    (a, b) => (listingUnitPrice(a) - listingUnitPrice(b)) * dir,
+  );
+}
+
+export function listingOfferId(listing: {
+  cartGroup?: Record<string, unknown>;
+}): string | number | undefined {
+  const offer = listing.cartGroup?.offer as { id?: string | number } | undefined;
+  return offer?.id;
+}
+
 /** How many seats this group can actually sell right now. */
 export function sellableCount(g: RawTicketGroup) {
   const fromSeats = Array.isArray(g.seatIds) ? g.seatIds.length : 0;
@@ -52,18 +76,38 @@ export function normalizeGlobalTicketLimit(value: unknown) {
   return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
 }
 
+type QuantityCapSource = QuantityRestrictionSource & {
+  id?: string | number | null;
+  name?: string | null;
+};
+
 type QuantityCapGroup = {
   GA?: boolean;
   generalAdmission?: boolean;
-  offer?: QuantityRestrictionSource | null;
-  package?: QuantityRestrictionSource | null;
+  offer?: QuantityCapSource | null;
+  package?: QuantityCapSource | null;
+  quantity?: number | null;
+  availableCount?: number | null;
+  /** Row inventory the seat came from. */
+  seatIds?: unknown;
+  /** Seat already taken out of that row by this selection. */
+  seatId?: unknown;
 };
 
 function restrictionSourceFromGroup(
   group: QuantityCapGroup,
-): QuantityRestrictionSource | null {
+): QuantityCapSource | null {
   const source = group.package || group.offer;
   return source ?? null;
+}
+
+/** What makes two selected rows read as the same offer to the shopper. */
+function selectionOfferKey(group: QuantityCapGroup) {
+  const source = restrictionSourceFromGroup(group);
+  const identity = source?.id ?? source?.name;
+  return identity == null || identity === ""
+    ? restrictionSourceKey(source)
+    : String(identity);
 }
 
 function isGaGroup(group: QuantityCapGroup) {
@@ -89,6 +133,65 @@ function groupMaxQuantity(group: QuantityCapGroup) {
     normalizeGlobalTicketLimit(group.package?.limit) ??
     normalizeGlobalTicketLimit(group.package?.maxQuantity)
   );
+}
+
+/** Seated rows count as one ticket; GA rows count as their quantity. */
+function countCartTickets(groups: QuantityCapGroup[]) {
+  return groups.reduce((sum, group) => {
+    if (group.GA === true || group.generalAdmission) {
+      return sum + (Number(group.quantity) || 0);
+    }
+    if (group.GA === false) return sum + 1;
+    return sum;
+  }, 0);
+}
+
+/**
+ * Limit that adding these tickets would break, or null when the add is allowed.
+ * When every offer caps quantity, the strictest cap still bounds the whole order.
+ * When one offer does not, only the offer being added is held to its own max —
+ * an uncapped offer is not stopped by the other offer's ceiling.
+ */
+export function exceededSelectionTicketLimit(
+  eventLimit: unknown,
+  selected: QuantityCapGroup[],
+  incoming: QuantityCapGroup[] = [],
+  additionalTickets: number,
+): number | null {
+  const combined = [...selected, ...incoming];
+  const everyOfferCaps =
+    combined.length > 0 &&
+    combined.every((group) => groupMaxQuantity(group) != null);
+
+  if (everyOfferCaps || incoming.length === 0) {
+    const limit = selectionTicketLimit(eventLimit, combined);
+    if (!limit) return null;
+    return countCartTickets(selected) + additionalTickets <= limit ? null : limit;
+  }
+
+  const incomingKeys = [...new Set(incoming.map(selectionOfferKey))];
+  for (const key of incomingKeys) {
+    const sample = incoming.find((group) => selectionOfferKey(group) === key);
+    const cap = sample ? groupMaxQuantity(sample) : null;
+    if (cap == null) continue;
+    const already = countCartTickets(
+      selected.filter((group) => selectionOfferKey(group) === key),
+    );
+    const adding =
+      incomingKeys.length === 1
+        ? additionalTickets
+        : incoming
+            .filter((group) => selectionOfferKey(group) === key)
+            .reduce((sum, group) => sum + (Number(group.quantity) || 0), 0);
+    if (already + adding > cap) return cap;
+  }
+
+  const eventCap = normalizeGlobalTicketLimit(eventLimit);
+  const addingUncapped = incoming.some((group) => groupMaxQuantity(group) == null);
+  if (eventCap == null || !addingUncapped) return null;
+  return countCartTickets(selected) + additionalTickets <= eventCap
+    ? null
+    : eventCap;
 }
 
 /** Offer/package max when set; otherwise the event/package cap. */
@@ -155,10 +258,88 @@ export function selectionPaneTicketLimit(
 }
 
 /**
+ * Seats the selected offers hold in their row. Offers on one seat each cover
+ * part of the row, and the seats already picked still count, so the pane states
+ * the row's total rather than what one offer has left.
+ */
+/**
+ * Highest limit the selected GA offers actually show. Two offers at 26 and 50
+ * can be bought up to the larger of those, which is not the 100 GA fallback
+ * and not the stricter of the two.
+ */
+function highestGaOfferLimit(
+  selected: QuantityCapGroup[],
+  eventLimit: unknown,
+) {
+  const byOffer = new Map<string, number>();
+  selected.forEach((group) => {
+    const max = limitsFromTicketGroup(
+      group as QuantityCapGroup & RawTicketGroup,
+      normalizeGlobalTicketLimit(eventLimit),
+    ).max;
+    const key = selectionOfferKey(group);
+    byOffer.set(key, Math.max(byOffer.get(key) ?? 0, max));
+  });
+  if (byOffer.size < 2) return null;
+  return Math.max(...byOffer.values());
+}
+
+function selectionRowInventory(selected: QuantityCapGroup[]) {
+  if (selected.length && selected.every(isGaGroup)) {
+    const byOffer = new Map<string, number>();
+    selected.forEach((group) => {
+      const count = sellableCount(group as RawTicketGroup);
+      const key = selectionOfferKey(group);
+      byOffer.set(key, Math.max(byOffer.get(key) ?? 0, count));
+    });
+    const total = [...byOffer.values()].reduce((sum, n) => sum + n, 0);
+    return total || undefined;
+  }
+  const seats = new Set<string>();
+  selected.forEach((group) => {
+    if (Array.isArray(group.seatIds)) {
+      group.seatIds.forEach((id) => seats.add(String(id)));
+    }
+    if (group.seatId != null) seats.add(String(group.seatId));
+  });
+  return seats.size || undefined;
+}
+
+/** Strictest minimum the selected offers impose. */
+function selectionMinQuantity(selected: QuantityCapGroup[]) {
+  const mins = selected
+    .map((group) =>
+      normalizeGlobalTicketLimit(restrictionSourceFromGroup(group)?.minQuantity),
+    )
+    .filter((min): min is number => min != null);
+  return mins.length ? Math.max(...mins) : 1;
+}
+
+/**
+ * Strictest maximum the selected offers impose, but only when every one of them
+ * caps quantity. An uncapped offer can carry the order past the other offer's
+ * ceiling, so the pane states the row's total instead of that ceiling.
+ */
+function selectionMaxQuantity(selected: QuantityCapGroup[]) {
+  const maxes = selected.map((group) => {
+    const source = restrictionSourceFromGroup(group);
+    return (
+      normalizeGlobalTicketLimit(source?.limit) ??
+      normalizeGlobalTicketLimit(source?.maxQuantity)
+    );
+  });
+  return maxes.length && maxes.every((max) => max != null)
+    ? Math.min(...maxes)
+    : null;
+}
+
+/**
  * Full min/max/step copy for the map Your selection pane — mirrors GA tier notes.
- * Clamps max to `selectionPaneTicketLimit()` when that cap is tighter. A selection
- * spanning offers with different quantity rules falls back to the default range,
- * since no single offer's rules describe the order.
+ * Clamps max to `selectionPaneTicketLimit()` when that cap is tighter, and to the
+ * seats the selected row holds, since that is all the map can assign. A
+ * selection spanning two offers uses the strictest minimum. Two GA offers use
+ * the higher of the limits they each show; seated offers use a shared maximum
+ * only when every one of them caps quantity.
  */
 export function selectionPaneRestrictionLabel(
   eventLimit: unknown,
@@ -171,19 +352,23 @@ export function selectionPaneRestrictionLabel(
     ? DEFAULT_GA_TICKET_LIMIT
     : DEFAULT_SEATED_TICKET_LIMIT;
 
-  const groupSources = selected.map(restrictionSourceFromGroup);
-  const mixedOffers =
-    new Set(groupSources.map(restrictionSourceKey)).size > 1;
-
-  let source: QuantityRestrictionSource | null = mixedOffers
-    ? null
-    : groupSources.find((fromGroup) => fromGroup != null) ?? null;
-  if (!source && !mixedOffers && fallbackSource) {
-    source = fallbackSource;
-  }
+  const mixedOffers = new Set(selected.map(selectionOfferKey)).size > 1;
+  const highestGaLimit = gaOnly
+    ? highestGaOfferLimit(selected, eventLimit)
+    : null;
+  const source = mixedOffers
+    ? {
+        minQuantity: selectionMinQuantity(selected),
+        maxQuantity: highestGaLimit ?? selectionMaxQuantity(selected),
+      }
+    : selected
+        .map(restrictionSourceFromGroup)
+        .find((fromGroup) => fromGroup != null) ??
+      fallbackSource ??
+      null;
 
   const limits = quantityLimits(source ?? {}, {
-    available: undefined,
+    available: selectionRowInventory(selected),
     defaultMax,
     globalMax: normalizeGlobalTicketLimit(eventLimit),
   });
@@ -290,70 +475,48 @@ export function limitsFromTicketGroup(
   });
 }
 
-/** Exact-limit offers that require more tickets than a single seated map pick allows. */
-export function offerRequiresMultipleSeats(
-  source: QuantityRestrictionSource | null | undefined,
-) {
-  const exactLimit = normalizeGlobalTicketLimit(source?.limit);
-  return exactLimit != null && exactLimit > 1;
-}
-
-function configuredQuantityAboveOne(value: unknown) {
-  const parsed = normalizeGlobalTicketLimit(value);
-  return parsed != null && parsed > 1;
-}
-
-function configuredStepAboveOne(
-  source: QuantityRestrictionSource | null | undefined,
-) {
-  const raw = source?.multipleOf ?? source?.incrementsOf;
-  if (raw == null) return false;
-  return positiveInteger(raw, 1) > 1;
-}
-
-/**
- * Seated map rows only list offers that can be bought one ticket at a time:
- * no exact limit, min, max, or step/increment above 1.
- */
+/** Seated offers remain visible on the map even when they require a group. */
 export function offerAllowedOnSeatedMap(
-  source: QuantityRestrictionSource | null | undefined,
+  _source?: QuantityRestrictionSource | null,
 ) {
-  if (offerRequiresMultipleSeats(source)) return false;
-  if (configuredQuantityAboveOne(source?.maxQuantity)) return false;
-  if (configuredQuantityAboveOne(source?.minQuantity)) return false;
-  if (configuredStepAboveOne(source)) return false;
   return true;
 }
 
-/** Seated map multi-offer rows: one seat, qty 0 or 1; exact limits above 1 are not selectable. */
+/**
+ * Ordinary seated offers pick the clicked seat only. Group-restricted offers
+ * (BOGO, pairs, exact quantities) use the row inventory so the map can assign
+ * the clicked seat and the remaining required seats together.
+ */
 export function limitsFromSeatedOfferRow(
-  group: QuantityCapGroup & RawTicketGroup,
+  group?: QuantityCapGroup & RawTicketGroup,
   globalMax?: number | null,
 ): QuantityLimits {
-  const source = restrictionSourceFromGroup(group);
-  if (!offerAllowedOnSeatedMap(source)) {
-    if (offerRequiresMultipleSeats(source)) {
-      const exactLimit = normalizeGlobalTicketLimit(source?.limit)!;
-      return { min: exactLimit, max: exactLimit, step: 1, valid: false };
-    }
-
-    const base = quantityLimits(source, {
-      available: 1,
-      defaultMax: 1,
-      globalMax,
-    });
-    return { ...base, valid: false };
+  if (!group) return { min: 1, max: 1, step: 1, valid: true };
+  const rowAvailable = Array.isArray(group.seatIds)
+    ? group.seatIds.length
+    : sellableCount(group);
+  const limits = limitsFromTicketGroup(
+    {
+      ...group,
+      availableCount: rowAvailable,
+      maxContiguous: rowAvailable,
+    },
+    globalMax,
+  );
+  // A group offer sells as one block, so the stepper jumps straight to the
+  // required quantity on the first click and has nowhere else to go.
+  if (limits.min > 1 || limits.step > 1) {
+    return { min: limits.min, max: limits.min, step: 1, valid: limits.valid };
   }
-
   return { min: 1, max: 1, step: 1, valid: true };
 }
 
 /** Whether a seated map tooltip should list this offer row. */
 export function shouldShowSeatedMapOfferRow(
-  group: QuantityCapGroup & RawTicketGroup,
-  globalMax?: number | null,
+  _group?: QuantityCapGroup & RawTicketGroup,
+  _globalMax?: number | null,
 ): boolean {
-  return limitsFromSeatedOfferRow(group, globalMax).valid;
+  return true;
 }
 
 /** Offers on a seat that shoppers can pick from the seated map. */
@@ -371,15 +534,22 @@ export function hasSeatedMapSelectableOffers(
   return seatedMapSelectableOffers(groups, globalMax).length > 0;
 }
 
-/** Limits a seated map offer row shows (one ticket per seat). */
-export function offerRestrictionLimitsForSeatedRow(
+/**
+ * Seated map offer row copy. Ordinary offers sell the clicked seat and say
+ * nothing; group-restricted ones name the minimum or exact quantity, not a range.
+ */
+export function seatedOfferRowRestrictionLabel(
   source: QuantityRestrictionSource | null | undefined,
-  limits: QuantityLimits,
-): QuantityLimits | null {
-  if (!limits.valid) {
-    return offerRestrictionLimits(source, limits);
-  }
-  return { min: 1, max: 1, step: 1, valid: true };
+  _limits?: QuantityLimits,
+): string | null {
+  const exactLimit = normalizeGlobalTicketLimit(source?.limit);
+  if (exactLimit != null && exactLimit > 1) return `Exact of ${exactLimit}`;
+  // A multiple is its own floor, and it rounds any configured minimum up to the
+  // quantity the stepper will actually jump to.
+  const step = positiveInteger(source?.multipleOf ?? source?.incrementsOf, 1);
+  const configuredMin = normalizeGlobalTicketLimit(source?.minQuantity) ?? step;
+  const min = Math.ceil(configuredMin / step) * step;
+  return min > 1 ? `Minimum of ${min}` : null;
 }
 
 export function limitsFromListing(
@@ -611,6 +781,7 @@ export function listingDetailAvailabilityLabel(
  * filtered out server-side, so every offer that arrives here is on sale.
  */
 export type OfferSummary = {
+  id?: string | number;
   name?: string;
   isLocked?: boolean;
   isConnectedOffer?: boolean | null;
@@ -663,7 +834,7 @@ export function groupsToListings(
   }: { includeLocked?: boolean; globalMax?: number | null } = {},
 ): TicketingListing[] {
   const seen = new Set<string>();
-  return expandGroupsWithConnectedOffers(groups)
+  const mapped = expandGroupsWithConnectedOffers(groups)
     .filter((g) => includeLocked || !g.offer?.accessCode)
     .filter((g) => sellableCount(g) > 0)
     .filter((g) => {
@@ -693,6 +864,39 @@ export function groupsToListings(
       };
     })
     .filter((listing) => listing.min <= listing.max);
+  return sortListingsByPrice(mapped);
+}
+
+export function filterGroupsForListings(
+  groups: RawTicketGroup[],
+  {
+    quantity = 0,
+    accessible = false,
+    sort = "price",
+    offerIds = [],
+  }: {
+    quantity?: number;
+    accessible?: boolean;
+    sort?: "price" | "-price";
+    offerIds?: Array<string | number>;
+  } = {},
+): RawTicketGroup[] {
+  const offerSet = new Set(offerIds.map(String).filter(Boolean));
+  let next = groups.filter((group) => {
+    if (accessible && !group.accessible) return false;
+    if (offerSet.size && !offerSet.has(String(group.offer?.id ?? ""))) {
+      return false;
+    }
+    if (quantity > 0 && !quantityIsAllowed(quantity, limitsFromTicketGroup(group))) {
+      return false;
+    }
+    return true;
+  });
+  const dir = sort === "-price" ? -1 : 1;
+  next = [...next].sort(
+    (a, b) => (Number(a.price || 0) - Number(b.price || 0)) * dir,
+  );
+  return next;
 }
 
 /**

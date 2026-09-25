@@ -1,21 +1,23 @@
 import { create } from "zustand";
 import {
+  adjacentSeatsUnavailableError,
   invalidOfferQuantityError,
   maxTicketLimitError,
   mixedMapSelectionError,
 } from "@/lib/mapSelection";
 import {
+  exceededSelectionTicketLimit,
   limitsFromSeatedOfferRow,
   limitsFromTicketGroup,
   quantityIsAllowed,
   quantityRestrictionLabel,
-  selectionTicketLimit,
 } from "@/lib/ticketListings";
 import useFiltersStore, { type TicketGroup } from "./filtersStore";
 import type {
   SeatmapBackground,
   SeatmapMapping,
 } from "@/lib/seatmapLookups";
+import { adjacentSeatWindow } from "@/lib/seatmapLookups";
 import {
   trackSelectTicket,
   type TrackingOrganization,
@@ -166,18 +168,14 @@ const useSeatmapStore = create<SeatmapState>((set, get) => ({
         ? incoming
         : [incoming]
       : [];
-    const limit = selectionTicketLimit(
-      get().eventTicketLimit ?? useFiltersStore.getState().eventTicketLimit,
-      [...get().selectedFromMap, ...incomingGroups],
+    return (
+      exceededSelectionTicketLimit(
+        get().eventTicketLimit ?? useFiltersStore.getState().eventTicketLimit,
+        get().selectedFromMap,
+        incomingGroups,
+        additionalTickets,
+      ) == null
     );
-    if (!limit) return true;
-
-    const { selectedFromMap } = get();
-    const currentGA = selectedFromMap
-      .filter((g) => g.GA === true)
-      .reduce((sum, g) => sum + (g.quantity || 0), 0);
-    const currentSeated = selectedFromMap.filter((g) => g.GA === false).length;
-    return currentGA + currentSeated + additionalTickets <= limit;
   },
 
   resetMapState: () => {
@@ -212,12 +210,14 @@ const useSeatmapStore = create<SeatmapState>((set, get) => ({
       (sum, { quantity }) => sum + (quantity || 0),
       0,
     );
-    if (!get()._withingEventTicketLimit(totalNew, selectedGroups)) {
-      const limit = selectionTicketLimit(
-        get().eventTicketLimit ?? useFiltersStore.getState().eventTicketLimit,
-        [...get().selectedFromMap, ...selectedGroups],
-      );
-      set({ seatedError: maxTicketLimitError(limit ?? totalNew) });
+    const gaLimit = exceededSelectionTicketLimit(
+      eventLimit,
+      get().selectedFromMap,
+      selectedGroups,
+      totalNew,
+    );
+    if (gaLimit != null) {
+      set({ seatedError: maxTicketLimitError(gaLimit) });
       return;
     }
     const organization = useFiltersStore.getState().event
@@ -241,12 +241,14 @@ const useSeatmapStore = create<SeatmapState>((set, get) => ({
       set({ seatedError: mixed });
       return;
     }
-    if (!get()._withingEventTicketLimit(1, ticketGroup)) {
-      const limit = selectionTicketLimit(
-        get().eventTicketLimit ?? useFiltersStore.getState().eventTicketLimit,
-        [...get().selectedFromMap, ticketGroup],
-      );
-      set({ seatedError: maxTicketLimitError(limit ?? 1) });
+    const seatLimit = exceededSelectionTicketLimit(
+      get().eventTicketLimit ?? useFiltersStore.getState().eventTicketLimit,
+      get().selectedFromMap,
+      [ticketGroup],
+      1,
+    );
+    if (seatLimit != null) {
+      set({ seatedError: maxTicketLimitError(seatLimit) });
       return;
     }
 
@@ -307,7 +309,7 @@ const useSeatmapStore = create<SeatmapState>((set, get) => ({
     const [group] = picks;
     const limits = limitsFromSeatedOfferRow(group, eventLimit);
     const qty = Number(group.quantity || 0);
-    if (qty !== 1 || !quantityIsAllowed(qty, limits)) {
+    if (!quantityIsAllowed(qty, limits)) {
       set({
         seatedError: invalidOfferQuantityError(
           quantityRestrictionLabel(limits),
@@ -315,13 +317,36 @@ const useSeatmapStore = create<SeatmapState>((set, get) => ({
       });
       return;
     }
-    const totalNew = 1;
-    if (!get()._withingEventTicketLimit(totalNew, picks)) {
-      const limit = selectionTicketLimit(
-        get().eventTicketLimit ?? useFiltersStore.getState().eventTicketLimit,
-        [...get().selectedFromMap, ...picks],
-      );
-      set({ seatedError: maxTicketLimitError(limit ?? totalNew) });
+    // A full cart is why these seats can't be added, so say that before
+    // blaming the row for not having a long enough run.
+    const offerLimit = exceededSelectionTicketLimit(
+      eventLimit,
+      get().selectedFromMap,
+      picks,
+      qty,
+    );
+    if (offerLimit != null) {
+      set({ seatedError: maxTicketLimitError(offerLimit) });
+      return;
+    }
+    const alreadySelected = new Set(
+      get().selectedFromMap.map((selected) => String(selected.seatId)),
+    );
+    const rowSeatIds = Array.isArray(group.seatIds)
+      ? group.seatIds.map(String)
+      : [];
+    const clickedId = String(seatId);
+    const selectedSeatIds = adjacentSeatWindow(
+      get().data,
+      clickedId,
+      rowSeatIds,
+      alreadySelected,
+      qty,
+    );
+    if (!selectedSeatIds) {
+      set({
+        seatedError: adjacentSeatsUnavailableError(qty),
+      });
       return;
     }
 
@@ -331,15 +356,20 @@ const useSeatmapStore = create<SeatmapState>((set, get) => ({
             ...state.data,
             seats: {
               ...state.data.seats,
-              [String(seatId)]: {
-                ...state.data.seats?.[String(seatId)],
-                seatId: String(seatId),
-                cx: state.data.seats?.[String(seatId)]?.cx ?? 0,
-                cy: state.data.seats?.[String(seatId)]?.cy ?? 0,
-                w: state.data.seats?.[String(seatId)]?.w ?? 0,
-                h: state.data.seats?.[String(seatId)]?.h ?? 0,
-                selected: true,
-              },
+              ...Object.fromEntries(
+                selectedSeatIds.map((id) => [
+                  id,
+                  {
+                    ...state.data?.seats?.[id],
+                    seatId: id,
+                    cx: state.data?.seats?.[id]?.cx ?? 0,
+                    cy: state.data?.seats?.[id]?.cy ?? 0,
+                    w: state.data?.seats?.[id]?.w ?? 0,
+                    h: state.data?.seats?.[id]?.h ?? 0,
+                    selected: true,
+                  },
+                ]),
+              ),
             },
           }
         : state.data,
@@ -347,10 +377,11 @@ const useSeatmapStore = create<SeatmapState>((set, get) => ({
 
     const organization = useFiltersStore.getState().event
       ?.organization as TrackingOrganization | undefined;
-    const selectedTickets = picks.map((group) => ({
-      seatId,
-      seatNumber: get().data?.seats?.[String(seatId)]?.seatNumber,
+    const selectedTickets = selectedSeatIds.map((selectedSeatId) => ({
       ...group,
+      seatId: selectedSeatId,
+      seatNumber: get().data?.seats?.[selectedSeatId]?.seatNumber,
+      quantity: 1,
       offer: group.offer,
       offerIds: group.offer?.id ? [group.offer.id] : group.offerIds,
     }));
