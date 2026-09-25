@@ -667,6 +667,11 @@ function CheckoutSuccessPage() {
                             ? "Your tickets are in your wallet"
                             : "Your tickets have been emailed"}
                   </div>
+                  {ticketSummary.accessibleLabel ? (
+                    <div className="text-[14px]" style={{ color: MUTED }}>
+                      {ticketSummary.accessibleLabel}
+                    </div>
+                  ) : null}
                 </div>
               </div>
               <div className="h-px bg-[rgba(5,27,53,0.08)]" />

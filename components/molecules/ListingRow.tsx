@@ -3,6 +3,7 @@
 import type { ReactNode } from "react";
 import Pill from "@/components/atoms/Pill";
 import { Check, Accessibility } from "@/components/atoms/icons";
+import { getAccessibleLabel } from "@/lib/ticketAccessibility";
 
 /**
  * ListingRow — one purchasable listing as a dense, price-first rail row:
@@ -23,6 +24,7 @@ export default function ListingRow({
   tier = 0,
   thumb,
   accessible = false,
+  accessibleType,
   bestDeal = false,
   selected = false,
   onClick,
@@ -40,6 +42,7 @@ export default function ListingRow({
   /** Seat locator visual (e.g. <SeatMapThumb/>); replaces the tier marker. */
   thumb?: ReactNode;
   accessible?: boolean;
+  accessibleType?: string;
   bestDeal?: boolean;
   selected?: boolean;
   onClick?: () => void;
@@ -47,6 +50,7 @@ export default function ListingRow({
   onHover?: (hovering: boolean) => void;
 }) {
   const qty = qtyMin === qtyMax ? `${qtyMin} ticket${qtyMin === 1 ? "" : "s"}` : `${qtyMin}–${qtyMax} tickets`;
+  const accessibleLabel = getAccessibleLabel({ accessible, accessibleType });
   const leftThumb = thumb ? (
         <span className="flex h-[46px] w-[62px] shrink-0 items-center justify-center overflow-hidden rounded-lg border border-white/[0.08] bg-[#051B35]" aria-hidden>
           {thumb}
@@ -71,13 +75,13 @@ export default function ListingRow({
       {leftThumb}
       <span className="min-w-0 flex-1">
         <span className="flex flex-wrap items-center gap-2">
-          <span className="text-[14px] font-semibold text-white">{label ?? `Sec ${sec} · Row ${row}`}</span>
-          {bestDeal && <Pill size="sm">Best deal</Pill>}
-          {accessible && (
-            <span className="text-[#9DA2B3]" title="Accessible seating">
-              <Accessibility className="h-[14px] w-[14px]" />
+          {accessibleLabel && (
+            <span role="img" aria-label={accessibleLabel} title={accessibleLabel} className="flex shrink-0 text-white">
+              <Accessibility className="h-4 w-4" />
             </span>
           )}
+          <span className="text-[14px] font-semibold text-white">{label ?? `Sec ${sec} · Row ${row}`}</span>
+          {bestDeal && <Pill size="sm">Best deal</Pill>}
         </span>
         <span className="mt-0.5 block text-[12px] text-[#9DA2B3]">{qty}</span>
       </span>

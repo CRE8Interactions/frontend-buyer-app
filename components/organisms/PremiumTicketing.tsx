@@ -12,10 +12,11 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import { createPortal } from "react-dom";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import AccessibleSeatingBadge from "@/components/atoms/AccessibleSeatingBadge";
 import BrandedActionButton from "@/components/atoms/BrandedActionButton";
 import LockIcon from "@/components/atoms/LockIcon";
 import { BrandedLoader } from "@/components/molecules/RouteLoader";
-import { Ticket } from "@/components/atoms/icons";
+import { Accessibility, Ticket } from "@/components/atoms/icons";
 import LoginLink from "@/components/molecules/LoginLink";
 import Modal from "@/components/molecules/Modal";
 import MobileStickyFooter from "@/components/molecules/MobileStickyFooter";
@@ -53,6 +54,7 @@ import {
   ticketQuantityOptions,
   type QuantityRestrictionSource,
 } from "@/lib/ticketListings";
+import { getAccessibleLabel, isAccessibleSource } from "@/lib/ticketAccessibility";
 import { shopperShellVars } from "@/lib/branding";
 import { ORG_SCROLLBAR_CLASS, orgScrollbarCss } from "@/lib/orgScrollbar";
 import {
@@ -715,7 +717,7 @@ export default function PremiumTicketing({
 
   const mapLocked = Boolean(d.soldOut) || eventScheduled;
   const rows = useMemo(() => {
-    const filtered = d.listings.filter((l) => quantityIsAllowed(want, listingQtyLimits(l)) && (!zoneFilter.length || zoneFilter.includes(l.zone)) && !(!!lockedMap[l.zone] && !unlocked.includes(l.zone)) && (!ada || Boolean(l.cartGroup?.accessible)));
+    const filtered = d.listings.filter((l) => quantityIsAllowed(want, listingQtyLimits(l)) && (!zoneFilter.length || zoneFilter.includes(l.zone)) && !(!!lockedMap[l.zone] && !unlocked.includes(l.zone)) && (!ada || isAccessibleSource(l.cartGroup)));
     return sortListingsByPrice(filtered, sortDir).map((l) => ({
       ...l,
       range: `${l.min} – ${l.max} Tickets`,
@@ -1103,6 +1105,29 @@ export default function PremiumTicketing({
       thumbnailCandidates={venueImageCandidates(l.sec)}
     />
   );
+
+  /** Accessible listings name their seating type where the ticket icon sits. */
+  const listingSeatIcon = (l: TicketingListing, s: number) => {
+    const accessibleLabel = getAccessibleLabel(l.cartGroup);
+    const box = { flexShrink: 0, display: "flex", alignItems: "center" };
+    if (!accessibleLabel) {
+      return (
+        <span style={{ ...box, color: "#6e7180" }}>
+          <TicketIcon s={s} />
+        </span>
+      );
+    }
+    return (
+      <span
+        role="img"
+        aria-label={accessibleLabel}
+        title={accessibleLabel}
+        style={{ ...box, color: NAVY }}
+      >
+        <Accessibility width={s + 2} height={s + 2} strokeWidth={2} />
+      </span>
+    );
+  };
 
   /** Event-level schedule shown only when no offer is currently active. */
   const scheduledPanel = (wideLayout: boolean) => (
@@ -1528,7 +1553,7 @@ export default function PremiumTicketing({
         {busy ? <div style={{ height: 20, width: 96, borderRadius: 999, ...shimmer }} /> : <div style={{ fontSize: 16, fontWeight: 500, fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap" }}>{rows.length} Listings</div>}
         <div style={{ display: "flex", alignItems: "center", gap: compact ? 12 : 20 }}>
           <div style={{ display: "flex", alignItems: "center", gap: compact ? 8 : 10, color: "#6e7180" }}>
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" style={{ width: compact ? 18 : 21, height: compact ? 18 : 21 }}><circle cx="16" cy="4" r="1" /><path d="m18 19 1-7-6 1" /><path d="m5 8 3-3 5.5 3-2.36 3.5" /><path d="M4.24 14.5a5 5 0 0 0 6.88 6" /><path d="M13.76 17.5a5 5 0 0 0-6.88-6" /></svg>
+            <Accessibility style={{ width: compact ? 18 : 21, height: compact ? 18 : 21 }} />
             <button onClick={toggleAda} aria-label="Accessible seating only" style={{ width: compact ? 44 : 48, height: compact ? 26 : 28, borderRadius: 999, border: "none", padding: 3, cursor: "pointer", boxSizing: "border-box", display: "flex", alignItems: "center", transition: "background 180ms ease", background: ada ? ACC : "#d3d6e0" }}>
               <span style={{ display: "block", width: compact ? 20 : 22, height: compact ? 20 : 22, borderRadius: 999, background: "#fff", boxShadow: "0 1px 3px rgba(5,27,53,0.3)", transition: "transform 180ms cubic-bezier(0.2,0.8,0.2,1)", transform: ada ? (compact ? "translateX(18px)" : "translateX(20px)") : "translateX(0)" }} />
             </button>
@@ -1902,10 +1927,15 @@ export default function PremiumTicketing({
                   : zoneFilter.length > 1
                     ? "these offers"
                     : "";
-              const title = noOfferInventory
+              const noAccessible = ada;
+              const title = noAccessible
+                ? "No accessible listings"
+                : noOfferInventory
                 ? `No tickets for ${offerLabel}`
                 : `No listings for ${want === 1 ? "1 ticket" : `${want} tickets`}`;
-              const body = noOfferInventory
+              const body = noAccessible
+                ? "No accessible seating is currently listed. Turn off the accessible seating filter to see all tickets."
+                : noOfferInventory
                 ? zoneFilter.length === 1
                   ? "This offer doesn't have any inventory on sale right now. Try another section, or check back later."
                   : "None of the selected offers have inventory on sale right now. Try another section, or check back later."
@@ -1915,7 +1945,7 @@ export default function PremiumTicketing({
                   <svg viewBox="0 0 24 24" fill="none" stroke={ACC} strokeWidth={1.6} strokeLinecap="round" strokeLinejoin="round" style={{ width: 34, height: 34 }}><path d="M4 9V6a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v3a2 2 0 0 0 0 4v3a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2v-3a2 2 0 0 0 0-4z" /><line x1="9" y1="9" x2="15" y2="15" /><line x1="15" y1="9" x2="9" y2="15" /></svg>
                   <div style={{ fontSize: fluidSize(19), fontWeight: 600, letterSpacing: "-0.015em" }}>{title}</div>
                   <div style={{ fontSize: fluidSize(15), color: "#6e7180", maxWidth: 380 }}>{body}</div>
-                  {!noOfferInventory && want > 1 ? (
+                  {!noAccessible && !noOfferInventory && want > 1 ? (
                     <button className="nmt-primary" onClick={() => reload(quantityOptions[0] || 1)} style={{ ...primaryBtn, marginTop: 6, fontSize: fluidSize(15), padding: "13px 26px" }}>Reset quantity</button>
                   ) : null}
                 </div>
@@ -1932,7 +1962,7 @@ export default function PremiumTicketing({
                       </div>
                       <div style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", gap: 10 }}>
                         <div style={{ display: "flex", alignItems: "center", gap: 6, minWidth: 0, fontSize: 18, fontWeight: 600, letterSpacing: "-0.015em" }}>
-                          <span style={{ color: "#6e7180", flexShrink: 0, display: "flex", alignItems: "center" }}><TicketIcon s={18} /></span>
+                          {listingSeatIcon(l, 18)}
                           <span style={{ minWidth: 0, overflowWrap: "anywhere" }}>Sec {l.sec} · Row {l.row}</span>
                         </div>
                         <div style={{ fontSize: 15, color: "#6e7180" }}>{l.range}</div>
@@ -1950,7 +1980,7 @@ export default function PremiumTicketing({
                       <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 6, minWidth: 0 }}>
                         <span style={{ alignSelf: "flex-start", ...pill(ACC_SOFT, ACC) }}><Star s={14} /> {l.zone}</span>
                         <div style={{ display: "flex", alignItems: "center", gap: 9, minWidth: 0, fontSize: 18, fontWeight: 600, letterSpacing: "-0.015em" }}>
-                          <span style={{ color: "#6e7180", flexShrink: 0, display: "flex", alignItems: "center" }}><TicketIcon s={18} /></span>
+                          {listingSeatIcon(l, 18)}
                           <span style={{ minWidth: 0, overflowWrap: "anywhere" }}>Sec {l.sec} · Row {l.row}</span>
                         </div>
                         <div style={{ fontSize: 15, color: "#6e7180" }}>{l.range}</div>
@@ -2509,6 +2539,7 @@ export default function PremiumTicketing({
                 <span style={{ alignSelf: "flex-start", flexShrink: 0, ...pill(ACC_SOFT, ACC), ...(mobile ? { padding: "5px 10px" } : {}) }}><Star s={14} /> {selRow.tier || selRow.zone}</span>
                 <div style={{ display: "flex", flexDirection: "column", gap: 5, minWidth: 0 }}>
                   <div style={{ fontSize: 22, fontWeight: 600, letterSpacing: "-0.02em", lineHeight: 1.5 }}>Sec {selRow.sec} · Row {selRow.row}</div>
+                  <AccessibleSeatingBadge source={selRow.cartGroup} />
                   <div style={{ fontSize: 14, lineHeight: 1.5, color: "#6e7180" }}>{listingDetailAvailabilityLabel(selRow.min, selRow.max, selRow.multipleOf)}</div>
                 </div>
               </div>

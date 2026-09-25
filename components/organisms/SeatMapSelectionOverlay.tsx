@@ -5,6 +5,7 @@ import { fluidSize } from "@/lib/shopperFluidType";
 
 import { memo, useCallback, useEffect, useState } from "react";
 import { lockPageScroll, unlockPageScroll } from "@/lib/pageScroll";
+import AccessibleSeatingBadge from "@/components/atoms/AccessibleSeatingBadge";
 import BrandedActionButton from "@/components/atoms/BrandedActionButton";
 import BuyerProtectionCard from "@/components/molecules/BuyerProtectionCard";
 import Modal from "@/components/molecules/Modal";
@@ -963,6 +964,7 @@ function SeatMapSelectionOverlay({
                             ? gaTicketSeatLine(mapDetailGroup)
                             : `Sec ${mapDetailSection} · Row ${mapDetailGroup.rowNumber || mapDetailGroup.rowName || "—"} · Seat ${mapDetailGroup.seatNumber ?? "—"}`}
                         </div>
+                        <AccessibleSeatingBadge source={mapDetailGroup} />
                         <div style={{ fontSize: 14, lineHeight: 1.5, color: "#6e7180" }}>
                           1 Ticket
                         </div>
@@ -1267,6 +1269,10 @@ function SeatMapSelectionOverlay({
                                   ) : null}
                                 </div>
                               </div>
+                              <AccessibleSeatingBadge
+                                source={g}
+                                style={{ marginTop: 10 }}
+                              />
                               <div
                                 style={{
                                   height: 1,

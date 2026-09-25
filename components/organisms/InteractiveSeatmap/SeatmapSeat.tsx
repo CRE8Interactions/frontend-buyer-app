@@ -5,6 +5,7 @@ import type { SeatmapSeat } from "@/lib/seatmapLookups";
 import { SEATMAP_TAP_THRESHOLD_PX } from "@/lib/seatmapPopup";
 import type { TicketGroup } from "@/stores/filtersStore";
 import useSeatmapStore from "@/stores/seatmapStore";
+import { accessibleSeatColor } from "@/lib/ticketAccessibility";
 import type { SeatmapTooltipTarget } from "./SeatmapTooltip";
 
 const TOOLTIP_TIMEOUT = 500;
@@ -85,12 +86,6 @@ export function activateSellableSeat(args: {
   onTooltip(null);
 }
 
-function accessibleColor(accessibleType?: string) {
-  if (accessibleType === "DA") return "#2DEDB4";
-  if (accessibleType === "DB") return "#F4BC16";
-  return "#F4BC16";
-}
-
 function offerColor(color?: string | null) {
   const value = color?.trim();
   if (!value) return null;
@@ -169,7 +164,7 @@ const SeatmapSeat = memo(function SeatmapSeat({
   const seatColor = useMemo(() => {
     if (seat.selected) return "var(--seatmap-selected, #A6E773)";
     if (!ticketGroup) return "#E6E8EC";
-    if (isAccessible) return accessibleColor(accessibleType);
+    if (isAccessible) return accessibleSeatColor(accessibleType);
     if (displayTicketGroup && isLockedOffer(displayTicketGroup)) return "#353945";
     if (displayTicketGroup?.resale) return "#E06C35";
     if (isExclusiveOffer(displayTicketGroup)) return "#9757D7";

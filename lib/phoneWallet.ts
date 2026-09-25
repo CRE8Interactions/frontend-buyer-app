@@ -11,6 +11,7 @@ import {
   type AccessPassSummary,
   type EventLike,
 } from "@/lib/wallet";
+import { getWalletAccessibleLabel } from "@/lib/ticketAccessibility";
 
 export type PhoneWalletKind = "apple" | "google";
 
@@ -297,7 +298,7 @@ export function ticketWalletRequest(
   if (!checkInCode) return null;
   const passEvent = walletPassEvent(event, ticket);
   if (!passEvent) return null;
-  return { event: passEvent, obj: ticket };
+  return { event: passEvent, obj: { ...ticket, accessibilityLabel: getWalletAccessibleLabel(ticket) } };
 }
 
 export async function addTicketToPhoneWallet(

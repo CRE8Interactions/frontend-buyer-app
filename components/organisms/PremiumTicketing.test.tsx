@@ -896,6 +896,16 @@ describe("Select tickets page (PremiumTicketing)", { timeout: 20_000 }, () => {
     expect(screen.queryByText("Ticket details")).not.toBeInTheDocument();
   });
 
+  it("shows the accessible seating label in ticket details", async () => {
+    const user = await renderReady();
+    await user.click(screen.getAllByText(/sec a · row 12/i)[0]);
+
+    expect(await screen.findByText("Ticket details")).toBeInTheDocument();
+    expect(
+      screen.getByText(/accessible: open space for wheelchair/i),
+    ).toBeInTheDocument();
+  });
+
   it("adjusts drawer quantity and checkout subtotal", async () => {
     const user = await renderReady();
     await user.click(screen.getByText(/sec m · row m3/i));
@@ -2362,6 +2372,46 @@ describe("Select tickets page (PremiumTicketing)", { timeout: 20_000 }, () => {
       expect(screen.getAllByText(/sec a · row 12/i).length).toBeGreaterThan(0);
       expect(screen.queryByText(/sec m · row m3/i)).not.toBeInTheDocument();
     });
+  });
+
+  it("shows an accessibility empty state instead of quantity-reset copy", async () => {
+    const user = await renderReady({
+      ...seatedTicketingFixture,
+      listings: seatedTicketingFixture.listings.filter(
+        (listing) => !listing.cartGroup?.accessible,
+      ),
+    });
+
+    await user.click(
+      screen.getByRole("button", { name: /accessible seating only/i }),
+    );
+
+    expect(
+      await screen.findByText(/no accessible listings/i),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(/turn off the accessible seating filter/i),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: /reset quantity/i }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("names the accessible seating type on accessible listings and keeps their locator thumb", async () => {
+    await renderReady();
+
+    expect(
+      screen.getAllByRole("img", {
+        name: /accessible: open space for wheelchair/i,
+      }).length,
+    ).toBeGreaterThan(0);
+    const thumbs = screen.queryAllByTestId("section-thumb");
+    expect(thumbs.some((el) => /thumb a/i.test(el.textContent || ""))).toBe(
+      true,
+    );
+    expect(thumbs.some((el) => /thumb m/i.test(el.textContent || ""))).toBe(
+      true,
+    );
   });
 
   it("asks the page for selected offer ids when an offer chip is used", async () => {

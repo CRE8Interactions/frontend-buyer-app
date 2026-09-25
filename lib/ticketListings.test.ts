@@ -1024,6 +1024,7 @@ describe("listing filters", () => {
     const none = DEMO_SEATED_TICKET_GROUPS.map((group) => ({
       ...group,
       accessible: false,
+      accessibleType: undefined,
     }));
     expect(filterGroupsForListings(none, { accessible: true })).toEqual([]);
   });

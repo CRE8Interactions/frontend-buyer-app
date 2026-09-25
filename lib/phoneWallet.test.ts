@@ -199,7 +199,7 @@ describe("addTicketToPhoneWallet", () => {
     expect(await addTicketToPhoneWallet(event, ticket, "apple")).toBeNull();
     expect(mockedApplePass).toHaveBeenCalledWith({
       event: expect.objectContaining({ uuid: event.uuid }),
-      obj: ticket,
+      obj: { ...ticket, accessibilityLabel: "" },
     });
   });
 
@@ -211,7 +211,7 @@ describe("addTicketToPhoneWallet", () => {
     expect(await addTicketToPhoneWallet(event, ticket, "google")).toBeNull();
     expect(mockedGooglePass).toHaveBeenCalledWith({
       event: expect.objectContaining({ uuid: event.uuid }),
-      ticket,
+      ticket: { ...ticket, accessibilityLabel: "" },
     });
     expect(open).toHaveBeenCalledWith(
       "https://pay.google.com/gp/v/save/ticket-1",
@@ -245,7 +245,7 @@ describe("addTicketToPhoneWallet", () => {
     ).toBeNull();
     expect(mockedGooglePass).toHaveBeenCalledWith({
       event: expect.objectContaining({ uuid: ticket.eventUUID }),
-      ticket,
+      ticket: { ...ticket, accessibilityLabel: "" },
     });
   });
 

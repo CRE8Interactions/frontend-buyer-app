@@ -207,6 +207,7 @@ import {
   type OrderLike,
   type TicketLike,
 } from "@/lib/wallet";
+import { getAccessibleLabel } from "@/lib/ticketAccessibility";
 import {
   addAccessPassToPhoneWallet,
   addTicketToPhoneWallet,
@@ -4871,6 +4872,7 @@ export default function SeasonTickets({
         seatNo: ticketSeatValue(raw) || "GA",
         entryLine,
         offerBadge,
+        accessibleLabel: getAccessibleLabel(raw),
       };
     }
     const parts = t.seat.split("·").map((p) => p.trim());
@@ -4886,6 +4888,7 @@ export default function SeasonTickets({
         seatNo: peel(parts[2], /^Seat\s*/i),
         entryLine,
         offerBadge,
+        accessibleLabel: getAccessibleLabel(raw),
       };
     }
     if (parts.length === 2 && /^GA$/i.test(parts[1])) {
@@ -4896,6 +4899,7 @@ export default function SeasonTickets({
         seatNo: "GA",
         entryLine,
         offerBadge,
+        accessibleLabel: getAccessibleLabel(raw),
       };
     }
     if (parts.length === 2) {
@@ -4906,6 +4910,7 @@ export default function SeasonTickets({
         seatNo: "—",
         entryLine,
         offerBadge,
+        accessibleLabel: getAccessibleLabel(raw),
       };
     }
     return {
@@ -4915,6 +4920,7 @@ export default function SeasonTickets({
       seatNo: "GA",
       entryLine,
       offerBadge,
+      accessibleLabel: getAccessibleLabel(raw),
     };
   });
   const acquiredAtLabel = orderAcquiredLabel(
@@ -5232,6 +5238,9 @@ export default function SeasonTickets({
                 {t.entryLine ? (
                   <div style={{ fontSize: fluidSize(13), lineHeight: 1.5, color: SUB }}>{t.entryLine}</div>
                 ) : null}
+                {t.accessibleLabel ? (
+                  <div style={{ fontSize: fluidSize(13), lineHeight: 1.5, color: SUB }}>{t.accessibleLabel}</div>
+                ) : null}
               </div>
             </div>
 
@@ -5401,6 +5410,9 @@ export default function SeasonTickets({
                 <div style={{ flex: 1, minWidth: 150, display: "flex", flexDirection: "column", gap: 5 }}>
                   <span style={{ alignSelf: "flex-start", fontSize: fluidSize(11), lineHeight: 1.5, fontWeight: 600, color: INK, background: SOFT, borderRadius: 999, padding: "4px 10px" }}>{t.offerBadge || "Tickets"}</span>
                   <div style={{ fontSize: mobile ? fluidSize(17) : 17, lineHeight: 1.5, fontWeight: 600, letterSpacing: "-0.015em" }}>{t.seat}</div>
+                  {t.accessibleLabel ? (
+                    <div style={{ fontSize: fluidSize(13), lineHeight: 1.5, color: SUB }}>{t.accessibleLabel}</div>
+                  ) : null}
                 </div>
                 <div className="st-ev-seat-actions">
                   <button
@@ -6121,9 +6133,11 @@ export default function SeasonTickets({
   };
 
   const offerLine = formatPrintedOfferLine(detail?.raw);
+  const accessibleLine = getAccessibleLabel(detail?.raw);
   const detailRows = [
     { k: "Ticket", v: detail?.seat || "" },
     ...(offerLine ? [{ k: "Offer", v: offerLine }] : []),
+    ...(accessibleLine ? [{ k: "Accessibility", v: accessibleLine }] : []),
     {
       k: "Holder",
       v: printedTicketHolderName(

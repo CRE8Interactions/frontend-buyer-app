@@ -1,5 +1,6 @@
 import type { GATier, TicketingListing } from "@/components/organisms/PremiumTicketing";
 import { expandGroupsWithConnectedOffers } from "@/lib/connectedOffers";
+import { isAccessibleSource } from "@/lib/ticketAccessibility";
 import { gaTierSubtitle } from "@/lib/ticketSummary";
 import type { TicketGroup } from "@/stores/filtersStore";
 
@@ -883,7 +884,7 @@ export function filterGroupsForListings(
 ): RawTicketGroup[] {
   const offerSet = new Set(offerIds.map(String).filter(Boolean));
   let next = groups.filter((group) => {
-    if (accessible && !group.accessible) return false;
+    if (accessible && !isAccessibleSource(group)) return false;
     if (offerSet.size && !offerSet.has(String(group.offer?.id ?? ""))) {
       return false;
     }

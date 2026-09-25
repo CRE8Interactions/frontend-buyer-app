@@ -196,6 +196,27 @@ describe("Checkout success receipt", () => {
     ).toBeInTheDocument();
   });
 
+  it("shows the accessible seating label on the confirmation", async () => {
+    const ada = DEMO_SEATED_TICKET_GROUPS.find((group) => group.accessible)!;
+    const order = demoCompletedTicketOrder();
+    mockedGetOrderByPi.mockResolvedValue({
+      data: demoCompletedTicketOrder({
+        tickets: (order.tickets as Array<Record<string, unknown>>).map(
+          (ticket) => ({
+            ...ticket,
+            accessible: true,
+            accessibleType: ada.accessibleType,
+          }),
+        ),
+      }),
+    } as never);
+    render(<CheckoutSuccessPageRoute />);
+
+    expect(
+      await screen.findByText("Accessible: Open space for wheelchair"),
+    ).toBeInTheDocument();
+  });
+
   it("names the GA tier from the event ticket groups instead of a bare ga", async () => {
     mockedGetOrderByPi.mockResolvedValue({
       data: gaCompletedOrder(),

@@ -1470,6 +1470,11 @@ function CheckoutPage() {
                       <div className={`text-[13px] ${muted}`}>
                         {ticketSummary.subtitle}
                       </div>
+                      {ticketSummary.accessibleLabel ? (
+                        <div className={`text-[13px] ${muted}`}>
+                          {ticketSummary.accessibleLabel}
+                        </div>
+                      ) : null}
                     </div>
                   </div>
                   <div className="h-px bg-[rgba(5,27,53,0.08)]" />

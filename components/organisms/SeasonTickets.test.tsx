@@ -5402,6 +5402,40 @@ describe("SeasonTickets routed event screen", { timeout: 20_000 }, () => {
     expect(details.getByText("Mobile entry")).toBeInTheDocument();
   });
 
+  it("shows the accessible seating label on event cards and ticket details", async () => {
+    const user = userEvent.setup();
+    const listing = DEMO_SEATED_TICKET_GROUPS.find((group) => group.accessible)!;
+    const cart = demoCheckoutCart({ ticketCount: 1 });
+    const order = demoCompletedTicketOrder({
+      event: printableEvent,
+      tickets: cart.tickets.map((ticket) => ({
+        ...ticket,
+        accessible: true,
+        accessibleType: listing.accessibleType,
+        sectionNumber: listing.sectionNumber,
+        rowNumber: listing.rowNumber,
+      })),
+    });
+    mockedGetMyEvents.mockResolvedValue({ data: [order] } as never);
+
+    render(
+      <SeasonTickets initialScreen="event" eventUUID={printableEvent.uuid} />,
+    );
+
+    expect(
+      await screen.findByText("Accessible: Open space for wheelchair"),
+    ).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Details" }));
+    const modal = screen
+      .getByRole("heading", { name: "Ticket details" })
+      .closest("div")?.parentElement;
+    expect(within(modal!).getByText("Accessibility")).toBeInTheDocument();
+    expect(
+      within(modal!).getByText("Accessible: Open space for wheelchair"),
+    ).toBeInTheDocument();
+  });
+
   it("shows the printable offer name and time from the single-order ticket payload", async () => {
     const user = userEvent.setup();
     const listed = demoCompletedTicketOrder({

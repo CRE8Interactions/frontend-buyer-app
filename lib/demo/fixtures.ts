@@ -605,6 +605,7 @@ export const DEMO_SEATED_TICKET_GROUPS: RawTicketGroup[] = [
     seatIds: ["a1", "a2", "a3", "a4", "a5", "a6"],
     GA: false,
     accessible: true,
+    accessibleType: "DA",
     offer: {
       id: 11,
       name: "Section A-B",
@@ -669,6 +670,7 @@ export const DEMO_SEATED_TICKET_GROUPS: RawTicketGroup[] = [
     seatIds: ["a1", "a2", "a3", "a4", "a5", "a6"],
     GA: false,
     accessible: true,
+    accessibleType: "DA",
     offer: {
       id: 11,
       name: "Section A-B",
@@ -774,6 +776,12 @@ export function demoSeatmapMapping(): SeatmapMapping {
         cy: 200 + sectionIndex * 60,
         w: 10,
         h: 10,
+        ...(section.sectionId === "sec-a"
+          ? { accessible: true, accessibleType: "DA" }
+          : {}),
+        ...(section.sectionId === "sec-n" && seatIndex < 2
+          ? { accessible: true, accessibleType: "DB" }
+          : {}),
       };
     });
     sections[section.sectionId] = {
@@ -869,6 +877,11 @@ export function demoCheckoutCart(
       cost: unitPrice,
       price: unitPrice,
       offerName: listing.offer?.name,
+      accessible: Boolean("accessible" in listing && listing.accessible),
+      accessibleType:
+        "accessibleType" in listing
+          ? (listing as { accessibleType?: string }).accessibleType
+          : undefined,
       ...(ga
         ? { GA: true, generalAdmission: true, offer: listing.offer }
         : {}),

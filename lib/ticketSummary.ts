@@ -14,6 +14,7 @@ import {
   ticketSeatValue,
   ticketSectionValue,
 } from "@/lib/wallet";
+import { getAccessibleLabel, isAccessibleSource } from "@/lib/ticketAccessibility";
 
 export type TicketOfferPriceLine = {
   /** Offer label shown on the checkout price row (e.g. "Early Bird"). */
@@ -33,6 +34,8 @@ export type TicketSelectionSummary = {
   qtyLabel: string;
   /** One row per distinct offer + unit price in the cart. */
   offerLines: TicketOfferPriceLine[];
+  /** Shopper accessible-seating copy when any ticket is accessible. */
+  accessibleLabel: string;
 };
 
 type OfferNameSource = {
@@ -323,6 +326,15 @@ export function ticketSelectionSummary(
             ? `${count} tickets · ${seatList}`
             : `${count} tickets`;
   const qtyLabel = `${count} ${count === 1 ? "ticket" : "tickets"}`;
+  const accessibleLabels = tickets
+    .map((ticket) => getAccessibleLabel(ticket))
+    .filter(Boolean);
+  const accessibleLabel = !tickets.some((ticket) => isAccessibleSource(ticket))
+    ? ""
+    : accessibleLabels.length &&
+        accessibleLabels.every((label) => label === accessibleLabels[0])
+      ? accessibleLabels[0]
+      : "Accessible seating";
   return {
     count,
     offerName,
@@ -332,6 +344,7 @@ export function ticketSelectionSummary(
     subtitle,
     qtyLabel,
     offerLines,
+    accessibleLabel,
   };
 }
 

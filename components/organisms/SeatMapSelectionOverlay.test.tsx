@@ -259,6 +259,45 @@ describe("SeatMapSelectionOverlay map readiness", () => {
     expect(screen.getAllByText(selectionOfferName(ga)).length).toBeGreaterThan(0);
   });
 
+  it("badges the accessible seating type on the selection card and in ticket details", () => {
+    const accessible = DEMO_SEATED_TICKET_GROUPS.find(
+      (group) => group.accessible,
+    );
+    const standard = DEMO_SEATED_TICKET_GROUPS.find(
+      (group) => !group.accessible,
+    );
+    if (!accessible || !standard) {
+      throw new Error("demo fixtures need accessible and standard seat groups");
+    }
+    useSeatmapStore.setState({
+      selectedFromMap: [
+        { ...accessible, seatId: "a1", seatNumber: 1, quantity: 1 },
+        { ...standard, seatId: "s1", seatNumber: 2, quantity: 1 },
+      ],
+      totalCount: 2,
+      totalPrice: Number(accessible.price || 0) + Number(standard.price || 0),
+    });
+    renderOverlay({
+      mapMapping: demoSeatmapMapping(),
+      mapBackground: BACKGROUND,
+    });
+    fireEvent.load(backgroundPreload()!);
+
+    expect(
+      screen.getAllByText("Accessible: Open space for wheelchair"),
+    ).toHaveLength(1);
+
+    fireEvent.click(screen.getAllByRole("button", { name: /details/i })[0]);
+
+    expect(screen.getByText("Ticket details")).toBeInTheDocument();
+    const detailHeading = screen.getByText(/· Seat/);
+    expect(
+      within(detailHeading.parentElement!).getByText(
+        "Accessible: Open space for wheelchair",
+      ),
+    ).toBeInTheDocument();
+  });
+
   it("shows one Your selection card per package ticket", () => {
     const pkg = demoSeasonPackage();
     const group = DEMO_SEATED_TICKET_GROUPS[0];

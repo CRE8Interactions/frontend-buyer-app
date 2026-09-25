@@ -1278,6 +1278,46 @@ describe("InteractiveSeatmap canvas", () => {
     expect(screen.getByText("Locked")).toBeInTheDocument();
   });
 
+  it("lists DA and DB in the legend when those seat types exist", async () => {
+    useFiltersStore.setState({ loadingTicketGroups: false });
+    render(<InteractiveSeatmap lookupsMode="external" />);
+
+    await waitFor(() => {
+      expect(screen.queryByLabelText(/loading seat map/i)).not.toBeInTheDocument();
+    });
+    expect(screen.getByText("DA")).toBeInTheDocument();
+    expect(screen.getByText("DB")).toBeInTheDocument();
+    expect(screen.queryByText("Accessibility")).not.toBeInTheDocument();
+  });
+
+  it("lists generic Accessibility when no DA or DB types exist", async () => {
+    const blankSeats = Object.fromEntries(
+      Object.entries(mapping.seats || {}).map(([id, seat]) => [
+        id,
+        { ...seat, accessible: false, accessibleType: undefined },
+      ]),
+    );
+    useSeatmapStore.setState({
+      data: { ...mapping, seats: blankSeats },
+    });
+    useFiltersStore.setState({
+      loadingTicketGroups: false,
+      ticketGroups: DEMO_SEATED_TICKET_GROUPS.map((group) => ({
+        ...group,
+        accessible: false,
+        accessibleType: undefined,
+      })),
+    });
+    render(<InteractiveSeatmap lookupsMode="external" />);
+
+    await waitFor(() => {
+      expect(screen.queryByLabelText(/loading seat map/i)).not.toBeInTheDocument();
+    });
+    expect(screen.getByText("Accessibility")).toBeInTheDocument();
+    expect(screen.queryByText("DA")).not.toBeInTheDocument();
+    expect(screen.queryByText("DB")).not.toBeInTheDocument();
+  });
+
   it("hides zoom and legend when hideChrome is set", async () => {
     useFiltersStore.setState({ loadingTicketGroups: false });
     render(<InteractiveSeatmap lookupsMode="external" compactChrome hideChrome />);

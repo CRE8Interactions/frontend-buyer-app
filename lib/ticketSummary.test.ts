@@ -169,6 +169,29 @@ describe("ticketSelectionSummary", () => {
     const cart = demoCheckoutCart({ ticketCount: 2 });
     const summary = ticketSelectionSummary(cart.tickets);
     expect(summary.offerName).toBe(listing.offer?.name);
+    expect(summary.accessibleLabel).toBe("");
+  });
+
+  it("carries the accessible seating label for ADA tickets", () => {
+    const adaGroup = DEMO_SEATED_TICKET_GROUPS.find((group) => group.accessible)!;
+    const summary = ticketSelectionSummary([
+      {
+        ...adaGroup,
+        cost: adaGroup.price,
+        sectionName: adaGroup.sectionNumber,
+      },
+    ]);
+    expect(summary.accessibleLabel).toBe(
+      "Accessible: Open space for wheelchair",
+    );
+  });
+
+  it("falls back to Accessible seating when mixed types are selected", () => {
+    const summary = ticketSelectionSummary([
+      { accessible: true, accessibleType: "DA", cost: 10, sectionName: "A" },
+      { accessible: true, accessibleType: "DB", cost: 10, sectionName: "A" },
+    ]);
+    expect(summary.accessibleLabel).toBe("Accessible seating");
   });
 
   it("has no offer name when tickets omit the offer", () => {

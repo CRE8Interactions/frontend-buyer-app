@@ -830,6 +830,25 @@ describe("Checkout page", { timeout: 20_000 }, () => {
     expect(screen.queryByText("Service Fee")).not.toBeInTheDocument();
   });
 
+  it("shows the accessible seating label on checkout tickets", async () => {
+    const ada = DEMO_SEATED_TICKET_GROUPS.find((group) => group.accessible)!;
+    const cart = demoCheckoutCart({ ticketCount: 1 });
+    cart.tickets = cart.tickets.map((ticket) => ({
+      ...ticket,
+      accessible: true,
+      accessibleType: ada.accessibleType,
+      sectionName: ada.sectionNumber,
+      sectionNumber: ada.sectionNumber,
+      rowNumber: ada.rowNumber,
+    }));
+    mockedGetCart.mockResolvedValue({ data: cart } as never);
+    render(<CheckoutPageRoute />);
+
+    expect(
+      await screen.findByText("Accessible: Open space for wheelchair"),
+    ).toBeInTheDocument();
+  });
+
   it("lists each offer on its own price row when the cart mixes offers", async () => {
     const cart = demoCheckoutCart({ ticketCount: 3 });
     cart.tickets = [
