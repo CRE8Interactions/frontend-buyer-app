@@ -8133,25 +8133,7 @@ describe("SeasonTickets routed event screen", { timeout: 20_000 }, () => {
       "recipient@example.com",
     );
     await user.click(screen.getByRole("button", { name: "Back" }));
-    const before = screen.getByRole("button", { name: "Next" });
-    let submitted = false;
-    const onSubmit = () => {
-      submitted = true;
-    };
-    document.addEventListener("submit", onSubmit);
-    await act(async () => {
-      before.click();
-    });
-    document.removeEventListener("submit", onSubmit);
-    const after = screen.queryByRole("button", { name: "Next" });
-    throw new Error(
-      JSON.stringify({
-        submitted,
-        sameNode: after === before,
-        type: after?.getAttribute("type") ?? null,
-        connected: before.isConnected,
-      }),
-    );
+    await user.click(screen.getByRole("button", { name: "Next" }));
 
     expect(
       screen.getByRole("textbox", { name: "Email address" }),

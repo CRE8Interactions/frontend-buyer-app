@@ -44,16 +44,16 @@ function offerIdentity(group: TicketGroup) {
   return id == null || id === "" ? "" : String(id);
 }
 
-/** One row per offer, so a seat listed twice still counts as a single offer. */
+/** One row per offer. Tickets with no offer id share one bucket. */
 function distinctOfferGroups(groups: TicketGroup[]) {
   const seen = new Set<string>();
   const unique: TicketGroup[] = [];
-  groups.forEach((group, index) => {
-    const key = offerIdentity(group) || `row-${index}`;
-    if (seen.has(key)) return;
+  for (const group of groups) {
+    const key = offerIdentity(group) || "offer";
+    if (seen.has(key)) continue;
     seen.add(key);
     unique.push(group);
-  });
+  }
   return unique;
 }
 
