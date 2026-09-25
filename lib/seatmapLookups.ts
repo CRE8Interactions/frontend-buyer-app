@@ -61,6 +61,48 @@ export type SeatmapMapping = {
   seats?: Record<string, SeatmapSeat>;
 };
 
+/** Contiguous offered seats containing the clicked seat, in venue row order. */
+export function adjacentSeatWindow(
+  mapping: SeatmapMapping | null,
+  clickedSeatId: string,
+  offeredSeatIds: string[],
+  selectedSeatIds: Set<string>,
+  quantity: number,
+) {
+  const clickedRowId = mapping?.seats?.[clickedSeatId]?.rowId;
+  const mappedRow =
+    (clickedRowId ? mapping?.rows?.[clickedRowId] : undefined) ??
+    Object.values(mapping?.rows ?? {}).find((row) =>
+      row.seats.map(String).includes(clickedSeatId),
+    );
+  const rowOrder = (mappedRow?.seats ?? offeredSeatIds).map(String);
+  const offered = new Set(offeredSeatIds);
+  const eligible = (id: string) =>
+    offered.has(id) && !selectedSeatIds.has(id);
+  const clickedIndex = rowOrder.indexOf(clickedSeatId);
+  if (clickedIndex < 0 || !eligible(clickedSeatId)) return null;
+
+  const firstStart = Math.min(
+    clickedIndex,
+    Math.max(0, rowOrder.length - quantity),
+  );
+  for (
+    let start = firstStart;
+    start >= Math.max(0, clickedIndex - quantity + 1);
+    start -= 1
+  ) {
+    const seats = rowOrder.slice(start, start + quantity);
+    if (
+      seats.length === quantity &&
+      seats.includes(clickedSeatId) &&
+      seats.every(eligible)
+    ) {
+      return seats;
+    }
+  }
+  return null;
+}
+
 /**
  * Background images reach us in several shapes: a bare URL, a Strapi media
  * object, a `data.attributes` relation, or only a `formats` derivative. Any of

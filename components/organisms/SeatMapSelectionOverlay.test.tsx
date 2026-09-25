@@ -7,6 +7,7 @@ import {
   demoSeasonPackage,
   demoTicketGroups,
 } from "@/lib/demo/fixtures";
+import { INVENTORY_UPDATE_LOADER_MESSAGE } from "@/lib/loaderMessages";
 import { MIXED_MAP_SELECTION_ERROR } from "@/lib/mapSelection";
 import { selectionOfferName } from "@/lib/ticketSummary";
 import type { SeatmapBackground } from "@/lib/seatmapLookups";
@@ -24,39 +25,38 @@ vi.mock("next/navigation", () => ({
 
 vi.mock("@/components/organisms/InteractiveSeatmap", async () => {
   const { useEffect } = await import("react");
+  const InteractiveSeatmap = ({
+    dismissTooltipKey,
+    onPaintReady,
+    hideChrome,
+  }: {
+    dismissTooltipKey?: number;
+    onPaintReady?: () => void;
+    hideChrome?: boolean;
+  }) => {
+    useEffect(() => {
+      onPaintReady?.();
+    }, [onPaintReady]);
+    return (
+      <div
+        data-testid="interactive-seatmap"
+        data-dismiss-tooltip-key={String(dismissTooltipKey ?? 0)}
+      >
+        Interactive seat map
+        {hideChrome ? null : (
+          <>
+            <button type="button" aria-label="Zoom in">
+              +
+            </button>
+            <button type="button">Legend</button>
+          </>
+        )}
+      </div>
+    );
+  };
   return {
-    InteractiveSeatmap: ({
-      dismissTooltipKey,
-      onPaintReady,
-      hideChrome,
-    }: {
-      dismissTooltipKey?: number;
-      onPaintReady?: () => void;
-      hideChrome?: boolean;
-    }) => {
-      useEffect(() => {
-        onPaintReady?.();
-      }, [onPaintReady]);
-      return (
-        <div
-          data-testid="interactive-seatmap"
-          data-dismiss-tooltip-key={String(dismissTooltipKey ?? 0)}
-        >
-          Interactive seat map
-          {hideChrome ? null : (
-            <>
-              <button type="button" aria-label="Zoom in">
-                +
-              </button>
-              <button type="button">Legend</button>
-            </>
-          )}
-        </div>
-      );
-    },
-    InteractiveSeatmapMemo: () => (
-      <div data-testid="interactive-seatmap">Interactive seat map</div>
-    ),
+    InteractiveSeatmap,
+    InteractiveSeatmapMemo: InteractiveSeatmap,
   };
 });
 
@@ -76,6 +76,7 @@ type MapProps = {
   mapMapping?: ReturnType<typeof demoSeatmapMapping> | null;
   mapBackground?: SeatmapBackground | null;
   preparing?: boolean;
+  updatingInventory?: boolean;
   itemPriceNote?: string;
   mapLegend?: "event" | "package";
 };
@@ -170,6 +171,41 @@ describe("SeatMapSelectionOverlay map readiness", () => {
 
     expect(screen.getByTestId("interactive-seatmap")).toBeInTheDocument();
     expect(loaderShowing()).toBe(false);
+  });
+
+  it("covers a painted map with Updating inventory while lookups rebuild", () => {
+    renderOverlay({
+      mapMapping: demoSeatmapMapping(),
+      mapBackground: BACKGROUND,
+      updatingInventory: true,
+    });
+    fireEvent.load(backgroundPreload()!);
+
+    expect(screen.getByTestId("interactive-seatmap")).toBeInTheDocument();
+    expect(loaderShowing()).toBe(true);
+    expect(screen.getByText(INVENTORY_UPDATE_LOADER_MESSAGE)).toBeInTheDocument();
+  });
+
+  it("closes an open seat card when a rebuild starts", () => {
+    const { rerender } = renderOverlay({
+      mapMapping: demoSeatmapMapping(),
+      mapBackground: BACKGROUND,
+    });
+    fireEvent.load(backgroundPreload()!);
+    const dismissals = () =>
+      screen.getByTestId("interactive-seatmap").dataset.dismissTooltipKey;
+    const before = dismissals();
+
+    rerender(
+      overlay({
+        mapMapping: demoSeatmapMapping(),
+        mapBackground: BACKGROUND,
+        updatingInventory: true,
+      }),
+    );
+
+    expect(dismissals()).not.toBe(before);
+    expect(screen.getByText(INVENTORY_UPDATE_LOADER_MESSAGE)).toBeInTheDocument();
   });
 
   it("paints the map when the background image fails so a bad URL cannot trap the shopper", () => {
@@ -288,7 +324,9 @@ describe("SeatMapSelectionOverlay map readiness", () => {
     fireEvent.click(screen.getByRole("button", { name: /view selection/i }));
 
     expect(screen.getByText("Your selection")).toBeInTheDocument();
-    expect(screen.getByText("Ticket limit: 1–6 per order")).toBeInTheDocument();
+    expect(
+      screen.getByText(`Ticket limit: 1–${group.seatIds!.length} per order`),
+    ).toBeInTheDocument();
     expect(screen.queryByText("Ticket details")).not.toBeInTheDocument();
   });
 

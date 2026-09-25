@@ -30,8 +30,8 @@ import {
 import { cacheOrgBranding, orgSlugFromPathname } from "@/lib/orgBrandingCache";
 import { beginRouteTransition } from "@/lib/routeTransition";
 import { useClientReady } from "@/lib/useClientReady";
-import { formString, normalizeRedemptionCode, promoCodeRedeemDisplayMessage, redemptionCodeBlurFieldError, redemptionCodeSubmitError, type RedemptionCodeFieldError } from "@/lib/fieldValidation";
-import RedemptionCodeField from "@/components/molecules/RedemptionCodeField";
+import { promoCodeRedeemDisplayMessage } from "@/lib/fieldValidation";
+import PromoCodeForm, { type PromoRedeemResult } from "@/components/molecules/PromoCodeForm";
 import {
   flexPackSeasonLine,
   flexPackVoucherCount,
@@ -57,6 +57,7 @@ import {
   resolveFundraisingCampaign,
 } from "@/lib/api";
 import { buildProcessOrderRequest } from "@/lib/checkoutPaymentIntent";
+import { readTrackingCodeForCart } from "@/lib/trackingLink";
 import {
   buildFundraisingPayload,
   buildPaymentIntentRequest,
@@ -246,15 +247,13 @@ function CheckoutPaymentForm({
 }) {
   const stripe = useStripe();
   const elements = useElements();
+  // Only the applied code — the promo form owns the value being typed.
   const [promoCode, setPromoCode] = useState("");
   const [isDiscountApplied, setIsDiscountApplied] = useState(false);
   const [discountedPrice, setDiscountedPrice] = useState<number | null>(null);
   const [promoDetails, setPromoDetails] = useState<Record<string, unknown> | null>(
     null,
   );
-  const [promoFieldError, setPromoFieldError] = useState<RedemptionCodeFieldError>(null);
-  const [promoRejectedMessage, setPromoRejectedMessage] = useState("");
-  const [submittingPromo, setSubmittingPromo] = useState(false);
   const [removingPromo, setRemovingPromo] = useState(false);
   const [purchasing, setPurchasing] = useState(false);
   const [paymentReady, setPaymentReady] = useState(false);
@@ -316,34 +315,20 @@ function CheckoutPaymentForm({
     );
   }, [onPromoChange, promoDiscountAmount, promoDiscountCode]);
 
-  const submitPromo = async (e: React.FormEvent<HTMLFormElement>) => {
-    e.preventDefault();
-    const code =
-      formString(new FormData(e.currentTarget), "promo") || promoCode;
-    setPromoCode(code);
-    const submitErr = redemptionCodeSubmitError(code);
-    if (submitErr) {
-      setPromoFieldError(submitErr);
-      setPromoRejectedMessage("");
-      return;
-    }
-    setSubmittingPromo(true);
-    setPromoFieldError(null);
-    setPromoRejectedMessage("");
+  const redeemPromo = async (code: string): Promise<PromoRedeemResult> => {
     try {
       const res = await redeemPromoCode({
         code: code.trim(),
         paymentIntentId: intentId,
         cart,
       });
+      setPromoCode(code);
       setIsDiscountApplied(true);
       setDiscountedPrice(res.data?.promoPricingDetails?.discountedPrice);
       setPromoDetails(res.data);
+      return null;
     } catch (err: unknown) {
-      setPromoFieldError("rejected");
-      setPromoRejectedMessage(promoCodeRedeemDisplayMessage(err));
-    } finally {
-      setSubmittingPromo(false);
+      return { rejectedMessage: promoCodeRedeemDisplayMessage(err) };
     }
   };
 
@@ -355,8 +340,6 @@ function CheckoutPaymentForm({
       setDiscountedPrice(null);
       setPromoDetails(null);
       setPromoCode("");
-      setPromoFieldError(null);
-      setPromoRejectedMessage("");
     } catch {
       /* ignore */
     } finally {
@@ -373,7 +356,13 @@ function CheckoutPaymentForm({
       // Elements already has the PaymentIntent client secret. Legacy checkout
       // confirms once; a prior elements.submit() makes confirmPayment reject
       // in the browser before Stripe's confirm request.
-      await processOrder(buildProcessOrderRequest(cart, intentId));
+      await processOrder(
+        buildProcessOrderRequest(
+          cart,
+          intentId,
+          readTrackingCodeForCart(cart),
+        ),
+      );
       const confirmed = await stripe.confirmPayment({
         elements,
         confirmParams: {
@@ -460,40 +449,7 @@ function CheckoutPaymentForm({
               <p className="mb-2 text-[12px] font-semibold uppercase tracking-[0.1em] text-[#8a93a3]">
                 Promo code
               </p>
-              <form noValidate onSubmit={submitPromo} className="flex items-start gap-2.5">
-                <RedemptionCodeField
-                  id="promo"
-                  name="promo"
-                  label="Promo code"
-                  hideLabel
-                  value={promoCode}
-                  placeholder="Enter promo code"
-                  error={promoFieldError}
-                  rejectedMessage={promoRejectedMessage}
-                  className="min-w-0 flex-1"
-                  inputClassName="!h-12 !rounded-[10px] !bg-white !px-[18px] !text-[15px]"
-                  onChange={(value) => {
-                    setPromoCode(value);
-                    setPromoFieldError(null);
-                    setPromoRejectedMessage("");
-                  }}
-                  onBlur={(value) =>
-                    setPromoFieldError((current) =>
-                      redemptionCodeBlurFieldError(current, value),
-                    )
-                  }
-                />
-                <BrandedActionButton
-                  type="submit"
-                  tone="secondary"
-                  loading={submittingPromo}
-                  loadingLabel="Applying…"
-                  disabled={!normalizeRedemptionCode(promoCode)}
-                  className="!rounded-[10px] px-6 !h-12"
-                >
-                  Apply
-                </BrandedActionButton>
-              </form>
+              <PromoCodeForm onRedeem={redeemPromo} />
             </div>
           )}
         </div>
@@ -614,6 +570,7 @@ function CheckoutPage() {
   const [expiredOpen, setExpiredOpen] = useState(false);
   const [leaveOpen, setLeaveOpen] = useState(false);
   const [cancelling, setCancelling] = useState(false);
+  const [cancelError, setCancelError] = useState("");
   const [declineMsg, setDeclineMsg] = useState("");
   const [dueTotal, setDueTotal] = useState(0);
   const [promoDiscount, setPromoDiscount] =
@@ -732,6 +689,7 @@ function CheckoutPage() {
   const cancelOrder = useCallback(async () => {
     if (cancelling) return;
     setCancelling(true);
+    setCancelError("");
     const eventData = eventRef.current || cartRef.current?.event;
     const dest = resolveCheckoutReturnPath(
       cartRef.current,
@@ -745,7 +703,11 @@ function CheckoutPage() {
         dropUserCartPayload(cartRef.current, eventData, getStoredCart()),
       );
     } catch {
-      /* release best-effort — still leave checkout */
+      setCancelling(false);
+      setCancelError(
+        "We couldn't release your tickets. Please try cancelling again.",
+      );
+      return;
     }
     clearStoredCart();
     setLeaving(true);
@@ -849,7 +811,10 @@ function CheckoutPage() {
             sendToLogin();
             return;
           }
-          const processRes = await processFreeOrder({ cartId: cartData.id });
+          const processRes = await processFreeOrder({
+            cartId: cartData.id,
+            trackingCode: readTrackingCodeForCart(cartData),
+          });
           sessionStorage.setItem(
             "order",
             JSON.stringify({ id: processRes.data?.id }),
@@ -1205,7 +1170,10 @@ function CheckoutPage() {
           : null
       }
       holdPaused={leaveOpen || cancelling}
-      onBack={() => setLeaveOpen(true)}
+      onBack={() => {
+        setCancelError("");
+        setLeaveOpen(true);
+      }}
       onExpire={handleHoldExpired}
       loading={shellLoading}
       loaderBranding={loaderBranding}
@@ -1616,9 +1584,14 @@ function CheckoutPage() {
           hideClose
         >
           <p className="mt-4 text-[15px] text-[#6e7180]">
-            If you leave this page, you&apos;ll lose your chance to purchase
-            these tickets.
+            Cancelling releases these tickets so another shopper can purchase
+            them.
           </p>
+          {cancelError ? (
+            <p role="alert" className="mt-3 text-[14px] text-[#b42318]">
+              {cancelError}
+            </p>
+          ) : null}
           <div className="mt-5 flex flex-col gap-3">
             <BrandedActionButton
               tone="secondary"
@@ -1633,7 +1606,10 @@ function CheckoutPage() {
               primaryColor={branding.theme.accent}
               textColor={branding.theme.buttonTextColor}
               disabled={cancelling}
-              onClick={() => setLeaveOpen(false)}
+              onClick={() => {
+                setCancelError("");
+                setLeaveOpen(false);
+              }}
               className="w-full"
             >
               Continue with checkout

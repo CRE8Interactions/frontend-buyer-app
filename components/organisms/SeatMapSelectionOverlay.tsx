@@ -3,14 +3,15 @@
 import { browseLeading } from "@/lib/browseType";
 import { fluidSize } from "@/lib/shopperFluidType";
 
-import { useEffect, useState } from "react";
+import { memo, useCallback, useEffect, useState } from "react";
 import { lockPageScroll, unlockPageScroll } from "@/lib/pageScroll";
 import BrandedActionButton from "@/components/atoms/BrandedActionButton";
 import BuyerProtectionCard from "@/components/molecules/BuyerProtectionCard";
 import Modal from "@/components/molecules/Modal";
 import { BrandedLoader } from "@/components/molecules/RouteLoader";
+import { INVENTORY_UPDATE_LOADER_MESSAGE } from "@/lib/loaderMessages";
 import SectionLocatorThumb from "@/components/molecules/SectionLocatorThumb";
-import { InteractiveSeatmap } from "@/components/organisms/InteractiveSeatmap";
+import { InteractiveSeatmapMemo } from "@/components/organisms/InteractiveSeatmap";
 import type { SeatmapBackground, SeatmapMapping } from "@/lib/seatmapLookups";
 import { getSeatViewImageCandidates } from "@/lib/seatView";
 import {
@@ -33,6 +34,9 @@ const NAVY = "#051b35";
  * would leave the shopper with nothing.
  */
 const MAX_PREPARING_MS = 6000;
+
+/** Clears the seat map's own zoom pill and legend, which sit at z-10. */
+const MAP_LOADER_Z = 20;
 
 /**
  * Artwork downloaded once this session should not put the loader back up when
@@ -138,7 +142,7 @@ const Star = ({ s = 14 }: { s?: number }) => (
   </svg>
 );
 
-export default function SeatMapSelectionOverlay({
+function SeatMapSelectionOverlay({
   title,
   accent,
   accentSoft,
@@ -155,6 +159,7 @@ export default function SeatMapSelectionOverlay({
   mapMapping,
   venueSlug,
   preparing = false,
+  updatingInventory = false,
   orgName,
   logoSrc,
   orderQuantitySource,
@@ -178,6 +183,7 @@ export default function SeatMapSelectionOverlay({
   mapMapping?: SeatmapMapping | null;
   venueSlug?: string;
   preparing?: boolean;
+  updatingInventory?: boolean;
   orgName?: string | null;
   logoSrc?: string | null;
   orderQuantitySource?: QuantityRestrictionSource | null;
@@ -208,11 +214,14 @@ export default function SeatMapSelectionOverlay({
     if (target.closest("[data-seatmap-canvas]")) return;
     dismissMapTooltip();
   };
-  const paneRestrictionLabel = selectionPaneRestrictionLabel(
-    seatmapTicketLimit ?? eventTicketLimit,
-    selectedFromMap,
-    orderQuantitySource,
-  );
+  const paneRestrictionLabel =
+    mapLegend === "package"
+      ? null
+      : selectionPaneRestrictionLabel(
+          seatmapTicketLimit ?? eventTicketLimit,
+          selectedFromMap,
+          orderQuantitySource,
+        );
 
   const mapping = mapMapping || storeMapping;
   const background = mapBackground || storeBackground;
@@ -233,19 +242,16 @@ export default function SeatMapSelectionOverlay({
     setLoadedBackgroundUrl(backgroundUrl);
   };
   const mapPaintable = mapHasSeats && (backgroundReady || prepareExpired);
-  const [seatmapPaintReady, setSeatmapPaintReady] = useState(false);
+  const paintToken = `${backgroundUrl}|${mapHasSeats ? "seats" : "empty"}`;
+  const [readyToken, setReadyToken] = useState("");
+  const handlePaintReady = useCallback(() => {
+    setReadyToken(paintToken);
+  }, [paintToken]);
+  const seatmapPaintReady = readyToken === paintToken;
   const geometryPending = preparing && !mapHasSeats;
   const showMapLoader =
     preparing ||
     (mapHasSeats && (!mapPaintable || !seatmapPaintReady));
-
-  useEffect(() => {
-    setSeatmapPaintReady(false);
-  }, [backgroundUrl, mapHasSeats]);
-
-  useEffect(() => {
-    if (preparing) setSeatmapPaintReady(false);
-  }, [preparing]);
 
   const [mapDetail, setMapDetail] = useState<number | null>(null);
   const [mapSelectionOpen, setMapSelectionOpen] = useState(false);
@@ -277,7 +283,10 @@ export default function SeatMapSelectionOverlay({
     selectedFromMap.length > 0 &&
     (!mobile || mapSelectionOpen || mapDetail != null);
   const checkoutDisabled =
-    checkoutLoading || showMapLoader || selectedFromMap.length === 0;
+    checkoutLoading ||
+    showMapLoader ||
+    updatingInventory ||
+    selectedFromMap.length === 0;
   const handleCheckout = () => {
     if (checkoutDisabled) return;
     dismissMapTooltip();
@@ -290,6 +299,13 @@ export default function SeatMapSelectionOverlay({
       setMapDetail(null);
     }
   }, [selectedFromMap.length]);
+
+  // Seat cards are fixed above the map, so one left open during a rebuild
+  // floats stale inventory over the loader.
+  useEffect(() => {
+    if (!updatingInventory) return;
+    setDismissTooltipKey((key) => key + 1);
+  }, [updatingInventory]);
 
   // Never reset this: closing the overlay unmounts it, and clearing the flag
   // while the loader is up would flip it straight back on.
@@ -340,6 +356,43 @@ export default function SeatMapSelectionOverlay({
         )
       : [];
 
+  const backgroundPreload = backgroundUrl ? (
+    // Warms the browser cache so the seatmap's own <image> paints on its
+    // first frame instead of after the seats. Stay mounted while the URL is
+    // known — jsdom (and a cached browser image) can finish before the loader
+    // branch would have rendered this tag.
+    // eslint-disable-next-line @next/next/no-img-element
+    <img
+      src={backgroundUrl}
+      alt=""
+      aria-hidden
+      data-seatmap-background-preload="true"
+      ref={(el) => {
+        if (el?.complete) markBackgroundLoaded();
+      }}
+      onLoad={markBackgroundLoaded}
+      onError={markBackgroundLoaded}
+      style={{
+        position: "absolute",
+        width: 1,
+        height: 1,
+        opacity: 0,
+        pointerEvents: "none",
+      }}
+    />
+  ) : null;
+  /** One loader for preparing and rebuilding, so both read the same. */
+  const mapLoader = (message?: string) => (
+    <BrandedLoader
+      embedded
+      message={message}
+      branding={{
+        primaryColor: accent,
+        logoSrc,
+        name: orgName,
+      }}
+    />
+  );
   const pricesIncludeFees = mapLegend !== "package";
   const selectionPriceNote = pricesIncludeFees
     ? itemPriceNote
@@ -388,10 +441,11 @@ export default function SeatMapSelectionOverlay({
           display: "flex",
           flexDirection: "column",
           borderRadius: mobile ? 0 : 22,
-          overflow: "hidden",
+            overflow: "hidden",
           boxShadow: "0 24px 64px -20px rgba(5,27,53,0.45)",
         }}
       >
+      {backgroundPreload}
       <div
         style={{
           display: "flex",
@@ -477,38 +531,7 @@ export default function SeatMapSelectionOverlay({
             position: "relative",
           }}
         >
-          <BrandedLoader
-            embedded
-            branding={{
-              primaryColor: accent,
-              logoSrc,
-              name: orgName,
-            }}
-          />
-          {backgroundUrl ? (
-            // Warms the browser cache behind the loader so the seatmap's own
-            // <image> paints on its first frame instead of after the seats.
-            // eslint-disable-next-line @next/next/no-img-element
-            <img
-              src={backgroundUrl}
-              alt=""
-              aria-hidden
-              data-seatmap-background-preload="true"
-              // An already-cached image can finish before React attaches onLoad.
-              ref={(el) => {
-                if (el?.complete) markBackgroundLoaded();
-              }}
-              onLoad={markBackgroundLoaded}
-              onError={markBackgroundLoaded}
-              style={{
-                position: "absolute",
-                width: 1,
-                height: 1,
-                opacity: 0,
-                pointerEvents: "none",
-              }}
-            />
-          ) : null}
+          {mapLoader()}
         </div>
       ) : (
         <div
@@ -539,38 +562,22 @@ export default function SeatMapSelectionOverlay({
                 style={{
                   position: "absolute",
                   inset: 0,
-                  zIndex: 2,
+                  zIndex: MAP_LOADER_Z,
                 }}
               >
-                <BrandedLoader
-                  embedded
-                  branding={{
-                    primaryColor: accent,
-                    logoSrc,
-                    name: orgName,
-                  }}
-                />
-                {backgroundUrl ? (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img
-                    src={backgroundUrl}
-                    alt=""
-                    aria-hidden
-                    data-seatmap-background-preload="true"
-                    ref={(el) => {
-                      if (el?.complete) markBackgroundLoaded();
-                    }}
-                    onLoad={markBackgroundLoaded}
-                    onError={markBackgroundLoaded}
-                    style={{
-                      position: "absolute",
-                      width: 1,
-                      height: 1,
-                      opacity: 0,
-                      pointerEvents: "none",
-                    }}
-                  />
-                ) : null}
+                {mapLoader()}
+              </div>
+            ) : null}
+            {updatingInventory && !showMapLoader ? (
+              <div
+                style={{
+                  position: "absolute",
+                  inset: 0,
+                  zIndex: MAP_LOADER_Z,
+                  background: "rgba(255,255,255,0.78)",
+                }}
+              >
+                {mapLoader(INVENTORY_UPDATE_LOADER_MESSAGE)}
               </div>
             ) : null}
             <div
@@ -582,7 +589,8 @@ export default function SeatMapSelectionOverlay({
                 visibility: showMapLoader ? "hidden" : "visible",
               }}
             >
-              <InteractiveSeatmap
+              <InteractiveSeatmapMemo
+                key={paintToken}
                 className={mobile ? "h-full min-h-0" : "h-full min-h-[60vh]"}
                 lookupsMode="external"
                 accent={accent}
@@ -595,7 +603,7 @@ export default function SeatMapSelectionOverlay({
                 dismissTooltipKey={dismissTooltipKey}
                 onUnlockOffer={onUnlockOffer}
                 keepTooltipOpen={keepTooltipOpen}
-                onPaintReady={() => setSeatmapPaintReady(true)}
+                onPaintReady={handlePaintReady}
               />
             {showMobileMapBar ? (
               <div
@@ -1470,3 +1478,5 @@ export default function SeatMapSelectionOverlay({
     </div>
   );
 }
+
+export default memo(SeatMapSelectionOverlay);

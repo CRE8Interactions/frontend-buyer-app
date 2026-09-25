@@ -38,10 +38,20 @@ describe("buildProcessOrderRequest", () => {
     const request = buildProcessOrderRequest(cart, "pi_test");
 
     expect(request.paymentIntentId).toBe("pi_test");
+    expect(request.trackingCode).toBeNull();
     expect(request.cart.accessPassQuantity).toBeNull();
     expect(request.cart.id).toBe(cart.id);
     expect(request.cart.tickets).toEqual(cart.tickets);
     expect(request.cart.total).toBe(cart.total);
+  });
+
+  it("attaches a tracking-link code to the process payload", () => {
+    const cart = demoCheckoutCart({ ga: true });
+    const request = buildProcessOrderRequest(cart, "pi_test", "1234");
+
+    expect(request.trackingCode).toBe("1234");
+    expect(request.paymentIntentId).toBe("pi_test");
+    expect(request.cart.id).toBe(cart.id);
   });
 });
 

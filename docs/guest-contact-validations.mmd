@@ -10,6 +10,14 @@
 
 %%
 
+%% Blur: optional hint on a non-empty field only. Empty blur is quiet.
+
+%% Submit: names are checked locally; email uses validateSubmittedEmail.
+
+%% Continue stays clickable when a field is empty.
+
+%%
+
 %% --- Blur ---
 
 %% | Field | Empty blur | Non-empty invalid |
@@ -19,6 +27,18 @@
 %% | First name | (no error) | Letters only — no digits. |
 
 %% | Last name | (no error) | Letters only — no digits. |
+
+%%
+
+%% --- Submit — client (before / with validateSubmittedEmail) ---
+
+%% | Field | Empty | Non-empty invalid |
+
+%% | Email | Email address is required. | Email is invalid. Please try again. |
+
+%% | First name | First name is required. | Letters only — no digits. |
+
+%% | Last name | Last name is required. | Letters only — no digits. |
 
 %%
 
@@ -38,6 +58,12 @@
 
 %% --- POST /payment/intent ---
 
+%% GuestContact maps 400 to start-failed copy. Other intent errors are rethrown
+
+%% and handled by checkout (same as signed-in intent).
+
+%%
+
 %% | Status | API meaning | Displayed copy |
 
 %% | 400 | Details rejected | We could not start your checkout. Please check your details and try again. |
@@ -46,64 +72,34 @@
 
 %% | other | Load failed | Unable to load checkout. Please try again. |
 
-
-
 flowchart TD
-
   typeFields[Type email, first name, last name] --> blurField[Blur]
-
-
-
   subgraph blurValidations [blur]
-
     bWhich{Which field?}
-
     bWhich -->|email| bEmailEmpty{Non-empty?}
-
     bEmailEmpty -->|no| bQuiet[No error]
-
     bEmailEmpty -->|yes| bEmailOk{Blocked domain or bad syntax?}
-
     bEmailOk -->|yes| bEmailInvalid["Email is invalid. Please try again."]
-
     bEmailOk -->|no| bQuiet
-
     bWhich -->|first or last name| bNameEmpty{Non-empty?}
-
     bNameEmpty -->|no| bQuiet
-
     bNameEmpty -->|yes| bNameOk{Letters, spaces, apostrophes, hyphens?}
-
     bNameOk -->|no| bNameInvalid["Letters only — no digits."]
-
     bNameOk -->|yes| bQuiet
-
   end
-
-
-
   blurField -.-> blurValidations
-
-
-
-  typeFields --> validateEmail[POST /registration/validate-email]
-
-  validateEmail --> emailFail{API response?}
-
-  emailFail -->|200 Invalid or Risky with suggestion| emailInvalid["Email is invalid. Please try again."]
-
-  emailFail -->|402| emailInvalid
-
-  emailFail -->|400| startFailed["We could not start your checkout. Please check your details and try again."]
-
+  typeFields --> continue[Continue to payment]
+  continue --> names{Names valid?}
+  names -->|empty| nameRequired["First name is required. / Last name is required."]
+  names -->|pattern| nameInvalid["Letters only — no digits."]
+  names -->|ok| validateEmail[validateSubmittedEmail]
+  validateEmail --> emailFail{Result?}
+  emailFail -->|required| emailRequired["Email address is required."]
+  emailFail -->|invalid| emailInvalid
+  emailFail -->|400 startFailed| startFailed["We could not start your checkout. Please check your details and try again."]
   emailFail -->|500 / other| network["We're experiencing technical difficulties. Please try again later."]
-
-  emailFail -->|200 Valid| intent[POST /payment/intent]
-
+  emailFail -->|ok| intent[POST /payment/intent]
   intent --> intentFail{API response?}
-
   intentFail -->|400| startFailed
-
   intentFail -->|404 / 410| cartExpired["Cart expired — Your reserved tickets were released. Please select tickets again."]
-
   intentFail -->|other| loadError["Unable to load checkout. Please try again."]

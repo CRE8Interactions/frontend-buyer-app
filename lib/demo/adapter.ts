@@ -23,6 +23,7 @@ import {
   demoPublicMenu,
   demoSeasonPackage,
 } from "./fixtures";
+import { filterGroupsForListings, type RawTicketGroup } from "@/lib/ticketListings";
 
 type DemoResult = { data: unknown; status?: number };
 type Route = {
@@ -342,7 +343,31 @@ const routes: Route[] = [
       const body = parseBody(config);
       const ev = (body.event || {}) as { shortcode?: string; shortCode?: string; seatmap?: { ga_only?: boolean } };
       const code = ev.seatmap?.ga_only ? GA_CODE : mapCode(ev.shortcode || ev.shortCode);
-      return { data: await snap(`ticketgroups-${code}.json`) };
+      const payload = (await snap(`ticketgroups-${code}.json`)) as {
+        ticketGroups?: RawTicketGroup[];
+      };
+      const groups = payload.ticketGroups;
+      if (!Array.isArray(groups)) return { data: payload };
+      const quantity = Number(body.quantity || 0);
+      const accessible = Boolean(body.accessible);
+      const sort = body.sort === "-price" ? "-price" : "price";
+      const offerIds = Array.isArray(body.offerIds)
+        ? (body.offerIds as Array<string | number>)
+        : [];
+      if (!(quantity > 0 || accessible || offerIds.length || body.sort)) {
+        return { data: payload };
+      }
+      return {
+        data: {
+          ...payload,
+          ticketGroups: filterGroupsForListings(groups, {
+            quantity,
+            accessible,
+            sort,
+            offerIds,
+          }),
+        },
+      };
     },
   },
 

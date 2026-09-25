@@ -47,6 +47,17 @@ export default function ListingRow({
   onHover?: (hovering: boolean) => void;
 }) {
   const qty = qtyMin === qtyMax ? `${qtyMin} ticket${qtyMin === 1 ? "" : "s"}` : `${qtyMin}–${qtyMax} tickets`;
+  const leftThumb = thumb ? (
+        <span className="flex h-[46px] w-[62px] shrink-0 items-center justify-center overflow-hidden rounded-lg border border-white/[0.08] bg-[#051B35]" aria-hidden>
+          {thumb}
+        </span>
+  ) : (
+        <span
+          className="h-3 w-3 shrink-0 rounded-[3px]"
+          style={{ background: selected ? "#a6e773" : TIER_FILL[tier] ?? TIER_FILL[0] }}
+          aria-hidden
+        />
+  );
   return (
     <button
       type="button"
@@ -57,17 +68,7 @@ export default function ListingRow({
       className={`flex w-full items-center gap-3.5 px-4 py-3 text-left transition-colors sm:px-5 ${selected ? "bg-[#a6e773]/[0.1]" : "hover:bg-white/[0.04]"
         }`}
     >
-      {thumb ? (
-        <span className="flex h-[46px] w-[62px] shrink-0 items-center justify-center overflow-hidden rounded-lg border border-white/[0.08] bg-[#051B35]" aria-hidden>
-          {thumb}
-        </span>
-      ) : (
-        <span
-          className="h-3 w-3 shrink-0 rounded-[3px]"
-          style={{ background: selected ? "#a6e773" : TIER_FILL[tier] ?? TIER_FILL[0] }}
-          aria-hidden
-        />
-      )}
+      {leftThumb}
       <span className="min-w-0 flex-1">
         <span className="flex flex-wrap items-center gap-2">
           <span className="text-[14px] font-semibold text-white">{label ?? `Sec ${sec} · Row ${row}`}</span>

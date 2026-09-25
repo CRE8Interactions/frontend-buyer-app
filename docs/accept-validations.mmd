@@ -20,7 +20,6 @@ flowchart TD
   apiFail -->|226| claimed["Transfer has already been claimed"]
   apiFail -->|4xx other| acceptError["Could not accept transfer. Please try again."]
   apiFail -->|500 / other| apiNetwork["We're experiencing technical difficulties. Please try again later."]
-
   claimed --> showError[Show error in popup]
   acceptError --> showError
   apiNetwork --> showError

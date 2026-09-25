@@ -62,4 +62,33 @@ describe("createSeatLookupTables", () => {
       [...expected].sort(),
     );
   });
+
+  it("narrows a seat to the selected offer and restores every offer when none are selected", () => {
+    const parent = DEMO_SEATED_TICKET_GROUPS.find((g) => g.seatIds?.includes("a1"));
+    expect(parent?.offer?.id).toBeTruthy();
+    const unlocked = {
+      ...parent!,
+      id: "grp-unlocked",
+      price: Number(parent!.price || 0) + 5,
+      offer: {
+        ...parent!.offer,
+        id: "off-unlocked",
+        name: "ROCKOUT",
+        accessCode: "ROCK",
+        unlocked: true,
+      },
+    };
+    const groups = [parent!, unlocked];
+
+    const allOffers = createSeatLookupTables(groups).offersLookupTable.a1;
+    expect(allOffers?.map((group) => group.offer?.id)).toEqual(
+      expect.arrayContaining([parent!.offer?.id, "off-unlocked"]),
+    );
+
+    const filtered = createSeatLookupTables(groups, ["off-unlocked"]);
+    expect(filtered.offersLookupTable.a1?.map((group) => group.offer?.id)).toEqual([
+      "off-unlocked",
+    ]);
+    expect(filtered.lookupTable.a1?.offer?.id).toBe("off-unlocked");
+  });
 });

@@ -168,8 +168,8 @@ type SentTransferStub = {
 function pendingSentTransferStub(input: {
   id: string | number;
   order: ReturnType<typeof demoCompletedTicketOrder>;
-  ticket?: (typeof input.order.tickets)[number];
-  tickets?: (typeof input.order.tickets)[number][];
+  ticket?: unknown;
+  tickets?: unknown[];
   email?: string;
   createdAt?: string;
 }): SentTransferStub {
@@ -1539,7 +1539,7 @@ describe("SeasonTickets package tab", () => {
       name: "Print PDF",
     });
     for (const print of printButtons) {
-      const seatRow = print.closest(".st-ev-seat")!;
+      const seatRow = print.closest(".st-ev-seat") as HTMLElement;
       expect(within(seatRow).getByText("Tickets")).toBeInTheDocument();
       expect(within(seatRow).queryByText("Season tickets")).not.toBeInTheDocument();
     }
@@ -8136,12 +8136,49 @@ describe("SeasonTickets routed event screen", { timeout: 20_000 }, () => {
     await user.click(screen.getByRole("button", { name: "Next" }));
 
     expect(
-      screen.getByText("Enter the recipient's email address"),
-    ).toBeInTheDocument();
+      screen.getByRole("textbox", { name: "Email address" }),
+    ).toHaveValue("recipient@example.com");
     expect(
       screen.queryByText("You are about to transfer 1 ticket"),
     ).not.toBeInTheDocument();
     expect(mockedValidateEmail).not.toHaveBeenCalled();
+  });
+
+  it("keeps the recipient email when going back to the email step without submitting it", async () => {
+    const user = userEvent.setup();
+    const order = demoCompletedTicketOrder({ event: icedogs });
+    const ticket = order.tickets[0];
+    mockedGetMyEvents.mockResolvedValue({ data: [order] } as never);
+    mockedValidateEmail.mockClear();
+
+    render(<SeasonTickets initialScreen="event" eventUUID={icedogs.uuid} />);
+
+    await user.click(await screen.findByRole("button", { name: "Transfer" }));
+    await user.click(
+      screen.getByRole("button", { name: `Seat ${ticket.seatNumber}` }),
+    );
+    await user.click(screen.getByRole("button", { name: "Next" }));
+    await user.type(
+      screen.getByRole("textbox", { name: "Email address" }),
+      "recipient@example.com",
+    );
+    await user.click(screen.getByRole("button", { name: "Next" }));
+    expect(
+      await screen.findByText("You are about to transfer 1 ticket"),
+    ).toBeInTheDocument();
+    const checksBeforeBack = mockedValidateEmail.mock.calls.length;
+
+    await act(async () => {
+      screen.getByRole("button", { name: "Back" }).click();
+    });
+
+    expect(
+      screen.getByRole("textbox", { name: "Email address" }),
+    ).toHaveValue("recipient@example.com");
+    expect(
+      screen.queryByText("You are about to transfer 1 ticket"),
+    ).not.toBeInTheDocument();
+    expect(mockedValidateEmail.mock.calls.length).toBe(checksBeforeBack);
   });
 
   it("does not show or retain an email error when entering the recipient step", async () => {

@@ -8,21 +8,22 @@
  * prop, so any event can use it. See NM_STATE_DATA for the reference content.
  */
 
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import BrandedActionButton from "@/components/atoms/BrandedActionButton";
+import LockIcon from "@/components/atoms/LockIcon";
 import { BrandedLoader } from "@/components/molecules/RouteLoader";
 import { Ticket } from "@/components/atoms/icons";
-import EmailField from "@/components/molecules/EmailField";
 import LoginLink from "@/components/molecules/LoginLink";
 import Modal from "@/components/molecules/Modal";
 import MobileStickyFooter from "@/components/molecules/MobileStickyFooter";
 import BuyerProtectionCard from "@/components/molecules/BuyerProtectionCard";
 import OnSaleSoonCard from "@/components/molecules/OnSaleSoonCard";
 import ShopperBodyPortal from "@/components/templates/ShopperBodyPortal";
-import RedemptionCodeField from "@/components/molecules/RedemptionCodeField";
+import UnlockCodeDialog from "@/components/molecules/UnlockCodeDialog";
+import WaitlistEmailForm from "@/components/molecules/WaitlistEmailForm";
 import SectionLocatorThumb from "@/components/molecules/SectionLocatorThumb";
 import {
   ShopperSearchField,
@@ -46,8 +47,11 @@ import {
   limitsFromListing,
   listingAvailabilityRange,
   listingDetailAvailabilityLabel,
+  listingOfferId,
   quantityIsAllowed,
+  sortListingsByPrice,
   ticketQuantityOptions,
+  type QuantityRestrictionSource,
 } from "@/lib/ticketListings";
 import { shopperShellVars } from "@/lib/branding";
 import { ORG_SCROLLBAR_CLASS, orgScrollbarCss } from "@/lib/orgScrollbar";
@@ -56,16 +60,9 @@ import {
 } from "@/lib/ticketSummary";
 import { checkoutHref, rememberCheckoutReturnPath, setStoredCart } from "@/lib/cart";
 import {
-  emailBlurInvalid,
-  formString,
   normalizeRedemptionCode,
-  redemptionCodeBlurFieldError,
-  redemptionCodeSubmitError,
-  submittedEmail,
-  type EmailFieldError,
   type RedemptionCodeFieldError,
 } from "@/lib/fieldValidation";
-import { validateSubmittedEmail } from "@/lib/submitEmailValidation";
 import { LOADER_MESSAGE } from "@/lib/loaderMessages";
 import { lockPageScroll, unlockPageScroll } from "@/lib/pageScroll";
 import { beginRouteTransition } from "@/lib/routeTransition";
@@ -179,6 +176,11 @@ export type TicketingFilters = {
   quantity: number;
   accessible: boolean;
   sort: "price" | "-price";
+  offerIds?: Array<string | number>;
+  accessCodes?: string[];
+  accessCodeTokens?: string[];
+  /** Quantity the chip starts on, so the URL can leave it out. */
+  defaultQuantity?: number;
 };
 
 export type GATier = {
@@ -211,6 +213,8 @@ const money = (n: number) => "$" + n.toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g,
 const SEATMAP = "/nmstate/seatmap-dummy.svg";
 /** How long the listing placeholders stay up after a filter change. */
 const LIST_SHIMMER_MS = 420;
+/** Floor for the map overlay so a fast inventory response cannot flash it. */
+const MAP_REBUILD_MIN_MS = 420;
 /** Bottom bar height reserved so the map fills the locked mobile viewport. */
 const LISTINGS_SHEET_BAR_PX = 88;
 
@@ -268,12 +272,6 @@ const Star = ({ s = 14, filled = true }: { s?: number; filled?: boolean }) => (
     <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" />
   </svg>
 );
-const LockIcon = ({ s = 15 }: { s?: number }) => (
-  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" style={{ width: s, height: s }} aria-hidden>
-    <rect x="4.5" y="11" width="15" height="10" rx="2" />
-    <path d="M8 11V7a4 4 0 0 1 8 0v4" />
-  </svg>
-);
 const TicketIcon = ({ s = 18, color }: { s?: number; color?: string }) => (
   <Ticket width={s} height={s} stroke={color || "currentColor"} strokeWidth={1.8} aria-hidden />
 );
@@ -282,12 +280,18 @@ export default function PremiumTicketing({
   data: d,
   onFiltersChange,
   refreshing = false,
+  initialFilters,
+  initialOfferNames,
+  initialUnlockedZones,
 }: {
   data: TicketingData;
   /** Ask the route to refetch inventory for these filters (server-side truth). */
-  onFiltersChange?: (filters: TicketingFilters) => void;
+  onFiltersChange?: (filters: TicketingFilters) => void | Promise<void>;
   /** True while the route is refetching after a filter change. */
   refreshing?: boolean;
+  initialFilters?: Partial<TicketingFilters>;
+  initialOfferNames?: string[];
+  initialUnlockedZones?: string[];
 }) {
   const { isAuthenticated } = useAuth();
   const router = useRouter();
@@ -342,6 +346,8 @@ export default function PremiumTicketing({
   const storeBackground = useSeatmapStore((s) => s.background);
   const setStoreMapping = useSeatmapStore((s) => s.setData);
   const setStoreBackground = useSeatmapStore((s) => s.setBackground);
+  const ticketGroups = useFiltersStore((s) => s.ticketGroups);
+  const setPurchaseFilters = useFiltersStore((s) => s.setFilters);
 
   // Props and the seatmap store are hydrated from the same payload, but either
   // one can be behind the other (route refetch, Fast Refresh). Take whichever
@@ -356,22 +362,30 @@ export default function PremiumTicketing({
   const [listingsShellReady, setListingsShellReady] = useState(
     () => !usesListingsSheet(),
   );
-  const [want, setWant] = useState(() => initialTicketQuantity(d.listings));
-  const [zoneFilter, setZoneFilter] = useState<string[]>([]);
-  const [unlocked, setUnlocked] = useState<string[]>([]);
+  // Captured on first load: filter refetches narrow d.listings, which would
+  // otherwise move the quantity the shopper never chose.
+  const [defaultQuantity] = useState(() => initialTicketQuantity(d.listings));
+  const [want, setWant] = useState(
+    () => initialFilters?.quantity || defaultQuantity,
+  );
+  const [zoneFilter, setZoneFilter] = useState<string[]>(
+    () => initialOfferNames ?? [],
+  );
+  const [unlocked, setUnlocked] = useState<string[]>(
+    () => initialUnlockedZones ?? [],
+  );
   const [unlockZone, setUnlockZone] = useState<string | null>(null);
-  const [unlockInput, setUnlockInput] = useState("");
-  const [unlockFieldError, setUnlockFieldError] =
-    useState<RedemptionCodeFieldError>(null);
-  const [unlocking, setUnlocking] = useState(false);
   const [qtyMenu, setQtyMenu] = useState(false);
-  const [ada, setAda] = useState(false);
-  const [sortDir, setSortDir] = useState<"price" | "-price">("price");
+  const [ada, setAda] = useState(() => Boolean(initialFilters?.accessible));
+  const [sortDir, setSortDir] = useState<"price" | "-price">(
+    () => initialFilters?.sort ?? "price",
+  );
   const [loading, setLoading] = useState(false);
   const [pinned, setPinned] = useState(false);
   const [map, setMap] = useState(false);
   const [mapReady, setMapReady] = useState(false);
   const [preparingMap, setPreparingMap] = useState(false);
+  const [updatingInventory, setUpdatingInventory] = useState(false);
   const [mapExitConfirm, setMapExitConfirm] = useState(false);
   const [zoom, setZoom] = useState(100);
   const [legendOpen, setLegendOpen] = useState(false);
@@ -384,10 +398,8 @@ export default function PremiumTicketing({
   // GA mode state
   const [gaQuantities, setGaQuantities] = useState<Record<number, number>>({});
   const [notifySubject, setNotifySubject] = useState<NotifySubject | null>(null);
+  // Only the confirmed address — the waitlist form owns the value being typed.
   const [notifyEmail, setNotifyEmail] = useState("");
-  const [notifyEmailError, setNotifyEmailError] = useState<EmailFieldError>(null);
-  const [notifyEmailNetworkError, setNotifyEmailNetworkError] = useState(false);
-  const [notifyEmailChecking, setNotifyEmailChecking] = useState(false);
   const [notifySms, setNotifySms] = useState(false);
   const [notifySent, setNotifySent] = useState(false);
   const [notified, setNotified] = useState<Record<string, boolean>>({});
@@ -403,6 +415,9 @@ export default function PremiumTicketing({
   const qtyBtn = useRef<HTMLButtonElement | null>(null);
   const [headerH, setHeaderH] = useState(TICKETING_HEADER_FALLBACK_PX);
   const loadTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const mapRebuildTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const mapRebuildId = useRef(0);
+  const pendingUnlockRebuild = useRef<(() => void) | null>(null);
 
   useEffect(() => setMounted(true), []);
 
@@ -525,14 +540,104 @@ export default function PremiumTicketing({
     };
   }, [stickTop]);
 
-  const requestInventory = (next: Partial<TicketingFilters>) => {
+  const requestInventory = (
+    next: Partial<TicketingFilters> & { accessCodeTokens?: string[] } = {},
+    zones = zoneFilter,
+    unlockedZones = unlocked,
+  ) => {
+    const offerIds = next.offerIds ?? offerIdsForZones(zones);
+    const accessCodes =
+      next.accessCodes ??
+      accessCodesForZones(unlockedZones);
+    const accessCodeTokens =
+      next.accessCodeTokens ??
+      accessCodeTokensForZones(unlockedZones);
     const filters: TicketingFilters = {
       quantity: next.quantity ?? want,
       accessible: next.accessible ?? ada,
       sort: next.sort ?? sortDir,
+      offerIds,
+      accessCodes,
+      accessCodeTokens,
+      defaultQuantity,
     };
-    onFiltersChange?.(filters);
+    return onFiltersChange?.(filters);
   };
+
+  const offerIdsForZones = (zones: string[]) =>
+    zones
+      .map((zone) => {
+        const listing = d.listings.find((row) => row.zone === zone)
+          || d.quantityCatalog?.find((row) => row.zone === zone);
+        return listing ? listingOfferId(listing) : undefined;
+      })
+      .filter((id): id is string | number => id != null);
+
+  const applySeatmapLookups = (
+    offerIds: Array<string | number>,
+    groups = useFiltersStore.getState().ticketGroups,
+  ) => {
+    const lookups = seatmapLookupsFromTicketGroups(groups, offerIds);
+    setSeatLookupTable(lookups.seatLookupTable);
+    setSeatOffersLookupTable(lookups.seatOffersLookupTable);
+    setSectionLookupTable(lookups.sectionLookupTable);
+  };
+
+  /**
+   * The map narrows to the picked offers once the ticket-group request for them
+   * comes back, so the overlay stays up for the whole round trip.
+   */
+  const syncSelectedOfferIds = (
+    offerIds: Array<string | number>,
+    inventory?: void | Promise<void>,
+  ) => {
+    setPurchaseFilters({ selectedOfferIds: offerIds });
+    if (!hasLiveSeatmap) return;
+    if (!map) return;
+    const rebuildId = mapRebuildId.current + 1;
+    mapRebuildId.current = rebuildId;
+    setUpdatingInventory(true);
+    if (mapRebuildTimer.current) clearTimeout(mapRebuildTimer.current);
+    const minimumOverlay = new Promise<void>((resolve) => {
+      mapRebuildTimer.current = setTimeout(resolve, MAP_REBUILD_MIN_MS);
+    });
+    void Promise.all([
+      Promise.resolve(inventory).catch(() => undefined),
+      minimumOverlay,
+    ]).then(() => {
+      if (mapRebuildId.current !== rebuildId) return;
+      mapRebuildTimer.current = null;
+      applySeatmapLookups(offerIds);
+      setUpdatingInventory(false);
+    });
+  };
+
+  const orderQuantitySource = useMemo((): QuantityRestrictionSource | null => {
+    const ids = offerIdsForZones(zoneFilter);
+    if (ids.length !== 1) return null;
+    const id = String(ids[0]);
+    const group = ticketGroups.find((row) => String(row.offer?.id) === id);
+    return (group?.package || group?.offer) ?? null;
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- offerIdsForZones is recreated each render
+  }, [d.listings, d.quantityCatalog, ticketGroups, zoneFilter]);
+
+  useEffect(() => {
+    setPurchaseFilters({ selectedOfferIds: offerIdsForZones(zoneFilter) });
+    // Seed from the URL / initial chips once.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const accessCodesForZones = (zones: string[]) =>
+    zones
+      .map((zone) => lockedMap[zone])
+      .filter(Boolean);
+
+  const accessCodeTokensForZones = (zones: string[]) =>
+    zones.flatMap((zone) => {
+      const id = offerIdsForZones([zone])[0];
+      const code = lockedMap[zone];
+      return id != null && code ? [`${id}:${code}`] : [];
+    });
 
   /**
    * Shimmer the rows for a beat so every filter change reads as a new list,
@@ -567,8 +672,11 @@ export default function PremiumTicketing({
   };
 
   const filterByZones = (next: (current: string[]) => string[]) => {
-    setZoneFilter(next);
+    const zones = next(zoneFilter);
+    setZoneFilter(zones);
     setSel(null);
+    const offerIds = offerIdsForZones(zones);
+    syncSelectedOfferIds(offerIds, requestInventory({ offerIds }, zones));
     shimmerListings();
   };
 
@@ -577,35 +685,17 @@ export default function PremiumTicketing({
     setNotifySent(false);
   };
 
-  const submitEventWaitlist = async (
-    email: string,
-    onSuccess?: () => void,
-  ): Promise<boolean> => {
-    setNotifyEmailNetworkError(false);
-    setNotifyEmailChecking(true);
-    const result = await validateSubmittedEmail(email);
-    setNotifyEmailChecking(false);
-    if (!result.ok) {
-      if (result.error === "required" || result.error === "invalid") {
-        setNotifyEmailError(result.error);
-      } else {
-        setNotifyEmailError(null);
-        setNotifyEmailNetworkError(true);
-      }
-      return false;
-    }
-    setNotifyEmail(result.email);
-    setNotifyEmailError(null);
-    setNotified((current) => ({ ...current, [d.eventName]: true }));
-    onSuccess?.();
-    return true;
-  };
-
   const lockedMap = useMemo(() => {
     const m: Record<string, string> = {};
     (d.lockedZones || []).forEach((z) => { m[z.zone] = z.code.trim().toUpperCase(); });
     return m;
   }, [d.lockedZones]);
+  /** The offer row a zone name came from, as the access-code check needs it. */
+  const offerForZone = (zone: string) =>
+    useFiltersStore
+      .getState()
+      .ticketGroups.find((group) => group.offer?.name?.trim() === zone.trim())
+      ?.offer;
   const eventTicketLimit = useFiltersStore((s) => s.eventTicketLimit);
   const listingQtyLimits = (l: TicketingListing) =>
     limitsFromListing(l, eventTicketLimit);
@@ -624,14 +714,9 @@ export default function PremiumTicketing({
   }, [busy, listingsExpanded, listingsSheet]);
 
   const mapLocked = Boolean(d.soldOut) || eventScheduled;
-  const priceOf = (l: TicketingListing) =>
-    parseFloat(l.price.replace(/[^0-9.]/g, "")) || 0;
   const rows = useMemo(() => {
     const filtered = d.listings.filter((l) => quantityIsAllowed(want, listingQtyLimits(l)) && (!zoneFilter.length || zoneFilter.includes(l.zone)) && !(!!lockedMap[l.zone] && !unlocked.includes(l.zone)) && (!ada || Boolean(l.cartGroup?.accessible)));
-    const sorted = [...filtered].sort((a, b) =>
-      sortDir === "price" ? priceOf(a) - priceOf(b) : priceOf(b) - priceOf(a),
-    );
-    return sorted.map((l) => ({
+    return sortListingsByPrice(filtered, sortDir).map((l) => ({
       ...l,
       range: `${l.min} – ${l.max} Tickets`,
     }));
@@ -710,13 +795,20 @@ export default function PremiumTicketing({
   const addPick = (z: (typeof ZONES)[number]) => setPicks((list) => [...list, { sec: z.sec, row: z.row, seat: String(21 + list.length), zone: z.zone, tier: z.tier, unit: z.unit, price: "$" + z.unit.toFixed(2) }]);
   const flip = () => setMedia((m) => (m === 0 ? 1 : 0));
 
-  const closeMap = () => {
+  const closeMap = useCallback(() => {
+    if (mapRebuildTimer.current) {
+      clearTimeout(mapRebuildTimer.current);
+      mapRebuildTimer.current = null;
+    }
+    // Abandon a rebuild still waiting on inventory so it cannot reopen the overlay.
+    mapRebuildId.current += 1;
+    setUpdatingInventory(false);
     setMap(false);
     setMapReady(false);
     setPreparingMap(false);
     resetMapState();
     setPicks([]);
-  };
+  }, [resetMapState]);
 
   /** Closing with seats selected needs confirm so the shopper does not lose them by accident. */
   const requestCloseMap = () => {
@@ -764,50 +856,59 @@ export default function PremiumTicketing({
     window.setTimeout(hydrate, 50);
   };
 
-  const submitUnlockCode = async (code = unlockInput) => {
+  const verifyUnlockCode = async (
+    code: string,
+  ): Promise<RedemptionCodeFieldError> => {
     const zone = unlockZone;
-    if (!zone || unlocking) return;
-    const submitErr = redemptionCodeSubmitError(code);
-    if (submitErr) {
-      setUnlockFieldError(submitErr);
-      return;
-    }
+    if (!zone) return null;
     const typed = normalizeRedemptionCode(code);
-    setUnlocking(true);
     const opened = await verifyOfferAccessCode({
-      eventId: d.eventId,
+      offer: offerForZone(zone),
       code: typed,
       expected: lockedMap[zone],
     });
-    setUnlocking(false);
-    if (!opened) {
-      setUnlockFieldError("rejected");
-      return;
-    }
-    setUnlockFieldError(null);
+    if (!opened) return "rejected";
     setUnlocked((u) => (u.includes(zone) ? u : [...u, zone]));
     const filtersState = useFiltersStore.getState();
     const updatedGroups = unlockOfferInTicketGroups(filtersState.ticketGroups, zone);
     filtersState.setTicketGroups(updatedGroups);
-    const lookups = seatmapLookupsFromTicketGroups(
-      updatedGroups,
-      filtersState.filters.selectedOfferIds,
-    );
-    setSeatLookupTable(lookups.seatLookupTable);
-    setSeatOffersLookupTable(lookups.seatOffersLookupTable);
-    setSectionLookupTable(lookups.sectionLookupTable);
-    filterByZones((prev) => (prev.includes(zone) ? prev : [...prev, zone]));
+    const nextUnlocked = unlocked.includes(zone) ? unlocked : [...unlocked, zone];
+    const nextZones = zoneFilter.includes(zone) ? zoneFilter : [...zoneFilter, zone];
+    setZoneFilter(nextZones);
+    setSel(null);
+    // The dialog covers the map, so a rebuild started here would run its whole
+    // overlay behind the backdrop and be over before the shopper sees the map.
+    pendingUnlockRebuild.current = () => {
+      syncSelectedOfferIds(
+        offerIdsForZones(nextZones),
+        requestInventory(
+          { accessCodes: accessCodesForZones(nextUnlocked) },
+          nextZones,
+          nextUnlocked,
+        ),
+      );
+    };
+    shimmerListings();
     setUnlockZone(null);
+    return null;
   };
 
-  const goToCheckout = (cartId: string) => {
+  useEffect(() => {
+    if (unlockZone !== null) return;
+    const rebuild = pendingUnlockRebuild.current;
+    if (!rebuild) return;
+    pendingUnlockRebuild.current = null;
+    rebuild();
+  }, [unlockZone]);
+
+  const goToCheckout = useCallback((cartId: string) => {
     rememberCheckoutReturnPath();
     const href = checkoutHref(cartId);
     beginRouteTransition(href);
     router.push(href);
-  };
+  }, [router]);
 
-  const placeSelectedTickets = async (
+  const placeSelectedTickets = useCallback(async (
     groups: Array<Record<string, unknown> & { quantity?: number }>,
   ) => {
     if (d.eventId == null) {
@@ -834,7 +935,7 @@ export default function PremiumTicketing({
     const qty = groups.reduce((sum, g) => sum + Number(g.quantity || 1), 0);
     setStoredCart(cartId, qty || 1);
     return String(cartId);
-  };
+  }, [d.eventId, isGa]);
 
   const runCheckoutWithGroup = async (
     group: Record<string, unknown>,
@@ -854,15 +955,16 @@ export default function PremiumTicketing({
     }
   };
 
-  const startHoldFromMap = async () => {
-    if (holding || !selectedFromMap.length) return;
+  const startHoldFromMap = useCallback(async () => {
+    const seats = useSeatmapStore.getState().selectedFromMap;
+    if (holding || !seats.length) return;
     setHolding(true);
     setHoldError("");
     try {
       // A seat picked off the map has to reach the API without a quantity:
       // any quantity switches it to the quickpick path, which throws the
       // chosen seats away and reserves consecutive ones instead.
-      const groups = selectedFromMap.map((g) => {
+      const groups = seats.map((g) => {
         const group = { ...(g as Record<string, unknown>) };
         if (!g.GA && g.seatId != null) {
           delete group.quantity;
@@ -876,7 +978,7 @@ export default function PremiumTicketing({
       setSeatedError(checkoutHoldError(err));
       setHolding(false);
     }
-  };
+  }, [goToCheckout, holding, placeSelectedTickets, setSeatedError]);
 
   const startHold = async () => {
     if (holding) return;
@@ -888,6 +990,10 @@ export default function PremiumTicketing({
     }
     await runCheckoutWithGroup(group, panelQty);
   };
+
+  const handleUnlockOffer = useCallback((offerName: string) => {
+    setUnlockZone(offerName);
+  }, []);
 
   // GA tier sheet → place inventory, then the checkout page (which gates login).
   const startGaCheckout = async (
@@ -1116,7 +1222,6 @@ export default function PremiumTicketing({
       disabled={Boolean(notified[d.eventName])}
       onClick={() => {
         setNotifySent(false);
-        setNotifyEmailError(null);
         setEventSoldOutSheet(true);
       }}
       style={{
@@ -1331,11 +1436,7 @@ export default function PremiumTicketing({
               ) : locked ? (
                 <BrandedActionButton
                   tone="secondary"
-                  onClick={() => {
-                    setUnlockZone(t.name);
-                    setUnlockInput("");
-                    setUnlockFieldError(null);
-                  }}
+                  onClick={() => setUnlockZone(t.name)}
                   className="text-[16px]"
                   style={{ padding: "13px 22px" }}
                 >
@@ -1403,8 +1504,6 @@ export default function PremiumTicketing({
                 onClick={() => {
                   if (locked) {
                     setUnlockZone(z);
-                    setUnlockInput("");
-                    setUnlockFieldError(null);
                     return;
                   }
                   if (z === null) {
@@ -1832,7 +1931,6 @@ export default function PremiumTicketing({
                         {listingThumb(l)}
                       </div>
                       <div style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", gap: 10 }}>
-                        <span style={{ alignSelf: "flex-start", ...pill(ACC_SOFT, ACC), fontSize: 13, padding: "3px 8px" }}><Star s={12} /> {l.zone}</span>
                         <div style={{ display: "flex", alignItems: "center", gap: 6, minWidth: 0, fontSize: 18, fontWeight: 600, letterSpacing: "-0.015em" }}>
                           <span style={{ color: "#6e7180", flexShrink: 0, display: "flex", alignItems: "center" }}><TicketIcon s={18} /></span>
                           <span style={{ minWidth: 0, overflowWrap: "anywhere" }}>Sec {l.sec} · Row {l.row}</span>
@@ -2197,58 +2295,22 @@ export default function PremiumTicketing({
                   <p className="ga-soldout-notify-desc" style={{ margin: "0 0 18px", lineHeight: 1.55, color: "#4a5567" }}>
                     Enter your email below to get notified in case a ticket becomes available.
                   </p>
-                  <form
-                    noValidate
-                    onSubmit={(event) => {
-                      event.preventDefault();
-                      void submitEventWaitlist(
-                        submittedEmail(new FormData(event.currentTarget)),
-                        () => setNotifySent(true),
-                      );
-                    }}
+                  <WaitlistEmailForm
+                    id="ga-soldout-email"
+                    submitLabel="Join waitlist"
+                    accent={ACC}
+                    buttonTextColor={BTN_INK}
                     style={{ display: "flex", flexDirection: "column", gap: 14 }}
-                  >
-                    <EmailField
-                      autoFocus
-                      id="ga-soldout-email"
-                      name="email"
-                      label="Email address"
-                      placeholder="you@example.com"
-                      value={notifyEmail}
-                      error={notifyEmailError}
-                      networkError={notifyEmailNetworkError}
-                      disabled={notifyEmailChecking}
-                      onChange={(value) => {
-                        setNotifyEmail(value);
-                        setNotifyEmailError(null);
-                        setNotifyEmailNetworkError(false);
-                      }}
-                      onBlur={(value) =>
-                        setNotifyEmailError(emailBlurInvalid(value) ? "invalid" : null)
-                      }
-                    />
-                    <div style={{ display: "flex", justifyContent: "flex-end", gap: 10 }}>
-                      <BrandedActionButton
-                        type="button"
-                        tone="secondary"
-                        onClick={() => setEventSoldOutSheet(false)}
-                        className="ga-soldout-notify-action"
-                      >
-                        Cancel
-                      </BrandedActionButton>
-                      <BrandedActionButton
-                        type="submit"
-                        primaryColor={ACC}
-                        textColor={BTN_INK}
-                        className="ga-soldout-notify-submit"
-                        loading={notifyEmailChecking}
-                        loadingLabel="Checking email…"
-                        disabled={notifyEmailChecking}
-                      >
-                        Join waitlist
-                      </BrandedActionButton>
-                    </div>
-                  </form>
+                    actionsStyle={{ display: "flex", justifyContent: "flex-end", gap: 10 }}
+                    cancelClassName="ga-soldout-notify-action"
+                    submitClassName="ga-soldout-notify-submit"
+                    onCancel={() => setEventSoldOutSheet(false)}
+                    onConfirmed={(email) => {
+                      setNotifyEmail(email);
+                      setNotified((current) => ({ ...current, [d.eventName]: true }));
+                      setNotifySent(true);
+                    }}
+                  />
                 </>
               )}
             </div>
@@ -2279,51 +2341,22 @@ export default function PremiumTicketing({
           <Modal variant="light" title={title} closeOnBackdrop onClose={() => setNotifySubject(null)}>
             <p className="mt-4 text-[14px] text-[#4a5567]">{body}</p>
             {!notifySent ? (
-              <form
-                noValidate
+              <WaitlistEmailForm
+                id="notify-email"
+                submitLabel={soldout ? "Join waitlist" : "Set reminder"}
+                accent={ACC}
+                buttonTextColor={BTN_INK}
                 className="mt-5 flex flex-col gap-3.5"
-                onSubmit={(event) => {
-                  event.preventDefault();
-                  void (async () => {
-                    const next = submittedEmail(new FormData(event.currentTarget));
-                    setNotifyEmailNetworkError(false);
-                    setNotifyEmailChecking(true);
-                    const result = await validateSubmittedEmail(next);
-                    setNotifyEmailChecking(false);
-                    if (!result.ok) {
-                      if (result.error === "required" || result.error === "invalid") {
-                        setNotifyEmailError(result.error);
-                      } else {
-                        setNotifyEmailError(null);
-                        setNotifyEmailNetworkError(true);
-                      }
-                      return;
-                    }
-                    setNotifyEmail(result.email);
-                    setNotifyEmailError(null);
-                    setNotifySent(true);
-                    setNotified((m) => ({ ...m, [t.name]: true }));
-                  })();
+                actionsClassName="flex flex-col gap-3 sm:flex-row sm:justify-end"
+                cancelClassName="w-full sm:w-auto"
+                submitClassName="w-full sm:w-auto"
+                onCancel={() => setNotifySubject(null)}
+                onConfirmed={(email) => {
+                  setNotifyEmail(email);
+                  setNotified((m) => ({ ...m, [t.name]: true }));
+                  setNotifySent(true);
                 }}
               >
-                <EmailField
-                  autoFocus
-                  id="notify-email"
-                  name="email"
-                  placeholder="you@example.com"
-                  value={notifyEmail}
-                  error={notifyEmailError}
-                  networkError={notifyEmailNetworkError}
-                  disabled={notifyEmailChecking}
-                  onChange={(value) => {
-                    setNotifyEmail(value);
-                    setNotifyEmailError(null);
-                    setNotifyEmailNetworkError(false);
-                  }}
-                  onBlur={(value) =>
-                    setNotifyEmailError(emailBlurInvalid(value) ? "invalid" : null)
-                  }
-                />
                 <label className="flex cursor-pointer items-start gap-2.5 text-[14px] font-normal text-[#4a5567]">
                   <input
                     type="checkbox"
@@ -2335,25 +2368,7 @@ export default function PremiumTicketing({
                   />
                   <span>Also text me at the number on my account</span>
                 </label>
-                <div className="flex flex-col gap-3 sm:flex-row sm:justify-end">
-                  <BrandedActionButton
-                    type="button"
-                    tone="secondary"
-                    onClick={() => setNotifySubject(null)}
-                    className="w-full sm:w-auto"
-                  >
-                    Cancel
-                  </BrandedActionButton>
-                  <BrandedActionButton
-                    type="submit"
-                    primaryColor={ACC}
-                    textColor={BTN_INK}
-                    className="w-full sm:w-auto"
-                  >
-                    {soldout ? "Join waitlist" : "Set reminder"}
-                  </BrandedActionButton>
-                </div>
-              </form>
+              </WaitlistEmailForm>
             ) : (
               <div className="mt-5 flex flex-col gap-4">
                 <div className="flex items-center gap-3 rounded-[14px] border border-[rgba(127,190,77,0.35)] bg-[rgba(166,231,115,0.16)] px-4 py-3.5">
@@ -2398,20 +2413,18 @@ export default function PremiumTicketing({
           buttonTextColor={BTN_INK}
           mobile={mobile}
           onClose={closeMap}
-          onCheckout={() => void startHoldFromMap()}
+          onCheckout={startHoldFromMap}
           checkoutLoading={holding}
           checkoutError=""
           mapBackground={mapBackground}
           mapMapping={mapMapping}
           venueSlug={d.venueSlug}
           preparing={preparingMap || !mapReady || !hasLiveSeatmap}
+          updatingInventory={updatingInventory}
           orgName={d.orgLabel}
           logoSrc={d.brandLogoSrc || d.logoSrc}
-          onUnlockOffer={(offerName) => {
-            setUnlockZone(offerName);
-            setUnlockInput("");
-            setUnlockFieldError(null);
-          }}
+          orderQuantitySource={orderQuantitySource}
+          onUnlockOffer={handleUnlockOffer}
           keepTooltipOpen={unlockZone !== null}
         />
       )}
@@ -2557,82 +2570,17 @@ export default function PremiumTicketing({
       )}
 
       {unlockZone !== null && (
-        <Modal
-          variant="light"
-          hideHeader
-          hideClose
-          title={isGa ? `${unlockZone} requires a code` : `${unlockZone} is locked`}
-          className="unlock-code-dialog !max-w-[400px] !p-6"
+        <UnlockCodeDialog
+          key={unlockZone}
+          zone={unlockZone}
+          isGa={isGa}
+          offerDescription={unlockOfferDescription}
+          accent={ACC}
+          accentSoft={ACC_SOFT}
+          buttonTextColor={BTN_INK}
+          onVerify={verifyUnlockCode}
           onClose={() => setUnlockZone(null)}
-        >
-          <form
-            noValidate
-            className="flex flex-col gap-4"
-            onSubmit={(e) => {
-              e.preventDefault();
-              void submitUnlockCode(formString(new FormData(e.currentTarget), "accessCode"));
-            }}
-          >
-            <div className="flex items-center justify-between">
-              <div
-                className="flex h-[46px] w-[46px] items-center justify-center rounded-xl"
-                style={{ background: ACC_SOFT, color: ACC }}
-              >
-                <LockIcon s={22} />
-              </div>
-              <button
-                type="button"
-                aria-label="Close"
-                onClick={() => setUnlockZone(null)}
-                className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-[rgba(5,27,53,0.16)] text-[#051b35] transition-colors hover:bg-[rgba(5,27,53,0.06)]"
-              >
-                <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden>
-                  <path d="M6 6l12 12M18 6 6 18" />
-                </svg>
-              </button>
-            </div>
-            <h2 className="m-0 font-semibold">
-              {isGa ? `${unlockZone} requires a code` : `${unlockZone} is locked`}
-            </h2>
-            {unlockOfferDescription ? (
-              <pre className="m-0 whitespace-pre-wrap font-[inherit] text-[14px] leading-[1.5] text-[#4a5567] [overflow-wrap:anywhere]">
-                {unlockOfferDescription}
-              </pre>
-            ) : null}
-            <p className="text-[14px] text-[#6e7180]">
-              Enter your access code to unlock {isGa ? "this offer" : "these seats"}.
-            </p>
-            <RedemptionCodeField
-              name="accessCode"
-              label="Access code"
-              hideLabel
-              value={unlockInput}
-              autoFocus
-              placeholder="Access code"
-              error={unlockFieldError}
-              onChange={(value) => {
-                setUnlockInput(value);
-                setUnlockFieldError(null);
-              }}
-              onBlur={(value) =>
-                setUnlockFieldError((current) =>
-                  redemptionCodeBlurFieldError(current, value),
-                )
-              }
-              inputClassName="tracking-[0.06em]"
-            />
-            <BrandedActionButton
-              type="submit"
-              primaryColor={ACC}
-              textColor={BTN_INK}
-              loading={unlocking}
-              loadingLabel="Checking…"
-              className="w-full text-[16px]"
-            >
-              <LockIcon s={16} /> {isGa ? "Unlock offer" : "Unlock seats"}
-            </BrandedActionButton>
-          </form>
-        </Modal>
+        />
       )}
 
       {seatedError && !map ? (

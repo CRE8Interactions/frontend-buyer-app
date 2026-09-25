@@ -12,6 +12,8 @@
 
 %% Submit: validateSubmittedEmail — trim, empty, blocked/syntax, then POST /registration/validate-email.
 
+%% Login maps 400 startFailed to the network banner, not invalid-email copy.
+
 %%
 
 %% --- Blur — client hint (non-empty only) ---
@@ -40,7 +42,11 @@
 
 %% | 200 | SendGrid verdict Invalid (or Risky with suggestion) | Email is invalid. Please try again. |
 
+%% | 400 | (any) | We're experiencing technical difficulties. Please try again later. |
+
 %% | 402 | Bad email | Email is invalid. Please try again. |
+
+%% | 500 / other | (any other) | We're experiencing technical difficulties. Please try again later. |
 
 %%
 
@@ -52,87 +58,40 @@
 
 %% | 500 / other | (any other) | We're experiencing technical difficulties. Please try again later. |
 
-
-
 flowchart TD
-
   start[Step 0: email] --> typeEmail[Type email]
-
   typeEmail --> blurField[Blur field]
-
   blurField --> blurValidate[emailBlurInvalid]
-
   blurValidate --> blurHint[Show inline hint if non-empty invalid]
-
   blurHint --> typeEmail
-
   typeEmail --> sendClick[Submit email]
-
   sendClick --> readDom[Read submitted email]
-
   readDom --> validate[validateSubmittedEmail]
-
-
-
   validate --> valFail{Result?}
-
   valFail -->|ok| verifyUser[POST /verifies verifyUser]
-
-  valFail -->|500| network["We're experiencing technical difficulties. Please try again later."]
-
-
-
+  valFail -->|400 / 500 / other| network["We're experiencing technical difficulties. Please try again later."]
   verifyUser --> verifyFail{API response?}
-
   verifyFail -->|200| nextStep[Continue to Step 1: 6-digit code]
-
   verifyFail -->|500| network
-
-
-
   subgraph blurClientChecks [blur — client check]
-
     bNonEmpty{Email non-empty on blur?}
-
     bNonEmpty -->|no| bQuiet[No error]
-
     bNonEmpty -->|yes| bBlocked{Blocked domain or bad syntax?}
-
     bBlocked -->|yes| bInvalid["Email is invalid. Please try again."]
-
     bBlocked -->|no| bQuiet
-
   end
-
-
-
   subgraph validateSubmittedEmail [submit — validateSubmittedEmail]
-
     vNorm[Trim and lowercase]
-
     vNorm --> vEmpty{Empty?}
-
     vEmpty -->|yes| vEmailRequired["Email address is required."]
-
     vEmpty -->|no| vBlocked{Blocked domain or bad syntax?}
-
     vBlocked -->|yes| vEmailInvalid["Email is invalid. Please try again."]
-
     vBlocked -->|no| vSendgrid[POST /registration/validate-email]
-
     vSendgrid --> vSgStatus{HTTP status?}
-
     vSgStatus -->|200 Valid| vOk[ok]
-
     vSgStatus -->|200 Invalid or Risky with suggestion| vEmailInvalid
-
     vSgStatus -->|402| vEmailInvalid
-
+    vSgStatus -->|400 / 500 / other| vNetwork["We're experiencing technical difficulties. Please try again later."]
   end
-
-
-
   blurValidate -.-> blurClientChecks
-
   validate -.-> validateSubmittedEmail
-

@@ -8,6 +8,7 @@ import PremiumTicketing, {
   type TicketingData,
 } from "@/components/organisms/PremiumTicketing";
 import { getEventByShortCode, getTicketGroups } from "@/lib/api";
+import { rememberTrackingCode } from "@/lib/trackingLink";
 import { brandingToTicketingTheme, type OrgBranding } from "@/lib/branding";
 import { cacheEventBranding } from "@/lib/orgBrandingCache";
 import { isSportingEvent } from "@/lib/eventCategory";
@@ -200,6 +201,7 @@ function GAEvent() {
           return;
         }
         const event = res.data.event as EventData;
+        rememberTrackingCode(event.uuid, searchParams.get("code"));
         cacheEventBranding(event, event.organization);
         if (
           event.uuid &&
