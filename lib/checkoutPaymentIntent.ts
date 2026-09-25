@@ -54,6 +54,7 @@ const paymentIntentTotalFromCart = (cart: CartLike) => {
 export function buildProcessOrderRequest<T extends object>(
   cart: T,
   paymentIntentId: string,
+  trackingCode: string | null = null,
 ) {
   const nextCart = {
     ...cart,
@@ -62,6 +63,7 @@ export function buildProcessOrderRequest<T extends object>(
   return {
     cart: nextCart,
     paymentIntentId,
+    trackingCode,
   };
 }
 

@@ -15,6 +15,7 @@ import {
 } from "@/lib/api";
 import { brandingToTicketingTheme, type OrgBranding } from "@/lib/branding";
 import { cacheEventBranding } from "@/lib/orgBrandingCache";
+import { rememberTrackingCode } from "@/lib/trackingLink";
 import { isSportingEvent } from "@/lib/eventCategory";
 import {
   eventAboutText,
@@ -358,6 +359,7 @@ function SeatedTickets() {
           return;
         }
         const event = res.data.event as EventData;
+        rememberTrackingCode(event.uuid, searchParams.get("code"));
         cacheEventBranding(event, event.organization);
         if (
           event.uuid &&

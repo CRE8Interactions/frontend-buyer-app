@@ -57,6 +57,7 @@ import {
   resolveFundraisingCampaign,
 } from "@/lib/api";
 import { buildProcessOrderRequest } from "@/lib/checkoutPaymentIntent";
+import { readTrackingCodeForCart } from "@/lib/trackingLink";
 import {
   buildFundraisingPayload,
   buildPaymentIntentRequest,
@@ -355,7 +356,13 @@ function CheckoutPaymentForm({
       // Elements already has the PaymentIntent client secret. Legacy checkout
       // confirms once; a prior elements.submit() makes confirmPayment reject
       // in the browser before Stripe's confirm request.
-      await processOrder(buildProcessOrderRequest(cart, intentId));
+      await processOrder(
+        buildProcessOrderRequest(
+          cart,
+          intentId,
+          readTrackingCodeForCart(cart),
+        ),
+      );
       const confirmed = await stripe.confirmPayment({
         elements,
         confirmParams: {
@@ -804,7 +811,10 @@ function CheckoutPage() {
             sendToLogin();
             return;
           }
-          const processRes = await processFreeOrder({ cartId: cartData.id });
+          const processRes = await processFreeOrder({
+            cartId: cartData.id,
+            trackingCode: readTrackingCodeForCart(cartData),
+          });
           sessionStorage.setItem(
             "order",
             JSON.stringify({ id: processRes.data?.id }),

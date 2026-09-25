@@ -270,4 +270,21 @@ describe("seated tickets route", () => {
     });
     expect(screen.getByText(/ticket listings/i)).toBeInTheDocument();
   });
+
+  it("persists a numeric tracking-link code from the seated event URL", async () => {
+    nav.search = new URLSearchParams("code=9876543210");
+    mockedGetEvent.mockResolvedValue({
+      data: demoEventDetail(EVENT.shortCode),
+    } as never);
+    mockedGetTicketGroups.mockResolvedValue(inventoryPayload());
+
+    render(<SeatedTicketsRoute />);
+
+    expect(
+      await screen.findByText(/ticket listings/i, undefined, { timeout: 4000 }),
+    ).toBeInTheDocument();
+    expect(sessionStorage.getItem(`trackingLink:${EVENT.uuid}`)).toBe(
+      "9876543210",
+    );
+  });
 });

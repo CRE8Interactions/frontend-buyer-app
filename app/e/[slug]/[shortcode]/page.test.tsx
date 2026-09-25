@@ -8,11 +8,12 @@ const router = vi.hoisted(() => ({
   push: vi.fn(),
   replace: vi.fn(),
   back: vi.fn(),
+  search: new URLSearchParams(),
 }));
 
 vi.mock("next/navigation", () => ({
   useParams: () => ({ slug: GA_EVENT.seoUrl, shortcode: GA_EVENT.shortcode }),
-  useSearchParams: () => new URLSearchParams(),
+  useSearchParams: () => router.search,
   usePathname: () => `/e/${GA_EVENT.seoUrl}/${GA_EVENT.shortcode}/`,
   useRouter: () => router,
 }));
@@ -52,6 +53,7 @@ describe("GA event page tiers", () => {
   beforeEach(() => {
     sessionStorage.clear();
     router.replace.mockReset();
+    router.search = new URLSearchParams();
     mockedGetEvent.mockReset();
     mockedGetTicketGroups.mockReset();
     mockedGetEvent.mockResolvedValue({
@@ -163,5 +165,39 @@ describe("GA event page tiers", () => {
     });
     expect(mockedGetTicketGroups).not.toHaveBeenCalled();
     expect(screen.queryByText(/no tickets on sale/i)).not.toBeInTheDocument();
+  });
+
+  it("persists a numeric tracking-link code from the event URL", async () => {
+    router.search = new URLSearchParams("code=123456");
+    const { ticketGroups, offers } = demoTicketGroups();
+    inventory({ soldout: false, ticketGroups, offers });
+
+    render(<GAEventRoute />);
+
+    expect(
+      await screen.findByText(/vip club · live/i, undefined, {
+        timeout: 4000,
+      }),
+    ).toBeInTheDocument();
+    expect(sessionStorage.getItem(`trackingLink:${GA_EVENT.uuid}`)).toBe(
+      "123456",
+    );
+  });
+
+  it("does not persist an offer access code as a tracking link", async () => {
+    router.search = new URLSearchParams("code=GO2026");
+    const { ticketGroups, offers } = demoTicketGroups();
+    inventory({ soldout: false, ticketGroups, offers });
+
+    render(<GAEventRoute />);
+
+    expect(
+      await screen.findByText(/vip club · live/i, undefined, {
+        timeout: 4000,
+      }),
+    ).toBeInTheDocument();
+    expect(
+      sessionStorage.getItem(`trackingLink:${GA_EVENT.uuid}`),
+    ).toBeNull();
   });
 });
