@@ -37,6 +37,7 @@ import {
   flexPackVoucherCount,
 } from "@/lib/flexPackDisplay";
 import {
+  alignPackageSeatPrices,
   packageCartTickets,
   packageOrderSummary,
   promoSummaryLabel,
@@ -1079,8 +1080,11 @@ function CheckoutPage() {
     cart,
     packageSummary?.subtotal || 0,
   );
-  const packageSeats = withPackageCheckoutSeatPrices(
-    packageSummary?.seats || [],
+  const packageSeats = alignPackageSeatPrices(
+    withPackageCheckoutSeatPrices(
+      packageSummary?.seats || [],
+      packageTotals.subtotal,
+    ),
     packageTotals.subtotal,
   );
   const flexTotals = cart?.flex_pack
@@ -1381,6 +1385,17 @@ function CheckoutPage() {
                         {formatCurrency(packageTotals.serviceFee)}
                       </span>
                     </div>
+                    {packageTotals.customFeeLines.map((line) => (
+                      <div
+                        key={`${line.name}-${line.amount}`}
+                        className="flex justify-between gap-3"
+                      >
+                        <span>{line.name}</span>
+                        <span className="tabular-nums text-[#051b35]">
+                          {formatCurrency(line.amount)}
+                        </span>
+                      </div>
+                    ))}
                   </div>
                 </>
               ) : cart?.flex_pack ? (

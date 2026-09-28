@@ -1132,6 +1132,7 @@ function TransferModal({
   const [emailError, setEmailError] = useState<EmailFieldError>(null);
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
+  const emailFormRef = useRef<HTMLFormElement>(null);
   const tickets = event.tickets
     .map((ticket, index) => {
       const chip = transferSeatChip(ticket.raw, ticket.seat);
@@ -1271,7 +1272,7 @@ function TransferModal({
         ) : null}
 
         {transfer.step === 2 ? (
-          <form id="season-xfer" noValidate style={{ display: "flex", flexDirection: "column", gap: 14 }} onSubmit={(event) => { event.preventDefault(); void next(submittedEmail(new FormData(event.currentTarget))); }}>
+          <form ref={emailFormRef} id="season-xfer" noValidate style={{ display: "flex", flexDirection: "column", gap: 14 }} onSubmit={(event) => { event.preventDefault(); void next(submittedEmail(new FormData(event.currentTarget))); }}>
             <div style={{ fontSize: modalType.stepTitle, fontWeight: 600, letterSpacing: "-0.015em" }}>Enter the recipient&apos;s email address</div>
             <p style={{ margin: 0, fontSize: modalType.body, lineHeight: browseLeading("body"), color: SUB }}>{transferRecipientNotifyCopy(kind, count)}</p>
             <EmailField
@@ -1354,10 +1355,20 @@ function TransferModal({
           {transfer.step === 4 && !saving ? (
             <Link href={walletSectionHref("listings")} onClick={onViewTransfers} style={{ fontFamily: "inherit", flex: 1, display: "flex", alignItems: "center", justifyContent: "center", fontSize: modalType.button, fontWeight: 600, color: INK, background: "#f1f3f8", borderRadius: 999, padding: 14, minHeight: 48, textDecoration: "none", cursor: "pointer" }}>My transfers</Link>
           ) : null}
+          {/*
+            Stays a plain button on every step. The same DOM node carries the
+            wizard from step 1 to step 2 (and back from step 3); if it flipped to
+            a native submit button during that click, the browser would run its
+            submit activation against the freshly rendered email form and push a
+            retained address straight through to the confirm step.
+          */}
           <button
-            type={transfer.step === 2 ? "submit" : "button"}
-            form={transfer.step === 2 ? "season-xfer" : undefined}
-            onClick={transfer.step === 2 ? undefined : () => void next()}
+            type="button"
+            onClick={
+              transfer.step === 2
+                ? () => emailFormRef.current?.requestSubmit()
+                : () => void next()
+            }
             disabled={!canNext || saving}
             aria-busy={saving || undefined}
             style={{ fontFamily: "inherit", flex: 1, display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 8, fontSize: modalType.button, lineHeight: 1.5, fontWeight: 600, color: canNext ? INK : MUTE, background: canNext ? ACCENT : "#d7dbe6", border: "none", borderRadius: 999, padding: 14, minHeight: 48, cursor: "pointer" }}

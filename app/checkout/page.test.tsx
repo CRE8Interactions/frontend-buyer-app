@@ -908,11 +908,53 @@ describe("Checkout page", { timeout: 20_000 }, () => {
     ).toBeInTheDocument();
     expect(screen.getByText("Service Fee")).toBeInTheDocument();
     expect(screen.getByText(formatCurrency(cart.serviceFee))).toBeInTheDocument();
+    expect(screen.queryByText("Senior Fee")).not.toBeInTheDocument();
     expect(screen.getByText("Total")).toBeInTheDocument();
     expect(
       await screen.findByRole("button", {
         name: `Pay ${formatCurrency(cart.total)}`,
       }),
+    ).toBeInTheDocument();
+  });
+
+  it("lists a package custom fee on its own summary row", async () => {
+    const priced = demoPackageCheckoutCart({
+      tickets: [
+        {
+          sectionNumber: "113",
+          rowNumber: "B",
+          seatNumber: 3,
+          cost: 0,
+          price: 0,
+        },
+        {
+          sectionNumber: "113",
+          rowNumber: "B",
+          seatNumber: 4,
+          cost: 0,
+          price: 0,
+        },
+      ],
+      serviceFee: 3,
+      processingFee: 14.6,
+      total: 507.6,
+    });
+    const cart = {
+      ...priced,
+      package: { ...priced.package, pricingTiers: [], price: 0 },
+      packageWebsiteFeeSnapshot: {
+        customFeeLines: [{ name: "Senior Fee", amount: 20 }],
+      },
+    };
+    mockedGetCart.mockResolvedValue({ data: cart } as never);
+    render(<CheckoutPageRoute />);
+
+    expect(await screen.findByText("Senior Fee")).toBeInTheDocument();
+    expect(screen.getByText(formatCurrency(20))).toBeInTheDocument();
+    expect(screen.getAllByText(formatCurrency(470)).length).toBeGreaterThan(0);
+    expect(screen.queryByText(formatCurrency(490))).not.toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: `Pay ${formatCurrency(507.6)}` }),
     ).toBeInTheDocument();
   });
 

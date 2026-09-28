@@ -275,6 +275,29 @@ describe("Checkout success receipt", () => {
     expect(screen.getByText("$12.38")).toBeInTheDocument();
     expect(screen.getByText("Service Fee")).toBeInTheDocument();
     expect(screen.getByText("$40.00")).toBeInTheDocument();
+    expect(screen.queryByText("Additional Fee")).not.toBeInTheDocument();
+  });
+
+  it("names the package custom fee on the order summary", async () => {
+    const order = demoCompletedPackageOrder({
+      total: 507.6,
+      serviceFee: 3,
+      processingFee: 14.6,
+      estimatedProcessingFee: 14.6,
+      salesTax: 0,
+      totalFeeAmount: 20,
+      priceObject: {
+        packageCustomFees: [{ name: "Senior Fee", amount: 20 }],
+      },
+    });
+    mockedGetOrderByPi.mockResolvedValue({ data: order } as never);
+    render(<CheckoutSuccessPageRoute />);
+
+    expect(await screen.findByText("Senior Fee")).toBeInTheDocument();
+    expect(screen.getByText(formatCurrency(20))).toBeInTheDocument();
+    expect(screen.getByText(formatCurrency(470))).toBeInTheDocument();
+    expect(screen.queryByText("Additional Fee")).not.toBeInTheDocument();
+    expect(screen.getByText(formatCurrency(507.6))).toBeInTheDocument();
   });
 
   it("lists the promo code and a pre-discount subtotal on a discounted order", async () => {

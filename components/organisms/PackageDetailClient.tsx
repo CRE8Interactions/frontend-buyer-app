@@ -797,6 +797,9 @@ export default function PackageDetailClient({
                           ? formatPackageFromPrice(fromPrice)
                           : "See tickets"}
                       </span>
+                      <span style={{ fontSize: fluidSize(13), lineHeight: 1.5, color: MUTE }}>
+                        Fees added at checkout
+                      </span>
                     </div>
                     <BrandedActionButton
                       primaryColor={theme.buttonColor}
@@ -865,6 +868,9 @@ export default function PackageDetailClient({
                     See tickets
                   </div>
                 )}
+                <div style={{ fontSize: fluidSize(12), lineHeight: 1.5, color: MUTE }}>
+                  Fees added at checkout
+                </div>
               </div>
               <BrandedActionButton
                 primaryColor={theme.buttonColor}

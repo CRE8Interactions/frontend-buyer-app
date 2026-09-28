@@ -501,7 +501,7 @@ export function buildOrderReceipt(
     processingFee,
     serviceFee,
     tax,
-    additionalFee,
+    customFeeLines,
     discount,
     total,
     subtotal,
@@ -562,10 +562,10 @@ export function buildOrderReceipt(
     { label: "Processing Fee", amount: formatCurrency(processingFee) },
     { label: "Service Fee", amount: formatCurrency(serviceFee) },
   ];
-  if (additionalFee > 0) {
+  for (const line of customFeeLines) {
     totals.push({
-      label: "Additional Fee",
-      amount: formatCurrency(additionalFee),
+      label: line.name,
+      amount: formatCurrency(line.amount),
     });
   }
   if (discount) {
