@@ -12,6 +12,8 @@ import {
   completedOrderPromoCode,
   gaTierSubtitle,
   gaTicketsNeedGroupSection,
+  alignPackageSeatPrices,
+  packageCustomFeeLines,
   packageOrderSummary,
   packageSeatLines,
   promoSummaryLabel,
@@ -470,6 +472,102 @@ describe("resolvePackageCheckoutTotals", () => {
   });
 });
 
+describe("package custom fees", () => {
+  it("reads each named fee on the cart snapshot", () => {
+    expect(
+      packageCustomFeeLines({
+        customFeeLines: [
+          { name: "Senior Fee", amount: 20 },
+          { name: "  ", amount: 0 },
+          { name: "Facility fee", amount: 5 },
+        ],
+      }),
+    ).toEqual([
+      { name: "Senior Fee", amount: 20 },
+      { name: "Facility fee", amount: 5 },
+    ]);
+  });
+
+  it("falls back to the single custom fee amount", () => {
+    expect(
+      packageCustomFeeLines(
+        JSON.stringify({ customFeeName: "Senior Fee", customFeeAmount: 20 }),
+      ),
+    ).toEqual([{ name: "Senior Fee", amount: 20 }]);
+  });
+
+  it("lists a custom fee that was folded into an inferred seat price", () => {
+    const cart = demoPackageCheckoutCart({
+      tickets: [
+        {
+          sectionNumber: "113",
+          rowNumber: "B",
+          seatNumber: 3,
+          cost: 0,
+          price: 0,
+        },
+        {
+          sectionNumber: "113",
+          rowNumber: "B",
+          seatNumber: 4,
+          cost: 0,
+          price: 0,
+        },
+      ],
+      serviceFee: 3,
+      processingFee: 14.6,
+      total: 507.6,
+    });
+    const priced = {
+      ...cart,
+      package: { ...cart.package, pricingTiers: [], price: 0 },
+      packageWebsiteFeeSnapshot: {
+        customFeeLines: [{ id: 1, name: "Senior Fee", amount: 20 }],
+      },
+    };
+    const totals = resolvePackageCheckoutTotals(priced, 0);
+
+    expect(totals.customFeeLines).toEqual([{ name: "Senior Fee", amount: 20 }]);
+    expect(totals.subtotal).toBe(470);
+    expect(totals.serviceFee).toBe(3);
+    expect(totals.processingFee).toBe(14.6);
+    expect(totals.total).toBe(507.6);
+    expect(
+      alignPackageSeatPrices(
+        withPackageCheckoutSeatPrices(
+          packageOrderSummary(priced.package, priced.tickets).seats,
+          totals.subtotal,
+        ),
+        totals.subtotal,
+      )[0].price,
+    ).toBe(470);
+  });
+
+  it("keeps ticket prices when the custom fee is already outside the subtotal", () => {
+    const cart = demoPackageCheckoutCart({
+      serviceFee: 3,
+      processingFee: 14.6,
+      total: 0,
+    });
+    const unit = Number(cart.package.pricingTiers[0].price);
+    const totals = resolvePackageCheckoutTotals(
+      {
+        ...cart,
+        total: unit + 3 + 14.6 + 20,
+        packageWebsiteFeeSnapshot: {
+          customFeeName: "Senior Fee",
+          customFeeAmount: 20,
+        },
+      },
+      unit,
+    );
+
+    expect(totals.subtotal).toBe(unit);
+    expect(totals.customFeeLines).toEqual([{ name: "Senior Fee", amount: 20 }]);
+    expect(totals.total).toBe(unit + 3 + 14.6 + 20);
+  });
+});
+
 describe("resolveFlexPackCheckoutTotals", () => {
   it("uses $1 per voucher when the cart omits a service fee", () => {
     const cart = demoFlexPackCheckoutCart({ serviceFee: 0 });
@@ -503,9 +601,48 @@ describe("resolveCompletedOrderFees", () => {
       processingFee: 12.38,
       serviceFee: 40,
       additionalFee: 0,
+      customFeeLines: [],
       discount: 0,
       total: 452.2,
     });
+  });
+
+  it("names a package custom fee instead of folding it into the subtotal", () => {
+    const fees = resolveCompletedOrderFees({
+      total: 507.6,
+      serviceFee: 3,
+      processingFee: 14.6,
+      salesTax: 0,
+      totalFeeAmount: 20,
+      priceObject: {
+        packageCustomFees: [{ id: 4, name: "Senior Fee", amount: 20 }],
+      },
+    });
+
+    expect(fees.customFeeLines).toEqual([{ name: "Senior Fee", amount: 20 }]);
+    expect(fees.subtotal).toBe(470);
+    expect(fees.additionalFee).toBe(20);
+    expect(
+      fees.subtotal +
+        fees.tax +
+        fees.processingFee +
+        fees.serviceFee +
+        fees.additionalFee,
+    ).toBe(fees.total);
+  });
+
+  it("uses the order custom-fee name when the price object has no lines", () => {
+    const fees = resolveCompletedOrderFees({
+      total: 507.6,
+      serviceFee: 3,
+      processingFee: 14.6,
+      salesTax: 0,
+      totalFeeAmount: 20,
+      custom_fees: [{ attributes: { name: "Senior Fee" } }],
+    });
+
+    expect(fees.customFeeLines).toEqual([{ name: "Senior Fee", amount: 20 }]);
+    expect(fees.subtotal).toBe(470);
   });
 
   it("keeps a promo out of the subtotal so the breakdown foots to the amount paid", () => {

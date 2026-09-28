@@ -201,6 +201,39 @@ describe("buildOrderReceipt", () => {
     ]);
   });
 
+  it("names the package custom fee instead of Additional Fee", () => {
+    const order = demoCompletedPackageOrder({
+      total: 507.6,
+      serviceFee: 3,
+      processingFee: 14.6,
+      estimatedProcessingFee: 14.6,
+      salesTax: 0,
+      totalFeeAmount: 20,
+      priceObject: {
+        packageCustomFees: [{ name: "Senior Fee", amount: 20 }],
+      },
+      custom_fees: [{ name: "Senior Fee" }],
+    });
+    const receipt = buildOrderReceipt(order)!;
+
+    expect(receipt.totals.map((row) => row.label)).toEqual([
+      "Subtotal",
+      "Tax",
+      "Processing Fee",
+      "Service Fee",
+      "Senior Fee",
+      "Total",
+      "Amount paid",
+    ]);
+    expect(receipt.totals.find((row) => row.label === "Senior Fee")?.amount).toBe(
+      formatCurrency(20),
+    );
+    expect(receipt.totals.find((row) => row.label === "Subtotal")?.amount).toBe(
+      formatCurrency(470),
+    );
+    expect(receipt.totals.some((row) => row.label === "Additional Fee")).toBe(false);
+  });
+
   it("does not repeat a package seat once per game", () => {
     const pkg = demoSeasonPackage();
     const listing = DEMO_SEATED_TICKET_GROUPS[0];

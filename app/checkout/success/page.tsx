@@ -562,12 +562,13 @@ function CheckoutSuccessPage() {
                   label="Service Fee"
                   value={formatCurrency(orderFees.serviceFee)}
                 />
-                {orderFees.additionalFee > 0 ? (
+                {orderFees.customFeeLines.map((line) => (
                   <SummaryRow
-                    label="Additional Fee"
-                    value={formatCurrency(orderFees.additionalFee)}
+                    key={`${line.name}-${line.amount}`}
+                    label={line.name}
+                    value={formatCurrency(line.amount)}
                   />
-                ) : null}
+                ))}
                 {order.discountApplied ? (
                   <SummaryRow
                     label={promoSummaryLabel(completedOrderPromoCode(order))}

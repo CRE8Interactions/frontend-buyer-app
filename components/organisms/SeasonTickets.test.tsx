@@ -8142,6 +8142,36 @@ describe("SeasonTickets routed event screen", { timeout: 20_000 }, () => {
       screen.queryByText("You are about to transfer 1 ticket"),
     ).not.toBeInTheDocument();
     expect(mockedValidateEmail).not.toHaveBeenCalled();
+    // Browsers run submit activation after click handlers finish. The Next
+    // button that carried the click into the email step must not have become
+    // the email form's submit button, or the retained address auto-submits.
+    const nextButton = screen.getByRole("button", { name: "Next" });
+    expect(nextButton).toHaveAttribute("type", "button");
+    expect((nextButton as HTMLButtonElement).form).toBeNull();
+  });
+
+  it("submits the recipient email from the keyboard with Enter", async () => {
+    const user = userEvent.setup();
+    const order = demoCompletedTicketOrder({ event: icedogs });
+    const ticket = order.tickets[0];
+    mockedGetMyEvents.mockResolvedValue({ data: [order] } as never);
+
+    render(<SeasonTickets initialScreen="event" eventUUID={icedogs.uuid} />);
+
+    await user.click(await screen.findByRole("button", { name: "Transfer" }));
+    await user.click(
+      screen.getByRole("button", { name: `Seat ${ticket.seatNumber}` }),
+    );
+    await user.click(screen.getByRole("button", { name: "Next" }));
+    await user.type(
+      screen.getByRole("textbox", { name: "Email address" }),
+      "recipient@example.com{Enter}",
+    );
+
+    expect(
+      await screen.findByText("You are about to transfer 1 ticket"),
+    ).toBeInTheDocument();
+    expect(screen.getByText("recipient@example.com")).toBeInTheDocument();
   });
 
   it("keeps the recipient email when going back to the email step without submitting it", async () => {

@@ -519,6 +519,9 @@ export default function FlexPackDetailClient({
                   >
                     {formatCurrency(flexPack.price)}
                   </span>
+                  <span style={{ fontSize: fluidSize(13), lineHeight: 1.5, color: MUTE }}>
+                    Fees added at checkout
+                  </span>
                 </div>
                 <BrandedActionButton
                   primaryColor={theme.buttonColor}
@@ -575,6 +578,9 @@ export default function FlexPackDetailClient({
               }}
             >
               {formatCurrency(flexPack.price)}
+            </span>
+            <span style={{ fontSize: fluidSize(12), lineHeight: 1.5, color: MUTE }}>
+              Fees added at checkout
             </span>
           </div>
           <BrandedActionButton

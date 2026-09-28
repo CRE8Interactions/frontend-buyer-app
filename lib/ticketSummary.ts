@@ -401,6 +401,55 @@ export function packageCartTickets(cart?: {
   ];
 }
 
+export type PackageCustomFeeLine = {
+  name: string;
+  amount: number;
+};
+
+function moneyEquals(a: number, b: number) {
+  return Math.abs(a - b) < 0.02;
+}
+
+function roundMoney(value: number) {
+  return Math.round(value * 100) / 100;
+}
+
+/**
+ * Package custom fees stored on the cart when the hold was priced.
+ * Legacy checkout reads the same snapshot: one named line per fee, or the
+ * single customFeeAmount fallback.
+ */
+export function packageCustomFeeLines(
+  snapshot: unknown,
+): PackageCustomFeeLine[] {
+  let source = snapshot;
+  if (typeof source === "string") {
+    try {
+      source = JSON.parse(source) as unknown;
+    } catch {
+      return [];
+    }
+  }
+  if (!source || typeof source !== "object") return [];
+  const record = source as Record<string, unknown>;
+  const raw = record.customFeeLines;
+  if (Array.isArray(raw)) {
+    const lines = raw.flatMap((line) => {
+      if (!line || typeof line !== "object") return [];
+      const row = line as Record<string, unknown>;
+      const amount = Number(row.amount);
+      if (!Number.isFinite(amount) || amount <= 0) return [];
+      const name = String(row.name || "Custom fee").trim() || "Custom fee";
+      return [{ name, amount: roundMoney(amount) }];
+    });
+    if (lines.length) return lines;
+  }
+  const amount = Number(record.customFeeAmount);
+  if (!Number.isFinite(amount) || amount <= 0) return [];
+  const name = String(record.customFeeName || "Custom fee").trim() || "Custom fee";
+  return [{ name, amount: roundMoney(amount) }];
+}
+
 export function resolvePackageCheckoutTotals(
   cart: {
     total?: number;
@@ -409,6 +458,7 @@ export function resolvePackageCheckoutTotals(
     estimatedProcessingFee?: number;
     totalTax?: number;
     salesTax?: number;
+    packageWebsiteFeeSnapshot?: unknown;
   } | null | undefined,
   seatSubtotal: number,
 ): {
@@ -416,6 +466,7 @@ export function resolvePackageCheckoutTotals(
   total: number;
   serviceFee: number;
   processingFee: number;
+  customFeeLines: PackageCustomFeeLine[];
 } {
   const serviceFee = Number(cart?.serviceFee || 0);
   const processingFee = Number(
@@ -423,11 +474,28 @@ export function resolvePackageCheckoutTotals(
   );
   const tax = Number(cart?.totalTax ?? cart?.salesTax ?? 0);
   const fees = serviceFee + processingFee + tax;
+  const customFeeLines = packageCustomFeeLines(cart?.packageWebsiteFeeSnapshot);
+  const customFee = roundMoney(
+    customFeeLines.reduce((sum, line) => sum + line.amount, 0),
+  );
   const cartTotal = Number(cart?.total || 0);
-  const subtotal =
+  let subtotal =
     seatSubtotal > 0 ? seatSubtotal : Math.max(0, cartTotal - fees);
-  const total = cartTotal > 0 && cartTotal >= subtotal ? cartTotal : subtotal + fees;
-  return { subtotal, total, serviceFee, processingFee };
+  // A missing ticket price is inferred from the cart total, which already
+  // includes the custom fee. Pull that fee back out so the summary can list it.
+  if (
+    customFee > 0 &&
+    cartTotal > 0 &&
+    moneyEquals(subtotal + fees, cartTotal) &&
+    subtotal >= customFee
+  ) {
+    subtotal = roundMoney(subtotal - customFee);
+  }
+  const total =
+    cartTotal > 0 && cartTotal >= subtotal
+      ? cartTotal
+      : roundMoney(subtotal + fees + customFee);
+  return { subtotal, total, serviceFee, processingFee, customFeeLines };
 }
 
 /** Flex pack: $1 per voucher (cart serviceFee, or inferred) plus processing fee. */
@@ -464,6 +532,10 @@ export type CompletedOrderFeeSource = {
   totalTax?: number;
   totalFeeAmount?: number;
   discountApplied?: number;
+  custom_fees?:
+    | Array<{ name?: string; attributes?: { name?: string } } | null>
+    | { name?: string; attributes?: { name?: string } }
+    | null;
   priceObject?:
     | Record<string, unknown>
     | Array<Record<string, unknown> | null | undefined>
@@ -538,7 +610,10 @@ export function resolveCompletedOrderFees(
   const serviceFee = finiteMoney(order?.serviceFee) ?? 0;
   const tax =
     finiteMoney(order?.salesTax) ?? finiteMoney(order?.totalTax) ?? 0;
-  const additionalFee = finiteMoney(order?.totalFeeAmount) ?? 0;
+  const customFeeLines = completedOrderCustomFeeLines(order, priceObjects);
+  const additionalFee =
+    finiteMoney(order?.totalFeeAmount) ??
+    roundMoney(customFeeLines.reduce((sum, line) => sum + line.amount, 0));
   const discount = finiteMoney(order?.discountApplied) ?? 0;
   const total = finiteMoney(order?.total) ?? 0;
   // `total` is what the customer paid, already net of any promo, so the
@@ -553,9 +628,75 @@ export function resolveCompletedOrderFees(
     processingFee,
     serviceFee,
     additionalFee,
+    customFeeLines,
     discount,
     total,
   };
+}
+
+function customFeeRecordName(value: unknown): string {
+  if (!value || typeof value !== "object") return "";
+  const row = value as { name?: string; attributes?: { name?: string } };
+  return String(row.attributes?.name || row.name || "").trim();
+}
+
+/**
+ * Named package fees on a completed order. Legacy success reads
+ * `priceObject.packageCustomFees`, then the order's custom-fee relation.
+ */
+function completedOrderCustomFeeLines(
+  order: CompletedOrderFeeSource | null | undefined,
+  priceObjects: Array<Record<string, unknown> | null | undefined>,
+): PackageCustomFeeLine[] {
+  const lines = priceObjects.flatMap((entry) => {
+    if (!entry) return [];
+    const raw = entry.packageCustomFees;
+    if (!Array.isArray(raw)) return [];
+    return raw.flatMap((line) => {
+      if (!line || typeof line !== "object") return [];
+      const row = line as { name?: string; amount?: number };
+      const amount = Number(row.amount);
+      if (!Number.isFinite(amount) || amount <= 0) return [];
+      const name = String(row.name || "Custom fee").trim() || "Custom fee";
+      return [{ name, amount: roundMoney(amount) }];
+    });
+  });
+  if (lines.length) return lines;
+
+  const amount = finiteMoney(order?.totalFeeAmount) ?? 0;
+  if (amount <= 0) return [];
+  const related = Array.isArray(order?.custom_fees)
+    ? order.custom_fees
+    : order?.custom_fees
+      ? [order.custom_fees]
+      : [];
+  const name = related.map(customFeeRecordName).find(Boolean) || "Custom fee";
+  return [{ name, amount: roundMoney(amount) }];
+}
+
+/**
+ * Seat lines should add up to the checkout subtotal. When the custom fee was
+ * folded into an inferred seat price, scale those lines back down to the
+ * ticket subtotal so the fee can be shown on its own row.
+ */
+export function alignPackageSeatPrices(
+  seats: PackageSeatLine[],
+  subtotal: number,
+): PackageSeatLine[] {
+  if (!seats.length || !(subtotal > 0)) return seats;
+  const priced = seats.reduce((sum, seat) => sum + Number(seat.price || 0), 0);
+  if (moneyEquals(priced, subtotal)) return seats;
+  if (!(priced > 0)) return withPackageCheckoutSeatPrices(seats, subtotal);
+
+  const target = Math.round(subtotal * 100);
+  const current = Math.round(priced * 100);
+  let remaining = target;
+  return seats.map((seat, index) => {
+    if (index === seats.length - 1) return { ...seat, price: remaining / 100 };
+    const share = Math.round((Math.round(Number(seat.price) * 100) / current) * target);
+    remaining -= share;
+    return { ...seat, price: share / 100 };
+  });
 }
 
 /** When season tickets have no unit price, show the inferred checkout subtotal on the seat lines. */

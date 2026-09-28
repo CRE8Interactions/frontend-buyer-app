@@ -212,6 +212,7 @@ describe("Package detail (PackageDetailClient)", () => {
       screen.getByText(pkg.events[pkg.events.length - 1].name),
     ).toBeInTheDocument();
     expect(screen.getByText(formatPackageFromPrice(packageFromPrice(pkg)!))).toBeInTheDocument();
+    expect(screen.getByText("Fees added at checkout")).toBeInTheDocument();
     expect(screen.queryByText(/taxes (&|and) fees included/i)).not.toBeInTheDocument();
     expect(
       screen.queryByText(
@@ -247,7 +248,7 @@ describe("Package detail (PackageDetailClient)", () => {
     expect(screen.queryByText(/select your seats/i)).not.toBeInTheDocument();
   });
 
-  it("shows the mobile footer from-price on one line without a fees note", async () => {
+  it("shows the mobile footer from-price with fees added at checkout", async () => {
     Object.defineProperty(window, "innerWidth", {
       configurable: true,
       writable: true,
@@ -259,6 +260,7 @@ describe("Package detail (PackageDetailClient)", () => {
 
     const amount = packageFromPrice(pkg)!;
     expect(screen.getByText(formatPackageFromPrice(amount))).toBeInTheDocument();
+    expect(screen.getByText("Fees added at checkout")).toBeInTheDocument();
     expect(screen.queryByText(/^From$/)).not.toBeInTheDocument();
     expect(screen.queryByText(/taxes (&|and) fees included/i)).not.toBeInTheDocument();
   });
