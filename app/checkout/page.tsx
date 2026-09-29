@@ -13,6 +13,7 @@ import {
 import BrandedCheckoutShell from "@/components/organisms/BrandedCheckoutShell";
 import GuestContact from "@/components/organisms/GuestContact";
 import BrandedActionButton from "@/components/atoms/BrandedActionButton";
+import AccessibleSeatingBadge from "@/components/atoms/AccessibleSeatingBadge";
 import MobileStickyFooter from "@/components/molecules/MobileStickyFooter";
 import Button from "@/components/atoms/Button";
 import Spinner from "@/components/atoms/Spinner";
@@ -1471,9 +1472,10 @@ function CheckoutPage() {
                         {ticketSummary.subtitle}
                       </div>
                       {ticketSummary.accessibleLabel ? (
-                        <div className={`text-[13px] ${muted}`}>
-                          {ticketSummary.accessibleLabel}
-                        </div>
+                        <AccessibleSeatingBadge
+                          label={ticketSummary.accessibleLabel}
+                          style={{ marginTop: 4 }}
+                        />
                       ) : null}
                     </div>
                   </div>

@@ -201,6 +201,34 @@ describe("buildOrderReceipt", () => {
     ]);
   });
 
+  it("keeps the full seat name on the receipt", () => {
+    const order = demoCompletedTicketOrder();
+    const ticket = order.tickets[0] as Record<string, unknown>;
+    const receipt = buildOrderReceipt(
+      demoCompletedTicketOrder({
+        tickets: [{ ...ticket, seatNumber: "15_DA" }],
+      }),
+    )!;
+
+    expect(receipt.lines[0].description).toContain("Seat 15_DA");
+    expect(receipt.lines[0].description).not.toMatch(/Seat 15$/);
+  });
+
+  it("lists accessible seat names instead of their numeric prefixes", () => {
+    const order = demoCompletedTicketOrder();
+    const [first, second] = order.tickets as Array<Record<string, unknown>>;
+    const receipt = buildOrderReceipt(
+      demoCompletedTicketOrder({
+        tickets: [
+          { ...first, seatNumber: "15_DA" },
+          { ...second, seatNumber: "16_DA" },
+        ],
+      }),
+    )!;
+
+    expect(receipt.lines[0].description).toContain("Seat 15_DA, 16_DA");
+  });
+
   it("does not repeat a package seat once per game", () => {
     const pkg = demoSeasonPackage();
     const listing = DEMO_SEATED_TICKET_GROUPS[0];

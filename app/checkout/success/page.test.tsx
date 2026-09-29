@@ -247,6 +247,29 @@ describe("Checkout success receipt", () => {
     ).toBeInTheDocument();
   });
 
+  it("labels listed seat numbers on the confirmation", async () => {
+    const order = demoCompletedTicketOrder();
+    const [first, second] = order.tickets as Array<Record<string, unknown>>;
+    mockedGetOrderByPi.mockResolvedValue({
+      data: demoCompletedTicketOrder({
+        tickets: [
+          { ...first, seatNumber: 5 },
+          { ...second, seatNumber: 7 },
+        ],
+      }),
+    } as never);
+    render(<CheckoutSuccessPageRoute />);
+
+    expect(
+      await screen.findByText("2 tickets · Seats 5, 7"),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        `Sec ${first.sectionNumber} · Row ${first.rowNumber}`,
+      ),
+    ).toBeInTheDocument();
+  });
+
   it("shows the package ticket offer beside the seat thumbnail", async () => {
     mockedGetOrderByPi.mockResolvedValue({
       data: demoCompletedPackageOrder(),

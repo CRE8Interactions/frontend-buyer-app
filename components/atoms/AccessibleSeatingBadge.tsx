@@ -12,13 +12,16 @@ const NAVY = "#051B35";
  */
 export default function AccessibleSeatingBadge({
   source,
+  label: labelProp,
   style,
 }: {
   /** Listing row, cart group, seat, or wallet ticket. */
-  source: unknown;
+  source?: unknown;
+  /** Pre-computed copy (e.g. a ticket summary label); wins over `source`. */
+  label?: string;
   style?: CSSProperties;
 }) {
-  const label = getAccessibleLabel(source);
+  const label = labelProp || getAccessibleLabel(source);
   if (!label) return null;
   return (
     <span

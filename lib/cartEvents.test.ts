@@ -229,6 +229,8 @@ describe("wallet order totals", () => {
         checkInCode: ticket.code,
         name: "Prelims",
         offer: { name: "Prelims", description: "Morning session" },
+        accessible: true,
+        accessibleType: "DA",
       })),
     });
 
@@ -236,6 +238,8 @@ describe("wallet order totals", () => {
       name: "Prelims",
       offerName: "Prelims",
       offer: { name: "Prelims", description: "Morning session" },
+      accessible: true,
+      accessibleType: "DA",
     });
   });
 

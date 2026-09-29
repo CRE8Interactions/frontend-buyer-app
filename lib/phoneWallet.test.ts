@@ -8,6 +8,9 @@ vi.mock("@/lib/api", () => ({
 import { downloadApplePass, downloadGooglePass } from "@/lib/api";
 import { DEMO_EVENTS, demoAccessPass, demoCompletedTicketOrder, demoPackageAccessPass, demoSeasonPackage } from "@/lib/demo/fixtures";
 import {
+  WALLET_ACCESSIBLE_LABEL_DA,
+} from "@/lib/ticketAccessibility";
+import {
   addAccessPassToPhoneWallet,
   addTicketToPhoneWallet,
   phoneWalletKind,
@@ -199,7 +202,7 @@ describe("addTicketToPhoneWallet", () => {
     expect(await addTicketToPhoneWallet(event, ticket, "apple")).toBeNull();
     expect(mockedApplePass).toHaveBeenCalledWith({
       event: expect.objectContaining({ uuid: event.uuid }),
-      obj: { ...ticket, accessibilityLabel: "" },
+      obj: { ...ticket, name: ticket.offerName, accessibilityLabel: "" },
     });
   });
 
@@ -211,13 +214,37 @@ describe("addTicketToPhoneWallet", () => {
     expect(await addTicketToPhoneWallet(event, ticket, "google")).toBeNull();
     expect(mockedGooglePass).toHaveBeenCalledWith({
       event: expect.objectContaining({ uuid: event.uuid }),
-      ticket: { ...ticket, accessibilityLabel: "" },
+      ticket: { ...ticket, name: ticket.offerName, accessibilityLabel: "" },
     });
     expect(open).toHaveBeenCalledWith(
       "https://pay.google.com/gp/v/save/ticket-1",
       "_blank",
       "noopener,noreferrer",
     );
+  });
+
+  it("sends the printable offer name and the DA accessibility type", async () => {
+    mockedApplePass.mockResolvedValue({
+      data: new Blob(["pkpass"], { type: "application/vnd.apple.pkpass" }),
+    } as never);
+    const accessible = {
+      ...ticket,
+      name: undefined,
+      offerName: "Field Club",
+      accessible: true,
+      accessibleType: "DA",
+    };
+
+    expect(await addTicketToPhoneWallet(event, accessible, "apple")).toBeNull();
+    expect(mockedApplePass).toHaveBeenCalledWith({
+      event: expect.objectContaining({ uuid: event.uuid }),
+      obj: expect.objectContaining({
+        name: "Field Club",
+        accessible: true,
+        accessibleType: "DA",
+        accessibilityLabel: WALLET_ACCESSIBLE_LABEL_DA,
+      }),
+    });
   });
 
   it("explains when the ticket cannot be added", async () => {
@@ -245,7 +272,7 @@ describe("addTicketToPhoneWallet", () => {
     ).toBeNull();
     expect(mockedGooglePass).toHaveBeenCalledWith({
       event: expect.objectContaining({ uuid: ticket.eventUUID }),
-      ticket: { ...ticket, accessibilityLabel: "" },
+      ticket: { ...ticket, name: ticket.offerName, accessibilityLabel: "" },
     });
   });
 

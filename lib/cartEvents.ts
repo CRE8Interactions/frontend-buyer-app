@@ -1,4 +1,5 @@
 import { BLOCKTICKETS_NAVY, resolvePrimaryColor, type BrandingOrganization, type OrgBranding } from "@/lib/branding";
+import { accessibleTypeOf } from "@/lib/ticketAccessibility";
 import { isSportingEvent } from "@/lib/eventCategory";
 import {
   attractionImageUrl,
@@ -576,10 +577,16 @@ function printedTicketPayload(ticket: Record<string, unknown>) {
   const offerName = String(
     ticket.offerName || ticket.offer_name || offer?.name || "",
   ).trim();
+  const accessibleType = accessibleTypeOf(ticket);
   return {
     ...(name ? { name } : {}),
     ...(offer ? { offer } : {}),
     ...(offerName ? { offerName } : {}),
+    // The Apple/Google pass reads these, not the label this app computes.
+    ...(ticket.accessible === true || accessibleType
+      ? { accessible: true }
+      : {}),
+    ...(accessibleType ? { accessibleType } : {}),
   };
 }
 

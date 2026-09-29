@@ -262,9 +262,14 @@ describe("ticketSelectionSummary", () => {
     ).toEqual(cart.tickets);
   });
 
-  it("keeps a ticket-count subtitle for reserved seats", () => {
+  it("puts a single reserved seat beside the ticket count", () => {
     const cart = demoCheckoutCart();
-    expect(ticketSelectionSummary(cart.tickets).subtitle).toBe("1 ticket");
+    const ticket = cart.tickets[0];
+    const summary = ticketSelectionSummary(cart.tickets);
+    expect(summary.seatLine).toBe(
+      `Sec ${ticket.sectionNumber} · Row ${ticket.rowNumber}`,
+    );
+    expect(summary.subtitle).toBe(`1 ticket · Seat ${ticket.seatNumber}`);
   });
 
   it("keeps seats-are-together copy when selected seats are consecutive", () => {
@@ -276,13 +281,31 @@ describe("ticketSelectionSummary", () => {
     );
   });
 
+  it("treats accessible seat labels as together when their numbers are consecutive", () => {
+    const cart = demoCheckoutCart({ ticketCount: 2 });
+    const summary = ticketSelectionSummary([
+      { ...cart.tickets[0], seatNumber: "2_DA" },
+      { ...cart.tickets[1], seatNumber: "3_DA" },
+    ]);
+    expect(summary.subtitle).toBe("2 tickets · seats are together");
+  });
+
+  it("lists accessible seat labels when their numbers have a gap", () => {
+    const cart = demoCheckoutCart({ ticketCount: 2 });
+    const summary = ticketSelectionSummary([
+      { ...cart.tickets[0], seatNumber: "2_DA" },
+      { ...cart.tickets[1], seatNumber: "4_DA" },
+    ]);
+    expect(summary.subtitle).toBe("2 tickets · Seats 2_DA, 4_DA");
+  });
+
   it("lists seat numbers instead of together copy when seats in the same row have a gap", () => {
     const cart = demoCheckoutCart({ ticketCount: 2 });
     const summary = ticketSelectionSummary([
       { ...cart.tickets[0], seatNumber: 3 },
       { ...cart.tickets[1], seatNumber: 5 },
     ]);
-    expect(summary.subtitle).toBe("2 tickets · 3, 5");
+    expect(summary.subtitle).toBe("2 tickets · Seats 3, 5");
     expect(summary.subtitle).not.toMatch(/together/i);
   });
 

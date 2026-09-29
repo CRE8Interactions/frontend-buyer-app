@@ -287,19 +287,17 @@ export function ticketSelectionSummary(
   );
   const seatNumbers = tickets.map((ticket) => ticketSeatValue(ticket));
   const together = sameBlock && seatsAreTogether(seatNumbers);
-  const seatList = formatSeatNumberRanges(seatNumbers);
+  const labeledSeats = formatSeatNumbers(seatNumbers);
   const seatLine = ga
     ? gaTicketSeatLine(first)
-    : count === 1
-      ? `Sec ${section} · Row ${row} · Seat ${first.seatNumber}`
-      : sameBlock
-        ? `Sec ${section} · Row ${row}`
-        : tickets
-            .map(
-              (ticket) =>
-                `Sec ${ticket.sectionName || ticket.sectionNumber} · Row ${ticket.rowNumber} · Seat ${ticket.seatNumber}`,
-            )
-            .join(", ");
+    : sameBlock
+      ? `Sec ${section} · Row ${row}`
+      : tickets
+          .map(
+            (ticket) =>
+              `Sec ${ticket.sectionName || ticket.sectionNumber} · Row ${ticket.rowNumber} · Seat ${ticket.seatNumber}`,
+          )
+          .join(", ");
   const allGa =
     tickets.length > 0 &&
     tickets.every((ticket) => Boolean(ticket.generalAdmission || ticket.GA));
@@ -310,8 +308,7 @@ export function ticketSelectionSummary(
       : gameCount === 1
         ? "1 game"
         : `all ${gameCount} games`;
-  const packageSeatLabel =
-    allGa || !seatList ? "" : `Seats ${seatList}`;
+  const packageSeatLabel = allGa ? "" : labeledSeats;
   const subtitle = gamesLabel
     ? [allGa ? gaTierSubtitle(first) : packageSeatLabel, gamesLabel]
         .filter(Boolean)
@@ -319,11 +316,13 @@ export function ticketSelectionSummary(
     : allGa
       ? gaTierSubtitle(first)
       : count === 1
-        ? "1 ticket"
+        ? labeledSeats
+          ? `1 ticket · ${labeledSeats}`
+          : "1 ticket"
         : together
           ? `${count} tickets · seats are together`
-          : sameBlock && seatList
-            ? `${count} tickets · ${seatList}`
+          : sameBlock && labeledSeats
+            ? `${count} tickets · ${labeledSeats}`
             : `${count} tickets`;
   const qtyLabel = `${count} ${count === 1 ? "ticket" : "tickets"}`;
   const accessibleLabels = tickets
@@ -590,23 +589,36 @@ export function withPackageCheckoutSeatPrices(
   });
 }
 
-/** Unknown seat numbers can never be described as together. */
+/** Leading number in a seat label. `10_DA` counts as 10; `DA` has none. */
+function seatNumberValue(seat: string): number | null {
+  const match = seat.match(/\d+/);
+  if (!match) return null;
+  const value = Number(match[0]);
+  return Number.isFinite(value) ? value : null;
+}
+
+/** A label with no number is never together. */
 function seatsAreTogether(seats: Array<string | number>): boolean {
   const cleaned = seats.map((seat) => String(seat ?? "").trim());
   if (cleaned.some((seat) => !seat)) return false;
   const unique = [...new Set(cleaned)];
   if (unique.length !== cleaned.length) return false;
   if (unique.length === 1) return true;
-  const nums = unique.map(Number).filter(Number.isFinite);
-  if (nums.length !== unique.length) return false;
-  const sorted = [...nums].sort((a, b) => a - b);
+  const nums = unique.map(seatNumberValue);
+  if (nums.some((seat) => seat == null)) return false;
+  const sorted = (nums as number[]).sort((a, b) => a - b);
   return sorted[sorted.length - 1] - sorted[0] === sorted.length - 1;
 }
 
 function formatSeatNumbers(seats: Array<string | number>): string {
-  const unique = [...new Set(seats.map((seat) => String(seat)))];
+  const unique = [
+    ...new Set(
+      seats.map((seat) => String(seat ?? "").trim()).filter(Boolean),
+    ),
+  ];
+  if (unique.length === 0) return "";
   if (unique.length === 1) return `Seat ${unique[0]}`;
-  return `Seats ${formatSeatNumberRanges(seats)}`;
+  return `Seats ${formatSeatNumberRanges(unique)}`;
 }
 
 export function packageSeatLines(

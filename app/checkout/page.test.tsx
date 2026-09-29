@@ -355,8 +355,11 @@ describe("Checkout page", { timeout: 20_000 }, () => {
     ).not.toBeInTheDocument();
     expect(
       screen.getByText(
-        `Sec ${ticket.sectionName} · Row ${ticket.rowNumber} · Seat ${ticket.seatNumber}`,
+        `Sec ${ticket.sectionName} · Row ${ticket.rowNumber}`,
       ),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(`1 ticket · Seat ${ticket.seatNumber}`),
     ).toBeInTheDocument();
     expect(screen.getByAltText(/seat view for this ticket/i)).toHaveAttribute(
       "src",

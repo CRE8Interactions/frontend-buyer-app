@@ -26,6 +26,7 @@ import {
   useState,
   type CSSProperties,
   type KeyboardEvent as ReactKeyboardEvent,
+  type ReactNode,
 } from "react";
 import Link from "next/link";
 import { useParams, usePathname, useSearchParams } from "next/navigation";
@@ -208,6 +209,7 @@ import {
   type TicketLike,
 } from "@/lib/wallet";
 import { getAccessibleLabel } from "@/lib/ticketAccessibility";
+import AccessibleSeatingBadge from "@/components/atoms/AccessibleSeatingBadge";
 import {
   addAccessPassToPhoneWallet,
   addTicketToPhoneWallet,
@@ -5239,7 +5241,7 @@ export default function SeasonTickets({
                   <div style={{ fontSize: fluidSize(13), lineHeight: 1.5, color: SUB }}>{t.entryLine}</div>
                 ) : null}
                 {t.accessibleLabel ? (
-                  <div style={{ fontSize: fluidSize(13), lineHeight: 1.5, color: SUB }}>{t.accessibleLabel}</div>
+                  <AccessibleSeatingBadge label={t.accessibleLabel} style={{ marginTop: 4 }} />
                 ) : null}
               </div>
             </div>
@@ -5411,7 +5413,7 @@ export default function SeasonTickets({
                   <span style={{ alignSelf: "flex-start", fontSize: fluidSize(11), lineHeight: 1.5, fontWeight: 600, color: INK, background: SOFT, borderRadius: 999, padding: "4px 10px" }}>{t.offerBadge || "Tickets"}</span>
                   <div style={{ fontSize: mobile ? fluidSize(17) : 17, lineHeight: 1.5, fontWeight: 600, letterSpacing: "-0.015em" }}>{t.seat}</div>
                   {t.accessibleLabel ? (
-                    <div style={{ fontSize: fluidSize(13), lineHeight: 1.5, color: SUB }}>{t.accessibleLabel}</div>
+                    <AccessibleSeatingBadge label={t.accessibleLabel} style={{ marginTop: 2 }} />
                   ) : null}
                 </div>
                 <div className="st-ev-seat-actions">
@@ -6134,10 +6136,12 @@ export default function SeasonTickets({
 
   const offerLine = formatPrintedOfferLine(detail?.raw);
   const accessibleLine = getAccessibleLabel(detail?.raw);
-  const detailRows = [
+  const detailRows: { k: string; v: ReactNode }[] = [
     { k: "Ticket", v: detail?.seat || "" },
     ...(offerLine ? [{ k: "Offer", v: offerLine }] : []),
-    ...(accessibleLine ? [{ k: "Accessibility", v: accessibleLine }] : []),
+    ...(accessibleLine
+      ? [{ k: "Accessibility", v: <AccessibleSeatingBadge label={accessibleLine} /> }]
+      : []),
     {
       k: "Holder",
       v: printedTicketHolderName(
