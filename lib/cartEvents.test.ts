@@ -500,6 +500,23 @@ describe("wallet season-package orders", () => {
     );
   });
 
+  it("keeps each order's games when two purchases share a package", () => {
+    const earlier = demoCompletedPackageOrder();
+    const later = demoCompletedPackageOrder({
+      id: 1500,
+      orderId: "1500-000000-0001",
+    });
+    const details = buildSeasonPackageEventDetails([earlier, later]);
+    const gamesFor = (orderId: string) =>
+      Object.values(details).filter((detail) => detail.orderId === orderId);
+
+    expect(gamesFor(String(earlier.orderId))).toHaveLength(pkg.events.length);
+    expect(gamesFor(String(later.orderId))).toHaveLength(pkg.events.length);
+    expect(gamesFor(String(earlier.orderId)).map((detail) => detail.eventUUID)).toEqual(
+      pkg.events.map((event) => event.uuid),
+    );
+  });
+
   it("shows remaining package tickets after a pass transfer clears order tickets", () => {
     const order = demoCompletedPackageOrder();
     const pass = demoPackageAccessPass();
@@ -2340,7 +2357,7 @@ describe("wallet season-package orders", () => {
       package: { ...order.package, events: [activeEvent] },
       tickets,
     });
-    const packageKey = `${String(packageOrder.package?.uuid || packageOrder.orderId)}:${activeEvent.uuid}`;
+    const packageKey = `${String(packageOrder.package?.uuid || packageOrder.orderId)}:${packageOrder.orderId}:${activeEvent.uuid}`;
     const wallet = buildWalletEventDetails(
       [packageOrder],
       packageOrder.email,
@@ -2680,7 +2697,7 @@ describe("wallet season-package orders", () => {
     const wallet = buildSeasonPackageEventDetails([packageOrder]);
     const afterClaim = pruneTransferredWalletDetails(wallet);
     const schedule = summarizeEventDetails(afterClaim, "schedule");
-    const packageKey = `${String(packageOrder.package?.uuid || packageOrder.orderId)}:${activeEvent.uuid}`;
+    const packageKey = `${String(packageOrder.package?.uuid || packageOrder.orderId)}:${packageOrder.orderId}:${activeEvent.uuid}`;
 
     expect(afterClaim[packageKey]?.availability).toBe("transferred");
     expect(schedule.some((row) => row.key === packageKey)).toBe(true);
