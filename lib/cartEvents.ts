@@ -1865,7 +1865,9 @@ export function promoteRecipientPackageUpcomingRows(
       if (!tickets.length) continue;
 
       const incomingKey = `incoming:${eventUUID}`;
-      const packageDetailKey = packageKey ? `${packageKey}:${eventUUID}` : "";
+      const packageDetailKey = packageKey
+        ? seasonPackageEventDetailKey(packageKey, orderId || "", eventUUID)
+        : "";
       const existingIncoming = out[incomingKey];
       const packageDetail = packageDetailKey ? out[packageDetailKey] : undefined;
       if (existingIncoming?.pendingIncomingTransfer) continue;
@@ -2920,6 +2922,22 @@ export function buildOrderEventDetails(
   return out;
 }
 
+/**
+ * Package games are keyed by package and order. Two purchases of the same
+ * package would otherwise share one row, and the earlier order's Game tickets
+ * tab would come up empty.
+ */
+function seasonPackageEventDetailKey(
+  packageKey: string,
+  orderId: string,
+  eventKey: string,
+) {
+  const order = String(orderId || "").trim();
+  return order
+    ? `${packageKey}:${order}:${eventKey}`
+    : `${packageKey}:${eventKey}`;
+}
+
 /** Per-game details for season-package orders (Season tickets tab drill-down). */
 export function buildSeasonPackageEventDetails(
   orders: OrderLike[],
@@ -2929,8 +2947,9 @@ export function buildSeasonPackageEventDetails(
 
   for (const order of orders) {
     if (!order.package?.events?.length) continue;
+    const orderId = orderIdOf(order);
     const packageKey =
-      String(order.package.uuid || "").trim() || orderIdOf(order);
+      String(order.package.uuid || "").trim() || orderId;
     const seen = new Set<string>();
     for (const ev of order.package.events) {
       const uuid = String(ev.uuid || ev.name || "");
@@ -2941,7 +2960,7 @@ export function buildSeasonPackageEventDetails(
         out,
         order,
         ev,
-        `${packageKey}:${uuid}`,
+        seasonPackageEventDetailKey(packageKey, orderId, uuid),
         tickets,
         holderEmail,
         "Package",

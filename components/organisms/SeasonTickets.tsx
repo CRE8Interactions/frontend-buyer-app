@@ -3986,13 +3986,28 @@ export default function SeasonTickets({
     const pendingIncoming = row.pendingIncomingTransfer === true;
     const incomingPass = row.incomingPassTransfer === true;
     const passEventCountLabel = incomingPassEventCountLabel(row.passEventCount);
-    const orderNavReady = Boolean(row.orderId);
+    // Package games always navigate to /event/<uuid>. Fall back to the package
+    // being viewed when a rebuilt wallet row lost its own order or event id, so
+    // the row never opens in place with the package URL left in the address bar.
+    const rowDetail = eventDetails[row.key];
+    const rowOrderId = packageUUID
+      ? row.orderId ||
+        rowDetail?.orderId ||
+        selectedSeasonPackage?.orderId ||
+        routedOrderId ||
+        ""
+      : row.orderId || "";
+    const rowEventUUID =
+      row.eventUUID ||
+      rowDetail?.eventUUID ||
+      String(rowDetail?.event?.uuid || "").trim();
+    const orderNavReady = Boolean(rowOrderId);
     const href = packageUUID
       ? orderNavReady
-        ? walletPackageEventPath(row.orderId, packageUUID, row.eventUUID)
+        ? walletPackageEventPath(rowOrderId, packageUUID, rowEventUUID)
         : ""
       : orderNavReady
-        ? walletEventTicketsPath(row.orderId)
+        ? walletEventTicketsPath(rowOrderId)
         : "";
     const eventRowLayout = {
       position: "relative" as const,
@@ -4495,6 +4510,11 @@ export default function SeasonTickets({
       const eventUUID = String(event.uuid || "").trim();
       const matchingDetail = eventUUID
         ? Object.values(eventDetails).find(
+            (detail) =>
+              detail.eventUUID === eventUUID &&
+              (!pass.orderId || detail.orderId === pass.orderId),
+          ) ||
+          Object.values(eventDetails).find(
             (detail) => detail.eventUUID === eventUUID,
           )
         : undefined;
@@ -4579,18 +4599,17 @@ export default function SeasonTickets({
         <Link
           key={`${highlighted ? "next-link-" : ""}${event.uuid || event.name}`}
           href={(() => {
-            const detail = Object.values(eventDetails).find(
-              (d) => d.eventUUID === eventUUID,
-            );
-            if (detail?.key.includes(":")) {
-              const packageUUID = detail.key.split(":")[0];
+            if (matchingDetail?.key.includes(":")) {
+              const packageUUID = matchingDetail.key.split(":")[0];
               return walletPackageEventPath(
-                detail.orderId,
+                matchingDetail.orderId,
                 packageUUID,
                 eventUUID,
               );
             }
-            return walletEventTicketsPath(detail?.orderId || routedOrderId);
+            return walletEventTicketsPath(
+              matchingDetail?.orderId || routedOrderId,
+            );
           })()}
           aria-label={`View ${event.name || "event"}`}
           style={{ color: "inherit", textDecoration: "none" }}
