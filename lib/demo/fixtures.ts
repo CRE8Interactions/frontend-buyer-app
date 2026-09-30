@@ -1116,6 +1116,8 @@ type DemoPackageCartTicket = {
   offerName?: string;
   generalAdmission?: boolean;
   GA?: boolean;
+  accessible?: boolean;
+  accessibleType?: string;
 };
 
 /** Checkout cart for a season package hold — NM State seats by default. */

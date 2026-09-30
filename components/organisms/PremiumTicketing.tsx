@@ -1416,7 +1416,7 @@ export default function PremiumTicketing({
               </div>
               <div style={{ textAlign: "right", flexShrink: 0 }}>
                 <div style={{ fontSize: mobile ? 22 : 26, fontWeight: 600, letterSpacing: "-0.03em", fontVariantNumeric: "tabular-nums", color: soldout ? "#6e7180" : NAVY }}>{t.price}</div>
-                <div style={{ fontSize: fluidSize(13), color: "#6e7180" }}>Incl. taxes and fees</div>
+                <div style={{ fontSize: fluidSize(13), color: "#6e7180" }}>Incl. taxes & fees</div>
               </div>
             </div>
             <div style={{ height: 1, background: "rgba(5,27,53,0.08)" }} />
@@ -1968,7 +1968,7 @@ export default function PremiumTicketing({
                         <div style={{ fontSize: 15, color: "#6e7180" }}>{l.range}</div>
                         <div style={{ display: "flex", alignItems: "baseline", flexWrap: "wrap", gap: "2px 6px" }}>
                           <span style={{ fontSize: 17, fontWeight: 600, fontVariantNumeric: "tabular-nums", letterSpacing: "-0.015em" }}>{l.price} each</span>
-                          <span style={{ fontSize: 13, color: "#6e7180" }}>Incl. fees</span>
+                          <span style={{ fontSize: 13, color: "#6e7180" }}>incl. taxes & fees</span>
                         </div>
                       </div>
                     </div>
@@ -1987,7 +1987,7 @@ export default function PremiumTicketing({
                       </div>
                       <div style={{ textAlign: "right", flexShrink: 0, marginLeft: 8 }}>
                         <div style={{ fontSize: 20, fontWeight: 600, fontVariantNumeric: "tabular-nums", letterSpacing: "-0.015em", whiteSpace: "nowrap" }}>{l.price} each</div>
-                        <div style={{ fontSize: 13, color: "#6e7180", marginTop: 2, whiteSpace: "nowrap" }}>Incl. Taxes & Fees</div>
+                        <div style={{ fontSize: 13, color: "#6e7180", marginTop: 2, whiteSpace: "nowrap" }}>Incl. taxes & fees</div>
                       </div>
                     </>
                   )}
@@ -2547,7 +2547,7 @@ export default function PremiumTicketing({
               <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, padding: "18px 0" }}>
                 <div style={{ display: "flex", alignItems: "baseline", gap: 5, minWidth: 0, flexShrink: 1, whiteSpace: "nowrap" }}>
                   <span style={{ fontSize: 22, fontWeight: 600, fontVariantNumeric: "tabular-nums", letterSpacing: "-0.02em", lineHeight: 1.5 }}>{selRow.price} ea</span>
-                  <span style={{ fontSize: 14, lineHeight: 1.5, color: "#6e7180" }}>incl. fees</span>
+                  <span style={{ fontSize: 14, lineHeight: 1.5, color: "#6e7180" }}>incl. taxes & fees</span>
                 </div>
                 <div style={{ display: "flex", alignItems: "center", gap: 6, border: "1px solid #d3d6e0", borderRadius: 999, padding: mobile ? "4px 6px" : "5px 8px", flexShrink: 0 }}>
                   <button

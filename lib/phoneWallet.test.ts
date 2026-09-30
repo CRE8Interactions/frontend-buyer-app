@@ -7,9 +7,7 @@ vi.mock("@/lib/api", () => ({
 
 import { downloadApplePass, downloadGooglePass } from "@/lib/api";
 import { DEMO_EVENTS, demoAccessPass, demoCompletedTicketOrder, demoPackageAccessPass, demoSeasonPackage } from "@/lib/demo/fixtures";
-import {
-  WALLET_ACCESSIBLE_LABEL_DA,
-} from "@/lib/ticketAccessibility";
+import { ACCESSIBLE_LABEL_DA } from "@/lib/ticketAccessibility";
 import {
   addAccessPassToPhoneWallet,
   addTicketToPhoneWallet,
@@ -242,7 +240,7 @@ describe("addTicketToPhoneWallet", () => {
         name: "Field Club",
         accessible: true,
         accessibleType: "DA",
-        accessibilityLabel: WALLET_ACCESSIBLE_LABEL_DA,
+        accessibilityLabel: ACCESSIBLE_LABEL_DA,
       }),
     });
   });

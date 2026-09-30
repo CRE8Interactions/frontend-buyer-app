@@ -284,7 +284,7 @@ describe("SeatMapSelectionOverlay map readiness", () => {
     fireEvent.load(backgroundPreload()!);
 
     expect(
-      screen.getAllByText("Accessible: Open space for wheelchair"),
+      screen.getAllByText("Open space for wheelchair"),
     ).toHaveLength(1);
 
     fireEvent.click(screen.getAllByRole("button", { name: /details/i })[0]);
@@ -293,7 +293,7 @@ describe("SeatMapSelectionOverlay map readiness", () => {
     const detailHeading = screen.getByText(/· Seat/);
     expect(
       within(detailHeading.parentElement!).getByText(
-        "Accessible: Open space for wheelchair",
+        "Open space for wheelchair",
       ),
     ).toBeInTheDocument();
   });
@@ -330,7 +330,7 @@ describe("SeatMapSelectionOverlay map readiness", () => {
       screen.getAllByText(`$${Number(group.price).toFixed(2)}`),
     ).toHaveLength(2);
     expect(screen.getAllByText(`All ${gameCount} games`)).toHaveLength(2);
-    expect(screen.queryByText(/incl\. fees/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/incl\. taxes & fees/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/prices are all-in/i)).not.toBeInTheDocument();
 
     fireEvent.click(screen.getAllByRole("button", { name: /details/i })[0]);
@@ -338,9 +338,28 @@ describe("SeatMapSelectionOverlay map readiness", () => {
     expect(
       screen.getByText(`$${Number(group.price).toFixed(2)} ea`),
     ).toBeInTheDocument();
-    expect(screen.queryByText(/incl\. fees/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/incl\. taxes & fees/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/prices are all-in/i)).not.toBeInTheDocument();
     expect(screen.getByText(/buyer protection/i)).toBeInTheDocument();
+  });
+
+  it("shows the seat number without an accessibility suffix", () => {
+    const group = DEMO_SEATED_TICKET_GROUPS[0];
+    useSeatmapStore.setState({
+      selectedFromMap: [
+        { ...group, seatId: "s1", seatNumber: "13_DA", quantity: 1 },
+      ],
+      totalCount: 1,
+      totalPrice: Number(group.price || 0),
+    });
+    renderOverlay({
+      mapMapping: demoSeatmapMapping(),
+      mapBackground: BACKGROUND,
+    });
+    fireEvent.load(backgroundPreload()!);
+
+    expect(screen.getByText("13")).toBeInTheDocument();
+    expect(screen.queryByText(/13_DA/)).not.toBeInTheDocument();
   });
 
   it("shows Your selection with the ticket limit when View selection opens on mobile", () => {
@@ -433,7 +452,7 @@ describe("SeatMapSelectionOverlay map readiness", () => {
     const detailHeading = screen.getByText(/Sec GA/);
     expect(within(detailHeading.parentElement!).getByText("1 Ticket")).toBeInTheDocument();
     expect(within(detailHeading.parentElement!).queryByText("6 Tickets")).not.toBeInTheDocument();
-    expect(screen.getByText(/incl\. fees/i)).toBeInTheDocument();
+    expect(screen.getByText(/incl\. taxes & fees/i)).toBeInTheDocument();
   });
 
   it("removes one GA card without dropping the rest of the quantity", () => {

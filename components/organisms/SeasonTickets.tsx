@@ -199,6 +199,8 @@ import {
   transferSeatChip,
   ticketRowValue,
   ticketSeatValue,
+  seatDisplayValue,
+  sectionDisplayValue,
   ticketSectionValue,
   unwrapList,
   unwrapAccessPassList,
@@ -4869,9 +4871,9 @@ export default function SeasonTickets({
     if (isGA) {
       return {
         ...t,
-        sec: ticketSectionValue(raw) || "GA",
+        sec: sectionDisplayValue(ticketSectionValue(raw)) || "GA",
         row: ticketRowValue(raw) || "GA",
-        seatNo: ticketSeatValue(raw) || "GA",
+        seatNo: seatDisplayValue(ticketSeatValue(raw)) || "GA",
         entryLine,
         offerBadge,
         accessibleLabel: getAccessibleLabel(raw),
@@ -4885,9 +4887,9 @@ export default function SeasonTickets({
     if (parts.length >= 3) {
       return {
         ...t,
-        sec: peel(parts[0], /^Sec\s*/i),
+        sec: sectionDisplayValue(peel(parts[0], /^Sec\s*/i)),
         row: peel(parts[1], /^Row\s*/i),
-        seatNo: peel(parts[2], /^Seat\s*/i),
+        seatNo: seatDisplayValue(peel(parts[2], /^Seat\s*/i)) || "—",
         entryLine,
         offerBadge,
         accessibleLabel: getAccessibleLabel(raw),
@@ -4896,7 +4898,7 @@ export default function SeasonTickets({
     if (parts.length === 2 && /^GA$/i.test(parts[1])) {
       return {
         ...t,
-        sec: peel(parts[0], /^Sec\s*/i),
+        sec: sectionDisplayValue(peel(parts[0], /^Sec\s*/i)),
         row: "GA",
         seatNo: "GA",
         entryLine,
@@ -4907,7 +4909,7 @@ export default function SeasonTickets({
     if (parts.length === 2) {
       return {
         ...t,
-        sec: peel(parts[0], /^Sec\s*/i),
+        sec: sectionDisplayValue(peel(parts[0], /^Sec\s*/i)),
         row: peel(parts[1], /^Row\s*/i),
         seatNo: "—",
         entryLine,
@@ -4917,7 +4919,7 @@ export default function SeasonTickets({
     }
     return {
       ...t,
-      sec: peel(parts[0] || "GA", /^Sec\s*/i),
+      sec: sectionDisplayValue(peel(parts[0] || "GA", /^Sec\s*/i)),
       row: "GA",
       seatNo: "GA",
       entryLine,
@@ -6139,9 +6141,7 @@ export default function SeasonTickets({
   const detailRows: { k: string; v: ReactNode }[] = [
     { k: "Ticket", v: detail?.seat || "" },
     ...(offerLine ? [{ k: "Offer", v: offerLine }] : []),
-    ...(accessibleLine
-      ? [{ k: "Accessibility", v: <AccessibleSeatingBadge label={accessibleLine} /> }]
-      : []),
+    ...(accessibleLine ? [{ k: "Accessibility", v: accessibleLine }] : []),
     {
       k: "Holder",
       v: printedTicketHolderName(

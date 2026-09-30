@@ -5423,7 +5423,7 @@ describe("SeasonTickets routed event screen", { timeout: 20_000 }, () => {
     );
 
     expect(
-      await screen.findByText("Accessible: Open space for wheelchair"),
+      await screen.findByText("Open space for wheelchair"),
     ).toBeInTheDocument();
 
     await user.click(screen.getByRole("button", { name: "Details" }));
@@ -5432,7 +5432,7 @@ describe("SeasonTickets routed event screen", { timeout: 20_000 }, () => {
       .closest("div")?.parentElement;
     expect(within(modal!).getByText("Accessibility")).toBeInTheDocument();
     expect(
-      within(modal!).getByText("Accessible: Open space for wheelchair"),
+      within(modal!).getByText("Open space for wheelchair"),
     ).toBeInTheDocument();
   });
 

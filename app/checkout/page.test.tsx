@@ -848,7 +848,7 @@ describe("Checkout page", { timeout: 20_000 }, () => {
     render(<CheckoutPageRoute />);
 
     expect(
-      await screen.findByText("Accessible: Open space for wheelchair"),
+      await screen.findByText("Open space for wheelchair"),
     ).toBeInTheDocument();
   });
 
@@ -919,6 +919,7 @@ describe("Checkout page", { timeout: 20_000 }, () => {
     expect(screen.getByText(summary.venueName)).toBeInTheDocument();
     expect(screen.getByText(summary.seats[0].seatLine)).toBeInTheDocument();
     expect(screen.getByText(summary.seats[0].context)).toBeInTheDocument();
+    expect(screen.queryByText("Accessible seating")).not.toBeInTheDocument();
     expect(screen.getByText("Subtotal")).toBeInTheDocument();
     expect(
       screen.getAllByText(formatCurrency(summary.subtotal)).length,
@@ -935,6 +936,23 @@ describe("Checkout page", { timeout: 20_000 }, () => {
       await screen.findByRole("button", {
         name: `Pay ${formatCurrency(cart.total)}`,
       }),
+    ).toBeInTheDocument();
+  });
+
+  it("shows the accessibility badge for accessible package seats", async () => {
+    const base = demoPackageCheckoutCart();
+    const cart = demoPackageCheckoutCart({
+      tickets: base.tickets.map((ticket) => ({
+        ...ticket,
+        accessible: true,
+        accessibleType: "DA",
+      })),
+    });
+    mockedGetCart.mockResolvedValue({ data: cart } as never);
+    render(<CheckoutPageRoute />);
+
+    expect(
+      await screen.findByText("Open space for wheelchair"),
     ).toBeInTheDocument();
   });
 

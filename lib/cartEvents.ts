@@ -51,6 +51,8 @@ import {
   isWalletListedEvent,
   ticketRowValue,
   ticketSeatValue,
+  seatDisplayValue,
+  sectionDisplayValue,
   ticketSectionValue,
   type AccessPassLike,
   type AccessPassSummary,
@@ -361,10 +363,10 @@ function ticketSeatLabel(t: Record<string, unknown>) {
   if (t.generalAdmission || t.GA) {
     return gaTicketSeatLine(t);
   }
-  const sec = t.sectionName || t.sectionNumber;
+  const sec = sectionDisplayValue(t.sectionName || t.sectionNumber);
   const row = t.rowNumber;
-  const seat = t.seatNumber;
-  if (sec != null && row != null && seat != null) {
+  const seat = seatDisplayValue(t.seatNumber);
+  if (sec != null && row != null && seat) {
     return `Sec ${sec} · Row ${row} · Seat ${seat}`;
   }
   return String(t.offerName || t.sectionName || "Ticket");

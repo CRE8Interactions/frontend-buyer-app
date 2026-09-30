@@ -213,7 +213,7 @@ describe("Checkout success receipt", () => {
     render(<CheckoutSuccessPageRoute />);
 
     expect(
-      await screen.findByText("Accessible: Open space for wheelchair"),
+      await screen.findByText("Open space for wheelchair"),
     ).toBeInTheDocument();
   });
 

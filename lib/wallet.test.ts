@@ -5,11 +5,13 @@ import {
   resolveAccessPassTotalEventCount,
   formatPassDateRange,
   formatSeatNumberRanges,
+  seatDisplayValue,
   formatTicketHolderName,
   gaTicketSeatLine,
   groupedWalletSeatLines,
   passMatchesTicketSeat,
   isScannedTicket,
+  mapSectionHeading,
   seatLabel,
   transferGroupLabel,
   transferSeatChip,
@@ -244,6 +246,23 @@ describe("formatSeatNumberRanges", () => {
   it("returns a single seat number", () => {
     expect(formatSeatNumberRanges([6])).toBe("6");
   });
+
+  it("collapses accessible seat labels by their numbers", () => {
+    expect(formatSeatNumberRanges(["13_DA", "12_DB"])).toBe("12-13");
+  });
+});
+
+describe("seatDisplayValue", () => {
+  it("shows the seat number without an accessibility suffix", () => {
+    expect(seatDisplayValue("13_DA")).toBe("13");
+    expect(seatDisplayValue("13_DB")).toBe("13");
+  });
+
+  it("keeps a seat label that has no number", () => {
+    expect(seatDisplayValue("WC")).toBe("WC");
+    expect(seatDisplayValue("")).toBe("");
+    expect(seatDisplayValue(null)).toBe("");
+  });
 });
 
 describe("passMatchesTicketSeat", () => {
@@ -394,7 +413,27 @@ describe("isScannedTicket", () => {
   });
 });
 
+describe("mapSectionHeading", () => {
+  it("keeps a section name that already says Section", () => {
+    expect(mapSectionHeading("Section 124")).toBe("Section 124");
+  });
+
+  it("prefixes a bare section number", () => {
+    expect(mapSectionHeading("124")).toBe("Sec 124");
+  });
+});
+
 describe("seatLabel", () => {
+  it("shows the seat number without an accessibility suffix", () => {
+    expect(
+      seatLabel({
+        sectionNumber: "115ADA",
+        rowNumber: "G",
+        seatNumber: "13_DA",
+      }),
+    ).toBe("Sec 115ADA · Row G · Seat 13");
+  });
+
   it("builds GA wallet lines from concrete section and row values", () => {
     expect(
       seatLabel({
@@ -488,6 +527,15 @@ describe("transferSeatChip", () => {
     expect(
       transferSeatChip({ sectionNumber: "ga" }, "Sec ga"),
     ).toEqual({ seatNo: "GA", isGA: true, ariaLabel: "GA" });
+  });
+
+  it("shows the seat number without an accessibility suffix", () => {
+    expect(
+      transferSeatChip(
+        { sectionNumber: "115ADA", rowNumber: "G", seatNumber: "13_DA" },
+        "Sec 115ADA · Row G · Seat 13_DA",
+      ),
+    ).toEqual({ seatNo: "13", isGA: false, ariaLabel: "Seat 13" });
   });
 
   it("keeps numbered seats under a Seat label", () => {

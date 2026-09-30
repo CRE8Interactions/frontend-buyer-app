@@ -33,7 +33,7 @@ export default function AccessibleSeatingBadge({
         maxWidth: "100%",
         background: "#f1f3f8",
         color: NAVY,
-        fontSize: 14,
+        fontSize: 13,
         fontWeight: 600,
         lineHeight: 1.35,
         padding: "7px 13px",

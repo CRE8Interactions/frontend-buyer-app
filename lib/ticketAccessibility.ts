@@ -4,12 +4,9 @@ export const ACCESSIBLE_SEAT_COLOR_DA = "#2DEDB4";
 export const ACCESSIBLE_SEAT_COLOR_DB = "#F4BC16";
 export const ACCESSIBLE_SEAT_COLOR_GENERIC = "#F4BC16";
 
-export const ACCESSIBLE_LABEL_DA = "Accessible: Open space for wheelchair";
-export const ACCESSIBLE_LABEL_DB = "Accessible: Chair-back seating";
+export const ACCESSIBLE_LABEL_DA = "Open space for wheelchair";
+export const ACCESSIBLE_LABEL_DB = "Chair-back seating";
 export const ACCESSIBLE_LABEL_GENERIC = "Accessible seating";
-
-export const WALLET_ACCESSIBLE_LABEL_DA = "Open space for wheelchair";
-export const WALLET_ACCESSIBLE_LABEL_DB = "Chair-back seating";
 
 type AccessibleFields = {
   accessible?: unknown;
@@ -58,21 +55,13 @@ export function isAccessibleSource(source: unknown): boolean {
 }
 
 /**
- * Ticket details / Your selection copy, matching legacy `getAccessibleLabel`.
- * Empty when the source is not accessible.
+ * Accessible seating copy shared by Ticket details, Your selection, and
+ * Apple / Google Wallet passes. Empty when the source is not accessible.
  */
 export function getAccessibleLabel(source: unknown): string {
   const type = accessibleTypeOf(source);
   if (type === "DA") return ACCESSIBLE_LABEL_DA;
   if (type === "DB") return ACCESSIBLE_LABEL_DB;
-  return isAccessibleSource(source) ? ACCESSIBLE_LABEL_GENERIC : "";
-}
-
-/** Shorter strings used on Apple / Google Wallet passes. */
-export function getWalletAccessibleLabel(source: unknown): string {
-  const type = accessibleTypeOf(source);
-  if (type === "DA") return WALLET_ACCESSIBLE_LABEL_DA;
-  if (type === "DB") return WALLET_ACCESSIBLE_LABEL_DB;
   return isAccessibleSource(source) ? ACCESSIBLE_LABEL_GENERIC : "";
 }
 

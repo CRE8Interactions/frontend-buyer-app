@@ -6,11 +6,8 @@ import {
   ACCESSIBLE_LABEL_GENERIC,
   accessibleTypeOf,
   getAccessibleLabel,
-  getWalletAccessibleLabel,
   isAccessibleSource,
   seatmapAccessibilityLegendRows,
-  WALLET_ACCESSIBLE_LABEL_DA,
-  WALLET_ACCESSIBLE_LABEL_DB,
 } from "@/lib/ticketAccessibility";
 
 const accessibleGroup = DEMO_SEATED_TICKET_GROUPS.find(
@@ -19,6 +16,8 @@ const accessibleGroup = DEMO_SEATED_TICKET_GROUPS.find(
 
 describe("ticket accessibility", () => {
   it("reads every field spelling and returns DA / DB / fallback copy", () => {
+    expect(ACCESSIBLE_LABEL_DA).toBe("Open space for wheelchair");
+    expect(ACCESSIBLE_LABEL_DB).toBe("Chair-back seating");
     expect(getAccessibleLabel({ accessibleType: "DA" })).toBe(ACCESSIBLE_LABEL_DA);
     expect(getAccessibleLabel({ accessiblityType: "DB" })).toBe(
       ACCESSIBLE_LABEL_DB,
@@ -38,19 +37,6 @@ describe("ticket accessibility", () => {
     expect(getAccessibleLabel({ accessible: false })).toBe("");
     expect(getAccessibleLabel({})).toBe("");
     expect(isAccessibleSource(DEMO_SEATED_TICKET_GROUPS[0])).toBe(false);
-  });
-
-  it("uses shorter wallet pass strings", () => {
-    expect(getWalletAccessibleLabel({ accessibleType: "DA" })).toBe(
-      WALLET_ACCESSIBLE_LABEL_DA,
-    );
-    expect(getWalletAccessibleLabel({ accessibleType: "DB" })).toBe(
-      WALLET_ACCESSIBLE_LABEL_DB,
-    );
-    expect(getWalletAccessibleLabel({ accessible: true })).toBe(
-      ACCESSIBLE_LABEL_GENERIC,
-    );
-    expect(getWalletAccessibleLabel({})).toBe("");
   });
 
   it("shows DA and DB legend rows when those types exist, otherwise Accessibility", () => {

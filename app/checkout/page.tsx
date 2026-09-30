@@ -1340,6 +1340,12 @@ function CheckoutPage() {
                               <div className={`min-w-0 text-[12px] ${muted}`}>
                                 {seat.context}
                               </div>
+                              {seat.accessibleLabel ? (
+                                <AccessibleSeatingBadge
+                                  label={seat.accessibleLabel}
+                                  style={{ marginTop: 4 }}
+                                />
+                              ) : null}
                             </div>
                             <div className="shrink-0 text-[14px] font-semibold tabular-nums">
                               {formatCurrency(seat.price)}
@@ -1448,7 +1454,7 @@ function CheckoutPage() {
                     <div className="flex min-w-0 flex-1 flex-col gap-1.5">
                       {ticketSummary.offerName ? (
                         <span
-                          className="inline-flex w-fit items-center gap-1 rounded-full px-2.5 py-1 text-[12px] font-semibold"
+                          className="inline-flex w-fit items-center gap-1 rounded-full px-2.5 py-1 text-[13px] font-semibold"
                           style={{
                             background: branding.theme.accentSoft,
                             color: branding.theme.accent,

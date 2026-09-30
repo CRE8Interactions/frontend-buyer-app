@@ -19,6 +19,7 @@ import {
 } from "@/lib/ticketSummary";
 import {
   formatSeatNumberRanges,
+  seatNumberDigits,
   ticketRowValue,
   ticketSeatValue,
   ticketSectionValue,
@@ -346,8 +347,18 @@ export function formatReceiptPaymentMethod(order: OrderReceiptSource | null) {
   return formatOrderPaymentMethodSummary(order) || "—";
 }
 
+/** Receipts print the seat number only. `13_DA` counts as 13. */
+function receiptSeatNumber(seat: string | number): number | null {
+  const value = seatNumberDigits(seat);
+  return value != null && value > 0 ? value : null;
+}
+
 function formatSeatRange(seatNumbers: Array<string | number>) {
-  return formatSeatNumberRanges(seatNumbers);
+  return formatSeatNumberRanges(
+    seatNumbers
+      .map(receiptSeatNumber)
+      .filter((seat): seat is number => seat != null),
+  );
 }
 
 function groupReceiptTickets(tickets: Array<Record<string, unknown>>) {

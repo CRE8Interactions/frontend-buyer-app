@@ -201,7 +201,7 @@ describe("buildOrderReceipt", () => {
     ]);
   });
 
-  it("keeps the full seat name on the receipt", () => {
+  it("prints the seat number without an accessibility suffix", () => {
     const order = demoCompletedTicketOrder();
     const ticket = order.tickets[0] as Record<string, unknown>;
     const receipt = buildOrderReceipt(
@@ -210,23 +210,23 @@ describe("buildOrderReceipt", () => {
       }),
     )!;
 
-    expect(receipt.lines[0].description).toContain("Seat 15_DA");
-    expect(receipt.lines[0].description).not.toMatch(/Seat 15$/);
+    expect(receipt.lines[0].description).toContain("Seat 15");
+    expect(receipt.lines[0].description).not.toContain("15_DA");
   });
 
-  it("lists accessible seat names instead of their numeric prefixes", () => {
+  it("orders accessible seats and collapses consecutive numbers", () => {
     const order = demoCompletedTicketOrder();
     const [first, second] = order.tickets as Array<Record<string, unknown>>;
     const receipt = buildOrderReceipt(
       demoCompletedTicketOrder({
         tickets: [
-          { ...first, seatNumber: "15_DA" },
-          { ...second, seatNumber: "16_DA" },
+          { ...first, seatNumber: "13_DA" },
+          { ...second, seatNumber: "12_DA" },
         ],
       }),
     )!;
 
-    expect(receipt.lines[0].description).toContain("Seat 15_DA, 16_DA");
+    expect(receipt.lines[0].description).toContain("Seat 12-13");
   });
 
   it("does not repeat a package seat once per game", () => {

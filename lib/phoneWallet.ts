@@ -13,7 +13,7 @@ import {
 } from "@/lib/wallet";
 import {
   accessibleTypeOf,
-  getWalletAccessibleLabel,
+  getAccessibleLabel,
 } from "@/lib/ticketAccessibility";
 
 export type PhoneWalletKind = "apple" | "google";
@@ -325,7 +325,7 @@ export function ticketWalletRequest(
     event: passEvent,
     obj: {
       ...passTicket,
-      accessibilityLabel: getWalletAccessibleLabel(passTicket),
+      accessibilityLabel: getAccessibleLabel(passTicket),
     },
   };
 }

@@ -10,6 +10,8 @@ import {
 import {
   formatSeatNumberRanges,
   gaTicketSeatLine,
+  seatDisplayValue,
+  seatNumberDigits,
   ticketRowValue,
   ticketSeatValue,
   ticketSectionValue,
@@ -295,7 +297,7 @@ export function ticketSelectionSummary(
       : tickets
           .map(
             (ticket) =>
-              `Sec ${ticket.sectionName || ticket.sectionNumber} · Row ${ticket.rowNumber} · Seat ${ticket.seatNumber}`,
+              `Sec ${ticket.sectionName || ticket.sectionNumber} · Row ${ticket.rowNumber} · Seat ${seatDisplayValue(ticket.seatNumber) || "—"}`,
           )
           .join(", ");
   const allGa =
@@ -351,6 +353,7 @@ export type PackageSeatLine = {
   seatLine: string;
   context: string;
   price: number;
+  accessibleLabel: string;
 };
 
 export type PackageOrderSummary = {
@@ -591,10 +594,7 @@ export function withPackageCheckoutSeatPrices(
 
 /** Leading number in a seat label. `10_DA` counts as 10; `DA` has none. */
 function seatNumberValue(seat: string): number | null {
-  const match = seat.match(/\d+/);
-  if (!match) return null;
-  const value = Number(match[0]);
-  return Number.isFinite(value) ? value : null;
+  return seatNumberDigits(seat);
 }
 
 /** A label with no number is never together. */
@@ -617,8 +617,11 @@ function formatSeatNumbers(seats: Array<string | number>): string {
     ),
   ];
   if (unique.length === 0) return "";
-  if (unique.length === 1) return `Seat ${unique[0]}`;
-  return `Seats ${formatSeatNumberRanges(unique)}`;
+  const displayed = formatSeatNumberRanges(unique);
+  if (!displayed) return "";
+  const multi =
+    unique.length > 1 || displayed.includes(",") || displayed.includes("-");
+  return multi ? `Seats ${displayed}` : `Seat ${displayed}`;
 }
 
 export function packageSeatLines(
@@ -633,6 +636,7 @@ export function packageSeatLines(
     ga: boolean;
     context: string;
     seatNumbers: Array<string | number>;
+    accessibleLabels: string[];
     amount: number;
   }> = [];
   const groupIndex = new Map<string, number>();
@@ -666,6 +670,7 @@ export function packageSeatLines(
     const amount = ticketUnitAmount(ticket);
     if (existing != null) {
       groups[existing].seatNumbers.push(seatNumber);
+      groups[existing].accessibleLabels.push(getAccessibleLabel(ticket));
       groups[existing].amount += amount;
       return;
     }
@@ -676,18 +681,25 @@ export function packageSeatLines(
       ga,
       context,
       seatNumbers: [seatNumber],
+      accessibleLabels: [getAccessibleLabel(ticket)],
       amount,
     });
   });
 
   return groups.map((group) => {
     const uniqueSeats = new Set(group.seatNumbers.map((seat) => String(seat))).size || 1;
+    const labels = group.accessibleLabels.filter(Boolean);
     return {
       seatLine: group.ga
         ? gaTicketSeatLine({ sectionNumber: group.section, rowNumber: group.row, generalAdmission: true })
         : `Sec ${group.section} · Row ${group.row} · ${formatSeatNumbers(group.seatNumbers)}`,
       context: group.context,
       price: group.amount > 0 ? group.amount : unitPrice * uniqueSeats,
+      accessibleLabel: !labels.length
+        ? ""
+        : labels.every((label) => label === labels[0])
+          ? labels[0]
+          : "Accessible seating",
     };
   });
 }

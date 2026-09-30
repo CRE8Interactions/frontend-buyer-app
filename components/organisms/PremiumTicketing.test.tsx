@@ -902,7 +902,7 @@ describe("Select tickets page (PremiumTicketing)", { timeout: 20_000 }, () => {
 
     expect(await screen.findByText("Ticket details")).toBeInTheDocument();
     expect(
-      screen.getByText(/accessible: open space for wheelchair/i),
+      screen.getByText(/open space for wheelchair/i),
     ).toBeInTheDocument();
   });
 
@@ -2402,7 +2402,7 @@ describe("Select tickets page (PremiumTicketing)", { timeout: 20_000 }, () => {
 
     expect(
       screen.getAllByRole("img", {
-        name: /accessible: open space for wheelchair/i,
+        name: /open space for wheelchair/i,
       }).length,
     ).toBeGreaterThan(0);
     const thumbs = screen.queryAllByTestId("section-thumb");

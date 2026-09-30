@@ -1,9 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { DEMO_EVENTS, DEMO_SEATED_TICKET_GROUPS, DEMO_USER } from "@/lib/demo/fixtures";
+import { ACCESSIBLE_LABEL_DA } from "@/lib/ticketAccessibility";
 import {
   NM_STATE_ATHLETICS_ORG_UUID,
   printedTicketHolderName,
   printedTicketIdLayout,
+  printedTicketAccessibilityLayout,
   printedTicketOfferLayout,
   printedTicketSubtitle,
   printedVenueLabel,
@@ -213,6 +215,27 @@ describe("printedTicketOfferLayout", () => {
   });
 });
 
+describe("printedTicketAccessibilityLayout", () => {
+  it("prints the accessibility label for an accessible seat", () => {
+    expect(
+      printedTicketAccessibilityLayout({
+        checkInCode: "ADA-1",
+        accessible: true,
+        accessibleType: "DA",
+      }),
+    ).toEqual({ label: "ACCESSIBILITY", value: ACCESSIBLE_LABEL_DA });
+  });
+
+  it("omits accessibility when the ticket is not accessible", () => {
+    expect(
+      printedTicketAccessibilityLayout({
+        checkInCode: "STD-1",
+        seatNumber: 14,
+      }),
+    ).toBeNull();
+  });
+});
+
 describe("printedTicketIdLayout", () => {
   const athleticsEvent = {
     ...nmState,
@@ -276,6 +299,17 @@ describe("ticketPdfSeatColumnValues", () => {
         seatNumber: 8,
       }),
     ).toEqual({ section: "P", row: "12", seat: "8" });
+  });
+
+  it("prints the seat number without an accessibility suffix", () => {
+    expect(
+      ticketPdfSeatColumnValues({
+        checkInCode: "RES-DA",
+        sectionNumber: "115ADA",
+        rowNumber: "G",
+        seatNumber: "13_DA",
+      }),
+    ).toEqual({ section: "115ADA", row: "G", seat: "13" });
   });
 
   it("uses dash placeholders for reserved tickets missing row or seat", () => {

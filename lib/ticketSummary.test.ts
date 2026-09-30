@@ -182,7 +182,7 @@ describe("ticketSelectionSummary", () => {
       },
     ]);
     expect(summary.accessibleLabel).toBe(
-      "Accessible: Open space for wheelchair",
+      "Open space for wheelchair",
     );
   });
 
@@ -272,6 +272,14 @@ describe("ticketSelectionSummary", () => {
     expect(summary.subtitle).toBe(`1 ticket · Seat ${ticket.seatNumber}`);
   });
 
+  it("shows the seat number without an accessibility suffix", () => {
+    const cart = demoCheckoutCart();
+    const summary = ticketSelectionSummary([
+      { ...cart.tickets[0], seatNumber: "13_DA" },
+    ]);
+    expect(summary.subtitle).toBe("1 ticket · Seat 13");
+  });
+
   it("keeps seats-are-together copy when selected seats are consecutive", () => {
     const cart = demoCheckoutCart({ ticketCount: 2 });
     const summary = ticketSelectionSummary(cart.tickets);
@@ -296,7 +304,7 @@ describe("ticketSelectionSummary", () => {
       { ...cart.tickets[0], seatNumber: "2_DA" },
       { ...cart.tickets[1], seatNumber: "4_DA" },
     ]);
-    expect(summary.subtitle).toBe("2 tickets · Seats 2_DA, 4_DA");
+    expect(summary.subtitle).toBe("2 tickets · Seats 2, 4");
   });
 
   it("lists seat numbers instead of together copy when seats in the same row have a gap", () => {
@@ -389,6 +397,18 @@ describe("packageSeatLines", () => {
       `${ticket.offerName} · all ${cart.package.events.length} games`,
     );
     expect(lines[0].price).toBe(Number(ticket.price));
+    expect(lines[0].accessibleLabel).toBe("");
+  });
+
+  it("labels accessible package seats", () => {
+    const cart = demoPackageCheckoutCart();
+    const ticket = cart.tickets[0];
+    const lines = packageSeatLines(
+      [{ ...ticket, accessible: true, accessibleType: "DA" }],
+      cart.package.events.length,
+    );
+
+    expect(lines[0].accessibleLabel).toBe("Open space for wheelchair");
   });
 
   it("collapses per-game tickets for the same seat and never uses the package name", () => {
