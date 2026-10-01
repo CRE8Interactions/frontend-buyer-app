@@ -245,6 +245,27 @@ describe("addTicketToPhoneWallet", () => {
     });
   });
 
+  it("sends the seat number without the accessibility suffix", async () => {
+    mockedApplePass.mockResolvedValue({
+      data: new Blob(["pkpass"], { type: "application/vnd.apple.pkpass" }),
+    } as never);
+    const accessible = {
+      ...ticket,
+      seatNumber: "13_DA",
+      seat_number: "13_DA",
+      accessibleType: "DA",
+    };
+
+    expect(await addTicketToPhoneWallet(event, accessible, "apple")).toBeNull();
+    expect(mockedApplePass).toHaveBeenCalledWith({
+      event: expect.objectContaining({ uuid: event.uuid }),
+      obj: expect.objectContaining({
+        seatNumber: "13",
+        seat_number: "13",
+      }),
+    });
+  });
+
   it("explains when the ticket cannot be added", async () => {
     mockedApplePass.mockRejectedValue(new Error("500"));
 
