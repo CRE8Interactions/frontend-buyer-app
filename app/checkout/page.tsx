@@ -24,7 +24,6 @@ import {
   cachedBrandingForCheckout,
   checkoutBrandingFromCart,
   checkoutHoldSeconds,
-  resolveCheckoutTax,
   type CheckoutCartBrandingSource,
 } from "@/lib/checkoutBranding";
 import { cacheOrgBranding, orgSlugFromPathname } from "@/lib/orgBrandingCache";
@@ -38,6 +37,7 @@ import {
 } from "@/lib/flexPackDisplay";
 import {
   alignPackageSeatPrices,
+  checkoutTaxLine,
   packageCartTickets,
   packageOrderSummary,
   promoSummaryLabel,
@@ -1123,6 +1123,14 @@ function CheckoutPage() {
       : cart?.flex_pack
         ? flexTotals?.total || 0
         : Number(cart?.total || 0));
+  const taxLine = checkoutTaxLine(cart);
+  const singleEvent =
+    Boolean(cart?.tickets?.length) &&
+    !cart?.package &&
+    !cart?.flex_pack &&
+    !cart?.access_pass_template;
+  const singleEventAllIn = singleEvent && taxLine.label === "Tax (included)";
+  const singleEventNoTax = singleEvent && taxLine.amount === 0;
 
   const elementsOptions = useMemo(
     () =>
@@ -1368,9 +1376,9 @@ function CheckoutPage() {
                       </span>
                     </div>
                     <div className="flex justify-between gap-3">
-                      <span>Tax</span>
+                      <span>{taxLine.label}</span>
                       <span className="tabular-nums text-[#051b35]">
-                        {formatCurrency(resolveCheckoutTax(cart))}
+                        {formatCurrency(taxLine.amount)}
                       </span>
                     </div>
                     <div className="flex justify-between gap-3">
@@ -1429,9 +1437,9 @@ function CheckoutPage() {
                       </span>
                     </div>
                     <div className="flex justify-between gap-3">
-                      <span>Tax</span>
+                      <span>{taxLine.label}</span>
                       <span className="tabular-nums text-[#051b35]">
-                        {formatCurrency(resolveCheckoutTax(cart))}
+                        {formatCurrency(taxLine.amount)}
                       </span>
                     </div>
                     <div className="flex justify-between gap-3">
@@ -1489,38 +1497,51 @@ function CheckoutPage() {
                   </div>
                   <div className="h-px bg-[rgba(5,27,53,0.08)]" />
                   <div className="flex flex-col gap-2.5 text-[14px] text-[#4a5567]">
-                    {ticketSummary.offerLines.length > 1
-                      ? ticketSummary.offerLines.map((line) => (
-                          <div
-                            key={`${line.offerName}-${line.unit}`}
-                            className="flex justify-between gap-3"
-                          >
-                            <span>
-                              {line.offerName} x {line.count} (
-                              {formatCurrency(line.unit)})
-                            </span>
-                            <span className="tabular-nums text-[#051b35]">
-                              {formatCurrency(line.subtotal)}
-                            </span>
-                          </div>
-                        ))
-                      : (
-                          <div className="flex justify-between gap-3">
-                            <span>
-                              Tickets: {formatCurrency(ticketSummary.unit)} x{" "}
-                              {ticketSummary.count}
-                            </span>
-                            <span className="tabular-nums text-[#051b35]">
-                              {formatCurrency(ticketSummary.subtotal)}
-                            </span>
-                          </div>
-                        )}
-                    <div className="flex justify-between gap-3">
-                      <span>Tax</span>
-                      <span className="tabular-nums text-[#051b35]">
-                        {formatCurrency(resolveCheckoutTax(cart))}
-                      </span>
+                    <div className="flex flex-col gap-0.5">
+                      {ticketSummary.offerLines.length > 1
+                        ? ticketSummary.offerLines.map((line) => (
+                            <div
+                              key={`${line.offerName}-${line.unit}`}
+                              className="flex justify-between gap-3"
+                            >
+                              <span>
+                                {line.offerName} x {line.count} (
+                                {formatCurrency(line.unit)})
+                              </span>
+                              <span className="tabular-nums text-[#051b35]">
+                                {formatCurrency(line.subtotal)}
+                              </span>
+                            </div>
+                          ))
+                        : (
+                            <div className="flex justify-between gap-3">
+                              <span className="text-[14px] text-[#4a5567]">
+                                Tickets: {formatCurrency(ticketSummary.unit)} ×{" "}
+                                {ticketSummary.count}
+                              </span>
+                              <span className="tabular-nums text-[#051b35]">
+                                {formatCurrency(ticketSummary.subtotal)}
+                              </span>
+                            </div>
+                          )}
+                      {singleEventAllIn ? (
+                        <p className="text-[13px] leading-tight text-[#4a5567]">
+                          Includes {formatCurrency(taxLine.amount)} tax
+                        </p>
+                      ) : singleEventNoTax ? (
+                        <p className="text-[13px] leading-tight text-[#4a5567]">
+                          No tax applies
+                        </p>
+                      ) : null}
                     </div>
+                    {singleEventAllIn || singleEventNoTax ? null : (
+                      <div className="flex justify-between gap-3">
+                        <span>{taxLine.label}</span>
+                        <span className="tabular-nums text-[#051b35]">
+                          {formatCurrency(taxLine.amount)}
+                        </span>
+                      </div>
+                    )}
                   </div>
                 </>
               ) : cart?.package?.name ? (
@@ -1537,9 +1558,9 @@ function CheckoutPage() {
               !cart?.flex_pack &&
               cart?.access_pass_template ? (
                 <div className="flex justify-between gap-3 text-[14px] text-[#4a5567]">
-                  <span>Tax</span>
+                  <span>{taxLine.label}</span>
                   <span className="tabular-nums text-[#051b35]">
-                    {formatCurrency(resolveCheckoutTax(cart))}
+                    {formatCurrency(taxLine.amount)}
                   </span>
                 </div>
               ) : null}

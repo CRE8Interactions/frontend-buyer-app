@@ -450,10 +450,81 @@ describe("Checkout success receipt", () => {
     expect(screen.getByText(formatCurrency(totals.tax))).toBeInTheDocument();
   });
 
+  it("lists flex pack tax on its own row and keeps it out of the subtotal", async () => {
+    const order = demoCompletedFlexPackOrder({
+      total: 55.35,
+      serviceFee: 4,
+      processingFee: 1.85,
+      estimatedProcessingFee: 1.85,
+      salesTax: 0,
+      flex_pack: demoFlexPack({ price: 46, gameTickets: 4 }),
+    });
+    mockedGetOrderByPi.mockResolvedValue({ data: order } as never);
+    render(<CheckoutSuccessPageRoute />);
+
+    expect(await screen.findByText("Tax")).toBeInTheDocument();
+    expect(screen.getByText("Tax").parentElement).toHaveTextContent(
+      formatCurrency(3.5),
+    );
+    expect(screen.getByText("Subtotal").parentElement).toHaveTextContent(
+      formatCurrency(46),
+    );
+    expect(screen.queryByText(formatCurrency(49.5))).not.toBeInTheDocument();
+    expect(screen.getByText(formatCurrency(55.35))).toBeInTheDocument();
+  });
+
+  it("lists package tax on its own row and keeps it out of the subtotal", async () => {
+    const order = demoCompletedPackageOrder({
+      total: 100,
+      serviceFee: 3,
+      processingFee: 2,
+      estimatedProcessingFee: 2,
+      salesTax: 0,
+      priceObject: {
+        estimatedPaymentProcessingFee: 2,
+        packageWebsiteFeeSnapshot: { tax: 7, subtotal: 88 },
+      },
+    });
+    mockedGetOrderByPi.mockResolvedValue({ data: order } as never);
+    render(<CheckoutSuccessPageRoute />);
+
+    expect(await screen.findByText("Tax")).toBeInTheDocument();
+    expect(screen.getByText("Tax").parentElement).toHaveTextContent(
+      formatCurrency(7),
+    );
+    expect(screen.getByText("Subtotal").parentElement).toHaveTextContent(
+      formatCurrency(88),
+    );
+    expect(screen.queryByText(formatCurrency(95))).not.toBeInTheDocument();
+  });
+
+  it("lists single-event tax on its own row and keeps it out of the subtotal", async () => {
+    const order = demoCompletedTicketOrder({
+      salesTax: 2.8,
+      priceObject: { estimatedPaymentProcessingFee: 3.92 },
+    });
+    const buried = Number(order.total) - 3.92 - Number(order.serviceFee);
+    mockedGetOrderByPi.mockResolvedValue({ data: order } as never);
+    render(<CheckoutSuccessPageRoute />);
+
+    expect(await screen.findByText("Tax")).toBeInTheDocument();
+    expect(screen.getByText("Tax").parentElement).toHaveTextContent(
+      formatCurrency(2.8),
+    );
+    expect(screen.getByText("Subtotal").parentElement).toHaveTextContent(
+      formatCurrency(buried - 2.8),
+    );
+    expect(screen.getByText("Subtotal").parentElement).not.toHaveTextContent(
+      formatCurrency(buried),
+    );
+  });
+
   it("shows zero-valued Blocktickets fee lines for a flex pack", async () => {
+    const pack = demoFlexPack();
     const order = demoCompletedFlexPackOrder({
       processingFee: 0,
       estimatedProcessingFee: 0,
+      total: Number(pack.price) + Number(pack.gameTickets),
     });
     mockedGetOrderByPi.mockResolvedValue({ data: order } as never);
     render(<CheckoutSuccessPageRoute />);

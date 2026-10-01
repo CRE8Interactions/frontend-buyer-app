@@ -2,7 +2,10 @@ import { describe, expect, it } from "vitest";
 import {
   DEMO_SEATED_TICKET_GROUPS,
   demoCheckoutCart,
+  demoCompletedFlexPackOrder,
   demoCompletedPackageOrder,
+  demoCompletedTicketOrder,
+  demoFlexPack,
   demoFlexPackCheckoutCart,
   demoPackageCheckoutCart,
   demoSeasonPackage,
@@ -14,10 +17,14 @@ import {
   gaTicketsNeedGroupSection,
   alignPackageSeatPrices,
   packageCustomFeeLines,
+  checkoutIncludedPriceBreakdown,
+  checkoutTaxLine,
+  includedTicketPriceBreakdown,
   packageOrderSummary,
   packageSeatLines,
   promoSummaryLabel,
   resolveCompletedOrderFees,
+  sumIncludedSalesTax,
   resolveFlexPackCheckoutTotals,
   resolvePackageCheckoutTotals,
   selectionOfferDescription,
@@ -457,6 +464,119 @@ describe("packageSeatLines", () => {
   });
 });
 
+describe("sumIncludedSalesTax", () => {
+  it("totals tax already included in each ticket price by price level", () => {
+    const cart = demoCheckoutCart({ ticketCount: 2 });
+    const unit = Number(cart.tickets[0].cost);
+    const tickets = [
+      { ...cart.tickets[0], cost: unit },
+      { ...cart.tickets[1], cost: unit, pricingLevelId: 2 },
+    ];
+    const pricingObjects = [
+      { id: 1, totalDue: unit, taxPerTicket: 0.85, salesTax: 0.85 },
+      { id: 2, name: "Senior", totalDue: unit, taxPerTicket: 0.4 },
+    ];
+
+    expect(sumIncludedSalesTax(tickets, pricingObjects)).toBe(1.25);
+  });
+
+  it("returns 0 when tickets or pricing objects are missing", () => {
+    const cart = demoCheckoutCart();
+    expect(sumIncludedSalesTax(cart.tickets, [])).toBe(0);
+    expect(sumIncludedSalesTax([], [{ id: 1, taxPerTicket: 0.85 }])).toBe(0);
+  });
+});
+
+describe("includedTicketPriceBreakdown", () => {
+  it("sums tax, processing, and service fees from each ticket's price level", () => {
+    const cart = demoCheckoutCart({ ticketCount: 2 });
+    const unit = Number(cart.tickets[0].cost);
+    const tickets = [
+      { ...cart.tickets[0], cost: unit },
+      { ...cart.tickets[1], cost: unit, pricingLevelId: 2 },
+    ];
+    const pricingObjects = [
+      {
+        id: 1,
+        totalDue: unit,
+        taxPerTicket: 1.4,
+        estimatedPaymentProcessingFee: 0.83,
+        serviceFee: 2,
+      },
+      { id: 2, totalDue: unit, salesTax: 0.4, paymentProcessingFee: 0.5, serviceFee: 1 },
+    ];
+
+    expect(includedTicketPriceBreakdown(tickets, pricingObjects)).toEqual({
+      tax: 1.8,
+      processingFee: 1.33,
+      serviceFee: 3,
+    });
+  });
+});
+
+describe("checkoutIncludedPriceBreakdown", () => {
+  it("returns nothing when tax is charged on top or the price level has no amounts", () => {
+    const cart = demoCheckoutCart({ ticketCount: 2 });
+    const unit = Number(cart.tickets[0].cost);
+    const pricingObjects = [{ id: 1, totalDue: unit, taxPerTicket: 1.4 }];
+
+    expect(
+      checkoutIncludedPriceBreakdown({
+        ...cart,
+        totalTax: 2.5,
+        am_pricing_objects: pricingObjects,
+      }),
+    ).toBeNull();
+    expect(
+      checkoutIncludedPriceBreakdown({
+        ...cart,
+        totalTax: 0,
+        am_pricing_objects: [{ id: 1, totalDue: unit }],
+      }),
+    ).toBeNull();
+    expect(
+      checkoutIncludedPriceBreakdown({
+        ...cart,
+        totalTax: 0,
+        am_pricing_objects: pricingObjects,
+      }),
+    ).toEqual({ tax: 2.8, processingFee: 0, serviceFee: 0 });
+  });
+});
+
+describe("checkoutTaxLine", () => {
+  it("keeps additive cart tax labeled Tax when the price also includes tax", () => {
+    const cart = demoCheckoutCart({ ticketCount: 2 });
+    const unit = Number(cart.tickets[0].cost);
+    const withIncluded = {
+      ...cart,
+      totalTax: 0,
+      am_pricing_objects: [{ id: 1, totalDue: unit, taxPerTicket: 0.85 }],
+    };
+
+    expect(checkoutTaxLine({ ...withIncluded, totalTax: 2.5 })).toEqual({
+      label: "Tax",
+      amount: 2.5,
+    });
+    expect(
+      checkoutTaxLine({
+        ...withIncluded,
+        totalTax: 0,
+        salesTax: 3.5,
+      }),
+    ).toEqual({ label: "Tax (included)", amount: 1.7 });
+  });
+
+  it("shows a $0.00 Tax row for a flex pack and ignores cart.salesTax like legacy", () => {
+    const cart = demoFlexPackCheckoutCart();
+
+    expect(checkoutTaxLine({ ...cart, totalTax: 0, salesTax: 3.5 })).toEqual({
+      label: "Tax",
+      amount: 0,
+    });
+  });
+});
+
 describe("resolvePackageCheckoutTotals", () => {
   it("uses the seat subtotal when the cart total is missing", () => {
     const cart = demoPackageCheckoutCart({ total: 0 });
@@ -469,6 +589,22 @@ describe("resolvePackageCheckoutTotals", () => {
     expect(totals.total).toBe(
       summary.subtotal + Number(cart.serviceFee) + Number(cart.processingFee),
     );
+  });
+
+  it("does not add cart.salesTax or included tax onto a package total", () => {
+    const cart = demoPackageCheckoutCart({ total: 0 });
+    const seatSubtotal = 46;
+    const totals = resolvePackageCheckoutTotals(
+      { ...cart, totalTax: 0, salesTax: 3.5 },
+      seatSubtotal,
+    );
+
+    expect(totals.total).toBe(
+      seatSubtotal + Number(cart.serviceFee) + Number(cart.processingFee),
+    );
+    expect(
+      checkoutTaxLine({ ...cart, totalTax: 0, salesTax: 3.5 }),
+    ).toEqual({ label: "Tax", amount: 0 });
   });
 });
 
@@ -582,6 +718,15 @@ describe("resolveFlexPackCheckoutTotals", () => {
         Number(cart.processingFee),
     );
   });
+
+  it("adds cart.totalTax onto the flex pack total like legacy", () => {
+    const base = demoFlexPackCheckoutCart({ processingFee: 1.85 });
+    const totals = resolveFlexPackCheckoutTotals({ ...base, totalTax: 3.5 });
+
+    expect(totals.total).toBe(
+      Number(base.flex_pack.price) + Number(base.serviceFee) + 1.85 + 3.5,
+    );
+  });
 });
 
 describe("resolveCompletedOrderFees", () => {
@@ -678,6 +823,53 @@ describe("resolveCompletedOrderFees", () => {
     expect(fees.subtotal).toBe(
       cart.total - cart.serviceFee - 4.25,
     );
+  });
+
+  it("keeps flex pack tax out of the subtotal when the order only stores the pack price", () => {
+    const order = demoCompletedFlexPackOrder({
+      total: 55.35,
+      serviceFee: 4,
+      processingFee: 1.85,
+      estimatedProcessingFee: 1.85,
+      salesTax: 0,
+      flex_pack: demoFlexPack({ price: 46, gameTickets: 4 }),
+    });
+    const fees = resolveCompletedOrderFees(order);
+
+    expect(fees.tax).toBe(3.5);
+    expect(fees.subtotal).toBe(46);
+    expect(fees.subtotal + fees.tax + fees.processingFee + fees.serviceFee).toBe(
+      55.35,
+    );
+  });
+
+  it("keeps package snapshot tax out of the subtotal", () => {
+    const order = demoCompletedPackageOrder({
+      total: 100,
+      serviceFee: 3,
+      processingFee: 2,
+      estimatedProcessingFee: 2,
+      salesTax: 0,
+      priceObject: {
+        estimatedPaymentProcessingFee: 2,
+        packageWebsiteFeeSnapshot: { tax: 7, subtotal: 88 },
+      },
+    });
+    const fees = resolveCompletedOrderFees(order);
+
+    expect(fees.tax).toBe(7);
+    expect(fees.subtotal).toBe(88);
+  });
+
+  it("keeps included single-event tax out of the subtotal when salesTax is 0", () => {
+    const order = demoCompletedTicketOrder({
+      salesTax: 0,
+      priceObject: { taxPerTicket: 1.4, estimatedPaymentProcessingFee: 3.92 },
+    });
+    const fees = resolveCompletedOrderFees(order);
+
+    expect(fees.tax).toBe(5.6);
+    expect(fees.subtotal).toBe(128.76);
   });
 });
 

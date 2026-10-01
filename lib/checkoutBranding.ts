@@ -154,9 +154,3 @@ export function formatHoldClock(remainingSeconds?: number | null): string | null
   return `${minutes}:${String(seconds).padStart(2, "0")}`;
 }
 
-export function resolveCheckoutTax(cart?: {
-  totalTax?: number;
-  salesTax?: number;
-} | null): number {
-  return Number(cart?.totalTax ?? cart?.salesTax ?? 0);
-}
