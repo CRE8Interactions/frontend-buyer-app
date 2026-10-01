@@ -234,6 +234,34 @@ describe("buildOrderReceipt", () => {
     expect(receipt.totals.some((row) => row.label === "Additional Fee")).toBe(false);
   });
 
+  it("prints the seat number without an accessibility suffix", () => {
+    const order = demoCompletedTicketOrder();
+    const ticket = order.tickets[0] as Record<string, unknown>;
+    const receipt = buildOrderReceipt(
+      demoCompletedTicketOrder({
+        tickets: [{ ...ticket, seatNumber: "15_DA" }],
+      }),
+    )!;
+
+    expect(receipt.lines[0].description).toContain("Seat 15");
+    expect(receipt.lines[0].description).not.toContain("15_DA");
+  });
+
+  it("orders accessible seats and collapses consecutive numbers", () => {
+    const order = demoCompletedTicketOrder();
+    const [first, second] = order.tickets as Array<Record<string, unknown>>;
+    const receipt = buildOrderReceipt(
+      demoCompletedTicketOrder({
+        tickets: [
+          { ...first, seatNumber: "13_DA" },
+          { ...second, seatNumber: "12_DA" },
+        ],
+      }),
+    )!;
+
+    expect(receipt.lines[0].description).toContain("Seat 12-13");
+  });
+
   it("does not repeat a package seat once per game", () => {
     const pkg = demoSeasonPackage();
     const listing = DEMO_SEATED_TICKET_GROUPS[0];

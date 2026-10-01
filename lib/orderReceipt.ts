@@ -17,7 +17,13 @@ import {
   promoSummaryLabel,
   resolveCompletedOrderFees,
 } from "@/lib/ticketSummary";
-import { ticketRowValue, ticketSectionValue } from "@/lib/wallet";
+import {
+  formatSeatNumberRanges,
+  seatNumberDigits,
+  ticketRowValue,
+  ticketSeatValue,
+  ticketSectionValue,
+} from "@/lib/wallet";
 import moment from "moment-timezone";
 
 export type OrderReceiptPerson = {
@@ -341,29 +347,18 @@ export function formatReceiptPaymentMethod(order: OrderReceiptSource | null) {
   return formatOrderPaymentMethodSummary(order) || "—";
 }
 
-function formatSeatRange(seatNumbers: Array<string | number>) {
-  const sorted = [
-    ...new Set(
-      seatNumbers
-        .map((seat) => Number.parseInt(String(seat), 10))
-        .filter((seat) => Number.isFinite(seat) && seat > 0),
-    ),
-  ].sort((a, b) => a - b);
-  if (!sorted.length) return "";
+/** Receipts print the seat number only. `13_DA` counts as 13. */
+function receiptSeatNumber(seat: string | number): number | null {
+  const value = seatNumberDigits(seat);
+  return value != null && value > 0 ? value : null;
+}
 
-  const ranges: string[] = [];
-  let start = sorted[0];
-  let end = start;
-  for (let i = 1; i < sorted.length; i += 1) {
-    if (sorted[i] === end + 1) {
-      end = sorted[i];
-      continue;
-    }
-    ranges.push(start === end ? String(start) : `${start}-${end}`);
-    start = end = sorted[i];
-  }
-  ranges.push(start === end ? String(start) : `${start}-${end}`);
-  return ranges.join(", ");
+function formatSeatRange(seatNumbers: Array<string | number>) {
+  return formatSeatNumberRanges(
+    seatNumbers
+      .map(receiptSeatNumber)
+      .filter((seat): seat is number => seat != null),
+  );
 }
 
 function groupReceiptTickets(tickets: Array<Record<string, unknown>>) {
@@ -391,18 +386,18 @@ function groupReceiptTickets(tickets: Array<Record<string, unknown>>) {
     const key = ga ? `ga:${section}:${offer}` : `${section}:${row}:${offer}`;
     const existing = groups.get(key);
     const price = money(ticket.cost ?? ticket.price);
-    const seat = ticket.seatNumber ?? ticket.seat_number;
+    const seat = ticketSeatValue(ticket);
     if (existing) {
       existing.count += 1;
       existing.amount += price;
-      if (seat != null) existing.seats.push(seat as string | number);
+      if (seat) existing.seats.push(seat);
       return;
     }
     groups.set(key, {
       section,
       row: ga ? ticketRowValue(ticket) || "GA" : row || "GA",
       ga,
-      seats: seat != null ? [seat as string | number] : [],
+      seats: seat ? [seat] : [],
       count: 1,
       amount: price,
     });

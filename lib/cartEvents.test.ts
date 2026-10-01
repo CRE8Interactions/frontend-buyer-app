@@ -229,6 +229,8 @@ describe("wallet order totals", () => {
         checkInCode: ticket.code,
         name: "Prelims",
         offer: { name: "Prelims", description: "Morning session" },
+        accessible: true,
+        accessibleType: "DA",
       })),
     });
 
@@ -236,6 +238,8 @@ describe("wallet order totals", () => {
       name: "Prelims",
       offerName: "Prelims",
       offer: { name: "Prelims", description: "Morning session" },
+      accessible: true,
+      accessibleType: "DA",
     });
   });
 
@@ -334,6 +338,44 @@ describe("wallet order totals", () => {
 
 describe("wallet ticket seat order", () => {
   const upcoming = DEMO_EVENTS.find((event) => event.shortCode === "NMST004")!;
+
+  it("does not repeat Sec when the section name already says Section", () => {
+    const [ticket] = demoCheckoutCart({ ticketCount: 1 }).tickets;
+    const detail = Object.values(
+      buildOrderEventDetails([
+        demoCompletedTicketOrder({
+          event: upcoming,
+          tickets: [
+            {
+              ...ticket,
+              sectionName: "Section 115",
+              sectionNumber: "115",
+              rowNumber: "C",
+              seatNumber: 9,
+            },
+          ],
+        }),
+      ]),
+    )[0];
+
+    expect(detail.tickets[0]?.seat).toBe("Sec 115 · Row C · Seat 9");
+  });
+
+  it("shows the seat number without an accessibility suffix", () => {
+    const [ticket] = demoCheckoutCart({ ticketCount: 1 }).tickets;
+    const detail = Object.values(
+      buildOrderEventDetails([
+        demoCompletedTicketOrder({
+          event: upcoming,
+          tickets: [{ ...ticket, seatNumber: "13_DB" }],
+        }),
+      ]),
+    )[0];
+
+    expect(detail.tickets[0]?.seat).toBe(
+      `Sec ${ticket.sectionNumber} · Row ${ticket.rowNumber} · Seat 13`,
+    );
+  });
 
   it("lists seats in ascending order when the API returns them reversed", () => {
     const [first, second] = demoCheckoutCart({ ticketCount: 2 }).tickets;

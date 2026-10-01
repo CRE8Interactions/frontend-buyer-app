@@ -196,6 +196,27 @@ describe("Checkout success receipt", () => {
     ).toBeInTheDocument();
   });
 
+  it("shows the accessible seating label on the confirmation", async () => {
+    const ada = DEMO_SEATED_TICKET_GROUPS.find((group) => group.accessible)!;
+    const order = demoCompletedTicketOrder();
+    mockedGetOrderByPi.mockResolvedValue({
+      data: demoCompletedTicketOrder({
+        tickets: (order.tickets as Array<Record<string, unknown>>).map(
+          (ticket) => ({
+            ...ticket,
+            accessible: true,
+            accessibleType: ada.accessibleType,
+          }),
+        ),
+      }),
+    } as never);
+    render(<CheckoutSuccessPageRoute />);
+
+    expect(
+      await screen.findByText("Open space for wheelchair"),
+    ).toBeInTheDocument();
+  });
+
   it("names the GA tier from the event ticket groups instead of a bare ga", async () => {
     mockedGetOrderByPi.mockResolvedValue({
       data: gaCompletedOrder(),
@@ -223,6 +244,29 @@ describe("Checkout success receipt", () => {
     ).toBeInTheDocument();
     expect(
       screen.getByText(demoTicketGroups().ticketGroups[0].offer!.name!),
+    ).toBeInTheDocument();
+  });
+
+  it("labels listed seat numbers on the confirmation", async () => {
+    const order = demoCompletedTicketOrder();
+    const [first, second] = order.tickets as Array<Record<string, unknown>>;
+    mockedGetOrderByPi.mockResolvedValue({
+      data: demoCompletedTicketOrder({
+        tickets: [
+          { ...first, seatNumber: 5 },
+          { ...second, seatNumber: 7 },
+        ],
+      }),
+    } as never);
+    render(<CheckoutSuccessPageRoute />);
+
+    expect(
+      await screen.findByText("2 tickets · Seats 5, 7"),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        `Sec ${first.sectionNumber} · Row ${first.rowNumber}`,
+      ),
     ).toBeInTheDocument();
   });
 

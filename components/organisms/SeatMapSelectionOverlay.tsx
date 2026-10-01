@@ -5,6 +5,7 @@ import { fluidSize } from "@/lib/shopperFluidType";
 
 import { memo, useCallback, useEffect, useState } from "react";
 import { lockPageScroll, unlockPageScroll } from "@/lib/pageScroll";
+import AccessibleSeatingBadge from "@/components/atoms/AccessibleSeatingBadge";
 import BrandedActionButton from "@/components/atoms/BrandedActionButton";
 import BuyerProtectionCard from "@/components/molecules/BuyerProtectionCard";
 import Modal from "@/components/molecules/Modal";
@@ -21,7 +22,7 @@ import {
 } from "@/lib/ticketListings";
 import type { QuantityRestrictionSource } from "@/lib/ticketListings";
 import { selectionOfferDescription, selectionOfferName, selectionTicketCards } from "@/lib/ticketSummary";
-import { gaTicketSeatLine } from "@/lib/wallet";
+import { gaTicketSeatLine, mapSectionHeading, seatDisplayValue } from "@/lib/wallet";
 import useFiltersStore from "@/stores/filtersStore";
 import useSeatmapStore from "@/stores/seatmapStore";
 
@@ -153,7 +154,7 @@ function SeatMapSelectionOverlay({
   onCheckout,
   checkoutLoading = false,
   checkoutError = "",
-  itemPriceNote = "Incl. Taxes & Fees",
+  itemPriceNote = "Incl. taxes & fees",
   subtotalCaption,
   mapBackground,
   mapMapping,
@@ -961,8 +962,9 @@ function SeatMapSelectionOverlay({
                         >
                           {mapDetailGroup.GA
                             ? gaTicketSeatLine(mapDetailGroup)
-                            : `Sec ${mapDetailSection} · Row ${mapDetailGroup.rowNumber || mapDetailGroup.rowName || "—"} · Seat ${mapDetailGroup.seatNumber ?? "—"}`}
+                            : `${mapSectionHeading(mapDetailSection)} · Row ${mapDetailGroup.rowNumber || mapDetailGroup.rowName || "—"} · Seat ${seatDisplayValue(mapDetailGroup.seatNumber) || "—"}`}
                         </div>
+                        <AccessibleSeatingBadge source={mapDetailGroup} />
                         <div style={{ fontSize: 14, lineHeight: 1.5, color: "#6e7180" }}>
                           1 Ticket
                         </div>
@@ -992,7 +994,7 @@ function SeatMapSelectionOverlay({
                       </span>
                       {pricesIncludeFees ? (
                         <span style={{ fontSize: 14, lineHeight: 1.5, color: "#6e7180" }}>
-                          incl. fees
+                          incl. taxes & fees
                         </span>
                       ) : null}
                     </div>
@@ -1170,7 +1172,7 @@ function SeatMapSelectionOverlay({
                           const section =
                             g.sectionNumber || g.sectionName || "GA";
                           const row = g.rowNumber || g.rowName || "—";
-                          const seat = g.seatNumber || "—";
+                          const seat = seatDisplayValue(g.seatNumber) || "—";
                           const offer = selectionOfferName(g);
                           const itemPrice = Number(g.price || 0);
                           return (
@@ -1267,6 +1269,10 @@ function SeatMapSelectionOverlay({
                                   ) : null}
                                 </div>
                               </div>
+                              <AccessibleSeatingBadge
+                                source={g}
+                                style={{ marginTop: 10 }}
+                              />
                               <div
                                 style={{
                                   height: 1,

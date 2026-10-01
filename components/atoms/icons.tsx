@@ -50,5 +50,5 @@ export const Sort = (p: SVGProps<SVGSVGElement>) => (
   <svg {...base(p)}><path d="M7 4v16M7 20l-3-3M7 20l3-3M17 20V4M17 4l-3 3M17 4l3 3" /></svg>
 );
 export const Accessibility = (p: SVGProps<SVGSVGElement>) => (
-  <svg {...base(p)}><circle cx="12" cy="5" r="1.6" /><path d="M12 8.5v5l3.5 5M12 11l3.5-1M12 11l-3.5-1" /><path d="M8 14.5a4.5 4.5 0 1 0 7 4.6" /></svg>
+  <svg {...base(p)}><circle cx="16" cy="4" r="1" /><path d="m18 19 1-7-6 1" /><path d="m5 8 3-3 5.5 3-2.36 3.5" /><path d="M4.24 14.5a5 5 0 0 0 6.88 6" /><path d="M13.76 17.5a5 5 0 0 0-6.88-6" /></svg>
 );

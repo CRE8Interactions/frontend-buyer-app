@@ -10,10 +10,13 @@ import {
 import {
   formatSeatNumberRanges,
   gaTicketSeatLine,
+  seatDisplayValue,
+  seatNumberDigits,
   ticketRowValue,
   ticketSeatValue,
   ticketSectionValue,
 } from "@/lib/wallet";
+import { getAccessibleLabel, isAccessibleSource } from "@/lib/ticketAccessibility";
 
 export type TicketOfferPriceLine = {
   /** Offer label shown on the checkout price row (e.g. "Early Bird"). */
@@ -33,6 +36,8 @@ export type TicketSelectionSummary = {
   qtyLabel: string;
   /** One row per distinct offer + unit price in the cart. */
   offerLines: TicketOfferPriceLine[];
+  /** Shopper accessible-seating copy when any ticket is accessible. */
+  accessibleLabel: string;
 };
 
 type OfferNameSource = {
@@ -284,19 +289,17 @@ export function ticketSelectionSummary(
   );
   const seatNumbers = tickets.map((ticket) => ticketSeatValue(ticket));
   const together = sameBlock && seatsAreTogether(seatNumbers);
-  const seatList = formatSeatNumberRanges(seatNumbers);
+  const labeledSeats = formatSeatNumbers(seatNumbers);
   const seatLine = ga
     ? gaTicketSeatLine(first)
-    : count === 1
-      ? `Sec ${section} · Row ${row} · Seat ${first.seatNumber}`
-      : sameBlock
-        ? `Sec ${section} · Row ${row}`
-        : tickets
-            .map(
-              (ticket) =>
-                `Sec ${ticket.sectionName || ticket.sectionNumber} · Row ${ticket.rowNumber} · Seat ${ticket.seatNumber}`,
-            )
-            .join(", ");
+    : sameBlock
+      ? `Sec ${section} · Row ${row}`
+      : tickets
+          .map(
+            (ticket) =>
+              `Sec ${ticket.sectionName || ticket.sectionNumber} · Row ${ticket.rowNumber} · Seat ${seatDisplayValue(ticket.seatNumber) || "—"}`,
+          )
+          .join(", ");
   const allGa =
     tickets.length > 0 &&
     tickets.every((ticket) => Boolean(ticket.generalAdmission || ticket.GA));
@@ -307,8 +310,7 @@ export function ticketSelectionSummary(
       : gameCount === 1
         ? "1 game"
         : `all ${gameCount} games`;
-  const packageSeatLabel =
-    allGa || !seatList ? "" : `Seats ${seatList}`;
+  const packageSeatLabel = allGa ? "" : labeledSeats;
   const subtitle = gamesLabel
     ? [allGa ? gaTierSubtitle(first) : packageSeatLabel, gamesLabel]
         .filter(Boolean)
@@ -316,13 +318,24 @@ export function ticketSelectionSummary(
     : allGa
       ? gaTierSubtitle(first)
       : count === 1
-        ? "1 ticket"
+        ? labeledSeats
+          ? `1 ticket · ${labeledSeats}`
+          : "1 ticket"
         : together
           ? `${count} tickets · seats are together`
-          : sameBlock && seatList
-            ? `${count} tickets · ${seatList}`
+          : sameBlock && labeledSeats
+            ? `${count} tickets · ${labeledSeats}`
             : `${count} tickets`;
   const qtyLabel = `${count} ${count === 1 ? "ticket" : "tickets"}`;
+  const accessibleLabels = tickets
+    .map((ticket) => getAccessibleLabel(ticket))
+    .filter(Boolean);
+  const accessibleLabel = !tickets.some((ticket) => isAccessibleSource(ticket))
+    ? ""
+    : accessibleLabels.length &&
+        accessibleLabels.every((label) => label === accessibleLabels[0])
+      ? accessibleLabels[0]
+      : "Accessible seating";
   return {
     count,
     offerName,
@@ -332,6 +345,7 @@ export function ticketSelectionSummary(
     subtitle,
     qtyLabel,
     offerLines,
+    accessibleLabel,
   };
 }
 
@@ -339,6 +353,7 @@ export type PackageSeatLine = {
   seatLine: string;
   context: string;
   price: number;
+  accessibleLabel: string;
 };
 
 export type PackageOrderSummary = {
@@ -952,23 +967,36 @@ export function withPackageCheckoutSeatPrices(
   });
 }
 
-/** Unknown seat numbers can never be described as together. */
+/** Leading number in a seat label. `10_DA` counts as 10; `DA` has none. */
+function seatNumberValue(seat: string): number | null {
+  return seatNumberDigits(seat);
+}
+
+/** A label with no number is never together. */
 function seatsAreTogether(seats: Array<string | number>): boolean {
   const cleaned = seats.map((seat) => String(seat ?? "").trim());
   if (cleaned.some((seat) => !seat)) return false;
   const unique = [...new Set(cleaned)];
   if (unique.length !== cleaned.length) return false;
   if (unique.length === 1) return true;
-  const nums = unique.map(Number).filter(Number.isFinite);
-  if (nums.length !== unique.length) return false;
-  const sorted = [...nums].sort((a, b) => a - b);
+  const nums = unique.map(seatNumberValue);
+  if (nums.some((seat) => seat == null)) return false;
+  const sorted = (nums as number[]).sort((a, b) => a - b);
   return sorted[sorted.length - 1] - sorted[0] === sorted.length - 1;
 }
 
 function formatSeatNumbers(seats: Array<string | number>): string {
-  const unique = [...new Set(seats.map((seat) => String(seat)))];
-  if (unique.length === 1) return `Seat ${unique[0]}`;
-  return `Seats ${formatSeatNumberRanges(seats)}`;
+  const unique = [
+    ...new Set(
+      seats.map((seat) => String(seat ?? "").trim()).filter(Boolean),
+    ),
+  ];
+  if (unique.length === 0) return "";
+  const displayed = formatSeatNumberRanges(unique);
+  if (!displayed) return "";
+  const multi =
+    unique.length > 1 || displayed.includes(",") || displayed.includes("-");
+  return multi ? `Seats ${displayed}` : `Seat ${displayed}`;
 }
 
 export function packageSeatLines(
@@ -983,6 +1011,7 @@ export function packageSeatLines(
     ga: boolean;
     context: string;
     seatNumbers: Array<string | number>;
+    accessibleLabels: string[];
     amount: number;
   }> = [];
   const groupIndex = new Map<string, number>();
@@ -1016,6 +1045,7 @@ export function packageSeatLines(
     const amount = ticketUnitAmount(ticket);
     if (existing != null) {
       groups[existing].seatNumbers.push(seatNumber);
+      groups[existing].accessibleLabels.push(getAccessibleLabel(ticket));
       groups[existing].amount += amount;
       return;
     }
@@ -1026,18 +1056,25 @@ export function packageSeatLines(
       ga,
       context,
       seatNumbers: [seatNumber],
+      accessibleLabels: [getAccessibleLabel(ticket)],
       amount,
     });
   });
 
   return groups.map((group) => {
     const uniqueSeats = new Set(group.seatNumbers.map((seat) => String(seat))).size || 1;
+    const labels = group.accessibleLabels.filter(Boolean);
     return {
       seatLine: group.ga
         ? gaTicketSeatLine({ sectionNumber: group.section, rowNumber: group.row, generalAdmission: true })
         : `Sec ${group.section} · Row ${group.row} · ${formatSeatNumbers(group.seatNumbers)}`,
       context: group.context,
       price: group.amount > 0 ? group.amount : unitPrice * uniqueSeats,
+      accessibleLabel: !labels.length
+        ? ""
+        : labels.every((label) => label === labels[0])
+          ? labels[0]
+          : "Accessible seating",
     };
   });
 }
