@@ -1178,6 +1178,30 @@ describe("SeatmapSeat", () => {
     vi.useRealTimers();
   });
 
+  it("shows the seat number without an accessibility suffix", () => {
+    window.innerWidth = 1024;
+    const seats = mapping.seats ?? {};
+    useSeatmapStore.setState({
+      data: {
+        ...mapping,
+        seats: {
+          ...seats,
+          s1: { ...seats.s1, seatId: "s1", seatNumber: "13_DA" },
+        },
+      },
+    });
+
+    render(
+      <SeatmapTooltip
+        target={{ kind: "seat", seatId: "s1", x: 20, y: 20, pinned: false }}
+        onClose={() => {}}
+      />,
+    );
+
+    expect(screen.getByText("Seat 13")).toBeInTheDocument();
+    expect(screen.queryByText(/13_DA/)).not.toBeInTheDocument();
+  });
+
   it("shows Unlock offer on a desktop hover preview for a locked seat", () => {
     const coded = DEMO_SEATED_TICKET_GROUPS.find((item) => item.offer?.accessCode);
     expect(coded).toBeTruthy();
@@ -1276,6 +1300,46 @@ describe("InteractiveSeatmap canvas", () => {
       expect(screen.queryByLabelText(/loading seat map/i)).not.toBeInTheDocument();
     });
     expect(screen.getByText("Locked")).toBeInTheDocument();
+  });
+
+  it("lists DA and DB in the legend when those seat types exist", async () => {
+    useFiltersStore.setState({ loadingTicketGroups: false });
+    render(<InteractiveSeatmap lookupsMode="external" />);
+
+    await waitFor(() => {
+      expect(screen.queryByLabelText(/loading seat map/i)).not.toBeInTheDocument();
+    });
+    expect(screen.getByText("DA")).toBeInTheDocument();
+    expect(screen.getByText("DB")).toBeInTheDocument();
+    expect(screen.queryByText("Accessibility")).not.toBeInTheDocument();
+  });
+
+  it("lists generic Accessibility when no DA or DB types exist", async () => {
+    const blankSeats = Object.fromEntries(
+      Object.entries(mapping.seats || {}).map(([id, seat]) => [
+        id,
+        { ...seat, accessible: false, accessibleType: undefined },
+      ]),
+    );
+    useSeatmapStore.setState({
+      data: { ...mapping, seats: blankSeats },
+    });
+    useFiltersStore.setState({
+      loadingTicketGroups: false,
+      ticketGroups: DEMO_SEATED_TICKET_GROUPS.map((group) => ({
+        ...group,
+        accessible: false,
+        accessibleType: undefined,
+      })),
+    });
+    render(<InteractiveSeatmap lookupsMode="external" />);
+
+    await waitFor(() => {
+      expect(screen.queryByLabelText(/loading seat map/i)).not.toBeInTheDocument();
+    });
+    expect(screen.getByText("Accessibility")).toBeInTheDocument();
+    expect(screen.queryByText("DA")).not.toBeInTheDocument();
+    expect(screen.queryByText("DB")).not.toBeInTheDocument();
   });
 
   it("hides zoom and legend when hideChrome is set", async () => {
@@ -2018,7 +2082,7 @@ describe("SeatmapTooltip GA stepper", () => {
 
     expect(screen.getAllByText("Ticket limit: 1–4 per order")).toHaveLength(2);
     expect(screen.queryByText("Ticket limit: 1–100 per order")).not.toBeInTheDocument();
-    expect(screen.getAllByText("Incl. Taxes & Fees")).toHaveLength(2);
+    expect(screen.getAllByText("Incl. taxes & fees")).toHaveLength(2);
   });
 
   it("states the 1–100 default at the top when other GA offers have their own limit", () => {
@@ -2649,7 +2713,7 @@ describe("SeatmapTooltip GA stepper", () => {
     );
 
     expect(screen.queryByText(/Ticket limit:/)).not.toBeInTheDocument();
-    expect(screen.getAllByText("Incl. Taxes & Fees")).toHaveLength(2);
+    expect(screen.getAllByText("Incl. taxes & fees")).toHaveLength(2);
   });
 
   it("omits the ticket limit on a seated popover with only one offer", () => {

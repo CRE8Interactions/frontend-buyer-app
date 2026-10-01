@@ -27,6 +27,7 @@ import SeatmapSeat, {
   TOOLTIP_DISMISS_DELAY_MS,
 } from "./SeatmapSeat";
 import SeatmapSections from "./SeatmapSections";
+import { seatmapAccessibilityLegendRows } from "@/lib/ticketAccessibility";
 import SeatmapTooltip, { type SeatmapTooltipTarget } from "./SeatmapTooltip";
 
 const PAN_THRESHOLD_PX = SEATMAP_TAP_THRESHOLD_PX;
@@ -321,6 +322,14 @@ export default function InteractiveSeatmap({
   const [focusedSectionId, setFocusedSectionId] = useState<string | null>(null);
   const [activeRowIds, setActiveRowIds] = useState<string[] | null>(null);
   const [lookupsReady, setLookupsReady] = useState(lookupsMode === "external");
+  const accessibilityLegend = useMemo(
+    () =>
+      seatmapAccessibilityLegendRows([
+        ...Object.values(data?.seats || {}),
+        ...ticketGroups,
+      ]),
+    [data?.seats, ticketGroups],
+  );
   const [legendOpen, setLegendOpen] = useState(!compactChrome);
   const [fitScale, setFitScale] = useState(1);
   // Venue artwork can arrive after geometry — keep the Find-on-map spinner up
@@ -1037,7 +1046,7 @@ export default function InteractiveSeatmap({
                       { label: "Unavailable", color: "#E6E8EC" },
                       { label: "Available", color: "#3E8BF7" },
                       { label: "Selected", color: accent },
-                      { label: "Accessibility", color: "#F4BC16" },
+                      ...accessibilityLegend,
                     ]
                   : [
                       { label: "Unavailable", color: "#E6E8EC" },
@@ -1045,7 +1054,7 @@ export default function InteractiveSeatmap({
                       { label: "Selected", color: accent },
                       { label: "Locked", color: "#353945" },
                       { label: "Exclusive", color: "#9757D7" },
-                      { label: "Accessibility", color: "#F4BC16" },
+                      ...accessibilityLegend,
                     ]
               ).map((item) => (
                 <div

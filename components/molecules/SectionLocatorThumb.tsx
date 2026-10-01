@@ -30,6 +30,20 @@ export function sectionPin(
   return { cx, cy };
 }
 
+/**
+ * DigitalOcean Spaces answers 503 when a page's first paint fires many
+ * thumbnail requests at once. One short retry lets a throttled-but-real
+ * image load instead of being treated as missing.
+ */
+export const CANDIDATE_RETRY_DELAY_MS = 600;
+export const CANDIDATE_RETRY_LIMIT = 1;
+
+/** Cache-busting suffix so the browser re-requests a 503'd URL. */
+export function retryCandidateSrc(src: string, attempt: number) {
+  if (attempt <= 0) return src;
+  return `${src}${src.includes("?") ? "&" : "?"}retry=${attempt}`;
+}
+
 function CandidateThumbnail({
   candidates,
   alt,
@@ -42,17 +56,40 @@ function CandidateThumbnail({
   onExhausted: () => void;
 }) {
   const [index, setIndex] = useState(0);
+  const [retries, setRetries] = useState(0);
+  const [waiting, setWaiting] = useState(false);
   const key = candidates.join("|");
 
   useEffect(() => {
     setIndex(0);
+    setRetries(0);
+    setWaiting(false);
   }, [key]);
+
+  useEffect(() => {
+    if (!waiting) return;
+    // Hold the retry so the burst that triggered the 503 has drained.
+    const timer = setTimeout(() => setWaiting(false), CANDIDATE_RETRY_DELAY_MS);
+    return () => clearTimeout(timer);
+  }, [waiting]);
 
   if (!candidates.length) {
     return null;
   }
 
-  const src = candidates[Math.min(index, candidates.length - 1)];
+  const base = candidates[Math.min(index, candidates.length - 1)];
+  const src = retryCandidateSrc(base, retries);
+
+  if (waiting) {
+    return (
+      <div
+        className={className}
+        aria-busy="true"
+        aria-label={alt}
+        style={{ width: "100%", height: "100%", background: "#edeff7" }}
+      />
+    );
+  }
 
   return (
     // eslint-disable-next-line @next/next/no-img-element
@@ -60,10 +97,21 @@ function CandidateThumbnail({
       src={src}
       alt={alt}
       className={className}
+      loading="lazy"
+      decoding="async"
       onError={() => {
+        if (retries < CANDIDATE_RETRY_LIMIT) {
+          setRetries(retries + 1);
+          setWaiting(true);
+          return;
+        }
         const next = index + 1;
-        if (next < candidates.length) setIndex(next);
-        else onExhausted();
+        if (next < candidates.length) {
+          setIndex(next);
+          setRetries(0);
+        } else {
+          onExhausted();
+        }
       }}
       style={{
         width: "100%",

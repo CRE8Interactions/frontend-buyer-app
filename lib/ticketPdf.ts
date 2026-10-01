@@ -20,12 +20,14 @@ import { formatEventWhen } from "@/lib/helpers";
 import type { EventLike } from "@/lib/cartEvents";
 import {
   formatTicketHolderName,
+  seatDisplayValue,
   ticketRowValue,
   ticketSeatValue,
   ticketSectionValue,
 } from "@/lib/wallet";
 import { formatVenueCityState } from "@/lib/venueLocation";
 import { resolvePrintedOfferInfo } from "@/lib/printedOfferLabel";
+import { getAccessibleLabel } from "@/lib/ticketAccessibility";
 
 type PrintableTicket = {
   id?: string | number;
@@ -42,6 +44,8 @@ type PrintableTicket = {
   email?: unknown;
   offerName?: unknown;
   offer?: { name?: unknown; description?: unknown };
+  accessible?: unknown;
+  accessibleType?: unknown;
   package?: { name?: unknown } | Array<{ name?: unknown }>;
   organizationUUID?: string;
   organization?: { uuid?: string };
@@ -288,6 +292,12 @@ export function printedTicketOfferLayout(
   };
 }
 
+/** Right-column ACCESSIBILITY value. Empty when the ticket is not accessible. */
+export function printedTicketAccessibilityLayout(ticket: PrintableTicket) {
+  const value = getAccessibleLabel(ticket);
+  return value ? { label: "ACCESSIBILITY", value } : null;
+}
+
 function drawRoundedRect(
   page: PDFPage,
   {
@@ -365,7 +375,9 @@ export function ticketPdfSeatColumnValues(
       ? ticketSectionValue(ticket) || "—"
       : String(ticket.sectionName ?? ticket.sectionNumber ?? "—"),
     row: isGA ? gaRow || (gaBare ? "GA" : "—") : String(ticket.rowNumber ?? "—"),
-    seat: isGA ? gaSeat || (gaBare ? "GA" : "—") : String(ticket.seatNumber ?? "—"),
+    seat: isGA
+      ? seatDisplayValue(gaSeat) || (gaBare ? "GA" : "—")
+      : seatDisplayValue(ticket.seatNumber) || "—",
   };
 }
 
@@ -536,9 +548,15 @@ async function drawBrandedTicket(
     });
   }
 
-  const drawField = (label: string, value: unknown, x: number, y: number) => {
+  const drawField = (
+    label: string,
+    value: unknown,
+    x: number,
+    y: number,
+    maxWidth = 230,
+  ) => {
     page.drawText(label, { x, y: y + 16, size: 8, font: bold, color: labelColor });
-    page.drawText(fitText(value, regular, 11, 230) || "—", {
+    page.drawText(fitText(value, regular, 11, maxWidth) || "—", {
       x,
       y,
       size: 11,
@@ -588,13 +606,36 @@ async function drawBrandedTicket(
     color: hexToRgb("#CBCFD8"),
   });
 
+  const qrSize = 118;
+  const besideQrWidth = Math.max(
+    72,
+    TICKET_X + TICKET_W - qrSize - 24 - 8 - holderX,
+  );
+  const rightColumnWidth = (y: number) =>
+    y < ticketY + 40 + qrSize ? besideQrWidth : 200;
+
+  let rightY = headerBottom - 80;
   if (offerLayout.secondary) {
     drawField(
       offerLayout.secondary.label,
       offerLayout.secondary.value,
       holderX,
-      headerBottom - 80,
+      rightY,
+      rightColumnWidth(rightY),
     );
+    rightY -= 40;
+  }
+
+  const accessibility = printedTicketAccessibilityLayout(ticket);
+  if (accessibility) {
+    drawField(
+      accessibility.label,
+      accessibility.value,
+      holderX,
+      rightY,
+      rightColumnWidth(rightY),
+    );
+    rightY -= 40;
   }
 
   const ticketId = printedTicketIdLayout(ticket, event);
@@ -603,7 +644,8 @@ async function drawBrandedTicket(
       ticketId.label,
       ticketId.value,
       holderX,
-      headerBottom - (offerLayout.secondary ? 120 : 80),
+      rightY,
+      rightColumnWidth(rightY),
     );
   }
 
@@ -646,7 +688,6 @@ async function drawBrandedTicket(
     });
   });
 
-  const qrSize = 118;
   const qrX = TICKET_X + TICKET_W - qrSize - 24;
   const qrY = ticketY + 40;
   drawRoundedRect(page, {

@@ -13,6 +13,7 @@ import {
 import BrandedCheckoutShell from "@/components/organisms/BrandedCheckoutShell";
 import GuestContact from "@/components/organisms/GuestContact";
 import BrandedActionButton from "@/components/atoms/BrandedActionButton";
+import AccessibleSeatingBadge from "@/components/atoms/AccessibleSeatingBadge";
 import MobileStickyFooter from "@/components/molecules/MobileStickyFooter";
 import Button from "@/components/atoms/Button";
 import Spinner from "@/components/atoms/Spinner";
@@ -24,7 +25,6 @@ import {
   cachedBrandingForCheckout,
   checkoutBrandingFromCart,
   checkoutHoldSeconds,
-  resolveCheckoutTax,
   type CheckoutCartBrandingSource,
 } from "@/lib/checkoutBranding";
 import { cacheOrgBranding, orgSlugFromPathname } from "@/lib/orgBrandingCache";
@@ -38,6 +38,7 @@ import {
 } from "@/lib/flexPackDisplay";
 import {
   alignPackageSeatPrices,
+  checkoutTaxLine,
   packageCartTickets,
   packageOrderSummary,
   promoSummaryLabel,
@@ -1123,6 +1124,14 @@ function CheckoutPage() {
       : cart?.flex_pack
         ? flexTotals?.total || 0
         : Number(cart?.total || 0));
+  const taxLine = checkoutTaxLine(cart);
+  const singleEvent =
+    Boolean(cart?.tickets?.length) &&
+    !cart?.package &&
+    !cart?.flex_pack &&
+    !cart?.access_pass_template;
+  const singleEventAllIn = singleEvent && taxLine.label === "Tax (included)";
+  const singleEventNoTax = singleEvent && taxLine.amount === 0;
 
   const elementsOptions = useMemo(
     () =>
@@ -1343,6 +1352,12 @@ function CheckoutPage() {
                               <div className={`min-w-0 text-[12px] ${muted}`}>
                                 {seat.context}
                               </div>
+                              {seat.accessibleLabel ? (
+                                <AccessibleSeatingBadge
+                                  label={seat.accessibleLabel}
+                                  style={{ marginTop: 4 }}
+                                />
+                              ) : null}
                             </div>
                             <div className="shrink-0 text-[14px] font-semibold tabular-nums">
                               {formatCurrency(seat.price)}
@@ -1368,9 +1383,9 @@ function CheckoutPage() {
                       </span>
                     </div>
                     <div className="flex justify-between gap-3">
-                      <span>Tax</span>
+                      <span>{taxLine.label}</span>
                       <span className="tabular-nums text-[#051b35]">
-                        {formatCurrency(resolveCheckoutTax(cart))}
+                        {formatCurrency(taxLine.amount)}
                       </span>
                     </div>
                     <div className="flex justify-between gap-3">
@@ -1429,9 +1444,9 @@ function CheckoutPage() {
                       </span>
                     </div>
                     <div className="flex justify-between gap-3">
-                      <span>Tax</span>
+                      <span>{taxLine.label}</span>
                       <span className="tabular-nums text-[#051b35]">
-                        {formatCurrency(resolveCheckoutTax(cart))}
+                        {formatCurrency(taxLine.amount)}
                       </span>
                     </div>
                     <div className="flex justify-between gap-3">
@@ -1462,7 +1477,7 @@ function CheckoutPage() {
                     <div className="flex min-w-0 flex-1 flex-col gap-1.5">
                       {ticketSummary.offerName ? (
                         <span
-                          className="inline-flex w-fit items-center gap-1 rounded-full px-2.5 py-1 text-[12px] font-semibold"
+                          className="inline-flex w-fit items-center gap-1 rounded-full px-2.5 py-1 text-[13px] font-semibold"
                           style={{
                             background: branding.theme.accentSoft,
                             color: branding.theme.accent,
@@ -1485,42 +1500,61 @@ function CheckoutPage() {
                       <div className={`text-[13px] ${muted}`}>
                         {ticketSummary.subtitle}
                       </div>
+                      {ticketSummary.accessibleLabel ? (
+                        <AccessibleSeatingBadge
+                          label={ticketSummary.accessibleLabel}
+                          style={{ marginTop: 4 }}
+                        />
+                      ) : null}
                     </div>
                   </div>
                   <div className="h-px bg-[rgba(5,27,53,0.08)]" />
                   <div className="flex flex-col gap-2.5 text-[14px] text-[#4a5567]">
-                    {ticketSummary.offerLines.length > 1
-                      ? ticketSummary.offerLines.map((line) => (
-                          <div
-                            key={`${line.offerName}-${line.unit}`}
-                            className="flex justify-between gap-3"
-                          >
-                            <span>
-                              {line.offerName} x {line.count} (
-                              {formatCurrency(line.unit)})
-                            </span>
-                            <span className="tabular-nums text-[#051b35]">
-                              {formatCurrency(line.subtotal)}
-                            </span>
-                          </div>
-                        ))
-                      : (
-                          <div className="flex justify-between gap-3">
-                            <span>
-                              Tickets: {formatCurrency(ticketSummary.unit)} x{" "}
-                              {ticketSummary.count}
-                            </span>
-                            <span className="tabular-nums text-[#051b35]">
-                              {formatCurrency(ticketSummary.subtotal)}
-                            </span>
-                          </div>
-                        )}
-                    <div className="flex justify-between gap-3">
-                      <span>Tax</span>
-                      <span className="tabular-nums text-[#051b35]">
-                        {formatCurrency(resolveCheckoutTax(cart))}
-                      </span>
+                    <div className="flex flex-col gap-0.5">
+                      {ticketSummary.offerLines.length > 1
+                        ? ticketSummary.offerLines.map((line) => (
+                            <div
+                              key={`${line.offerName}-${line.unit}`}
+                              className="flex justify-between gap-3"
+                            >
+                              <span>
+                                {line.offerName} x {line.count} (
+                                {formatCurrency(line.unit)})
+                              </span>
+                              <span className="tabular-nums text-[#051b35]">
+                                {formatCurrency(line.subtotal)}
+                              </span>
+                            </div>
+                          ))
+                        : (
+                            <div className="flex justify-between gap-3">
+                              <span className="text-[14px] text-[#4a5567]">
+                                Tickets: {formatCurrency(ticketSummary.unit)} ×{" "}
+                                {ticketSummary.count}
+                              </span>
+                              <span className="tabular-nums text-[#051b35]">
+                                {formatCurrency(ticketSummary.subtotal)}
+                              </span>
+                            </div>
+                          )}
+                      {singleEventAllIn ? (
+                        <p className="text-[13px] leading-tight text-[#4a5567]">
+                          Includes {formatCurrency(taxLine.amount)} tax
+                        </p>
+                      ) : singleEventNoTax ? (
+                        <p className="text-[13px] leading-tight text-[#4a5567]">
+                          No tax applies
+                        </p>
+                      ) : null}
                     </div>
+                    {singleEventAllIn || singleEventNoTax ? null : (
+                      <div className="flex justify-between gap-3">
+                        <span>{taxLine.label}</span>
+                        <span className="tabular-nums text-[#051b35]">
+                          {formatCurrency(taxLine.amount)}
+                        </span>
+                      </div>
+                    )}
                   </div>
                 </>
               ) : cart?.package?.name ? (
@@ -1537,9 +1571,9 @@ function CheckoutPage() {
               !cart?.flex_pack &&
               cart?.access_pass_template ? (
                 <div className="flex justify-between gap-3 text-[14px] text-[#4a5567]">
-                  <span>Tax</span>
+                  <span>{taxLine.label}</span>
                   <span className="tabular-nums text-[#051b35]">
-                    {formatCurrency(resolveCheckoutTax(cart))}
+                    {formatCurrency(taxLine.amount)}
                   </span>
                 </div>
               ) : null}

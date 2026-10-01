@@ -355,8 +355,11 @@ describe("Checkout page", { timeout: 20_000 }, () => {
     ).not.toBeInTheDocument();
     expect(
       screen.getByText(
-        `Sec ${ticket.sectionName} · Row ${ticket.rowNumber} · Seat ${ticket.seatNumber}`,
+        `Sec ${ticket.sectionName} · Row ${ticket.rowNumber}`,
       ),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(`1 ticket · Seat ${ticket.seatNumber}`),
     ).toBeInTheDocument();
     expect(screen.getByAltText(/seat view for this ticket/i)).toHaveAttribute(
       "src",
@@ -820,14 +823,113 @@ describe("Checkout page", { timeout: 20_000 }, () => {
 
     expect(
       await screen.findByText(
-        `Tickets: ${formatCurrency(summary.unit)} x ${summary.count}`,
+        `Tickets: ${formatCurrency(summary.unit)} × ${summary.count}`,
       ),
     ).toBeInTheDocument();
-    expect(screen.getByText("Tax")).toBeInTheDocument();
+    expect(screen.getByText("No tax applies")).toBeInTheDocument();
+    expect(screen.queryByText("Tax")).not.toBeInTheDocument();
     expect(screen.getByText("Total")).toBeInTheDocument();
     expect(screen.queryByText("Subtotal")).not.toBeInTheDocument();
     expect(screen.queryByText("Processing Fee")).not.toBeInTheDocument();
     expect(screen.queryByText("Service Fee")).not.toBeInTheDocument();
+  });
+
+  it("shows included tax on a single event without listing fees or changing the total", async () => {
+    const base = demoCheckoutCart({ ticketCount: 2 });
+    const perTicket = {
+      taxPerTicket: 1.4,
+      estimatedPaymentProcessingFee: 0.83,
+      serviceFee: 2,
+    };
+    const cart = {
+      ...base,
+      totalTax: 0,
+      am_pricing_objects: [
+        { id: 1, totalDue: base.tickets[0].cost, ...perTicket },
+      ],
+    };
+    mockedGetCart.mockResolvedValue({ data: cart } as never);
+    render(<CheckoutPageRoute />);
+
+    expect(
+      await screen.findByText(
+        `Includes ${formatCurrency(perTicket.taxPerTicket * cart.tickets.length)} tax`,
+      ),
+    ).toBeInTheDocument();
+    expect(screen.getByText("Total").parentElement).toHaveTextContent(
+      formatCurrency(cart.total),
+    );
+    expect(screen.queryByText("Tax (included)")).not.toBeInTheDocument();
+    expect(screen.queryByText(/processing fee/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/service fee/i)).not.toBeInTheDocument();
+  });
+
+  it("shows the same included-tax summary while guest contact is open", async () => {
+    mockedUseAuth.mockReturnValue(authState(false));
+    const base = demoCheckoutCart({ ticketCount: 2 });
+    const taxPerTicket = 1.4;
+    const cart = {
+      ...base,
+      totalTax: 0,
+      am_pricing_objects: [
+        { id: 1, totalDue: base.tickets[0].cost, taxPerTicket },
+      ],
+    };
+    mockedGetCart.mockResolvedValue({ data: cart } as never);
+    render(<CheckoutPageRoute />);
+
+    expect(
+      await screen.findByRole("heading", {
+        name: /where should we send your tickets/i,
+      }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        `Includes ${formatCurrency(taxPerTicket * cart.tickets.length)} tax`,
+      ),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/processing fee/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/service fee/i)).not.toBeInTheDocument();
+  });
+
+  it("keeps the plain Tax row when the cart charges tax on top of the ticket price", async () => {
+    const base = demoCheckoutCart({ ticketCount: 2 });
+    const cart = {
+      ...base,
+      totalTax: 2.5,
+      am_pricing_objects: [
+        { id: 1, totalDue: base.tickets[0].cost, taxPerTicket: 1.4, serviceFee: 2 },
+      ],
+    };
+    mockedGetCart.mockResolvedValue({ data: cart } as never);
+    render(<CheckoutPageRoute />);
+
+    expect((await screen.findByText("Tax")).parentElement).toHaveTextContent(
+      formatCurrency(2.5),
+    );
+    expect(
+      screen.queryByText(/includes .* tax/i),
+    ).not.toBeInTheDocument();
+    expect(screen.queryByText(/service fee/i)).not.toBeInTheDocument();
+  });
+
+  it("shows the accessible seating label on checkout tickets", async () => {
+    const ada = DEMO_SEATED_TICKET_GROUPS.find((group) => group.accessible)!;
+    const cart = demoCheckoutCart({ ticketCount: 1 });
+    cart.tickets = cart.tickets.map((ticket) => ({
+      ...ticket,
+      accessible: true,
+      accessibleType: ada.accessibleType,
+      sectionName: ada.sectionNumber,
+      sectionNumber: ada.sectionNumber,
+      rowNumber: ada.rowNumber,
+    }));
+    mockedGetCart.mockResolvedValue({ data: cart } as never);
+    render(<CheckoutPageRoute />);
+
+    expect(
+      await screen.findByText("Open space for wheelchair"),
+    ).toBeInTheDocument();
   });
 
   it("lists each offer on its own price row when the cart mixes offers", async () => {
@@ -881,7 +983,8 @@ describe("Checkout page", { timeout: 20_000 }, () => {
     expect(
       await screen.findByText(/Tickets:/),
     ).toBeInTheDocument();
-    expect(screen.getByText("Tax")).toBeInTheDocument();
+    expect(screen.getByText("No tax applies")).toBeInTheDocument();
+    expect(screen.queryByText("Tax")).not.toBeInTheDocument();
     expect(screen.queryByText("Processing Fee")).not.toBeInTheDocument();
     expect(screen.queryByText("Service Fee")).not.toBeInTheDocument();
   });
@@ -897,6 +1000,7 @@ describe("Checkout page", { timeout: 20_000 }, () => {
     expect(screen.getByText(summary.venueName)).toBeInTheDocument();
     expect(screen.getByText(summary.seats[0].seatLine)).toBeInTheDocument();
     expect(screen.getByText(summary.seats[0].context)).toBeInTheDocument();
+    expect(screen.queryByText("Accessible seating")).not.toBeInTheDocument();
     expect(screen.getByText("Subtotal")).toBeInTheDocument();
     expect(
       screen.getAllByText(formatCurrency(summary.subtotal)).length,
@@ -955,6 +1059,23 @@ describe("Checkout page", { timeout: 20_000 }, () => {
     expect(screen.queryByText(formatCurrency(490))).not.toBeInTheDocument();
     expect(
       screen.getByRole("button", { name: `Pay ${formatCurrency(507.6)}` }),
+    ).toBeInTheDocument();
+  });
+
+  it("shows the accessibility badge for accessible package seats", async () => {
+    const base = demoPackageCheckoutCart();
+    const cart = demoPackageCheckoutCart({
+      tickets: base.tickets.map((ticket) => ({
+        ...ticket,
+        accessible: true,
+        accessibleType: "DA",
+      })),
+    });
+    mockedGetCart.mockResolvedValue({ data: cart } as never);
+    render(<CheckoutPageRoute />);
+
+    expect(
+      await screen.findByText("Open space for wheelchair"),
     ).toBeInTheDocument();
   });
 
@@ -1118,7 +1239,8 @@ describe("Checkout page", { timeout: 20_000 }, () => {
   });
 
   it("summarizes a flex pack with the $1 voucher fee and processing fee", async () => {
-    const cart = demoFlexPackCheckoutCart();
+    // Legacy reads only cart.totalTax; a stray salesTax must not show as tax.
+    const cart = { ...demoFlexPackCheckoutCart(), salesTax: 3.5 };
     mockedGetCart.mockResolvedValue({ data: cart } as never);
     render(<CheckoutPageRoute />);
 
@@ -1134,7 +1256,10 @@ describe("Checkout page", { timeout: 20_000 }, () => {
       screen.getByText(`${cart.flex_pack.gameTickets} flex vouchers`),
     ).toBeInTheDocument();
     expect(screen.getByText("Subtotal")).toBeInTheDocument();
-    expect(screen.getByText("Tax")).toBeInTheDocument();
+    expect(screen.getByText("Tax").parentElement).toHaveTextContent(
+      formatCurrency(0),
+    );
+    expect(screen.queryByText(formatCurrency(3.5))).not.toBeInTheDocument();
     expect(screen.getByText("Processing Fee")).toBeInTheDocument();
     expect(
       screen.getByText(formatCurrency(cart.processingFee)),
@@ -1151,6 +1276,25 @@ describe("Checkout page", { timeout: 20_000 }, () => {
     expect(
       await screen.findByRole("button", {
         name: `Pay ${formatCurrency(cart.total)}`,
+      }),
+    ).toBeInTheDocument();
+  });
+
+  it("charges flex pack tax on top of the price and fees like legacy", async () => {
+    const base = demoFlexPackCheckoutCart({ processingFee: 1.85 });
+    const cart = { ...base, totalTax: 3.5 };
+    const expectedTotal =
+      Number(base.flex_pack.price) + Number(base.serviceFee) + 1.85 + 3.5;
+    mockedGetCart.mockResolvedValue({ data: cart } as never);
+    render(<CheckoutPageRoute />);
+
+    expect(await screen.findByText(cart.flex_pack.name)).toBeInTheDocument();
+    expect(screen.getByText("Tax").parentElement).toHaveTextContent(
+      formatCurrency(3.5),
+    );
+    expect(
+      await screen.findByRole("button", {
+        name: `Pay ${formatCurrency(expectedTotal)}`,
       }),
     ).toBeInTheDocument();
   });

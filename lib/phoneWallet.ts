@@ -11,6 +11,10 @@ import {
   type AccessPassSummary,
   type EventLike,
 } from "@/lib/wallet";
+import {
+  accessibleTypeOf,
+  getAccessibleLabel,
+} from "@/lib/ticketAccessibility";
 
 export type PhoneWalletKind = "apple" | "google";
 
@@ -288,6 +292,19 @@ export async function addAccessPassToPhoneWallet(
   );
 }
 
+/** Pass TICKET field is `ticket.name`, the same value legacy sends from the order. */
+function printablePassName(ticket: Record<string, unknown>): string {
+  const stored = String(ticket.name || "").trim();
+  if (stored) return stored;
+  const raw = ticket.offer;
+  const offer = Array.isArray(raw) ? raw[0] : raw;
+  const fromOffer =
+    offer && typeof offer === "object"
+      ? String((offer as { name?: unknown }).name || "").trim()
+      : "";
+  return fromOffer || String(ticket.offerName || ticket.offer_name || "").trim();
+}
+
 export function ticketWalletRequest(
   event?: EventLike | Record<string, unknown> | null,
   ticket?: Record<string, unknown> | null,
@@ -297,7 +314,20 @@ export function ticketWalletRequest(
   if (!checkInCode) return null;
   const passEvent = walletPassEvent(event, ticket);
   if (!passEvent) return null;
-  return { event: passEvent, obj: ticket };
+  const name = printablePassName(ticket);
+  const accessibleType = accessibleTypeOf(ticket);
+  const passTicket = {
+    ...ticket,
+    ...(name ? { name } : {}),
+    ...(accessibleType ? { accessible: true, accessibleType } : {}),
+  };
+  return {
+    event: passEvent,
+    obj: {
+      ...passTicket,
+      accessibilityLabel: getAccessibleLabel(passTicket),
+    },
+  };
 }
 
 export async function addTicketToPhoneWallet(

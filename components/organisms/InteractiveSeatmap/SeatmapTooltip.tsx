@@ -22,6 +22,7 @@ import {
 } from "@/lib/ticketListings";
 import type { QuantityLimits, RawTicketGroup } from "@/lib/ticketListings";
 import { selectionOfferName } from "@/lib/ticketSummary";
+import { mapSectionHeading, seatDisplayValue } from "@/lib/wallet";
 import useFiltersStore from "@/stores/filtersStore";
 import useSeatmapStore from "@/stores/seatmapStore";
 import type { TicketGroup } from "@/stores/filtersStore";
@@ -114,7 +115,7 @@ function priceIncludesTaxesAndFees(
 function OfferPriceNote({ color }: { color: string }) {
   return (
     <p className="text-[10px]" style={{ color }}>
-      Incl. Taxes &amp; Fees
+      Incl. taxes &amp; fees
     </p>
   );
 }
@@ -163,9 +164,12 @@ function seatedSelectionPreview(
   seatIds: string[] | null,
 ) {
   if (!seatIds?.length) return null;
-  const labels = seatIds.map(
-    (id) => mapping?.seats?.[id]?.seatNumber ?? id,
-  );
+  const labels = seatIds.map((id) => {
+    const number = mapping?.seats?.[id]?.seatNumber;
+    return number == null || number === ""
+      ? id
+      : seatDisplayValue(number) || id;
+  });
   return labels.length === 1
     ? `Seat ${labels[0]} will be added`
     : `Seats ${labels[0]}-${labels[labels.length - 1]} will be added`;
@@ -472,7 +476,7 @@ function MobileSingleOfferSeatPopup({
     seat?.sectionNumber ||
     "—";
   const row = primary?.rowName || primary?.rowNumber || "—";
-  const seatNumber = seat?.seatNumber ?? "—";
+  const seatNumber = seatDisplayValue(seat?.seatNumber) || "—";
 
   useLayoutEffect(() => {
     const nextHeight = cardRef.current?.offsetHeight;
@@ -744,10 +748,10 @@ export default function SeatmapTooltip({
               className="text-[12px] font-semibold uppercase tracking-[0.12em]"
               style={{ color: muted }}
             >
-              Seat {seat?.seatNumber ?? "—"}
+              Seat {seatDisplayValue(seat?.seatNumber) || "—"}
             </p>
             <p className="mt-1 text-[15px] font-semibold" style={{ color: ink }}>
-              Sec {primary?.sectionName || primary?.sectionNumber} · Row{" "}
+              {mapSectionHeading(primary?.sectionName || primary?.sectionNumber)} · Row{" "}
               {primary?.rowName || primary?.rowNumber}
             </p>
           </div>

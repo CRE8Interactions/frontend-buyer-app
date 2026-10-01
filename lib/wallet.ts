@@ -474,6 +474,24 @@ export function ticketSectionValue(
   return "";
 }
 
+/**
+ * Map seat popups keep a name that already says Section.
+ * A bare number still gets a Sec prefix.
+ */
+export function mapSectionHeading(value: unknown): string {
+  const text = String(value ?? "").trim();
+  if (!text) return "";
+  if (/^(?:section|sec)\b/i.test(text)) return text;
+  return `Sec ${text}`;
+}
+
+/** Drop a leading "Sec" or "Section" so a Sec label is not repeated. */
+export function sectionDisplayValue(value: unknown): string {
+  const text = String(value ?? "").trim();
+  const bare = text.replace(/^(?:(?:section|sec)\s+)+/i, "").trim();
+  return bare || text;
+}
+
 export function ticketRowValue(
   ticket?: TicketLike | Record<string, unknown> | null,
 ): string {
@@ -488,6 +506,23 @@ export function ticketRowValue(
     if (text && !isGenericGeneralAdmissionLabel(text)) return text;
   }
   return "";
+}
+
+/** Leading digits in a seat label. `13_DA` counts as 13; `DA` has none. */
+export function seatNumberDigits(value: unknown): number | null {
+  const match = String(value ?? "").match(/\d+/);
+  if (!match) return null;
+  const numeric = Number(match[0]);
+  return Number.isFinite(numeric) ? numeric : null;
+}
+
+/** Shopper-facing seat number. `13_DA` and `13_DB` display as 13. */
+export function seatDisplayValue(value: unknown): string {
+  if (value == null) return "";
+  const text = String(value).trim();
+  if (!text || text === "undefined" || text === "null") return "";
+  const numeric = seatNumberDigits(text);
+  return numeric == null ? text : String(numeric);
 }
 
 /** Actual seat number/name only — never invent GA for general admission tickets. */
@@ -514,9 +549,10 @@ export function gaTicketSeatLine(
 ): string {
   const sec = ticketSectionValue(ticket);
   const row = ticketRowValue(ticket);
-  const seat = ticketSeatValue(ticket);
+  const seat = seatDisplayValue(ticketSeatValue(ticket));
   const parts: string[] = [];
-  if (sec) parts.push(`Sec ${sec}`);
+  const sectionLabel = sectionDisplayValue(sec);
+  if (sectionLabel) parts.push(`Sec ${sectionLabel}`);
   if (row) parts.push(`Row ${row}`);
   if (seat) parts.push(`Seat ${seat}`);
   if (!parts.length) return "GA";
@@ -555,23 +591,24 @@ export function seatLabel(ticket?: TicketLike | null): string {
   if (ticket.generalAdmission || ticket.GA) {
     return gaTicketSeatLine(ticket);
   }
+  const seat = seatDisplayValue(ticket.seatNumber);
   return [
-    ticket.sectionNumber != null ? `Sec ${ticket.sectionNumber}` : null,
+    ticket.sectionNumber != null
+      ? `Sec ${sectionDisplayValue(ticket.sectionNumber)}`
+      : null,
     ticket.rowNumber != null ? `Row ${ticket.rowNumber}` : null,
-    ticket.seatNumber != null ? `Seat ${ticket.seatNumber}` : null,
+    seat ? `Seat ${seat}` : null,
   ]
     .filter(Boolean)
     .join(" · ");
 }
 
-/** Collapse seat numbers: `6-10` consecutive, `6, 10, 11` otherwise. */
+/** Collapse seat numbers: `6-10` consecutive, `6, 10, 11` otherwise. `13_DA` counts as 13. */
 export function formatSeatNumberRanges(
   seats: Array<string | number>,
 ): string {
   const unique = [
-    ...new Set(
-      seats.map((seat) => String(seat).trim()).filter(Boolean),
-    ),
+    ...new Set(seats.map((seat) => seatDisplayValue(seat)).filter(Boolean)),
   ];
   const nums = unique
     .map((seat) => Number(seat))
@@ -695,7 +732,7 @@ export function groupedWalletSeatLines(
     if (group.bareGA && group.rows.size === 0) {
       lines.push(
         group.sectionDisplay && group.sectionDisplay !== "GA"
-          ? `Sec ${group.sectionDisplay}`
+          ? `Sec ${sectionDisplayValue(group.sectionDisplay)}`
           : "GA",
       );
       continue;
@@ -715,12 +752,12 @@ export function groupedWalletSeatLines(
 
     if (rowParts.length) {
       lines.push(
-        `Sec ${group.sectionDisplay} · ${rowParts.join(" · ")}`,
+        `Sec ${sectionDisplayValue(group.sectionDisplay)} · ${rowParts.join(" · ")}`,
       );
     } else if (group.bareGA) {
       lines.push(
         group.sectionDisplay && group.sectionDisplay !== "GA"
-          ? `Sec ${group.sectionDisplay}`
+          ? `Sec ${sectionDisplayValue(group.sectionDisplay)}`
           : "GA",
       );
     }
@@ -814,11 +851,13 @@ export function transferGroupLabel(
   const isGA = isTransferGroupGeneralAdmission(ticket);
 
   if (isGA) {
-    return section ? `Sec ${section}` : "Sec";
+    const label = sectionDisplayValue(section);
+    return label ? `Sec ${label}` : "Sec";
   }
 
   const parts: string[] = [];
-  if (section) parts.push(`Sec ${section}`);
+  const sectionLabel = sectionDisplayValue(section);
+  if (sectionLabel) parts.push(`Sec ${sectionLabel}`);
   if (row) parts.push(`Row ${row}`);
   return parts.join(" · ");
 }
@@ -840,13 +879,14 @@ export function transferSeatChip(
     isGenericGeneralAdmissionLabel(parsed) ||
     (ticket?.seatNumber != null &&
       isGenericGeneralAdmissionLabel(String(ticket.seatNumber).trim()));
+  const displayedSeat = seatDisplayValue(actualSeat);
   const seatNo = isGA
-    ? actualSeat || "GA"
-    : actualSeat || parsed || "—";
+    ? displayedSeat || "GA"
+    : displayedSeat || seatDisplayValue(parsed) || "—";
   return {
     seatNo,
     isGA,
-    ariaLabel: isGA ? (actualSeat || "GA") : `Seat ${seatNo}`,
+    ariaLabel: isGA ? seatNo : `Seat ${seatNo}`,
   };
 }
 

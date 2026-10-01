@@ -1,4 +1,5 @@
 import { BLOCKTICKETS_NAVY, resolvePrimaryColor, type BrandingOrganization, type OrgBranding } from "@/lib/branding";
+import { accessibleTypeOf } from "@/lib/ticketAccessibility";
 import { isSportingEvent } from "@/lib/eventCategory";
 import {
   attractionImageUrl,
@@ -50,6 +51,8 @@ import {
   isWalletListedEvent,
   ticketRowValue,
   ticketSeatValue,
+  seatDisplayValue,
+  sectionDisplayValue,
   ticketSectionValue,
   type AccessPassLike,
   type AccessPassSummary,
@@ -360,10 +363,10 @@ function ticketSeatLabel(t: Record<string, unknown>) {
   if (t.generalAdmission || t.GA) {
     return gaTicketSeatLine(t);
   }
-  const sec = t.sectionName || t.sectionNumber;
+  const sec = sectionDisplayValue(t.sectionName || t.sectionNumber);
   const row = t.rowNumber;
-  const seat = t.seatNumber;
-  if (sec != null && row != null && seat != null) {
+  const seat = seatDisplayValue(t.seatNumber);
+  if (sec != null && row != null && seat) {
     return `Sec ${sec} · Row ${row} · Seat ${seat}`;
   }
   return String(t.offerName || t.sectionName || "Ticket");
@@ -576,10 +579,16 @@ function printedTicketPayload(ticket: Record<string, unknown>) {
   const offerName = String(
     ticket.offerName || ticket.offer_name || offer?.name || "",
   ).trim();
+  const accessibleType = accessibleTypeOf(ticket);
   return {
     ...(name ? { name } : {}),
     ...(offer ? { offer } : {}),
     ...(offerName ? { offerName } : {}),
+    // The Apple/Google pass reads these, not the label this app computes.
+    ...(ticket.accessible === true || accessibleType
+      ? { accessible: true }
+      : {}),
+    ...(accessibleType ? { accessibleType } : {}),
   };
 }
 

@@ -6,6 +6,7 @@ import { useSearchParams } from "next/navigation";
 import BrandedActionButton, {
   ButtonBusyContents,
 } from "@/components/atoms/BrandedActionButton";
+import AccessibleSeatingBadge from "@/components/atoms/AccessibleSeatingBadge";
 import RouteLoader from "@/components/molecules/RouteLoader";
 import MobileStickyFooter from "@/components/molecules/MobileStickyFooter";
 import { ShopperFluidTypeStyles } from "@/components/templates/ShopperFluidType";
@@ -668,6 +669,12 @@ function CheckoutSuccessPage() {
                             ? "Your tickets are in your wallet"
                             : "Your tickets have been emailed"}
                   </div>
+                  {ticketSummary.accessibleLabel ? (
+                    <AccessibleSeatingBadge
+                      label={ticketSummary.accessibleLabel}
+                      style={{ marginTop: 4 }}
+                    />
+                  ) : null}
                 </div>
               </div>
               <div className="h-px bg-[rgba(5,27,53,0.08)]" />

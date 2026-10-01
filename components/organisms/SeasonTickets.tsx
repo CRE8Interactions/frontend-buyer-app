@@ -26,6 +26,7 @@ import {
   useState,
   type CSSProperties,
   type KeyboardEvent as ReactKeyboardEvent,
+  type ReactNode,
 } from "react";
 import Link from "next/link";
 import { useParams, usePathname, useSearchParams } from "next/navigation";
@@ -198,6 +199,8 @@ import {
   transferSeatChip,
   ticketRowValue,
   ticketSeatValue,
+  seatDisplayValue,
+  sectionDisplayValue,
   ticketSectionValue,
   unwrapList,
   unwrapAccessPassList,
@@ -207,6 +210,8 @@ import {
   type OrderLike,
   type TicketLike,
 } from "@/lib/wallet";
+import { getAccessibleLabel } from "@/lib/ticketAccessibility";
+import AccessibleSeatingBadge from "@/components/atoms/AccessibleSeatingBadge";
 import {
   addAccessPassToPhoneWallet,
   addTicketToPhoneWallet,
@@ -4896,11 +4901,12 @@ export default function SeasonTickets({
     if (isGA) {
       return {
         ...t,
-        sec: ticketSectionValue(raw) || "GA",
+        sec: sectionDisplayValue(ticketSectionValue(raw)) || "GA",
         row: ticketRowValue(raw) || "GA",
-        seatNo: ticketSeatValue(raw) || "GA",
+        seatNo: seatDisplayValue(ticketSeatValue(raw)) || "GA",
         entryLine,
         offerBadge,
+        accessibleLabel: getAccessibleLabel(raw),
       };
     }
     const parts = t.seat.split("·").map((p) => p.trim());
@@ -4911,40 +4917,44 @@ export default function SeasonTickets({
     if (parts.length >= 3) {
       return {
         ...t,
-        sec: peel(parts[0], /^Sec\s*/i),
+        sec: sectionDisplayValue(peel(parts[0], /^Sec\s*/i)),
         row: peel(parts[1], /^Row\s*/i),
-        seatNo: peel(parts[2], /^Seat\s*/i),
+        seatNo: seatDisplayValue(peel(parts[2], /^Seat\s*/i)) || "—",
         entryLine,
         offerBadge,
+        accessibleLabel: getAccessibleLabel(raw),
       };
     }
     if (parts.length === 2 && /^GA$/i.test(parts[1])) {
       return {
         ...t,
-        sec: peel(parts[0], /^Sec\s*/i),
+        sec: sectionDisplayValue(peel(parts[0], /^Sec\s*/i)),
         row: "GA",
         seatNo: "GA",
         entryLine,
         offerBadge,
+        accessibleLabel: getAccessibleLabel(raw),
       };
     }
     if (parts.length === 2) {
       return {
         ...t,
-        sec: peel(parts[0], /^Sec\s*/i),
+        sec: sectionDisplayValue(peel(parts[0], /^Sec\s*/i)),
         row: peel(parts[1], /^Row\s*/i),
         seatNo: "—",
         entryLine,
         offerBadge,
+        accessibleLabel: getAccessibleLabel(raw),
       };
     }
     return {
       ...t,
-      sec: peel(parts[0] || "GA", /^Sec\s*/i),
+      sec: sectionDisplayValue(peel(parts[0] || "GA", /^Sec\s*/i)),
       row: "GA",
       seatNo: "GA",
       entryLine,
       offerBadge,
+      accessibleLabel: getAccessibleLabel(raw),
     };
   });
   const acquiredAtLabel = orderAcquiredLabel(
@@ -5262,6 +5272,9 @@ export default function SeasonTickets({
                 {t.entryLine ? (
                   <div style={{ fontSize: fluidSize(13), lineHeight: 1.5, color: SUB }}>{t.entryLine}</div>
                 ) : null}
+                {t.accessibleLabel ? (
+                  <AccessibleSeatingBadge label={t.accessibleLabel} style={{ marginTop: 4 }} />
+                ) : null}
               </div>
             </div>
 
@@ -5431,6 +5444,9 @@ export default function SeasonTickets({
                 <div style={{ flex: 1, minWidth: 150, display: "flex", flexDirection: "column", gap: 5 }}>
                   <span style={{ alignSelf: "flex-start", fontSize: fluidSize(11), lineHeight: 1.5, fontWeight: 600, color: INK, background: SOFT, borderRadius: 999, padding: "4px 10px" }}>{t.offerBadge || "Tickets"}</span>
                   <div style={{ fontSize: mobile ? fluidSize(17) : 17, lineHeight: 1.5, fontWeight: 600, letterSpacing: "-0.015em" }}>{t.seat}</div>
+                  {t.accessibleLabel ? (
+                    <AccessibleSeatingBadge label={t.accessibleLabel} style={{ marginTop: 2 }} />
+                  ) : null}
                 </div>
                 <div className="st-ev-seat-actions">
                   <button
@@ -6151,9 +6167,11 @@ export default function SeasonTickets({
   };
 
   const offerLine = formatPrintedOfferLine(detail?.raw);
-  const detailRows = [
+  const accessibleLine = getAccessibleLabel(detail?.raw);
+  const detailRows: { k: string; v: ReactNode }[] = [
     { k: "Ticket", v: detail?.seat || "" },
     ...(offerLine ? [{ k: "Offer", v: offerLine }] : []),
+    ...(accessibleLine ? [{ k: "Accessibility", v: accessibleLine }] : []),
     {
       k: "Holder",
       v: printedTicketHolderName(
