@@ -1,7 +1,8 @@
 import type { TicketingFilters } from "@/components/organisms/PremiumTicketing";
+import type { TicketingSort } from "@/lib/ticketListings";
 
-/** Cheapest first — what the listings show before the shopper flips the sort. */
-const DEFAULT_SORT = "price";
+/** Cheapest first — what the listings show before the shopper changes the sort. */
+const DEFAULT_SORT: TicketingSort = "price";
 
 export function parseTicketingSearchParams(search: URLSearchParams): {
   quantity?: number;
@@ -13,8 +14,9 @@ export function parseTicketingSearchParams(search: URLSearchParams): {
   const quantityRaw = search.get("quantity");
   const quantity = Number(quantityRaw);
   const sortRaw = search.get("sort");
-  const sort =
-    sortRaw === "price" || sortRaw === "-price" ? sortRaw : undefined;
+  // Only the legacy values are honoured; anything else falls back to the default.
+  const sort: TicketingSort | undefined =
+    sortRaw === "price" || sortRaw === "bestseat" ? sortRaw : undefined;
   const offers = search.get("offers");
   const access = search.get("access_code");
 
@@ -57,7 +59,7 @@ export function listingFiltersFromSearch(search: URLSearchParams): TicketingFilt
   return {
     quantity: parsed.quantity ?? 0,
     accessible: Boolean(parsed.accessible),
-    sort: parsed.sort ?? "price",
+    sort: parsed.sort ?? DEFAULT_SORT,
     offerIds: parsed.offerIds,
     accessCodes: accessCodesFromTokens(parsed.accessCodeTokens),
   };

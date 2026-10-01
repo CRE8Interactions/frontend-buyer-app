@@ -10,12 +10,12 @@ import {
 describe("ticketing query params", () => {
   it("hydrates quantity, sort, accessible, offers, and access_code", () => {
     const search = new URLSearchParams(
-      "code=wait&quantity=4&sort=-price&accessible=true&offers=11,10&access_code=12:SECRET",
+      "code=wait&quantity=4&sort=bestseat&accessible=true&offers=11,10&access_code=12:SECRET",
     );
     const parsed = parseTicketingSearchParams(search);
     expect(parsed).toEqual({
       quantity: 4,
-      sort: "-price",
+      sort: "bestseat",
       accessible: true,
       offerIds: ["11", "10"],
       accessCodeTokens: ["12:SECRET"],
@@ -24,10 +24,17 @@ describe("ticketing query params", () => {
     expect(listingFiltersFromSearch(search)).toMatchObject({
       quantity: 4,
       accessible: true,
-      sort: "-price",
+      sort: "bestseat",
       offerIds: ["11", "10"],
       accessCodes: ["SECRET"],
     });
+  });
+
+  it("ignores the retired -price sort and falls back to cheapest first", () => {
+    const search = new URLSearchParams("sort=-price");
+    expect(parseTicketingSearchParams(search).sort).toBeUndefined();
+    expect(listingFiltersFromSearch(search).sort).toBe("price");
+    expect(hasListingQueryFilters(search)).toBe(false);
   });
 
   it("writes the filters the shopper chose, without the waiting-room code", () => {
@@ -37,7 +44,7 @@ describe("ticketing query params", () => {
         quantity: 4,
         defaultQuantity: 2,
         accessible: true,
-        sort: "-price",
+        sort: "bestseat",
         offerIds: [11],
         accessCodes: ["SECRET"],
         accessCodeTokens: ["12:SECRET"],
@@ -46,7 +53,7 @@ describe("ticketing query params", () => {
     );
     expect(href).not.toMatch(/(?:^|[?&])code=/);
     expect(href).toContain("quantity=4");
-    expect(href).toContain("sort=-price");
+    expect(href).toContain("sort=bestseat");
     expect(href).toContain("accessible=true");
     expect(href).toContain("offers=11");
     expect(href).toContain("access_code=12%3ASECRET");

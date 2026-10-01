@@ -58,7 +58,7 @@ vi.mock("@/components/organisms/PremiumTicketing", () => ({
           onFiltersChange?.({
             quantity: 4,
             accessible: true,
-            sort: "-price",
+            sort: "bestseat",
             offerIds: [11],
             accessCodes: ["SECRET"],
             accessCodeTokens: ["12:SECRET"],
@@ -201,7 +201,7 @@ describe("seated tickets route", () => {
         expect.objectContaining({
           quantity: 4,
           accessible: true,
-          sort: "-price",
+          sort: "bestseat",
           offerIds: [11],
           // The endpoint pairs each code with its offer id.
           accessCodes: ["12:SECRET"],
@@ -213,6 +213,7 @@ describe("seated tickets route", () => {
     const href = String(nav.replace.mock.calls.at(-1)?.[0]);
     expect(href).not.toMatch(/(?:^|[?&])code=/);
     expect(href).toContain("quantity=4");
+    expect(href).toContain("sort=bestseat");
     expect(href).toContain("accessible=true");
     expect(href).toContain("offers=11");
     expect(href).toContain("access_code=");
@@ -220,7 +221,7 @@ describe("seated tickets route", () => {
 
   it("hydrates listing filters from the URL and refetches listings only", async () => {
     nav.search = new URLSearchParams(
-      "quantity=4&sort=-price&accessible=true&offers=11&access_code=12:SECRET",
+      "quantity=4&sort=bestseat&accessible=true&offers=11&access_code=12:SECRET",
     );
     mockedGetEvent.mockResolvedValue({
       data: demoEventDetail(EVENT.shortCode),
@@ -239,7 +240,7 @@ describe("seated tickets route", () => {
       expect.objectContaining({
         quantity: 4,
         accessible: true,
-        sort: "-price",
+        sort: "bestseat",
         offerIds: ["11"],
         accessCodes: ["12:SECRET"],
       }),

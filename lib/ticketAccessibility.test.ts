@@ -4,6 +4,7 @@ import {
   ACCESSIBLE_LABEL_DA,
   ACCESSIBLE_LABEL_DB,
   ACCESSIBLE_LABEL_GENERIC,
+  accessibleLabelFromSeats,
   accessibleTypeOf,
   getAccessibleLabel,
   isAccessibleSource,
@@ -26,6 +27,8 @@ describe("ticket accessibility", () => {
       ACCESSIBLE_LABEL_DA,
     );
     expect(getAccessibleLabel({ accessible: true })).toBe(ACCESSIBLE_LABEL_GENERIC);
+    expect(getAccessibleLabel({ accessible: "true" })).toBe(ACCESSIBLE_LABEL_GENERIC);
+    expect(getAccessibleLabel({ accessible: 1 })).toBe(ACCESSIBLE_LABEL_GENERIC);
     expect(getAccessibleLabel({ raw: { accessible: true, accessibleType: "DB" } })).toBe(
       ACCESSIBLE_LABEL_DB,
     );
@@ -35,8 +38,24 @@ describe("ticket accessibility", () => {
 
   it("returns empty copy when the ticket is not accessible", () => {
     expect(getAccessibleLabel({ accessible: false })).toBe("");
+    expect(getAccessibleLabel({ accessible: "false" })).toBe("");
     expect(getAccessibleLabel({})).toBe("");
     expect(isAccessibleSource(DEMO_SEATED_TICKET_GROUPS[0])).toBe(false);
+  });
+
+  it("reads accessibility off a mapped seat when the group itself is not flagged", () => {
+    expect(
+      accessibleLabelFromSeats(
+        { seatIds: ["k1"] },
+        { seats: { k1: { accessible: true } } },
+      ),
+    ).toBe(ACCESSIBLE_LABEL_GENERIC);
+    expect(
+      accessibleLabelFromSeats(
+        { seatIds: ["j1"] },
+        { seats: { j1: { accessible: false } } },
+      ),
+    ).toBe("");
   });
 
   it("shows DA and DB legend rows when those types exist, otherwise Accessibility", () => {
