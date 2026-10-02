@@ -344,7 +344,7 @@ describe("Checkout success receipt", () => {
     expect(screen.getByText(formatCurrency(507.6))).toBeInTheDocument();
   });
 
-  it("lists the promo code and a pre-discount subtotal on a discounted order", async () => {
+  it("lists the promo name and a pre-discount subtotal on a discounted order", async () => {
     const order = demoCompletedTicketOrder({
       total: 5.5,
       serviceFee: 2.5,
@@ -352,12 +352,12 @@ describe("Checkout success receipt", () => {
       estimatedProcessingFee: 0.5,
       salesTax: 0,
       discountApplied: 2,
-      discountBreakdown: { code: "TESTDIS" },
+      discountBreakdown: { name: "Student Night", code: "TESTDIS" },
     });
     mockedGetOrderByPi.mockResolvedValue({ data: order } as never);
     render(<CheckoutSuccessPageRoute />);
 
-    expect(await screen.findByText("Promo (TESTDIS)")).toBeInTheDocument();
+    expect(await screen.findByText("Student Night")).toBeInTheDocument();
     expect(screen.getByText(`-${formatCurrency(2)}`)).toBeInTheDocument();
     expect(screen.getByText("Subtotal")).toBeInTheDocument();
     expect(screen.getByText(formatCurrency(4.5))).toBeInTheDocument();

@@ -212,7 +212,7 @@ const lightCard =
   "rounded-[18px] border border-[rgba(5,27,53,0.08)] bg-white shadow-[0_10px_30px_-20px_rgba(5,27,53,0.35)]";
 const muted = "text-[#6e7180]";
 
-type CheckoutPromoDiscount = { code: string; amount: number };
+type CheckoutPromoDiscount = { label: string; amount: number };
 
 function CheckoutPaymentForm({
   intentId,
@@ -292,6 +292,7 @@ function CheckoutPaymentForm({
   const promoPricing = promoDetails?.promoPricingDetails as
     | {
         code?: string;
+        name?: string;
         amountDiscounted?: number;
         originalPrice?: number;
         discountedPrice?: number;
@@ -308,14 +309,16 @@ function CheckoutPaymentForm({
       )
     : 0;
   const promoDiscountCode = promoPricing?.code || promoCode.trim();
+  const promoDiscountLabel =
+    String(promoPricing?.name || "").trim() || promoDiscountCode;
 
   useEffect(() => {
     onPromoChange?.(
       promoDiscountAmount > 0
-        ? { code: promoDiscountCode, amount: promoDiscountAmount }
+        ? { label: promoDiscountLabel, amount: promoDiscountAmount }
         : null,
     );
-  }, [onPromoChange, promoDiscountAmount, promoDiscountCode]);
+  }, [onPromoChange, promoDiscountAmount, promoDiscountLabel]);
 
   const redeemPromo = async (code: string): Promise<PromoRedeemResult> => {
     try {
@@ -1579,7 +1582,7 @@ function CheckoutPage() {
               ) : null}
               {promoDiscount ? (
                 <div className="flex justify-between gap-3 text-[14px] text-[#4a5567]">
-                  <span>{promoSummaryLabel(promoDiscount.code)}</span>
+                  <span>{promoSummaryLabel(promoDiscount.label)}</span>
                   <span className="tabular-nums text-[#051b35]">
                     -{formatCurrency(promoDiscount.amount)}
                   </span>

@@ -21,6 +21,7 @@ import {
   selectionPaneRestrictionLabel,
 } from "@/lib/ticketListings";
 import type { QuantityRestrictionSource } from "@/lib/ticketListings";
+import { listedUnitPrice } from "@/lib/helpers";
 import { selectionOfferDescription, selectionOfferName, selectionTicketCards } from "@/lib/ticketSummary";
 import {
   gaTicketSeatLine,
@@ -281,6 +282,10 @@ function SeatMapSelectionOverlay({
   );
   const mapDetailOffer = selectionOfferName(mapDetailGroup);
   const mapDetailOfferDescription = selectionOfferDescription(mapDetailGroup);
+  const mapDetailUnitPrice = listedUnitPrice(
+    mapDetailGroup?.price,
+    mapDetailGroup?.offer || mapDetailGroup?.package,
+  );
   const selectionCards = selectionTicketCards(selectedFromMap);
   const mapTicketCount = totalCount || selectedFromMap.length;
   const mapTicketLabel = subtotalCaption
@@ -1006,9 +1011,13 @@ function SeatMapSelectionOverlay({
                           lineHeight: 1.5,
                         }}
                       >
-                        {money(Number(mapDetailGroup.price || 0))} ea
+                        {money(mapDetailUnitPrice)} ea
                       </span>
-                      {pricesIncludeFees ? (
+                      {mapDetailUnitPrice === 0 ? (
+                        <span style={{ fontSize: 14, lineHeight: 1.5, color: "#6e7180" }}>
+                          complimentary
+                        </span>
+                      ) : pricesIncludeFees ? (
                         <span style={{ fontSize: 14, lineHeight: 1.5, color: "#6e7180" }}>
                           incl. taxes & fees
                         </span>
@@ -1193,7 +1202,10 @@ function SeatMapSelectionOverlay({
                           const row = g.rowNumber || g.rowName || "—";
                           const seat = seatDisplayValue(g.seatNumber) || "—";
                           const offer = selectionOfferName(g);
-                          const itemPrice = Number(g.price || 0);
+                          const itemPrice = listedUnitPrice(
+                            g.price,
+                            g.offer || g.package,
+                          );
                           return (
                             <li
                               key={`${g.seatId ?? g.id}-${groupIndex}-${unitIndex}`}
@@ -1290,7 +1302,7 @@ function SeatMapSelectionOverlay({
                                   <div style={{ fontSize: "17px", fontWeight: 600 }}>
                                     {money(itemPrice)}
                                   </div>
-                                  {selectionPriceNote ? (
+                                  {itemPrice === 0 || selectionPriceNote ? (
                                   <div
                                     style={{
                                       marginTop: 1,
@@ -1299,7 +1311,7 @@ function SeatMapSelectionOverlay({
                                       whiteSpace: "nowrap",
                                     }}
                                   >
-                                    {selectionPriceNote}
+                                    {itemPrice === 0 ? "Complimentary" : selectionPriceNote}
                                   </div>
                                   ) : null}
                                 </div>

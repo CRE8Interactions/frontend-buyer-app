@@ -160,10 +160,18 @@ export const formatCurrency = (num?: number | string | null) =>
     maximumFractionDigits: 2,
   });
 
+/** Complimentary offers list at $0 even when the inventory price includes fees. */
+export function listedUnitPrice(
+  amount?: number | null,
+  offer?: { freeOffer?: boolean } | null,
+) {
+  return offer?.freeOffer ? 0 : Number(amount || 0);
+}
+
 export const formatOfferListPrice = (
   amount: number,
   offer?: { freeOffer?: boolean } | null,
-) => formatCurrency(offer?.freeOffer ? 0 : amount);
+) => formatCurrency(listedUnitPrice(amount, offer));
 
 export const formatNumber = (num?: number | string | null) =>
   parseFloat(String(num ?? 0)).toLocaleString("en-US");

@@ -302,6 +302,27 @@ describe("Select tickets page (PremiumTicketing)", { timeout: 20_000 }, () => {
     expect(screen.getByText(/mobile tickets/i)).toBeInTheDocument();
   });
 
+  it("lists a complimentary offer at $0.00 with a Complimentary note", async () => {
+    const group = DEMO_SEATED_TICKET_GROUPS[0];
+    const [listing] = groupsToListings([
+      {
+        ...group,
+        price: 1.96,
+        offer: { ...group.offer, name: "COMP TICKET", freeOffer: true },
+      },
+    ]);
+    await renderReady({
+      ...seatedTicketingFixture,
+      listings: [listing],
+      offerNames: ["COMP TICKET"],
+    });
+
+    expect(screen.getByText("$0.00 each")).toBeInTheDocument();
+    expect(screen.getByText("Complimentary")).toBeInTheDocument();
+    expect(screen.queryByText("$1.96 each")).not.toBeInTheDocument();
+    expect(screen.queryByText(/incl\. taxes & fees/i)).not.toBeInTheDocument();
+  });
+
   it("closes event information when the backdrop is clicked", async () => {
     const user = await renderReady();
 
@@ -809,7 +830,7 @@ describe("Select tickets page (PremiumTicketing)", { timeout: 20_000 }, () => {
     expect(screen.getByRole("button", { name: /^2 tickets$/i })).toBeInTheDocument();
   });
 
-  it("omits the offer name from mobile listing cards", async () => {
+  it("shows the offer badge on mobile listing cards", async () => {
     Object.defineProperty(window, "innerWidth", {
       configurable: true,
       writable: true,
@@ -817,11 +838,11 @@ describe("Select tickets page (PremiumTicketing)", { timeout: 20_000 }, () => {
     });
     await renderReady();
 
-    const offerName = DEMO_SEATED_TICKET_GROUPS[0].offer!.name!;
-    document.querySelectorAll(".nmt-listing").forEach((listing) => {
-      expect(within(listing as HTMLElement).queryByText(offerName)).not.toBeInTheDocument();
+    const listings = Array.from(document.querySelectorAll(".nmt-listing"));
+    expect(listings.length).toBeGreaterThan(0);
+    listings.forEach((listing, idx) => {
+      expect(within(listing as HTMLElement).getByText(seatedTicketingFixture.listings[idx].zone)).toBeInTheDocument();
     });
-    expect(screen.getByRole("button", { name: offerName })).toBeInTheDocument();
   });
 
   it("does not offer quantities above the highest offer maxQuantity", async () => {

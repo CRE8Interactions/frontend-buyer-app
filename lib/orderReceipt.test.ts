@@ -130,7 +130,7 @@ describe("buildOrderReceipt", () => {
     });
   });
 
-  it("lists the redeemed promo code and still foots to the amount paid", () => {
+  it("lists the promo name and still foots to the amount paid", () => {
     const listing = DEMO_SEATED_TICKET_GROUPS[0];
     const order = demoCompletedTicketOrder({
       tickets: [
@@ -150,7 +150,7 @@ describe("buildOrderReceipt", () => {
       processingFee: 0.5,
       salesTax: 0,
       discountApplied: 2,
-      discountBreakdown: { code: "TESTDIS" },
+      discountBreakdown: { name: "Student Night", code: "TESTDIS" },
     });
     const receipt = buildOrderReceipt(order)!;
 
@@ -160,7 +160,7 @@ describe("buildOrderReceipt", () => {
       { label: "Tax", amount: formatCurrency(0) },
       { label: "Processing Fee", amount: formatCurrency(0.5) },
       { label: "Service Fee", amount: formatCurrency(2.5) },
-      { label: "Promo (TESTDIS)", amount: `-${formatCurrency(2)}` },
+      { label: "Student Night", amount: `-${formatCurrency(2)}` },
       { label: "Total", amount: formatCurrency(5.5), strong: true },
       {
         label: "Amount paid",
