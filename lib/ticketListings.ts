@@ -1,5 +1,6 @@
 import type { GATier, TicketingListing } from "@/components/organisms/PremiumTicketing";
 import { expandGroupsWithConnectedOffers } from "@/lib/connectedOffers";
+import { listedUnitPrice } from "@/lib/helpers";
 import { isAccessibleSource } from "@/lib/ticketAccessibility";
 import { gaTierSubtitle, selectionOfferName } from "@/lib/ticketSummary";
 import type { TicketGroup } from "@/stores/filtersStore";
@@ -35,9 +36,12 @@ function money(n: number) {
   return `$${n.toFixed(2)}`;
 }
 
-/** Numeric unit price from a listing's `$12.00` string. */
+/** Numeric unit price from a listing's `$12.00` string. Complimentary offers are $0. */
 export function listingUnitPrice(listing: { price?: string; cartGroup?: Record<string, unknown> }) {
-  const fromGroup = Number(listing.cartGroup?.price);
+  const group = listing.cartGroup;
+  const offer = group?.offer as { freeOffer?: boolean } | undefined;
+  if (offer?.freeOffer) return 0;
+  const fromGroup = Number(group?.price);
   if (Number.isFinite(fromGroup) && fromGroup > 0) return fromGroup;
   return parseFloat(String(listing.price || "").replace(/[^0-9.]/g, "")) || 0;
 }
@@ -956,7 +960,7 @@ export function groupsToListings(
         min: limits.min,
         max: limits.max,
         multipleOf: limits.step,
-        price: money(Number(g.price || 0)),
+        price: money(listedUnitPrice(Number(g.price || 0), g.offer)),
         sectionId: g.sectionId != null ? String(g.sectionId) : undefined,
         cartGroup: g as Record<string, unknown>,
         sourceIndex,
@@ -1025,7 +1029,7 @@ export function groupsToGaTiers(
     })
     .map((g) => {
       const available = Number(g.availableCount || 0);
-      const unit = Number(g.price || 0);
+      const unit = listedUnitPrice(Number(g.price || 0), g.offer);
       const offerName = g.offer?.name || g.sectionName || "Standard admission";
       const limits = limitsFromTicketGroup(g, globalMax);
       const soldout = available <= 0;

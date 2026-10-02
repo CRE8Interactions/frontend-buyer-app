@@ -13,7 +13,7 @@ import {
 import { htmlToReceiptPdf } from "@/lib/orderReceiptHtmlToPdf";
 import { saveReceiptPdf } from "@/lib/orderReceiptPdf";
 import {
-  completedOrderPromoCode,
+  completedOrderPromoName,
   promoSummaryLabel,
   resolveCompletedOrderFees,
 } from "@/lib/ticketSummary";
@@ -565,7 +565,7 @@ export function buildOrderReceipt(
   }
   if (discount) {
     totals.push({
-      label: promoSummaryLabel(completedOrderPromoCode(order)),
+      label: promoSummaryLabel(completedOrderPromoName(order)),
       amount: `-${formatCurrency(discount)}`,
     });
   }

@@ -350,6 +350,38 @@ describe("SeatMapSelectionOverlay map readiness", () => {
     expect(screen.getByText(/buyer protection/i)).toBeInTheDocument();
   });
 
+  it("lists a complimentary ticket at $0.00 instead of the fee-inclusive price", () => {
+    const group = DEMO_SEATED_TICKET_GROUPS[0];
+    useSeatmapStore.setState({
+      selectedFromMap: [
+        {
+          ...group,
+          seatId: "s1",
+          seatNumber: 13,
+          price: 1.96,
+          offer: { ...group.offer, name: "COMP TICKET", freeOffer: true },
+        },
+      ],
+      totalCount: 1,
+      totalPrice: 0,
+    });
+    renderOverlay({
+      mapMapping: demoSeatmapMapping(),
+      mapBackground: BACKGROUND,
+    });
+    fireEvent.load(backgroundPreload()!);
+
+    expect(screen.getAllByText("$0.00")).toHaveLength(2);
+    expect(screen.queryByText("$1.96")).not.toBeInTheDocument();
+    expect(screen.getByText("Complimentary")).toBeInTheDocument();
+    expect(screen.queryByText(/incl\. taxes & fees/i)).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: /details/i }));
+    expect(screen.getByText("$0.00 ea")).toBeInTheDocument();
+    expect(screen.getByText("complimentary")).toBeInTheDocument();
+    expect(screen.queryByText(/incl\. taxes & fees/i)).not.toBeInTheDocument();
+  });
+
   it("shows the seat number without an accessibility suffix", () => {
     const group = DEMO_SEATED_TICKET_GROUPS[0];
     useSeatmapStore.setState({

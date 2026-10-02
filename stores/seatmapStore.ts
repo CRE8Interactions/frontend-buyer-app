@@ -20,6 +20,7 @@ import type {
   SeatmapMapping,
 } from "@/lib/seatmapLookups";
 import { adjacentSeatWindow } from "@/lib/seatmapLookups";
+import { listedUnitPrice } from "@/lib/helpers";
 import {
   trackSelectTicket,
   type TrackingOrganization,
@@ -34,8 +35,7 @@ const effectiveUnitPrice = (ticketGroup: TicketGroup) => {
     ticketGroup?.package ||
     (ticketGroup?.listing as { offer?: { freeOffer?: boolean } } | undefined)
       ?.offer;
-  if (offer && "freeOffer" in offer && offer.freeOffer) return 0;
-  return ticketGroup.price ?? 0;
+  return listedUnitPrice(ticketGroup.price, offer);
 };
 
 function offerIdentity(group: TicketGroup) {

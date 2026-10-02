@@ -13,6 +13,7 @@ import {
 } from "@/lib/demo/fixtures";
 import {
   completedOrderPromoCode,
+  completedOrderPromoName,
   gaTierSubtitle,
   gaTicketsNeedGroupSection,
   alignPackageSeatPrices,
@@ -940,19 +941,32 @@ describe("resolveCompletedOrderFees", () => {
 });
 
 describe("completedOrderPromoCode", () => {
-  it("labels the summary row with the redeemed code", () => {
+  it("labels the summary row with the promo name", () => {
     expect(
-      completedOrderPromoCode({ discountBreakdown: { code: "TESTDIS" } }),
+      completedOrderPromoName({
+        discountBreakdown: { name: "Student Night", code: "TESTDIS" },
+      }),
+    ).toBe("Student Night");
+    expect(
+      completedOrderPromoName({
+        promoCode: [{ attributes: { name: "Alumni", code: "5OFFFEB7" } }],
+      }),
+    ).toBe("Alumni");
+    expect(promoSummaryLabel("Student Night")).toBe("Student Night");
+  });
+
+  it("uses the promo code when the promo has no name", () => {
+    expect(
+      completedOrderPromoName({ discountBreakdown: { code: "TESTDIS" } }),
     ).toBe("TESTDIS");
     expect(completedOrderPromoCode({ promoCode: [{ code: "5OFFFEB7" }] })).toBe(
       "5OFFFEB7",
     );
-    expect(promoSummaryLabel("TESTDIS")).toBe("Promo (TESTDIS)");
   });
 
-  it("falls back to a plain Promo label when the order has no code", () => {
+  it("falls back to a plain Promo label when the order has no name or code", () => {
     expect(completedOrderPromoCode({})).toBe("");
-    expect(completedOrderPromoCode(null)).toBe("");
+    expect(completedOrderPromoName(null)).toBe("");
     expect(promoSummaryLabel("")).toBe("Promo");
   });
 });

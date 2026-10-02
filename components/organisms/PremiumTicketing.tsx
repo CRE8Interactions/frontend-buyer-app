@@ -95,6 +95,20 @@ import useSeatmapStore from "@/stores/seatmapStore";
 
 const NAVY = "#051b35";
 
+function isZeroListingPrice(price: string) {
+  if (/^free$/i.test(price.trim())) return true;
+  const amount = parseFloat(price.replace(/[^0-9.]/g, ""));
+  return Number.isFinite(amount) && amount === 0;
+}
+
+/** Own line is capitalized; a note beside the price stays lowercase. */
+function listingFeeNote(price: string, sameLine: boolean) {
+  if (isZeroListingPrice(price)) {
+    return sameLine ? "complimentary" : "Complimentary";
+  }
+  return sameLine ? "incl. taxes & fees" : "Incl. taxes & fees";
+}
+
 /** Hover lift on a listing row. The scroller reserves this much headroom so the
  *  top row's border is not clipped while it is raised. */
 const LISTING_HOVER_LIFT_PX = 2;
@@ -1442,7 +1456,7 @@ export default function PremiumTicketing({
               </div>
               <div style={{ textAlign: "right", flexShrink: 0 }}>
                 <div style={{ fontSize: mobile ? 22 : 26, fontWeight: 600, letterSpacing: "-0.03em", fontVariantNumeric: "tabular-nums", color: soldout ? "#6e7180" : NAVY }}>{t.price}</div>
-                <div style={{ fontSize: fluidSize(13), color: "#6e7180" }}>Incl. taxes & fees</div>
+                <div style={{ fontSize: fluidSize(13), color: "#6e7180" }}>{listingFeeNote(t.price, false)}</div>
               </div>
             </div>
             <div style={{ height: 1, background: "rgba(5,27,53,0.08)" }} />
@@ -1591,11 +1605,11 @@ export default function PremiumTicketing({
           {sortMenu && mounted && sortBtn.current && createPortal(
             <>
               <div onClick={() => setSortMenu(false)} style={{ position: "fixed", inset: 0, zIndex: 29 }} />
-              <div role="listbox" aria-label="Sort listings" style={{ position: "fixed", top: sortBtn.current.getBoundingClientRect().bottom + 8, right: Math.max(8, window.innerWidth - sortBtn.current.getBoundingClientRect().right), zIndex: 30, minWidth: 160, background: "#fff", border: "1px solid rgba(5,27,53,0.10)", borderRadius: 14, boxShadow: "0 20px 44px -18px rgba(5,27,53,0.45)", padding: 6, display: "flex", flexDirection: "column" }}>
+              <div role="listbox" aria-label="Sort listings" style={{ position: "fixed", top: sortBtn.current.getBoundingClientRect().bottom + 8, right: Math.max(8, window.innerWidth - sortBtn.current.getBoundingClientRect().right), zIndex: 30, minWidth: 160, background: "#fff", border: "1px solid rgba(5,27,53,0.10)", borderRadius: 14, boxShadow: "0 20px 44px -18px rgba(5,27,53,0.45)", padding: 6, display: "flex", flexDirection: "column", gap: 4 }}>
                 {SORT_OPTIONS.map((option) => {
                   const active = option.value === sortDir;
                   return (
-                    <button key={option.value} role="option" aria-selected={active} onClick={() => chooseSort(option.value)} style={{ fontFamily: "inherit", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, width: "100%", textAlign: "left", fontSize: type, fontWeight: active ? 600 : 500, color: active ? ACC : NAVY, background: active ? ACC_SOFT : "transparent", border: "none", borderRadius: 10, padding: compact ? "10px 12px" : "11px 14px", cursor: "pointer", whiteSpace: "nowrap" }}>
+                    <button key={option.value} role="option" aria-selected={active} onClick={() => chooseSort(option.value)} className={`nmt-sort-option${active ? " active" : ""}`} style={{ fontFamily: "inherit", fontSize: type, color: active ? "#fff" : NAVY, padding: compact ? "10px 12px" : "11px 14px" }}>
                       {option.label}
                     </button>
                   );
@@ -1643,6 +1657,10 @@ export default function PremiumTicketing({
         .nmt-filter .nmt-star { color: ${ACC}; display: inline-flex; }
         .nmt-filter:hover { border-color: ${NAVY}; background: #f1f3f8; }
         .nmt-filter.active { background: ${ACC}; border-color: ${ACC}; color: #fff; }
+        .nmt-sort-option { display: flex; align-items: center; width: 100%; box-sizing: border-box; text-align: left; font-weight: 600; background: transparent; border: none; border-radius: 10px; cursor: pointer; white-space: nowrap; transition: background 140ms ease; }
+        .nmt-sort-option:hover { background: color-mix(in srgb, ${ACC} 12%, transparent); }
+        .nmt-sort-option.active,
+        .nmt-sort-option.active:hover { background: ${ACC}; color: #fff; }
         .nmt-filter.active .nmt-star { color: #fff; }
         ${orgScrollbarCss(ACC)}
         .shopper-page .ga-soldout-notify-sheet h2 {
@@ -1996,21 +2014,22 @@ export default function PremiumTicketing({
 
             {!busy &&
               rows.map((l, idx) => (
-                <div key={`${l.sec}-${l.row}-${idx}`} className="nmt-listing" onClick={() => { setSel(idx); setPanelQty(clampQuantity(want, listingQtyLimits(l))); setMedia(0); }} style={{ display: "flex", flexDirection: mobile ? "column" : "row", alignItems: mobile ? "stretch" : "center", gap: mobile ? 8 : 18, background: "#fff", border: "1px solid rgba(5,27,53,0.10)", borderRadius: mobile ? 12 : 16, padding: mobile ? "10px 12px" : "16px 20px", cursor: "pointer" }}>
+                <div key={`${l.sec}-${l.row}-${idx}`} className="nmt-listing" onClick={() => { setSel(idx); setPanelQty(clampQuantity(want, listingQtyLimits(l))); setMedia(0); }} style={{ display: "flex", flexDirection: mobile ? "column" : "row", alignItems: mobile ? "stretch" : "center", gap: mobile ? 8 : 18, background: "#fff", border: "1px solid rgba(5,27,53,0.10)", borderRadius: mobile ? 12 : 16, padding: "16px 20px", cursor: "pointer" }}>
                   {mobile ? (
                     <div style={{ display: "flex", alignItems: "center", gap: 10, minWidth: 0 }}>
                       <div style={{ width: thumbSize, height: thumbSize, borderRadius: 8, background: "#f1f3f8", border: "1px solid rgba(5,27,53,0.08)", flexShrink: 0, overflow: "hidden" }}>
                         {listingThumb(l)}
                       </div>
-                      <div style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", gap: 10 }}>
-                        <div style={{ display: "flex", alignItems: "center", gap: 6, minWidth: 0, fontSize: 18, fontWeight: 600, letterSpacing: "-0.015em" }}>
+                      <div style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", gap: 6 }}>
+                        <span style={{ alignSelf: "flex-start", maxWidth: "100%", ...pill(ACC_SOFT, ACC), gap: 5, fontSize: 13, lineHeight: 1.5, padding: "4px 10px", whiteSpace: "normal", overflowWrap: "anywhere" }}><Star s={13} /> {l.zone}</span>
+                        <div style={{ display: "flex", alignItems: "center", gap: 6, minWidth: 0, fontSize: 18, lineHeight: 1.5, fontWeight: 600, letterSpacing: "-0.015em" }}>
                           {listingSeatIcon(l, 18)}
                           <span style={{ minWidth: 0, overflowWrap: "anywhere" }}>{listingLocationLabel(l)}</span>
                         </div>
-                        <div style={{ fontSize: 15, color: "#6e7180" }}>{l.range}</div>
-                        <div style={{ display: "flex", alignItems: "baseline", flexWrap: "wrap", gap: "2px 6px" }}>
+                        <div style={{ fontSize: 15, lineHeight: 1.5, color: "#6e7180" }}>{l.range}</div>
+                        <div style={{ display: "flex", alignItems: "baseline", flexWrap: "wrap", gap: "2px 6px", lineHeight: 1.5, marginTop: 2 }}>
                           <span style={{ fontSize: 17, fontWeight: 600, fontVariantNumeric: "tabular-nums", letterSpacing: "-0.015em" }}>{l.price} each</span>
-                          <span style={{ fontSize: 13, color: "#6e7180" }}>incl. taxes & fees</span>
+                          <span style={{ fontSize: 13, color: "#6e7180" }}>{listingFeeNote(l.price, true)}</span>
                         </div>
                       </div>
                     </div>
@@ -2029,7 +2048,7 @@ export default function PremiumTicketing({
                       </div>
                       <div style={{ textAlign: "right", flexShrink: 0, marginLeft: 8 }}>
                         <div style={{ fontSize: 20, fontWeight: 600, fontVariantNumeric: "tabular-nums", letterSpacing: "-0.015em", whiteSpace: "nowrap" }}>{l.price} each</div>
-                        <div style={{ fontSize: 13, color: "#6e7180", marginTop: 2, whiteSpace: "nowrap" }}>Incl. taxes & fees</div>
+                        <div style={{ fontSize: 13, color: "#6e7180", marginTop: 2, whiteSpace: "nowrap" }}>{listingFeeNote(l.price, false)}</div>
                       </div>
                     </>
                   )}
@@ -2593,7 +2612,7 @@ export default function PremiumTicketing({
               <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, padding: "18px 0" }}>
                 <div style={{ display: "flex", alignItems: "baseline", gap: 5, minWidth: 0, flexShrink: 1, whiteSpace: "nowrap" }}>
                   <span style={{ fontSize: 22, fontWeight: 600, fontVariantNumeric: "tabular-nums", letterSpacing: "-0.02em", lineHeight: 1.5 }}>{selRow.price} ea</span>
-                  <span style={{ fontSize: 14, lineHeight: 1.5, color: "#6e7180" }}>incl. taxes & fees</span>
+                  <span style={{ fontSize: 14, lineHeight: 1.5, color: "#6e7180" }}>{listingFeeNote(selRow.price, true)}</span>
                 </div>
                 <div style={{ display: "flex", alignItems: "center", gap: 6, border: "1px solid #d3d6e0", borderRadius: 999, padding: mobile ? "4px 6px" : "5px 8px", flexShrink: 0 }}>
                   <button

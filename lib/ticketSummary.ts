@@ -732,14 +732,41 @@ function finiteMoney(value: unknown): number | undefined {
   return Number.isFinite(amount) ? amount : undefined;
 }
 
-type PromoCodeLike = { code?: string } | null | undefined;
+type PromoCodeLike = {
+  code?: string;
+  name?: string;
+  attributes?: { code?: string; name?: string };
+} | null | undefined;
 
 export type CompletedOrderPromoSource = {
   discountBreakdown?: PromoCodeLike;
   promoPricingDetails?: PromoCodeLike;
-  promoCode?: Array<PromoCodeLike> | { code?: string } | null;
+  promoCode?: Array<PromoCodeLike> | { code?: string; name?: string } | null;
   promo_code?: PromoCodeLike;
 };
+
+function promoSources(
+  order?: CompletedOrderPromoSource | null,
+): PromoCodeLike[] {
+  const relation = Array.isArray(order?.promoCode)
+    ? order.promoCode.find(Boolean)
+    : order?.promoCode;
+  return [
+    order?.discountBreakdown,
+    order?.promoPricingDetails,
+    relation,
+    order?.promo_code,
+  ];
+}
+
+function promoFields(source: PromoCodeLike): { name: string; code: string } {
+  if (!source || typeof source !== "object") return { name: "", code: "" };
+  const attributes = source.attributes;
+  return {
+    name: String(source.name || attributes?.name || "").trim(),
+    code: String(source.code || attributes?.code || "").trim(),
+  };
+}
 
 /**
  * The redeemed code lives on the discount breakdown json Blocktickets copies
@@ -748,21 +775,30 @@ export type CompletedOrderPromoSource = {
 export function completedOrderPromoCode(
   order?: CompletedOrderPromoSource | null,
 ): string {
-  const relation = Array.isArray(order?.promoCode)
-    ? order.promoCode.find(Boolean)
-    : order?.promoCode;
-  return String(
-    order?.discountBreakdown?.code ||
-      order?.promoPricingDetails?.code ||
-      relation?.code ||
-      order?.promo_code?.code ||
-      "",
-  ).trim();
+  for (const source of promoSources(order)) {
+    const code = promoFields(source).code;
+    if (code) return code;
+  }
+  return "";
 }
 
-/** "Promo (CODE)" when the order carries the redeemed code, else "Promo". */
-export function promoSummaryLabel(code?: string): string {
-  return code ? `Promo (${code})` : "Promo";
+/** Shopper-facing promo title: the promo's name, or its code when it has none. */
+export function completedOrderPromoName(
+  order?: CompletedOrderPromoSource | null,
+): string {
+  let code = "";
+  for (const source of promoSources(order)) {
+    const fields = promoFields(source);
+    if (fields.name) return fields.name;
+    if (!code && fields.code) code = fields.code;
+  }
+  return code;
+}
+
+/** The promo's name on the summary. "Promo" only when the order has neither name nor code. */
+export function promoSummaryLabel(name?: string): string {
+  const text = String(name ?? "").trim();
+  return text || "Promo";
 }
 
 function packageSnapshotTax(

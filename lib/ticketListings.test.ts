@@ -4,6 +4,7 @@ import {
   groupsToListings,
   filterGroupsForListings,
   listingLocationLabel,
+  listingUnitPrice,
   sortListings,
   limitsFromTicketGroup,
   limitsFromSeatedOfferRow,
@@ -234,6 +235,20 @@ describe("groupsToListings", () => {
       max: 8,
       price: "$11.64",
     });
+  });
+
+  it("lists a complimentary offer at $0.00 even when the inventory price includes fees", () => {
+    const group = DEMO_SEATED_TICKET_GROUPS[0];
+    const [listing] = groupsToListings([
+      {
+        ...group,
+        price: 1.96,
+        offer: { ...group.offer, name: "COMP TICKET", freeOffer: true },
+      },
+    ]);
+
+    expect(listing.price).toBe("$0.00");
+    expect(listingUnitPrice(listing)).toBe(0);
   });
 
   it("skips access-coded offers, empty inventory, and duplicate groups", () => {

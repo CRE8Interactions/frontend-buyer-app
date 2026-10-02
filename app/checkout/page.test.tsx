@@ -1320,6 +1320,7 @@ describe("Checkout page", { timeout: 20_000 }, () => {
     mockedRedeemPromo.mockResolvedValue({
       data: {
         promoPricingDetails: {
+          name: "Student Night",
           code: "TESTDIS",
           originalPrice: cart.total,
           discountedPrice: cart.total - discount,
@@ -1336,7 +1337,7 @@ describe("Checkout page", { timeout: 20_000 }, () => {
     );
     await user.click(screen.getByRole("button", { name: /apply/i }));
 
-    expect(await screen.findByText("Promo (TESTDIS)")).toBeInTheDocument();
+    expect(await screen.findByText("Student Night")).toBeInTheDocument();
     expect(
       screen.getByText(`-${formatCurrency(discount)}`),
     ).toBeInTheDocument();
@@ -1349,7 +1350,7 @@ describe("Checkout page", { timeout: 20_000 }, () => {
     await user.click(screen.getByRole("button", { name: /remove/i }));
 
     await waitFor(() => {
-      expect(screen.queryByText("Promo (TESTDIS)")).not.toBeInTheDocument();
+      expect(screen.queryByText("Student Night")).not.toBeInTheDocument();
     });
     expect(
       screen.queryByText(`-${formatCurrency(discount)}`),
@@ -1378,7 +1379,7 @@ describe("Checkout page", { timeout: 20_000 }, () => {
       "aria-invalid",
       "true",
     );
-    expect(screen.queryByText(/^Promo \(/)).not.toBeInTheDocument();
+    expect(screen.queryByText("Promo")).not.toBeInTheDocument();
     expect(
       screen.getByRole("button", { name: `Pay ${formatCurrency(cart.total)}` }),
     ).toBeInTheDocument();

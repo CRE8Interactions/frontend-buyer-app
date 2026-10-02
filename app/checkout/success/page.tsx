@@ -37,7 +37,7 @@ import { getGuestCheckoutBuyer } from "@/lib/guestCheckout";
 import { hideIntercomLauncher } from "@/lib/intercom";
 import { cacheOrgBranding } from "@/lib/orgBrandingCache";
 import {
-  completedOrderPromoCode,
+  completedOrderPromoName,
   promoSummaryLabel,
   resolveCompletedOrderFees,
   ticketSelectionSummary,
@@ -572,7 +572,7 @@ function CheckoutSuccessPage() {
                 ))}
                 {order.discountApplied ? (
                   <SummaryRow
-                    label={promoSummaryLabel(completedOrderPromoCode(order))}
+                    label={promoSummaryLabel(completedOrderPromoName(order))}
                     value={`-${formatCurrency(order.discountApplied)}`}
                   />
                 ) : null}
