@@ -1058,7 +1058,9 @@ describe("Checkout page", { timeout: 20_000 }, () => {
     expect(screen.getAllByText(formatCurrency(470)).length).toBeGreaterThan(0);
     expect(screen.queryByText(formatCurrency(490))).not.toBeInTheDocument();
     expect(
-      screen.getByRole("button", { name: `Pay ${formatCurrency(507.6)}` }),
+      await screen.findByRole("button", {
+        name: `Pay ${formatCurrency(507.6)}`,
+      }),
     ).toBeInTheDocument();
   });
 
