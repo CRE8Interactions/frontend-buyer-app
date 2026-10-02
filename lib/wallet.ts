@@ -552,7 +552,7 @@ export function gaTicketSeatLine(
   const seat = seatDisplayValue(ticketSeatValue(ticket));
   const parts: string[] = [];
   const sectionLabel = sectionDisplayValue(sec);
-  if (sectionLabel) parts.push(`Sec ${sectionLabel}`);
+  if (sectionLabel) parts.push(sectionLabel);
   if (row) parts.push(`Row ${row}`);
   if (seat) parts.push(`Seat ${seat}`);
   if (!parts.length) return "GA";
@@ -672,12 +672,12 @@ function gaGroupLocationLine(
     ),
   ];
   const parts: string[] = [];
-  if (section) parts.push(`Sec ${section}`);
+  if (section) parts.push(sectionDisplayValue(section));
   if (rows.length === 1) parts.push(`Row ${rows[0]}`);
   return parts.join(" · ") || "GA";
 }
 
-/** One line per section; multiple rows on the same line; GA shows Sec only unless row/seat exist. */
+/** One line per section; multiple rows on the same line; GA names the section without Sec. */
 export function groupedWalletSeatLines(
   tickets: Array<TicketLike | Record<string, unknown>>,
 ): string[] {
@@ -841,7 +841,7 @@ function isTransferGroupGeneralAdmission(
   ].some((candidate) => isGenericGeneralAdmissionLabel(candidate));
 }
 
-/** Transfer modal group label: Sec/Row for reserved seats; Sec only for GA. */
+/** Transfer modal group label: Sec/Row for reserved seats; section name only for GA. */
 export function transferGroupLabel(
   ticket?: TicketLike | Record<string, unknown> | null,
 ): string {
@@ -851,8 +851,7 @@ export function transferGroupLabel(
   const isGA = isTransferGroupGeneralAdmission(ticket);
 
   if (isGA) {
-    const label = sectionDisplayValue(section);
-    return label ? `Sec ${label}` : "Sec";
+    return sectionDisplayValue(section) || "GA";
   }
 
   const parts: string[] = [];
@@ -1110,14 +1109,39 @@ export function isAndroid() {
   return /android/i.test(navigator.userAgent);
 }
 
+/** iPhone Safari "Request Desktop Website" keeps iPhone on `navigator.platform`. */
+function reportsIphone() {
+  return (
+    /iPhone|iPod/i.test(navigator.userAgent) ||
+    /iPhone|iPod/i.test(navigator.platform || "")
+  );
+}
+
+/**
+ * Shorter physical screen side. Desktop-site Safari widens `innerWidth`, so
+ * the layout viewport cannot separate an iPhone from an iPad.
+ */
+function phoneSizedScreen() {
+  if (typeof window === "undefined") return false;
+  const width = window.screen?.width ?? 0;
+  const height = window.screen?.height ?? 0;
+  if (!width || !height) return false;
+  return Math.min(width, height) < 600;
+}
+
 /** iPads and Android tablets lack Apple/Google Wallet on device. */
 export function isTabletDevice() {
   if (typeof navigator === "undefined") return false;
   const ua = navigator.userAgent;
 
   if (/iPad/i.test(ua)) return true;
-  // iPadOS 13+ can report as Mac with touch.
-  if (/Macintosh/i.test(ua) && (navigator.maxTouchPoints ?? 0) > 1) return true;
+  if (reportsIphone()) return false;
+  // iPadOS 13+ can report as Mac with touch. A phone-sized screen is an
+  // iPhone whose platform was rewritten to MacIntel as well.
+  if (/Macintosh/i.test(ua) && (navigator.maxTouchPoints ?? 0) > 1) {
+    if (phoneSizedScreen()) return false;
+    return true;
+  }
 
   if (/Android/i.test(ua) && !/Mobile/i.test(ua)) {
     const hints = (
@@ -1128,7 +1152,6 @@ export function isTabletDevice() {
   }
 
   // DevTools tablet presets can keep a desktop UA while emulating touch.
-  if (/iPhone|iPod/i.test(ua)) return false;
   if (/Android/i.test(ua) && /Mobile/i.test(ua)) return false;
   if (typeof window !== "undefined" && typeof window.matchMedia === "function") {
     const coarse = window.matchMedia("(pointer: coarse)").matches;
@@ -1143,10 +1166,10 @@ export function isTabletDevice() {
 /** Phones that can hold a scannable Apple or Google Wallet pass. */
 export function isPhoneDevice() {
   if (typeof navigator === "undefined") return false;
+  if (reportsIphone()) return true;
   if (isTabletDevice()) return false;
 
   const ua = navigator.userAgent;
-  if (/iPhone|iPod/i.test(ua)) return true;
 
   if (/Android/i.test(ua)) {
     if (/Mobile/i.test(ua)) return true;
@@ -1154,6 +1177,14 @@ export function isPhoneDevice() {
       navigator as Navigator & { userAgentData?: { mobile?: boolean } }
     ).userAgentData;
     if (hints?.mobile) return true;
+  }
+
+  if (
+    /Macintosh/i.test(ua) &&
+    (navigator.maxTouchPoints ?? 0) > 1 &&
+    phoneSizedScreen()
+  ) {
+    return true;
   }
 
   return false;

@@ -1561,7 +1561,7 @@ describe("wallet season-package orders", () => {
     const [row] = summarizeEventDetails(merged);
 
     expect(row?.ticketCount).toBe(2);
-    expect(row?.ticketSeats).toEqual(["Sec Club x 2"]);
+    expect(row?.ticketSeats).toEqual(["Club x 2"]);
   });
 
   it("does not duplicate a single pending incoming transfer in upcoming", () => {

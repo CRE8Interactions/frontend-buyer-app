@@ -1611,7 +1611,7 @@ export default function SeasonTickets({
     }
   };
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     setVw(window.innerWidth);
     setPhoneDevice(isPhoneDevice());
     setPassWallet(phoneWalletKind());
@@ -2171,8 +2171,9 @@ export default function SeasonTickets({
   ]);
 
   const mobile = vw < 900;
-  // Swipeable cards are phone-only: narrow width plus a phone UA (not tablet / DevTools iPad).
-  const mobileTicketView = vw <= 767 && phoneDevice;
+  // Swipeable cards follow the phone, including iPhone Safari requesting the
+  // desktop site (Macintosh UA and a wide layout width).
+  const mobileTicketView = phoneDevice;
   const isHolder = email.trim().toLowerCase() === "harrison.cogan@gmail.com";
   const events = useMemo(buildEvents, []);
   const showRoutedWallet = Boolean(
@@ -4901,6 +4902,7 @@ export default function SeasonTickets({
     if (isGA) {
       return {
         ...t,
+        isGA: true,
         sec: sectionDisplayValue(ticketSectionValue(raw)) || "GA",
         row: ticketRowValue(raw) || "GA",
         seatNo: seatDisplayValue(ticketSeatValue(raw)) || "GA",
@@ -4917,6 +4919,7 @@ export default function SeasonTickets({
     if (parts.length >= 3) {
       return {
         ...t,
+        isGA: false,
         sec: sectionDisplayValue(peel(parts[0], /^Sec\s*/i)),
         row: peel(parts[1], /^Row\s*/i),
         seatNo: seatDisplayValue(peel(parts[2], /^Seat\s*/i)) || "—",
@@ -4928,6 +4931,7 @@ export default function SeasonTickets({
     if (parts.length === 2 && /^GA$/i.test(parts[1])) {
       return {
         ...t,
+        isGA: true,
         sec: sectionDisplayValue(peel(parts[0], /^Sec\s*/i)),
         row: "GA",
         seatNo: "GA",
@@ -4939,6 +4943,7 @@ export default function SeasonTickets({
     if (parts.length === 2) {
       return {
         ...t,
+        isGA: false,
         sec: sectionDisplayValue(peel(parts[0], /^Sec\s*/i)),
         row: peel(parts[1], /^Row\s*/i),
         seatNo: "—",
@@ -4949,6 +4954,7 @@ export default function SeasonTickets({
     }
     return {
       ...t,
+      isGA: true,
       sec: sectionDisplayValue(peel(parts[0] || "GA", /^Sec\s*/i)),
       row: "GA",
       seatNo: "GA",
@@ -5262,9 +5268,15 @@ export default function SeasonTickets({
                   <span style={{ alignSelf: "flex-start", fontSize: fluidSize(11), fontWeight: 600, color: INK, background: SOFT, borderRadius: 999, padding: "4px 10px" }}>{t.offerBadge}</span>
                 ) : null}
                 <div style={{ display: "flex", alignItems: "baseline", gap: 14 }}>
-                  {[["Sec", t.sec], ["Row", t.row], ["Seat", t.seatNo]].map(([k, v]) => (
-                    <div key={k} style={{ display: "flex", alignItems: "baseline", gap: 6 }}>
-                      <span style={{ fontSize: fluidSize(10), fontWeight: 600, lineHeight: 1.5, letterSpacing: "0.14em", textTransform: "uppercase", color: MUTE }}>{k}</span>
+                  {/* GA has no row or seat, so the strip is just the section name. */}
+                  {(t.isGA
+                    ? [["", t.sec]]
+                    : [["Sec", t.sec], ["Row", t.row], ["Seat", t.seatNo]]
+                  ).map(([k, v]) => (
+                    <div key={k || "section"} style={{ display: "flex", alignItems: "baseline", gap: 6 }}>
+                      {k ? (
+                        <span style={{ fontSize: fluidSize(10), fontWeight: 600, lineHeight: 1.5, letterSpacing: "0.14em", textTransform: "uppercase", color: MUTE }}>{k}</span>
+                      ) : null}
                       <span style={{ fontSize: 24, fontWeight: 600, lineHeight: 1.5, letterSpacing: "-0.025em", fontVariantNumeric: "tabular-nums" }}>{v === "—" ? "GA" : v}</span>
                     </div>
                   ))}
@@ -5443,7 +5455,7 @@ export default function SeasonTickets({
                 </div>
                 <div style={{ flex: 1, minWidth: 150, display: "flex", flexDirection: "column", gap: 5 }}>
                   <span style={{ alignSelf: "flex-start", fontSize: fluidSize(11), lineHeight: 1.5, fontWeight: 600, color: INK, background: SOFT, borderRadius: 999, padding: "4px 10px" }}>{t.offerBadge || "Tickets"}</span>
-                  <div style={{ fontSize: mobile ? fluidSize(17) : 17, lineHeight: 1.5, fontWeight: 600, letterSpacing: "-0.015em" }}>{t.seat}</div>
+                  <div style={{ fontSize: mobile ? fluidSize(17) : 17, lineHeight: 1.5, fontWeight: 600, letterSpacing: "-0.015em" }}>{t.isGA ? t.sec : t.seat}</div>
                   {t.accessibleLabel ? (
                     <AccessibleSeatingBadge label={t.accessibleLabel} style={{ marginTop: 2 }} />
                   ) : null}
@@ -6169,7 +6181,15 @@ export default function SeasonTickets({
   const offerLine = formatPrintedOfferLine(detail?.raw);
   const accessibleLine = getAccessibleLabel(detail?.raw);
   const detailRows: { k: string; v: ReactNode }[] = [
-    { k: "Ticket", v: detail?.seat || "" },
+    {
+      k: "Ticket",
+      v:
+        detail && (detail.raw?.generalAdmission || detail.raw?.GA)
+          ? sectionDisplayValue(ticketSectionValue(detail.raw)) ||
+            sectionDisplayValue(detail.seat) ||
+            "GA"
+          : detail?.seat || "",
+    },
     ...(offerLine ? [{ k: "Offer", v: offerLine }] : []),
     ...(accessibleLine ? [{ k: "Accessibility", v: accessibleLine }] : []),
     {

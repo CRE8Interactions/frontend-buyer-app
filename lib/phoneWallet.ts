@@ -157,7 +157,13 @@ export function walletPassEvent(
 export function phoneWalletKind(): PhoneWalletKind | null {
   if (!isPhoneDevice()) return null;
   const ua = navigator.userAgent;
-  if (/iPhone|iPod/i.test(ua)) return "apple";
+  if (
+    /iPhone|iPod/i.test(ua) ||
+    /iPhone|iPod/i.test(navigator.platform || "") ||
+    /Macintosh/i.test(ua)
+  ) {
+    return "apple";
+  }
   if (/Android/i.test(ua)) return "google";
   return null;
 }

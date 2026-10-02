@@ -2495,6 +2495,16 @@ describe("Select tickets page (PremiumTicketing)", { timeout: 20_000 }, () => {
     await user.click(screen.getAllByText("Standing Room Right")[0]);
     expect(screen.getAllByText("Standing Room Right").length).toBeGreaterThan(1);
     expect(screen.queryByText(/row ga/i)).not.toBeInTheDocument();
+
+    await user.click(screen.getAllByRole("button", { name: "Next view" })[0]);
+    const seatView = screen.queryByRole("img", { name: /view from section/i });
+    if (seatView) fireEvent.error(seatView);
+    expect(
+      screen.getByText("No seat view for Standing Room Right"),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByText("No seat view for Sec Standing Room Right"),
+    ).not.toBeInTheDocument();
   });
 
   it("switches between cheapest-first and best-seat order from the sort dropdown", async () => {

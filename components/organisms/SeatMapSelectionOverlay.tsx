@@ -22,7 +22,12 @@ import {
 } from "@/lib/ticketListings";
 import type { QuantityRestrictionSource } from "@/lib/ticketListings";
 import { selectionOfferDescription, selectionOfferName, selectionTicketCards } from "@/lib/ticketSummary";
-import { gaTicketSeatLine, mapSectionHeading, seatDisplayValue } from "@/lib/wallet";
+import {
+  gaTicketSeatLine,
+  mapSectionHeading,
+  seatDisplayValue,
+  sectionDisplayValue,
+} from "@/lib/wallet";
 import useFiltersStore from "@/stores/filtersStore";
 import useSeatmapStore from "@/stores/seatmapStore";
 
@@ -78,7 +83,15 @@ const pill = (
   lineHeight: wrap ? 1.35 : undefined,
 });
 
-function SeatViewImage({ src, section }: { src?: string; section: string }) {
+function SeatViewImage({
+  src,
+  section,
+  ga = false,
+}: {
+  src?: string;
+  section: string;
+  ga?: boolean;
+}) {
   const [failedSrc, setFailedSrc] = useState<string | null>(null);
   if (!src || failedSrc === src) {
     return (
@@ -110,7 +123,7 @@ function SeatViewImage({ src, section }: { src?: string; section: string }) {
           <path d="M14 20v-6h3v6" />
         </svg>
         <div style={{ fontSize: fluidSize(13), fontWeight: 500 }}>
-          No seat view for Sec {section}
+          No seat view for {ga ? section : `Sec ${section}`}
         </div>
       </div>
     );
@@ -797,6 +810,9 @@ function SeatMapSelectionOverlay({
                         <SeatViewImage
                           src={venueImage(mapDetailSection, "seat-view")}
                           section={mapDetailSection}
+                          ga={Boolean(
+                            mapDetailGroup.GA || mapDetailGroup.generalAdmission,
+                          )}
                         />
                       )}
                       <div
@@ -1169,8 +1185,11 @@ function SeatMapSelectionOverlay({
                         }}
                       >
                         {selectionCards.map(({ group: g, groupIndex, unitIndex }) => {
+                          const isGA = Boolean(g.GA || g.generalAdmission);
                           const section =
-                            g.sectionNumber || g.sectionName || "GA";
+                            sectionDisplayValue(
+                              g.sectionNumber || g.sectionName,
+                            ) || "GA";
                           const row = g.rowNumber || g.rowName || "—";
                           const seat = seatDisplayValue(g.seatNumber) || "—";
                           const offer = selectionOfferName(g);
@@ -1218,39 +1237,55 @@ function SeatMapSelectionOverlay({
                               <div
                                 style={{
                                   display: "grid",
-                                  gridTemplateColumns: "58px 58px 58px 1fr",
+                                  gridTemplateColumns: isGA
+                                    ? "minmax(0, 1fr) auto"
+                                    : "58px 58px 58px 1fr",
                                   gap: 10,
                                   alignItems: "start",
                                 }}
                               >
-                                {[
-                                  ["Sec", section],
-                                  ["Row", row],
-                                  ["Seat", seat],
-                                ].map(([label, value]) => (
-                                  <div key={label}>
-                                    <div
-                                      style={{
-                                        fontSize: "11px",
-                                        fontWeight: 600,
-                                        color: "#9DA2B3",
-                                        textTransform: "uppercase",
-                                        letterSpacing: "0.12em",
-                                      }}
-                                    >
-                                      {label}
-                                    </div>
-                                    <div
-                                      style={{
-                                        marginTop: 1,
-                                        fontSize: "17px",
-                                        fontWeight: 600,
-                                      }}
-                                    >
-                                      {value}
-                                    </div>
+                                {isGA ? (
+                                  // GA has no row or seat: the section name alone, no Sec label.
+                                  <div
+                                    style={{
+                                      minWidth: 0,
+                                      fontSize: "17px",
+                                      fontWeight: 600,
+                                      overflowWrap: "anywhere",
+                                    }}
+                                  >
+                                    {section}
                                   </div>
-                                ))}
+                                ) : (
+                                  [
+                                    ["Sec", section],
+                                    ["Row", row],
+                                    ["Seat", seat],
+                                  ].map(([label, value]) => (
+                                    <div key={label}>
+                                      <div
+                                        style={{
+                                          fontSize: "11px",
+                                          fontWeight: 600,
+                                          color: "#9DA2B3",
+                                          textTransform: "uppercase",
+                                          letterSpacing: "0.12em",
+                                        }}
+                                      >
+                                        {label}
+                                      </div>
+                                      <div
+                                        style={{
+                                          marginTop: 1,
+                                          fontSize: "17px",
+                                          fontWeight: 600,
+                                        }}
+                                      >
+                                        {value}
+                                      </div>
+                                    </div>
+                                  ))
+                                )}
                                 <div style={{ textAlign: "right" }}>
                                   <div style={{ fontSize: "17px", fontWeight: 600 }}>
                                     {money(itemPrice)}

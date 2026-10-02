@@ -255,6 +255,10 @@ describe("SeatMapSelectionOverlay map readiness", () => {
       2,
     );
     expect(screen.queryByText(/× 2/)).not.toBeInTheDocument();
+    expect(screen.getAllByText("GA")).toHaveLength(2);
+    expect(screen.queryByText("Sec")).not.toBeInTheDocument();
+    expect(screen.queryByText("Row")).not.toBeInTheDocument();
+    expect(screen.queryByText("Seat")).not.toBeInTheDocument();
     expect(screen.getAllByText(`$${Number(ga.price).toFixed(2)}`)).toHaveLength(2);
     expect(screen.getAllByText(selectionOfferName(ga)).length).toBeGreaterThan(0);
   });
@@ -283,6 +287,9 @@ describe("SeatMapSelectionOverlay map readiness", () => {
     });
     fireEvent.load(backgroundPreload()!);
 
+    expect(screen.getAllByText("Sec").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Row").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Seat").length).toBeGreaterThan(0);
     expect(
       screen.getAllByText("Open space for wheelchair"),
     ).toHaveLength(1);
@@ -449,10 +456,18 @@ describe("SeatMapSelectionOverlay map readiness", () => {
     fireEvent.click(screen.getAllByRole("button", { name: /details/i })[0]);
 
     expect(screen.getByText("Ticket details")).toBeInTheDocument();
-    const detailHeading = screen.getByText(/Sec GA/);
-    expect(within(detailHeading.parentElement!).getByText("1 Ticket")).toBeInTheDocument();
-    expect(within(detailHeading.parentElement!).queryByText("6 Tickets")).not.toBeInTheDocument();
+    const ticketCount = screen.getByText("1 Ticket");
+    // GA details name the section with no Sec prefix.
+    expect(within(ticketCount.parentElement!).getByText("GA")).toBeInTheDocument();
+    expect(screen.queryByText(/Sec GA/)).not.toBeInTheDocument();
+    expect(within(ticketCount.parentElement!).queryByText("6 Tickets")).not.toBeInTheDocument();
     expect(screen.getByText(/incl\. taxes & fees/i)).toBeInTheDocument();
+
+    fireEvent.click(screen.getAllByRole("button", { name: "Next view" })[0]);
+    const seatView = screen.queryByRole("img", { name: /view from section/i });
+    if (seatView) fireEvent.error(seatView);
+    expect(screen.getByText("No seat view for GA")).toBeInTheDocument();
+    expect(screen.queryByText("No seat view for Sec GA")).not.toBeInTheDocument();
   });
 
   it("removes one GA card without dropping the rest of the quantity", () => {

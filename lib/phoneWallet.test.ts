@@ -65,6 +65,7 @@ beforeEach(() => {
 
 afterEach(() => {
   Reflect.deleteProperty(navigator, "userAgent");
+  Reflect.deleteProperty(navigator, "platform");
 });
 
 describe("phoneWalletTheme", () => {
@@ -111,6 +112,19 @@ describe("phoneWalletKind", () => {
       "Mozilla/5.0 (Linux; Android 13; SM-X900) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36",
     );
     expect(phoneWalletKind()).toBeNull();
+  });
+
+  it("offers Apple Wallet when iPhone Safari requests the desktop site", () => {
+    setUserAgent(
+      "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Safari/605.1.15",
+      5,
+    );
+    Object.defineProperty(navigator, "platform", {
+      configurable: true,
+      value: "iPhone",
+    });
+
+    expect(phoneWalletKind()).toBe("apple");
   });
 });
 

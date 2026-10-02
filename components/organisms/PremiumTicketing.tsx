@@ -255,9 +255,11 @@ type SeatPick = { sec: string; row: string; seat: string; zone: string; tier: st
 function SeatViewImage({
   src,
   section,
+  ga = false,
 }: {
   src?: string;
   section: string;
+  ga?: boolean;
 }) {
   const [failedSrc, setFailedSrc] = useState<string | null>(null);
 
@@ -265,7 +267,9 @@ function SeatViewImage({
     return (
       <div style={{ width: "100%", height: "100%", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 8, background: "#e7eaf2", color: "#6e7180" }}>
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" style={{ width: 28, height: 28 }}><path d="M3 20V9l9-5 9 5v11" /><path d="M3 20h18" /><path d="M7 20v-6h4v6" /><path d="M14 20v-6h3v6" /></svg>
-        <div style={{ fontSize: fluidSize(13), fontWeight: 500 }}>No seat view for Sec {section}</div>
+        <div style={{ fontSize: fluidSize(13), fontWeight: 500 }}>
+          No seat view for {ga ? section : `Sec ${section}`}
+        </div>
       </div>
     );
   }
@@ -2557,6 +2561,10 @@ export default function PremiumTicketing({
                   <SeatViewImage
                     src={venueImage(selRow.sec, "seat-view")}
                     section={selRow.sec}
+                    ga={
+                      selRow.cartGroup?.GA === true ||
+                      selRow.cartGroup?.generalAdmission === true
+                    }
                   />
                 )}
                 <div style={{ position: "absolute", left: 0, right: 0, bottom: 12, display: "flex", alignItems: "center", justifyContent: "center", gap: 12 }}>

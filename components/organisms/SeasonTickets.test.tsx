@@ -334,7 +334,7 @@ describe("SeasonTickets empty wallet", () => {
     expect(
       await screen.findByText("Pending transfer from m.rivera@example.com"),
     ).toBeInTheDocument();
-    expect(screen.getByText("Sec Club x 2")).toBeInTheDocument();
+    expect(screen.getByText("Club x 2")).toBeInTheDocument();
     expect(screen.getByText("2 tickets")).toBeInTheDocument();
   });
 
@@ -5343,11 +5343,19 @@ describe("SeasonTickets routed event screen", { timeout: 20_000 }, () => {
 
     render(<SeasonTickets initialScreen="event" eventUUID={icedogs.uuid} />);
 
-    expect(await screen.findAllByText("Sec Club")).toHaveLength(2);
+    // GA ticket rows name the section without a Sec prefix.
+    expect(await screen.findAllByText("Club")).toHaveLength(2);
+    expect(screen.queryByText("Sec Club")).not.toBeInTheDocument();
+
+    await user.click(screen.getAllByRole("button", { name: "Details" })[0]);
+    expect(screen.getByRole("heading", { name: "Ticket details" })).toBeInTheDocument();
+    expect(screen.getAllByText("Club").length).toBeGreaterThan(0);
+    expect(screen.queryByText("Sec Club")).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Close" }));
 
     await user.click(await screen.findByRole("button", { name: "Transfer" }));
 
-    expect(screen.getAllByText("Sec Club").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Club").length).toBeGreaterThan(0);
     expect(screen.getAllByRole("button", { name: "GA" })).toHaveLength(2);
     expect(
       screen.queryByRole("button", { name: /Seat general admission/i }),
@@ -5378,7 +5386,7 @@ describe("SeasonTickets routed event screen", { timeout: 20_000 }, () => {
 
     expect(screen.getByText("Select tickets to transfer")).toBeInTheDocument();
     expect(
-      within(screen.getByText("Select tickets to transfer").parentElement!).getByText("Sec ga"),
+      within(screen.getByText("Select tickets to transfer").parentElement!).getByText("ga"),
     ).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "GA" })).toBeInTheDocument();
     expect(
@@ -8742,7 +8750,7 @@ describe("SeasonTickets ticket screen responsive layout", () => {
     Reflect.deleteProperty(navigator, "userAgent");
   });
 
-  it("shows GA section values without a duplicate Sec prefix on phone", async () => {
+  it("shows only the section for a GA ticket on phone", async () => {
     mockedGetMyEvents.mockResolvedValue({
       data: [
         demoCompletedTicketOrder({
@@ -8778,7 +8786,10 @@ describe("SeasonTickets ticket screen responsive layout", () => {
     render(<SeasonTickets initialScreen="event" eventUUID={icedogs.uuid} />);
 
     expect(await screen.findByText("ga")).toBeInTheDocument();
-    expect(screen.getAllByText("GA")).toHaveLength(2);
+    expect(screen.queryByText("Sec")).not.toBeInTheDocument();
+    expect(screen.queryByText("GA")).not.toBeInTheDocument();
+    expect(screen.queryByText("Row")).not.toBeInTheDocument();
+    expect(screen.queryByText("Seat")).not.toBeInTheDocument();
     expect(screen.queryByText("—")).not.toBeInTheDocument();
     expect(screen.queryByText("Sec ga")).not.toBeInTheDocument();
 
@@ -8810,7 +8821,7 @@ describe("SeasonTickets ticket screen responsive layout", () => {
     Reflect.deleteProperty(navigator, "userAgent");
   });
 
-  it("keeps the stacked ticket screen at iPad Air width even with a phone UA", async () => {
+  it("shows the swipeable ticket cards on a phone even at a desktop layout width", async () => {
     setWidth(820);
     Object.defineProperty(window, "matchMedia", {
       configurable: true,
@@ -8827,10 +8838,10 @@ describe("SeasonTickets ticket screen responsive layout", () => {
     render(<SeasonTickets />);
 
     expect(
-      await screen.findByRole("link", { name: /All tickets/i }),
-    ).toBeInTheDocument();
+      (await screen.findAllByRole("button", { name: "View QR-Code" })).length,
+    ).toBeGreaterThan(0);
     expect(
-      screen.queryByRole("button", { name: "View QR-Code" }),
+      screen.queryByRole("link", { name: /All tickets/i }),
     ).not.toBeInTheDocument();
 
     Reflect.deleteProperty(navigator, "userAgent");
