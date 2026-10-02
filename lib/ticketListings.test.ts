@@ -3,7 +3,8 @@ import {
   groupsToGaTiers,
   groupsToListings,
   filterGroupsForListings,
-  sortListingsByPrice,
+  listingLocationLabel,
+  sortListings,
   limitsFromTicketGroup,
   limitsFromSeatedOfferRow,
   offerAllowedOnSeatedMap,
@@ -46,6 +47,20 @@ const CODED_OFFER = {
   name: CODED_GROUP.offer.name,
   code: CODED_GROUP.offer.accessCode,
 };
+
+describe("listing quantity range", () => {
+  it("counts every seat in the row, not only the longest contiguous run", () => {
+    const [listing] = groupsToListings([
+      {
+        ...DEMO_SEATED_TICKET_GROUPS[0],
+        seatIds: ["s1", "s2", "s3", "s5", "s6", "s7"],
+        availableCount: 6,
+        maxContiguous: 3,
+      },
+    ]);
+    expect(listing).toMatchObject({ min: 1, max: 6 });
+  });
+});
 
 describe("sellableCount", () => {
   it("takes the maximum of seat ids, availableCount, and maxContiguous", () => {
@@ -1025,8 +1040,44 @@ describe("offerChipNames connected offers", () => {
   });
 });
 
+describe("listing location label", () => {
+  it("shows a GA section name without Row GA", () => {
+    const [listing] = groupsToListings([
+      {
+        ...demoTicketGroups().ticketGroups[0],
+        sectionName: "Standing Room Right",
+        sectionNumber: "Standing Room Right",
+        rowNumber: "GA",
+        GA: true,
+      },
+    ]);
+    expect(listingLocationLabel(listing)).toBe("Standing Room Right");
+    expect(listingLocationLabel(listing)).not.toMatch(/row ga/i);
+  });
+
+  it("keeps Sec and Row on a reserved listing", () => {
+    const fieldClub = groupsToListings(DEMO_SEATED_TICKET_GROUPS).find(
+      (row) => row.zone === "Field Club",
+    );
+    expect(listingLocationLabel(fieldClub!)).toBe("Sec M · Row M3");
+  });
+
+  it("keeps a real row on a GA listing that is not row GA", () => {
+    const [listing] = groupsToListings([
+      {
+        ...demoTicketGroups().ticketGroups[0],
+        sectionName: "Lawn",
+        sectionNumber: "Lawn",
+        rowNumber: "A",
+        GA: true,
+      },
+    ]);
+    expect(listingLocationLabel(listing)).toBe("Sec Lawn · Row A");
+  });
+});
+
 describe("listing filters", () => {
-  it("sorts listings cheapest to highest and can reverse", () => {
+  it("sorts listings cheapest to highest by default", () => {
     const listings = groupsToListings(DEMO_SEATED_TICKET_GROUPS);
     expect(listings.map((listing) => listing.price)).toEqual([
       "$11.64",
@@ -1034,9 +1085,53 @@ describe("listing filters", () => {
       "$21.94",
       "$33.59",
     ]);
-    const reversed = sortListingsByPrice(listings, "-price");
-    expect(reversed[0]?.price).toBe("$33.59");
-    expect(reversed[reversed.length - 1]?.price).toBe("$11.64");
+  });
+
+  it("sorts listings by the API best-seat rank, unranked rows last", () => {
+    const listings = groupsToListings(DEMO_SEATED_TICKET_GROUPS);
+    const bestSeat = sortListings(listings, "bestseat");
+    expect(bestSeat.map((listing) => listing.cartGroup?.sortOrder)).toEqual([
+      1, 2, 2, 3,
+    ]);
+    expect(bestSeat[0]?.zone).toBe("Field Club");
+    expect(bestSeat[bestSeat.length - 1]?.price).toBe("$11.64");
+
+    const unranked = listings.map((listing) =>
+      listing.zone === "Field Club"
+        ? { ...listing, cartGroup: { ...listing.cartGroup, sortOrder: undefined } }
+        : listing,
+    );
+    const withUnranked = sortListings(unranked, "bestseat");
+    expect(withUnranked[withUnranked.length - 1]?.zone).toBe("Field Club");
+  });
+
+  it("keeps the API order for best seat when groups carry no rank, like legacy", () => {
+    // The API returns groups ordered by sort_order then id; legacy shows that
+    // order untouched when sortOrder is missing instead of falling back to price.
+    const unranked = DEMO_SEATED_TICKET_GROUPS.map(
+      ({ sortOrder: _rank, ...group }) => group,
+    );
+    const listings = groupsToListings(unranked);
+    expect(listings[0]?.price).toBe("$11.64");
+
+    const bestSeat = sortListings(listings, "bestseat");
+    expect(bestSeat.map((listing) => listing.zone)).toEqual([
+      "Field Club",
+      "Section A-B",
+      "Companion Seat",
+      "Section M-N & GA",
+    ]);
+  });
+
+  it("orders filtered groups by best seat when asked", () => {
+    const bestSeat = filterGroupsForListings(DEMO_SEATED_TICKET_GROUPS, {
+      sort: "bestseat",
+    });
+    expect(bestSeat[0]?.offer?.name).toBe("Field Club");
+    const cheapest = filterGroupsForListings(DEMO_SEATED_TICKET_GROUPS, {
+      sort: "price",
+    });
+    expect(cheapest[0]?.price).toBe(11.64);
   });
 
   it("keeps only accessible groups when the ADA listing filter is on", () => {

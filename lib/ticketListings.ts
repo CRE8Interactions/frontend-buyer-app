@@ -42,14 +42,68 @@ export function listingUnitPrice(listing: { price?: string; cartGroup?: Record<s
   return parseFloat(String(listing.price || "").replace(/[^0-9.]/g, "")) || 0;
 }
 
-export function sortListingsByPrice<T extends { price?: string; cartGroup?: Record<string, unknown> }>(
-  listings: T[],
-  sort: "price" | "-price" = "price",
-): T[] {
-  const dir = sort === "-price" ? -1 : 1;
-  return [...listings].sort(
-    (a, b) => (listingUnitPrice(a) - listingUnitPrice(b)) * dir,
+/** Listing orders the shopper can pick: cheapest first, or the venue's best-seat rank. */
+export type TicketingSort = "price" | "bestseat";
+
+/**
+ * Best-seat rank for a group — mirrors legacy `sortOrder ?? Infinity`, so rows
+ * the API did not rank fall to the end.
+ */
+function bestSeatRank(group: Record<string, unknown> | undefined) {
+  const rank = Number(group?.sortOrder);
+  return group?.sortOrder == null || !Number.isFinite(rank) ? Infinity : rank;
+}
+
+function compareRanks(a: number, b: number) {
+  if (a === b) return 0;
+  return a < b ? -1 : 1;
+}
+
+/**
+ * Legacy never re-sorts ties: the API already returns groups in
+ * `sort_order, id` order, so equal or missing ranks keep that order rather
+ * than falling back to price.
+ */
+function compareSourceOrder(a: number | undefined, b: number | undefined) {
+  return compareRanks(a ?? Infinity, b ?? Infinity);
+}
+
+export function sortListings<
+  T extends {
+    price?: string;
+    cartGroup?: Record<string, unknown>;
+    sourceIndex?: number;
+  },
+>(listings: T[], sort: TicketingSort = "price"): T[] {
+  return [...listings].sort((a, b) =>
+    sort === "bestseat"
+      ? compareRanks(bestSeatRank(a.cartGroup), bestSeatRank(b.cartGroup)) ||
+        compareSourceOrder(a.sourceIndex, b.sourceIndex)
+      : compareRanks(listingUnitPrice(a), listingUnitPrice(b)),
   );
+}
+
+/**
+ * Listing location line. A general-admission group whose row is GA shows the
+ * section only — "Standing Room Right" — the way legacy quickpicks do.
+ * Reserved rows stay "Sec M · Row M3".
+ */
+export function listingLocationLabel(listing: {
+  sec: string;
+  row: string;
+  cartGroup?: Record<string, unknown>;
+}) {
+  const group = listing.cartGroup;
+  const ga = group?.GA === true || group?.generalAdmission === true;
+  const row = String(listing.row ?? "").trim();
+  if (ga && row.toLowerCase() === "ga") {
+    const sectionName =
+      typeof group?.sectionName === "string" ? group.sectionName.trim() : "";
+    const sectionNumber =
+      group?.sectionNumber != null ? String(group.sectionNumber).trim() : "";
+    return sectionName || sectionNumber || listing.sec;
+  }
+  return `Sec ${listing.sec} · Row ${listing.row}`;
 }
 
 export function listingOfferId(listing: {
@@ -489,12 +543,20 @@ export function quantityIsAllowed(quantity: number, limits: QuantityLimits) {
   );
 }
 
-/** Inventory cap passed into quantityLimits for seated vs GA groups. */
+/**
+ * Inventory cap for a listing's quantity range. Seated rows use every seat
+ * still in the group, the way legacy quickpicks use `seatIds.length`, so a
+ * gap in the row does not shrink "1–6" down to the longest contiguous run.
+ */
 export function inventoryCapForLimits(group: RawTicketGroup) {
-  const available = sellableCount(group);
-  const contiguous = Number(group.maxContiguous || 0);
-  if (isGaGroup(group)) return available;
-  return Math.min(contiguous > 0 ? contiguous : available, available);
+  if (isGaGroup(group)) return sellableCount(group);
+  if (Array.isArray(group.seatIds) && group.seatIds.length > 0) {
+    return group.seatIds.length;
+  }
+  return Math.max(
+    Number(group.availableCount || 0),
+    Number(group.maxContiguous || 0),
+  );
 }
 
 /** Single source of truth for offer/package limits across listings, GA, and map. */
@@ -879,7 +941,7 @@ export function groupsToListings(
       seen.add(key);
       return true;
     })
-    .map((g) => {
+    .map((g, sourceIndex) => {
       const limits = limitsFromTicketGroup(g, globalMax);
       const zone =
         g.offer?.name ||
@@ -897,10 +959,11 @@ export function groupsToListings(
         price: money(Number(g.price || 0)),
         sectionId: g.sectionId != null ? String(g.sectionId) : undefined,
         cartGroup: g as Record<string, unknown>,
+        sourceIndex,
       };
     })
     .filter((listing) => listing.min <= listing.max);
-  return sortListingsByPrice(mapped);
+  return sortListings(mapped);
 }
 
 export function filterGroupsForListings(
@@ -913,7 +976,7 @@ export function filterGroupsForListings(
   }: {
     quantity?: number;
     accessible?: boolean;
-    sort?: "price" | "-price";
+    sort?: TicketingSort;
     offerIds?: Array<string | number>;
   } = {},
 ): RawTicketGroup[] {
@@ -928,9 +991,13 @@ export function filterGroupsForListings(
     }
     return true;
   });
-  const dir = sort === "-price" ? -1 : 1;
-  next = [...next].sort(
-    (a, b) => (Number(a.price || 0) - Number(b.price || 0)) * dir,
+  next = [...next].sort((a, b) =>
+    sort === "bestseat"
+      ? compareRanks(
+          bestSeatRank(a as Record<string, unknown>),
+          bestSeatRank(b as Record<string, unknown>),
+        )
+      : compareRanks(Number(a.price || 0), Number(b.price || 0)),
   );
   return next;
 }

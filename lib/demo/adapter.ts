@@ -350,7 +350,7 @@ const routes: Route[] = [
       if (!Array.isArray(groups)) return { data: payload };
       const quantity = Number(body.quantity || 0);
       const accessible = Boolean(body.accessible);
-      const sort = body.sort === "-price" ? "-price" : "price";
+      const sort = body.sort === "bestseat" ? "bestseat" : "price";
       const offerIds = Array.isArray(body.offerIds)
         ? (body.offerIds as Array<string | number>)
         : [];

@@ -21,6 +21,7 @@ import {
 } from "@/lib/mapSelection";
 import {
   groupsToGaTiers,
+  groupsToListings,
   lockedZonesFromGroups,
 } from "@/lib/ticketListings";
 import {
@@ -162,12 +163,13 @@ async function renderReady(
     onFiltersChange?: (filters: {
       quantity: number;
       accessible: boolean;
-      sort: "price" | "-price";
+      sort: "price" | "bestseat";
       offerIds?: Array<string | number>;
       accessCodes?: string[];
     }) => void | Promise<void>;
     refreshing?: boolean;
     waitForListing?: RegExp | string;
+    initialFilters?: { quantity?: number; accessible?: boolean; sort?: "price" | "bestseat" };
   } = {},
 ) {
   const user = userEvent.setup();
@@ -176,6 +178,7 @@ async function renderReady(
       data={data}
       onFiltersChange={props.onFiltersChange}
       refreshing={props.refreshing}
+      initialFilters={props.initialFilters}
     />,
   );
   const waitForListing = props.waitForListing ?? /sec m · row m3/i;
@@ -535,11 +538,15 @@ describe("Select tickets page (PremiumTicketing)", { timeout: 20_000 }, () => {
       expect.objectContaining({ accessible: true }),
     );
 
+    await user.click(screen.getByRole("button", { name: /^sort by price$/i }));
     await user.click(
-      screen.getByRole("button", { name: /sorted by lowest price/i }),
+      within(screen.getByRole("listbox", { name: /sort listings/i })).getByRole(
+        "option",
+        { name: /^best seat$/i },
+      ),
     );
     expect(onFiltersChange).toHaveBeenCalledWith(
-      expect.objectContaining({ sort: "-price" }),
+      expect.objectContaining({ sort: "bestseat" }),
     );
   });
 
@@ -2397,6 +2404,30 @@ describe("Select tickets page (PremiumTicketing)", { timeout: 20_000 }, () => {
     ).not.toBeInTheDocument();
   });
 
+  it("keeps the accessibility icon on a flagged listing after sorting by best seat", async () => {
+    const [flagged] = groupsToListings([
+      {
+        ...DEMO_SEATED_TICKET_GROUPS[0],
+        accessible: true,
+        accessibleType: undefined,
+        sectionNumber: "102",
+        rowNumber: "K",
+      },
+    ]);
+    await renderReady(
+      {
+        ...seatedTicketingFixture,
+        listings: [flagged, ...seatedTicketingFixture.listings],
+      },
+      { initialFilters: { sort: "bestseat" } },
+    );
+
+    expect(
+      screen.getAllByRole("img", { name: /accessible seating/i }).length,
+    ).toBeGreaterThan(0);
+    expect(screen.getByText(/sec 102 · row k/i)).toBeInTheDocument();
+  });
+
   it("names the accessible seating type on accessible listings and keeps their locator thumb", async () => {
     await renderReady();
 
@@ -2440,20 +2471,90 @@ describe("Select tickets page (PremiumTicketing)", { timeout: 20_000 }, () => {
     });
   });
 
-  it("sorts listings by price ascending then descending on the client", async () => {
+  it("shows a GA listing as its section name without Row GA", async () => {
+    const user = await renderReady({
+      ...seatedTicketingFixture,
+      listings: [
+        ...groupsToListings([
+          {
+            ...demoTicketGroups().ticketGroups[0],
+            sectionName: "Standing Room Right",
+            sectionNumber: "Standing Room Right",
+            rowNumber: "GA",
+            GA: true,
+          },
+        ]),
+        ...seatedTicketingFixture.listings,
+      ],
+    });
+
+    expect(screen.getAllByText("Standing Room Right").length).toBeGreaterThan(0);
+    expect(screen.queryByText(/row ga/i)).not.toBeInTheDocument();
+    expect(screen.getByText(/sec m · row m3/i)).toBeInTheDocument();
+
+    await user.click(screen.getAllByText("Standing Room Right")[0]);
+    expect(screen.getAllByText("Standing Room Right").length).toBeGreaterThan(1);
+    expect(screen.queryByText(/row ga/i)).not.toBeInTheDocument();
+
+    await user.click(screen.getAllByRole("button", { name: "Next view" })[0]);
+    const seatView = screen.queryByRole("img", { name: /view from section/i });
+    if (seatView) fireEvent.error(seatView);
+    expect(
+      screen.getByText("No seat view for Standing Room Right"),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByText("No seat view for Sec Standing Room Right"),
+    ).not.toBeInTheDocument();
+  });
+
+  it("switches between cheapest-first and best-seat order from the sort dropdown", async () => {
     const user = await renderReady();
 
     const firstPrice = () =>
       screen.getAllByText(/\$[\d,]+\.\d{2} each/i)[0].textContent;
+    const pickSort = async (current: RegExp, option: RegExp) => {
+      await user.click(screen.getByRole("button", { name: current }));
+      await user.click(
+        within(screen.getByRole("listbox", { name: /sort listings/i })).getByRole(
+          "option",
+          { name: option },
+        ),
+      );
+    };
 
+    // Default: cheapest first, and the default label.
     expect(firstPrice()).toMatch(/\$11\.64/);
+    expect(screen.getByRole("button", { name: /^sort by price$/i })).toBeInTheDocument();
+    expect(screen.queryByRole("listbox", { name: /sort listings/i })).not.toBeInTheDocument();
 
-    await user.click(
-      screen.getByRole("button", { name: /sorted by lowest price/i }),
-    );
+    // Best seat: the API's sortOrder puts Field Club ($33.59) first.
+    await pickSort(/^sort by price$/i, /^best seat$/i);
+    expect(
+      screen.getByRole("button", { name: /^sort by best seat$/i }),
+    ).toBeInTheDocument();
+    expect(screen.queryByRole("listbox", { name: /sort listings/i })).not.toBeInTheDocument();
     await waitFor(() => {
       expect(firstPrice()).toMatch(/\$33\.59/);
     });
+
+    // Back to price restores cheapest first and the default label.
+    await pickSort(/^sort by best seat$/i, /^price$/i);
+    expect(screen.getByRole("button", { name: /^sort by price$/i })).toBeInTheDocument();
+    await waitFor(() => {
+      expect(firstPrice()).toMatch(/\$11\.64/);
+    });
+  });
+
+  it("opens the listings sorted by best seat when the URL asks for it", async () => {
+    await renderReady(seatedTicketingFixture, {
+      initialFilters: { sort: "bestseat" },
+    });
+    expect(
+      screen.getByRole("button", { name: /^sort by best seat$/i }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getAllByText(/\$[\d,]+\.\d{2} each/i)[0].textContent,
+    ).toMatch(/\$33\.59/);
   });
 
   it("opens the event information modal", async () => {

@@ -48,13 +48,19 @@ import {
   limitsFromListing,
   listingAvailabilityRange,
   listingDetailAvailabilityLabel,
+  listingLocationLabel,
   listingOfferId,
   quantityIsAllowed,
-  sortListingsByPrice,
+  sortListings,
   ticketQuantityOptions,
   type QuantityRestrictionSource,
+  type TicketingSort,
 } from "@/lib/ticketListings";
-import { getAccessibleLabel, isAccessibleSource } from "@/lib/ticketAccessibility";
+import {
+  accessibleLabelFromSeats,
+  getAccessibleLabel,
+  isAccessibleSource,
+} from "@/lib/ticketAccessibility";
 import { shopperShellVars } from "@/lib/branding";
 import { ORG_SCROLLBAR_CLASS, orgScrollbarCss } from "@/lib/orgScrollbar";
 import {
@@ -106,6 +112,11 @@ export type TicketingListing = {
   sectionId?: string;
   /** Strapi ticket-group payload used by place-tickets-into-cart */
   cartGroup?: Record<string, unknown>;
+  /**
+   * Position in the API payload, which arrives ordered by sort_order then id.
+   * Best-seat sort falls back to this when ranks tie or are missing.
+   */
+  sourceIndex?: number;
 };
 
 export type TicketingData = {
@@ -177,7 +188,7 @@ export type TicketingData = {
 export type TicketingFilters = {
   quantity: number;
   accessible: boolean;
-  sort: "price" | "-price";
+  sort: TicketingSort;
   offerIds?: Array<string | number>;
   accessCodes?: string[];
   accessCodeTokens?: string[];
@@ -204,6 +215,12 @@ export type GATier = {
  * takes a waitlist signup, anything else takes an on-sale reminder.
  */
 type NotifySubject = { name: string; soldout: boolean; onSaleAt?: string };
+
+/** Sort menu entries, in the order the legacy dropdown listed them. */
+const SORT_OPTIONS: Array<{ value: TicketingSort; label: string }> = [
+  { value: "price", label: "Price" },
+  { value: "bestseat", label: "Best seat" },
+];
 
 const LEGEND = [
   { label: "Unavailable", color: "#dfe3ee" },
@@ -238,9 +255,11 @@ type SeatPick = { sec: string; row: string; seat: string; zone: string; tier: st
 function SeatViewImage({
   src,
   section,
+  ga = false,
 }: {
   src?: string;
   section: string;
+  ga?: boolean;
 }) {
   const [failedSrc, setFailedSrc] = useState<string | null>(null);
 
@@ -248,7 +267,9 @@ function SeatViewImage({
     return (
       <div style={{ width: "100%", height: "100%", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 8, background: "#e7eaf2", color: "#6e7180" }}>
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" style={{ width: 28, height: 28 }}><path d="M3 20V9l9-5 9 5v11" /><path d="M3 20h18" /><path d="M7 20v-6h4v6" /><path d="M14 20v-6h3v6" /></svg>
-        <div style={{ fontSize: fluidSize(13), fontWeight: 500 }}>No seat view for Sec {section}</div>
+        <div style={{ fontSize: fluidSize(13), fontWeight: 500 }}>
+          No seat view for {ga ? section : `Sec ${section}`}
+        </div>
       </div>
     );
   }
@@ -378,8 +399,9 @@ export default function PremiumTicketing({
   );
   const [unlockZone, setUnlockZone] = useState<string | null>(null);
   const [qtyMenu, setQtyMenu] = useState(false);
+  const [sortMenu, setSortMenu] = useState(false);
   const [ada, setAda] = useState(() => Boolean(initialFilters?.accessible));
-  const [sortDir, setSortDir] = useState<"price" | "-price">(
+  const [sortDir, setSortDir] = useState<TicketingSort>(
     () => initialFilters?.sort ?? "price",
   );
   const [loading, setLoading] = useState(false);
@@ -415,6 +437,7 @@ export default function PremiumTicketing({
   const sticky = useRef<HTMLDivElement | null>(null);
   const listingsScroll = useRef<HTMLDivElement | null>(null);
   const qtyBtn = useRef<HTMLButtonElement | null>(null);
+  const sortBtn = useRef<HTMLButtonElement | null>(null);
   const [headerH, setHeaderH] = useState(TICKETING_HEADER_FALLBACK_PX);
   const loadTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const mapRebuildTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -666,8 +689,9 @@ export default function PremiumTicketing({
     shimmerListings();
   };
 
-  const toggleSort = () => {
-    const nextSort = sortDir === "price" ? "-price" : "price";
+  const chooseSort = (nextSort: TicketingSort) => {
+    setSortMenu(false);
+    if (nextSort === sortDir) return;
     setSortDir(nextSort);
     requestInventory({ sort: nextSort });
     shimmerListings();
@@ -718,7 +742,7 @@ export default function PremiumTicketing({
   const mapLocked = Boolean(d.soldOut) || eventScheduled;
   const rows = useMemo(() => {
     const filtered = d.listings.filter((l) => quantityIsAllowed(want, listingQtyLimits(l)) && (!zoneFilter.length || zoneFilter.includes(l.zone)) && !(!!lockedMap[l.zone] && !unlocked.includes(l.zone)) && (!ada || isAccessibleSource(l.cartGroup)));
-    return sortListingsByPrice(filtered, sortDir).map((l) => ({
+    return sortListings(filtered, sortDir).map((l) => ({
       ...l,
       range: `${l.min} – ${l.max} Tickets`,
     }));
@@ -1108,7 +1132,9 @@ export default function PremiumTicketing({
 
   /** Accessible listings name their seating type where the ticket icon sits. */
   const listingSeatIcon = (l: TicketingListing, s: number) => {
-    const accessibleLabel = getAccessibleLabel(l.cartGroup);
+    const accessibleLabel =
+      getAccessibleLabel(l.cartGroup) ||
+      accessibleLabelFromSeats(l.cartGroup, mapMapping);
     const box = { flexShrink: 0, display: "flex", alignItems: "center" };
     if (!accessibleLabel) {
       return (
@@ -1558,10 +1584,26 @@ export default function PremiumTicketing({
               <span style={{ display: "block", width: compact ? 20 : 22, height: compact ? 20 : 22, borderRadius: 999, background: "#fff", boxShadow: "0 1px 3px rgba(5,27,53,0.3)", transition: "transform 180ms cubic-bezier(0.2,0.8,0.2,1)", transform: ada ? (compact ? "translateX(18px)" : "translateX(20px)") : "translateX(0)" }} />
             </button>
           </div>
-          <button onClick={toggleSort} aria-label={sortDir === "price" ? "Sorted by lowest price" : "Sorted by highest price"} style={{ fontFamily: "inherit", display: "inline-flex", alignItems: "center", gap: 6, fontSize: type, fontWeight: 500, color: NAVY, background: "transparent", border: "none", padding: compact ? "8px 0" : 0, minHeight: compact ? 40 : undefined, whiteSpace: "nowrap", cursor: "pointer" }}>
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" style={{ width: compact ? 16 : 18, height: compact ? 16 : 18, transform: sortDir === "price" ? "none" : "scaleY(-1)" }}><path d="M11 5h10" /><path d="M11 9h7" /><path d="M11 13h4" /><path d="M3 17l3 3 3-3" /><path d="M6 4v16" /></svg>
-            Sort by price
+          <button ref={sortBtn} onClick={() => setSortMenu((v) => !v)} aria-haspopup="listbox" aria-expanded={sortMenu} style={{ fontFamily: "inherit", display: "inline-flex", alignItems: "center", gap: 6, fontSize: type, fontWeight: 500, color: NAVY, background: "transparent", border: "none", padding: compact ? "8px 0" : 0, minHeight: compact ? 40 : undefined, whiteSpace: "nowrap", cursor: "pointer" }}>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" style={{ width: compact ? 16 : 18, height: compact ? 16 : 18 }}><path d="M11 5h10" /><path d="M11 9h7" /><path d="M11 13h4" /><path d="M3 17l3 3 3-3" /><path d="M6 4v16" /></svg>
+            {sortDir === "bestseat" ? "Sort by best seat" : "Sort by price"}
           </button>
+          {sortMenu && mounted && sortBtn.current && createPortal(
+            <>
+              <div onClick={() => setSortMenu(false)} style={{ position: "fixed", inset: 0, zIndex: 29 }} />
+              <div role="listbox" aria-label="Sort listings" style={{ position: "fixed", top: sortBtn.current.getBoundingClientRect().bottom + 8, right: Math.max(8, window.innerWidth - sortBtn.current.getBoundingClientRect().right), zIndex: 30, minWidth: 160, background: "#fff", border: "1px solid rgba(5,27,53,0.10)", borderRadius: 14, boxShadow: "0 20px 44px -18px rgba(5,27,53,0.45)", padding: 6, display: "flex", flexDirection: "column" }}>
+                {SORT_OPTIONS.map((option) => {
+                  const active = option.value === sortDir;
+                  return (
+                    <button key={option.value} role="option" aria-selected={active} onClick={() => chooseSort(option.value)} style={{ fontFamily: "inherit", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, width: "100%", textAlign: "left", fontSize: type, fontWeight: active ? 600 : 500, color: active ? ACC : NAVY, background: active ? ACC_SOFT : "transparent", border: "none", borderRadius: 10, padding: compact ? "10px 12px" : "11px 14px", cursor: "pointer", whiteSpace: "nowrap" }}>
+                      {option.label}
+                    </button>
+                  );
+                })}
+              </div>
+            </>,
+            document.body,
+          )}
         </div>
       </div>
       <div style={{ height: 1, background: "rgba(5,27,53,0.08)", margin: compact ? "10px 0 0" : "16px 0 0" }} />
@@ -1963,7 +2005,7 @@ export default function PremiumTicketing({
                       <div style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", gap: 10 }}>
                         <div style={{ display: "flex", alignItems: "center", gap: 6, minWidth: 0, fontSize: 18, fontWeight: 600, letterSpacing: "-0.015em" }}>
                           {listingSeatIcon(l, 18)}
-                          <span style={{ minWidth: 0, overflowWrap: "anywhere" }}>Sec {l.sec} · Row {l.row}</span>
+                          <span style={{ minWidth: 0, overflowWrap: "anywhere" }}>{listingLocationLabel(l)}</span>
                         </div>
                         <div style={{ fontSize: 15, color: "#6e7180" }}>{l.range}</div>
                         <div style={{ display: "flex", alignItems: "baseline", flexWrap: "wrap", gap: "2px 6px" }}>
@@ -1981,7 +2023,7 @@ export default function PremiumTicketing({
                         <span style={{ alignSelf: "flex-start", ...pill(ACC_SOFT, ACC) }}><Star s={14} /> {l.zone}</span>
                         <div style={{ display: "flex", alignItems: "center", gap: 9, minWidth: 0, fontSize: 18, fontWeight: 600, letterSpacing: "-0.015em" }}>
                           {listingSeatIcon(l, 18)}
-                          <span style={{ minWidth: 0, overflowWrap: "anywhere" }}>Sec {l.sec} · Row {l.row}</span>
+                          <span style={{ minWidth: 0, overflowWrap: "anywhere" }}>{listingLocationLabel(l)}</span>
                         </div>
                         <div style={{ fontSize: 15, color: "#6e7180" }}>{l.range}</div>
                       </div>
@@ -2519,6 +2561,10 @@ export default function PremiumTicketing({
                   <SeatViewImage
                     src={venueImage(selRow.sec, "seat-view")}
                     section={selRow.sec}
+                    ga={
+                      selRow.cartGroup?.GA === true ||
+                      selRow.cartGroup?.generalAdmission === true
+                    }
                   />
                 )}
                 <div style={{ position: "absolute", left: 0, right: 0, bottom: 12, display: "flex", alignItems: "center", justifyContent: "center", gap: 12 }}>
@@ -2538,7 +2584,7 @@ export default function PremiumTicketing({
               <div style={{ display: "flex", flexDirection: "column", gap: 8, padding: "18px 0 16px" }}>
                 <span style={{ alignSelf: "flex-start", flexShrink: 0, ...pill(ACC_SOFT, ACC), ...(mobile ? { padding: "5px 10px" } : {}) }}><Star s={14} /> {selRow.tier || selRow.zone}</span>
                 <div style={{ display: "flex", flexDirection: "column", gap: 5, minWidth: 0 }}>
-                  <div style={{ fontSize: 22, fontWeight: 600, letterSpacing: "-0.02em", lineHeight: 1.5 }}>Sec {selRow.sec} · Row {selRow.row}</div>
+                  <div style={{ fontSize: 22, fontWeight: 600, letterSpacing: "-0.02em", lineHeight: 1.5 }}>{listingLocationLabel(selRow)}</div>
                   <AccessibleSeatingBadge source={selRow.cartGroup} />
                   <div style={{ fontSize: 14, lineHeight: 1.5, color: "#6e7180" }}>{listingDetailAvailabilityLabel(selRow.min, selRow.max, selRow.multipleOf)}</div>
                 </div>
