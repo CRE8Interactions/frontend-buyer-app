@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, useState } from "react";
+import { Suspense, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import CodeField, { type CodeError } from "@/components/molecules/CodeField";
@@ -45,6 +45,8 @@ import {
 type Choice = "email" | "phone-number";
 
 const NAVY = "#051b35";
+/** How long the resend success banner and "on its way" copy stay visible. */
+const RESEND_FEEDBACK_MS = 3000;
 
 /** Demo login: 28px on phone, 34px from md. Avoid text-[Npx] tokens. */
 const loginTitleCls =
@@ -140,13 +142,28 @@ function LoginForm() {
   const [resent, setResent] = useState(false);
   const [done, setDone] = useState(false);
   const [statusMessage, setStatusMessage] = useState("");
+  const resentFeedbackTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const clearResentFeedbackTimer = () => {
+    if (resentFeedbackTimer.current) {
+      clearTimeout(resentFeedbackTimer.current);
+      resentFeedbackTimer.current = null;
+    }
+  };
+
+  const clearResentFeedback = () => {
+    clearResentFeedbackTimer();
+    setResent(false);
+    setStatusMessage("");
+  };
 
   const clearNetworkFeedback = () => {
     setHasError(false);
-    setStatusMessage("");
-    setResent(false);
+    clearResentFeedback();
     setCodeError(null);
   };
+
+  useEffect(() => () => clearResentFeedbackTimer(), []);
 
   const destinationLabel = choice === "email" ? email : phoneNumber;
 
@@ -207,11 +224,17 @@ function LoginForm() {
     setIsSaving(true);
     setHasError(false);
     setCodeError(null);
-    setResent(false);
+    clearResentFeedback();
     try {
       await sendCode(normalizeEmail(email));
       setResent(true);
       setStatusMessage("Verification code has been resent.");
+      clearResentFeedbackTimer();
+      resentFeedbackTimer.current = setTimeout(() => {
+        resentFeedbackTimer.current = null;
+        setResent(false);
+        setStatusMessage("");
+      }, RESEND_FEEDBACK_MS);
     } catch {
       setHasError(true);
       setCodeError("network");
@@ -426,7 +449,7 @@ function LoginForm() {
               />
               <div className="flex flex-col gap-4 text-center text-[13px] text-[#8a93a3]">
                 <p>
-                  Codes expire after 5 minutes, so be sure to use the right one.
+                  Codes expire after 10 minutes, so be sure to use the right one.
                 </p>
                 <p>
                   {done ? (
