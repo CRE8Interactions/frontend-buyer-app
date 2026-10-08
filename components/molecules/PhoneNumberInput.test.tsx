@@ -65,6 +65,21 @@ describe("PhoneNumberInput", () => {
     expect(countrySelect().value).toBe("GB");
   });
 
+  it("shows the demo US number nationally while keeping its country", () => {
+    render(
+      <PhoneNumberInput
+        value={DEMO_USER.phoneNumber}
+        onChange={() => {}}
+      />,
+    );
+
+    expect(countrySelect().value).toBe("US");
+    expect(screen.getByRole("textbox")).toHaveValue("(415) 555-2671");
+    expect(screen.getByRole("textbox")).not.toHaveValue(
+      expect.stringMatching(/^\+/),
+    );
+  });
+
   it("does not offer browser autofill on the number or country picker", () => {
     render(<PhoneNumberInput value={undefined} onChange={() => {}} />);
 

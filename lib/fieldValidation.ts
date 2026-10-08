@@ -141,6 +141,155 @@ export function formatDobInput(raw: string) {
   return `${digits.slice(0, 2)}/${digits.slice(2, 4)}/${digits.slice(4)}`;
 }
 
+export type DobEditInputType =
+  | "deleteContentBackward"
+  | "deleteContentForward"
+  | "insertText"
+  | string;
+
+export type DobInputEdit = {
+  value: string;
+  caret: number;
+};
+
+function caretAfterDigitCount(value: string, digitCount: number) {
+  if (digitCount <= 0) return 0;
+  let seen = 0;
+  for (let index = 0; index < value.length; index += 1) {
+    if (/\d/.test(value[index])) seen += 1;
+    if (seen === digitCount) {
+      const next = index + 1;
+      // A slash is not a place to keep typing. Legacy moves into the next block.
+      return value[next] === "/" ? next + 1 : next;
+    }
+  }
+  return value.length;
+}
+
+/** A slash only exists to separate digits. Never leave two slashes in a row. */
+function finishDobEdit(value: string, caret: number): DobInputEdit {
+  let next = "";
+  let nextCaret = caret;
+  for (let index = 0; index < value.length; index += 1) {
+    if (value[index] === "/" && next.endsWith("/")) {
+      if (index < caret) nextCaret -= 1;
+      continue;
+    }
+    next += value[index];
+  }
+  if (!/\d/.test(next)) return { value: "", caret: 0 };
+  return {
+    value: next,
+    caret: Math.min(Math.max(nextCaret, 0), next.length),
+  };
+}
+
+/** The slash that opens the next date part is added while typing, not deleting. */
+function deletedDobEdit(value: string, caret: number): DobInputEdit {
+  const edit = finishDobEdit(value, caret);
+  if (!edit.value.endsWith("/")) return edit;
+  const next = edit.value.slice(0, -1);
+  return finishDobEdit(next, Math.min(edit.caret, next.length));
+}
+
+function packedDob(value: string) {
+  const formatted = formatDobInput(value);
+  return value === formatted || value === `${formatted}/`;
+}
+
+/** One new digit inserted into `rawDigits` relative to `previousDigits`. */
+function insertedDigit(previousDigits: string, rawDigits: string) {
+  if (rawDigits.length !== previousDigits.length + 1) return null;
+  for (let index = 0; index < rawDigits.length; index += 1) {
+    if (previousDigits[index] === rawDigits[index]) continue;
+    if (rawDigits.slice(index + 1) === previousDigits.slice(index)) {
+      return { index, digit: rawDigits[index] };
+    }
+    return null;
+  }
+  return null;
+}
+
+/**
+ * Formats a DOB edit without losing the caret's logical digit position.
+ * Deleting in the middle preserves the empty mask slot so retyping replaces
+ * that slot, while typing into a complete date replaces instead of shifting.
+ */
+export function editDobInput(
+  previous: string,
+  raw: string,
+  selectionStart: number | null,
+  inputType: DobEditInputType = "insertText",
+): DobInputEdit {
+  const caret = selectionStart ?? raw.length;
+  const previousDigits = previous.replace(/\D/g, "");
+  const rawDigits = raw.replace(/\D/g, "");
+
+  // Browsers delete a slash before the controlled mask can intervene. Match
+  // legacy by retaining the slash and deleting the adjacent digit instead.
+  if (
+    previous.length === raw.length + 1 &&
+    previous[caret] === "/" &&
+    previous.slice(0, caret) + previous.slice(caret + 1) === raw
+  ) {
+    // Backspace on the slash that only opens the next part removes that slash.
+    if (!/\d/.test(previous.slice(caret + 1))) {
+      return deletedDobEdit(raw, caret);
+    }
+    if (inputType === "deleteContentForward") {
+      const next = previous.slice(0, caret + 1) + previous.slice(caret + 2);
+      return deletedDobEdit(next, caret + 1);
+    }
+    const digitIndex = Math.max(0, caret - 1);
+    const next = previous.slice(0, digitIndex) + previous.slice(caret);
+    return deletedDobEdit(next, digitIndex);
+  }
+
+  // Typing over a month, day, or year replaces that digit and steps forward.
+  // Appending at the end still grows the date. A hole is not a packed value.
+  const typedOver = insertedDigit(previousDigits, rawDigits);
+  if (
+    typedOver &&
+    typedOver.index < previousDigits.length &&
+    packedDob(previous) &&
+    inputType !== "deleteContentBackward" &&
+    inputType !== "deleteContentForward"
+  ) {
+    const nextDigits =
+      previousDigits.slice(0, typedOver.index) +
+      typedOver.digit +
+      previousDigits.slice(typedOver.index + 1);
+    let value = formatDobInput(nextDigits);
+    let nextCaret = caretAfterDigitCount(value, typedOver.index + 1);
+    const finishedPart = typedOver.index + 1 === 2 || typedOver.index + 1 === 4;
+    if (finishedPart && nextCaret === value.length) {
+      value = `${value}/`;
+      nextCaret = value.length;
+    }
+    return finishDobEdit(value, nextCaret);
+  }
+
+  // Keep the hole created by a middle deletion. Compacting all remaining
+  // digits would move the caret and change every date part after the edit.
+  if (raw.length < previous.length && /^[\d/]*$/.test(raw)) {
+    return deletedDobEdit(raw.slice(0, 10), caret);
+  }
+
+  const digitsBeforeCaret = raw.slice(0, caret).replace(/\D/g, "").length;
+  let value = formatDobInput(raw);
+  const digitCount = value.replace(/\D/g, "").length;
+  const typingNextPart =
+    inputType !== "deleteContentBackward" &&
+    inputType !== "deleteContentForward" &&
+    digitsBeforeCaret >= digitCount &&
+    (digitCount === 2 || digitCount === 4);
+  if (typingNextPart) value = `${value}/`;
+  return finishDobEdit(
+    value,
+    typingNextPart ? value.length : caretAfterDigitCount(value, digitsBeforeCaret),
+  );
+}
+
 export function isValidDob(dob: string) {
   const digits = dob.replace(/\D/g, "");
   if (digits.length !== 8) return false;
