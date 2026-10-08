@@ -4,6 +4,7 @@ import { Suspense, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import CodeField, { type CodeError } from "@/components/molecules/CodeField";
+import DobField from "@/components/molecules/DobField";
 import EmailField from "@/components/molecules/EmailField";
 import NameField from "@/components/molecules/NameField";
 import PhoneNumberInput, {
@@ -24,16 +25,12 @@ import {
   FIELD_COPY,
   codeResponseError,
   codeSubmitError,
-  dobBlurError,
   dobSubmitError,
-  DOB_INVALID_MESSAGE,
-  DOB_REQUIRED_MESSAGE,
   emailBlurInvalid,
   emailSubmitError,
   emailSubmitInvalid,
   formatDobInput,
   formString,
-  lightFieldClass,
   nameBlurError,
   nameFieldError,
   normalizeEmail,
@@ -562,48 +559,16 @@ function LoginForm() {
                 }}
                 onBlur={(value) => setLastNameError(nameBlurError(value))}
               />
-              <div>
-                <label
-                  htmlFor="dob"
-                  className="text-[12px] font-semibold text-[#4a5567]"
-                >
-                  Birth date
-                </label>
-                <input
-                  id="dob"
-                  name="dob"
-                  value={dob}
-                  required
-                  autoComplete="bday"
-                  aria-invalid={Boolean(dobError)}
-                  onChange={(e) => {
-                    setDob(formatDobInput(e.target.value));
-                    setDobError(null);
-                    setHasError(false);
-                  }}
-                  onInput={(e) => {
-                    setDob(formatDobInput(e.currentTarget.value));
-                    setDobError(null);
-                  }}
-                  onBlur={(e) => setDobError(dobBlurError(e.currentTarget.value))}
-                  placeholder="MM/DD/YYYY"
-                  inputMode="numeric"
-                  className={`mt-2 ${lightFieldClass(Boolean(dobError))}`}
-                />
-                {dobError === "required" ? (
-                  <p className="mt-2 text-[13px] text-[#c2394a]">
-                    {DOB_REQUIRED_MESSAGE}
-                  </p>
-                ) : dobError === "invalid" ? (
-                  <p className="mt-2 text-[13px] text-[#c2394a]">
-                    {DOB_INVALID_MESSAGE}
-                  </p>
-                ) : (
-                  <p className="mt-1.5 text-[12px] text-[#8a93a3]">
-                    Format: MM/DD/YYYY
-                  </p>
-                )}
-              </div>
+              <DobField
+                value={dob}
+                error={dobError}
+                onChange={(value) => {
+                  setDob(value);
+                  setDobError(null);
+                  setHasError(false);
+                }}
+                onBlur={setDobError}
+              />
               {hasError ? (
                 <p className="text-[13px] text-[#c2394a]">{FIELD_COPY.network}</p>
               ) : null}

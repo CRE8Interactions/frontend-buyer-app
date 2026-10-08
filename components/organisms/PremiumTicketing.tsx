@@ -8,7 +8,7 @@
  * prop, so any event can use it. See NM_STATE_DATA for the reference content.
  */
 
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type Dispatch, type ReactNode, type SetStateAction } from "react";
 import { createPortal } from "react-dom";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -313,6 +313,24 @@ const TicketIcon = ({ s = 18, color }: { s?: number; color?: string }) => (
   <Ticket width={s} height={s} stroke={color || "currentColor"} strokeWidth={1.8} aria-hidden />
 );
 
+/**
+ * Keep quantity updates inside the ticket-details subtree. If this state lives
+ * on PremiumTicketing, every stepper click also rerenders all listing rows.
+ */
+function TicketDetailsQuantityState({
+  initialQuantity,
+  children,
+}: {
+  initialQuantity: number;
+  children: (
+    quantity: number,
+    setQuantity: Dispatch<SetStateAction<number>>,
+  ) => ReactNode;
+}) {
+  const [quantity, setQuantity] = useState(initialQuantity);
+  return children(quantity, setQuantity);
+}
+
 export default function PremiumTicketing({
   data: d,
   onFiltersChange,
@@ -432,7 +450,6 @@ export default function PremiumTicketing({
   const [media, setMedia] = useState(0);
   const [info, setInfo] = useState(false);
   const [sel, setSel] = useState<number | null>(null);
-  const [panelQty, setPanelQty] = useState(2);
   // GA mode state
   const [gaQuantities, setGaQuantities] = useState<Record<number, number>>({});
   const [notifySubject, setNotifySubject] = useState<NotifySubject | null>(null);
@@ -1020,7 +1037,7 @@ export default function PremiumTicketing({
     }
   }, [goToCheckout, holding, placeSelectedTickets, setSeatedError]);
 
-  const startHold = async () => {
+  const startHold = async (quantity: number) => {
     if (holding) return;
     const listing = selRow as TicketingListing | undefined;
     const group = listing?.cartGroup;
@@ -1028,7 +1045,7 @@ export default function PremiumTicketing({
       setSeatedError({ ...CHECKOUT_DEMO_LISTINGS_ERROR });
       return;
     }
-    await runCheckoutWithGroup(group, panelQty);
+    await runCheckoutWithGroup(group, quantity);
   };
 
   const handleUnlockOffer = useCallback((offerName: string) => {
@@ -2014,7 +2031,7 @@ export default function PremiumTicketing({
 
             {!busy &&
               rows.map((l, idx) => (
-                <div key={`${l.sec}-${l.row}-${idx}`} className="nmt-listing" onClick={() => { setSel(idx); setPanelQty(clampQuantity(want, listingQtyLimits(l))); setMedia(0); }} style={{ display: "flex", flexDirection: mobile ? "column" : "row", alignItems: mobile ? "stretch" : "center", gap: mobile ? 8 : 18, background: "#fff", border: "1px solid rgba(5,27,53,0.10)", borderRadius: mobile ? 12 : 16, padding: "16px 20px", cursor: "pointer" }}>
+                <div key={`${l.sec}-${l.row}-${idx}`} className="nmt-listing" onClick={() => { setSel(idx); setMedia(0); }} style={{ display: "flex", flexDirection: mobile ? "column" : "row", alignItems: mobile ? "stretch" : "center", gap: mobile ? 8 : 18, background: "#fff", border: "1px solid rgba(5,27,53,0.10)", borderRadius: mobile ? 12 : 16, padding: "16px 20px", cursor: "pointer" }}>
                   {mobile ? (
                     <div style={{ display: "flex", alignItems: "center", gap: 10, minWidth: 0 }}>
                       <div style={{ width: thumbSize, height: thumbSize, borderRadius: 8, background: "#f1f3f8", border: "1px solid rgba(5,27,53,0.08)", flexShrink: 0, overflow: "hidden" }}>
@@ -2554,6 +2571,11 @@ export default function PremiumTicketing({
 
       {/* TICKET DETAIL DRAWER */}
       {panelOpen && selRow && (
+        <TicketDetailsQuantityState
+          key={`${selRow.sec}-${selRow.row}-${sel}`}
+          initialQuantity={clampQuantity(want, listingQtyLimits(selRow))}
+        >
+          {(panelQty, setPanelQty) => (
         <>
           <div style={{ position: "fixed", inset: 0, zIndex: 20, background: "rgba(5,27,53,0.42)", backdropFilter: "blur(3px)" }} />
           <div className="ticket-details-sheet" style={{ position: "fixed", zIndex: 21, display: "flex", flexDirection: "column", background: "#fff", overflow: "hidden", boxShadow: "-30px 0 80px -20px rgba(5,27,53,0.45)", top: mobile ? "auto" : 0, right: 0, bottom: 0, left: "auto", width: mobile ? "100%" : 480, height: mobile ? "86vh" : "auto", maxWidth: "100%", borderRadius: mobile ? "24px 24px 0 0" : 0 }}>
@@ -2654,7 +2676,7 @@ export default function PremiumTicketing({
                 textColor={BTN_INK}
                 loading={holding}
                 loadingLabel="Holding seats…"
-                onClick={() => void startHold()}
+                onClick={() => void startHold(panelQty)}
                 className="w-full"
                 style={{ ...checkoutBtnRow, padding: mobile ? 16 : 17, minHeight: 48, fontSize: 17, lineHeight: 1.5 }}
               >
@@ -2663,6 +2685,8 @@ export default function PremiumTicketing({
             </div>
           </div>
         </>
+          )}
+        </TicketDetailsQuantityState>
       )}
 
       {unlockZone !== null && (

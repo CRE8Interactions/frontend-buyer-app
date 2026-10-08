@@ -10,6 +10,7 @@ import {
 import {
   createSeatLookupTables,
   createSectionLookupTable,
+  UNAVAILABLE_SECTION_FILL,
 } from "@/lib/seatmapLookups";
 import {
   seatmapLookupsFromTicketGroups,
@@ -150,11 +151,42 @@ describe("SeatmapSections", () => {
     expect(section("sec-m")).toHaveAttribute("opacity", "1");
   });
 
-  it("greys out a sold-out seated section instead of using its authored fill", () => {
-    const section = renderSections();
+  it("puts the cover back on a section you moved away from", () => {
+    const section = renderSections({ revealedSectionIds: ["sec-m"] });
 
-    expect(section("sec-b")).toHaveAttribute("fill", UNAVAILABLE_FILL);
-    expect(section("sec-b")).toHaveAttribute("opacity", "0.45");
+    expect(section("sec-m")).toHaveAttribute("fill", "#FFFFFF");
+    expect(section("sec-a")).toHaveAttribute("fill", DEMO_SECTION_FILL);
+    expect(section("sec-b")).toHaveAttribute("fill", UNAVAILABLE_SECTION_FILL);
+    expect(section("sec-b")).toHaveAttribute("opacity", "1");
+  });
+
+  it("uncovers a partly sold section when zoom reveals it", () => {
+    const lookup = useSeatmapStore.getState().seatLookupTable;
+    useSeatmapStore.setState({ seatLookupTable: { s1: lookup.s1 } });
+    const section = renderSections({ revealedSectionIds: ["sec-m"] });
+
+    expect(section("sec-m")).toHaveAttribute("fill", "#FFFFFF");
+    expect(section("sec-m")?.getAttribute("fill")).not.toContain("url(");
+  });
+
+  it("keeps a sold-out cover up when that section is the zoom target", () => {
+    const section = renderSections({ revealedSectionIds: ["sec-b"] });
+
+    expect(section("sec-b")).toHaveAttribute("fill", UNAVAILABLE_SECTION_FILL);
+  });
+
+  it("does not zoom a sold-out section and still zooms a section with seats", () => {
+    const onZoomableSectionClick = vi.fn();
+    const section = renderSections({ onZoomableSectionClick });
+
+    fireEvent.click(section("sec-b")!);
+    expect(onZoomableSectionClick).not.toHaveBeenCalled();
+
+    fireEvent.click(section("sec-m")!);
+    expect(onZoomableSectionClick).toHaveBeenCalledWith(
+      "sec-m",
+      expect.anything(),
+    );
   });
 
   it("greys out every seated section when there is no inventory at all", () => {
@@ -162,7 +194,7 @@ describe("SeatmapSections", () => {
     const section = renderSections();
 
     ["sec-m", "sec-a", "sec-n", "sec-b"].forEach((id) => {
-      expect(section(id)).toHaveAttribute("fill", UNAVAILABLE_FILL);
+      expect(section(id)).toHaveAttribute("fill", UNAVAILABLE_SECTION_FILL);
     });
   });
 
