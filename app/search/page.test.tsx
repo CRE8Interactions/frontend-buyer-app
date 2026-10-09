@@ -80,6 +80,25 @@ describe("Search page", () => {
     ).toHaveAttribute("href", eventPurchasePath(seated));
   });
 
+  it("shows a sold-out badge and does not link a sold-out search result", async () => {
+    const hits = DEMO_EVENTS.filter((event) => /raptors/i.test(event.name));
+    const sold = { ...hits[0], status: "on_sale", soldOut: true };
+    const live = hits[1];
+    searchParams.set("query", "raptors");
+    mockedSearch.mockResolvedValue({ data: [sold, live] } as never);
+
+    render(<SearchPage />);
+
+    expect(await screen.findByText(sold.name)).toBeInTheDocument();
+    expect(screen.getByText(/^sold out$/i)).toBeInTheDocument();
+    expect(
+      screen.queryByRole("link", { name: new RegExp(sold.name, "i") }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.getByRole("link", { name: new RegExp(live.name, "i") }),
+    ).toHaveAttribute("href", eventPurchasePath(live));
+  });
+
   it("shows zero results copy when nothing matches", async () => {
     searchParams.set("query", "zzzz");
     mockedSearch.mockResolvedValue({ data: [] } as never);

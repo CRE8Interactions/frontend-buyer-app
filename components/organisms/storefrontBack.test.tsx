@@ -1,4 +1,4 @@
-import { act, render, screen, waitFor } from "@testing-library/react";
+import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { ReactNode } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -78,6 +78,7 @@ vi.mock("@/lib/api", () => ({
   getVenueUpcomingEvents: vi.fn(),
   getEventsByIds: vi.fn(),
   getOrganizationStorefront: vi.fn(),
+  getTicketGroups: vi.fn(),
 }));
 
 import ClientProfile from "@/components/organisms/ClientProfile";
@@ -86,6 +87,7 @@ import { notFound } from "next/navigation";
 import {
   getEventsByIds,
   getOrganizationStorefront,
+  getTicketGroups,
   getVenue,
   getVenues,
   getVenueUpcomingEvents,
@@ -188,6 +190,56 @@ describe("team and venue back buttons", () => {
     expect(
       screen.getByRole("link", { name: /visit venue website/i }),
     ).toHaveAttribute("href", nmState.homeVenue.website);
+  });
+
+  it("keeps a sold-out team event on the list instead of the tickets page", () => {
+    const event = { ...nmStateEvents[0], status: "on_sale", soldout: true };
+    render(
+      <ClientProfile
+        slug={nmState.slug}
+        initialData={{
+          organization: nmState,
+          events: [event],
+          venues: nmState.venues,
+        }}
+      />,
+    );
+
+    expect(
+      screen.queryByRole("link", { name: new RegExp(event.name, "i") }),
+    ).not.toBeInTheDocument();
+    const row = screen.getByText(event.name).closest(".cp-row");
+    expect(row).not.toBeNull();
+    expect(within(row as HTMLElement).getAllByText(/^sold out$/i)).toHaveLength(2);
+    expect(within(row as HTMLElement).queryByText(/^get tickets$/i)).not.toBeInTheDocument();
+  });
+
+  it("keeps a GA team event off the event page when its inventory is sold out", async () => {
+    const ga = DEMO_EVENTS.find(
+      (event) => event.seatmap?.ga_only && event.status === "on_sale",
+    )!;
+    const event = { ...ga, id: 9101, uuid: "evt-ga-inventory-sold-out", organization: nmState };
+    vi.mocked(getTicketGroups).mockResolvedValueOnce({
+      data: { soldout: true, ticketGroups: [], offers: [] },
+    } as never);
+    render(
+      <ClientProfile
+        slug={nmState.slug}
+        initialData={{
+          organization: nmState,
+          events: [event],
+          venues: nmState.venues,
+        }}
+      />,
+    );
+
+    await waitFor(() => {
+      expect(
+        screen.queryByRole("link", { name: new RegExp(event.name, "i") }),
+      ).not.toBeInTheDocument();
+    });
+    const row = screen.getByText(event.name).closest(".cp-row");
+    expect(within(row as HTMLElement).getAllByText(/^sold out$/i)).toHaveLength(2);
   });
 
   it("keeps the org loader visible until team venue data is ready", async () => {
@@ -600,6 +652,50 @@ describe("venue page events", () => {
     expect(
       screen.queryByRole("button", { name: /see full schedule/i }),
     ).not.toBeInTheDocument();
+  });
+
+  it("keeps a sold-out venue event on the list instead of the tickets page", async () => {
+    const venue = raptors.homeVenue;
+    const schedule = demoVenueEvents(venue.slug).map((event, index) => ({
+      ...event,
+      start: upcomingStart(index),
+      status: "on_sale",
+    }));
+    mockedGetVenue.mockResolvedValue({ data: [venue] } as never);
+    mockedGetVenues.mockResolvedValue({ data: [venue] } as never);
+    mockedGetUpcoming.mockResolvedValue({
+      data: { allEvents: schedule },
+    } as never);
+    const sold = schedule[0];
+    mockedGetEventsByIds.mockResolvedValue({
+      data: {
+        data: [
+          {
+            id: sold.id,
+            attributes: {
+              shortCode: sold.shortCode,
+              uuid: sold.uuid,
+              status: "on_sale",
+              soldOut: true,
+            },
+          },
+        ],
+      },
+    } as never);
+
+    render(<VenueProfile slug={venue.slug} />);
+
+    const live = schedule[1];
+    const soldRow = (await screen.findByText(sold.name)).closest(".vp-row");
+    expect(soldRow).not.toBeNull();
+    expect(
+      screen.queryByRole("link", { name: new RegExp(sold.name, "i") }),
+    ).not.toBeInTheDocument();
+    expect(within(soldRow as HTMLElement).getAllByText(/^sold out$/i)).toHaveLength(2);
+    expect(within(soldRow as HTMLElement).queryByText(/^get tickets$/i)).not.toBeInTheDocument();
+    const liveRow = screen.getByRole("link", { name: new RegExp(live.name, "i") });
+    expect(within(liveRow).getByText(/^get tickets$/i)).toBeInTheDocument();
+    expect(within(liveRow).queryByText(/^sold out$/i)).not.toBeInTheDocument();
   });
 
   it("keeps the org loader visible until venue events are ready", async () => {
