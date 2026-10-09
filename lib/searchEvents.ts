@@ -7,6 +7,7 @@ import {
   sortByDate,
   type ApiImage,
 } from "@/lib/helpers";
+import { withGaInventorySoldOut } from "@/lib/eventSoldOut";
 import { cacheEventBranding } from "@/lib/orgBrandingCache";
 
 export const SEARCH_DEBOUNCE_MS = 300;
@@ -27,6 +28,9 @@ export type ShopperSearchEvent = {
   start?: string;
   startDate?: string;
   display_start_time?: boolean;
+  status?: string | null;
+  soldout?: boolean | null;
+  soldOut?: boolean | null;
   image?: ApiImage;
   venue?: {
     name?: string;
@@ -104,5 +108,5 @@ export async function fetchSearchEvents(query: string) {
       { touchLast: false },
     ),
   );
-  return events;
+  return withGaInventorySoldOut(events);
 }

@@ -6,7 +6,7 @@
  * from GET /organizations/storefront/:slug so each org URL shows that org.
  */
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import InAppBackLink from "@/components/molecules/InAppBackLink";
@@ -15,6 +15,7 @@ import RouteLoader from "@/components/molecules/RouteLoader";
 import { BROWSE_TRACK, browseLeading, browsePageTypeCss } from "@/lib/browseType";
 import { fluidSize } from "@/lib/shopperFluidType";
 import { getOrganizationStorefront, getVenueUpcomingEvents } from "@/lib/api";
+import { isEventSoldOut, withGaInventorySoldOut } from "@/lib/eventSoldOut";
 import {
   monthEventCountLabel,
   packageFromPriceLabel,
@@ -77,6 +78,8 @@ type StoreEvent = {
   shortcode?: string;
   start?: string;
   status?: string;
+  soldout?: boolean | null;
+  soldOut?: boolean | null;
   sport?: string;
   category?: { name?: string } | null;
   image?: ApiImage;
@@ -171,6 +174,7 @@ type RowEvent = {
   title: string;
   venue: string;
   status: string;
+  soldOut: boolean;
   href: string;
   sort: number;
 };
@@ -211,6 +215,33 @@ function eventStatus(ev: StoreEvent) {
   return raw.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
 }
 
+function EventRowFrame({
+  soldOut,
+  href,
+  className,
+  style,
+  children,
+}: {
+  soldOut: boolean;
+  href: string;
+  className: string;
+  style: CSSProperties;
+  children: ReactNode;
+}) {
+  if (soldOut) {
+    return (
+      <div className={className} style={{ ...style, cursor: "default" }}>
+        {children}
+      </div>
+    );
+  }
+  return (
+    <Link href={href} className={className} style={style}>
+      {children}
+    </Link>
+  );
+}
+
 const ALL_FILTER = "All";
 
 function matchesFilter(category: string | null | undefined, selected: string) {
@@ -245,6 +276,7 @@ function toRow(ev: StoreEvent, org?: Org | null): RowEvent | null {
     title: ev.name || ev.title || "Event",
     venue: ev.venue?.name || "",
     status: eventStatus(ev),
+    soldOut: isEventSoldOut(ev),
     href: eventPurchasePath(ev),
     sort: new Date(start).getTime() || 0,
   };
@@ -307,7 +339,14 @@ export default function ClientProfile({
 
     if (initialData?.organization) {
       setLoading(false);
-      return undefined;
+      const initialEvents = initialData.events || [];
+      void withGaInventorySoldOut(initialEvents).then((flagged) => {
+        if (cancelled || flagged.every((ev, i) => ev === initialEvents[i])) return;
+        setEvents(sortByDate(flagged));
+      });
+      return () => {
+        cancelled = true;
+      };
     }
 
     setLoading(true);
@@ -326,7 +365,8 @@ export default function ClientProfile({
           setMissing(true);
           return;
         }
-        const incoming = data.events || [];
+        const incoming = await withGaInventorySoldOut(data.events || []);
+        if (cancelled) return;
         // Branding can paint the loader immediately; shopper content remains
         // gated until the venue website lookup below has completed.
         setOrganization(data.organization);
@@ -612,7 +652,7 @@ export default function ClientProfile({
       } as React.CSSProperties}
     >
       <style>{`${browsePageTypeCss()}
-.cp-a{transition:background 140ms}.cp-row{transition:box-shadow 150ms ease}.cp-row:hover{box-shadow:0 8px 30px rgba(5,27,53,0.09)}.cp-action{outline:none;border-color:rgba(5,27,53,0.14);transition:border-color 140ms ease}.cp-action:hover,.cp-action:focus-visible{border-color:var(--cp-accent)}`}</style>
+.cp-a{transition:background 140ms}.cp-row{box-shadow:0 1px 2px rgba(5,27,53,0.05);transition:box-shadow 150ms ease}.cp-row:hover{box-shadow:0 8px 30px rgba(5,27,53,0.09)}.cp-row.cp-row-still,.cp-row.cp-row-still:hover{box-shadow:0 1px 2px rgba(5,27,53,0.05);transition:none}.cp-action{outline:none;border-color:rgba(5,27,53,0.14);transition:border-color 140ms ease}.cp-action:hover,.cp-action:focus-visible{border-color:var(--cp-accent)}`}</style>
 
       <header
         ref={headerRef}
@@ -1003,19 +1043,22 @@ export default function ClientProfile({
                   </div>
                   {g.rows.map((e) => {
                     const soon = e.status === "Presale";
+                    const soldOut = e.soldOut;
                     return (
-                      <Link
+                      <EventRowFrame
                         key={e.key}
                         href={e.href}
-                        className="cp-row"
+                        soldOut={soldOut}
+                        className={soldOut ? "cp-row cp-row-still" : "cp-row"}
                         style={{
                           ...card,
+                          boxShadow: undefined,
                           padding: mobile ? 14 : "16px 20px",
                           display: "grid",
                           gridTemplateColumns: rowCols,
                           gap: mobile ? 14 : 20,
                           alignItems: "center",
-                          cursor: "pointer",
+                          cursor: soldOut ? "default" : "pointer",
                           color: NAVY,
                           textDecoration: "none",
                         }}
@@ -1049,6 +1092,11 @@ export default function ClientProfile({
                               {e.sport}
                               {e.time ? ` · ${e.time}` : ""}
                             </span>
+                            {soldOut ? (
+                              <span style={{ fontSize: 10, fontWeight: 600, lineHeight: 1.5, letterSpacing: "0.08em", textTransform: "uppercase", color: "#6e7180", background: "#eef0f6", borderRadius: 999, padding: "3px 8px" }}>
+                                Sold out
+                              </span>
+                            ) : null}
                           </div>
                           <div style={{ fontSize: mobile ? 16 : 17, fontWeight: 600, letterSpacing: "-0.015em", lineHeight: 1.25 }}>
                             {e.title}
@@ -1076,13 +1124,13 @@ export default function ClientProfile({
                               fontSize: 14,
                               fontWeight: 600,
                               lineHeight: 1.5,
-                              color: soon ? NAVY : "#fff",
-                              background: soon ? "#fff" : BTN,
-                              border: `1px solid ${soon ? "rgba(5,27,53,0.14)" : BTN}`,
+                              color: soldOut ? "#6e7180" : soon ? NAVY : "#fff",
+                              background: soldOut || soon ? "#fff" : BTN,
+                              border: `1px solid ${soldOut || soon ? "rgba(5,27,53,0.14)" : BTN}`,
                               borderRadius: 999,
                               padding: "12px 22px",
                               minHeight: 44,
-                              cursor: "pointer",
+                              cursor: soldOut ? "default" : "pointer",
                               whiteSpace: "nowrap",
                               display: "inline-flex",
                               alignItems: "center",
@@ -1090,10 +1138,10 @@ export default function ClientProfile({
                               boxSizing: "border-box",
                             }}
                           >
-                            {soon ? "Remind me" : "Get tickets"}
+                            {soldOut ? "Sold out" : soon ? "Remind me" : "Get tickets"}
                           </span>
                         </div>
-                      </Link>
+                      </EventRowFrame>
                     );
                   })}
                 </div>

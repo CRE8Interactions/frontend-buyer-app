@@ -43,12 +43,14 @@ vi.mock("@/lib/api", () => ({
   getVenues: vi.fn(),
   getVenueUpcomingEvents: vi.fn(),
   searchEvents: vi.fn(),
+  getTicketGroups: vi.fn(),
 }));
 
 import {
   getEvents,
   getEventsByIds,
   getOrganizationsOnSale,
+  getTicketGroups,
   getVenueUpcomingEvents,
   getVenues,
   searchEvents,
@@ -432,7 +434,9 @@ describe("Browse page", () => {
     expect(
       (await screen.findAllByText(DEMO_EVENTS[0].name)).length,
     ).toBeGreaterThan(0);
-    const seated = DEMO_EVENTS.find((e) => e.seatmap.ga_only === false)!;
+    const seated = DEMO_EVENTS.find(
+      (e) => e.seatmap.ga_only === false && e.status !== "presale",
+    )!;
     const href = `/e/${seated.slug}/${seated.shortCode}/tickets/`;
     const card = screen
       .getAllByRole("link")
@@ -485,6 +489,74 @@ describe("Browse page", () => {
         .getAllByRole("link", { name: /meridian centre/i })
         .some((el) => el.getAttribute("href") === "/venue/meridian-centre/"),
     ).toBe(true);
+  });
+
+  it("keeps sold-out and not-yet-on-sale events out of the slider and unclickable", async () => {
+    const sold = DEMO_EVENTS[0];
+    const presale = DEMO_EVENTS.find((event) => event.status === "presale")!;
+    const featured = DEMO_EVENTS.find((event) => event.shortCode === "BUCS002")!;
+    mockedGetEventsByIds.mockResolvedValue({
+      data: {
+        data: [
+          {
+            id: sold.id,
+            attributes: {
+              uuid: sold.uuid,
+              shortCode: sold.shortCode,
+              status: "on_sale",
+              soldOut: true,
+            },
+          },
+        ],
+      },
+    } as never);
+    render(<BrowseHome />);
+
+    const hero = (await screen.findByText(/featured · /i)).closest("section");
+    expect(hero).not.toBeNull();
+    expect(hero).toHaveTextContent(featured.name);
+    expect(hero).not.toHaveTextContent(sold.name);
+    expect(hero).not.toHaveTextContent(presale.name);
+
+    expect(screen.getAllByText(/^sold out$/i)).toHaveLength(2);
+    expect(screen.getByText(/remind me/i)).toBeInTheDocument();
+    for (const event of [sold, presale]) {
+      expect(
+        screen
+          .queryAllByRole("link")
+          .some((el) => (el.getAttribute("href") || "").includes(event.shortCode)),
+      ).toBe(false);
+    }
+    expect(
+      screen
+        .getAllByRole("link")
+        .some((el) => (el.getAttribute("href") || "").includes(featured.shortCode)),
+    ).toBe(true);
+  });
+
+  it("shows a GA event as sold out and unclickable when its inventory is sold out", async () => {
+    const ga = DEMO_EVENTS.find(
+      (event) => event.seatmap?.ga_only && event.status === "on_sale",
+    )!;
+    const soldGa = { ...ga, id: 9201, uuid: "evt-browse-ga-sold-out" };
+    mockBrowseApis({ events: [soldGa] });
+    vi.mocked(getTicketGroups).mockImplementation(((payload: { event: { uuid: string } }) =>
+      Promise.resolve({
+        data:
+          payload.event.uuid === soldGa.uuid
+            ? { soldout: true, ticketGroups: [], offers: [] }
+            : { soldout: false, ticketGroups: [], offers: [] },
+      })) as never);
+    render(<BrowseHome />);
+
+    expect((await screen.findAllByText(soldGa.name)).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/^sold out$/i)).toHaveLength(2);
+    expect(
+      screen
+        .queryAllByRole("link")
+        .some((el) => (el.getAttribute("href") || "").includes(soldGa.shortCode)),
+    ).toBe(false);
+    vi.mocked(getTicketGroups).mockReset();
   });
 
   it("shows On sale and Remind me status treatments in the event cards", async () => {
