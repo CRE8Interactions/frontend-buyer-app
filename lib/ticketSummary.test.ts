@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
+  DEMO_GA_SECTION_ID,
   DEMO_SEATED_TICKET_GROUPS,
+  demoSeatmapMapping,
   demoCheckoutCart,
   demoCompletedFlexPackOrder,
   demoCompletedPackageOrder,
@@ -225,6 +227,29 @@ describe("ticketSelectionSummary", () => {
     ).toBe(cart.tickets[0].offerName);
   });
 
+  it("keeps the section name and counts tickets for a GA section on a seated event", () => {
+    const section = demoSeatmapMapping().sections?.[DEMO_GA_SECTION_ID];
+    const ticket = {
+      ...demoCheckoutCart().tickets[0],
+      GA: true,
+      generalAdmission: true,
+      sectionNumber: section?.sectionNumber,
+      sectionName: section?.sectionNumber,
+      seatNumber: undefined,
+      rowNumber: undefined,
+    };
+    const one = ticketSelectionSummary([ticket], { seatedGaSection: true });
+    expect(one.seatLine).toBe(String(section?.sectionNumber));
+    expect(one.subtitle).toBe("1 ticket • unreserved seating");
+    expect(one.seatLine).not.toBe("1 ticket");
+    expect(
+      ticketSelectionSummary([ticket, { ...ticket, id: 2 }], {
+        seatedGaSection: true,
+      }).subtitle,
+    ).toBe("2 tickets • unreserved seating");
+    expect(one.subtitle).not.toBe(gaTierSubtitle(ticket));
+  });
+
   it("uses the GA offer subtitle instead of a ticket count", () => {
     const cart = demoCheckoutCart({ ga: true });
     const group = demoTicketGroups().ticketGroups[0];
@@ -394,6 +419,90 @@ describe("ticketSelectionSummary", () => {
 });
 
 describe("packageSeatLines", () => {
+  it("omits the row on a GA package ticket that has no row", () => {
+    const cart = demoPackageCheckoutCart();
+    const ticket = cart.tickets[0];
+    const section = demoSeatmapMapping().sections?.[DEMO_GA_SECTION_ID];
+    const lines = packageSeatLines(
+      [
+        {
+          ...ticket,
+          GA: true,
+          generalAdmission: true,
+          sectionId: section?.sectionId,
+          sectionNumber: section?.sectionNumber,
+          sectionName: section?.sectionNumber,
+          rowNumber: undefined,
+          rowName: undefined,
+          seatNumber: undefined,
+        },
+      ],
+      cart.package.events.length,
+    );
+
+    expect(lines).toHaveLength(1);
+    expect(lines[0].seatLine).toBe(`${section?.sectionNumber} · 1 ticket`);
+    expect(lines[0].context).toBe(
+      `${ticket.offerName} · unreserved seating · all ${cart.package.events.length} games`,
+    );
+  });
+
+  it("counts GA package tickets in the same section on one checkout line", () => {
+    const cart = demoPackageCheckoutCart();
+    const ticket = cart.tickets[0];
+    const section = demoSeatmapMapping().sections?.[DEMO_GA_SECTION_ID];
+    const unit = Number(ticket.price);
+    const gaTicket = {
+      ...ticket,
+      GA: true,
+      generalAdmission: true,
+      sectionId: section?.sectionId,
+      sectionNumber: section?.sectionNumber,
+      sectionName: section?.sectionNumber,
+      rowNumber: undefined,
+      rowName: undefined,
+      seatNumber: undefined,
+    };
+    const lines = packageSeatLines(
+      [
+        { ...gaTicket, id: "ga-1" },
+        { ...gaTicket, id: "ga-2" },
+      ],
+      cart.package.events.length,
+    );
+
+    expect(lines).toHaveLength(1);
+    expect(lines[0].seatLine).toBe(`${section?.sectionNumber} · 2 tickets`);
+    expect(lines[0].price).toBe(unit * 2);
+  });
+
+  it("does not count the same GA package ticket twice when it is copied per game", () => {
+    const cart = demoPackageCheckoutCart();
+    const ticket = cart.tickets[0];
+    const section = demoSeatmapMapping().sections?.[DEMO_GA_SECTION_ID];
+    const unit = Number(ticket.price);
+    const gaTicket = {
+      ...ticket,
+      id: "ga-1",
+      GA: true,
+      generalAdmission: true,
+      sectionId: section?.sectionId,
+      sectionNumber: section?.sectionNumber,
+      sectionName: section?.sectionNumber,
+      rowNumber: undefined,
+      rowName: undefined,
+      seatNumber: undefined,
+    };
+    const lines = packageSeatLines(
+      [gaTicket, { ...gaTicket }],
+      cart.package.events.length,
+    );
+
+    expect(lines).toHaveLength(1);
+    expect(lines[0].seatLine).toBe(`${section?.sectionNumber} · 1 ticket`);
+    expect(lines[0].price).toBe(unit);
+  });
+
   it("lists one season seat with the offer name and game count", () => {
     const cart = demoPackageCheckoutCart();
     const ticket = cart.tickets[0];

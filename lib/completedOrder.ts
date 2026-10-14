@@ -52,6 +52,7 @@ export type OrderData = {
   event?: OrderEvent | null;
   package?: {
     name?: string;
+    image?: { url?: string } | null;
     organization?: BrandingOrganization | null;
     events?: Array<Record<string, unknown>>;
   } | null;

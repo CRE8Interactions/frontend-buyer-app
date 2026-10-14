@@ -10,6 +10,7 @@
  */
 
 import { LOADER_MESSAGE } from "@/lib/loaderMessages";
+import { motionPhase } from "@/lib/motionPhase";
 
 const NAVY = "#051b35";
 const GREEN = "#a6e773";
@@ -17,27 +18,6 @@ const GREEN_D = "#7fbe4d";
 const LOCKUP = "/blocktickets-logo.svg";
 const DEFAULT_ACCENT = "#051b35";
 const DEFAULT_LOGO = "/blocktickets-emblem-navy.svg";
-
-/**
- * A load can hand off between the boot splash, the route loader, and a page's
- * own loader. Each is a separate element, so anchoring every animation to the
- * document clock keeps the motion running instead of restarting on each swap.
- * Entrances (`loop: false`) land already finished so they never replay.
- */
-function motionPhase<T extends { style: CSSStyleDeclaration }>(
-  durationMs: number,
-  options: { loop?: boolean; staggerMs?: number } = {},
-) {
-  return (el: T | null) => {
-    if (!el || typeof performance === "undefined") return;
-    const elapsed = performance.now();
-    const offset =
-      options.loop === false
-        ? -Math.min(elapsed, durationMs)
-        : (options.staggerMs || 0) - (elapsed % durationMs);
-    el.style.animationDelay = `${Math.round(offset)}ms`;
-  };
-}
 
 /**
  * The stacking blocks from the platform loader, on their own. Pages that wait

@@ -556,8 +556,7 @@ function SeatedTickets() {
       />
     );
   }
-  // A sold-out event still renders the page: the shopper gets the sold-out
-  // screen and its waitlist instead of a dead end.
+  // A sold-out event still renders the tickets page.
   if (!hasInventory && !soldOut && !scheduled) {
     return (
       <BrandedNotice

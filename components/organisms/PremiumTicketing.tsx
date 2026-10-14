@@ -15,6 +15,7 @@ import { useRouter } from "next/navigation";
 import AccessibleSeatingBadge from "@/components/atoms/AccessibleSeatingBadge";
 import BrandedActionButton from "@/components/atoms/BrandedActionButton";
 import LockIcon from "@/components/atoms/LockIcon";
+import Spinner from "@/components/atoms/Spinner";
 import { BrandedLoader } from "@/components/molecules/RouteLoader";
 import { Accessibility, Ticket } from "@/components/atoms/icons";
 import LoginLink from "@/components/molecules/LoginLink";
@@ -76,7 +77,7 @@ import { lockPageScroll, unlockPageScroll } from "@/lib/pageScroll";
 import { beginRouteTransition } from "@/lib/routeTransition";
 import { walletSectionHref } from "@/lib/walletNav";
 import type { SeatmapBackground, SeatmapMapping } from "@/lib/seatmapLookups";
-import { getSeatViewImageCandidates } from "@/lib/seatView";
+import { getSeatViewImageCandidates, SEAT_VIEW_PLACEHOLDER } from "@/lib/seatView";
 import {
   stickyOffsetBelowHeader,
   ticketingChromeReservePx,
@@ -269,38 +270,54 @@ type SeatPick = { sec: string; row: string; seat: string; zone: string; tier: st
 function SeatViewImage({
   src,
   section,
-  ga = false,
+  onReady,
+  color,
 }: {
   src?: string;
   section: string;
-  ga?: boolean;
+  onReady?: () => void;
+  color?: string;
 }) {
   const [failedSrc, setFailedSrc] = useState<string | null>(null);
-
-  if (!src || failedSrc === src) {
-    return (
-      <div style={{ width: "100%", height: "100%", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 8, background: "#e7eaf2", color: "#6e7180" }}>
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" style={{ width: 28, height: 28 }}><path d="M3 20V9l9-5 9 5v11" /><path d="M3 20h18" /><path d="M7 20v-6h4v6" /><path d="M14 20v-6h3v6" /></svg>
-        <div style={{ fontSize: fluidSize(13), fontWeight: 500 }}>
-          No seat view for {ga ? section : `Sec ${section}`}
-        </div>
-      </div>
-    );
-  }
+  const [loadedSrc, setLoadedSrc] = useState<string | null>(null);
+  const onReadyRef = useRef(onReady);
+  onReadyRef.current = onReady;
+  const displaySrc = !src || failedSrc === src ? SEAT_VIEW_PLACEHOLDER : src;
+  const loaded = loadedSrc === displaySrc;
+  const placeholder = displaySrc === SEAT_VIEW_PLACEHOLDER;
 
   return (
-    // eslint-disable-next-line @next/next/no-img-element
-    <img
-      src={src}
-      alt={`View from section ${section}`}
-      onError={() => setFailedSrc(src)}
-      style={{
-        width: "100%",
-        height: "100%",
-        display: "block",
-        objectFit: "cover",
-      }}
-    />
+    <div style={{ position: "relative", width: "100%", height: "100%", background: "#fff" }}>
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img
+        src={displaySrc}
+        alt={placeholder ? "Seat view placeholder" : `View from section ${section}`}
+        onLoad={() => {
+          setLoadedSrc(displaySrc);
+          onReadyRef.current?.();
+        }}
+        onError={() => {
+          if (placeholder || !src) {
+            onReadyRef.current?.();
+            return;
+          }
+          setFailedSrc(src);
+        }}
+        style={{
+          width: "100%",
+          height: "100%",
+          display: "block",
+          objectFit: placeholder ? "contain" : "cover",
+          opacity: loaded ? 1 : 0,
+          background: "#fff",
+        }}
+      />
+      {loaded ? null : (
+        <span style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center" }}>
+          <Spinner size={22} variant="compact" color={color} label="Loading seat image" />
+        </span>
+      )}
+    </div>
   );
 }
 
@@ -367,14 +384,15 @@ export default function PremiumTicketing({
   const gaScheduled = isGa && !!d.scheduled && !activeGaTiers?.length;
   const eventScheduled = gaScheduled || seatedScheduled;
   const gaSoldOut = isGa && !!d.soldOut && !activeGaTiers?.length;
-  const seatedSoldOut = !isGa && !!d.soldOut && !seatedScheduled;
-  const eventSoldOut = gaSoldOut || seatedSoldOut;
   const GA_TIERS: GATier[] =
     activeGaTiers && activeGaTiers.length
       ? activeGaTiers
       : gaSoldOut || gaScheduled || d.gaTiers
         ? []
         : DEFAULT_GA_TIERS;
+  const gaOffersSoldOut =
+    isGa && GA_TIERS.length > 0 && GA_TIERS.every((tier) => tier.state === "soldout");
+  const gaShowSoldOut = gaSoldOut || gaOffersSoldOut;
   // Nav is crimson for reserved, white for GA.
   const navBg = isGa ? "#ffffff" : ACC;
   const navInk = isGa ? NAVY : "#fff";
@@ -450,6 +468,23 @@ export default function PremiumTicketing({
   const [media, setMedia] = useState(0);
   const [info, setInfo] = useState(false);
   const [sel, setSel] = useState<number | null>(null);
+  // Remember which slides finished loading for this listing. Flipping away and
+  // back keeps the image element mounted, so a loaded slide stays on screen.
+  const [loadedSlides, setLoadedSlides] = useState<{
+    sel: number | null;
+    ready: readonly number[];
+  }>({ sel: null, ready: [] });
+  const seatMediaReady =
+    loadedSlides.sel === sel && loadedSlides.ready.includes(media);
+  const markSlideReady = useCallback((slide: number) => {
+    setLoadedSlides((prev) => {
+      const ready = prev.sel === sel ? prev.ready : [];
+      if (ready.includes(slide)) return prev.sel === sel ? prev : { sel, ready };
+      return { sel, ready: [...ready, slide] };
+    });
+  }, [sel]);
+  const markLocationReady = useCallback(() => markSlideReady(0), [markSlideReady]);
+  const markViewReady = useCallback(() => markSlideReady(1), [markSlideReady]);
   // GA mode state
   const [gaQuantities, setGaQuantities] = useState<Record<number, number>>({});
   const [notifySubject, setNotifySubject] = useState<NotifySubject | null>(null);
@@ -459,7 +494,6 @@ export default function PremiumTicketing({
   const [notifySent, setNotifySent] = useState(false);
   const [notified, setNotified] = useState<Record<string, boolean>>({});
   const [gaSheet, setGaSheet] = useState(false);
-  const [eventSoldOutSheet, setEventSoldOutSheet] = useState(false);
   const [listingsExpanded, setListingsExpanded] = useState(
     () => usesListingsSheet(),
   );
@@ -1157,6 +1191,7 @@ export default function PremiumTicketing({
       sectionId={l.sectionId}
       sectionNumber={l.sec}
       section={l.sec}
+      spinnerColor={ACC}
       thumbnailCandidates={venueImageCandidates(l.sec)}
     />
   );
@@ -1298,141 +1333,6 @@ export default function PremiumTicketing({
     </MobileStickyFooter>
   );
 
-  const eventSoldOutNotifyButton = (
-    <button
-      type="button"
-      disabled={Boolean(notified[d.eventName])}
-      onClick={() => {
-        setNotifySent(false);
-        setEventSoldOutSheet(true);
-      }}
-      style={{
-        fontFamily: "inherit",
-        flexShrink: 0,
-        border: "none",
-        borderRadius: 999,
-        background: notified[d.eventName] ? ACC_SOFT : ACC,
-        color: notified[d.eventName] ? ACC : BTN_INK,
-        fontSize: fluidSize(15),
-        fontWeight: 600,
-        padding: "14px 22px",
-        cursor: notified[d.eventName] ? "default" : "pointer",
-        whiteSpace: "nowrap",
-        ...(seatedSoldOut ? { width: "100%" } : {}),
-      }}
-    >
-      {notified[d.eventName] ? "Reminder set" : "Join waitlist"}
-    </button>
-  );
-
-  const eventSoldOutNotifyCopy = (
-    <>
-      <div style={{ display: "flex", alignItems: "center", gap: 8, ...(seatedSoldOut ? { justifyContent: "center" } : {}) }}>
-        <span
-          aria-hidden
-          style={{
-            width: 8,
-            height: 8,
-            borderRadius: 999,
-            background: ACC,
-            flexShrink: 0,
-          }}
-        />
-        <span
-          style={{
-            fontSize: fluidSize(12),
-            fontWeight: 600,
-            letterSpacing: "0.12em",
-            textTransform: "uppercase",
-            color: "#6e7180",
-          }}
-        >
-          Sold out
-        </span>
-      </div>
-      <div
-        style={{
-          fontSize: seatedSoldOut
-            ? mobile
-              ? 20
-              : 26
-            : isGa && !mobile
-              ? "22px"
-              : fluidSize(16),
-          fontWeight: 600,
-          color: seatedSoldOut ? "#051b35" : "#4a5567",
-          letterSpacing: seatedSoldOut ? "-0.02em" : undefined,
-          lineHeight: seatedSoldOut ? 1.25 : 1.35,
-          ...(seatedSoldOut ? {} : { paddingLeft: 16 }),
-        }}
-      >
-        Get notified if tickets become available
-      </div>
-    </>
-  );
-
-  const eventSoldOutBodyPanel = () => (
-    <div
-      data-testid="ticketing-soldout-body"
-      style={{
-        flex: "1 1 0",
-        minHeight: 0,
-        alignSelf: "stretch",
-        display: "flex",
-        flexDirection: "column",
-      }}
-    >
-      <div
-        style={{
-          ...card,
-          borderRadius: 20,
-          flex: 1,
-          minHeight: 0,
-          width: "100%",
-          boxSizing: "border-box",
-          display: "flex",
-          flexDirection: "column",
-          alignItems: "center",
-          justifyContent: "center",
-          textAlign: "center",
-          gap: 12,
-          padding: "32px 24px",
-        }}
-      >
-        {eventSoldOutNotifyCopy}
-        <div style={{ width: "100%", maxWidth: 320, marginTop: 8 }}>
-          {eventSoldOutNotifyButton}
-        </div>
-      </div>
-    </div>
-  );
-
-  const eventSoldOutNotifyBarInner = (
-    <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-        <div style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", gap: 4 }}>
-          {eventSoldOutNotifyCopy}
-        </div>
-        {eventSoldOutNotifyButton}
-      </div>
-  );
-
-  const eventSoldOutNotifyBar = (fixed: boolean) =>
-    fixed ? (
-      <MobileStickyFooter
-        accentColor={ACC}
-        data-testid="ticketing-soldout-sticky"
-      >
-        {eventSoldOutNotifyBarInner}
-      </MobileStickyFooter>
-    ) : (
-      <div
-        data-testid="ticketing-soldout-sticky"
-        style={{ padding: "18px 20px", background: "#fff" }}
-      >
-        {eventSoldOutNotifyBarInner}
-    </div>
-  );
-
   // GA tier cards — rendered inline on desktop, inside the mobile bottom sheet.
   const gaTierCards = (
     <>
@@ -1524,24 +1424,12 @@ export default function PremiumTicketing({
                 >
                   <LockIcon s={16} /> Enter access code
                 </BrandedActionButton>
-              ) : done && soldout ? (
-                <div
-                  role="status"
-                  style={{
-                    fontSize: fluidSize(14),
-                    fontWeight: 600,
-                    color: "#3f6b1f",
-                    background: "rgba(166,231,115,0.16)",
-                    borderRadius: 14,
-                    padding: "13px 18px",
-                  }}
-                >
-                  You&rsquo;re on the waiting list
-                </div>
+              ) : soldout ? (
+                <span style={{ fontFamily: "inherit", display: "inline-flex", alignItems: "center", fontSize: fluidSize(15), fontWeight: 600, lineHeight: 1.5, color: "#6e7180", background: "#fff", border: "1px solid rgba(5,27,53,0.14)", borderRadius: 999, padding: "13px 22px", cursor: "default", whiteSpace: "nowrap" }}>Sold out</span>
               ) : (
-                <button onClick={() => openNotify({ name: t.name, soldout, onSaleAt: t.onSaleAt })} style={{ fontFamily: "inherit", display: "inline-flex", alignItems: "center", gap: 9, fontSize: fluidSize(15), fontWeight: 600, color: done ? "#3f6b1f" : NAVY, background: done ? "rgba(166,231,115,0.16)" : "#fff", border: `1px solid ${done ? "rgba(127,190,77,0.45)" : "#d3d6e0"}`, borderRadius: 999, padding: "13px 22px", cursor: "pointer" }}>
+                <button onClick={() => openNotify({ name: t.name, soldout: false, onSaleAt: t.onSaleAt })} style={{ fontFamily: "inherit", display: "inline-flex", alignItems: "center", gap: 9, fontSize: fluidSize(15), fontWeight: 600, color: done ? "#3f6b1f" : NAVY, background: done ? "rgba(166,231,115,0.16)" : "#fff", border: `1px solid ${done ? "rgba(127,190,77,0.45)" : "#d3d6e0"}`, borderRadius: 999, padding: "13px 22px", cursor: "pointer" }}>
                   {done && <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round" style={{ width: 16, height: 16 }}><polyline points="20 6 9 17 4 12" /></svg>}
-                  {done ? "Reminder set" : soldout ? "Join waitlist" : "Remind me"}
+                  {done ? "Reminder set" : "Remind me"}
                 </button>
               )}
             </div>
@@ -1809,15 +1697,12 @@ export default function PremiumTicketing({
 
       {/* MAIN (reserved / seatmap flow) */}
       {!isGa && (
-      <main style={{ flex: "1 1 auto", width: "100%", maxWidth: 1320, margin: "0 auto", padding: eventScheduled ? (mobile ? 12 : `${TICKETING_MAIN_PAD_TOP_PX}px 32px ${TICKETING_MAIN_PAD_BOTTOM_PX}px`) : mobile ? `12px 12px ${gaSoldOut ? mobileStickyFooterReservePx() : "12px"}` : seatedSoldOut ? `${TICKETING_MAIN_PAD_TOP_PX}px 32px ${TICKETING_MAIN_PAD_BOTTOM_PX}px` : `${TICKETING_MAIN_PAD_TOP_PX}px 32px ${TICKETING_MAIN_PAD_BOTTOM_PX}px`, ...(eventScheduled || seatedSoldOut ? { display: "flex", flexDirection: "column", minHeight: 0 } : {}), ...(listingsSheet ? { paddingBottom: LISTINGS_SHEET_BAR_PX, minHeight: 0, overflow: "hidden" } : {}), boxSizing: "border-box", display: eventScheduled || seatedSoldOut || narrow ? "flex" : "grid", flexDirection: "column", gridTemplateColumns: eventScheduled || seatedSoldOut || narrow ? undefined : "minmax(0, 1fr) 340px", gap: 16, alignItems: listingsSheet ? "stretch" : "start" }}>
+      <main style={{ flex: "1 1 auto", width: "100%", maxWidth: 1320, margin: "0 auto", padding: eventScheduled ? (mobile ? 12 : `${TICKETING_MAIN_PAD_TOP_PX}px 32px ${TICKETING_MAIN_PAD_BOTTOM_PX}px`) : mobile ? `12px 12px ${gaSoldOut ? mobileStickyFooterReservePx() : "12px"}` : `${TICKETING_MAIN_PAD_TOP_PX}px 32px ${TICKETING_MAIN_PAD_BOTTOM_PX}px`, ...(eventScheduled ? { display: "flex", flexDirection: "column", minHeight: 0 } : {}), ...(listingsSheet ? { paddingBottom: LISTINGS_SHEET_BAR_PX, minHeight: 0, overflow: "hidden" } : {}), boxSizing: "border-box", display: eventScheduled || narrow ? "flex" : "grid", flexDirection: "column", gridTemplateColumns: eventScheduled || narrow ? undefined : "minmax(0, 1fr) 340px", gap: 16, alignItems: listingsSheet ? "stretch" : "start" }}>
         {eventScheduled ? (
           scheduledBodyPanel(!mobile)
-        ) : seatedSoldOut ? (
-          eventSoldOutBodyPanel()
         ) : (
         <>
         {listingsSheet && narrowMapBlock}
-        {!(eventSoldOut && mobile) && (
         <section
           data-testid="ticketing-offers"
           ref={wide ? sticky : undefined}
@@ -1830,9 +1715,7 @@ export default function PremiumTicketing({
               : mobile
                 ? 16
                 : 20,
-            padding: eventSoldOut
-              ? 0
-              : listingsSheet
+            padding: listingsSheet
                 ? listingsExpanded
                   ? "0 16px calc(16px + env(safe-area-inset-bottom))"
                   : "12px 16px calc(12px + env(safe-area-inset-bottom))"
@@ -1865,7 +1748,7 @@ export default function PremiumTicketing({
                       }),
                 }
               : {}),
-            ...(narrow && !eventSoldOut && !listingsSheet
+            ...(narrow && !listingsSheet
               ? {
                   width: "100%",
                   alignSelf: "stretch",
@@ -1874,7 +1757,7 @@ export default function PremiumTicketing({
                   isolation: "isolate",
                 }
               : {}),
-            ...(wide && !eventSoldOut
+            ...(wide
               ? {
                   position: "sticky",
                   top: stickTop,
@@ -1890,9 +1773,6 @@ export default function PremiumTicketing({
               : {}),
           }}
         >
-          {eventSoldOut ? (
-            !mobile ? eventSoldOutNotifyBar(false) : null
-          ) : (
           <>
           {!listingsSheet && narrowMapBlock}
           {wide && (
@@ -2074,14 +1954,12 @@ export default function PremiumTicketing({
           </div>
           )}
           </>
-          )}
         </section>
-        )}
-        {narrow && !eventScheduled && !seatedSoldOut && (
+        {narrow && !eventScheduled && (
           <div style={{ flexShrink: 0, width: "100%", alignSelf: "stretch" }}><BuyerProtectionCard accent={ACC} /></div>
         )}
 
-        {wide && !eventScheduled && !seatedSoldOut && (
+        {wide && !eventScheduled && (
           <aside
             data-testid="ticketing-map"
             style={{ display: "flex", flexDirection: "column", gap: 20, position: "sticky", top: stickTop, alignSelf: "start" }}
@@ -2155,19 +2033,24 @@ export default function PremiumTicketing({
               <div style={{ fontSize: fluidSize(16), color: "#4a5567" }}>{d.whenLong}</div>
             </div>
 
-            {/* Sold-out GA uses the notify bar + sheet instead of the inline waitlist panel. */}
-            {eventSoldOut ? (
-              !mobile ? (
-                <div style={{ ...card, borderRadius: 20, overflow: "hidden" }}>
-                  {eventSoldOutNotifyBar(false)}
-                </div>
-              ) : null
-            ) : gaScheduled ? (
+            {/* Sold-out events keep the ticket list. The waitlist is not offered here. */}
+            {gaScheduled ? (
               !mobile ? scheduledPanel(true) : null
             ) : !mobile ? (
               <div style={{ ...card, borderRadius: 20, padding: mobile ? 18 : 24, display: "flex", flexDirection: "column", gap: 16 }}>
-                <div style={{ fontSize: 22, fontWeight: 600, letterSpacing: "-0.025em" }}>Get tickets</div>
-                {gaTierCards}
+                {gaShowSoldOut ? null : (
+                  <div style={{ fontSize: 22, fontWeight: 600, letterSpacing: "-0.025em" }}>Get tickets</div>
+                )}
+                {gaSoldOut ? (
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16 }}>
+                    <span style={{ display: "inline-flex", alignItems: "center", gap: 7, background: "#eef0f6", color: "#6e7180", fontSize: fluidSize(11), fontWeight: 600, letterSpacing: "0.1em", textTransform: "uppercase", padding: "5px 11px", borderRadius: 999 }}>
+                      <span style={{ width: 6, height: 6, borderRadius: 999, background: "#a9b0bd" }} />Sold out
+                    </span>
+                    <span style={{ fontFamily: "inherit", display: "inline-flex", alignItems: "center", fontSize: fluidSize(15), fontWeight: 600, lineHeight: 1.5, color: "#6e7180", background: "#fff", border: "1px solid rgba(5,27,53,0.14)", borderRadius: 999, padding: "13px 22px", cursor: "default" }}>Sold out</span>
+                  </div>
+                ) : (
+                  gaTierCards
+                )}
                 {holdError ? (
                   <div style={{ fontSize: fluidSize(13), color: "#b91c1c", lineHeight: 1.4 }}>{holdError}</div>
                 ) : null}
@@ -2239,11 +2122,20 @@ export default function PremiumTicketing({
       {/* STICKY ON-SALE BAR (GA, mobile) */}
       {isGa && mobile && gaScheduled && scheduledStickyBar}
 
-      {/* STICKY SOLD-OUT BAR (mobile, GA only — seated uses inline body card) */}
-      {gaSoldOut && mobile && eventSoldOutNotifyBar(true)}
-
       {/* STICKY BUY BAR (GA, mobile) */}
-      {isGa && mobile && !gaSoldOut && !gaScheduled && (
+      {isGa && mobile && gaShowSoldOut && (
+        <MobileStickyFooter
+          accentColor={ACC}
+          innerStyle={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 14 }}
+        >
+          <span style={{ display: "inline-flex", alignItems: "center", gap: 7, background: "#eef0f6", color: "#6e7180", fontSize: fluidSize(11), fontWeight: 600, letterSpacing: "0.1em", textTransform: "uppercase", padding: "5px 11px", borderRadius: 999 }}>
+            Sold out
+          </span>
+          <span style={{ fontFamily: "inherit", display: "inline-flex", alignItems: "center", fontSize: fluidSize(15), fontWeight: 600, lineHeight: 1.5, color: "#6e7180", background: "#fff", border: "1px solid rgba(5,27,53,0.14)", borderRadius: 999, padding: "13px 22px", cursor: "default" }}>Sold out</span>
+        </MobileStickyFooter>
+      )}
+
+      {isGa && mobile && !gaShowSoldOut && !gaScheduled && (
         <MobileStickyFooter
           accentColor={ACC}
           innerStyle={{ display: "flex", alignItems: "center", gap: 14 }}
@@ -2257,7 +2149,7 @@ export default function PremiumTicketing({
       )}
 
       {/* GA TIER SHEET (mobile) */}
-      {isGa && gaSheet && !gaSoldOut && !gaScheduled && (
+      {isGa && gaSheet && !gaShowSoldOut && !gaScheduled && (
         <div onClick={() => setGaSheet(false)} style={{ position: "fixed", inset: 0, zIndex: 55, background: "rgba(5,27,53,0.55)", backdropFilter: "blur(6px)", display: "flex", alignItems: "flex-end", justifyContent: "center" }}>
           <div role="dialog" aria-modal="true" aria-labelledby="ga-ticket-sheet-title" onClick={(e) => e.stopPropagation()} style={{ width: "100%", maxWidth: 560, maxHeight: "88vh", background: "#fff", borderTopLeftRadius: 24, borderTopRightRadius: 24, boxShadow: "0 -20px 60px -20px rgba(5,27,53,0.5)", display: "flex", flexDirection: "column", overflow: "hidden" }}>
             <div style={{ display: "flex", justifyContent: "center", paddingTop: 10, flexShrink: 0 }}>
@@ -2281,177 +2173,19 @@ export default function PremiumTicketing({
         </div>
       )}
 
-      {/* EVENT SOLD-OUT NOTIFY SHEET */}
-      {eventSoldOut && eventSoldOutSheet && (!mobile || mounted) &&
-        (() => {
-          const overlay = (
-        <div
-          className="ga-soldout-notify-sheet-overlay"
-          onClick={() => setEventSoldOutSheet(false)}
-          style={{
-            position: "fixed",
-            inset: 0,
-            zIndex: 55,
-            background: "rgba(5,27,53,0.55)",
-            backdropFilter: "blur(6px)",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            padding: 16,
-          }}
-        >
-          <div
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="ga-soldout-sheet-title"
-            className="ga-soldout-notify-sheet"
-            onClick={(e) => e.stopPropagation()}
-            style={{
-              width: "100%",
-              maxWidth: 480,
-              maxHeight: "min(88vh, 640px)",
-              background: "#fff",
-              borderRadius: 24,
-              boxShadow: "rgba(5, 27, 53, 0.6) 0px 40px 90px -30px",
-              display: "flex",
-              flexDirection: "column",
-              overflow: "hidden",
-            }}
-          >
-            <div style={{ flex: 1, minHeight: 0, overflowY: "auto", padding: "22px 20px 20px" }}>
-              {notified[d.eventName] || notifySent ? (
-                <>
-                  <div style={{ marginBottom: 18 }}>
-                    <h2
-                      id="ga-soldout-sheet-title"
-                      className="text-[24px] font-semibold tracking-[-0.01em]"
-                      style={{
-                        margin: 0,
-                        lineHeight: 1.25,
-                        color: NAVY,
-                      }}
-                    >
-                      You&rsquo;re on the list.
-                    </h2>
-                  </div>
-                  <p className="ga-soldout-notify-desc" style={{ margin: "0 0 22px", lineHeight: 1.55, color: "#4a5567" }}>
-                    We&rsquo;ll email{" "}
-                    <strong style={{ fontWeight: 600, color: NAVY }}>{notifyEmail || "you"}</strong>{" "}
-                    the moment a ticket is posted for this event.
-                  </p>
-                  <div style={{ display: "flex", gap: 10 }}>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setNotified((current) => ({ ...current, [d.eventName]: false }));
-                        setNotifySent(false);
-                        setEventSoldOutSheet(false);
-                      }}
-                      style={{
-                        fontFamily: "inherit",
-                        flex: 1,
-                        border: "1px solid #d3d6e0",
-                        borderRadius: 999,
-                        background: "#fff",
-                        color: NAVY,
-                        fontWeight: 600,
-                        padding: "14px 18px",
-                        cursor: "pointer",
-                      }}
-                      className="ga-soldout-notify-action"
-                    >
-                      Turn off
-                    </button>
-                    <Link
-                      href="/browse/"
-                      onClick={() => setEventSoldOutSheet(false)}
-                      style={{
-                        fontFamily: "inherit",
-                        flex: 1,
-                        display: "inline-flex",
-                        alignItems: "center",
-                        justifyContent: "center",
-                        border: "none",
-                        borderRadius: 999,
-                        background: ACC,
-                        color: BTN_INK,
-                        fontWeight: 600,
-                        padding: "14px 18px",
-                        textDecoration: "none",
-                      }}
-                      className="ga-soldout-notify-action"
-                    >
-                      Browse all events
-                    </Link>
-                  </div>
-                </>
-              ) : (
-                <>
-                  <div style={{ marginBottom: 18 }}>
-                    <h2
-                      id="ga-soldout-sheet-title"
-                      className="text-[24px] font-semibold tracking-[-0.01em]"
-                      style={{
-                        margin: 0,
-                        lineHeight: 1.25,
-                        color: NAVY,
-                      }}
-                    >
-                      Join the waitlist
-                    </h2>
-                  </div>
-                  <p className="ga-soldout-notify-desc" style={{ margin: "0 0 18px", lineHeight: 1.55, color: "#4a5567" }}>
-                    Enter your email below to get notified in case a ticket becomes available.
-                  </p>
-                  <WaitlistEmailForm
-                    id="ga-soldout-email"
-                    submitLabel="Join waitlist"
-                    accent={ACC}
-                    buttonTextColor={BTN_INK}
-                    style={{ display: "flex", flexDirection: "column", gap: 14 }}
-                    actionsStyle={{ display: "flex", justifyContent: "flex-end", gap: 10 }}
-                    cancelClassName="ga-soldout-notify-action"
-                    submitClassName="ga-soldout-notify-submit"
-                    onCancel={() => setEventSoldOutSheet(false)}
-                    onConfirmed={(email) => {
-                      setNotifyEmail(email);
-                      setNotified((current) => ({ ...current, [d.eventName]: true }));
-                      setNotifySent(true);
-                    }}
-                  />
-                </>
-              )}
-            </div>
-          </div>
-        </div>
-          );
-          return mobile && mounted
-            ? (
-              <ShopperBodyPortal accentColor={ACC}>
-                {overlay}
-              </ShopperBodyPortal>
-            )
-            : overlay;
-        })()}
-
       {/* NOTIFY / WAITLIST MODAL */}
       {notifySubject && (() => {
         const t = notifySubject;
-        const soldout = t.soldout;
-        const title = soldout ? "Join the waitlist" : "Get notified when tickets go on sale";
-        const body = soldout
-          ? `${t.name} is sold out. If tickets are released back to inventory, waitlist members are contacted in order — one purchase window each, 30 minutes to complete.`
-          : `${t.name} goes on sale ${t.onSaleAt || "soon"}. We will send a reminder one hour before, and a second the moment inventory opens.`;
-        const confirm = soldout
-          ? `You are on the waitlist for ${t.name}. We will email ${notifyEmail || "your account address"} if tickets are released.`
-          : `Reminder set. We will email ${notifyEmail || "your account address"} before ${t.name} goes on sale.`;
+        const title = "Get notified when tickets go on sale";
+        const body = `${t.name} goes on sale ${t.onSaleAt || "soon"}. We will send a reminder one hour before, and a second the moment inventory opens.`;
+        const confirm = `Reminder set. We will email ${notifyEmail || "your account address"} before ${t.name} goes on sale.`;
         return (
           <Modal variant="light" title={title} closeOnBackdrop onClose={() => setNotifySubject(null)}>
             <p className="mt-4 text-[14px] text-[#4a5567]">{body}</p>
             {!notifySent ? (
               <WaitlistEmailForm
                 id="notify-email"
-                submitLabel={soldout ? "Join waitlist" : "Set reminder"}
+                submitLabel="Set reminder"
                 accent={ACC}
                 buttonTextColor={BTN_INK}
                 className="mt-5 flex flex-col gap-3.5"
@@ -2588,27 +2322,30 @@ export default function PremiumTicketing({
             </div>
             <div style={{ flex: 1, overflowY: "auto", padding: 20 }}>
               <div style={{ position: "relative", borderRadius: 16, background: "#f1f3f8", border: "1px solid rgba(5,27,53,0.08)", overflow: "hidden", height: 220 }}>
-                {media === 0 ? (
+                <div style={{ position: "absolute", inset: 0, visibility: media === 0 ? "visible" : "hidden" }} aria-hidden={media === 0 ? undefined : true}>
                   <SectionLocatorThumb
                     background={mapBackground}
                     mapping={mapMapping}
                     sectionId={selRow.sectionId}
                     sectionNumber={selRow.sec}
                     section={selRow.sec}
-                    pinColor={ACC}
+                    spinnerColor={ACC}
+                    priority
+                    onReady={markLocationReady}
                     thumbnailCandidates={venueImageCandidates(selRow.sec)}
                   />
-                ) : (
+                </div>
+                <div style={{ position: "absolute", inset: 0, visibility: media === 1 ? "visible" : "hidden" }} aria-hidden={media === 1 ? undefined : true}>
                   <SeatViewImage
                     src={venueImage(selRow.sec, "seat-view")}
                     section={selRow.sec}
-                    ga={
-                      selRow.cartGroup?.GA === true ||
-                      selRow.cartGroup?.generalAdmission === true
-                    }
+                    onReady={markViewReady}
+                    color={ACC}
                   />
-                )}
-                <div style={{ position: "absolute", left: 0, right: 0, bottom: 12, display: "flex", alignItems: "center", justifyContent: "center", gap: 12 }}>
+                </div>
+                {seatMediaReady ? (
+                <>
+                <div style={{ position: "absolute", left: 0, right: 0, bottom: 12, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 8 }}>
                   <span style={{ display: "inline-flex", alignItems: "center", gap: 7, background: "rgba(5,27,53,0.82)", color: "#fff", fontSize: fluidSize(12), fontWeight: 600, letterSpacing: "0.06em", textTransform: "uppercase", padding: "6px 14px", borderRadius: 999 }}>{media === 0 ? "Seat location" : "Seat view"}</span>
                   <span style={{ display: "flex", alignItems: "center", gap: 6 }}>
                     <span style={{ width: 7, height: 7, borderRadius: 999, background: media === 0 ? ACC : "rgba(5,27,53,0.22)" }} />
@@ -2621,6 +2358,8 @@ export default function PremiumTicketing({
                 <button onClick={flip} aria-label="Next view" style={{ fontFamily: "inherit", position: "absolute", right: 12, top: "50%", transform: "translateY(-50%)", width: 44, height: 44, borderRadius: 999, background: "#fff", border: "1px solid rgba(5,27,53,0.10)", color: NAVY, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", boxShadow: "0 6px 18px -8px rgba(5,27,53,0.4)" }}>
                   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" style={{ width: 20, height: 20 }}><polyline points="9 18 15 12 9 6" /></svg>
                 </button>
+                </>
+                ) : null}
               </div>
               <div style={{ display: "flex", flexDirection: "column", gap: 8, padding: "18px 0 16px" }}>
                 <span style={{ alignSelf: "flex-start", flexShrink: 0, ...pill(ACC_SOFT, ACC), ...(mobile ? { padding: "5px 10px" } : {}) }}><Star s={14} /> {selRow.tier || selRow.zone}</span>

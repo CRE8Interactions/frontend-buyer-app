@@ -12,6 +12,7 @@ import { rememberTrackingCode } from "@/lib/trackingLink";
 import { brandingToTicketingTheme, type OrgBranding } from "@/lib/branding";
 import { cacheEventBranding } from "@/lib/orgBrandingCache";
 import { isSportingEvent } from "@/lib/eventCategory";
+import { isEventSoldOut } from "@/lib/eventSoldOut";
 import {
   eventAboutText,
   eventDoorsIso,
@@ -84,6 +85,9 @@ type EventData = {
     image?: unknown;
     address?: Array<{ address_1?: string; city?: string; state?: string; zipcode?: string }>;
   };
+  status?: string | null;
+  soldout?: boolean | null;
+  soldOut?: boolean | null;
 };
 
 const titleCase = (s?: string) =>
@@ -234,7 +238,7 @@ function GAEvent() {
           });
           if (!cancelled) {
             setGroups((gr.data?.ticketGroups || []) as RawGroup[]);
-            setSoldOut(Boolean(gr.data?.soldout));
+            setSoldOut(Boolean(gr.data?.soldout) || isEventSoldOut(event));
             setScheduled(Boolean(gr.data?.isScheduled));
             setScheduledTime(gr.data?.scheduledTime || null);
           }
@@ -295,9 +299,9 @@ function GAEvent() {
       />
     );
   }
-  // A sold-out event keeps its page and swaps the ticket card for the waitlist.
-  // Anything else with no tiers has nothing to say, so the notice takes over.
-  if (!data.gaTiers?.length && !soldOut && !scheduled) {
+  // A sold-out GA event with nothing left uses the same notice as a seated
+  // event that has no inventory. Scheduled events still show their on-sale time.
+  if (!data.gaTiers?.length && !scheduled) {
     return (
       <BrandedNotice
         title="No tickets on sale"

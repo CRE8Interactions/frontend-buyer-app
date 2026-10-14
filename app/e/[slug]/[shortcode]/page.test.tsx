@@ -106,15 +106,33 @@ describe("GA event page tiers", () => {
     ).toBeInTheDocument();
   });
 
-  it("hands a sold-out event to the waitlist instead of the empty notice", async () => {
+  it("shows the same empty notice as a seated event when the event is sold out and groups are empty", async () => {
+    const detail = demoEventDetail(GA_EVENT.shortcode);
+    mockedGetEvent.mockResolvedValue({
+      data: {
+        ...detail,
+        event: { ...detail.event, status: "on_sale", soldOut: true },
+      },
+    } as never);
+    inventory({ soldout: false, ticketGroups: [], offers: [] });
+
+    render(<GAEventRoute />);
+
+    expect(
+      await screen.findByText(/no tickets on sale/i, undefined, { timeout: 4000 }),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/event sold out/i)).not.toBeInTheDocument();
+  });
+
+  it("shows the same empty notice when ticket groups are sold out and empty", async () => {
     inventory({ soldout: true, ticketGroups: [], offers: [] });
 
     render(<GAEventRoute />);
 
     expect(
-      await screen.findByText(/event sold out/i, undefined, { timeout: 4000 }),
+      await screen.findByText(/no tickets on sale/i, undefined, { timeout: 4000 }),
     ).toBeInTheDocument();
-    expect(screen.queryByText(/no tickets on sale/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/event sold out/i)).not.toBeInTheDocument();
   });
 
   it("shows the event schedule without inventing a GA offer card", async () => {

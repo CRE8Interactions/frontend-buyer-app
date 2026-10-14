@@ -66,12 +66,23 @@ function cartTicketsAreGaOnly(cart?: CheckoutLeaveCart) {
   return tickets.every((ticket) => Boolean(ticket.generalAdmission || ticket.GA));
 }
 
-/** Cart events often omit seatmap.ga_only — held GA tickets still mean the GA page. */
+type LeaveSeatmap = { ga_only?: boolean; mapping?: unknown } | null;
+
+/**
+ * GA-only shows use the event page. A GA section on a seated event still
+ * belongs on the tickets page. Held GA tickets only imply the GA page when
+ * the cart omits the seatmap and we never loaded one.
+ */
 function leaveEventIsGaOnly(
   cart?: CheckoutLeaveCart,
   eventData?: CheckoutLeaveEvent,
+  seatmap?: LeaveSeatmap,
 ) {
-  return eventIsGaOnly(eventData) || cartTicketsAreGaOnly(cart);
+  if (eventIsGaOnly(eventData)) return true;
+  if (eventData?.seatmap?.ga_only === false) return false;
+  if (seatmap?.ga_only) return true;
+  if (seatmap?.mapping) return false;
+  return cartTicketsAreGaOnly(cart);
 }
 
 function eventIdentityFromPath(path: string) {
@@ -127,6 +138,7 @@ export function checkoutLeavePath(
   cart?: CheckoutLeaveCart,
   eventData?: CheckoutLeaveEvent,
   orgSlug?: string | null,
+  seatmap?: LeaveSeatmap,
 ) {
   const pkg = cart?.package;
   const pack = cart?.flex_pack;
@@ -153,7 +165,7 @@ export function checkoutLeavePath(
     ) ||
     ticketsPathFromEvent(
       eventData ?? cart?.event,
-      leaveEventIsGaOnly(cart, eventData ?? cart?.event),
+      leaveEventIsGaOnly(cart, eventData ?? cart?.event, seatmap),
     )
   );
 }
@@ -198,8 +210,9 @@ export function resolveCheckoutReturnPath(
   cart?: CheckoutLeaveCart,
   eventData?: CheckoutLeaveEvent,
   orgSlug?: string | null,
+  seatmap?: LeaveSeatmap,
 ) {
-  const leave = checkoutLeavePath(cart, eventData, orgSlug);
+  const leave = checkoutLeavePath(cart, eventData, orgSlug, seatmap);
   const stored = getCheckoutReturnPath();
   if (!stored) return leave;
   return usableStoredReturnPath(stored, cart) || leave;

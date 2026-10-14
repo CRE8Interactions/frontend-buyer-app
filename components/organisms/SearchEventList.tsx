@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { isEventSoldOut } from "@/lib/eventSoldOut";
 import {
   eventSearchName,
   formatSearchEventWhen,
@@ -20,20 +21,21 @@ export function SearchEventRow({
   const when = formatSearchEventWhen(event);
   const venue = event.venue?.name;
   const meta = [when, venue].filter(Boolean).join(" | ");
-
-  return (
-    <Link
-      href={searchEventHref(event)}
-      onClick={onSelect}
-      className="flex items-center gap-3 rounded-xl px-2 py-2 text-[#051b35] no-underline hover:bg-[#f1f3f8]"
-    >
+  const soldOut = isEventSoldOut(event);
+  const row = (
+    <>
       {/* eslint-disable-next-line @next/next/no-img-element */}
       <img
         src={searchEventImageSrc(event)}
         alt=""
         className="h-12 w-12 shrink-0 rounded-lg object-cover bg-[#eef1f6]"
       />
-      <span className="min-w-0 flex-1">
+      <span className="flex min-w-0 flex-1 flex-col">
+        {soldOut ? (
+          <span className="mb-1 inline-flex self-start rounded-full bg-[#eef0f6] px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.08em] text-[#6e7180]">
+            Sold out
+          </span>
+        ) : null}
         <span className="block truncate text-[14px] font-semibold">
           {eventSearchName(event)}
         </span>
@@ -43,6 +45,24 @@ export function SearchEventRow({
           </span>
         ) : null}
       </span>
+    </>
+  );
+
+  if (soldOut) {
+    return (
+      <div className="flex cursor-default items-center gap-3 rounded-xl px-2 py-2 text-[#051b35]">
+        {row}
+      </div>
+    );
+  }
+
+  return (
+    <Link
+      href={searchEventHref(event)}
+      onClick={onSelect}
+      className="flex items-center gap-3 rounded-xl px-2 py-2 text-[#051b35] no-underline hover:bg-[#f1f3f8]"
+    >
+      {row}
     </Link>
   );
 }

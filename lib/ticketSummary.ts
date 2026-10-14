@@ -108,8 +108,8 @@ export function selectionOfferDescription(
 }
 
 type GaTierSubtitleSource = {
-  sectionName?: string | null;
-  sectionNumber?: string | null;
+  sectionName?: string | number | null;
+  sectionNumber?: string | number | null;
   offer?: { description?: string | null } | null;
 };
 
@@ -228,6 +228,11 @@ type TicketSelectionSummaryOptions = {
   defaultOffer?: string;
   /** Season-package game count; when set, the subtitle is seats • all n games. */
   gameCount?: number;
+  /**
+   * GA section on a seated event: the heading stays the section line, and the
+   * subtitle is the ticket count plus unreserved seating.
+   */
+  seatedGaSection?: boolean;
 };
 
 /** Group cart tickets by offer name and unit price for the checkout breakdown. */
@@ -290,6 +295,11 @@ export function ticketSelectionSummary(
   const seatNumbers = tickets.map((ticket) => ticketSeatValue(ticket));
   const together = sameBlock && seatsAreTogether(seatNumbers);
   const labeledSeats = formatSeatNumbers(seatNumbers);
+  const allGa =
+    tickets.length > 0 &&
+    tickets.every((ticket) => Boolean(ticket.generalAdmission || ticket.GA));
+  const ticketCountLabel = `${count} ${count === 1 ? "ticket" : "tickets"}`;
+  const seatedGa = allGa && Boolean(options?.seatedGaSection);
   const seatLine = ga
     ? gaTicketSeatLine(first)
     : sameBlock
@@ -300,9 +310,6 @@ export function ticketSelectionSummary(
               `Sec ${ticket.sectionName || ticket.sectionNumber} · Row ${ticket.rowNumber} · Seat ${seatDisplayValue(ticket.seatNumber) || "—"}`,
           )
           .join(", ");
-  const allGa =
-    tickets.length > 0 &&
-    tickets.every((ticket) => Boolean(ticket.generalAdmission || ticket.GA));
   const gameCount = options?.gameCount;
   const gamesLabel =
     gameCount == null || gameCount < 1
@@ -311,12 +318,15 @@ export function ticketSelectionSummary(
         ? "1 game"
         : `all ${gameCount} games`;
   const packageSeatLabel = allGa ? "" : labeledSeats;
+  const gaSubtitle = seatedGa
+    ? `${ticketCountLabel} • unreserved seating`
+    : gaTierSubtitle(first);
   const subtitle = gamesLabel
-    ? [allGa ? gaTierSubtitle(first) : packageSeatLabel, gamesLabel]
+    ? [allGa ? gaSubtitle : packageSeatLabel, gamesLabel]
         .filter(Boolean)
         .join(" · ")
     : allGa
-      ? gaTierSubtitle(first)
+      ? gaSubtitle
       : count === 1
         ? labeledSeats
           ? `1 ticket · ${labeledSeats}`
@@ -613,6 +623,8 @@ export type CheckoutTaxLine = {
  */
 export function checkoutTaxLine(cart?: {
   totalTax?: number;
+  // Some carts still send salesTax. It is not shown or added to the total.
+  salesTax?: number;
   tickets?: unknown;
   am_pricing_objects?: unknown;
 } | null): CheckoutTaxLine {
@@ -1055,10 +1067,11 @@ export function packageSeatLines(
 
   tickets.forEach((ticket, index) => {
     const section = ticketSectionValue(ticket) || "GA";
-    const row = ticketRowValue(ticket) || "—";
+    const ga = Boolean(ticket.GA || ticket.generalAdmission);
+    const rowValue = ticketRowValue(ticket);
+    const row = ga ? rowValue : rowValue || "—";
     const seatNumber =
       (ticket.seatNumber as string | number | null | undefined) ?? "—";
-    const ga = Boolean(ticket.GA || ticket.generalAdmission);
     const seatKey = ga
       ? `ga:${section}:${ticket.id ?? ticket.seatId ?? index}`
       : `${section}:${row}:${seatNumber}`;
@@ -1075,8 +1088,11 @@ export function packageSeatLines(
     }
     seenSeat.add(seatKey);
 
-    const context = `${selectionOfferName(ticket)} · ${gamesLabel}`;
-    const groupKey = ga ? seatKey : `${section}:${row}:${context}`;
+    const offerLabel = selectionOfferName(ticket);
+    const context = ga
+      ? `${offerLabel} · unreserved seating · ${gamesLabel}`
+      : `${offerLabel} · ${gamesLabel}`;
+    const groupKey = `${section}:${row}:${context}`;
     const existing = groupIndex.get(groupKey);
     const amount = ticketUnitAmount(ticket);
     if (existing != null) {
@@ -1098,11 +1114,19 @@ export function packageSeatLines(
   });
 
   return groups.map((group) => {
-    const uniqueSeats = new Set(group.seatNumbers.map((seat) => String(seat))).size || 1;
+    const uniqueSeats = group.ga
+      ? group.seatNumbers.length
+      : new Set(group.seatNumbers.map((seat) => String(seat))).size || 1;
     const labels = group.accessibleLabels.filter(Boolean);
+    const gaSection = gaTicketSeatLine({
+      sectionNumber: group.section,
+      rowNumber: group.row,
+      generalAdmission: true,
+    });
+    const ticketCountLabel = `${uniqueSeats} ${uniqueSeats === 1 ? "ticket" : "tickets"}`;
     return {
       seatLine: group.ga
-        ? gaTicketSeatLine({ sectionNumber: group.section, rowNumber: group.row, generalAdmission: true })
+        ? `${gaSection} · ${ticketCountLabel}`
         : `Sec ${group.section} · Row ${group.row} · ${formatSeatNumbers(group.seatNumbers)}`,
       context: group.context,
       price: group.amount > 0 ? group.amount : unitPrice * uniqueSeats,

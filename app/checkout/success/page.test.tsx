@@ -3,6 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ReactNode } from "react";
 import {
+  DEMO_EVENTS,
   DEMO_GA_SECTION_ID,
   DEMO_ORGS,
   DEMO_SEATED_TICKET_GROUPS,
@@ -13,6 +14,7 @@ import {
   demoCompletedTicketOrder,
   demoFlexPack,
   demoSeasonPackage,
+  demoSeatmapMapping,
   demoTicketGroups,
 } from "@/lib/demo/fixtures";
 import { formatCurrency } from "@/lib/helpers";
@@ -48,6 +50,7 @@ vi.mock("@/lib/api", () => ({
   getEventByUuid: vi.fn(),
   getEventByShortCode: vi.fn(),
   getOrganizationStorefront: vi.fn(),
+  getSeatmapByShortCode: vi.fn(),
   getTicketGroups: vi.fn(),
   downloadApplePass: vi.fn(),
   downloadGooglePass: vi.fn(),
@@ -80,6 +83,7 @@ import {
   downloadGooglePass,
   getOrder,
   getOrderByPaymentIntentId,
+  getSeatmapByShortCode,
   getTicketGroups,
 } from "@/lib/api";
 import { seatLabel } from "@/lib/wallet";
@@ -98,6 +102,7 @@ import {
 const mockedGetOrderByPi = vi.mocked(getOrderByPaymentIntentId);
 const mockedGetOrder = vi.mocked(getOrder);
 const mockedGetTicketGroups = vi.mocked(getTicketGroups);
+const mockedGetSeatmap = vi.mocked(getSeatmapByShortCode);
 
 /** Live GA orders come back with a generic "ga" section, not the tier name. */
 function gaCompletedOrder() {
@@ -247,6 +252,118 @@ describe("Checkout success receipt", () => {
     ).toBeInTheDocument();
   });
 
+  it("keeps the section name and counts tickets for a GA section on a seated event", async () => {
+    const section = demoSeatmapMapping().sections?.[DEMO_GA_SECTION_ID];
+    const cart = demoCheckoutCart({ ticketCount: 2 });
+    mockedGetOrderByPi.mockResolvedValue({
+      data: demoCompletedTicketOrder({
+        tickets: cart.tickets.map((ticket) => ({
+          ...ticket,
+          GA: true,
+          generalAdmission: true,
+          sectionId: section?.sectionId,
+          sectionName: section?.sectionNumber,
+          sectionNumber: section?.sectionNumber,
+          rowNumber: undefined,
+          seatNumber: undefined,
+        })),
+      }),
+    } as never);
+    render(<CheckoutSuccessPageRoute />);
+
+    expect(
+      await screen.findByText(String(section?.sectionNumber)),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText("2 tickets • unreserved seating"),
+    ).toBeInTheDocument();
+    expect(screen.queryByText("2 tickets")).not.toBeInTheDocument();
+    expect(screen.queryByText("unreserved seating")).not.toBeInTheDocument();
+    expect(
+      screen.queryByText(`${section?.sectionNumber} · unreserved seating`),
+    ).not.toBeInTheDocument();
+  });
+
+  it("counts GA tickets on a seated event when the order omits the seatmap flag", async () => {
+    const section = demoSeatmapMapping().sections?.[DEMO_GA_SECTION_ID];
+    const cart = demoCheckoutCart({ ticketCount: 2 });
+    const event = { ...cart.event, seatmap: undefined };
+    mockedGetSeatmap.mockResolvedValue({ data: { ga_only: true } } as never);
+    mockedGetOrderByPi.mockResolvedValue({
+      data: demoCompletedTicketOrder({
+        event,
+        tickets: cart.tickets.map((ticket) => ({
+          ...ticket,
+          GA: true,
+          generalAdmission: true,
+          sectionId: section?.sectionId,
+          sectionName: section?.sectionNumber,
+          sectionNumber: section?.sectionNumber,
+          rowNumber: undefined,
+          seatNumber: undefined,
+        })),
+      }),
+    } as never);
+    render(<CheckoutSuccessPageRoute />);
+
+    expect(
+      await screen.findByText("2 tickets • unreserved seating"),
+    ).toBeInTheDocument();
+    expect(screen.getByText(String(section?.sectionNumber))).toBeInTheDocument();
+    expect(
+      screen.queryByText(`${section?.sectionNumber} · unreserved seating`),
+    ).not.toBeInTheDocument();
+  });
+
+  it("keeps the original GA subtitle when a GA-only ticket section is just ga", async () => {
+    const cart = demoCheckoutCart({ ga: true, ticketCount: 1 });
+    const event = {
+      ...cart.event,
+      seatmap: undefined,
+      venue: { ...cart.event.venue, isGeneralAdmissionOnly: false },
+    };
+    mockedGetOrderByPi.mockResolvedValue({
+      data: demoCompletedTicketOrder({
+        event,
+        tickets: cart.tickets.map((ticket) => ({
+          ...ticket,
+          GA: true,
+          generalAdmission: true,
+          sectionName: "ga",
+          sectionNumber: "ga",
+          rowNumber: undefined,
+          seatNumber: undefined,
+        })),
+      }),
+    } as never);
+    render(<CheckoutSuccessPageRoute />);
+
+    expect(await screen.findByText("Ga · unreserved seating")).toBeInTheDocument();
+    expect(screen.queryByText("1 ticket • unreserved seating")).not.toBeInTheDocument();
+  });
+
+  it("uses the GA tier subtitle when a GA-only ticket gets its tier name from ticket groups", async () => {
+    const gaGroup = demoTicketGroups().ticketGroups[0];
+    const order = gaCompletedOrder();
+    mockedGetOrderByPi.mockResolvedValue({
+      data: {
+        ...order,
+        event: { ...order.event, seatmap: undefined },
+        tickets: (order.tickets as Array<Record<string, unknown>>).map(
+          (ticket) => ({ ...ticket, sectionNumber: "ga" }),
+        ),
+      },
+    } as never);
+    render(<CheckoutSuccessPageRoute />);
+
+    expect(
+      await screen.findByText(`${gaGroup.sectionName} · unreserved seating`),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByText(/tickets? • unreserved seating/),
+    ).not.toBeInTheDocument();
+  });
+
   it("labels listed seat numbers on the confirmation", async () => {
     const order = demoCompletedTicketOrder();
     const [first, second] = order.tickets as Array<Record<string, unknown>>;
@@ -268,6 +385,54 @@ describe("Checkout success receipt", () => {
         `Sec ${first.sectionNumber} · Row ${first.rowNumber}`,
       ),
     ).toBeInTheDocument();
+  });
+
+  it("shows the package image instead of the first event in the package", async () => {
+    const pkg = demoSeasonPackage();
+    const seasonEvent = DEMO_EVENTS.find((event) => event.shortCode === "NMST004")!;
+    const packageArtwork = DEMO_EVENTS.find((event) => event.shortCode === "ICEDOG1")!;
+    mockedGetOrderByPi.mockResolvedValue({
+      data: demoCompletedPackageOrder({
+        package: {
+          ...pkg,
+          image: packageArtwork.image,
+          events: pkg.events.map((event, index) =>
+            index === 0 ? { ...event, image: seasonEvent.image } : event,
+          ),
+        },
+      }),
+    } as never);
+    render(<CheckoutSuccessPageRoute />);
+
+    expect(await screen.findByText(pkg.name)).toBeInTheDocument();
+    expect(
+      document.querySelector(`img[src="${packageArtwork.image.url}"]`),
+    ).toBeTruthy();
+    expect(
+      document.querySelector(`img[src="${seasonEvent.image.url}"]`),
+    ).toBeNull();
+  });
+
+  it("uses the first event image when the package has no image of its own", async () => {
+    const pkg = demoSeasonPackage();
+    const seasonEvent = DEMO_EVENTS.find((event) => event.shortCode === "NMST004")!;
+    const { image: _packageImage, ...packageWithoutImage } = pkg;
+    mockedGetOrderByPi.mockResolvedValue({
+      data: demoCompletedPackageOrder({
+        package: {
+          ...packageWithoutImage,
+          events: pkg.events.map((event, index) =>
+            index === 0 ? { ...event, image: seasonEvent.image } : event,
+          ),
+        },
+      }),
+    } as never);
+    render(<CheckoutSuccessPageRoute />);
+
+    expect(await screen.findByText(pkg.name)).toBeInTheDocument();
+    expect(
+      document.querySelector(`img[src="${seasonEvent.image.url}"]`),
+    ).toBeTruthy();
   });
 
   it("shows the package ticket offer beside the seat thumbnail", async () => {
