@@ -9,16 +9,19 @@ import Testimonials from "@/components/organisms/Testimonials";
 import LogoMarquee from "@/components/organisms/LogoMarquee";
 import SiteFooter from "@/components/organisms/SiteFooter";
 import { ArrowRight, Seat, Spark, Users, Shield, Layers, Bolt, Check } from "@/components/atoms/icons";
-import { DEFAULT_DESCRIPTION, DEFAULT_TITLE, pageMetadata } from "@/lib/seo";
+import {
+  DEFAULT_OG_IMAGE,
+  HOME_PAGE_DESCRIPTION,
+  HOME_PAGE_TITLE,
+  pageMetadata,
+} from "@/lib/seo";
 
 export const metadata: Metadata = pageMetadata({
-  title: DEFAULT_TITLE,
-  description: DEFAULT_DESCRIPTION,
+  title: HOME_PAGE_TITLE,
+  description: HOME_PAGE_DESCRIPTION,
   path: "/",
-  image: "/hero-bg.jpg",
-  ogHeadline: "Sports-first ticketing for teams & venues",
-  subtitle: "Sell more. Keep more. One platform.",
-  cta: "Get Started",
+  image: DEFAULT_OG_IMAGE,
+  exactCopy: true,
 });
 
 const DELIVER = [

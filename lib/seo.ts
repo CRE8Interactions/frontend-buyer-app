@@ -6,6 +6,20 @@ export const SITE_NAME = "Blocktickets";
 export const DEFAULT_TITLE = "Blocktickets — Sports-first ticketing";
 export const DEFAULT_DESCRIPTION =
   "The ticketing platform built for leagues, teams, and venues. Sell more tickets. Keep more revenue. Run it all from one platform.";
+
+/** Legacy consumer homepage (`HomePage`). */
+export const HOME_PAGE_TITLE =
+  "Event experiences that go beyond tickets. | Blocktickets";
+export const HOME_PAGE_DESCRIPTION =
+  "We combine digital collectibles with tickets to control secondary market revenue, eliminate ticket fraud, and build community between event organizers, artists, and fans like never before.";
+
+/** Legacy browse page. The tab title is longer than the social title. */
+export const BROWSE_PAGE_TITLE =
+  "Find tickets to interesting events in your area | Blocktickets";
+export const BROWSE_PAGE_OG_TITLE =
+  "Find tickets to events in your area | Blocktickets";
+export const BROWSE_PAGE_DESCRIPTION =
+  "Looking for something exciting?  Search here for to find events in your area on Blocktickets.";
 export const DEFAULT_OG_IMAGE =
   "https://blocktickets.nyc3.cdn.digitaloceanspaces.com/logo.png";
 
@@ -22,6 +36,8 @@ type PageMetadataInput = {
   image?: string | null;
   /** Optional longer headline baked into the OG image. Defaults to title. */
   ogHeadline?: string;
+  /** When set, og:title and twitter:title use this instead of `title`. */
+  ogTitle?: string;
   /** Secondary line on the OG image (e.g. city · date). */
   subtitle?: string;
   /** CTA button label on the OG image. */
@@ -29,6 +45,11 @@ type PageMetadataInput = {
   keywords?: string | string[];
   type?: "website" | "article";
   noIndex?: boolean;
+  /**
+   * Keep the legacy buyer-app strings. Shopper titles are not cut at 60
+   * characters, and descriptions follow the legacy 200-character plain text.
+   */
+  exactCopy?: boolean;
 };
 
 function normalizeSiteUrl(raw?: string | null): string | null {
@@ -71,6 +92,22 @@ export function absoluteImageUrl(
 function stripHtml(value?: string | null): string {
   if (!value) return "";
   return value.replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim();
+}
+
+/** Legacy `plainText`: strip markup, decode entities, cap at 200 characters. */
+export function plainText(value?: unknown, maxLength = 200): string {
+  const text = String(value ?? "")
+    .replace(/<[^>]*>/g, " ")
+    .replace(/&nbsp;/gi, " ")
+    .replace(/&amp;/gi, "&")
+    .replace(/&quot;/gi, '"')
+    .replace(/&#39;|&apos;/gi, "'")
+    .replace(/&lt;/gi, "<")
+    .replace(/&gt;/gi, ">")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (text.length <= maxLength) return text;
+  return `${text.slice(0, maxLength - 1).trimEnd()}…`;
 }
 
 export function truncate(value: string, max = TITLE_MAX): string {
@@ -127,15 +164,20 @@ export function pageMetadata({
   path = "/",
   image,
   ogHeadline,
+  ogTitle,
   subtitle,
   cta = "Learn More",
   keywords,
   type = "website",
   noIndex = false,
+  exactCopy = false,
 }: PageMetadataInput): Metadata {
   const url = absoluteUrl(path);
-  const shortTitle = truncate(title, TITLE_MAX);
-  const desc = truncate(stripHtml(description) || DEFAULT_DESCRIPTION, 160);
+  const shortTitle = exactCopy ? title.trim() : truncate(title, TITLE_MAX);
+  const socialTitle = exactCopy ? (ogTitle || shortTitle).trim() : shortTitle;
+  const desc = exactCopy
+    ? description.trim()
+    : truncate(stripHtml(description) || DEFAULT_DESCRIPTION, 160);
   // Prefer the real media URL (event flyer, org logo, etc.). Social scrapers
   // are unreliable with generated /api/og cards and redirects.
   const ogImage = image
@@ -165,14 +207,14 @@ export function pageMetadata({
     openGraph: {
       type,
       siteName: SITE_NAME,
-      title: shortTitle,
+      title: socialTitle,
       description: desc,
       url,
       images: [imageMeta],
     },
     twitter: {
       card: "summary_large_image",
-      title: shortTitle,
+      title: socialTitle,
       description: desc,
       images: [ogImage],
     },
@@ -381,6 +423,7 @@ function withOpenGraphImage(copy: OpenGraphCopy, path: string, cta: string): Met
     image: copy.image,
     cta,
     keywords: copy.description,
+    exactCopy: true,
   });
 }
 
@@ -408,7 +451,7 @@ export function eventOpenGraph(event?: EventSeo | null): OpenGraphCopy {
   return {
     title,
     description:
-      stripHtml(event?.summary) ||
+      plainText(event?.summary) ||
       [`${name} Tickets`, schedule, place].filter(Boolean).join(", "),
     image: pickImage(
       event?.image,
@@ -429,7 +472,7 @@ export function venueOpenGraph(venue?: VenueSeo | null): OpenGraphCopy {
   return {
     title: name ? `${name} | Event Calendar` : OPEN_GRAPH_FALLBACK.venue.title,
     description:
-      stripHtml(venue?.description) ||
+      plainText(venue?.description) ||
       (name
         ? `Calendar | Buy tickets and find event information for upcoming events by ${name}`
         : OPEN_GRAPH_FALLBACK.venue.description),
@@ -437,10 +480,7 @@ export function venueOpenGraph(venue?: VenueSeo | null): OpenGraphCopy {
   };
 }
 
-/**
- * Season-ticket share copy. Callers that do not already have a package name
- * pass nothing — get-package-fe is too large to fetch for metadata.
- */
+/** Season-ticket share copy. Same wording as legacy `buildPackageOpenGraph`. */
 export function packageOpenGraph(eventPackage?: PackageSeo | null): OpenGraphCopy {
   const name = clean(eventPackage?.name);
   if (!name && !eventPackage) {
@@ -450,7 +490,7 @@ export function packageOpenGraph(eventPackage?: PackageSeo | null): OpenGraphCop
   return {
     title: name ? `${name} | Season Tickets` : OPEN_GRAPH_FALLBACK.package.title,
     description:
-      stripHtml(eventPackage?.description) ||
+      plainText(eventPackage?.description) ||
       `Buy season tickets for ${name || "this package"}.`,
     image: pickImage(
       eventPackage?.image,
@@ -472,7 +512,7 @@ export function flexPackOpenGraph(flexPack?: FlexPackSeo | null): OpenGraphCopy 
   return {
     title: name ? `${name} | ${SITE_NAME}` : OPEN_GRAPH_FALLBACK.flexPack.title,
     description:
-      stripHtml(flexPack?.description) ||
+      plainText(flexPack?.description) ||
       `Buy a flex pack from ${organization || SITE_NAME}.`,
     image: pickImage(
       flexPack?.image,
@@ -482,16 +522,117 @@ export function flexPackOpenGraph(flexPack?: FlexPackSeo | null): OpenGraphCopy 
   };
 }
 
+type LegacyOpenGraphMeta = {
+  title: string;
+  description: string;
+  image?: string;
+};
+
+/**
+ * Legacy `/open-graph/meta` returns the same title, description, and image
+ * the buyer app puts in the tab, without the full package or seatmap payload.
+ */
+async function fetchLegacyOpenGraph(
+  path: string,
+): Promise<LegacyOpenGraphMeta | null> {
+  const data = await apiGet<{
+    title?: string;
+    description?: string;
+    image?: string;
+  }>(`/open-graph/meta?path=${encodeURIComponent(path)}`);
+  const title = clean(data?.title);
+  const description = clean(data?.description);
+  if (!title || !description) return null;
+  return { title, description, image: clean(data?.image) || undefined };
+}
+
+function shopperMetadata(
+  meta: { title: string; description: string; image?: string },
+  path: string,
+  cta: string,
+): Metadata {
+  return pageMetadata({
+    title: meta.title,
+    description: meta.description,
+    path,
+    image: meta.image,
+    cta,
+    keywords: meta.description,
+    exactCopy: true,
+  });
+}
+
+async function legacyOrLocal(
+  path: string,
+  fallbackTitle: string,
+  loadLocal: () => Promise<OpenGraphCopy>,
+  cta: string,
+): Promise<Metadata> {
+  const remote = await fetchLegacyOpenGraph(path);
+  if (remote && remote.title !== fallbackTitle) {
+    return shopperMetadata(remote, path, cta);
+  }
+  return withOpenGraphImage(await loadLocal(), path, cta);
+}
+
+/** Legacy organization tab: `{name} | Tickets & Passes`. */
+export function organizationShareCopy(org?: { name?: string | null } | null) {
+  const name = clean(org?.name);
+  return {
+    title: name ? `${name} | Tickets & Passes` : "Tickets & Passes",
+    description: `Browse and buy tickets, season passes, and flex packs for ${name || "this organization"}.`,
+    keywords: `Buy tickets, season passes, and flex packs for ${name || "events"}`,
+  };
+}
+
+/** Legacy public access-pass tab: `{venue} | Access Pass`. */
+export function accessPassTabTitle(pass?: {
+  venue?: { name?: string | null } | null;
+} | null) {
+  return `${clean(pass?.venue?.name) || "Venue"} | Access Pass`;
+}
+
+/** Legacy fundraiser tab: `{title} | Fundraiser`. */
+export function fundraiserShareCopy(campaign?: {
+  title?: string | null;
+  description?: string | null;
+} | null) {
+  const title = clean(campaign?.title);
+  return {
+    title: title ? `${title} | Fundraiser` : "Fundraiser",
+    description:
+      plainText(campaign?.description) || "Support this fundraising campaign.",
+  };
+}
+
+/** Legacy waiting-room tab. Empty when the event name is not known yet. */
+export function waitingRoomTabTitle(eventName?: string | null) {
+  const name = clean(eventName);
+  return name ? `Waiting Room — ${name}` : "";
+}
+
+/** Legacy in-venue menu tab. */
+export function menuTabTitle(orgName?: string | null, pickup = false) {
+  return `${clean(orgName) || "In-Suite Dining"} | ${pickup ? "Menu" : "Suite Menu"}`;
+}
+
 export async function eventPageMetadata(
   slug: string,
   shortcode: string,
   path: string,
   code = "0",
 ): Promise<Metadata> {
-  const data = await apiGet<{ event?: EventSeo }>(
-    `/events/${encodeURIComponent(slug)}/${encodeURIComponent(shortcode)}?code=${encodeURIComponent(code)}`,
+  return legacyOrLocal(
+    path,
+    OPEN_GRAPH_FALLBACK.event.title,
+    async () => {
+      const data = await apiGet<{ event?: EventSeo }>(
+        `/events/${encodeURIComponent(slug)}/${encodeURIComponent(shortcode)}?code=${encodeURIComponent(code)}`,
+      );
+      return eventOpenGraph(data?.event);
+    },
+    "Buy Tickets",
   );
-  return withOpenGraphImage(eventOpenGraph(data?.event), path, "Buy Tickets");
 }
 
 export async function organizationPageMetadata(
@@ -501,48 +642,47 @@ export async function organizationPageMetadata(
   const data = await apiGet<OrgSeo>(
     `/organizations/storefront/${encodeURIComponent(slug)}`,
   );
-  const org = data?.organization;
-  if (!org?.name) {
-    return pageMetadata({
-      title: `Tickets & Passes | ${SITE_NAME}`,
-      description: "Browse and buy tickets, season passes, and flex packs.",
-      path,
-      cta: "Browse Tickets",
-    });
-  }
-
+  const copy = organizationShareCopy(data?.organization);
   return pageMetadata({
-    title: fitTitle(org.name, " Tickets"),
-    description: `Browse and buy tickets, season passes, and flex packs for ${org.name}.`,
+    ...copy,
     path,
-    image: absoluteImageUrl(org.image),
-    ogHeadline: org.name,
-    subtitle: "Tickets, passes & flex packs",
+    image: data?.organization?.name
+      ? absoluteImageUrl(data.organization.image)
+      : undefined,
     cta: "Browse Tickets",
-    keywords: `Buy tickets, season passes, and flex packs for ${org.name}`,
+    exactCopy: true,
   });
 }
 
 export async function venuePageMetadata(slug: string): Promise<Metadata> {
   const path = `/venue/${slug}/`;
-  const data = await apiGet<{ data?: VenueSeo[] } | VenueSeo[]>(
-    `/venues?filters[slug][$eq]=${encodeURIComponent(slug)}`,
+  return legacyOrLocal(
+    path,
+    OPEN_GRAPH_FALLBACK.venue.title,
+    async () => {
+      const data = await apiGet<{ data?: VenueSeo[] } | VenueSeo[]>(
+        `/venues?filters[slug][$eq]=${encodeURIComponent(slug)}`,
+      );
+      const list = Array.isArray(data)
+        ? data
+        : Array.isArray(data?.data)
+          ? data.data
+          : [];
+      return venueOpenGraph(list[0]);
+    },
+    "View Events",
   );
-  const list = Array.isArray(data)
-    ? data
-    : Array.isArray(data?.data)
-      ? data.data
-      : [];
-  return withOpenGraphImage(venueOpenGraph(list[0]), path, "View Events");
 }
 
 export async function packagePageMetadata(
   uuid: string,
   path: string,
 ): Promise<Metadata> {
-  // Do NOT call get-package-fe here — for large venues it returns 30MB+
-  // (full seatmap + every package ticket) and blocks the page / Next.js cache.
+  // get-package-fe is 30MB+ for large venues. Legacy tab copy comes from
+  // /open-graph/meta, which loads only the name, description, and images.
   void uuid;
+  const remote = await fetchLegacyOpenGraph(path);
+  if (remote) return shopperMetadata(remote, path, "View Package");
   return withOpenGraphImage(packageOpenGraph(null), path, "View Package");
 }
 
@@ -550,15 +690,33 @@ export async function flexPackPageMetadata(
   uuid: string,
   path: string,
 ): Promise<Metadata> {
-  const data = await apiGet<FlexPackSeo>(
-    `/flex-pack/get-flex-pack?uuid=${encodeURIComponent(uuid)}`,
+  return legacyOrLocal(
+    path,
+    OPEN_GRAPH_FALLBACK.flexPack.title,
+    async () => {
+      const data = await apiGet<FlexPackSeo>(
+        `/flex-pack/get-flex-pack?uuid=${encodeURIComponent(uuid)}`,
+      );
+      const flex =
+        data && typeof data === "object" && "name" in data
+          ? data
+          : ((data as { flexPack?: FlexPackSeo } | null)?.flexPack ?? null);
+      return flexPackOpenGraph(flex);
+    },
+    "View Flex Pack",
   );
-  const flex =
-    data && typeof data === "object" && "name" in data
-      ? data
-      : ((data as { flexPack?: FlexPackSeo } | null)?.flexPack ?? null);
+}
 
-  return withOpenGraphImage(flexPackOpenGraph(flex), path, "View Flex Pack");
+export async function waitingRoomPageMetadata(
+  slug: string,
+  shortcode: string,
+  code = "0",
+): Promise<Metadata> {
+  const data = await apiGet<{ event?: EventSeo }>(
+    `/events/${encodeURIComponent(slug)}/${encodeURIComponent(shortcode)}?code=${encodeURIComponent(code)}`,
+  );
+  const title = waitingRoomTabTitle(data?.event?.name);
+  return title ? { title } : {};
 }
 
 type AccessPassSeo = {
@@ -571,7 +729,7 @@ type AccessPassSeo = {
 
 export async function accessPassPageMetadata(
   uuid: string,
-  path: string,
+  _path: string,
 ): Promise<Metadata> {
   const data = await apiGet<AccessPassSeo[] | AccessPassSeo>(
     `/access-pass-templates/get-access-pass?uuid=${encodeURIComponent(uuid)}`,
@@ -582,27 +740,7 @@ export async function accessPassPageMetadata(
       ? data
       : null;
 
-  if (!pass?.name) {
-    return pageMetadata({
-      title: `Access Pass | ${SITE_NAME}`,
-      description: "Browse access pass offers.",
-      path,
-      cta: "View Access Pass",
-    });
-  }
-
-  const context = pass.organization?.name || pass.venue?.name;
-  return pageMetadata({
-    title: fitTitle(pass.name, context ? ` | ${truncate(context, 20)}` : ""),
-    description:
-      stripHtml(pass.description) ||
-      `Buy the ${pass.name} access pass${context ? ` from ${context}` : ""}.`,
-    path,
-    image: absoluteImageUrl(pass.artwork || pass.venue?.image),
-    ogHeadline: pass.name,
-    subtitle: context || "Access pass",
-    cta: "View Access Pass",
-  });
+  return { title: accessPassTabTitle(pass) };
 }
 
 export async function fundraiserPageMetadata(
@@ -617,25 +755,16 @@ export async function fundraiserPageMetadata(
   const data = await apiGet<CampaignSeo>(
     `/fundraising-campaigns/public/${encodeURIComponent(campaignSlug)}${qs ? `?${qs}` : ""}`,
   );
-  const campaign = data?.campaign;
-  if (!campaign?.title) {
-    return pageMetadata({
-      title: `Fundraiser | ${SITE_NAME}`,
-      description: "Support this fundraising campaign.",
-      path,
-      cta: "Donate",
-    });
-  }
-
+  const copy = fundraiserShareCopy(data?.campaign);
   return pageMetadata({
-    title: fitTitle(campaign.title, " Fundraiser"),
-    description:
-      stripHtml(campaign.description) || "Support this fundraising campaign.",
+    title: copy.title,
+    description: copy.description,
     path,
-    image: absoluteImageUrl(campaign.heroImage),
-    ogHeadline: campaign.title,
-    subtitle: "Support this campaign",
+    image: data?.campaign?.heroImage
+      ? absoluteImageUrl(data.campaign.heroImage)
+      : undefined,
     cta: "Donate",
+    exactCopy: true,
   });
 }
 
