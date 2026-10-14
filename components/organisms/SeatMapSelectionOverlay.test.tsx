@@ -60,9 +60,17 @@ vi.mock("@/components/organisms/InteractiveSeatmap", async () => {
   };
 });
 
-vi.mock("@/components/molecules/SectionLocatorThumb", () => ({
-  default: () => <div data-testid="section-thumb">Thumb</div>,
-}));
+vi.mock("@/components/molecules/SectionLocatorThumb", async () => {
+  const { useEffect } = await import("react");
+  return {
+    default: ({ onReady }: { onReady?: () => void }) => {
+      useEffect(() => {
+        onReady?.();
+      }, [onReady]);
+      return <div data-testid="section-thumb">Thumb</div>;
+    },
+  };
+});
 
 import SeatMapSelectionOverlay from "@/components/organisms/SeatMapSelectionOverlay";
 
@@ -498,8 +506,8 @@ describe("SeatMapSelectionOverlay map readiness", () => {
     fireEvent.click(screen.getAllByRole("button", { name: "Next view" })[0]);
     const seatView = screen.queryByRole("img", { name: /view from section/i });
     if (seatView) fireEvent.error(seatView);
-    expect(screen.getByText("No seat view for GA")).toBeInTheDocument();
-    expect(screen.queryByText("No seat view for Sec GA")).not.toBeInTheDocument();
+    expect(screen.getByRole("img", { name: /seat view placeholder/i })).toBeInTheDocument();
+    expect(screen.queryByText(/no seat view/i)).not.toBeInTheDocument();
   });
 
   it("removes one GA card without dropping the rest of the quantity", () => {

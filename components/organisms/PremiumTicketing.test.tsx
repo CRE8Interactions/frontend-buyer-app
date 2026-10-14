@@ -95,11 +95,23 @@ vi.mock("@/components/organisms/InteractiveSeatmap", async () => {
   };
 });
 
-vi.mock("@/components/molecules/SectionLocatorThumb", () => ({
-  default: ({ sectionNumber }: { sectionNumber?: string | number }) => (
-    <div data-testid="section-thumb">Thumb {String(sectionNumber || "")}</div>
-  ),
-}));
+vi.mock("@/components/molecules/SectionLocatorThumb", async () => {
+  const { useEffect } = await import("react");
+  return {
+    default: ({
+      sectionNumber,
+      onReady,
+    }: {
+      sectionNumber?: string | number;
+      onReady?: () => void;
+    }) => {
+      useEffect(() => {
+        onReady?.();
+      }, [onReady]);
+      return <div data-testid="section-thumb">Thumb {String(sectionNumber || "")}</div>;
+    },
+  };
+});
 
 vi.mock("@/lib/api", () => ({
   placeTicketsIntoCart: vi.fn(),
@@ -867,7 +879,15 @@ describe("Select tickets page (PremiumTicketing)", { timeout: 20_000 }, () => {
     ).toBeInTheDocument();
 
     await user.click(screen.getByRole("button", { name: /next view/i }));
+    const seatView = screen.getByRole("img", { name: /view from section/i });
+    fireEvent.load(seatView);
     expect(screen.getByText(/seat view/i)).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: /previous view/i }));
+    expect(screen.getByText(/seat location/i)).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: /next view/i }));
+    expect(screen.getByRole("img", { name: /view from section/i })).toBe(seatView);
+    expect(screen.queryByRole("status", { name: /loading seat image/i })).not.toBeInTheDocument();
   });
 
   it("closes the ticket details drawer from Back and does not show Close", async () => {
@@ -2275,12 +2295,8 @@ describe("Select tickets page (PremiumTicketing)", { timeout: 20_000 }, () => {
     await user.click(screen.getAllByRole("button", { name: "Next view" })[0]);
     const seatView = screen.queryByRole("img", { name: /view from section/i });
     if (seatView) fireEvent.error(seatView);
-    expect(
-      screen.getByText("No seat view for Standing Room Right"),
-    ).toBeInTheDocument();
-    expect(
-      screen.queryByText("No seat view for Sec Standing Room Right"),
-    ).not.toBeInTheDocument();
+    expect(screen.getByRole("img", { name: /seat view placeholder/i })).toBeInTheDocument();
+    expect(screen.queryByText(/no seat view/i)).not.toBeInTheDocument();
   });
 
   it("switches between cheapest-first and best-seat order from the sort dropdown", async () => {

@@ -15,6 +15,7 @@ import { useRouter } from "next/navigation";
 import AccessibleSeatingBadge from "@/components/atoms/AccessibleSeatingBadge";
 import BrandedActionButton from "@/components/atoms/BrandedActionButton";
 import LockIcon from "@/components/atoms/LockIcon";
+import Spinner from "@/components/atoms/Spinner";
 import { BrandedLoader } from "@/components/molecules/RouteLoader";
 import { Accessibility, Ticket } from "@/components/atoms/icons";
 import LoginLink from "@/components/molecules/LoginLink";
@@ -76,7 +77,7 @@ import { lockPageScroll, unlockPageScroll } from "@/lib/pageScroll";
 import { beginRouteTransition } from "@/lib/routeTransition";
 import { walletSectionHref } from "@/lib/walletNav";
 import type { SeatmapBackground, SeatmapMapping } from "@/lib/seatmapLookups";
-import { getSeatViewImageCandidates } from "@/lib/seatView";
+import { getSeatViewImageCandidates, SEAT_VIEW_PLACEHOLDER } from "@/lib/seatView";
 import {
   stickyOffsetBelowHeader,
   ticketingChromeReservePx,
@@ -269,38 +270,54 @@ type SeatPick = { sec: string; row: string; seat: string; zone: string; tier: st
 function SeatViewImage({
   src,
   section,
-  ga = false,
+  onReady,
+  color,
 }: {
   src?: string;
   section: string;
-  ga?: boolean;
+  onReady?: () => void;
+  color?: string;
 }) {
   const [failedSrc, setFailedSrc] = useState<string | null>(null);
-
-  if (!src || failedSrc === src) {
-    return (
-      <div style={{ width: "100%", height: "100%", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 8, background: "#e7eaf2", color: "#6e7180" }}>
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" style={{ width: 28, height: 28 }}><path d="M3 20V9l9-5 9 5v11" /><path d="M3 20h18" /><path d="M7 20v-6h4v6" /><path d="M14 20v-6h3v6" /></svg>
-        <div style={{ fontSize: fluidSize(13), fontWeight: 500 }}>
-          No seat view for {ga ? section : `Sec ${section}`}
-        </div>
-      </div>
-    );
-  }
+  const [loadedSrc, setLoadedSrc] = useState<string | null>(null);
+  const onReadyRef = useRef(onReady);
+  onReadyRef.current = onReady;
+  const displaySrc = !src || failedSrc === src ? SEAT_VIEW_PLACEHOLDER : src;
+  const loaded = loadedSrc === displaySrc;
+  const placeholder = displaySrc === SEAT_VIEW_PLACEHOLDER;
 
   return (
-    // eslint-disable-next-line @next/next/no-img-element
-    <img
-      src={src}
-      alt={`View from section ${section}`}
-      onError={() => setFailedSrc(src)}
-      style={{
-        width: "100%",
-        height: "100%",
-        display: "block",
-        objectFit: "cover",
-      }}
-    />
+    <div style={{ position: "relative", width: "100%", height: "100%", background: "#fff" }}>
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img
+        src={displaySrc}
+        alt={placeholder ? "Seat view placeholder" : `View from section ${section}`}
+        onLoad={() => {
+          setLoadedSrc(displaySrc);
+          onReadyRef.current?.();
+        }}
+        onError={() => {
+          if (placeholder) {
+            onReadyRef.current?.();
+            return;
+          }
+          setFailedSrc(src);
+        }}
+        style={{
+          width: "100%",
+          height: "100%",
+          display: "block",
+          objectFit: placeholder ? "contain" : "cover",
+          opacity: loaded ? 1 : 0,
+          background: "#fff",
+        }}
+      />
+      {loaded ? null : (
+        <span style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center" }}>
+          <Spinner size={22} variant="compact" color={color} label="Loading seat image" />
+        </span>
+      )}
+    </div>
   );
 }
 
@@ -451,6 +468,23 @@ export default function PremiumTicketing({
   const [media, setMedia] = useState(0);
   const [info, setInfo] = useState(false);
   const [sel, setSel] = useState<number | null>(null);
+  // Remember which slides finished loading for this listing. Flipping away and
+  // back keeps the image element mounted, so a loaded slide stays on screen.
+  const [loadedSlides, setLoadedSlides] = useState<{
+    sel: number | null;
+    ready: readonly number[];
+  }>({ sel: null, ready: [] });
+  const seatMediaReady =
+    loadedSlides.sel === sel && loadedSlides.ready.includes(media);
+  const markSlideReady = useCallback((slide: number) => {
+    setLoadedSlides((prev) => {
+      const ready = prev.sel === sel ? prev.ready : [];
+      if (ready.includes(slide)) return prev.sel === sel ? prev : { sel, ready };
+      return { sel, ready: [...ready, slide] };
+    });
+  }, [sel]);
+  const markLocationReady = useCallback(() => markSlideReady(0), [markSlideReady]);
+  const markViewReady = useCallback(() => markSlideReady(1), [markSlideReady]);
   // GA mode state
   const [gaQuantities, setGaQuantities] = useState<Record<number, number>>({});
   const [notifySubject, setNotifySubject] = useState<NotifySubject | null>(null);
@@ -1157,6 +1191,7 @@ export default function PremiumTicketing({
       sectionId={l.sectionId}
       sectionNumber={l.sec}
       section={l.sec}
+      spinnerColor={ACC}
       thumbnailCandidates={venueImageCandidates(l.sec)}
     />
   );
@@ -2287,27 +2322,30 @@ export default function PremiumTicketing({
             </div>
             <div style={{ flex: 1, overflowY: "auto", padding: 20 }}>
               <div style={{ position: "relative", borderRadius: 16, background: "#f1f3f8", border: "1px solid rgba(5,27,53,0.08)", overflow: "hidden", height: 220 }}>
-                {media === 0 ? (
+                <div style={{ position: "absolute", inset: 0, visibility: media === 0 ? "visible" : "hidden" }} aria-hidden={media === 0 ? undefined : true}>
                   <SectionLocatorThumb
                     background={mapBackground}
                     mapping={mapMapping}
                     sectionId={selRow.sectionId}
                     sectionNumber={selRow.sec}
                     section={selRow.sec}
-                    pinColor={ACC}
+                    spinnerColor={ACC}
+                    priority
+                    onReady={markLocationReady}
                     thumbnailCandidates={venueImageCandidates(selRow.sec)}
                   />
-                ) : (
+                </div>
+                <div style={{ position: "absolute", inset: 0, visibility: media === 1 ? "visible" : "hidden" }} aria-hidden={media === 1 ? undefined : true}>
                   <SeatViewImage
                     src={venueImage(selRow.sec, "seat-view")}
                     section={selRow.sec}
-                    ga={
-                      selRow.cartGroup?.GA === true ||
-                      selRow.cartGroup?.generalAdmission === true
-                    }
+                    onReady={markViewReady}
+                    color={ACC}
                   />
-                )}
-                <div style={{ position: "absolute", left: 0, right: 0, bottom: 12, display: "flex", alignItems: "center", justifyContent: "center", gap: 12 }}>
+                </div>
+                {seatMediaReady ? (
+                <>
+                <div style={{ position: "absolute", left: 0, right: 0, bottom: 12, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 8 }}>
                   <span style={{ display: "inline-flex", alignItems: "center", gap: 7, background: "rgba(5,27,53,0.82)", color: "#fff", fontSize: fluidSize(12), fontWeight: 600, letterSpacing: "0.06em", textTransform: "uppercase", padding: "6px 14px", borderRadius: 999 }}>{media === 0 ? "Seat location" : "Seat view"}</span>
                   <span style={{ display: "flex", alignItems: "center", gap: 6 }}>
                     <span style={{ width: 7, height: 7, borderRadius: 999, background: media === 0 ? ACC : "rgba(5,27,53,0.22)" }} />
@@ -2320,6 +2358,8 @@ export default function PremiumTicketing({
                 <button onClick={flip} aria-label="Next view" style={{ fontFamily: "inherit", position: "absolute", right: 12, top: "50%", transform: "translateY(-50%)", width: 44, height: 44, borderRadius: 999, background: "#fff", border: "1px solid rgba(5,27,53,0.10)", color: NAVY, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", boxShadow: "0 6px 18px -8px rgba(5,27,53,0.4)" }}>
                   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" style={{ width: 20, height: 20 }}><polyline points="9 18 15 12 9 6" /></svg>
                 </button>
+                </>
+                ) : null}
               </div>
               <div style={{ display: "flex", flexDirection: "column", gap: 8, padding: "18px 0 16px" }}>
                 <span style={{ alignSelf: "flex-start", flexShrink: 0, ...pill(ACC_SOFT, ACC), ...(mobile ? { padding: "5px 10px" } : {}) }}><Star s={14} /> {selRow.tier || selRow.zone}</span>

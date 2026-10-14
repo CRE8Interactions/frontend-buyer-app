@@ -13,7 +13,7 @@ import { cacheEventBranding } from "@/lib/orgBrandingCache";
 export const SEARCH_DEBOUNCE_MS = 300;
 export const SEARCH_MIN_CHARS = 3;
 export const SEARCH_SUGGESTION_LIMIT = 3;
-export const SEARCH_SPINNER_COLOR = "#3E8BF7";
+export const SEARCH_SPINNER_COLOR = "#A6E773";
 export const SEARCH_IMAGE_FALLBACK = "/blocktickets-emblem-navy.svg";
 
 export type ShopperSearchEvent = {

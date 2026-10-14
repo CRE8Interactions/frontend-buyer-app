@@ -20,6 +20,7 @@ import Spinner from "@/components/atoms/Spinner";
 import Modal from "@/components/molecules/Modal";
 import { BrandedLoader } from "@/components/molecules/RouteLoader";
 import SeatViewImage from "@/components/molecules/SeatViewImage";
+import SectionLocatorThumb from "@/components/molecules/SectionLocatorThumb";
 import { BLOCKTICKETS_NAVY, type BrandingOrganization } from "@/lib/branding";
 import {
   cachedBrandingForCheckout,
@@ -52,6 +53,7 @@ import {
   dropUserCart,
   getCart,
   getPaymentIntent,
+  getSeatmapByShortCode,
   processFreeOrder,
   processOrder,
   redeemPromoCode,
@@ -115,7 +117,19 @@ import {
   paymentIntentAlreadySucceeded,
   succeededStripeRedirectIntentId,
 } from "@/lib/checkoutSuccess";
-import { getSeatViewImageCandidates } from "@/lib/seatView";
+import {
+  cartShowsGaTicketIcon,
+  eventIsExplicitlyGaOnly,
+  GA_TICKET_PLACEHOLDER,
+  getSeatViewImageCandidates,
+  seatLocationSection,
+  showsSeatedGaTicketCount,
+} from "@/lib/seatView";
+import {
+  normalizeSeatmapBackground,
+  type SeatmapBackground,
+  type SeatmapMapping,
+} from "@/lib/seatmapLookups";
 import {
   injectMetaPixel,
   trackAddPaymentInfo,
@@ -207,6 +221,31 @@ type CartData = {
   ipAddress?: string;
   [key: string]: unknown;
 };
+
+async function loadCheckoutSeatLocation(event: CartData["event"]) {
+  const slug = event?.slug || event?.seoUrl;
+  const code = event?.shortCode || event?.shortcode;
+  if (!slug || !code) return null;
+  try {
+    const res = await getSeatmapByShortCode(String(code), String(slug));
+    const raw = res?.data as
+      | {
+          ga_only?: boolean;
+          background?: unknown;
+          mapping?: SeatmapMapping;
+        }
+      | null
+      | undefined;
+    if (!raw || raw.ga_only) return { ga_only: true, background: null, mapping: null };
+    return {
+      ga_only: false,
+      background: normalizeSeatmapBackground(raw.background),
+      mapping: (raw.mapping || null) as SeatmapMapping | null,
+    };
+  } catch {
+    return null;
+  }
+}
 
 const lightCard =
   "rounded-[18px] border border-[rgba(5,27,53,0.08)] bg-white shadow-[0_10px_30px_-20px_rgba(5,27,53,0.35)]";
@@ -559,6 +598,11 @@ function CheckoutPage() {
   const [loading, setLoading] = useState(true);
   const [cart, setCart] = useState<CartData | null>(null);
   const [event, setEvent] = useState<CartData["event"]>(null);
+  const [seatLocation, setSeatLocation] = useState<{
+    ga_only?: boolean;
+    background: SeatmapBackground | null;
+    mapping: SeatmapMapping | null;
+  } | null>(null);
   const [clientSecret, setClientSecret] = useState("");
   const [intentId, setIntentId] = useState("");
   const [stripe, setStripe] = useState<Stripe | null>(null);
@@ -588,6 +632,8 @@ function CheckoutPage() {
 
   const cartRef = useRef<CartData | null>(null);
   const eventRef = useRef<CartData["event"]>(null);
+  const seatLocationRef = useRef(seatLocation);
+  seatLocationRef.current = seatLocation;
   const leavingForSuccessRef = useRef(false);
   const leavingForLoginRef = useRef(false);
   const paymentContextRef = useRef<{
@@ -653,7 +699,12 @@ function CheckoutPage() {
     setRestarting(true);
     const eventData = eventRef.current || cartRef.current?.event;
     const dest =
-      checkoutLeavePath(cartRef.current, eventData, leaveOrgSlug()) ||
+      checkoutLeavePath(
+        cartRef.current,
+        eventData,
+        leaveOrgSlug(),
+        seatLocationRef.current,
+      ) ||
       BACK_FALLBACK_HREF;
     const returnPath = getCheckoutReturnPath();
     const loginDetour = hadCheckoutLoginDetour();
@@ -678,6 +729,7 @@ function CheckoutPage() {
         cartRef.current,
         eventData ?? cartRef.current?.event,
         leaveOrgSlug(),
+        seatLocationRef.current,
       );
       const payload = dropUserCartPayload(
         cartRef.current,
@@ -700,6 +752,7 @@ function CheckoutPage() {
       cartRef.current,
       eventData,
       leaveOrgSlug(),
+      seatLocationRef.current,
     );
     const returnPath = getCheckoutReturnPath();
     const loginDetour = hadCheckoutLoginDetour();
@@ -773,6 +826,7 @@ function CheckoutPage() {
     const run = async () => {
       setLoading(true);
       setLoadError("");
+      setSeatLocation(null);
       let cartId = cartIdFromQuery;
       if (!cartId) {
         cartId = getStoredCart()?.cartId ?? null;
@@ -796,7 +850,13 @@ function CheckoutPage() {
           cartData.tickets || [],
           cartData.event,
         );
+        const location =
+          (cartData.tickets?.length ?? 0) > 0 &&
+          !eventIsExplicitlyGaOnly(cartData.event)
+            ? await loadCheckoutSeatLocation(cartData.event)
+            : null;
         if (cancelled) return;
+        setSeatLocation(location);
         setCart(cartData);
         cartRef.current = cartData;
         const itemCount = countCartItems(cartData);
@@ -1076,7 +1136,13 @@ function CheckoutPage() {
           address?: Array<{ city?: string; state?: string; country?: string }>;
         }
       | undefined);
-  const ticketSummary = ticketSelectionSummary(cart?.tickets || []);
+  const ticketSummary = ticketSelectionSummary(cart?.tickets || [], {
+    seatedGaSection: showsSeatedGaTicketCount(
+      cart?.tickets,
+      event,
+      seatLocation,
+    ),
+  });
   const packageSummary = cart?.package
     ? packageOrderSummary(cart.package, packageCartTickets(cart))
     : null;
@@ -1115,11 +1181,23 @@ function CheckoutPage() {
     (event?.venue as { slug?: string } | undefined)?.slug ||
     (cart?.event as { venue?: { slug?: string } } | undefined)?.venue?.slug;
   const summaryTicket = cart?.tickets?.[0];
-  const seatViewCandidates = getSeatViewImageCandidates(
-    venueSlug,
-    summaryTicket?.sectionNumber as string | number | undefined,
-    summaryTicket?.sectionName as string | number | undefined,
+  const gaTicketIcon = cartShowsGaTicketIcon(cart?.tickets, event, seatLocation);
+  const locatedSection = seatLocationSection(summaryTicket);
+  const venueMapReady = Boolean(
+    !gaTicketIcon &&
+      seatLocation &&
+      !seatLocation.ga_only &&
+      seatLocation.background?.url &&
+      seatLocation.mapping,
   );
+  const seatViewCandidates =
+    gaTicketIcon || venueMapReady
+      ? []
+      : getSeatViewImageCandidates(
+          venueSlug,
+          summaryTicket?.sectionNumber as string | number | undefined,
+          summaryTicket?.sectionName as string | number | undefined,
+        );
   const dueAmount =
     dueTotal ||
     (cart?.package
@@ -1471,11 +1549,30 @@ function CheckoutPage() {
                   <div className="h-px bg-[rgba(5,27,53,0.08)]" />
                   <div className="flex items-start gap-3.5">
                     <div className="h-[84px] w-[84px] shrink-0 overflow-hidden rounded-xl border border-[rgba(5,27,53,0.10)] bg-[#f1f3f8]">
-                      <SeatViewImage
-                        candidates={seatViewCandidates}
-                        alt="Seat view for this ticket"
-                        className="h-full w-full object-cover"
-                      />
+                      {gaTicketIcon ? (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img
+                          src={GA_TICKET_PLACEHOLDER}
+                          alt="General admission"
+                          className="h-full w-full object-cover"
+                        />
+                      ) : venueMapReady ? (
+                        <SectionLocatorThumb
+                          background={seatLocation?.background}
+                          mapping={seatLocation?.mapping}
+                          sectionId={locatedSection.sectionId}
+                          sectionNumber={locatedSection.sectionNumber}
+                          spinnerColor={branding.theme.accent}
+                          priority
+                          className="h-full w-full"
+                        />
+                      ) : (
+                        <SeatViewImage
+                          candidates={seatViewCandidates}
+                          alt="Seat view for this ticket"
+                          className="h-full w-full object-cover"
+                        />
+                      )}
                     </div>
                     <div className="flex min-w-0 flex-1 flex-col gap-1.5">
                       {ticketSummary.offerName ? (

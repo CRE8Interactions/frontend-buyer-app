@@ -43,6 +43,7 @@ import {
   ticketSelectionSummary,
 } from "@/lib/ticketSummary";
 import { ticketsWithGaSections } from "@/lib/gaTicketSections";
+import { showsNamedGaSectionTicketCount } from "@/lib/seatView";
 import {
   flexPackSeasonLine,
   flexPackVoucherCount,
@@ -184,6 +185,7 @@ function CheckoutSuccessPage() {
       if (cancelled) return;
       const orderData =
         gaTickets === tickets ? loaded : { ...loaded, tickets: gaTickets };
+      if (cancelled) return;
       setOrder(orderData);
       setError("");
       clearStoredCart();
@@ -370,19 +372,19 @@ function CheckoutSuccessPage() {
   const selectedTicketAdded = selectedTicket
     ? addedWalletKeySet.has(walletTicketKey(selectedTicket))
     : true;
-  const ticketSummary = ticketSelectionSummary(
-    tickets,
-    order?.package
+  const ticketSummary = ticketSelectionSummary(tickets, {
+    ...(order?.package
       ? {
           defaultOffer: "Standard admission",
           gameCount: Array.isArray(order.package.events)
             ? order.package.events.length
             : undefined,
         }
-      : undefined,
-  );
+      : {}),
+    seatedGaSection: showsNamedGaSectionTicketCount(tickets, order?.event),
+  });
   const thumbSrc = imageUrl(
-    order?.flex_pack?.image || event?.image,
+    order?.package?.image || order?.flex_pack?.image || event?.image,
     branding.theme.logoSrc,
   );
   const title =

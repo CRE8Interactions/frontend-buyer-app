@@ -64,6 +64,32 @@ describe("checkoutLeavePath", () => {
     );
   });
 
+  it("returns the seated tickets page for a GA section on a seated event", () => {
+    const cart = demoCheckoutCart();
+    cart.tickets = cart.tickets.map((ticket) => ({
+      ...ticket,
+      GA: true,
+      generalAdmission: true,
+    }));
+    expect(checkoutLeavePath(cart, cart.event)).toBe(
+      eventPurchasePath(raptorsEvent),
+    );
+    expect(checkoutLeavePath(cart, cart.event)).toBe(
+      `/e/${raptorsEvent.slug}/${raptorsEvent.shortCode}/tickets/`,
+    );
+  });
+
+  it("returns the seated tickets page when a loaded seatmap places the GA section", () => {
+    const cart = demoCheckoutCart({ ga: true });
+    const event = cartEventWithoutGaFlags(cart.event);
+    expect(
+      checkoutLeavePath({ ...cart, event }, event, null, {
+        ga_only: false,
+        mapping: { sections: {} },
+      }),
+    ).toBe(`/e/${gaEvent.slug}/${gaEvent.shortCode}/tickets/`);
+  });
+
   it("still returns the seated tickets page when reserved-seat tickets have no seatmap", () => {
     const cart = demoCheckoutCart();
     const event = cartEventWithoutGaFlags(cart.event);

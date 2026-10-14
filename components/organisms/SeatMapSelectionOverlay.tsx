@@ -3,10 +3,11 @@
 import { browseLeading } from "@/lib/browseType";
 import { fluidSize } from "@/lib/shopperFluidType";
 
-import { memo, useCallback, useEffect, useState } from "react";
+import { memo, useCallback, useEffect, useRef, useState } from "react";
 import { lockPageScroll, unlockPageScroll } from "@/lib/pageScroll";
 import AccessibleSeatingBadge from "@/components/atoms/AccessibleSeatingBadge";
 import BrandedActionButton from "@/components/atoms/BrandedActionButton";
+import Spinner from "@/components/atoms/Spinner";
 import BuyerProtectionCard from "@/components/molecules/BuyerProtectionCard";
 import Modal from "@/components/molecules/Modal";
 import { BrandedLoader } from "@/components/molecules/RouteLoader";
@@ -14,7 +15,7 @@ import { INVENTORY_UPDATE_LOADER_MESSAGE } from "@/lib/loaderMessages";
 import SectionLocatorThumb from "@/components/molecules/SectionLocatorThumb";
 import { InteractiveSeatmapMemo } from "@/components/organisms/InteractiveSeatmap";
 import type { SeatmapBackground, SeatmapMapping } from "@/lib/seatmapLookups";
-import { getSeatViewImageCandidates } from "@/lib/seatView";
+import { getSeatViewImageCandidates, SEAT_VIEW_PLACEHOLDER } from "@/lib/seatView";
 import {
   quantityLimits,
   quantityRestrictionLabel,
@@ -87,62 +88,54 @@ const pill = (
 function SeatViewImage({
   src,
   section,
-  ga = false,
+  onReady,
+  color,
 }: {
   src?: string;
   section: string;
-  ga?: boolean;
+  onReady?: () => void;
+  color?: string;
 }) {
   const [failedSrc, setFailedSrc] = useState<string | null>(null);
-  if (!src || failedSrc === src) {
-    return (
-      <div
+  const [loadedSrc, setLoadedSrc] = useState<string | null>(null);
+  const onReadyRef = useRef(onReady);
+  onReadyRef.current = onReady;
+  const displaySrc = !src || failedSrc === src ? SEAT_VIEW_PLACEHOLDER : src;
+  const loaded = loadedSrc === displaySrc;
+  const placeholder = displaySrc === SEAT_VIEW_PLACEHOLDER;
+
+  return (
+    <div style={{ position: "relative", width: "100%", height: "100%", background: "#fff" }}>
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img
+        src={displaySrc}
+        alt={placeholder ? "Seat view placeholder" : `View from section ${section}`}
+        onLoad={() => {
+          setLoadedSrc(displaySrc);
+          onReadyRef.current?.();
+        }}
+        onError={() => {
+          if (placeholder) {
+            onReadyRef.current?.();
+            return;
+          }
+          setFailedSrc(src);
+        }}
         style={{
           width: "100%",
           height: "100%",
-          display: "flex",
-          flexDirection: "column",
-          alignItems: "center",
-          justifyContent: "center",
-          gap: 8,
-          background: "#e7eaf2",
-          color: "#6e7180",
+          display: "block",
+          objectFit: placeholder ? "contain" : "cover",
+          opacity: loaded ? 1 : 0,
+          background: "#fff",
         }}
-      >
-        <svg
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth={1.8}
-          strokeLinecap="round"
-          strokeLinejoin="round"
-          style={{ width: 28, height: 28 }}
-        >
-          <path d="M3 20V9l9-5 9 5v11" />
-          <path d="M3 20h18" />
-          <path d="M7 20v-6h4v6" />
-          <path d="M14 20v-6h3v6" />
-        </svg>
-        <div style={{ fontSize: fluidSize(13), fontWeight: 500 }}>
-          No seat view for {ga ? section : `Sec ${section}`}
-        </div>
-      </div>
-    );
-  }
-
-  return (
-    // eslint-disable-next-line @next/next/no-img-element
-    <img
-      src={src}
-      alt={`View from section ${section}`}
-      onError={() => setFailedSrc(src)}
-      style={{
-        width: "100%",
-        height: "100%",
-        display: "block",
-        objectFit: "cover",
-      }}
-    />
+      />
+      {loaded ? null : (
+        <span style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center" }}>
+          <Spinner size={22} variant="compact" color={color} label="Loading seat image" />
+        </span>
+      )}
+    </div>
   );
 }
 
@@ -281,6 +274,25 @@ function SeatMapSelectionOverlay({
     mapDetailGroup?.sectionNumber || mapDetailGroup?.sectionName || "GA",
   );
   const mapDetailOffer = selectionOfferName(mapDetailGroup);
+  // Remember which slides finished loading for this seat. Flipping away and
+  // back keeps the image element mounted, so a loaded slide stays on screen.
+  const [loadedSlides, setLoadedSlides] = useState<{
+    detail: number | null;
+    ready: readonly number[];
+  }>({ detail: null, ready: [] });
+  const seatMediaReady =
+    loadedSlides.detail === mapDetail && loadedSlides.ready.includes(media);
+  const markSlideReady = useCallback((slide: number) => {
+    setLoadedSlides((prev) => {
+      const ready = prev.detail === mapDetail ? prev.ready : [];
+      if (ready.includes(slide)) {
+        return prev.detail === mapDetail ? prev : { detail: mapDetail, ready };
+      }
+      return { detail: mapDetail, ready: [...ready, slide] };
+    });
+  }, [mapDetail]);
+  const markLocationReady = useCallback(() => markSlideReady(0), [markSlideReady]);
+  const markViewReady = useCallback(() => markSlideReady(1), [markSlideReady]);
   const mapDetailOfferDescription = selectionOfferDescription(mapDetailGroup);
   const mapDetailUnitPrice = listedUnitPrice(
     mapDetailGroup?.price,
@@ -795,7 +807,14 @@ function SeatMapSelectionOverlay({
                         overflow: "hidden",
                       }}
                     >
-                      {media === 0 ? (
+                      <div
+                        style={{
+                          position: "absolute",
+                          inset: 0,
+                          visibility: media === 0 ? "visible" : "hidden",
+                        }}
+                        aria-hidden={media === 0 ? undefined : true}
+                      >
                         <SectionLocatorThumb
                           background={background}
                           mapping={mapping}
@@ -806,20 +825,31 @@ function SeatMapSelectionOverlay({
                           }
                           sectionNumber={mapDetailSection}
                           section={mapDetailSection}
-                          pinColor={accent}
+                          spinnerColor={accent}
+                          priority
+                          onReady={markLocationReady}
                           thumbnailCandidates={venueImageCandidates(
                             mapDetailSection,
                           )}
                         />
-                      ) : (
+                      </div>
+                      <div
+                        style={{
+                          position: "absolute",
+                          inset: 0,
+                          visibility: media === 1 ? "visible" : "hidden",
+                        }}
+                        aria-hidden={media === 1 ? undefined : true}
+                      >
                         <SeatViewImage
                           src={venueImage(mapDetailSection, "seat-view")}
                           section={mapDetailSection}
-                          ga={Boolean(
-                            mapDetailGroup.GA || mapDetailGroup.generalAdmission,
-                          )}
+                          onReady={markViewReady}
+                          color={accent}
                         />
-                      )}
+                      </div>
+                      {seatMediaReady ? (
+                      <>
                       <div
                         style={{
                           position: "absolute",
@@ -827,9 +857,10 @@ function SeatMapSelectionOverlay({
                           right: 0,
                           bottom: 12,
                           display: "flex",
+                          flexDirection: "column",
                           alignItems: "center",
                           justifyContent: "center",
-                          gap: 12,
+                          gap: 8,
                         }}
                       >
                         <span
@@ -944,6 +975,8 @@ function SeatMapSelectionOverlay({
                           <polyline points="9 18 15 12 9 6" />
                         </svg>
                       </button>
+                      </>
+                      ) : null}
                     </div>
                     <div
                       style={{

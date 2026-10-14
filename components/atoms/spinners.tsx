@@ -6,6 +6,7 @@
 // Keyframes live in app/globals.css so motion works on first paint.
 
 import type { CSSProperties } from "react";
+import { motionPhase } from "@/lib/motionPhase";
 
 const GREEN = "#A6E773";
 const LINE = "rgba(158,182,216,0.14)";
@@ -108,6 +109,7 @@ export function Ring({
 }) {
   return (
     <div
+      ref={motionPhase(800)}
       role="status"
       aria-label="Loading"
       className="bt-sp-ring"
