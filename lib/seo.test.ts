@@ -1,18 +1,33 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { formatEventWhen } from "@/lib/helpers";
 import {
   DEMO_EVENTS,
+  DEMO_ORGS,
+  demoAccessPassTemplate,
   demoEventDetail,
   demoFlexPack,
+  demoFundraisingCampaign,
   demoSeasonPackage,
   demoVenueBySlug,
 } from "@/lib/demo/fixtures";
 import {
+  accessPassTabTitle,
+  BROWSE_PAGE_DESCRIPTION,
+  BROWSE_PAGE_OG_TITLE,
+  BROWSE_PAGE_TITLE,
   DEFAULT_OG_IMAGE,
   eventOpenGraph,
   flexPackOpenGraph,
+  fundraiserShareCopy,
+  HOME_PAGE_DESCRIPTION,
+  HOME_PAGE_TITLE,
+  menuTabTitle,
+  organizationShareCopy,
   packageOpenGraph,
+  packagePageMetadata,
+  pageMetadata,
   venueOpenGraph,
+  waitingRoomTabTitle,
 } from "@/lib/seo";
 
 function demoEvent() {
@@ -165,5 +180,116 @@ describe("missing open graph records", () => {
       title: "Season Tickets | Blocktickets",
       description: "Buy season tickets on Blocktickets.",
     });
+  });
+});
+
+describe("legacy shopper tab copy", () => {
+  const previousApi = process.env.NEXT_PUBLIC_API;
+
+  afterEach(() => {
+    process.env.NEXT_PUBLIC_API = previousApi;
+    vi.unstubAllGlobals();
+  });
+
+  it("keeps the homepage and browse titles past the 60-character cut", () => {
+    const home = pageMetadata({
+      title: HOME_PAGE_TITLE,
+      description: HOME_PAGE_DESCRIPTION,
+      exactCopy: true,
+    });
+    expect(home.title).toBe(HOME_PAGE_TITLE);
+    expect(home.description).toBe(HOME_PAGE_DESCRIPTION);
+
+    const browse = pageMetadata({
+      title: BROWSE_PAGE_TITLE,
+      ogTitle: BROWSE_PAGE_OG_TITLE,
+      description: BROWSE_PAGE_DESCRIPTION,
+      exactCopy: true,
+    });
+    expect(browse.title).toBe(BROWSE_PAGE_TITLE);
+    expect(browse.openGraph && "title" in browse.openGraph
+      ? browse.openGraph.title
+      : undefined).toBe(BROWSE_PAGE_OG_TITLE);
+    expect(browse.description).toBe(BROWSE_PAGE_DESCRIPTION);
+  });
+
+  it("uses the organization name in the tickets-and-passes title", () => {
+    const org = DEMO_ORGS.find((item) => item.slug === "niagara-icedogs");
+    if (!org) throw new Error("demo org missing");
+
+    expect(organizationShareCopy(org)).toEqual({
+      title: `${org.name} | Tickets & Passes`,
+      description: `Browse and buy tickets, season passes, and flex packs for ${org.name}.`,
+      keywords: `Buy tickets, season passes, and flex packs for ${org.name}`,
+    });
+    expect(organizationShareCopy(null)).toMatchObject({
+      title: "Tickets & Passes",
+      description:
+        "Browse and buy tickets, season passes, and flex packs for this organization.",
+    });
+  });
+
+  it("names the venue on an access pass and the campaign on a fundraiser", () => {
+    const pass = demoAccessPassTemplate();
+    expect(accessPassTabTitle(pass)).toBe(`${pass.venue.name} | Access Pass`);
+    expect(accessPassTabTitle(null)).toBe("Venue | Access Pass");
+
+    const campaign = demoFundraisingCampaign();
+    expect(fundraiserShareCopy(campaign)).toEqual({
+      title: `${campaign.title} | Fundraiser`,
+      description: campaign.description,
+    });
+    expect(fundraiserShareCopy(null)).toEqual({
+      title: "Fundraiser",
+      description: "Support this fundraising campaign.",
+    });
+  });
+
+  it("uses the event name in the waiting room and the org name on a menu", () => {
+    const event = demoEvent();
+    expect(waitingRoomTabTitle(event.name)).toBe(`Waiting Room — ${event.name}`);
+    expect(waitingRoomTabTitle("")).toBe("");
+
+    const org = DEMO_ORGS.find((item) => item.slug === "niagara-icedogs");
+    if (!org) throw new Error("demo org missing");
+    expect(menuTabTitle(org.name, false)).toBe(`${org.name} | Suite Menu`);
+    expect(menuTabTitle(org.name, true)).toBe(`${org.name} | Menu`);
+    expect(menuTabTitle("", false)).toBe("In-Suite Dining | Suite Menu");
+  });
+
+  it("uses the legacy open-graph title for a season package", async () => {
+    process.env.NEXT_PUBLIC_API = "https://api.example.test";
+    const pkg = demoSeasonPackage();
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => ({
+        ok: true,
+        json: async () => ({
+          title: `${pkg.name} | Season Tickets`,
+          description: `Buy season tickets for ${pkg.name}.`,
+          image: "https://cdn.example/package.png",
+        }),
+      })),
+    );
+
+    const meta = await packagePageMetadata(pkg.uuid, `/nm-state/package/${pkg.uuid}/`);
+
+    expect(meta.title).toBe(`${pkg.name} | Season Tickets`);
+    expect(meta.description).toBe(`Buy season tickets for ${pkg.name}.`);
+  });
+
+  it("keeps the season-ticket fallback when open graph cannot be loaded", async () => {
+    process.env.NEXT_PUBLIC_API = "https://api.example.test";
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => {
+        throw new Error("down");
+      }),
+    );
+
+    const meta = await packagePageMetadata("missing", "/nm-state/package/missing/");
+
+    expect(meta.title).toBe("Season Tickets | Blocktickets");
+    expect(meta.description).toBe("Buy season tickets on Blocktickets.");
   });
 });

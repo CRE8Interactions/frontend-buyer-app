@@ -26,6 +26,7 @@ import {
 import { beginRouteTransition } from "@/lib/routeTransition";
 import { hideIntercomLauncher } from "@/lib/intercom";
 import { cacheOrgBranding } from "@/lib/orgBrandingCache";
+import { packageOpenGraph } from "@/lib/seo";
 import {
   formatPackageFromPrice,
   packageFromPrice,
@@ -191,6 +192,11 @@ export default function PackageDetailClient({
 
   const theme = brandingToTicketingTheme(null, pkg?.organization);
   const mobile = vw < 900;
+
+  useEffect(() => {
+    if (!pkg) return;
+    document.title = packageOpenGraph(pkg).title;
+  }, [pkg]);
 
   useEffect(() => {
     const onR = () => setVw(window.innerWidth);
