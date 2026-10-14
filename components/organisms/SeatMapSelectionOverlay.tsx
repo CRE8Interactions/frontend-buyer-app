@@ -115,7 +115,7 @@ function SeatViewImage({
           onReadyRef.current?.();
         }}
         onError={() => {
-          if (placeholder) {
+          if (placeholder || !src) {
             onReadyRef.current?.();
             return;
           }

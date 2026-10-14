@@ -62,14 +62,13 @@ vi.mock("@/components/organisms/InteractiveSeatmap", async () => {
 
 vi.mock("@/components/molecules/SectionLocatorThumb", async () => {
   const { useEffect } = await import("react");
-  return {
-    default: ({ onReady }: { onReady?: () => void }) => {
-      useEffect(() => {
-        onReady?.();
-      }, [onReady]);
-      return <div data-testid="section-thumb">Thumb</div>;
-    },
+  const SectionLocatorThumb = ({ onReady }: { onReady?: () => void }) => {
+    useEffect(() => {
+      onReady?.();
+    }, [onReady]);
+    return <div data-testid="section-thumb">Thumb</div>;
   };
+  return { default: SectionLocatorThumb };
 });
 
 import SeatMapSelectionOverlay from "@/components/organisms/SeatMapSelectionOverlay";

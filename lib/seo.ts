@@ -250,7 +250,10 @@ type PackageSeo = {
   name?: string | null;
   description?: string | null;
   image?: SeoImage;
-  venue?: { image?: SeoImage } | null;
+  venue?: {
+    name?: string | null;
+    image?: SeoImage;
+  } | null;
   organization?: SeoOrganization | null;
 };
 

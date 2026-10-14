@@ -17,7 +17,9 @@ import {
 
 function demoEvent() {
   const detail = demoEventDetail(DEMO_EVENTS[0].shortcode);
-  if (!("event" in detail)) throw new Error("demo event missing");
+  if (!("event" in detail) || !detail.event) {
+    throw new Error("demo event missing");
+  }
   return detail.event;
 }
 

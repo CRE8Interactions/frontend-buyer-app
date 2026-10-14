@@ -97,20 +97,19 @@ vi.mock("@/components/organisms/InteractiveSeatmap", async () => {
 
 vi.mock("@/components/molecules/SectionLocatorThumb", async () => {
   const { useEffect } = await import("react");
-  return {
-    default: ({
-      sectionNumber,
-      onReady,
-    }: {
-      sectionNumber?: string | number;
-      onReady?: () => void;
-    }) => {
-      useEffect(() => {
-        onReady?.();
-      }, [onReady]);
-      return <div data-testid="section-thumb">Thumb {String(sectionNumber || "")}</div>;
-    },
+  const SectionLocatorThumb = ({
+    sectionNumber,
+    onReady,
+  }: {
+    sectionNumber?: string | number;
+    onReady?: () => void;
+  }) => {
+    useEffect(() => {
+      onReady?.();
+    }, [onReady]);
+    return <div data-testid="section-thumb">Thumb {String(sectionNumber || "")}</div>;
   };
+  return { default: SectionLocatorThumb };
 });
 
 vi.mock("@/lib/api", () => ({

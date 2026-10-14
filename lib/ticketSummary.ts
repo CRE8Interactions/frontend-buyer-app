@@ -108,8 +108,8 @@ export function selectionOfferDescription(
 }
 
 type GaTierSubtitleSource = {
-  sectionName?: string | null;
-  sectionNumber?: string | null;
+  sectionName?: string | number | null;
+  sectionNumber?: string | number | null;
   offer?: { description?: string | null } | null;
 };
 
@@ -623,6 +623,8 @@ export type CheckoutTaxLine = {
  */
 export function checkoutTaxLine(cart?: {
   totalTax?: number;
+  // Some carts still send salesTax. It is not shown or added to the total.
+  salesTax?: number;
   tickets?: unknown;
   am_pricing_objects?: unknown;
 } | null): CheckoutTaxLine {
