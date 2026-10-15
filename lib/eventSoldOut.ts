@@ -1,5 +1,5 @@
 import { getEventsByIds, getTicketGroups } from "@/lib/api";
-import { formatOnSaleBadge } from "@/lib/helpers";
+import { formatOnSaleBadge, type TimezoneLike } from "@/lib/helpers";
 import moment from "moment-timezone";
 
 export type SoldOutSource = {
@@ -14,7 +14,7 @@ export type SoldOutSource = {
   hideGeneralOnsale?: boolean | null;
   scheduled?: boolean | null;
   scheduledTime?: string | null;
-  venue?: { timezone?: string | null } | null;
+  venue?: { timezone?: TimezoneLike } | null;
   seatmap?: { ga_only?: boolean } | null;
 };
 
