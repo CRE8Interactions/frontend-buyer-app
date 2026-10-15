@@ -309,7 +309,8 @@ export const formatOnSaleWhen = (
 
 /**
  * Compact on-sale badge. Date only until the sale is inside 24 hours, then
- * "On sale today · 10 AM" or "On sale tomorrow · 10 AM". Drops :00 on the hour.
+ * "On sale today · 10 AM MST" or "On sale tomorrow · 10 AM MST". Drops :00
+ * on the hour. The abbreviation is the venue zone at the sale instant.
  * `now` is for tests.
  */
 export const formatOnSaleBadge = (
@@ -331,7 +332,9 @@ export const formatOnSaleBadge = (
   if (!current.isValid()) return "";
   const minutesAway = m.diff(current, "minutes", true);
   const withinDay = minutesAway >= 0 && minutesAway <= 24 * 60;
-  const time = m.minute() === 0 ? m.format("h A") : m.format("h:mm A");
+  const clock = m.minute() === 0 ? m.format("h A") : m.format("h:mm A");
+  const abbr = m.zoneAbbr();
+  const time = abbr ? `${clock} ${abbr}` : clock;
   if (!withinDay) return `On sale ${m.format("MMM D")}`;
   if (m.isSame(current, "day")) return `On sale today · ${time}`;
   if (m.isSame(current.clone().add(1, "day"), "day")) {

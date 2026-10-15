@@ -87,17 +87,17 @@ describe("formatOnSaleBadge", () => {
   it("says today or tomorrow with the time inside the next 24 hours", () => {
     expect(
       formatOnSaleBadge(sale, "America/Denver", "2026-11-01T15:00:00.000Z"),
-    ).toBe("On sale today · 10 AM");
+    ).toBe("On sale today · 10 AM MST");
     expect(
       formatOnSaleBadge(sale, "America/Denver", "2026-10-31T18:00:00.000Z"),
-    ).toBe("On sale tomorrow · 10 AM");
+    ).toBe("On sale tomorrow · 10 AM MST");
     expect(
       formatOnSaleBadge(
         "2026-09-04T09:15:00.000Z",
         "America/New_York",
         "2026-09-04T08:00:00.000Z",
       ),
-    ).toBe("On sale today · 5:15 AM");
+    ).toBe("On sale today · 5:15 AM EDT");
   });
 
   it("returns empty when the timestamp is missing", () => {
