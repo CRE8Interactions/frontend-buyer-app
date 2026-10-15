@@ -1,4 +1,6 @@
 import { getEventsByIds, getTicketGroups } from "@/lib/api";
+import { formatOnSaleBadge } from "@/lib/helpers";
+import moment from "moment-timezone";
 
 export type SoldOutSource = {
   id?: string | number;
@@ -8,6 +10,11 @@ export type SoldOutSource = {
   status?: string | null;
   soldout?: boolean | null;
   soldOut?: boolean | null;
+  generalOnsale?: string | null;
+  hideGeneralOnsale?: boolean | null;
+  scheduled?: boolean | null;
+  scheduledTime?: string | null;
+  venue?: { timezone?: string | null } | null;
   seatmap?: { ga_only?: boolean } | null;
 };
 
@@ -25,6 +32,53 @@ export function isNotYetOnSale(ev: SoldOutSource | null | undefined) {
   if (!ev || isEventSoldOut(ev)) return false;
   const raw = (ev.status || "").replace(/[\s_]+/g, "").toLowerCase();
   return NOT_YET_ON_SALE.has(raw);
+}
+
+function upcomingOnSaleIso(ev: SoldOutSource) {
+  const iso =
+    ev.scheduled && ev.scheduledTime
+      ? ev.scheduledTime
+      : ev.hideGeneralOnsale
+        ? null
+        : ev.generalOnsale || ev.scheduledTime || null;
+  if (!iso) return null;
+  const when = moment(iso);
+  if (!when.isValid()) return null;
+  if (when.isAfter(moment())) return iso;
+  if (isNotYetOnSale(ev) || ev.scheduled) return iso;
+  return null;
+}
+
+/**
+ * On-sale badge for seated and GA events whose public on-sale time is still
+ * ahead. Sold-out events keep the sold-out badge instead.
+ */
+export function onSaleBadgeLabel(ev: SoldOutSource | null | undefined) {
+  if (!ev || isEventSoldOut(ev)) return "";
+  const iso = upcomingOnSaleIso(ev);
+  if (!iso) return "";
+  return formatOnSaleBadge(iso, ev.venue?.timezone);
+}
+
+function withOnSaleFields<T extends SoldOutSource>(ev: T, detail: SoldOutSource): T {
+  const patch: Partial<SoldOutSource> = {};
+  if (ev.generalOnsale == null && detail.generalOnsale) {
+    patch.generalOnsale = detail.generalOnsale;
+  }
+  if (ev.hideGeneralOnsale == null && detail.hideGeneralOnsale != null) {
+    patch.hideGeneralOnsale = detail.hideGeneralOnsale;
+  }
+  if (ev.scheduled == null && detail.scheduled != null) {
+    patch.scheduled = detail.scheduled;
+  }
+  if (ev.scheduledTime == null && detail.scheduledTime) {
+    patch.scheduledTime = detail.scheduledTime;
+  }
+  const timezone = detail.venue?.timezone;
+  const venue =
+    !ev.venue?.timezone && timezone ? { ...ev.venue, timezone } : undefined;
+  if (!Object.keys(patch).length && !venue) return ev;
+  return { ...ev, ...patch, ...(venue ? { venue } : null) };
 }
 
 function lookupKeys(ev: SoldOutSource) {
@@ -134,13 +188,14 @@ export async function withSoldOutFlags<T extends SoldOutSource>(events: T[]): Pr
       if (!detail) return markGaSoldOut(ev);
       const soldOut = isEventSoldOut(ev) || isEventSoldOut(detail);
       const status = (ev.status || "").trim() ? ev.status : detail.status;
+      const base = withOnSaleFields(ev, detail);
       const merged =
-        !soldOut && status === ev.status
-          ? ev
+        !soldOut && status === base.status
+          ? base
           : {
-              ...ev,
+              ...base,
               ...(soldOut ? { soldOut: true } : null),
-              ...(status && status !== ev.status ? { status } : null),
+              ...(status && status !== base.status ? { status } : null),
             };
       return markGaSoldOut(merged, detail);
     }),

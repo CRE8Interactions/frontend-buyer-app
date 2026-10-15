@@ -33,7 +33,7 @@ import {
   getVenueUpcomingEvents,
   getVenues,
 } from "@/lib/api";
-import { isEventSoldOut, withSoldOutFlags } from "@/lib/eventSoldOut";
+import { isEventSoldOut, onSaleBadgeLabel, withSoldOutFlags } from "@/lib/eventSoldOut";
 import {
   dateChip,
   eventPurchasePath,
@@ -77,6 +77,10 @@ type VenueEvent = {
   status?: string;
   soldout?: boolean | null;
   soldOut?: boolean | null;
+  generalOnsale?: string | null;
+  hideGeneralOnsale?: boolean | null;
+  scheduled?: boolean | null;
+  scheduledTime?: string | null;
   sport?: string;
   category?: { name?: string } | null;
   slug?: string | null;
@@ -138,6 +142,7 @@ type RowEvent = {
   host: string;
   status: string;
   soldOut: boolean;
+  onSaleLabel: string;
   href: string;
   sort: number;
 };
@@ -278,6 +283,7 @@ function toRow(
     host: ev.organization?.name?.trim() || fallbackHost || "",
     status: eventStatus(ev),
     soldOut: isEventSoldOut(ev),
+    onSaleLabel: onSaleBadgeLabel(ev),
     href,
     sort: new Date(start).getTime() || 0,
   };
@@ -832,7 +838,7 @@ export default function VenueProfile({ slug }: { slug: string }) {
                   <div style={{ flex: 1, height: 1, background: "rgba(5,27,53,0.10)" }} />
                 </div>
                 {g.rows.map((e) => {
-                  const soon = e.status === "Presale";
+                  const soon = e.status === "Presale" || Boolean(e.onSaleLabel);
                   const soldOut = e.soldOut;
                   const dateW = stacked ? 64 : 76;
                   return (
@@ -848,6 +854,10 @@ export default function VenueProfile({ slug }: { slug: string }) {
                           {soldOut ? (
                             <span style={{ fontSize: 10, fontWeight: 600, lineHeight: 1.5, letterSpacing: "0.08em", textTransform: "uppercase", color: "#6e7180", background: "#eef0f6", borderRadius: 999, padding: "3px 8px" }}>
                               Sold out
+                            </span>
+                          ) : e.onSaleLabel ? (
+                            <span style={{ fontSize: 10, fontWeight: 600, lineHeight: 1.5, letterSpacing: "0.08em", textTransform: "uppercase", color: "#6e7180", background: "#eef0f6", borderRadius: 999, padding: "3px 8px", whiteSpace: "nowrap" }}>
+                              {e.onSaleLabel}
                             </span>
                           ) : null}
                         </div>

@@ -307,6 +307,39 @@ export const formatOnSaleWhen = (
   return abbr ? `${when} ${abbr}` : when;
 };
 
+/**
+ * Compact on-sale badge. Date only until the sale is inside 24 hours, then
+ * "On sale today · 10 AM" or "On sale tomorrow · 10 AM". Drops :00 on the hour.
+ * `now` is for tests.
+ */
+export const formatOnSaleBadge = (
+  start?: string,
+  timezone?: TimezoneLike,
+  now?: string | number | Date,
+) => {
+  if (!start) return "";
+  const tz = toIanaTimezone(timezone);
+  const m = tz ? moment.tz(start, tz) : moment(start);
+  if (!m.isValid()) return "";
+  const current = tz
+    ? now != null
+      ? moment.tz(now, tz)
+      : moment.tz(tz)
+    : now != null
+      ? moment(now)
+      : moment();
+  if (!current.isValid()) return "";
+  const minutesAway = m.diff(current, "minutes", true);
+  const withinDay = minutesAway >= 0 && minutesAway <= 24 * 60;
+  const time = m.minute() === 0 ? m.format("h A") : m.format("h:mm A");
+  if (!withinDay) return `On sale ${m.format("MMM D")}`;
+  if (m.isSame(current, "day")) return `On sale today · ${time}`;
+  if (m.isSame(current.clone().add(1, "day"), "day")) {
+    return `On sale tomorrow · ${time}`;
+  }
+  return `On sale ${m.format("MMM D")} · ${time}`;
+};
+
 /** Prefer the scheduled doors time the API stores separately from `doorsOpen`. */
 export const eventDoorsIso = (ev?: {
   doorsOpen?: string;

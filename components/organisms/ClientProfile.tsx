@@ -15,7 +15,7 @@ import RouteLoader from "@/components/molecules/RouteLoader";
 import { BROWSE_TRACK, browseLeading, browsePageTypeCss } from "@/lib/browseType";
 import { fluidSize } from "@/lib/shopperFluidType";
 import { getOrganizationStorefront, getVenueUpcomingEvents } from "@/lib/api";
-import { isEventSoldOut, withGaInventorySoldOut } from "@/lib/eventSoldOut";
+import { isEventSoldOut, onSaleBadgeLabel, withSoldOutFlags } from "@/lib/eventSoldOut";
 import {
   monthEventCountLabel,
   packageFromPriceLabel,
@@ -80,6 +80,10 @@ type StoreEvent = {
   status?: string;
   soldout?: boolean | null;
   soldOut?: boolean | null;
+  generalOnsale?: string | null;
+  hideGeneralOnsale?: boolean | null;
+  scheduled?: boolean | null;
+  scheduledTime?: string | null;
   sport?: string;
   category?: { name?: string } | null;
   image?: ApiImage;
@@ -175,6 +179,7 @@ type RowEvent = {
   venue: string;
   status: string;
   soldOut: boolean;
+  onSaleLabel: string;
   href: string;
   sort: number;
 };
@@ -277,6 +282,7 @@ function toRow(ev: StoreEvent, org?: Org | null): RowEvent | null {
     venue: ev.venue?.name || "",
     status: eventStatus(ev),
     soldOut: isEventSoldOut(ev),
+    onSaleLabel: onSaleBadgeLabel(ev),
     href: eventPurchasePath(ev),
     sort: new Date(start).getTime() || 0,
   };
@@ -340,7 +346,7 @@ export default function ClientProfile({
     if (initialData?.organization) {
       setLoading(false);
       const initialEvents = initialData.events || [];
-      void withGaInventorySoldOut(initialEvents).then((flagged) => {
+      void withSoldOutFlags(initialEvents).then((flagged) => {
         if (cancelled || flagged.every((ev, i) => ev === initialEvents[i])) return;
         setEvents(sortByDate(flagged));
       });
@@ -365,7 +371,7 @@ export default function ClientProfile({
           setMissing(true);
           return;
         }
-        const incoming = await withGaInventorySoldOut(data.events || []);
+        const incoming = await withSoldOutFlags(data.events || []);
         if (cancelled) return;
         // Branding can paint the loader immediately; shopper content remains
         // gated until the venue website lookup below has completed.
@@ -1042,7 +1048,7 @@ export default function ClientProfile({
                     <div style={{ flex: 1, height: 1, background: "rgba(5,27,53,0.10)" }} />
                   </div>
                   {g.rows.map((e) => {
-                    const soon = e.status === "Presale";
+                    const soon = e.status === "Presale" || Boolean(e.onSaleLabel);
                     const soldOut = e.soldOut;
                     return (
                       <EventRowFrame
@@ -1095,6 +1101,10 @@ export default function ClientProfile({
                             {soldOut ? (
                               <span style={{ fontSize: 10, fontWeight: 600, lineHeight: 1.5, letterSpacing: "0.08em", textTransform: "uppercase", color: "#6e7180", background: "#eef0f6", borderRadius: 999, padding: "3px 8px" }}>
                                 Sold out
+                              </span>
+                            ) : e.onSaleLabel ? (
+                              <span style={{ fontSize: 10, fontWeight: 600, lineHeight: 1.5, letterSpacing: "0.08em", textTransform: "uppercase", color: "#6e7180", background: "#eef0f6", borderRadius: 999, padding: "3px 8px", whiteSpace: "nowrap" }}>
+                                {e.onSaleLabel}
                               </span>
                             ) : null}
                           </div>
