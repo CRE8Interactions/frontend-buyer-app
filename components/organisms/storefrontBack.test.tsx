@@ -18,6 +18,7 @@ import {
 } from "@/lib/eventFromPrice";
 import { teamStorefrontDescription } from "@/lib/teamCopy";
 import { googleMapsDirectionsUrl } from "@/lib/venueLocation";
+import { onSaleBadgeLabel } from "@/lib/eventSoldOut";
 import { eventTypeLabel } from "@/lib/eventType";
 import {
   __resetInAppBackForTests,
@@ -212,6 +213,35 @@ describe("team and venue back buttons", () => {
     expect(row).not.toBeNull();
     expect(within(row as HTMLElement).getAllByText(/^sold out$/i)).toHaveLength(2);
     expect(within(row as HTMLElement).queryByText(/^get tickets$/i)).not.toBeInTheDocument();
+  });
+
+  it("shows an on-sale badge on seated and GA team events", () => {
+    const when = "2026-11-01T17:00:00.000Z";
+    const events = raptorsEvents.map((event) => ({
+      ...event,
+      status: "on_sale",
+      generalOnsale: when,
+    }));
+    const label = onSaleBadgeLabel(events[0]);
+    render(
+      <ClientProfile
+        slug={raptors.slug}
+        initialData={{
+          organization: raptors,
+          events,
+          venues: raptors.venues,
+        }}
+      />,
+    );
+
+    for (const event of events) {
+      const row = screen.getByRole("link", { name: new RegExp(event.name, "i") });
+      expect(within(row).getByText(label)).toBeInTheDocument();
+      expect(within(row).getByText(/^remind me$/i)).toBeInTheDocument();
+      expect(within(row).queryByText(/^get tickets$/i)).not.toBeInTheDocument();
+    }
+    expect(events.some((event) => event.seatmap?.ga_only)).toBe(true);
+    expect(events.some((event) => event.seatmap?.ga_only === false)).toBe(true);
   });
 
   it("keeps a GA team event off the event page when its inventory is sold out", async () => {
@@ -696,6 +726,53 @@ describe("venue page events", () => {
     const liveRow = screen.getByRole("link", { name: new RegExp(live.name, "i") });
     expect(within(liveRow).getByText(/^get tickets$/i)).toBeInTheDocument();
     expect(within(liveRow).queryByText(/^sold out$/i)).not.toBeInTheDocument();
+  });
+
+  it("shows an on-sale badge on seated and GA venue events", async () => {
+    const when = "2026-11-01T17:00:00.000Z";
+    const venue = raptors.homeVenue;
+    const schedule = demoVenueEvents(venue.slug).map((event, index) => ({
+      ...event,
+      start: upcomingStart(index),
+      status: "on_sale",
+    }));
+    const seated = schedule.find((event) => event.seatmap?.ga_only === false);
+    const ga = schedule.find((event) => event.seatmap?.ga_only);
+    if (!seated || !ga) throw new Error("venue fixtures need a seated and a GA event");
+    mockedGetVenue.mockResolvedValue({ data: [venue] } as never);
+    mockedGetVenues.mockResolvedValue({ data: [venue] } as never);
+    mockedGetUpcoming.mockResolvedValue({
+      data: { allEvents: schedule },
+    } as never);
+    mockedGetEventsByIds.mockResolvedValue({
+      data: {
+        data: [seated, ga].map((event) => ({
+          id: event.id,
+          attributes: {
+            uuid: event.uuid,
+            shortCode: event.shortCode,
+            status: "on_sale",
+            generalOnsale: when,
+          },
+        })),
+      },
+    } as never);
+
+    render(<VenueProfile slug={venue.slug} />);
+
+    const label = onSaleBadgeLabel({
+      ...seated,
+      generalOnsale: when,
+      status: "on_sale",
+    });
+    for (const event of [seated, ga]) {
+      const row = await screen.findByRole("link", {
+        name: new RegExp(event.name, "i"),
+      });
+      expect(within(row).getByText(label)).toBeInTheDocument();
+      expect(within(row).getByText(/^remind me$/i)).toBeInTheDocument();
+      expect(within(row).queryByText(/^get tickets$/i)).not.toBeInTheDocument();
+    }
   });
 
   it("keeps the org loader visible until venue events are ready", async () => {

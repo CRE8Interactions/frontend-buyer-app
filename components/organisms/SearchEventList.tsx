@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { isEventSoldOut } from "@/lib/eventSoldOut";
+import { isEventSoldOut, onSaleBadgeLabel } from "@/lib/eventSoldOut";
 import {
   eventSearchName,
   formatSearchEventWhen,
@@ -22,6 +22,7 @@ export function SearchEventRow({
   const venue = event.venue?.name;
   const meta = [when, venue].filter(Boolean).join(" | ");
   const soldOut = isEventSoldOut(event);
+  const onSaleLabel = soldOut ? "" : onSaleBadgeLabel(event);
   const row = (
     <>
       {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -34,6 +35,10 @@ export function SearchEventRow({
         {soldOut ? (
           <span className="mb-1 inline-flex self-start rounded-full bg-[#eef0f6] px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.08em] text-[#6e7180]">
             Sold out
+          </span>
+        ) : onSaleLabel ? (
+          <span className="mb-1 inline-flex self-start whitespace-nowrap rounded-full bg-[#eef0f6] px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.08em] text-[#6e7180] group-hover:bg-white">
+            {onSaleLabel}
           </span>
         ) : null}
         <span className="block truncate text-[14px] font-semibold">
@@ -60,7 +65,7 @@ export function SearchEventRow({
     <Link
       href={searchEventHref(event)}
       onClick={onSelect}
-      className="flex items-center gap-3 rounded-xl px-2 py-2 text-[#051b35] no-underline hover:bg-[#f1f3f8]"
+      className="group flex items-center gap-3 rounded-xl px-2 py-2 text-[#051b35] no-underline hover:bg-[#f1f3f8]"
     >
       {row}
     </Link>

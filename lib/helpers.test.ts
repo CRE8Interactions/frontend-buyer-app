@@ -9,6 +9,7 @@ import {
   flexPackPurchasePath,
   formatDoorsTime,
   formatEventWhen,
+  formatOnSaleBadge,
   formatOnSaleWhen,
   imageUrl,
   isBlockedEmail,
@@ -64,6 +65,43 @@ describe("formatOnSaleWhen", () => {
 
   it("returns empty when the timestamp is missing", () => {
     expect(formatOnSaleWhen(undefined, seated.venue.timezone)).toBe("");
+  });
+});
+
+describe("formatOnSaleBadge", () => {
+  const sale = "2026-11-01T17:00:00.000Z";
+
+  it("leaves the clock off until the sale is inside 24 hours", () => {
+    expect(
+      formatOnSaleBadge(sale, "America/Denver", "2026-10-15T16:00:00.000Z"),
+    ).toBe("On sale Nov 1");
+    expect(
+      formatOnSaleBadge(
+        "2026-09-04T09:15:00.000Z",
+        "America/New_York",
+        "2026-08-01T12:00:00.000Z",
+      ),
+    ).toBe("On sale Sep 4");
+  });
+
+  it("says today or tomorrow with the time inside the next 24 hours", () => {
+    expect(
+      formatOnSaleBadge(sale, "America/Denver", "2026-11-01T15:00:00.000Z"),
+    ).toBe("On sale today · 10 AM MST");
+    expect(
+      formatOnSaleBadge(sale, "America/Denver", "2026-10-31T18:00:00.000Z"),
+    ).toBe("On sale tomorrow · 10 AM MST");
+    expect(
+      formatOnSaleBadge(
+        "2026-09-04T09:15:00.000Z",
+        "America/New_York",
+        "2026-09-04T08:00:00.000Z",
+      ),
+    ).toBe("On sale today · 5:15 AM EDT");
+  });
+
+  it("returns empty when the timestamp is missing", () => {
+    expect(formatOnSaleBadge(undefined, seated.venue.timezone)).toBe("");
   });
 });
 
