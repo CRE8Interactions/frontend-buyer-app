@@ -368,12 +368,17 @@ describe("Checkout page", { timeout: 20_000 }, () => {
     expect(
       screen.getByText(`1 ticket · Seat ${ticket.seatNumber}`),
     ).toBeInTheDocument();
-    expect(screen.getByAltText(/seat view for this ticket/i)).toHaveAttribute(
+    expect(
+      screen.getByAltText(
+        new RegExp(`location of section ${ticket.sectionNumber}`, "i"),
+      ),
+    ).toHaveAttribute(
       "src",
       getSeatViewImageCandidates(
         raptorsEvent.venue.slug,
         ticket.sectionNumber,
-        ticket.sectionName,
+        ticket.sectionNumber,
+        ["highlights", "thumbnail"],
       )[0],
     );
     expect(screen.getByText("Total")).toBeInTheDocument();
@@ -427,7 +432,53 @@ describe("Checkout page", { timeout: 20_000 }, () => {
       }),
       paymentIntentId: "pi_test",
       trackingCode: null,
+      marketingEmailOptIn: false,
     });
+  });
+
+  it("sends marketing opt-in when a signed-in buyer checks the box", async () => {
+    const cart = demoCheckoutCart();
+    const user = userEvent.setup();
+    render(<CheckoutPageRoute />);
+
+    await user.click(
+      await screen.findByRole("checkbox", {
+        name: new RegExp(
+          `Send me emails from ${raptorsOrg.name} about upcoming events and offers`,
+          "i",
+        ),
+      }),
+    );
+    await fillBillingAndPay(user, `Pay ${formatCurrency(cart.total)}`);
+
+    expect(mockedProcessOrder).toHaveBeenCalledWith(
+      expect.objectContaining({ marketingEmailOptIn: true }),
+    );
+  });
+
+  it("shows a custom seat label on the ticket summary", async () => {
+    const cart = demoCheckoutCart();
+    const tickets = [{ ...cart.tickets[0], additionalLabel: "Aisle" }];
+    mockedGetCart.mockResolvedValue({
+      data: { ...cart, tickets },
+    } as never);
+    render(<CheckoutPageRoute />);
+
+    expect(await screen.findByText("Aisle")).toBeInTheDocument();
+    expect(
+      screen.getByText(ticketSelectionSummary(tickets).seatLine),
+    ).toBeInTheDocument();
+  });
+
+  it("leaves the ticket summary unlabeled when the seat has no custom label", async () => {
+    const cart = demoCheckoutCart();
+    mockedGetCart.mockResolvedValue({ data: cart } as never);
+    render(<CheckoutPageRoute />);
+
+    expect(
+      await screen.findByText(ticketSelectionSummary(cart.tickets).seatLine),
+    ).toBeInTheDocument();
+    expect(screen.queryByText("Aisle")).not.toBeInTheDocument();
   });
 
   it("shows a thrown Stripe confirm error after process succeeds", async () => {
@@ -857,7 +908,7 @@ describe("Checkout page", { timeout: 20_000 }, () => {
     ).not.toBeInTheDocument();
   });
 
-  it("shows the seat location map for reserved seats", async () => {
+  it("shows the same seat location image the tickets listing uses", async () => {
     const cart = demoCheckoutCart();
     const sectionNumber = cart.tickets[0].sectionNumber;
     mockedGetSeatmap.mockResolvedValue({
@@ -878,7 +929,15 @@ describe("Checkout page", { timeout: 20_000 }, () => {
       await screen.findByRole("img", {
         name: new RegExp(`location of section ${sectionNumber}`, "i"),
       }),
-    ).toBeInTheDocument();
+    ).toHaveAttribute(
+      "src",
+      getSeatViewImageCandidates(
+        raptorsEvent.venue.slug,
+        sectionNumber,
+        sectionNumber,
+        ["highlights", "thumbnail"],
+      )[0],
+    );
     expect(
       screen.queryByAltText(/seat view for this ticket/i),
     ).not.toBeInTheDocument();
@@ -1592,6 +1651,7 @@ describe("Checkout page", { timeout: 20_000 }, () => {
             email: DEMO_USER.email,
             firstName: DEMO_USER.firstName,
             lastName: DEMO_USER.lastName,
+            marketingEmailOptIn: false,
           },
         }),
       );

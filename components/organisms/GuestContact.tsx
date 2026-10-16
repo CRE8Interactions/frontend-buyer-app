@@ -4,6 +4,7 @@ import { useState, type FormEvent } from "react";
 import Link from "next/link";
 import BrandedActionButton from "@/components/atoms/BrandedActionButton";
 import EmailField from "@/components/molecules/EmailField";
+import MarketingOptIn from "@/components/molecules/MarketingOptIn";
 import NameField from "@/components/molecules/NameField";
 import {
   emailBlurInvalid,
@@ -29,12 +30,16 @@ export default function GuestContact({
   onContinue,
   buttonColor,
   buttonTextColor,
+  organizationName,
+  optInMessage,
 }: {
   loginHref: string;
   onSignIn?: () => void;
   onContinue: (buyer: GuestBuyer) => void | Promise<void>;
   buttonColor?: string;
   buttonTextColor?: string;
+  organizationName?: string | null;
+  optInMessage?: string | null;
 }) {
   const [email, setEmail] = useState("");
   const [firstName, setFirstName] = useState("");
@@ -45,6 +50,7 @@ export default function GuestContact({
   const [firstError, setFirstError] = useState<NameFieldError>(null);
   const [lastError, setLastError] = useState<NameFieldError>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [marketingEmailOptIn, setMarketingEmailOptIn] = useState(false);
 
   const onSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -81,6 +87,7 @@ export default function GuestContact({
       email: emailResult.email,
       firstName: first,
       lastName: last,
+      marketingEmailOptIn,
     });
     if (!buyer || !emailResult.ok || firstBad || lastBad) {
       setSubmitting(false);
@@ -161,6 +168,14 @@ export default function GuestContact({
           onBlur={(value) => setLastError(nameBlurError(value))}
         />
       </div>
+      <MarketingOptIn
+        id="guest-marketing-email-opt-in"
+        checked={marketingEmailOptIn}
+        onChange={setMarketingEmailOptIn}
+        organizationName={organizationName}
+        optInMessage={optInMessage}
+        disabled={submitting}
+      />
       <BrandedActionButton
         type="submit"
         primaryColor={buttonColor}
