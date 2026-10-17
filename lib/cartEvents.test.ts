@@ -142,6 +142,25 @@ describe("wallet event detail venue and summary", () => {
     expect(detailFor(withStreet).blurb).toBe("");
   });
 
+  it("shows the promotional description under the event summary", () => {
+    const promo = "Free bobblehead to the first 1,000 attendees";
+    expect(
+      detailFor({
+        ...withStreet,
+        promotionalDescription: [
+          { type: "paragraph", children: [{ type: "text", text: promo }] },
+        ],
+      }).promo,
+    ).toBe(promo);
+  });
+
+  it("leaves the promotional line empty when the event has none", () => {
+    expect(detailFor(withStreet).promo).toBe("");
+    expect(
+      detailFor({ ...withStreet, promotionalDescription: "   " }).promo,
+    ).toBe("");
+  });
+
   it("takes the summary and street address from a fetched order", () => {
     const listed = detailFor({
       ...withStreet,

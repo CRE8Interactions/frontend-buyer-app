@@ -42,6 +42,7 @@ export type ShopperSearchEvent = {
     isGeneralAdmissionOnly?: boolean;
   };
   seatmap?: { ga_only?: boolean };
+  promotionalDescription?: unknown;
   isGeneralAdmissionOnly?: boolean;
   generalAdmissionOnly?: boolean;
   organization?: BrandingOrganization | null;

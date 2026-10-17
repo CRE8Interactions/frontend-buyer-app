@@ -381,6 +381,57 @@ describe("Select tickets page (PremiumTicketing)", { timeout: 20_000 }, () => {
     ).toHaveAttribute("href", "/browse");
   });
 
+  it("shows the promotional description under the date and time", () => {
+    const promo = "Pink Night. Free bobblehead for the first 1,000 fans.";
+    render(
+      <PremiumTicketing
+        data={{
+          ...seatedTicketingFixture,
+          eventType: "ga",
+          promo,
+        }}
+      />,
+    );
+
+    const when = screen.getByText(seatedTicketingFixture.whenLong);
+    const line = screen.getByText(promo);
+    expect(
+      when.compareDocumentPosition(line) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+  });
+
+  it("shows the promotional description under the seated event", () => {
+    const promo = "Pink Night. Free bobblehead for the first 1,000 fans.";
+    render(
+      <PremiumTicketing data={{ ...seatedTicketingFixture, promo }} />,
+    );
+
+    const name = screen.getByText(seatedTicketingFixture.eventName);
+    const line = screen.getByText(promo);
+    expect(line.closest("header")).toBe(name.closest("header"));
+    expect(
+      name.compareDocumentPosition(line) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+  });
+
+  it("hides the promotional description on a seated event that has none", () => {
+    render(<PremiumTicketing data={seatedTicketingFixture} />);
+
+    expect(screen.getByText(seatedTicketingFixture.eventName)).toBeInTheDocument();
+    expect(screen.queryByText(/pink night/i)).not.toBeInTheDocument();
+  });
+
+  it("hides the promotional description when the event has none", () => {
+    render(
+      <PremiumTicketing
+        data={{ ...seatedTicketingFixture, eventType: "ga" }}
+      />,
+    );
+
+    expect(screen.getByText(seatedTicketingFixture.whenLong)).toBeInTheDocument();
+    expect(screen.queryByText(/pink night/i)).not.toBeInTheDocument();
+  });
+
   it("links the header to My tickets as My wallet when logged in", async () => {
     const auth = authState(true);
     mockedUseAuth.mockReturnValue(auth);

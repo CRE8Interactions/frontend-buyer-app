@@ -802,7 +802,7 @@ function SplitAttractionHero({
 
 type EventT = {
   title: string; when: string; whenDate?: string; doors: string; venue: string; city: string; address: string;
-  id: string; brand: string; initials: string; blurb: string; rec: string; opp: string;
+  id: string; brand: string; initials: string; blurb: string; promo?: string; rec: string; opp: string;
   teams: { name: string; role: string; rec: string; initials: string; brand: string; logo?: string }[];
   tickets: { id?: number | string; seat: string; holder: string; code: string; raw?: Record<string, unknown> }[];
   attractions?: AttractionCard[];
@@ -839,6 +839,7 @@ function detailToEventT(d: CartEventDetail, isCart = false): EventT {
     brand: d.brand,
     initials: d.initials,
     blurb: d.blurb,
+    promo: d.promo,
     rec: "",
     opp: d.opp,
     teams: d.teams,
@@ -5246,6 +5247,12 @@ export default function SeasonTickets({
           </div>
         </div>
       ) : null}
+      {ev.blurb ? (
+        <p style={{ margin: 0, fontSize: fluidSize(14), lineHeight: browseLeading("body"), color: FAINT, whiteSpace: "pre-line" }}>{ev.blurb}</p>
+      ) : null}
+      {ev.promo ? (
+        <p style={{ margin: 0, fontSize: fluidSize(14), lineHeight: browseLeading("body"), color: FAINT }}>{ev.promo}</p>
+      ) : null}
       {/* ticket carousel */}
       <div className="st-noscroll" style={{ display: "flex", gap: 14, overflowX: "auto", scrollSnapType: "x mandatory", scrollbarWidth: "none", msOverflowStyle: "none", margin: "12px -12px 0", padding: "2px 12px 6px" } as React.CSSProperties}>
         {ticketRows.map((t, i) => (
@@ -5438,10 +5445,15 @@ export default function SeasonTickets({
             </div>
             <div style={{ height: 1, background: "rgba(5,27,53,0.08)" }} />
             <AttractionCards />
-            {ev.blurb ? (
+            {ev.blurb || ev.promo ? (
               <>
                 <div style={{ height: 1, background: "rgba(5,27,53,0.08)" }} />
-                <p style={{ margin: 0, fontSize: fluidSize(14), lineHeight: browseLeading("body"), color: FAINT, whiteSpace: "pre-line" }}>{ev.blurb}</p>
+                {ev.blurb ? (
+                  <p style={{ margin: 0, fontSize: fluidSize(14), lineHeight: browseLeading("body"), color: FAINT, whiteSpace: "pre-line" }}>{ev.blurb}</p>
+                ) : null}
+                {ev.promo ? (
+                  <p style={{ margin: 0, fontSize: fluidSize(14), lineHeight: browseLeading("body"), color: FAINT }}>{ev.promo}</p>
+                ) : null}
               </>
             ) : null}
           </div>

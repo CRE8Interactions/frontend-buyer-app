@@ -5304,6 +5304,73 @@ describe("SeasonTickets routed event screen", { timeout: 20_000 }, () => {
     );
   });
 
+  it("shows the event summary above the promotional line and keeps its line breaks", async () => {
+    const promo = "Free bobblehead to the first 1,000 attendees";
+    const order = demoCompletedTicketOrder({
+      event: {
+        ...icedogs,
+        summary:
+          "<p>This is a Standing Room Only event</p><p>Enter through gate 2.</p>",
+        promotionalDescription: promo,
+      },
+    });
+    mockedGetMyEvents.mockResolvedValue({ data: [order] } as never);
+
+    render(<SeasonTickets initialScreen="event" eventUUID={icedogs.uuid} />);
+
+    const summary = await screen.findByText(/Standing Room Only event/);
+    const promoLine = screen.getByText(promo);
+    expect(summary.textContent).toBe(
+      "This is a Standing Room Only event\nEnter through gate 2.",
+    );
+    expect(
+      summary.compareDocumentPosition(promoLine) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+  });
+
+  it("hides a blank event summary on the wallet event", async () => {
+    const promo = "Free bobblehead to the first 1,000 attendees";
+    const order = demoCompletedTicketOrder({
+      event: {
+        ...icedogs,
+        summary: "<p> </p>",
+        promotionalDescription: promo,
+      },
+    });
+    mockedGetMyEvents.mockResolvedValue({ data: [order] } as never);
+
+    render(<SeasonTickets initialScreen="event" eventUUID={icedogs.uuid} />);
+
+    expect(await screen.findByText(promo)).toBeInTheDocument();
+    expect(screen.queryByText(/Standing Room Only/i)).not.toBeInTheDocument();
+  });
+
+  it("shows the promotional description on the wallet event", async () => {
+    const promo = "Free bobblehead to the first 1,000 attendees";
+    const order = demoCompletedTicketOrder({
+      event: { ...icedogs, promotionalDescription: `  ${promo}  ` },
+    });
+    mockedGetMyEvents.mockResolvedValue({ data: [order] } as never);
+
+    render(<SeasonTickets initialScreen="event" eventUUID={icedogs.uuid} />);
+
+    expect(await screen.findByRole("heading", { name: icedogs.name })).toBeInTheDocument();
+    expect(screen.getByText(promo)).toBeInTheDocument();
+  });
+
+  it("hides a blank promotional description on the wallet event", async () => {
+    const order = demoCompletedTicketOrder({
+      event: { ...icedogs, promotionalDescription: "   " },
+    });
+    mockedGetMyEvents.mockResolvedValue({ data: [order] } as never);
+
+    render(<SeasonTickets initialScreen="event" eventUUID={icedogs.uuid} />);
+
+    expect(await screen.findByRole("heading", { name: icedogs.name })).toBeInTheDocument();
+    expect(screen.queryByText(/bobblehead/i)).not.toBeInTheDocument();
+  });
+
   it("shows GA chips without a Seat label in the transfer picker", async () => {
     const user = userEvent.setup();
     const order = demoCompletedTicketOrder({
