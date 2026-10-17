@@ -143,6 +143,7 @@ function demoOrg(slug: string, name: string, category?: string) {
     website: DEMO_ORG_WEBSITES[slug],
     enableTransfer: true,
     enableResale: true,
+    setting: { printTickets: true },
   };
 }
 
@@ -233,6 +234,10 @@ export const DEMO_ORGS = [
     events: DEMO_ORG_EVENT_COUNT(7),
   },
 ];
+
+for (const org of DEMO_ORGS) {
+  Object.assign(org, { setting: { printTickets: true } });
+}
 
 /** Events shown on Browse (trending) + event detail. */
 export const DEMO_EVENTS = [

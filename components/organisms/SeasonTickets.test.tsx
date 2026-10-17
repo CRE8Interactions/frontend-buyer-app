@@ -4159,6 +4159,56 @@ describe("SeasonTickets package tab", () => {
     expect(screen.queryByRole("heading", { name: pkg.name })).not.toBeInTheDocument();
   });
 
+  it("opens an emailed open package that is not in the wallet list", async () => {
+    const order = demoCompletedPackageOrder({
+      status: "open",
+      orderId: "1450-141281-7561",
+      id: 1450,
+    });
+    mockedGetMyEvents.mockResolvedValue({ data: [] } as never);
+    mockedGetOrder.mockResolvedValue({ data: order } as never);
+    navigationMocks.pathname = `/wallet/my-tickets/order/${order.orderId}/package/${pkg.uuid}/`;
+
+    render(<SeasonTickets />);
+
+    expect(
+      await screen.findByRole("heading", { name: pkg.name }),
+    ).toBeInTheDocument();
+    expect(screen.getByText(pkg.events[1].name)).toBeInTheDocument();
+    expect(mockedGetOrder).toHaveBeenCalledWith(String(order.orderId));
+  });
+
+  it("opens an emailed reserved package that is not in the wallet list", async () => {
+    const order = demoCompletedPackageOrder({
+      status: "reserved",
+      orderId: "1450-141281-7563",
+      id: 1453,
+    });
+    mockedGetMyEvents.mockResolvedValue({ data: [] } as never);
+    mockedGetOrder.mockResolvedValue({ data: order } as never);
+    navigationMocks.pathname = `/wallet/my-tickets/order/${order.orderId}/package/${pkg.uuid}/`;
+
+    render(<SeasonTickets />);
+
+    expect(
+      await screen.findByRole("heading", { name: pkg.name }),
+    ).toBeInTheDocument();
+    expect(screen.getByText(pkg.events[1].name)).toBeInTheDocument();
+  });
+
+  it("shows package not found when the emailed package cannot be loaded", async () => {
+    mockedGetMyEvents.mockResolvedValue({ data: [] } as never);
+    mockedGetOrder.mockRejectedValue(new Error("offline"));
+    navigationMocks.pathname = `/wallet/my-tickets/order/1450-141281-7561/package/${pkg.uuid}/`;
+
+    render(<SeasonTickets />);
+
+    expect(
+      await screen.findByText(/couldn't find that package/i),
+    ).toBeInTheDocument();
+    expect(mockedGetOrder).toHaveBeenCalledWith("1450-141281-7561");
+  });
+
   it("shows an empty Packages tab when the wallet has no package orders", async () => {
     const user = userEvent.setup();
     mockedGetMyEvents.mockResolvedValue({
@@ -5429,6 +5479,36 @@ describe("SeasonTickets routed event screen", { timeout: 20_000 }, () => {
     ).not.toBeInTheDocument();
   });
 
+  it("shows General Admission when that is the ticket section number", async () => {
+    const user = userEvent.setup();
+    const order = demoCompletedTicketOrder({
+      event: icedogs,
+      tickets: [
+        {
+          id: 9301,
+          uuid: "ticket-general-admission",
+          checkInCode: "GA-SECTION",
+          eventUUID: icedogs.uuid,
+          generalAdmission: true,
+          sectionNumber: "General Admission",
+          rowNumber: null,
+          seatNumber: null,
+          cost: 0,
+        },
+      ],
+    });
+    mockedGetMyEvents.mockResolvedValue({ data: [order] } as never);
+
+    render(<SeasonTickets initialScreen="event" eventUUID={icedogs.uuid} />);
+
+    expect(await screen.findByText("General Admission")).toBeInTheDocument();
+    expect(screen.queryByText(/^GA$/)).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Details" }));
+    expect(screen.getByRole("heading", { name: "Ticket details" })).toBeInTheDocument();
+    expect(screen.getAllByText("General Admission").length).toBeGreaterThan(0);
+  });
+
   it("shows GA in the transfer chip when the ticket has no seat", async () => {
     const user = userEvent.setup();
     const order = demoCompletedTicketOrder({
@@ -6003,9 +6083,35 @@ describe("SeasonTickets routed event screen", { timeout: 20_000 }, () => {
     });
   });
 
+  it("hides print actions when the organization does not allow printing", async () => {
+    const order = demoCompletedTicketOrder({
+      event: {
+        ...printableEvent,
+        organization: {
+          ...printableEvent.organization,
+          setting: { printTickets: false },
+        },
+      },
+    });
+    mockedGetMyEvents.mockResolvedValue({ data: [order] } as never);
+
+    render(
+      <SeasonTickets initialScreen="event" eventUUID={printableEvent.uuid} />,
+    );
+
+    expect(
+      (await screen.findAllByRole("button", { name: "Details" })).length,
+    ).toBeGreaterThan(0);
+    expect(screen.queryByRole("button", { name: "Print PDF" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Print all" })).not.toBeInTheDocument();
+  });
+
   it("prints one ticket in a new PDF and downloads all tickets together", async () => {
     const user = userEvent.setup();
-    const order = demoCompletedTicketOrder({ event: printableEvent });
+    const order = demoCompletedTicketOrder({
+      event: printableEvent,
+      purchasedByOrganizationName: printableEvent.organization.name,
+    });
     mockedGetMyEvents.mockResolvedValue({ data: [order] } as never);
 
     render(
@@ -6021,6 +6127,7 @@ describe("SeasonTickets routed event screen", { timeout: 20_000 }, () => {
       1,
       expect.objectContaining({
         event: order.event,
+        purchasedByOrganizationName: printableEvent.organization.name,
         mode: "open",
         buyer: expect.objectContaining({
           firstName: DEMO_USER.firstName,
@@ -8480,6 +8587,68 @@ describe("SeasonTickets routed event screen", { timeout: 20_000 }, () => {
       screen.getByText("This event isn't in your wallet. Go back to see all of your tickets."),
     ).toBeInTheDocument();
     expect(screen.queryByRole("heading", { name: icedogs.name })).not.toBeInTheDocument();
+    expect(mockedGetOrder).not.toHaveBeenCalled();
+  });
+
+  it("opens an emailed order that is not in the wallet list", async () => {
+    const linkedEvent = DEMO_EVENTS.find((row) => row.shortCode === "ICEDOG5")!;
+    const linkedOrderId = "1450-141281-7561";
+    const linked = demoCompletedTicketOrder({
+      event: linkedEvent,
+      orderId: linkedOrderId,
+      id: 1450,
+    });
+    mockedGetMyEvents.mockResolvedValue({
+      data: [demoCompletedTicketOrder({ event: icedogs })],
+    } as never);
+    mockedGetOrder.mockResolvedValue({ data: linked } as never);
+    navigationMocks.pathname = `/wallet/my-tickets/order/${linkedOrderId}/`;
+
+    render(<SeasonTickets />);
+
+    expect(
+      await screen.findByRole("heading", { name: linkedEvent.name }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        `Sec M · Row M3 · Seat ${linked.tickets[0].seatNumber}`,
+      ),
+    ).toBeInTheDocument();
+    expect(mockedGetOrder).toHaveBeenCalledWith(linkedOrderId);
+    expect(
+      screen.queryByRole("heading", { name: icedogs.name }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("shows order not found when the emailed order cannot be loaded", async () => {
+    mockedGetMyEvents.mockResolvedValue({
+      data: [demoCompletedTicketOrder({ event: icedogs })],
+    } as never);
+    mockedGetOrder.mockRejectedValue(new Error("offline"));
+    navigationMocks.pathname = "/wallet/my-tickets/order/1450-141281-7561/";
+
+    render(<SeasonTickets />);
+
+    expect(await screen.findByText("Order not found")).toBeInTheDocument();
+    expect(mockedGetOrder).toHaveBeenCalledWith("1450-141281-7561");
+  });
+
+  it("shows order not found when the emailed order's event is already complete", async () => {
+    const linkedEvent = DEMO_EVENTS.find((row) => row.shortCode === "ICEDOG5")!;
+    const linked = demoCompletedTicketOrder({
+      event: { ...linkedEvent, status: "complete" },
+      orderId: "1450-141281-7561",
+    });
+    mockedGetMyEvents.mockResolvedValue({ data: [] } as never);
+    mockedGetOrder.mockResolvedValue({ data: linked } as never);
+    navigationMocks.pathname = "/wallet/my-tickets/order/1450-141281-7561/";
+
+    render(<SeasonTickets />);
+
+    expect(await screen.findByText("Order not found")).toBeInTheDocument();
+    expect(
+      screen.queryByRole("heading", { name: linkedEvent.name }),
+    ).not.toBeInTheDocument();
   });
 
   it("does not refetch wallet orders when going back to the list", async () => {
@@ -8592,6 +8761,26 @@ describe("SeasonTickets routed flex pack screen", () => {
       "href",
       expect.stringMatching(/^\/wallet\/my-tickets\/?$/),
     );
+  });
+
+  it("opens an emailed open flex pack that is not in the wallet list", async () => {
+    const order = demoCompletedFlexPackOrder({
+      status: "open",
+      orderId: "1450-141281-7562",
+      id: 1451,
+    });
+    const pack = demoFlexPack();
+    mockedGetMyEvents.mockResolvedValue({ data: [] } as never);
+    mockedGetOrder.mockResolvedValue({ data: order } as never);
+    navigationMocks.pathname = `/wallet/my-tickets/order/${order.orderId}/flex-pack/${pack.uuid}/`;
+
+    render(<SeasonTickets />);
+
+    expect(
+      await screen.findByRole("heading", { name: pack.name }),
+    ).toBeInTheDocument();
+    expect(screen.getByText(order.vouchers[0].code)).toBeInTheDocument();
+    expect(mockedGetOrder).toHaveBeenCalledWith(String(order.orderId));
   });
 
   it("explains when the routed flex pack is not in the wallet", async () => {

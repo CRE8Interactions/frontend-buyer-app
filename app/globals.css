@@ -41,6 +41,70 @@ select:focus-visible {
   border-color: var(--bt-field-focus, var(--acc, var(--accent))) !important;
 }
 
+/* Branded checkbox. A 1.5px border rasterizes unevenly (2px on some sides,
+   1px on others), so the edge is one device pixel of #8A90A0 (3.2:1 on white).
+   Checked fills with the org colour (--bt-field-focus) and a thin white check.
+   Focus recolours that same edge and adds no second ring. */
+input[type="checkbox"] {
+  appearance: none !important;
+  -webkit-appearance: none !important;
+  box-sizing: border-box !important;
+  width: 20px !important;
+  height: 20px !important;
+  min-width: 20px !important;
+  flex-shrink: 0;
+  margin: 0 !important;
+  padding: 0 !important;
+  border: 1px solid #8a90a0 !important;
+  border-radius: 5px !important;
+  background-color: #fff !important;
+  background-image: none !important;
+  background-repeat: no-repeat !important;
+  background-position: center !important;
+  background-size: 20px 20px !important;
+  box-shadow: none !important;
+  outline: none !important;
+  cursor: pointer;
+  vertical-align: top;
+}
+
+input[type="checkbox"]:focus,
+input[type="checkbox"]:focus-visible {
+  outline: none !important;
+  box-shadow: none !important;
+  border-color: var(--bt-field-focus, var(--acc, var(--accent))) !important;
+}
+
+input[type="checkbox"]:checked,
+input[type="checkbox"]:checked:focus,
+input[type="checkbox"]:checked:focus-visible {
+  border-color: var(--bt-field-focus, var(--acc, var(--accent))) !important;
+  background-color: var(--bt-field-focus, var(--acc, var(--accent))) !important;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 14 14' fill='none'%3E%3Cpath d='M2.4 7.1 5.2 9.9 11.4 3.4' stroke='%23fff' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") !important;
+  background-origin: border-box !important;
+  background-clip: border-box !important;
+  background-repeat: no-repeat !important;
+  background-position: center !important;
+  background-size: 14px 14px !important;
+  box-shadow: none !important;
+  outline: none !important;
+}
+
+input[type="checkbox"]:disabled {
+  cursor: default !important;
+  opacity: 0.45;
+}
+
+label:has(> input[type="checkbox"]) {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  min-height: 44px;
+  padding-top: 12px;
+  padding-bottom: 12px;
+  cursor: pointer;
+}
+
 /* react-phone-number-input — layout only; color is theme-scoped below */
 .PhoneInput {
   display: flex;

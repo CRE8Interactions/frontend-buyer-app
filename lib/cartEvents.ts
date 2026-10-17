@@ -310,9 +310,11 @@ function mergeEventOrganization(
   const enableTransfer =
     orderOrg?.enableTransfer ?? ev.organization?.enableTransfer;
   const enableResale = orderOrg?.enableResale ?? ev.organization?.enableResale;
+  const setting = ev.organization?.setting ?? orderOrg?.setting;
   if (
     enableTransfer === ev.organization?.enableTransfer &&
-    enableResale === ev.organization?.enableResale
+    enableResale === ev.organization?.enableResale &&
+    (ev.organization?.setting != null || setting == null)
   ) {
     return ev;
   }
@@ -322,6 +324,7 @@ function mergeEventOrganization(
       ...ev.organization,
       enableTransfer,
       enableResale,
+      setting,
     },
   };
 }

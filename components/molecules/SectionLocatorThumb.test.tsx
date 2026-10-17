@@ -141,6 +141,42 @@ describe("SectionLocatorThumb CDN retry", () => {
     expect(screen.getByAltText(thumbAlt)).toBeInTheDocument();
   });
 
+  it("keeps a loaded seat image when the venue map arrives", () => {
+    const { rerender } = renderThumb();
+    fireEvent.load(screen.getByAltText(thumbAlt));
+    expect(screen.queryByRole("status", { name: /loading seat image/i })).not.toBeInTheDocument();
+
+    rerender(
+      <SectionLocatorThumb
+        sectionNumber={SECTION}
+        section={SECTION}
+        thumbnailCandidates={candidates}
+        background={{ url: "https://example.com/rink.svg", width: 1000, height: 800 }}
+        mapping={demoSeatmapMapping()}
+      />,
+    );
+
+    expect(screen.queryByRole("status", { name: /loading seat image/i })).not.toBeInTheDocument();
+    expect(screen.getByAltText(thumbAlt)).toHaveAttribute("src", candidates[0]);
+  });
+
+  it("shows a cached seat image without waiting for another load", () => {
+    const imageProto = HTMLImageElement.prototype;
+    const complete = Object.getOwnPropertyDescriptor(imageProto, "complete");
+    const naturalWidth = Object.getOwnPropertyDescriptor(imageProto, "naturalWidth");
+    Object.defineProperty(imageProto, "complete", { configurable: true, get: () => true });
+    Object.defineProperty(imageProto, "naturalWidth", { configurable: true, get: () => 1440 });
+
+    try {
+      renderThumb();
+      expect(screen.queryByRole("status", { name: /loading seat image/i })).not.toBeInTheDocument();
+      expect(screen.getByAltText(thumbAlt)).toHaveAttribute("src", candidates[0]);
+    } finally {
+      if (complete) Object.defineProperty(imageProto, "complete", complete);
+      if (naturalWidth) Object.defineProperty(imageProto, "naturalWidth", naturalWidth);
+    }
+  });
+
   it("keeps the same spinner while a throttled image retries and moves on", () => {
     vi.useFakeTimers();
     renderThumb();

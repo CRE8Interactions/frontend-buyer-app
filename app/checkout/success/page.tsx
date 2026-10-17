@@ -677,6 +677,11 @@ function CheckoutSuccessPage() {
                       style={{ marginTop: 4 }}
                     />
                   ) : null}
+                  {ticketSummary.additionalLabel ? (
+                    <div className="text-[13px]" style={{ color: MUTED }}>
+                      {ticketSummary.additionalLabel}
+                    </div>
+                  ) : null}
                 </div>
               </div>
               <div className="h-px bg-[rgba(5,27,53,0.08)]" />

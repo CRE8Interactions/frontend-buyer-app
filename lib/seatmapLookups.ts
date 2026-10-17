@@ -22,6 +22,7 @@ export type SeatmapSeat = {
   accessibleType?: string;
   accessiblityType?: string;
   accessibilityType?: string;
+  additionalLabel?: string;
 };
 
 export type SeatmapRow = {
@@ -59,6 +60,7 @@ export type SeatmapMapping = {
   sections?: Record<string, SeatmapSection>;
   rows?: Record<string, SeatmapRow>;
   seats?: Record<string, SeatmapSeat>;
+  seatLabels?: Record<string, string>;
 };
 
 /** Contiguous offered seats containing the clicked seat, in venue row order. */

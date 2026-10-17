@@ -63,6 +63,7 @@ import {
   getAccessibleLabel,
   isAccessibleSource,
 } from "@/lib/ticketAccessibility";
+import { getSeatAdditionalLabel } from "@/lib/seatLabels";
 import { shopperShellVars } from "@/lib/branding";
 import { ORG_SCROLLBAR_CLASS, orgScrollbarCss } from "@/lib/orgScrollbar";
 import {
@@ -876,6 +877,15 @@ export default function PremiumTicketing({
     d.listings.find((l) => !isLocked(l.zone));
   const unit = selRow ? parseFloat(selRow.price.replace(/[^0-9.]/g, "")) : 0;
   const panelOfferDescription = selectionOfferDescription(selRow?.cartGroup);
+  const panelSeatId = selRow?.cartGroup?.seatId;
+  const panelAdditionalLabel = getSeatAdditionalLabel({
+    ticketGroup: selRow?.cartGroup,
+    mapSeat:
+      panelSeatId == null || panelSeatId === ""
+        ? undefined
+        : mapMapping?.seats?.[String(panelSeatId)],
+    seatLabels: mapMapping?.seatLabels,
+  });
   const unlockOfferDescription = selectionOfferDescription(
     GA_TIERS.find((tier) => tier.name === unlockZone)?.cartGroup ??
       d.listings.find((listing) => listing.zone === unlockZone)?.cartGroup ??
@@ -2218,14 +2228,12 @@ export default function PremiumTicketing({
                   setNotifySent(true);
                 }}
               >
-                <label className="flex cursor-pointer items-start gap-2.5 text-[14px] font-normal text-[#4a5567]">
+                <label className="text-[14px] font-normal text-[#4a5567]">
                   <input
                     type="checkbox"
                     name="notifySms"
                     checked={notifySms}
                     onChange={() => setNotifySms((v) => !v)}
-                    className="mt-0.5 h-[18px] w-[18px]"
-                    style={{ accentColor: ACC }}
                   />
                   <span>Also text me at the number on my account</span>
                 </label>
@@ -2385,6 +2393,11 @@ export default function PremiumTicketing({
                 <div style={{ display: "flex", flexDirection: "column", gap: 5, minWidth: 0 }}>
                   <div style={{ fontSize: 22, fontWeight: 600, letterSpacing: "-0.02em", lineHeight: 1.5 }}>{listingLocationLabel(selRow)}</div>
                   <AccessibleSeatingBadge source={selRow.cartGroup} />
+                  {panelAdditionalLabel ? (
+                    <div style={{ fontSize: 14, lineHeight: 1.5, color: "#6e7180" }}>
+                      {panelAdditionalLabel}
+                    </div>
+                  ) : null}
                   <div style={{ fontSize: 14, lineHeight: 1.5, color: "#6e7180" }}>{listingDetailAvailabilityLabel(selRow.min, selRow.max, selRow.multipleOf)}</div>
                 </div>
               </div>
