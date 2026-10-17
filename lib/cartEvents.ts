@@ -1,6 +1,7 @@
 import { BLOCKTICKETS_NAVY, resolvePrimaryColor, type BrandingOrganization, type OrgBranding } from "@/lib/branding";
 import { accessibleTypeOf } from "@/lib/ticketAccessibility";
 import { isSportingEvent } from "@/lib/eventCategory";
+import { eventPromotionalCopy } from "@/lib/promotionalDescription";
 import {
   attractionImageUrl,
   descriptionPlainText,
@@ -79,6 +80,7 @@ export type EventLike = {
   realDoorsOpen?: string;
   summary?: string;
   description?: string;
+  promotionalDescription?: unknown;
   venue?: VenueLike;
   image?: ApiImage;
   organization?:
@@ -246,6 +248,8 @@ export type CartEventDetail = {
   brand: string;
   initials: string;
   blurb: string;
+  /** Event promotional line. Empty when the event has none. */
+  promo?: string;
   opp: string;
   heroImage?: string;
   posterSrc?: string;
@@ -306,9 +310,11 @@ function mergeEventOrganization(
   const enableTransfer =
     orderOrg?.enableTransfer ?? ev.organization?.enableTransfer;
   const enableResale = orderOrg?.enableResale ?? ev.organization?.enableResale;
+  const setting = ev.organization?.setting ?? orderOrg?.setting;
   if (
     enableTransfer === ev.organization?.enableTransfer &&
-    enableResale === ev.organization?.enableResale
+    enableResale === ev.organization?.enableResale &&
+    (ev.organization?.setting != null || setting == null)
   ) {
     return ev;
   }
@@ -318,6 +324,7 @@ function mergeEventOrganization(
       ...ev.organization,
       enableTransfer,
       enableResale,
+      setting,
     },
   };
 }
@@ -2273,6 +2280,7 @@ function detailFromEvent(
     brand: "#8c0b42",
     initials: eventInitials(ev.name || visitorShort(ev)),
     blurb: eventBlurb(ev),
+    promo: eventPromotionalCopy(ev),
     opp: ev.attractions?.[0]?.name || "",
     heroImage: imageUrl(ev.image, ""),
     posterSrc,
@@ -3546,6 +3554,7 @@ export function withFullOrder(
     startTime: schedule.startTime || detail.startTime,
     today: event?.start ? schedule.today : detail.today,
     blurb: eventBlurb(event) || detail.blurb,
+    promo: eventPromotionalCopy(event) || detail.promo || "",
     venue: venueLines.venue || detail.venue,
     venueLine: venueLines.venueLine || detail.venueLine,
     city: venueLines.city || detail.city,

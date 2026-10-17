@@ -23,6 +23,7 @@ import {
 } from "@/lib/ticketListings";
 import type { QuantityRestrictionSource } from "@/lib/ticketListings";
 import { listedUnitPrice } from "@/lib/helpers";
+import { getSeatAdditionalLabel } from "@/lib/seatLabels";
 import { selectionOfferDescription, selectionOfferName, selectionTicketCards } from "@/lib/ticketSummary";
 import {
   gaTicketSeatLine,
@@ -297,6 +298,7 @@ function SeatMapSelectionOverlay({
   const mapDetailUnitPrice = listedUnitPrice(
     mapDetailGroup?.price,
     mapDetailGroup?.offer || mapDetailGroup?.package,
+    mapDetailGroup?.listing,
   );
   const selectionCards = selectionTicketCards(selectedFromMap);
   const mapTicketCount = totalCount || selectedFromMap.length;
@@ -1235,9 +1237,19 @@ function SeatMapSelectionOverlay({
                           const row = g.rowNumber || g.rowName || "—";
                           const seat = seatDisplayValue(g.seatNumber) || "—";
                           const offer = selectionOfferName(g);
+                          const mapSeat =
+                            g.seatId == null || g.seatId === ""
+                              ? undefined
+                              : mapMapping?.seats?.[String(g.seatId)];
+                          const additionalLabel = getSeatAdditionalLabel({
+                            ticketGroup: g,
+                            mapSeat,
+                            seatLabels: mapMapping?.seatLabels,
+                          });
                           const itemPrice = listedUnitPrice(
                             g.price,
                             g.offer || g.package,
+                            g.listing,
                           );
                           return (
                             <li
@@ -1353,6 +1365,18 @@ function SeatMapSelectionOverlay({
                                 source={g}
                                 style={{ marginTop: 10 }}
                               />
+                              {additionalLabel ? (
+                                <div
+                                  style={{
+                                    marginTop: 8,
+                                    fontSize: fluidSize(13),
+                                    lineHeight: 1.5,
+                                    color: "#6e7180",
+                                  }}
+                                >
+                                  {additionalLabel}
+                                </div>
+                              ) : null}
                               <div
                                 style={{
                                   height: 1,

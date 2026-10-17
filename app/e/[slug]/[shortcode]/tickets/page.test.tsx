@@ -38,11 +38,13 @@ vi.mock("@/components/organisms/PremiumTicketing", () => ({
       scheduled?: boolean;
       scheduledAt?: string;
       offerNames?: string[];
+      promo?: string;
     };
     onFiltersChange?: (filters: TicketingFilters) => void;
     initialFilters?: Partial<TicketingFilters>;
   }) => (
     <div>
+      {data.promo ? <p>{data.promo}</p> : null}
       {data.soldOut
         ? "Event sold out"
         : data.scheduled
@@ -131,6 +133,42 @@ describe("seated tickets route", () => {
     });
     expect(mockedGetTicketGroups).not.toHaveBeenCalled();
     expect(screen.queryByText("Ticket listings")).not.toBeInTheDocument();
+  });
+
+  it("passes the promotional description through to the seated event", async () => {
+    const promo = "Pink Night. Free bobblehead for the first 1,000 fans.";
+    const detail = demoEventDetail(EVENT.shortCode);
+    mockedGetEvent.mockResolvedValue({
+      data: {
+        ...detail,
+        event: { ...detail.event, promotionalDescription: `  ${promo}  ` },
+      },
+    } as never);
+    mockedGetTicketGroups.mockResolvedValue(inventoryPayload());
+
+    render(<SeatedTicketsRoute />);
+
+    expect(
+      await screen.findByText(promo, undefined, { timeout: 4000 }),
+    ).toBeInTheDocument();
+  });
+
+  it("omits a blank promotional description on the seated event", async () => {
+    const detail = demoEventDetail(EVENT.shortCode);
+    mockedGetEvent.mockResolvedValue({
+      data: {
+        ...detail,
+        event: { ...detail.event, promotionalDescription: "   " },
+      },
+    } as never);
+    mockedGetTicketGroups.mockResolvedValue(inventoryPayload());
+
+    render(<SeatedTicketsRoute />);
+
+    expect(
+      await screen.findByText(/ticket listings/i, undefined, { timeout: 4000 }),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/pink night/i)).not.toBeInTheDocument();
   });
 
   it("renders the sold-out ticket panel when seated inventory is sold out", async () => {

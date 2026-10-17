@@ -65,6 +65,7 @@ describe("parseGuestBuyer", () => {
       email: DEMO_USER.email,
       firstName: DEMO_USER.firstName,
       lastName: DEMO_USER.lastName,
+      marketingEmailOptIn: false,
     });
   });
 
@@ -89,11 +90,13 @@ describe("guest checkout session", () => {
       email: DEMO_USER.email,
       firstName: DEMO_USER.firstName,
       lastName: DEMO_USER.lastName,
+      marketingEmailOptIn: true,
     });
     expect(getGuestCheckoutBuyer()).toEqual({
       email: DEMO_USER.email,
       firstName: DEMO_USER.firstName,
       lastName: DEMO_USER.lastName,
+      marketingEmailOptIn: true,
     });
     expect(getGuestCheckoutEmail()).toBe(DEMO_USER.email);
   });

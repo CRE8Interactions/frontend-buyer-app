@@ -32,6 +32,7 @@ import { cacheOrgBranding, orgSlugFromPathname } from "@/lib/orgBrandingCache";
 import { beginRouteTransition } from "@/lib/routeTransition";
 import { useClientReady } from "@/lib/useClientReady";
 import { promoCodeRedeemDisplayMessage } from "@/lib/fieldValidation";
+import MarketingOptIn from "@/components/molecules/MarketingOptIn";
 import PromoCodeForm, { type PromoRedeemResult } from "@/components/molecules/PromoCodeForm";
 import {
   flexPackSeasonLine,
@@ -92,6 +93,7 @@ import {
   setGuestCheckoutBuyer,
   type GuestBuyer,
 } from "@/lib/guestCheckout";
+import { checkoutMarketingOrganization } from "@/lib/marketingOptIn";
 import { setLastKnown, useAuth } from "@/lib/auth";
 import {
   captureCheckoutReferrer,
@@ -269,6 +271,9 @@ function CheckoutPaymentForm({
   onSuccess,
   onDeclined,
   onExpired,
+  showMarketingOptIn = false,
+  organizationName,
+  optInMessage,
 }: {
   intentId: string;
   clientSecret: string;
@@ -285,6 +290,9 @@ function CheckoutPaymentForm({
   onSuccess: () => void;
   onDeclined: (msg: string) => void;
   onExpired: () => void;
+  showMarketingOptIn?: boolean;
+  organizationName?: string | null;
+  optInMessage?: string | null;
 }) {
   const stripe = useStripe();
   const elements = useElements();
@@ -298,6 +306,7 @@ function CheckoutPaymentForm({
   const [removingPromo, setRemovingPromo] = useState(false);
   const [purchasing, setPurchasing] = useState(false);
   const [paymentReady, setPaymentReady] = useState(false);
+  const [marketingEmailOptIn, setMarketingEmailOptIn] = useState(false);
   const hasTrackedPaymentInfoRef = useRef(false);
 
   const flexPackTotals = cart.flex_pack
@@ -405,6 +414,7 @@ function CheckoutPaymentForm({
           cart,
           intentId,
           readTrackingCodeForCart(cart),
+          showMarketingOptIn ? marketingEmailOptIn : undefined,
         ),
       );
       const confirmed = await stripe.confirmPayment({
@@ -499,13 +509,18 @@ function CheckoutPaymentForm({
         </div>
       ) : null}
 
-      <label className="mt-6 flex cursor-pointer items-start gap-2.5">
-        <input
-          type="checkbox"
-          defaultChecked
-          className="mt-0.5 h-[19px] w-[19px] shrink-0 rounded-[5px] border-[1.5px]"
-          style={{ accentColor: accent }}
+      {showMarketingOptIn ? (
+        <MarketingOptIn
+          className="mt-6"
+          checked={marketingEmailOptIn}
+          onChange={setMarketingEmailOptIn}
+          organizationName={organizationName}
+          optInMessage={optInMessage}
+          disabled={purchasing || isRefreshingIntent}
         />
+      ) : null}
+      <label className="mt-6">
+        <input type="checkbox" defaultChecked />
         <span className="text-[13px] text-[#4a5567]">
           Save my info for one-click checkout with Link
           {orgLabel && orgLabel !== "Blocktickets"
@@ -850,13 +865,17 @@ function CheckoutPage() {
           cartData.tickets || [],
           cartData.event,
         );
-        const location =
+        // The listing image does not need the venue map. Loading that map
+        // first kept the thumbnail on a spinner after the summary was ready.
+        if (
           (cartData.tickets?.length ?? 0) > 0 &&
           !eventIsExplicitlyGaOnly(cartData.event)
-            ? await loadCheckoutSeatLocation(cartData.event)
-            : null;
+        ) {
+          void loadCheckoutSeatLocation(cartData.event).then((location) => {
+            if (!cancelled) setSeatLocation(location);
+          });
+        }
         if (cancelled) return;
-        setSeatLocation(location);
         setCart(cartData);
         cartRef.current = cartData;
         const itemCount = countCartItems(cartData);
@@ -1190,8 +1209,20 @@ function CheckoutPage() {
       seatLocation.background?.url &&
       seatLocation.mapping,
   );
+  // Same highlights image the tickets listing uses, then the venue map.
+  const seatLocationCandidates =
+    !gaTicketIcon && locatedSection.sectionNumber
+      ? getSeatViewImageCandidates(
+          venueSlug,
+          locatedSection.sectionNumber,
+          locatedSection.sectionNumber,
+          ["highlights", "thumbnail"],
+        )
+      : [];
+  const showSeatLocationThumb =
+    seatLocationCandidates.length > 0 || venueMapReady;
   const seatViewCandidates =
-    gaTicketIcon || venueMapReady
+    gaTicketIcon || showSeatLocationThumb
       ? []
       : getSeatViewImageCandidates(
           venueSlug,
@@ -1235,6 +1266,7 @@ function CheckoutPage() {
     !isAuthenticated &&
     !guestBuyer &&
     isGuestEligibleCart(cart);
+  const marketingOrg = checkoutMarketingOrganization(cart, event);
   const awaitingAuth = !authReady;
   const shellLoading = awaitingAuth || (loading && !expiredOpen);
   const loaderBranding = branding.organization
@@ -1343,6 +1375,8 @@ function CheckoutPage() {
                     onContinue={confirmGuestBuyer}
                     buttonColor={branding.theme.buttonColor}
                     buttonTextColor={branding.theme.buttonTextColor}
+                    organizationName={marketingOrg?.name}
+                    optInMessage={marketingOrg?.opt_in_message}
                   />
                 ) : clientSecret && stripe && elementsOptions && checkoutCart ? (
                   <Elements
@@ -1366,6 +1400,9 @@ function CheckoutPage() {
                       onSuccess={() => goToSuccess(intentId)}
                       onDeclined={setDeclineMsg}
                       onExpired={handleHoldExpired}
+                      showMarketingOptIn={isAuthenticated}
+                      organizationName={marketingOrg?.name}
+                      optInMessage={marketingOrg?.opt_in_message}
                     />
                   </Elements>
                 ) : (
@@ -1438,6 +1475,11 @@ function CheckoutPage() {
                                   label={seat.accessibleLabel}
                                   style={{ marginTop: 4 }}
                                 />
+                              ) : null}
+                              {seat.additionalLabel ? (
+                                <div className={`text-[13px] ${muted}`}>
+                                  {seat.additionalLabel}
+                                </div>
                               ) : null}
                             </div>
                             <div className="shrink-0 text-[14px] font-semibold tabular-nums">
@@ -1556,12 +1598,13 @@ function CheckoutPage() {
                           alt="General admission"
                           className="h-full w-full object-cover"
                         />
-                      ) : venueMapReady ? (
+                      ) : showSeatLocationThumb ? (
                         <SectionLocatorThumb
                           background={seatLocation?.background}
                           mapping={seatLocation?.mapping}
                           sectionId={locatedSection.sectionId}
                           sectionNumber={locatedSection.sectionNumber}
+                          thumbnailCandidates={seatLocationCandidates}
                           spinnerColor={branding.theme.accent}
                           priority
                           className="h-full w-full"
@@ -1605,6 +1648,11 @@ function CheckoutPage() {
                           label={ticketSummary.accessibleLabel}
                           style={{ marginTop: 4 }}
                         />
+                      ) : null}
+                      {ticketSummary.additionalLabel ? (
+                        <div className={`text-[13px] ${muted}`}>
+                          {ticketSummary.additionalLabel}
+                        </div>
                       ) : null}
                     </div>
                   </div>

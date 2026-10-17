@@ -8,6 +8,7 @@
 
 import { useEffect, useMemo, useState, type CSSProperties, type ReactNode } from "react";
 import Link from "next/link";
+import EventPromo from "@/components/atoms/EventPromo";
 import Nav from "@/components/organisms/Nav";
 import SiteFooter from "@/components/organisms/SiteFooter";
 import { BrandedLoader } from "@/components/molecules/RouteLoader";
@@ -40,6 +41,7 @@ import {
   browsePx,
 } from "@/lib/browseType";
 import { venueUpcomingEventCount } from "@/lib/eventFromPrice";
+import { eventPromotionalCopy } from "@/lib/promotionalDescription";
 import {
   categoryLabel,
   eventTypeLabel,
@@ -99,6 +101,7 @@ type BrowseEvent = {
   seatmap?: { ga_only?: boolean };
   isGeneralAdmissionOnly?: boolean;
   generalAdmissionOnly?: boolean;
+  promotionalDescription?: unknown;
 };
 
 type BrowseOrg = {
@@ -642,6 +645,7 @@ export default function BrowseHome() {
                   >
                     {eventTitle(hero)}
                   </div>
+                  <EventPromo text={eventPromotionalCopy(hero)} lines={2} color="#fff" style={{ fontSize: 15 }} />
                   <div style={{ fontSize: mobile ? 14 : 16, lineHeight: 1.5, color: "#cdd9ea" }}>
                     {[eventWhen(hero), eventVenueLine(hero)]
                       .filter(Boolean)
@@ -1026,6 +1030,7 @@ export default function BrowseHome() {
                     >
                       {eventTitle(e)}
                     </div>
+                    <EventPromo text={eventPromotionalCopy(e)} />
                     <div
                       style={{
                         fontSize: 13,

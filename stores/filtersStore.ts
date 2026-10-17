@@ -54,9 +54,14 @@ export type TicketGroup = {
   GA?: boolean;
   accessible?: boolean;
   accessibleType?: string;
+  additionalLabel?: string;
   accessiblityType?: string;
   accessibilityType?: string;
   resale?: boolean;
+  listing?: {
+    askingPrice?: number | null;
+    offer?: { freeOffer?: boolean } | null;
+  } | null;
   ticketGroupUUID?: string;
   offer?: {
     id?: string | number;

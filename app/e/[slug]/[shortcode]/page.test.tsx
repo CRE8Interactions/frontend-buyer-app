@@ -28,6 +28,7 @@ vi.mock("@/lib/api", () => ({
 vi.mock("@/components/organisms/PremiumTicketing", () => ({
   default: ({ data }: { data: TicketingData }) => (
     <>
+      {data.promo ? <p>{data.promo}</p> : null}
       {data.soldOut ? <p>event sold out</p> : null}
       {data.scheduled ? <p>{`scheduled · ${data.scheduledAt}`}</p> : null}
       <ul>
@@ -217,5 +218,36 @@ describe("GA event page tiers", () => {
     expect(
       sessionStorage.getItem(`trackingLink:${GA_EVENT.uuid}`),
     ).toBeNull();
+  });
+
+  it("passes the promotional description through to the event page", async () => {
+    const promo = "Pink Night. Free bobblehead for the first 1,000 fans.";
+    const detail = demoEventDetail(GA_EVENT.shortcode);
+    mockedGetEvent.mockResolvedValue({
+      data: {
+        ...detail,
+        event: { ...detail.event, promotionalDescription: `  ${promo}  ` },
+      },
+    } as never);
+    inventory({ soldout: false, ...demoTicketGroups() });
+
+    render(<GAEventRoute />);
+
+    expect(await screen.findByText(promo, undefined, { timeout: 4000 })).toBeInTheDocument();
+  });
+
+  it("omits a blank promotional description", async () => {
+    const detail = demoEventDetail(GA_EVENT.shortcode);
+    mockedGetEvent.mockResolvedValue({
+      data: { ...detail, event: { ...detail.event, promotionalDescription: "   " } },
+    } as never);
+    inventory({ soldout: false, ...demoTicketGroups() });
+
+    render(<GAEventRoute />);
+
+    expect(
+      await screen.findByText(/vip club · live/i, undefined, { timeout: 4000 }),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/pink night/i)).not.toBeInTheDocument();
   });
 });

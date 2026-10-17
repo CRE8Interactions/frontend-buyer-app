@@ -1041,6 +1041,16 @@ describe("validQuantityOptions", () => {
       }),
     ).toEqual([2, 4, 6]);
   });
+
+  it("returns 1 through the smaller of the seats and the event limit when there is no offer", () => {
+    expect(
+      validQuantityOptions(null, {
+        available: 2,
+        defaultMax: 100,
+        globalMax: 8,
+      }),
+    ).toEqual([1, 2]);
+  });
 });
 
 describe("offerChipNames connected offers", () => {

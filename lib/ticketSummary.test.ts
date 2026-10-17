@@ -517,6 +517,15 @@ describe("packageSeatLines", () => {
     );
     expect(lines[0].price).toBe(Number(ticket.price));
     expect(lines[0].accessibleLabel).toBe("");
+    expect(lines[0].additionalLabel).toBe("");
+  });
+
+  it("keeps a custom seat label on the season seat line", () => {
+    const cart = demoPackageCheckoutCart();
+    const ticket = { ...cart.tickets[0], additionalLabel: "Aisle" };
+    const lines = packageSeatLines([ticket], cart.package.events.length);
+
+    expect(lines[0].additionalLabel).toBe("Aisle");
   });
 
   it("labels accessible package seats", () => {

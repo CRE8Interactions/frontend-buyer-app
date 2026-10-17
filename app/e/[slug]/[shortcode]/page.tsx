@@ -13,6 +13,7 @@ import { brandingToTicketingTheme, type OrgBranding } from "@/lib/branding";
 import { cacheEventBranding } from "@/lib/orgBrandingCache";
 import { isSportingEvent } from "@/lib/eventCategory";
 import { isEventSoldOut } from "@/lib/eventSoldOut";
+import { eventPromotionalCopy } from "@/lib/promotionalDescription";
 import {
   eventAboutText,
   eventDoorsIso,
@@ -57,6 +58,7 @@ type EventData = {
   realDoorsOpen?: string;
   summary?: string;
   description?: string;
+  promotionalDescription?: unknown;
   image?: ApiImage;
   category?: { name?: string | null };
   categoryName?: string | null;
@@ -164,6 +166,7 @@ function toGaData(
     orgLabel,
     providerLabel: `Official ticketing marketplace for ${orgLabel}`,
     aboutText: eventAboutText(ev),
+    promo: eventPromotionalCopy(ev),
     homeLabel: matchup.homeLabel,
     awayLabel: matchup.awayLabel,
     awayShort: matchup.awayShort,

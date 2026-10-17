@@ -31,11 +31,8 @@ export const SEAT_VIEW_PLACEHOLDER =
 
 const effectiveUnitPrice = (ticketGroup: TicketGroup) => {
   const offer =
-    ticketGroup?.offer ||
-    ticketGroup?.package ||
-    (ticketGroup?.listing as { offer?: { freeOffer?: boolean } } | undefined)
-      ?.offer;
-  return listedUnitPrice(ticketGroup.price, offer);
+    ticketGroup?.offer || ticketGroup?.package || ticketGroup?.listing?.offer;
+  return listedUnitPrice(ticketGroup.price, offer, ticketGroup.listing);
 };
 
 function offerIdentity(group: TicketGroup) {

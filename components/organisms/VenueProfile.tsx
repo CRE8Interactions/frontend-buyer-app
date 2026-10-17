@@ -9,6 +9,7 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import EventPromo from "@/components/atoms/EventPromo";
 import InAppBackLink from "@/components/molecules/InAppBackLink";
 import NavAuthActions from "@/components/molecules/NavAuthActions";
 import RouteLoader from "@/components/molecules/RouteLoader";
@@ -54,6 +55,7 @@ import {
   venueWebsiteHref,
 } from "@/lib/venueWebsite";
 import { categoryLabel, eventTypeLabel } from "@/lib/eventType";
+import { eventPromotionalCopy } from "@/lib/promotionalDescription";
 import { useClientReady } from "@/lib/useClientReady";
 import {
   stickyOffsetBelowHeader,
@@ -112,6 +114,7 @@ type VenueEvent = {
   seatmap?: { ga_only?: boolean };
   isGeneralAdmissionOnly?: boolean;
   generalAdmissionOnly?: boolean;
+  promotionalDescription?: unknown;
 };
 
 type VenueRecord = {
@@ -139,6 +142,7 @@ type RowEvent = {
   time: string;
   sport: string;
   title: string;
+  promo: string;
   host: string;
   status: string;
   soldOut: boolean;
@@ -280,6 +284,7 @@ function toRow(
     time: formatEventWhen(start, tz, "h:mm A") || "",
     sport: categoryLabel(eventTypeLabel(ev, org ? [org] : [])),
     title: ev.name || ev.title || "Event",
+    promo: eventPromotionalCopy(ev),
     host: ev.organization?.name?.trim() || fallbackHost || "",
     status: eventStatus(ev),
     soldOut: isEventSoldOut(ev),
@@ -862,6 +867,7 @@ export default function VenueProfile({ slug }: { slug: string }) {
                           ) : null}
                         </div>
                         <div style={{ fontSize: mobile ? 16 : 17, fontWeight: 600, letterSpacing: BROWSE_TRACK.card, lineHeight: 1.25 }}>{e.title}</div>
+                        <EventPromo text={e.promo} />
                         {e.host ? (
                           <div style={{ fontSize: 13, lineHeight: 1.5, color: "#6e7180", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{e.host}</div>
                         ) : null}

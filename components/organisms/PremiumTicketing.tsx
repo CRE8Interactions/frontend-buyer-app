@@ -13,6 +13,7 @@ import { createPortal } from "react-dom";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import AccessibleSeatingBadge from "@/components/atoms/AccessibleSeatingBadge";
+import EventPromo from "@/components/atoms/EventPromo";
 import BrandedActionButton from "@/components/atoms/BrandedActionButton";
 import LockIcon from "@/components/atoms/LockIcon";
 import Spinner from "@/components/atoms/Spinner";
@@ -62,6 +63,7 @@ import {
   getAccessibleLabel,
   isAccessibleSource,
 } from "@/lib/ticketAccessibility";
+import { getSeatAdditionalLabel } from "@/lib/seatLabels";
 import { shopperShellVars } from "@/lib/branding";
 import { ORG_SCROLLBAR_CLASS, orgScrollbarCss } from "@/lib/orgScrollbar";
 import {
@@ -161,6 +163,8 @@ export type TicketingData = {
   orgLabel: string;
   providerLabel: string;
   aboutText: string;
+  /** Promotional line under the date. Empty when the event has none. */
+  promo?: string;
   homeLabel: string;
   awayLabel: string;
   awayShort: string;
@@ -574,6 +578,14 @@ export default function PremiumTicketing({
   }, [map, info, sel]);
 
   const mobile = vw < 900;
+  const seatedPromo = !isGa ? (
+    <EventPromo
+      text={d.promo || ""}
+      lines={2}
+      color="#fff"
+      style={{ fontSize: fluidSize(mobile ? 13 : 14), fontWeight: 500 }}
+    />
+  ) : null;
   const narrow = mobile || vw < 1120;
   const wide = !narrow;
   const gaDesktop = isGa && !narrow;
@@ -865,6 +877,15 @@ export default function PremiumTicketing({
     d.listings.find((l) => !isLocked(l.zone));
   const unit = selRow ? parseFloat(selRow.price.replace(/[^0-9.]/g, "")) : 0;
   const panelOfferDescription = selectionOfferDescription(selRow?.cartGroup);
+  const panelSeatId = selRow?.cartGroup?.seatId;
+  const panelAdditionalLabel = getSeatAdditionalLabel({
+    ticketGroup: selRow?.cartGroup,
+    mapSeat:
+      panelSeatId == null || panelSeatId === ""
+        ? undefined
+        : mapMapping?.seats?.[String(panelSeatId)],
+    seatLabels: mapMapping?.seatLabels,
+  });
   const unlockOfferDescription = selectionOfferDescription(
     GA_TIERS.find((tier) => tier.name === unlockZone)?.cartGroup ??
       d.listings.find((listing) => listing.zone === unlockZone)?.cartGroup ??
@@ -1635,6 +1656,7 @@ export default function PremiumTicketing({
                   <div style={{ display: "flex", flexDirection: "column", gap: 3, minWidth: 0 }}>
                     <div style={{ fontSize: fluidSize(19), fontWeight: 600, letterSpacing: "-0.015em", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{d.eventName}</div>
                     <div style={{ fontSize: fluidSize(14), color: "rgba(255,255,255,0.72)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{d.whenLong} at <span style={{ color: "#fff", fontWeight: 500 }}>{d.venueLine}</span></div>
+                    {seatedPromo}
                     <button onClick={() => setInfo(true)} style={{ fontFamily: "inherit", alignSelf: "flex-start", display: "flex", alignItems: "center", gap: 6, fontSize: fluidSize(13), fontWeight: 500, color: "rgba(255,255,255,0.82)", background: "transparent", border: "none", padding: 0, cursor: "pointer", textDecoration: "underline", textUnderlineOffset: 3 }}>
                       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" style={{ width: 15, height: 15 }}><circle cx="12" cy="12" r="10" /><line x1="12" y1="16" x2="12" y2="12" /><line x1="12" y1="8" x2="12.01" y2="8" /></svg>
                       Event information
@@ -1687,6 +1709,7 @@ export default function PremiumTicketing({
             <div style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", gap: 2 }}>
               <div style={{ fontSize: fluidSize(16), fontWeight: 600, letterSpacing: "-0.015em", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{d.eventName}</div>
               <div style={{ fontSize: fluidSize(13), color: "rgba(255,255,255,0.72)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{d.whenShort}</div>
+              {seatedPromo}
             </div>
           )}
           <button onClick={() => setInfo(true)} aria-label="Event information" style={{ fontFamily: "inherit", width: 44, height: 44, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", background: "transparent", border: "none", color: navInk, cursor: "pointer" }}>
@@ -2031,6 +2054,12 @@ export default function PremiumTicketing({
               <h1 style={{ margin: 0, fontSize: mobile ? 30 : 42, fontWeight: 600, letterSpacing: "-0.035em", lineHeight: 1.08 }}>{d.eventName}</h1>
               <span style={{ alignSelf: "flex-start", fontSize: 17, fontWeight: 600, color: ACC }}>{d.venueLine}</span>
               <div style={{ fontSize: fluidSize(16), color: "#4a5567" }}>{d.whenLong}</div>
+              <EventPromo
+                text={d.promo || ""}
+                lines={6}
+                color={NAVY}
+                style={{ fontSize: fluidSize(16), fontWeight: 400 }}
+              />
             </div>
 
             {/* Sold-out events keep the ticket list. The waitlist is not offered here. */}
@@ -2199,14 +2228,12 @@ export default function PremiumTicketing({
                   setNotifySent(true);
                 }}
               >
-                <label className="flex cursor-pointer items-start gap-2.5 text-[14px] font-normal text-[#4a5567]">
+                <label className="text-[14px] font-normal text-[#4a5567]">
                   <input
                     type="checkbox"
                     name="notifySms"
                     checked={notifySms}
                     onChange={() => setNotifySms((v) => !v)}
-                    className="mt-0.5 h-[18px] w-[18px]"
-                    style={{ accentColor: ACC }}
                   />
                   <span>Also text me at the number on my account</span>
                 </label>
@@ -2366,6 +2393,11 @@ export default function PremiumTicketing({
                 <div style={{ display: "flex", flexDirection: "column", gap: 5, minWidth: 0 }}>
                   <div style={{ fontSize: 22, fontWeight: 600, letterSpacing: "-0.02em", lineHeight: 1.5 }}>{listingLocationLabel(selRow)}</div>
                   <AccessibleSeatingBadge source={selRow.cartGroup} />
+                  {panelAdditionalLabel ? (
+                    <div style={{ fontSize: 14, lineHeight: 1.5, color: "#6e7180" }}>
+                      {panelAdditionalLabel}
+                    </div>
+                  ) : null}
                   <div style={{ fontSize: 14, lineHeight: 1.5, color: "#6e7180" }}>{listingDetailAvailabilityLabel(selRow.min, selRow.max, selRow.multipleOf)}</div>
                 </div>
               </div>

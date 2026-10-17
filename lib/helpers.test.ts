@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { DEMO_EVENTS, DEMO_USER, demoFlexPack, demoSeasonPackage } from "@/lib/demo/fixtures";
+import {
+  DEMO_EVENTS,
+  DEMO_USER,
+  demoFlexPack,
+  demoSeasonPackage,
+  demoTicketGroups,
+} from "@/lib/demo/fixtures";
 import {
   attractionImageUrl,
   emailPatternMatch,
@@ -11,6 +17,7 @@ import {
   formatEventWhen,
   formatOnSaleBadge,
   formatOnSaleWhen,
+  listedUnitPrice,
   imageUrl,
   isBlockedEmail,
   isRequestCanceled,
@@ -22,6 +29,30 @@ import {
 } from "@/lib/helpers";
 
 const seated = DEMO_EVENTS.find((e) => e.shortcode === "RAPT006")!;
+
+describe("listedUnitPrice", () => {
+  const group = demoTicketGroups().ticketGroups.find(
+    (row) => row.offer && row.price != null && !row.offer.freeOffer,
+  )!;
+
+  it("keeps a listed price and falls back to the asking price only when price is missing", () => {
+    expect(listedUnitPrice(group.price, group.offer, { askingPrice: 1 })).toBe(
+      group.price,
+    );
+    expect(listedUnitPrice(null, group.offer, { askingPrice: group.price })).toBe(
+      group.price,
+    );
+    expect(listedUnitPrice(0, group.offer, { askingPrice: group.price })).toBe(0);
+  });
+
+  it("lists a complimentary offer at zero", () => {
+    expect(
+      listedUnitPrice(group.price, { ...group.offer, freeOffer: true }, {
+        askingPrice: group.price,
+      }),
+    ).toBe(0);
+  });
+});
 
 describe("eventDoorsIso", () => {
   it("prefers realDoorsOpen and falls back to doorsOpen", () => {
