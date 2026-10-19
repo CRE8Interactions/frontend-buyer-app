@@ -87,7 +87,7 @@ describe("cartEvents wallet schedule", () => {
     expect(summary.today).toBe(true);
     expect(summary.when).toBe("Tonight · 7:35 PM");
     expect(summary.whenDate).toBe("Sat, Aug 15 · 7:35 PM");
-    expect(walletEventScheduleLine(summary)).toMatch(/^Doors open · /);
+    expect(walletEventScheduleLine(summary)).toMatch(/^Doors · /);
     expect(walletEventScheduleLine(summary)).toContain("6:35 PM");
   });
 

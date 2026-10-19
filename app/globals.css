@@ -9,6 +9,22 @@
   --accent: #a6e773;
 }
 
+.bt-event-promo {
+  margin: 10px 0 0;
+}
+
+/* The flex gap already separates the promo, so don't add a second 10px. */
+[style*="display: flex"][style*="gap: 10px"] > .bt-event-promo,
+[style*="display:flex"][style*="gap:10px"] > .bt-event-promo,
+[style*="display: inline-flex"][style*="gap: 10px"] > .bt-event-promo,
+[style*="display:inline-flex"][style*="gap:10px"] > .bt-event-promo,
+.flex.gap-2\.5 > .bt-event-promo,
+.inline-flex.gap-2\.5 > .bt-event-promo,
+.flex.gap-\[10px\] > .bt-event-promo,
+.inline-flex.gap-\[10px\] > .bt-event-promo {
+  margin-top: 0;
+}
+
 /* Brand focus for every field: the field's own edge takes the brand colour, with
    no ring around it. Blocktickets lime by default; an org-branded surface sets
    `--bt-field-focus` / `--acc` on its root so its fields focus in the org's colour.

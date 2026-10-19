@@ -2672,7 +2672,7 @@ export function walletEventScheduleLine(
 ): string {
   if (row.today) {
     const doors = row.doorsTime || row.startTime;
-    return doors ? `Doors open · ${doors}` : "Today";
+    return doors ? `Doors · ${doors}` : "Today";
   }
   return row.when;
 }

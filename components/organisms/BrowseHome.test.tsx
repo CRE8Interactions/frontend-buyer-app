@@ -189,7 +189,7 @@ describe("Browse page", () => {
     ).not.toBeInTheDocument();
   });
 
-  it("shows the promotional description under the event name on the hero and event card", async () => {
+  it("shows the promotional description on the featured slider but not on the event card", async () => {
     const promo = "Pink Night. Free bobblehead for the first 1,000 fans.";
     const [featured, ...rest] = DEMO_EVENTS;
     mockBrowseApis({
@@ -198,27 +198,14 @@ describe("Browse page", () => {
 
     render(<BrowseHome />);
 
-    const promos = await screen.findAllByText(promo);
-    expect(promos).toHaveLength(2);
+    const hero = (await screen.findByText(/featured · /i)).closest("section") as HTMLElement;
+    expect(within(hero).getByText(promo)).toBeInTheDocument();
+    expect(screen.getAllByText(promo)).toHaveLength(1);
     const card = screen
       .getAllByText(featured.name)
       .map((title) => title.closest(".bh-ev"))
       .find(Boolean) as HTMLElement;
-    expect(within(card).getByText(promo)).toBeInTheDocument();
-  });
-
-  it("hides a blank promotional description on browse event cards", async () => {
-    const [featured, ...rest] = DEMO_EVENTS;
-    mockBrowseApis({
-      events: [{ ...featured, promotionalDescription: "  " }, ...rest],
-    });
-
-    render(<BrowseHome />);
-
-    const card = (await screen.findAllByText(featured.name))
-      .map((title) => title.closest(".bh-ev"))
-      .find(Boolean) as HTMLElement;
-    expect(card.querySelector("p")).toBeNull();
+    expect(within(card).queryByText(promo)).not.toBeInTheDocument();
   });
 
   it("keeps a plain get-tickets CTA when the featured event has no price", async () => {
@@ -351,7 +338,7 @@ describe("Browse page", () => {
     expect(screen.getAllByText(/6 events/i).length).toBeGreaterThan(0);
   });
 
-  it("shows a rich-text promotional description under the event name in search results", async () => {
+  it("does not show the promotional description on a search result", async () => {
     const user = userEvent.setup();
     const match = DEMO_EVENTS.find((event) => /raptors/i.test(event.name))!;
     mockedSearchEvents.mockResolvedValue({
@@ -369,11 +356,8 @@ describe("Browse page", () => {
 
     await user.type(screen.getByPlaceholderText(/search for events/i), "rap");
 
-    const promo = await screen.findByText("Kids eat free.");
-    expect(promo.closest("a")).toHaveAttribute(
-      "href",
-      expect.stringContaining(match.shortCode),
-    );
+    expect(await screen.findByText(match.name)).toBeInTheDocument();
+    expect(screen.queryByText("Kids eat free.")).not.toBeInTheDocument();
   });
 
   it("shows search no-match copy without emptying the browse grid", async () => {

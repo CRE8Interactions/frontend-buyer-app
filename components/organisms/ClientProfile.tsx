@@ -1116,12 +1116,12 @@ export default function ClientProfile({
                           <div style={{ fontSize: mobile ? 16 : 17, fontWeight: 600, letterSpacing: "-0.015em", lineHeight: 1.25 }}>
                             {e.title}
                           </div>
-                          <EventPromo text={e.promo} />
                           {e.venue && (
                             <div style={{ fontSize: 13, lineHeight: 1.5, color: "#6e7180", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                               {e.venue}
                             </div>
                           )}
+                          <EventPromo text={e.promo} />
                         </div>
                         <div
                           style={{

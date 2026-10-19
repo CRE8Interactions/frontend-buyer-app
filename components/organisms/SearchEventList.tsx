@@ -1,9 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import EventPromo from "@/components/atoms/EventPromo";
 import { isEventSoldOut, onSaleBadgeLabel } from "@/lib/eventSoldOut";
-import { eventPromotionalCopy } from "@/lib/promotionalDescription";
 import {
   eventSearchName,
   formatSearchEventWhen,
@@ -46,12 +44,6 @@ export function SearchEventRow({
         <span className="block truncate text-[14px] font-semibold">
           {eventSearchName(event)}
         </span>
-        <EventPromo
-          as="span"
-          text={eventPromotionalCopy(event)}
-          lines={2}
-          style={{ marginTop: 2 }}
-        />
         {meta ? (
           <span className="mt-0.5 block truncate text-[12px] text-[#6e7180]">
             {meta}

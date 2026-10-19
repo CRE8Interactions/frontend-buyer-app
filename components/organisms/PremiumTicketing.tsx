@@ -352,6 +352,15 @@ function TicketDetailsQuantityState({
   return children(quantity, setQuantity);
 }
 
+function EventInfoSection({ label, text }: { label: string; text: string }) {
+  return (
+    <div className="flex flex-col gap-2">
+      <div className="font-semibold uppercase text-[#8a93a3]" style={{ fontSize: 12, letterSpacing: "0.12em" }}>{label}</div>
+      <pre className="m-0 whitespace-pre-wrap font-[inherit] leading-relaxed text-[#4a5567] [overflow-wrap:anywhere]" style={{ fontSize: 14 }}>{text}</pre>
+    </div>
+  );
+}
+
 export default function PremiumTicketing({
   data: d,
   onFiltersChange,
@@ -581,9 +590,8 @@ export default function PremiumTicketing({
   const seatedPromo = !isGa ? (
     <EventPromo
       text={d.promo || ""}
-      lines={2}
       color="#fff"
-      style={{ fontSize: fluidSize(mobile ? 13 : 14), fontWeight: 500 }}
+      style={{ fontSize: fluidSize(mobile ? 13 : 14), ...(mobile ? {} : { marginBottom: 10 }) }}
     />
   ) : null;
   const narrow = mobile || vw < 1120;
@@ -2056,9 +2064,8 @@ export default function PremiumTicketing({
               <div style={{ fontSize: fluidSize(16), color: "#4a5567" }}>{d.whenLong}</div>
               <EventPromo
                 text={d.promo || ""}
-                lines={6}
                 color={NAVY}
-                style={{ fontSize: fluidSize(16), fontWeight: 400 }}
+                style={{ fontSize: fluidSize(16) }}
               />
             </div>
 
@@ -2521,6 +2528,9 @@ export default function PremiumTicketing({
               </div>
               <div className="font-semibold" style={{ fontSize: 22, letterSpacing: "-0.025em" }}>{d.eventName}</div>
               <div className="text-[#6e7180]" style={{ fontSize: 15 }}>{d.doorsLine}</div>
+              {d.promo?.trim() ? (
+                <div className="bt-event-promo" style={{ fontSize: 15, fontWeight: 500, lineHeight: 1.4, color: "#051b35" }}>{d.promo.trim()}</div>
+              ) : null}
             </div>
             <div className="flex flex-wrap items-center justify-between gap-4 rounded-2xl border border-[rgba(5,27,53,0.08)] bg-[#f7f8fc] p-[18px]">
               <div className="flex min-w-0 flex-col gap-1">
@@ -2571,20 +2581,11 @@ export default function PremiumTicketing({
                 </div>
                 ) : null}
               </div>
-              {d.aboutText ? (
-                <>
-              <div className="h-px bg-[rgba(5,27,53,0.08)]" />
-              <div className="flex flex-col gap-2">
-                <div className="font-semibold uppercase text-[#8a93a3]" style={{ fontSize: 12, letterSpacing: "0.12em" }}>About this event</div>
-                    <pre className="m-0 whitespace-pre-wrap font-[inherit] leading-relaxed text-[#4a5567] [overflow-wrap:anywhere]" style={{ fontSize: 14 }}>{d.aboutText}</pre>
-              </div>
-                </>
-              ) : null}
             </div>
-            ) : d.aboutText ? (
+            ) : null}
+            {d.aboutText ? (
               <div className="flex flex-col gap-2 rounded-2xl border border-[rgba(5,27,53,0.08)] bg-[#f7f8fc] p-[18px]">
-                <div className="font-semibold uppercase text-[#8a93a3]" style={{ fontSize: 12, letterSpacing: "0.12em" }}>About this event</div>
-                <pre className="m-0 whitespace-pre-wrap font-[inherit] leading-relaxed text-[#4a5567] [overflow-wrap:anywhere]" style={{ fontSize: 14 }}>{d.aboutText}</pre>
+                <EventInfoSection label="About this event" text={d.aboutText} />
               </div>
             ) : null}
           </div>

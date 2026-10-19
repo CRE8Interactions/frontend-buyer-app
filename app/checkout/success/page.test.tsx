@@ -17,7 +17,7 @@ import {
   demoSeatmapMapping,
   demoTicketGroups,
 } from "@/lib/demo/fixtures";
-import { formatCurrency } from "@/lib/helpers";
+import { eventDoorsIso, formatCurrency, formatDoorsTime } from "@/lib/helpers";
 import { resolveCompletedOrderFees } from "@/lib/ticketSummary";
 import { cacheOrgBranding } from "@/lib/orgBrandingCache";
 import { setGuestCheckoutBuyer } from "@/lib/guestCheckout";
@@ -181,6 +181,29 @@ describe("Checkout success receipt", () => {
       await screen.findByText(DEMO_SEATED_TICKET_GROUPS[0].offer!.name!),
     ).toBeInTheDocument();
     expect(mockedGetOrder).not.toHaveBeenCalled();
+  });
+
+  it("labels the doors time as Doors", async () => {
+    const cart = demoCheckoutCart({ ticketCount: 4 });
+    const doors = formatDoorsTime(
+      eventDoorsIso(cart.event),
+      cart.event.venue?.timezone,
+    );
+    render(<CheckoutSuccessPageRoute />);
+    expect(await screen.findByText(`Doors ${doors}.`)).toBeInTheDocument();
+    expect(screen.queryByText(/Doors open/)).not.toBeInTheDocument();
+  });
+
+  it("says arrive early when the event has a start time and no doors time", async () => {
+    const cart = demoCheckoutCart({ ticketCount: 4 });
+    mockedGetOrderByPi.mockResolvedValue({
+      data: demoCompletedTicketOrder({
+        event: { ...cart.event, doorsOpen: undefined, realDoorsOpen: undefined },
+      }),
+    } as never);
+    render(<CheckoutSuccessPageRoute />);
+    expect(await screen.findByText(/Arrive early\./)).toBeInTheDocument();
+    expect(screen.queryByText(/^Doors /)).not.toBeInTheDocument();
   });
 
   it("falls back to the seat line when the order has no offer name", async () => {

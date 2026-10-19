@@ -867,10 +867,10 @@ export default function VenueProfile({ slug }: { slug: string }) {
                           ) : null}
                         </div>
                         <div style={{ fontSize: mobile ? 16 : 17, fontWeight: 600, letterSpacing: BROWSE_TRACK.card, lineHeight: 1.25 }}>{e.title}</div>
-                        <EventPromo text={e.promo} />
                         {e.host ? (
                           <div style={{ fontSize: 13, lineHeight: 1.5, color: "#6e7180", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{e.host}</div>
                         ) : null}
+                        <EventPromo text={e.promo} />
                       </div>
                       <div style={{ gridColumn: stacked ? "1 / -1" : "auto", display: "flex", alignItems: "center", gap: 16, justifyContent: "flex-end", paddingTop: stacked ? 12 : 0, borderTop: stacked ? "1px solid rgba(5,27,53,0.08)" : "none" }}>
                         <span style={{ fontFamily: "inherit", fontSize: 14, fontWeight: 600, lineHeight: 1.5, color: soldOut ? "#6e7180" : soon ? NAVY : BTN_INK, background: soldOut || soon ? "#fff" : BTN, border: `1px solid ${soldOut || soon ? "rgba(5,27,53,0.14)" : BTN}`, borderRadius: 999, padding: "12px 22px", minHeight: 44, display: "inline-flex", alignItems: "center", cursor: soldOut ? "default" : "pointer", whiteSpace: "nowrap" }}>{soldOut ? "Sold out" : soon ? "Remind me" : "Get tickets"}</span>

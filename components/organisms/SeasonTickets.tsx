@@ -827,6 +827,10 @@ type EventT = {
   incomingTransferOn?: string;
 };
 
+function mobileEventWhen(ev: Pick<EventT, "when" | "doors" | "venue">) {
+  return [ev.when, ev.doors ? `Doors ${ev.doors}` : "", ev.venue].filter(Boolean).join(" · ");
+}
+
 function detailToEventT(d: CartEventDetail, isCart = false): EventT {
   return {
     id: d.key,
@@ -1591,6 +1595,11 @@ export default function SeasonTickets({
     ) => Promise<void>
   >(async () => undefined);
   const [fullOrders, setFullOrders] = useState<Record<string, OrderLike>>({});
+  const fullOrdersRef = useRef(fullOrders);
+  fullOrdersRef.current = fullOrders;
+  const [fullOrderFailed, setFullOrderFailed] = useState<
+    Record<string, boolean>
+  >({});
   const [fullOrderChecked, setFullOrderChecked] = useState<
     Record<string, boolean>
   >({});
@@ -2388,6 +2397,11 @@ export default function SeasonTickets({
           [storedId]: order,
           [routedOrderId]: order,
         }));
+        setFullOrderFailed((current) => ({
+          ...current,
+          [storedId]: false,
+          [routedOrderId]: false,
+        }));
         setFullOrderChecked((current) => ({
           ...current,
           [storedId]: true,
@@ -2484,22 +2498,25 @@ export default function SeasonTickets({
     ? eventDetails[orderEventKey] ?? linkedDetails[orderEventKey] ?? null
     : null;
   const activeOrderId = activeDetail?.orderId ?? "";
-  const activeWalletOrder =
-    activeOrderId
-      ? walletOrders.find(
-          (order) =>
-            String(order.orderId ?? order.id ?? "").trim() === activeOrderId,
-        ) ??
-        (linkedOrderForRoute &&
-        (String(linkedOrderForRoute.orderId ?? "").trim() === activeOrderId ||
-          String(linkedOrderForRoute.id ?? "").trim() === activeOrderId)
-          ? linkedOrderForRoute
-          : null)
-      : null;
   const sessionUser = getSession()?.user;
+  const linkedFullOrder =
+    linkedOrderForRoute &&
+    (String(linkedOrderForRoute.orderId ?? "").trim() === activeOrderId ||
+      String(linkedOrderForRoute.id ?? "").trim() === activeOrderId)
+      ? linkedOrderForRoute
+      : null;
+  // Tickets on this screen come from the order lookup. The upcoming-events
+  // list is not a substitute when that lookup fails. An emailed order that
+  // never appears on the list still renders from its own successful lookup.
   const ticketOrder = activeOrderId
-    ? fullOrders[activeOrderId] ?? activeWalletOrder
+    ? fullOrders[activeOrderId] ?? linkedFullOrder ?? null
     : null;
+  const orderLookupFailed = Boolean(
+    activeOrderId &&
+      fullOrderFailed[activeOrderId] &&
+      !fullOrders[activeOrderId] &&
+      !linkedFullOrder,
+  );
   const ticketBuyer = {
     firstName: ticketOrder?.firstName || sessionUser?.firstName,
     lastName: ticketOrder?.lastName || sessionUser?.lastName,
@@ -2535,7 +2552,7 @@ export default function SeasonTickets({
         initials: t.initials,
       }));
   const eventOrderPending = Boolean(
-    activeOrderId && !fullOrderChecked[activeOrderId],
+    activeOrderId && !fullOrderChecked[activeOrderId] && !orderLookupFailed,
   );
   const matchupHeroKey = splitAttractionHeroKey(
     activeEvId,
@@ -2543,32 +2560,39 @@ export default function SeasonTickets({
     ev,
   );
   const matchupHeroPending = Boolean(
-    !eventOrderPending &&
+    !orderLookupFailed &&
+      !eventOrderPending &&
       matchupHeroKey &&
       matchupHeroReadyKey !== matchupHeroKey,
   );
-  const eventDetailPending = eventOrderPending || matchupHeroPending;
+  const eventDetailPending =
+    !orderLookupFailed && (eventOrderPending || matchupHeroPending);
   const routedWalletPending =
-    routedPackagePassPending ||
-    routedAccessPassPending ||
-    eventDetailPending ||
-    linkedOrderPending ||
-    linkedOrderFetchNeeded ||
-    (showRoutedWallet &&
-      !routedTargetFound &&
-      (eventsLoading || !eventsChecked));
+    !orderLookupFailed &&
+    (routedPackagePassPending ||
+      routedAccessPassPending ||
+      eventDetailPending ||
+      linkedOrderPending ||
+      linkedOrderFetchNeeded ||
+      (showRoutedWallet &&
+        !routedTargetFound &&
+        (eventsLoading || !eventsChecked)));
   const routedWalletMissing =
-    showRoutedWallet && !routedTargetFound && !routedWalletPending;
+    showRoutedWallet &&
+    !routedWalletPending &&
+    (!routedTargetFound || orderLookupFailed);
   const showingEventDetail =
     showRoutedWallet
       ? Boolean(
           routedDetail &&
+            !orderLookupFailed &&
             !routedDetail.pendingIncomingTransfer &&
             !eventDetailPending &&
             !routedWalletPending &&
             !routedWalletMissing,
         )
       : screen === "event" &&
+          !orderLookupFailed &&
           !eventDetailPending &&
           !activeDetail?.pendingIncomingTransfer;
   const showingSeasonPackage =
@@ -3571,13 +3595,22 @@ export default function SeasonTickets({
   );
 
   const loadFullOrder = useCallback(async (orderId: string) => {
+    const noteLookupMiss = () => {
+      if (fullOrdersRef.current[orderId]) return;
+      setFullOrderFailed((current) => ({ ...current, [orderId]: true }));
+    };
     try {
       const order = unwrapOrder((await getOrder(orderId)).data);
       if (order) {
         setFullOrders((current) => ({ ...current, [orderId]: order }));
+        setFullOrderFailed((current) => ({ ...current, [orderId]: false }));
+      } else {
+        noteLookupMiss();
       }
     } catch {
-      // Screens fall back to what the wallet list returned for the order.
+      // A failed lookup must not keep tickets that only exist on the
+      // upcoming-events list. A lookup that already succeeded stays put.
+      noteLookupMiss();
     } finally {
       setFullOrderChecked((current) => ({ ...current, [orderId]: true }));
     }
@@ -5397,15 +5430,18 @@ export default function SeasonTickets({
   const MobileEvent = () => (
     <>
       {/* Blocktickets mobile event bar — fluid type, not desktop-pinned with ticket cards */}
-      <div style={{ position: "fixed", left: 0, right: 0, top: 0, zIndex: 45, boxSizing: "border-box", background: INK, boxShadow: "0 12px 30px -18px rgba(3,16,31,0.9)", padding: "calc(env(safe-area-inset-top) + 12px) 16px 12px", display: "flex", alignItems: "center", gap: 12 }}>
+      <div style={{ position: "sticky", top: 0, zIndex: 45, boxSizing: "border-box", background: INK, boxShadow: "0 12px 30px -18px rgba(3,16,31,0.9)", padding: "calc(env(safe-area-inset-top) + 12px) 16px 12px", display: "flex", alignItems: "flex-start", gap: 12 }}>
         {EventBackControl(mobileEventBackBtn, <BackArrow />, "Back")}
-        <div style={{ minWidth: 0, display: "flex", flexDirection: "column", gap: 2 }}>
+        <div style={{ minWidth: 0, flex: 1, display: "flex", flexDirection: "column", gap: 2 }}>
           <div style={{ fontSize: fluidSize(16), fontWeight: 600, lineHeight: 1.5, color: "#fff", letterSpacing: "-0.015em", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{ev.title}</div>
-          <div style={{ fontSize: fluidSize(12), lineHeight: 1.5, color: "rgba(255,255,255,0.78)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{ev.when} · {ev.venue}</div>
+          <div style={{ fontSize: fluidSize(12), lineHeight: 1.5, color: "rgba(255,255,255,0.78)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{mobileEventWhen(ev)}</div>
+          {ev.promo ? (
+            <div className="bt-event-promo" style={{ fontSize: fluidSize(12), fontWeight: 500, lineHeight: 1.4, color: "#fff", overflowWrap: "anywhere" }}>{ev.promo}</div>
+          ) : null}
         </div>
       </div>
 
-    <div className="st-mobile-ticket" style={{ boxSizing: "border-box", padding: `calc(env(safe-area-inset-top) + 74px) 12px ${showEventActionsFooter ? mobileStickyFooterReservePx(74) : "calc(28px + env(safe-area-inset-bottom))"}`, display: "flex", flexDirection: "column", gap: 16 }}>
+    <div className="st-mobile-ticket" style={{ boxSizing: "border-box", padding: `12px 12px ${showEventActionsFooter ? mobileStickyFooterReservePx(74, 24) : "calc(28px + env(safe-area-inset-bottom))"}`, display: "flex", flexDirection: "column", gap: 16 }}>
       {pendingIncomingEvent ? (
         <div style={{ ...card, borderRadius: 16, padding: "14px 16px", display: "flex", flexDirection: "column", gap: 6, border: "1px solid rgba(192,122,18,0.28)", background: "#fffaf2" }}>
           <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: fluidSize(13), fontWeight: 600, color: "#c07a12" }}>
@@ -5417,12 +5453,6 @@ export default function SeasonTickets({
           </div>
         </div>
       ) : null}
-      {ev.blurb ? (
-        <p style={{ margin: 0, fontSize: fluidSize(14), lineHeight: browseLeading("body"), color: FAINT, whiteSpace: "pre-line" }}>{ev.blurb}</p>
-      ) : null}
-      {ev.promo ? (
-        <p style={{ margin: 0, fontSize: fluidSize(14), lineHeight: browseLeading("body"), color: FAINT }}>{ev.promo}</p>
-      ) : null}
       {/* ticket carousel */}
       <div className="st-noscroll" style={{ display: "flex", gap: 14, overflowX: "auto", scrollSnapType: "x mandatory", scrollbarWidth: "none", msOverflowStyle: "none", margin: "12px -12px 0", padding: "2px 12px 6px" } as React.CSSProperties}>
         {ticketRows.map((t, i) => (
@@ -5430,11 +5460,6 @@ export default function SeasonTickets({
             {/* card header — matchup */}
             <div style={{ position: "relative", height: 210, overflow: "hidden", background: "#06203c" }}>
               {renderEventHero({ radius: 0, logoSize: 72, compactTextSize: 16, fullTextSize: 16 })}
-              <div style={{ position: "absolute", inset: 0, zIndex: 5, background: "linear-gradient(180deg, rgba(6,8,14,0.05) 30%, rgba(6,8,14,0.86) 100%)" }} />
-              <div style={{ position: "absolute", zIndex: 6, left: 0, right: 0, bottom: 0, padding: 16, display: "flex", flexDirection: "column", gap: 4 }}>
-                <div style={{ fontSize: fluidSize(16), fontWeight: 600, color: "#fff", letterSpacing: "-0.02em", lineHeight: 1.25, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{ev.title}</div>
-                <div style={{ fontSize: fluidSize(12), lineHeight: 1.5, color: "rgba(255,255,255,0.74)" }}>{ev.when} · {ev.venue}</div>
-              </div>
             </div>
 
             {/* seat strip */}
@@ -5492,7 +5517,7 @@ export default function SeasonTickets({
               </button>
               ) : null}
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
-                <button onClick={() => { setDetail(t); setModal("qr"); }} style={{ fontFamily: "inherit", minHeight: 48, fontSize: fluidSize(14), fontWeight: 600, lineHeight: 1.5, color: INK, background: "#fff", border: `1px solid ${ACCENT}`, borderRadius: 12, cursor: "pointer" }}>View QR-Code</button>
+                <button onClick={() => { setDetail(t); setModal("qr"); }} style={{ fontFamily: "inherit", minHeight: 48, fontSize: fluidSize(14), fontWeight: 600, lineHeight: 1.5, color: INK, background: "#fff", border: `1px solid ${ACCENT}`, borderRadius: 12, cursor: "pointer" }}>View QR code</button>
                 <button onClick={() => { setDetail(t); setModal("details"); }} style={{ fontFamily: "inherit", minHeight: 48, fontSize: fluidSize(14), fontWeight: 600, lineHeight: 1.5, color: INK, background: "#fff", border: "1px solid rgba(5,27,53,0.14)", borderRadius: 12, cursor: "pointer" }}>Ticket details</button>
               </div>
               {ticketWalletError ? (
@@ -5613,20 +5638,18 @@ export default function SeasonTickets({
             <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
               <h1 className="st-ev-title" style={{ margin: 0, fontWeight: 600, letterSpacing: "-0.03em", ...(mobile ? { lineHeight: browseLeading("h2") } : { fontSize: 30, lineHeight: 1.1 }) }}>{ev.title}</h1>
               <div style={{ display: "flex", flexWrap: "wrap", gap: "4px 20px", fontSize: fluidSize(14), lineHeight: 1.5, color: SUB }}>
-                <span style={{ fontWeight: 600, color: INK }}>{ev.when}</span>{ev.doors ? <span>Doors open {ev.doors}</span> : null}
+                <span style={{ fontWeight: 600, color: INK }}>{ev.when}</span>{ev.doors ? <span>Doors {ev.doors}</span> : null}
               </div>
+              {ev.promo ? (
+                <p className="bt-event-promo" style={{ fontSize: fluidSize(14), fontWeight: 500, lineHeight: browseLeading("body"), color: FAINT }}>{ev.promo}</p>
+              ) : null}
             </div>
             <div style={{ height: 1, background: "rgba(5,27,53,0.08)" }} />
             <AttractionCards />
-            {ev.blurb || ev.promo ? (
+            {ev.blurb ? (
               <>
                 <div style={{ height: 1, background: "rgba(5,27,53,0.08)" }} />
-                {ev.blurb ? (
-                  <p style={{ margin: 0, fontSize: fluidSize(14), lineHeight: browseLeading("body"), color: FAINT, whiteSpace: "pre-line" }}>{ev.blurb}</p>
-                ) : null}
-                {ev.promo ? (
-                  <p style={{ margin: 0, fontSize: fluidSize(14), lineHeight: browseLeading("body"), color: FAINT }}>{ev.promo}</p>
-                ) : null}
+                <p style={{ margin: 0, fontSize: fluidSize(14), lineHeight: browseLeading("body"), color: FAINT, whiteSpace: "pre-line" }}>{ev.blurb}</p>
               </>
             ) : null}
           </div>
@@ -5801,7 +5824,7 @@ export default function SeasonTickets({
                 today={today}
                 scheduleLine={
                   today
-                    ? `Doors open · ${g.doors}`
+                    ? `Doors · ${g.doors}`
                     : `${g.date} · ${g.time}`
                 }
               />
@@ -6372,7 +6395,6 @@ export default function SeasonTickets({
 
   const offerLine = formatPrintedOfferLine(detail?.raw);
   const accessibleLine = getAccessibleLabel(detail?.raw);
-  const additionalLine = getSeatAdditionalLabel({ ticket: detail?.raw });
   const detailRows: { k: string; v: ReactNode }[] = [
     {
       k: "Ticket",
@@ -6385,7 +6407,6 @@ export default function SeasonTickets({
     },
     ...(offerLine ? [{ k: "Offer", v: offerLine }] : []),
     ...(accessibleLine ? [{ k: "Accessibility", v: accessibleLine }] : []),
-    ...(additionalLine ? [{ k: "Seat label", v: additionalLine }] : []),
     {
       k: "Holder",
       v: printedTicketHolderName(
@@ -6971,7 +6992,7 @@ export default function SeasonTickets({
           {screen === "login" && Login()}
           {screen === "code" && CodeScreen()}
           {displaySection === "events" && screen === "events" && Events()}
-          {displaySection === "events" && screen === "event" && (eventDetailPending ? DetailLoader() : EventDetail())}
+          {displaySection === "events" && screen === "event" && (orderLookupFailed ? RoutedEventMissing() : eventDetailPending ? DetailLoader() : EventDetail())}
           {displaySection === "events" && screen === "seasonPackage" && SeasonPackage()}
           {displaySection === "events" && screen === "package" && Package()}
           {displaySection === "listings" && Listings()}

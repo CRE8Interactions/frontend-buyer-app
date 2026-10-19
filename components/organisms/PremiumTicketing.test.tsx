@@ -381,7 +381,7 @@ describe("Select tickets page (PremiumTicketing)", { timeout: 20_000 }, () => {
     ).toHaveAttribute("href", "/browse");
   });
 
-  it("shows the promotional description under the date and time", () => {
+  it("shows the promotional description under the ga event name", () => {
     const promo = "Pink Night. Free bobblehead for the first 1,000 fans.";
     render(
       <PremiumTicketing
@@ -393,14 +393,19 @@ describe("Select tickets page (PremiumTicketing)", { timeout: 20_000 }, () => {
       />,
     );
 
-    const when = screen.getByText(seatedTicketingFixture.whenLong);
+    const name = screen.getByRole("heading", { name: seatedTicketingFixture.eventName });
     const line = screen.getByText(promo);
+    const when = screen.getByText(seatedTicketingFixture.whenLong);
+    expect(name.parentElement).toBe(line.parentElement);
+    expect(
+      name.compareDocumentPosition(when) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
     expect(
       when.compareDocumentPosition(line) & Node.DOCUMENT_POSITION_FOLLOWING,
     ).toBeTruthy();
   });
 
-  it("shows the promotional description under the seated event", () => {
+  it("shows the promotional description under the seated event name", () => {
     const promo = "Pink Night. Free bobblehead for the first 1,000 fans.";
     render(
       <PremiumTicketing data={{ ...seatedTicketingFixture, promo }} />,
@@ -408,9 +413,13 @@ describe("Select tickets page (PremiumTicketing)", { timeout: 20_000 }, () => {
 
     const name = screen.getByText(seatedTicketingFixture.eventName);
     const line = screen.getByText(promo);
+    const when = screen.getByText(new RegExp(seatedTicketingFixture.whenLong));
     expect(line.closest("header")).toBe(name.closest("header"));
     expect(
-      name.compareDocumentPosition(line) & Node.DOCUMENT_POSITION_FOLLOWING,
+      name.compareDocumentPosition(when) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    expect(
+      when.compareDocumentPosition(line) & Node.DOCUMENT_POSITION_FOLLOWING,
     ).toBeTruthy();
   });
 
@@ -2424,6 +2433,40 @@ describe("Select tickets page (PremiumTicketing)", { timeout: 20_000 }, () => {
     expect(
       screen.queryByRole("dialog", { name: /event information/i }),
     ).not.toBeInTheDocument();
+  });
+
+  it("shows the promotional description in event information", async () => {
+    const promo = "Pink Night. Free bobblehead for the first 1,000 fans.";
+    const user = await renderReady({
+      ...seatedTicketingFixture,
+      promo,
+    });
+    await user.click(screen.getByRole("button", { name: /event information/i }));
+
+    const dialog = screen.getByRole("dialog", { name: /event information/i });
+    const name = within(dialog).getByText(seatedTicketingFixture.eventName);
+    const line = within(dialog).getByText(promo);
+    const doors = within(dialog).getByText(seatedTicketingFixture.doorsLine);
+    expect(
+      name.compareDocumentPosition(doors) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    expect(
+      doors.compareDocumentPosition(line) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    expect(within(dialog).queryByText(/promotional description/i)).not.toBeInTheDocument();
+    expect(within(dialog).getByText(/about this event/i)).toBeInTheDocument();
+  });
+
+  it("hides the promotional description in event information when the event has none", async () => {
+    const user = await renderReady({
+      ...seatedTicketingFixture,
+      promo: "   ",
+    });
+    await user.click(screen.getByRole("button", { name: /event information/i }));
+
+    const dialog = screen.getByRole("dialog", { name: /event information/i });
+    expect(within(dialog).queryByText(/promotional description/i)).not.toBeInTheDocument();
+    expect(within(dialog).getByText(/about this event/i)).toBeInTheDocument();
   });
 
   it("hides About this event when the event has no summary or description", async () => {

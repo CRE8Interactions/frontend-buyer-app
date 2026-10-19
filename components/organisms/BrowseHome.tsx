@@ -525,7 +525,7 @@ export default function BrowseHome() {
           style={{
             position: "relative",
             width: "100%",
-            height: mobile ? 400 : narrow ? 380 : 440,
+            minHeight: mobile ? 400 : narrow ? 380 : 440,
             borderRadius: mobile ? 20 : 28,
             overflow: "hidden",
             background: NAVY,
@@ -580,15 +580,16 @@ export default function BrowseHome() {
               />
               <div
                 style={{
-                  position: "absolute",
-                  inset: 0,
+                  position: "relative",
                   display: "flex",
                   flexDirection: "column",
                   justifyContent: "flex-end",
                   gap: mobile ? 14 : 18,
+                  minHeight: mobile ? 400 : narrow ? 380 : 440,
                   padding: mobile ? 24 : 44,
                   color: "#f4f7fc",
                   pointerEvents: "none",
+                  boxSizing: "border-box",
                 }}
               >
                 <div
@@ -645,12 +646,12 @@ export default function BrowseHome() {
                   >
                     {eventTitle(hero)}
                   </div>
-                  <EventPromo text={eventPromotionalCopy(hero)} lines={2} color="#fff" style={{ fontSize: 15 }} />
                   <div style={{ fontSize: mobile ? 14 : 16, lineHeight: 1.5, color: "#cdd9ea" }}>
                     {[eventWhen(hero), eventVenueLine(hero)]
                       .filter(Boolean)
                       .join(" · ")}
                   </div>
+                  <EventPromo text={eventPromotionalCopy(hero)} color="#fff" style={{ fontSize: 15 }} />
                 </div>
                 <div
                   style={{
@@ -1030,7 +1031,6 @@ export default function BrowseHome() {
                     >
                       {eventTitle(e)}
                     </div>
-                    <EventPromo text={eventPromotionalCopy(e)} />
                     <div
                       style={{
                         fontSize: 13,

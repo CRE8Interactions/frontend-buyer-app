@@ -744,7 +744,7 @@ function CheckoutSuccessPage() {
                   </svg>
                   <div className="text-[14px]" style={{ color: "#4a5567" }}>
                     <span className="font-semibold" style={{ color: NAVY }}>
-                      {doorsTime ? `Doors open ${doorsTime}.` : "Arrive early."}
+                      {doorsTime ? `Doors ${doorsTime}.` : "Arrive early."}
                     </span>
                     {startTime ? ` Event starts ${startTime}.` : ""}
                   </div>
