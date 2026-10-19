@@ -3,7 +3,7 @@ import userEvent from "@testing-library/user-event";
 import type { ReactNode } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import GuestContact from "@/components/organisms/GuestContact";
-import { DEMO_USER } from "@/lib/demo/fixtures";
+import { DEMO_ORGS, DEMO_USER } from "@/lib/demo/fixtures";
 import { FIELD_COPY } from "@/lib/fieldValidation";
 import { GUEST_CONTACT_COPY } from "@/lib/guestCheckout";
 
@@ -60,10 +60,50 @@ describe("GuestContact", () => {
       screen.getByRole("button", { name: /continue to payment/i }),
     );
 
+    expect(
+      screen.getByRole("checkbox", {
+        name: /send me emails about upcoming events and offers/i,
+      }),
+    ).not.toBeChecked();
     expect(onContinue).toHaveBeenCalledWith({
       email: DEMO_USER.email,
       firstName: DEMO_USER.firstName,
       lastName: DEMO_USER.lastName,
+      marketingEmailOptIn: false,
+    });
+  });
+
+  it("sends marketing opt-in when the buyer checks the team checkbox", async () => {
+    const org = DEMO_ORGS.find((item) => item.slug === "ogden-raptors");
+    if (!org) throw new Error("demo fixtures need the Raptors organization");
+    const user = userEvent.setup();
+    const onContinue = vi.fn();
+    render(
+      <GuestContact
+        loginHref="/login/"
+        onContinue={onContinue}
+        organizationName={org.name}
+        optInMessage={`Email me about ${org.name} offers.`}
+      />,
+    );
+
+    await user.type(screen.getByLabelText(/email address/i), DEMO_USER.email);
+    await user.type(screen.getByLabelText(/first name/i), DEMO_USER.firstName);
+    await user.type(screen.getByLabelText(/last name/i), DEMO_USER.lastName);
+    await user.click(
+      screen.getByRole("checkbox", {
+        name: `Email me about ${org.name} offers.`,
+      }),
+    );
+    await user.click(
+      screen.getByRole("button", { name: /continue to payment/i }),
+    );
+
+    expect(onContinue).toHaveBeenCalledWith({
+      email: DEMO_USER.email,
+      firstName: DEMO_USER.firstName,
+      lastName: DEMO_USER.lastName,
+      marketingEmailOptIn: true,
     });
   });
 

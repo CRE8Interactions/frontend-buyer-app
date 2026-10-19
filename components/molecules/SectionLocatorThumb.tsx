@@ -124,14 +124,27 @@ function CandidateThumbnail({
     return () => clearTimeout(timer);
   }, [waiting]);
 
+  const imgRef = useRef<HTMLImageElement>(null);
+  const onLoadRef = useRef(onLoad);
+  onLoadRef.current = onLoad;
+  const base = candidates.length
+    ? candidates[Math.min(index, candidates.length - 1)]
+    : "";
+  const src = base ? retryCandidateSrc(base, retries) : "";
+  const loaded = Boolean(src) && loadedSrc === src;
+
+  useLayoutEffect(() => {
+    const img = imgRef.current;
+    // A highlights image cached from the tickets page is already complete, so
+    // its load event will not fire again.
+    if (!img || !src || !img.complete || img.naturalWidth <= 0 || loaded) return;
+    setLoadedSrc(src);
+    onLoadRef.current();
+  }, [loaded, src]);
+
   if (!candidates.length) {
     return null;
   }
-
-  const base = candidates[Math.min(index, candidates.length - 1)];
-  const src = retryCandidateSrc(base, retries);
-
-  const loaded = loadedSrc === src;
 
   if (waiting) {
     return (
@@ -147,6 +160,7 @@ function CandidateThumbnail({
     <>
       {/* eslint-disable-next-line @next/next/no-img-element */}
       <img
+        ref={imgRef}
         src={src}
         alt={alt}
         loading={priority ? "eager" : "lazy"}
@@ -320,18 +334,22 @@ export default function SectionLocatorThumb({
       ? [thumbnailSrc]
       : [];
   const candidatesKey = candidates.join("|");
+  const seenCandidates = useRef(candidatesKey);
+  if (seenCandidates.current !== candidatesKey) {
+    seenCandidates.current = candidatesKey;
+    setCdnExhausted(false);
+    setCdnLoaded(false);
+  }
   const showCdn = candidates.length > 0 && !cdnExhausted;
   const showMap = Boolean(
     !showCdn && background?.url && (location.path || location.pin) && !mapFailed,
   );
 
   useEffect(() => {
-    setCdnExhausted(false);
     setMapFailed(false);
-    setCdnLoaded(false);
     setMapLoaded(false);
     setPlaceholderLoaded(false);
-  }, [candidatesKey, background?.url, location.path, location.pin]);
+  }, [background?.url, location.path, location.pin]);
 
   const markLoaded = (setLoaded: (value: boolean) => void) => () => {
     setLoaded(true);

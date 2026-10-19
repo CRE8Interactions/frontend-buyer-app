@@ -69,6 +69,8 @@ export type TicketPdfRequest = {
   tickets: PrintableTicket[];
   buyer?: TicketPdfBuyer | null;
   packageName?: string;
+  /** Group that bought the order. Drawn under the venue when set. */
+  purchasedByOrganizationName?: string | null;
   filename?: string;
   mode: "open" | "download";
 };
@@ -406,6 +408,7 @@ async function drawBrandedTicket(
     ticket,
     buyer,
     packageName,
+    purchasedByOrganizationName,
     fonts,
     logo,
     ticketY,
@@ -415,6 +418,7 @@ async function drawBrandedTicket(
     ticket: PrintableTicket;
     buyer?: TicketPdfBuyer | null;
     packageName?: string;
+    purchasedByOrganizationName?: string | null;
     fonts: { regular: PDFFont; bold: PDFFont };
     logo: PDFImage | null;
     ticketY: number;
@@ -581,6 +585,10 @@ async function drawBrandedTicket(
   );
   drawField("TIME", offerLayout.timeValue, contentLeft, headerBottom - 80);
   drawField("VENUE", printedVenueLabel(event), contentLeft, headerBottom - 120);
+  const organizationName = String(purchasedByOrganizationName || "").trim();
+  if (organizationName) {
+    drawField("ORGANIZATION", organizationName, contentLeft, headerBottom - 158);
+  }
 
   const holderX = TICKET_X + 270;
   page.drawText("TICKET HOLDER", {
@@ -655,7 +663,7 @@ async function drawBrandedTicket(
     x: seatBoxX,
     y: seatBoxY,
     width: 223,
-    height: 68,
+    height: 52,
     radius: 8,
     color: rgb(1, 1, 1),
     borderColor: seatBoxBorder,
@@ -672,7 +680,7 @@ async function drawBrandedTicket(
     const labelW = bold.widthOfTextAtSize(col.label, 7);
     page.drawText(col.label, {
       x: col.x,
-      y: seatBoxY + 48,
+      y: seatBoxY + 36,
       size: 7,
       font: bold,
       color: labelColor,
@@ -681,7 +689,7 @@ async function drawBrandedTicket(
     const value = fitText(col.value, bold, size, 60);
     page.drawText(value, {
       x: col.x + Math.max(0, (labelW - bold.widthOfTextAtSize(value, size)) / 2),
-      y: seatBoxY + 22,
+      y: seatBoxY + 14,
       size,
       font: bold,
       color: textDark,
@@ -733,6 +741,7 @@ export async function printTicketsPdf({
   tickets,
   buyer,
   packageName,
+  purchasedByOrganizationName,
   filename,
   mode,
 }: TicketPdfRequest) {
@@ -757,6 +766,7 @@ export async function printTicketsPdf({
       ticket: tickets[index],
       buyer,
       packageName,
+      purchasedByOrganizationName,
       fonts,
       logo,
       ticketY: TICKET_SLOTS[slot],

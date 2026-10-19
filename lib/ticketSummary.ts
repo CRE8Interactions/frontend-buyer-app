@@ -17,6 +17,7 @@ import {
   ticketSectionValue,
 } from "@/lib/wallet";
 import { getAccessibleLabel, isAccessibleSource } from "@/lib/ticketAccessibility";
+import { getSeatAdditionalLabel } from "@/lib/seatLabels";
 
 export type TicketOfferPriceLine = {
   /** Offer label shown on the checkout price row (e.g. "Early Bird"). */
@@ -38,6 +39,8 @@ export type TicketSelectionSummary = {
   offerLines: TicketOfferPriceLine[];
   /** Shopper accessible-seating copy when any ticket is accessible. */
   accessibleLabel: string;
+  /** Custom seat copy when any ticket in the selection has one. */
+  additionalLabel: string;
 };
 
 type OfferNameSource = {
@@ -57,6 +60,18 @@ type OfferNameSource = {
       }
     | null;
 };
+
+function joinedAdditionalLabels(
+  tickets: Array<Record<string, unknown>>,
+) {
+  return [
+    ...new Set(
+      tickets
+        .map((ticket) => getSeatAdditionalLabel({ ticket }))
+        .filter(Boolean),
+    ),
+  ].join(" · ");
+}
 
 function stripRichText(value?: string | null): string {
   if (!value) return "";
@@ -356,6 +371,7 @@ export function ticketSelectionSummary(
     qtyLabel,
     offerLines,
     accessibleLabel,
+    additionalLabel: joinedAdditionalLabels(tickets),
   };
 }
 
@@ -364,6 +380,7 @@ export type PackageSeatLine = {
   context: string;
   price: number;
   accessibleLabel: string;
+  additionalLabel: string;
 };
 
 export type PackageOrderSummary = {
@@ -1060,6 +1077,7 @@ export function packageSeatLines(
     context: string;
     seatNumbers: Array<string | number>;
     accessibleLabels: string[];
+    additionalLabels: string[];
     amount: number;
   }> = [];
   const groupIndex = new Map<string, number>();
@@ -1098,6 +1116,7 @@ export function packageSeatLines(
     if (existing != null) {
       groups[existing].seatNumbers.push(seatNumber);
       groups[existing].accessibleLabels.push(getAccessibleLabel(ticket));
+      groups[existing].additionalLabels.push(getSeatAdditionalLabel({ ticket }));
       groups[existing].amount += amount;
       return;
     }
@@ -1109,6 +1128,7 @@ export function packageSeatLines(
       context,
       seatNumbers: [seatNumber],
       accessibleLabels: [getAccessibleLabel(ticket)],
+      additionalLabels: [getSeatAdditionalLabel({ ticket })],
       amount,
     });
   });
@@ -1118,6 +1138,9 @@ export function packageSeatLines(
       ? group.seatNumbers.length
       : new Set(group.seatNumbers.map((seat) => String(seat))).size || 1;
     const labels = group.accessibleLabels.filter(Boolean);
+    const additionalLabels = [
+      ...new Set(group.additionalLabels.filter(Boolean)),
+    ];
     const gaSection = gaTicketSeatLine({
       sectionNumber: group.section,
       rowNumber: group.row,
@@ -1135,6 +1158,7 @@ export function packageSeatLines(
         : labels.every((label) => label === labels[0])
           ? labels[0]
           : "Accessible seating",
+      additionalLabel: additionalLabels.join(" · "),
     };
   });
 }

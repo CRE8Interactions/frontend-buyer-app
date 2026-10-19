@@ -677,6 +677,11 @@ function CheckoutSuccessPage() {
                       style={{ marginTop: 4 }}
                     />
                   ) : null}
+                  {ticketSummary.additionalLabel ? (
+                    <div className="text-[13px]" style={{ color: MUTED }}>
+                      {ticketSummary.additionalLabel}
+                    </div>
+                  ) : null}
                 </div>
               </div>
               <div className="h-px bg-[rgba(5,27,53,0.08)]" />
@@ -739,7 +744,7 @@ function CheckoutSuccessPage() {
                   </svg>
                   <div className="text-[14px]" style={{ color: "#4a5567" }}>
                     <span className="font-semibold" style={{ color: NAVY }}>
-                      {doorsTime ? `Doors open ${doorsTime}.` : "Arrive early."}
+                      {doorsTime ? `Doors ${doorsTime}.` : "Arrive early."}
                     </span>
                     {startTime ? ` Event starts ${startTime}.` : ""}
                   </div>

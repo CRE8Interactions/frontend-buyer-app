@@ -9,6 +9,7 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import EventPromo from "@/components/atoms/EventPromo";
 import InAppBackLink from "@/components/molecules/InAppBackLink";
 import NavAuthActions from "@/components/molecules/NavAuthActions";
 import RouteLoader from "@/components/molecules/RouteLoader";
@@ -54,6 +55,7 @@ import {
   venueWebsiteHref,
 } from "@/lib/venueWebsite";
 import { categoryLabel, eventTypeLabel } from "@/lib/eventType";
+import { eventPromotionalCopy } from "@/lib/promotionalDescription";
 import { useClientReady } from "@/lib/useClientReady";
 import {
   stickyOffsetBelowHeader,
@@ -112,6 +114,7 @@ type VenueEvent = {
   seatmap?: { ga_only?: boolean };
   isGeneralAdmissionOnly?: boolean;
   generalAdmissionOnly?: boolean;
+  promotionalDescription?: unknown;
 };
 
 type VenueRecord = {
@@ -139,6 +142,7 @@ type RowEvent = {
   time: string;
   sport: string;
   title: string;
+  promo: string;
   host: string;
   status: string;
   soldOut: boolean;
@@ -280,6 +284,7 @@ function toRow(
     time: formatEventWhen(start, tz, "h:mm A") || "",
     sport: categoryLabel(eventTypeLabel(ev, org ? [org] : [])),
     title: ev.name || ev.title || "Event",
+    promo: eventPromotionalCopy(ev),
     host: ev.organization?.name?.trim() || fallbackHost || "",
     status: eventStatus(ev),
     soldOut: isEventSoldOut(ev),
@@ -865,6 +870,7 @@ export default function VenueProfile({ slug }: { slug: string }) {
                         {e.host ? (
                           <div style={{ fontSize: 13, lineHeight: 1.5, color: "#6e7180", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{e.host}</div>
                         ) : null}
+                        <EventPromo text={e.promo} />
                       </div>
                       <div style={{ gridColumn: stacked ? "1 / -1" : "auto", display: "flex", alignItems: "center", gap: 16, justifyContent: "flex-end", paddingTop: stacked ? 12 : 0, borderTop: stacked ? "1px solid rgba(5,27,53,0.08)" : "none" }}>
                         <span style={{ fontFamily: "inherit", fontSize: 14, fontWeight: 600, lineHeight: 1.5, color: soldOut ? "#6e7180" : soon ? NAVY : BTN_INK, background: soldOut || soon ? "#fff" : BTN, border: `1px solid ${soldOut || soon ? "rgba(5,27,53,0.14)" : BTN}`, borderRadius: 999, padding: "12px 22px", minHeight: 44, display: "inline-flex", alignItems: "center", cursor: soldOut ? "default" : "pointer", whiteSpace: "nowrap" }}>{soldOut ? "Sold out" : soon ? "Remind me" : "Get tickets"}</span>

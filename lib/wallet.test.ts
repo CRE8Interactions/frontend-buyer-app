@@ -8,6 +8,7 @@ import {
   seatDisplayValue,
   formatTicketHolderName,
   gaTicketSeatLine,
+  ticketSectionValue,
   groupedWalletSeatLines,
   passMatchesTicketSeat,
   isScannedTicket,

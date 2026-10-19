@@ -189,6 +189,25 @@ describe("Browse page", () => {
     ).not.toBeInTheDocument();
   });
 
+  it("shows the promotional description on the featured slider but not on the event card", async () => {
+    const promo = "Pink Night. Free bobblehead for the first 1,000 fans.";
+    const [featured, ...rest] = DEMO_EVENTS;
+    mockBrowseApis({
+      events: [{ ...featured, promotionalDescription: promo }, ...rest],
+    });
+
+    render(<BrowseHome />);
+
+    const hero = (await screen.findByText(/featured · /i)).closest("section") as HTMLElement;
+    expect(within(hero).getByText(promo)).toBeInTheDocument();
+    expect(screen.getAllByText(promo)).toHaveLength(1);
+    const card = screen
+      .getAllByText(featured.name)
+      .map((title) => title.closest(".bh-ev"))
+      .find(Boolean) as HTMLElement;
+    expect(within(card).queryByText(promo)).not.toBeInTheDocument();
+  });
+
   it("keeps a plain get-tickets CTA when the featured event has no price", async () => {
     const { pricingLevels: _levels, ticketGroups: _groups, ...bare } =
       DEMO_EVENTS[0] as (typeof DEMO_EVENTS)[0] & { ticketGroups?: unknown };
@@ -317,6 +336,28 @@ describe("Browse page", () => {
     ).toHaveAttribute("href", "/search/?query=rap");
     expect(screen.getByText(DEMO_EVENTS[1].name)).toBeInTheDocument();
     expect(screen.getAllByText(/6 events/i).length).toBeGreaterThan(0);
+  });
+
+  it("does not show the promotional description on a search result", async () => {
+    const user = userEvent.setup();
+    const match = DEMO_EVENTS.find((event) => /raptors/i.test(event.name))!;
+    mockedSearchEvents.mockResolvedValue({
+      data: [
+        {
+          ...match,
+          promotionalDescription: [
+            { type: "paragraph", children: [{ type: "text", text: "Kids eat free." }] },
+          ],
+        },
+      ],
+    } as never);
+    render(<BrowseHome />);
+    await screen.findByRole("heading", { name: /^events$/i });
+
+    await user.type(screen.getByPlaceholderText(/search for events/i), "rap");
+
+    expect(await screen.findByText(match.name)).toBeInTheDocument();
+    expect(screen.queryByText("Kids eat free.")).not.toBeInTheDocument();
   });
 
   it("shows search no-match copy without emptying the browse grid", async () => {

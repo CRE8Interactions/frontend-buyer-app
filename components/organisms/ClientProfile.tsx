@@ -9,6 +9,7 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import EventPromo from "@/components/atoms/EventPromo";
 import InAppBackLink from "@/components/molecules/InAppBackLink";
 import NavAuthActions from "@/components/molecules/NavAuthActions";
 import RouteLoader from "@/components/molecules/RouteLoader";
@@ -21,6 +22,7 @@ import {
   packageFromPriceLabel,
   type EventPriceSource,
 } from "@/lib/eventFromPrice";
+import { eventPromotionalCopy } from "@/lib/promotionalDescription";
 import { teamStorefrontDescription } from "@/lib/teamCopy";
 import { categoryLabel, eventTypeLabel } from "@/lib/eventType";
 import {
@@ -107,6 +109,7 @@ type StoreEvent = {
   ticketGroups?: EventPriceSource["ticketGroups"];
   ticket_groups?: EventPriceSource["ticket_groups"];
   tickets?: EventPriceSource["tickets"];
+  promotionalDescription?: unknown;
   organization?: {
     slug?: string;
     name?: string;
@@ -176,6 +179,7 @@ type RowEvent = {
   time: string;
   sport: string;
   title: string;
+  promo: string;
   venue: string;
   status: string;
   soldOut: boolean;
@@ -279,6 +283,7 @@ function toRow(ev: StoreEvent, org?: Org | null): RowEvent | null {
     time: formatEventWhen(start, tz, "h:mm A") || "",
     sport: categoryLabel(eventTypeLabel(ev, org ? [org] : [])),
     title: ev.name || ev.title || "Event",
+    promo: eventPromotionalCopy(ev),
     venue: ev.venue?.name || "",
     status: eventStatus(ev),
     soldOut: isEventSoldOut(ev),
@@ -1116,6 +1121,7 @@ export default function ClientProfile({
                               {e.venue}
                             </div>
                           )}
+                          <EventPromo text={e.promo} />
                         </div>
                         <div
                           style={{

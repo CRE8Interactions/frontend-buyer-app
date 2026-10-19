@@ -215,6 +215,44 @@ describe("team and venue back buttons", () => {
     expect(within(row as HTMLElement).queryByText(/^get tickets$/i)).not.toBeInTheDocument();
   });
 
+  it("shows a promotional description under the event title", () => {
+    const promo = "Pink Night. Free bobblehead for the first 1,000 fans.";
+    const event = {
+      ...nmStateEvents[0],
+      promotionalDescription: `  ${promo}  `,
+    };
+    render(
+      <ClientProfile
+        slug={nmState.slug}
+        initialData={{
+          organization: nmState,
+          events: [event],
+          venues: nmState.venues,
+        }}
+      />,
+    );
+
+    const row = screen.getByText(event.name).closest(".cp-row");
+    expect(within(row as HTMLElement).getByText(promo)).toBeInTheDocument();
+  });
+
+  it("hides a blank promotional description", () => {
+    const event = { ...nmStateEvents[0], promotionalDescription: "   " };
+    render(
+      <ClientProfile
+        slug={nmState.slug}
+        initialData={{
+          organization: nmState,
+          events: [event],
+          venues: nmState.venues,
+        }}
+      />,
+    );
+
+    const row = screen.getByText(event.name).closest(".cp-row");
+    expect(row?.querySelector("p")).toBeNull();
+  });
+
   it("shows an on-sale badge on seated and GA team events", () => {
     const when = "2026-11-01T17:00:00.000Z";
     const events = raptorsEvents.map((event) => ({
@@ -726,6 +764,52 @@ describe("venue page events", () => {
     const liveRow = screen.getByRole("link", { name: new RegExp(live.name, "i") });
     expect(within(liveRow).getByText(/^get tickets$/i)).toBeInTheDocument();
     expect(within(liveRow).queryByText(/^sold out$/i)).not.toBeInTheDocument();
+  });
+
+  it("shows a rich-text promotional description under a sold-out venue event title", async () => {
+    const venue = raptors.homeVenue;
+    const [first, ...rest] = demoVenueEvents(venue.slug).map((event, index) => ({
+      ...event,
+      start: upcomingStart(index),
+      soldOut: index === 0,
+    }));
+    const event = {
+      ...first,
+      promotionalDescription: [
+        { type: "paragraph", children: [{ type: "text", text: "Pink Night." }] },
+        { type: "paragraph", children: [{ type: "text", text: "Free bobblehead." }] },
+      ],
+    };
+    mockedGetVenue.mockResolvedValue({ data: [venue] } as never);
+    mockedGetVenues.mockResolvedValue({ data: [venue] } as never);
+    mockedGetUpcoming.mockResolvedValue({
+      data: { allEvents: [event, ...rest] },
+    } as never);
+
+    render(<VenueProfile slug={venue.slug} />);
+
+    const row = (await screen.findByText(event.name)).closest(".vp-row") as HTMLElement;
+    expect(within(row).getByText("Pink Night. Free bobblehead.")).toBeInTheDocument();
+    expect(within(row).getAllByText(/^sold out$/i)).toHaveLength(2);
+  });
+
+  it("hides a blank promotional description on venue event rows", async () => {
+    const venue = raptors.homeVenue;
+    const schedule = demoVenueEvents(venue.slug).map((event, index) => ({
+      ...event,
+      start: upcomingStart(index),
+      promotionalDescription: index === 0 ? "   " : null,
+    }));
+    mockedGetVenue.mockResolvedValue({ data: [venue] } as never);
+    mockedGetVenues.mockResolvedValue({ data: [venue] } as never);
+    mockedGetUpcoming.mockResolvedValue({
+      data: { allEvents: schedule },
+    } as never);
+
+    render(<VenueProfile slug={venue.slug} />);
+
+    const row = (await screen.findByText(schedule[0].name)).closest(".vp-row");
+    expect(row?.querySelector("p")).toBeNull();
   });
 
   it("shows an on-sale badge on seated and GA venue events", async () => {

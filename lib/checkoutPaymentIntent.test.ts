@@ -52,6 +52,16 @@ describe("buildProcessOrderRequest", () => {
     expect(request.trackingCode).toBe("1234");
     expect(request.paymentIntentId).toBe("pi_test");
     expect(request.cart.id).toBe(cart.id);
+    expect(request).not.toHaveProperty("marketingEmailOptIn");
+  });
+
+  it("includes marketing opt-in only when the signed-in buyer sends it", () => {
+    const cart = demoCheckoutCart({ ga: true });
+    const optedIn = buildProcessOrderRequest(cart, "pi_test", null, true);
+    const declined = buildProcessOrderRequest(cart, "pi_test", null, false);
+
+    expect(optedIn.marketingEmailOptIn).toBe(true);
+    expect(declined.marketingEmailOptIn).toBe(false);
   });
 });
 
@@ -75,6 +85,7 @@ describe("buildPaymentIntentRequest", () => {
       email: DEMO_USER.email,
       firstName: DEMO_USER.firstName,
       lastName: DEMO_USER.lastName,
+      marketingEmailOptIn: true,
     };
     const request = buildPaymentIntentRequest(cart, cart.event, guest);
 

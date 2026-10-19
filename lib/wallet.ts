@@ -76,6 +76,8 @@ export type OrderLike = {
   total?: number | string;
   /** Purchase origin; wallet inventory is intentionally not filtered by it. */
   source?: "website" | "box_office" | "ticket_assignment" | string;
+  /** Group that bought the order, printed on the ticket PDF when set. */
+  purchasedByOrganizationName?: string | null;
   box_office?: boolean;
   event?: EventLike | null;
   package?: {
@@ -462,14 +464,20 @@ export function ticketSectionValue(
   ticket?: TicketLike | Record<string, unknown> | null,
 ): string {
   if (!ticket) return "";
-  for (const candidate of [
+  const candidates = [
     ticket.sectionNumber,
     ticket.sectionName,
     ticket.section_number,
     ticket.section_name,
-  ]) {
+  ];
+  for (const candidate of candidates) {
     const text = String(candidate ?? "").trim();
     if (text && !isGenericGeneralAdmissionLabel(text)) return text;
+  }
+  // Legacy My Tickets prints sectionNumber even when it is "General Admission".
+  for (const candidate of [ticket.sectionNumber, ticket.section_number]) {
+    const text = String(candidate ?? "").trim();
+    if (text) return text;
   }
   return "";
 }

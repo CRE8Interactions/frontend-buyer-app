@@ -8,6 +8,7 @@
 
 import { useEffect, useMemo, useState, type CSSProperties, type ReactNode } from "react";
 import Link from "next/link";
+import EventPromo from "@/components/atoms/EventPromo";
 import Nav from "@/components/organisms/Nav";
 import SiteFooter from "@/components/organisms/SiteFooter";
 import { BrandedLoader } from "@/components/molecules/RouteLoader";
@@ -40,6 +41,7 @@ import {
   browsePx,
 } from "@/lib/browseType";
 import { venueUpcomingEventCount } from "@/lib/eventFromPrice";
+import { eventPromotionalCopy } from "@/lib/promotionalDescription";
 import {
   categoryLabel,
   eventTypeLabel,
@@ -99,6 +101,7 @@ type BrowseEvent = {
   seatmap?: { ga_only?: boolean };
   isGeneralAdmissionOnly?: boolean;
   generalAdmissionOnly?: boolean;
+  promotionalDescription?: unknown;
 };
 
 type BrowseOrg = {
@@ -522,7 +525,7 @@ export default function BrowseHome() {
           style={{
             position: "relative",
             width: "100%",
-            height: mobile ? 400 : narrow ? 380 : 440,
+            minHeight: mobile ? 400 : narrow ? 380 : 440,
             borderRadius: mobile ? 20 : 28,
             overflow: "hidden",
             background: NAVY,
@@ -577,15 +580,16 @@ export default function BrowseHome() {
               />
               <div
                 style={{
-                  position: "absolute",
-                  inset: 0,
+                  position: "relative",
                   display: "flex",
                   flexDirection: "column",
                   justifyContent: "flex-end",
                   gap: mobile ? 14 : 18,
+                  minHeight: mobile ? 400 : narrow ? 380 : 440,
                   padding: mobile ? 24 : 44,
                   color: "#f4f7fc",
                   pointerEvents: "none",
+                  boxSizing: "border-box",
                 }}
               >
                 <div
@@ -647,6 +651,7 @@ export default function BrowseHome() {
                       .filter(Boolean)
                       .join(" · ")}
                   </div>
+                  <EventPromo text={eventPromotionalCopy(hero)} color="#fff" style={{ fontSize: 15 }} />
                 </div>
                 <div
                   style={{

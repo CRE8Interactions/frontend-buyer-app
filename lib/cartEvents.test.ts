@@ -87,7 +87,7 @@ describe("cartEvents wallet schedule", () => {
     expect(summary.today).toBe(true);
     expect(summary.when).toBe("Tonight · 7:35 PM");
     expect(summary.whenDate).toBe("Sat, Aug 15 · 7:35 PM");
-    expect(walletEventScheduleLine(summary)).toMatch(/^Doors open · /);
+    expect(walletEventScheduleLine(summary)).toMatch(/^Doors · /);
     expect(walletEventScheduleLine(summary)).toContain("6:35 PM");
   });
 
@@ -140,6 +140,25 @@ describe("wallet event detail venue and summary", () => {
 
   it("leaves the summary empty when the event has neither", () => {
     expect(detailFor(withStreet).blurb).toBe("");
+  });
+
+  it("shows the promotional description under the event summary", () => {
+    const promo = "Free bobblehead to the first 1,000 attendees";
+    expect(
+      detailFor({
+        ...withStreet,
+        promotionalDescription: [
+          { type: "paragraph", children: [{ type: "text", text: promo }] },
+        ],
+      }).promo,
+    ).toBe(promo);
+  });
+
+  it("leaves the promotional line empty when the event has none", () => {
+    expect(detailFor(withStreet).promo).toBe("");
+    expect(
+      detailFor({ ...withStreet, promotionalDescription: "   " }).promo,
+    ).toBe("");
   });
 
   it("takes the summary and street address from a fetched order", () => {

@@ -164,8 +164,13 @@ export const formatCurrency = (num?: number | string | null) =>
 export function listedUnitPrice(
   amount?: number | null,
   offer?: { freeOffer?: boolean } | null,
+  listing?: { askingPrice?: number | null } | null,
 ) {
-  return offer?.freeOffer ? 0 : Number(amount || 0);
+  if (offer?.freeOffer) return 0;
+  if (amount != null && Number.isFinite(Number(amount))) return Number(amount);
+  const asking = listing?.askingPrice;
+  if (asking != null && Number.isFinite(Number(asking))) return Number(asking);
+  return 0;
 }
 
 export const formatOfferListPrice = (

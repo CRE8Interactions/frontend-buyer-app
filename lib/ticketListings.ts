@@ -960,7 +960,7 @@ export function groupsToListings(
         min: limits.min,
         max: limits.max,
         multipleOf: limits.step,
-        price: money(listedUnitPrice(Number(g.price || 0), g.offer)),
+        price: money(listedUnitPrice(g.price, g.offer, g.listing)),
         sectionId: g.sectionId != null ? String(g.sectionId) : undefined,
         cartGroup: g as Record<string, unknown>,
         sourceIndex,
@@ -1029,7 +1029,7 @@ export function groupsToGaTiers(
     })
     .map((g) => {
       const available = Number(g.availableCount || 0);
-      const unit = listedUnitPrice(Number(g.price || 0), g.offer);
+      const unit = listedUnitPrice(g.price, g.offer, g.listing);
       const offerName = g.offer?.name || g.sectionName || "Standard admission";
       const limits = limitsFromTicketGroup(g, globalMax);
       const soldout = available <= 0;

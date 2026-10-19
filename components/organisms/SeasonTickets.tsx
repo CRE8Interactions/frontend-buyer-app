@@ -211,6 +211,7 @@ import {
   type TicketLike,
 } from "@/lib/wallet";
 import { getAccessibleLabel } from "@/lib/ticketAccessibility";
+import { getSeatAdditionalLabel } from "@/lib/seatLabels";
 import AccessibleSeatingBadge from "@/components/atoms/AccessibleSeatingBadge";
 import {
   addAccessPassToPhoneWallet,
@@ -802,7 +803,7 @@ function SplitAttractionHero({
 
 type EventT = {
   title: string; when: string; whenDate?: string; doors: string; venue: string; city: string; address: string;
-  id: string; brand: string; initials: string; blurb: string; rec: string; opp: string;
+  id: string; brand: string; initials: string; blurb: string; promo?: string; rec: string; opp: string;
   teams: { name: string; role: string; rec: string; initials: string; brand: string; logo?: string }[];
   tickets: { id?: number | string; seat: string; holder: string; code: string; raw?: Record<string, unknown> }[];
   attractions?: AttractionCard[];
@@ -826,6 +827,10 @@ type EventT = {
   incomingTransferOn?: string;
 };
 
+function mobileEventWhen(ev: Pick<EventT, "when" | "doors" | "venue">) {
+  return [ev.when, ev.doors ? `Doors ${ev.doors}` : "", ev.venue].filter(Boolean).join(" · ");
+}
+
 function detailToEventT(d: CartEventDetail, isCart = false): EventT {
   return {
     id: d.key,
@@ -839,6 +844,7 @@ function detailToEventT(d: CartEventDetail, isCart = false): EventT {
     brand: d.brand,
     initials: d.initials,
     blurb: d.blurb,
+    promo: d.promo,
     rec: "",
     opp: d.opp,
     teams: d.teams,
@@ -1388,6 +1394,45 @@ function TransferModal({
   );
 }
 
+function soonestLinkedOrderDetail(rows: CartEventDetail[]) {
+  return (
+    [...rows].sort((a, b) =>
+      String(a.event?.start || "").localeCompare(String(b.event?.start || "")),
+    )[0] ?? null
+  );
+}
+
+/** Event detail for an emailed order that is not already in the wallet list. */
+function linkedDetailForRoute(
+  details: Record<string, CartEventDetail>,
+  routedOrderId?: string,
+  routedEventUUID?: string,
+  routedPackageUUID?: string,
+): CartEventDetail | null {
+  if (!routedOrderId) return null;
+  const rows = Object.values(details).filter(
+    (detail) => detail.orderId === routedOrderId,
+  );
+  if (!rows.length) return null;
+  if (routedPackageUUID && routedEventUUID) {
+    return (
+      rows.find(
+        (detail) =>
+          detail.eventUUID === routedEventUUID &&
+          detail.key.startsWith(`${routedPackageUUID}:`),
+      ) ?? null
+    );
+  }
+  if (routedEventUUID) {
+    return rows.find((detail) => detail.eventUUID === routedEventUUID) ?? null;
+  }
+  if (routedPackageUUID) return null;
+  return (
+    rows.find((detail) => !detail.key.includes(":")) ??
+    soonestLinkedOrderDetail(rows)
+  );
+}
+
 let walletApiHydratedInBrowserSession = false;
 
 /** Reset first-load API-only hydration (tests simulate a fresh browser session). */
@@ -1550,9 +1595,19 @@ export default function SeasonTickets({
     ) => Promise<void>
   >(async () => undefined);
   const [fullOrders, setFullOrders] = useState<Record<string, OrderLike>>({});
+  const fullOrdersRef = useRef(fullOrders);
+  fullOrdersRef.current = fullOrders;
+  const [fullOrderFailed, setFullOrderFailed] = useState<
+    Record<string, boolean>
+  >({});
   const [fullOrderChecked, setFullOrderChecked] = useState<
     Record<string, boolean>
   >({});
+  const [linkedOrder, setLinkedOrder] = useState<{
+    orderId: string;
+    order: OrderLike | null;
+  } | null>(null);
+  const [linkedOrderPending, setLinkedOrderPending] = useState(false);
   const [matchupHeroReadyKey, setMatchupHeroReadyKey] = useState("");
   const [packageView, setPackageView] = useState<"pass" | "events">("pass");
   const [flexPacks, setFlexPacks] = useState<FlexPackSummary[]>([]);
@@ -2183,7 +2238,7 @@ export default function SeasonTickets({
       routedPackageUUID ||
       routedAccessPassUUID,
   );
-  const routedSeasonPackage = useMemo(
+  const walletRoutedSeasonPackage = useMemo(
     () =>
       routedPackageUUID
         ? seasonPackages.find(
@@ -2200,13 +2255,7 @@ export default function SeasonTickets({
         : null,
     [routedOrderId, routedPackageUUID, seasonPackages],
   );
-  const routedPackagePassPending = Boolean(
-    routedSeasonPackage &&
-      (routedOrderId || routedSeasonPackage.orderId) &&
-      !routedEventUUID &&
-      !packagePassChecked[routedSeasonPackage.key],
-  );
-  const routedDetail = useMemo(() => {
+  const walletRoutedDetail = useMemo(() => {
     const list = Object.values(eventDetails);
     const sameOrder = (d: CartEventDetail) =>
       !routedOrderId || d.orderId === routedOrderId;
@@ -2263,7 +2312,42 @@ export default function SeasonTickets({
     routedPackageUUID,
     eventDetails,
   ]);
-  const routedFlexPack = useMemo(
+  const linkedOrderForRoute =
+    routedOrderId && linkedOrder?.orderId === routedOrderId
+      ? linkedOrder.order
+      : null;
+  const linkedDetails = useMemo(() => {
+    if (!linkedOrderForRoute) return {} as Record<string, CartEventDetail>;
+    const holderEmail = String(getSession()?.user?.email || email);
+    return buildWalletEventDetails([linkedOrderForRoute], holderEmail).allDetails;
+  }, [email, linkedOrderForRoute]);
+  const linkedSeasonPackage = useMemo(() => {
+    if (!routedPackageUUID || !linkedOrderForRoute) return null;
+    return (
+      buildSeasonPackageSummaries([linkedOrderForRoute]).find(
+        (row) =>
+          row.packageUUID === routedPackageUUID || row.key === routedPackageUUID,
+      ) ?? null
+    );
+  }, [linkedOrderForRoute, routedPackageUUID]);
+  const linkedFlexPacks = useMemo(
+    () =>
+      linkedOrderForRoute ? buildFlexPackSummaries([linkedOrderForRoute]) : [],
+    [linkedOrderForRoute],
+  );
+  const linkedRoutedDetail = useMemo(
+    () =>
+      linkedDetailForRoute(
+        linkedDetails,
+        routedOrderId,
+        routedEventUUID,
+        routedPackageUUID,
+      ),
+    [linkedDetails, routedEventUUID, routedOrderId, routedPackageUUID],
+  );
+  const routedDetail = walletRoutedDetail ?? linkedRoutedDetail;
+  const routedSeasonPackage = walletRoutedSeasonPackage ?? linkedSeasonPackage;
+  const walletFlexPack = useMemo(
     () =>
       routedFlexPackUUID
         ? flexPacks.find(
@@ -2281,6 +2365,77 @@ export default function SeasonTickets({
         : null,
     [routedFlexPackUUID, routedOrderId, flexPacks],
   );
+  const walletRouteHasTarget = routedFlexPackUUID
+    ? Boolean(walletFlexPack)
+    : routedPackageUUID && !routedEventUUID
+      ? Boolean(walletRoutedSeasonPackage)
+      : Boolean(walletRoutedDetail);
+  const linkedOrderFetchNeeded = Boolean(
+    routedOrderId &&
+      !routedAccessPassUUID &&
+      eventsChecked &&
+      !eventsLoading &&
+      !walletRouteHasTarget &&
+      linkedOrder?.orderId !== routedOrderId,
+  );
+  useEffect(() => {
+    if (!linkedOrderFetchNeeded || !routedOrderId) {
+      setLinkedOrderPending(false);
+      return;
+    }
+    let cancelled = false;
+    setLinkedOrderPending(true);
+    void (async () => {
+      try {
+        const order = unwrapOrder((await getOrder(routedOrderId)).data);
+        if (cancelled) return;
+        setLinkedOrder({ orderId: routedOrderId, order });
+        if (!order) return;
+        const storedId = String(order.orderId || order.id || routedOrderId);
+        setFullOrders((current) => ({
+          ...current,
+          [storedId]: order,
+          [routedOrderId]: order,
+        }));
+        setFullOrderFailed((current) => ({
+          ...current,
+          [storedId]: false,
+          [routedOrderId]: false,
+        }));
+        setFullOrderChecked((current) => ({
+          ...current,
+          [storedId]: true,
+          [routedOrderId]: true,
+        }));
+      } catch {
+        if (!cancelled) setLinkedOrder({ orderId: routedOrderId, order: null });
+      } finally {
+        if (!cancelled) setLinkedOrderPending(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [linkedOrderFetchNeeded, routedOrderId]);
+  const linkedFlexPack = useMemo(
+    () =>
+      routedFlexPackUUID
+        ? linkedFlexPacks.find(
+            (row) =>
+              (row.flexPackUUID === routedFlexPackUUID ||
+                row.key === routedFlexPackUUID) &&
+              (!routedOrderId || row.orderId === routedOrderId),
+          ) ||
+          linkedFlexPacks.find(
+            (row) =>
+              row.flexPackUUID === routedFlexPackUUID ||
+              row.key === routedFlexPackUUID,
+          ) ||
+          null
+        : null,
+    [linkedFlexPacks, routedFlexPackUUID, routedOrderId],
+  );
+  const routedFlexPack = walletFlexPack ?? linkedFlexPack;
   const routedAccessPass = useMemo(() => {
     if (!routedAccessPassUUID) return null;
     if (
@@ -2312,6 +2467,12 @@ export default function SeasonTickets({
     accessPasses,
     sentTransferRecords,
   ]);
+  const routedPackagePassPending = Boolean(
+    routedSeasonPackage &&
+      (routedOrderId || routedSeasonPackage.orderId) &&
+      !routedEventUUID &&
+      !packagePassChecked[routedSeasonPackage.key],
+  );
   const routedAccessPassPending = Boolean(
     routedAccessPassUUID &&
       !routedAccessPass &&
@@ -2333,19 +2494,29 @@ export default function SeasonTickets({
       ? evId.slice(6)
       : null;
   const activeEvId = orderEventKey ? `order:${orderEventKey}` : evId;
-  const activeDetail = orderEventKey ? eventDetails[orderEventKey] ?? null : null;
-  const activeOrderId = activeDetail?.orderId ?? "";
-  const activeWalletOrder =
-    activeOrderId
-      ? walletOrders.find(
-          (order) =>
-            String(order.orderId ?? order.id ?? "").trim() === activeOrderId,
-        ) ?? null
-      : null;
-  const sessionUser = getSession()?.user;
-  const ticketOrder = activeOrderId
-    ? fullOrders[activeOrderId] ?? activeWalletOrder
+  const activeDetail = orderEventKey
+    ? eventDetails[orderEventKey] ?? linkedDetails[orderEventKey] ?? null
     : null;
+  const activeOrderId = activeDetail?.orderId ?? "";
+  const sessionUser = getSession()?.user;
+  const linkedFullOrder =
+    linkedOrderForRoute &&
+    (String(linkedOrderForRoute.orderId ?? "").trim() === activeOrderId ||
+      String(linkedOrderForRoute.id ?? "").trim() === activeOrderId)
+      ? linkedOrderForRoute
+      : null;
+  // Tickets on this screen come from the order lookup. The upcoming-events
+  // list is not a substitute when that lookup fails. An emailed order that
+  // never appears on the list still renders from its own successful lookup.
+  const ticketOrder = activeOrderId
+    ? fullOrders[activeOrderId] ?? linkedFullOrder ?? null
+    : null;
+  const orderLookupFailed = Boolean(
+    activeOrderId &&
+      fullOrderFailed[activeOrderId] &&
+      !fullOrders[activeOrderId] &&
+      !linkedFullOrder,
+  );
   const ticketBuyer = {
     firstName: ticketOrder?.firstName || sessionUser?.firstName,
     lastName: ticketOrder?.lastName || sessionUser?.lastName,
@@ -2381,7 +2552,7 @@ export default function SeasonTickets({
         initials: t.initials,
       }));
   const eventOrderPending = Boolean(
-    activeOrderId && !fullOrderChecked[activeOrderId],
+    activeOrderId && !fullOrderChecked[activeOrderId] && !orderLookupFailed,
   );
   const matchupHeroKey = splitAttractionHeroKey(
     activeEvId,
@@ -2389,30 +2560,39 @@ export default function SeasonTickets({
     ev,
   );
   const matchupHeroPending = Boolean(
-    !eventOrderPending &&
+    !orderLookupFailed &&
+      !eventOrderPending &&
       matchupHeroKey &&
       matchupHeroReadyKey !== matchupHeroKey,
   );
-  const eventDetailPending = eventOrderPending || matchupHeroPending;
+  const eventDetailPending =
+    !orderLookupFailed && (eventOrderPending || matchupHeroPending);
   const routedWalletPending =
-    routedPackagePassPending ||
-    routedAccessPassPending ||
-    eventDetailPending ||
-    (showRoutedWallet &&
-      !routedTargetFound &&
-      (eventsLoading || !eventsChecked));
+    !orderLookupFailed &&
+    (routedPackagePassPending ||
+      routedAccessPassPending ||
+      eventDetailPending ||
+      linkedOrderPending ||
+      linkedOrderFetchNeeded ||
+      (showRoutedWallet &&
+        !routedTargetFound &&
+        (eventsLoading || !eventsChecked)));
   const routedWalletMissing =
-    showRoutedWallet && !routedTargetFound && !routedWalletPending;
+    showRoutedWallet &&
+    !routedWalletPending &&
+    (!routedTargetFound || orderLookupFailed);
   const showingEventDetail =
     showRoutedWallet
       ? Boolean(
           routedDetail &&
+            !orderLookupFailed &&
             !routedDetail.pendingIncomingTransfer &&
             !eventDetailPending &&
             !routedWalletPending &&
             !routedWalletMissing,
         )
       : screen === "event" &&
+          !orderLookupFailed &&
           !eventDetailPending &&
           !activeDetail?.pendingIncomingTransfer;
   const showingSeasonPackage =
@@ -3197,7 +3377,7 @@ export default function SeasonTickets({
   const seasonPackageGames = selectedSeasonPackage
     ? summarizeEventDetails(
         Object.fromEntries(
-          Object.entries(eventDetails).filter(
+          Object.entries({ ...eventDetails, ...linkedDetails }).filter(
             ([key, detail]) =>
               (!selectedSeasonPackage.orderId ||
                 detail.orderId === selectedSeasonPackage.orderId) &&
@@ -3267,11 +3447,17 @@ export default function SeasonTickets({
           rawPasses,
           sentTransferRecordsRef.current,
         );
-        const packageOrder = walletOrdersRef.current.find(
-          (row) =>
-            String(row.orderId || "") === orderId ||
-            String(row.id || "") === orderId,
-        );
+        const packageOrder =
+          walletOrdersRef.current.find(
+            (row) =>
+              String(row.orderId || "") === orderId ||
+              String(row.id || "") === orderId,
+          ) ??
+          (linkedOrderForRoute &&
+          (String(linkedOrderForRoute.orderId || "") === orderId ||
+            String(linkedOrderForRoute.id || "") === orderId)
+            ? linkedOrderForRoute
+            : undefined);
         const passes = buildAccessPassSummaries(owned, {
           includeInactive: true,
           packageEvents: packageOrder?.package?.events,
@@ -3300,7 +3486,7 @@ export default function SeasonTickets({
         setPackagePassChecked((current) => ({ ...current, [key]: true }));
       }
     },
-    [email],
+    [email, linkedOrderForRoute],
   );
 
   const closeTransferModal = useCallback(async () => {
@@ -3409,13 +3595,22 @@ export default function SeasonTickets({
   );
 
   const loadFullOrder = useCallback(async (orderId: string) => {
+    const noteLookupMiss = () => {
+      if (fullOrdersRef.current[orderId]) return;
+      setFullOrderFailed((current) => ({ ...current, [orderId]: true }));
+    };
     try {
       const order = unwrapOrder((await getOrder(orderId)).data);
       if (order) {
         setFullOrders((current) => ({ ...current, [orderId]: order }));
+        setFullOrderFailed((current) => ({ ...current, [orderId]: false }));
+      } else {
+        noteLookupMiss();
       }
     } catch {
-      // Screens fall back to what the wallet list returned for the order.
+      // A failed lookup must not keep tickets that only exist on the
+      // upcoming-events list. A lookup that already succeeded stays put.
+      noteLookupMiss();
     } finally {
       setFullOrderChecked((current) => ({ ...current, [orderId]: true }));
     }
@@ -4899,6 +5094,7 @@ export default function SeasonTickets({
     const offerBadge = printedOfferBadgeName(t.raw);
     const raw = t.raw as TicketLike | undefined;
     const isGA = Boolean(raw?.generalAdmission || raw?.GA);
+    const additionalLabel = getSeatAdditionalLabel({ ticket: raw });
     if (isGA) {
       return {
         ...t,
@@ -4909,6 +5105,7 @@ export default function SeasonTickets({
         entryLine,
         offerBadge,
         accessibleLabel: getAccessibleLabel(raw),
+        additionalLabel,
       };
     }
     const parts = t.seat.split("·").map((p) => p.trim());
@@ -4926,6 +5123,7 @@ export default function SeasonTickets({
         entryLine,
         offerBadge,
         accessibleLabel: getAccessibleLabel(raw),
+        additionalLabel,
       };
     }
     if (parts.length === 2 && /^GA$/i.test(parts[1])) {
@@ -4938,6 +5136,7 @@ export default function SeasonTickets({
         entryLine,
         offerBadge,
         accessibleLabel: getAccessibleLabel(raw),
+        additionalLabel,
       };
     }
     if (parts.length === 2) {
@@ -4950,6 +5149,7 @@ export default function SeasonTickets({
         entryLine,
         offerBadge,
         accessibleLabel: getAccessibleLabel(raw),
+        additionalLabel,
       };
     }
     return {
@@ -4961,6 +5161,7 @@ export default function SeasonTickets({
       entryLine,
       offerBadge,
       accessibleLabel: getAccessibleLabel(raw),
+      additionalLabel,
     };
   });
   const acquiredAtLabel = orderAcquiredLabel(
@@ -5012,6 +5213,7 @@ export default function SeasonTickets({
           organization: { name: ev.teams[0]?.name },
         },
         buyer: ticketBuyer,
+        purchasedByOrganizationName: ticketOrder?.purchasedByOrganizationName,
         tickets: tickets.map((ticket) => ({
           ...(ticket.raw || {}),
           id: ticket.id,
@@ -5059,6 +5261,8 @@ export default function SeasonTickets({
     !pendingIncomingEvent &&
     ev.resaleEnabled === true &&
     ev.tickets.some((ticket) => ticket.id != null);
+  const canPrintTickets =
+    ev.event?.organization?.setting?.printTickets === true;
   const showEventActionsFooter =
     pendingIncomingEvent || canTransferEvent || canSellEvent;
   const manageActionBtnStyle: React.CSSProperties = {
@@ -5226,15 +5430,18 @@ export default function SeasonTickets({
   const MobileEvent = () => (
     <>
       {/* Blocktickets mobile event bar — fluid type, not desktop-pinned with ticket cards */}
-      <div style={{ position: "fixed", left: 0, right: 0, top: 0, zIndex: 45, boxSizing: "border-box", background: INK, boxShadow: "0 12px 30px -18px rgba(3,16,31,0.9)", padding: "calc(env(safe-area-inset-top) + 12px) 16px 12px", display: "flex", alignItems: "center", gap: 12 }}>
+      <div style={{ position: "sticky", top: 0, zIndex: 45, boxSizing: "border-box", background: INK, boxShadow: "0 12px 30px -18px rgba(3,16,31,0.9)", padding: "calc(env(safe-area-inset-top) + 12px) 16px 12px", display: "flex", alignItems: "flex-start", gap: 12 }}>
         {EventBackControl(mobileEventBackBtn, <BackArrow />, "Back")}
-        <div style={{ minWidth: 0, display: "flex", flexDirection: "column", gap: 2 }}>
+        <div style={{ minWidth: 0, flex: 1, display: "flex", flexDirection: "column", gap: 2 }}>
           <div style={{ fontSize: fluidSize(16), fontWeight: 600, lineHeight: 1.5, color: "#fff", letterSpacing: "-0.015em", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{ev.title}</div>
-          <div style={{ fontSize: fluidSize(12), lineHeight: 1.5, color: "rgba(255,255,255,0.78)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{ev.when} · {ev.venue}</div>
+          <div style={{ fontSize: fluidSize(12), lineHeight: 1.5, color: "rgba(255,255,255,0.78)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{mobileEventWhen(ev)}</div>
+          {ev.promo ? (
+            <div className="bt-event-promo" style={{ fontSize: fluidSize(12), fontWeight: 500, lineHeight: 1.4, color: "#fff", overflowWrap: "anywhere" }}>{ev.promo}</div>
+          ) : null}
         </div>
       </div>
 
-    <div className="st-mobile-ticket" style={{ boxSizing: "border-box", padding: `calc(env(safe-area-inset-top) + 74px) 12px ${showEventActionsFooter ? mobileStickyFooterReservePx(74) : "calc(28px + env(safe-area-inset-bottom))"}`, display: "flex", flexDirection: "column", gap: 16 }}>
+    <div className="st-mobile-ticket" style={{ boxSizing: "border-box", padding: `12px 12px ${showEventActionsFooter ? mobileStickyFooterReservePx(74, 24) : "calc(28px + env(safe-area-inset-bottom))"}`, display: "flex", flexDirection: "column", gap: 16 }}>
       {pendingIncomingEvent ? (
         <div style={{ ...card, borderRadius: 16, padding: "14px 16px", display: "flex", flexDirection: "column", gap: 6, border: "1px solid rgba(192,122,18,0.28)", background: "#fffaf2" }}>
           <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: fluidSize(13), fontWeight: 600, color: "#c07a12" }}>
@@ -5253,11 +5460,6 @@ export default function SeasonTickets({
             {/* card header — matchup */}
             <div style={{ position: "relative", height: 210, overflow: "hidden", background: "#06203c" }}>
               {renderEventHero({ radius: 0, logoSize: 72, compactTextSize: 16, fullTextSize: 16 })}
-              <div style={{ position: "absolute", inset: 0, zIndex: 5, background: "linear-gradient(180deg, rgba(6,8,14,0.05) 30%, rgba(6,8,14,0.86) 100%)" }} />
-              <div style={{ position: "absolute", zIndex: 6, left: 0, right: 0, bottom: 0, padding: 16, display: "flex", flexDirection: "column", gap: 4 }}>
-                <div style={{ fontSize: fluidSize(16), fontWeight: 600, color: "#fff", letterSpacing: "-0.02em", lineHeight: 1.25, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{ev.title}</div>
-                <div style={{ fontSize: fluidSize(12), lineHeight: 1.5, color: "rgba(255,255,255,0.74)" }}>{ev.when} · {ev.venue}</div>
-              </div>
             </div>
 
             {/* seat strip */}
@@ -5287,6 +5489,9 @@ export default function SeasonTickets({
                 {t.accessibleLabel ? (
                   <AccessibleSeatingBadge label={t.accessibleLabel} style={{ marginTop: 4 }} />
                 ) : null}
+                {t.additionalLabel ? (
+                  <div style={{ fontSize: fluidSize(13), lineHeight: 1.5, color: SUB }}>{t.additionalLabel}</div>
+                ) : null}
               </div>
             </div>
 
@@ -5312,7 +5517,7 @@ export default function SeasonTickets({
               </button>
               ) : null}
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
-                <button onClick={() => { setDetail(t); setModal("qr"); }} style={{ fontFamily: "inherit", minHeight: 48, fontSize: fluidSize(14), fontWeight: 600, lineHeight: 1.5, color: INK, background: "#fff", border: `1px solid ${ACCENT}`, borderRadius: 12, cursor: "pointer" }}>View QR-Code</button>
+                <button onClick={() => { setDetail(t); setModal("qr"); }} style={{ fontFamily: "inherit", minHeight: 48, fontSize: fluidSize(14), fontWeight: 600, lineHeight: 1.5, color: INK, background: "#fff", border: `1px solid ${ACCENT}`, borderRadius: 12, cursor: "pointer" }}>View QR code</button>
                 <button onClick={() => { setDetail(t); setModal("details"); }} style={{ fontFamily: "inherit", minHeight: 48, fontSize: fluidSize(14), fontWeight: 600, lineHeight: 1.5, color: INK, background: "#fff", border: "1px solid rgba(5,27,53,0.14)", borderRadius: 12, cursor: "pointer" }}>Ticket details</button>
               </div>
               {ticketWalletError ? (
@@ -5433,8 +5638,11 @@ export default function SeasonTickets({
             <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
               <h1 className="st-ev-title" style={{ margin: 0, fontWeight: 600, letterSpacing: "-0.03em", ...(mobile ? { lineHeight: browseLeading("h2") } : { fontSize: 30, lineHeight: 1.1 }) }}>{ev.title}</h1>
               <div style={{ display: "flex", flexWrap: "wrap", gap: "4px 20px", fontSize: fluidSize(14), lineHeight: 1.5, color: SUB }}>
-                <span style={{ fontWeight: 600, color: INK }}>{ev.when}</span>{ev.doors ? <span>Doors open {ev.doors}</span> : null}
+                <span style={{ fontWeight: 600, color: INK }}>{ev.when}</span>{ev.doors ? <span>Doors {ev.doors}</span> : null}
               </div>
+              {ev.promo ? (
+                <p className="bt-event-promo" style={{ fontSize: fluidSize(14), fontWeight: 500, lineHeight: browseLeading("body"), color: FAINT }}>{ev.promo}</p>
+              ) : null}
             </div>
             <div style={{ height: 1, background: "rgba(5,27,53,0.08)" }} />
             <AttractionCards />
@@ -5459,35 +5667,40 @@ export default function SeasonTickets({
                   {t.accessibleLabel ? (
                     <AccessibleSeatingBadge label={t.accessibleLabel} style={{ marginTop: 2 }} />
                   ) : null}
+                  {t.additionalLabel ? (
+                    <div style={{ fontSize: fluidSize(13), lineHeight: 1.5, color: SUB }}>{t.additionalLabel}</div>
+                  ) : null}
                 </div>
                 <div className="st-ev-seat-actions">
-                  <button
-                    type="button"
-                    disabled={printing !== null}
-                    aria-busy={printing === String(t.id || t.code) || undefined}
-                    onClick={() => void printTickets([t], "open")}
-                    style={{
-                      ...ghostBtn,
-                      fontSize: fluidSize(13),
-                      lineHeight: 1.5,
-                      padding: "11px 18px",
-                      display: "inline-flex",
-                      alignItems: "center",
-                      justifyContent: "center",
-                      gap: 8,
-                      cursor: printing !== null ? "default" : "pointer",
-                      opacity: printing !== null ? 0.55 : 1,
-                    }}
-                  >
-                    <ButtonBusyContents
-                      loading={printing === String(t.id || t.code)}
-                      loadingLabel="Preparing…"
-                      spinnerColor={INK}
-                      trackColor="rgba(5,27,53,0.2)"
+                  {canPrintTickets ? (
+                    <button
+                      type="button"
+                      disabled={printing !== null}
+                      aria-busy={printing === String(t.id || t.code) || undefined}
+                      onClick={() => void printTickets([t], "open")}
+                      style={{
+                        ...ghostBtn,
+                        fontSize: fluidSize(13),
+                        lineHeight: 1.5,
+                        padding: "11px 18px",
+                        display: "inline-flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        gap: 8,
+                        cursor: printing !== null ? "default" : "pointer",
+                        opacity: printing !== null ? 0.55 : 1,
+                      }}
                     >
-                      Print PDF
-                    </ButtonBusyContents>
-                  </button>
+                      <ButtonBusyContents
+                        loading={printing === String(t.id || t.code)}
+                        loadingLabel="Preparing…"
+                        spinnerColor={INK}
+                        trackColor="rgba(5,27,53,0.2)"
+                      >
+                        Print PDF
+                      </ButtonBusyContents>
+                    </button>
+                  ) : null}
                   <button onClick={() => { setDetail(t); setModal("details"); }} style={{ fontFamily: "inherit", fontSize: fluidSize(13), lineHeight: 1.5, fontWeight: 600, color: INK, background: "#f1f3f8", border: "none", borderRadius: 999, padding: "11px 18px", cursor: "pointer" }}>Details</button>
                 </div>
               </div>
@@ -5520,39 +5733,41 @@ export default function SeasonTickets({
             {canSellEvent ? (
               <Link href={walletSectionHref("resale")} style={manageActionBtnStyle}>Sell</Link>
             ) : null}
-            <button
-              type="button"
-              disabled={printing !== null || ev.tickets.length === 0}
-              aria-busy={printing === "all" || undefined}
-              onClick={() => void printTickets(ev.tickets, "download")}
-              style={{
-                fontFamily: "inherit",
-                width: "100%",
-                display: "flex",
-                alignItems: "center",
-                gap: 8,
-                textAlign: "left",
-                fontSize: fluidSize(14),
-                lineHeight: 1.5,
-                fontWeight: 600,
-                color: INK,
-                background: "#fff",
-                border: "1px solid rgba(5,27,53,0.14)",
-                borderRadius: 12,
-                padding: "13px 16px",
-                cursor: printing !== null || ev.tickets.length === 0 ? "default" : "pointer",
-                opacity: printing !== null || ev.tickets.length === 0 ? 0.55 : 1,
-              }}
-            >
-              <ButtonBusyContents
-                loading={printing === "all"}
-                loadingLabel="Preparing…"
-                spinnerColor={INK}
-                trackColor="rgba(5,27,53,0.2)"
+            {canPrintTickets ? (
+              <button
+                type="button"
+                disabled={printing !== null || ev.tickets.length === 0}
+                aria-busy={printing === "all" || undefined}
+                onClick={() => void printTickets(ev.tickets, "download")}
+                style={{
+                  fontFamily: "inherit",
+                  width: "100%",
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 8,
+                  textAlign: "left",
+                  fontSize: fluidSize(14),
+                  lineHeight: 1.5,
+                  fontWeight: 600,
+                  color: INK,
+                  background: "#fff",
+                  border: "1px solid rgba(5,27,53,0.14)",
+                  borderRadius: 12,
+                  padding: "13px 16px",
+                  cursor: printing !== null || ev.tickets.length === 0 ? "default" : "pointer",
+                  opacity: printing !== null || ev.tickets.length === 0 ? 0.55 : 1,
+                }}
               >
-                Print all
-              </ButtonBusyContents>
-            </button>
+                <ButtonBusyContents
+                  loading={printing === "all"}
+                  loadingLabel="Preparing…"
+                  spinnerColor={INK}
+                  trackColor="rgba(5,27,53,0.2)"
+                >
+                  Print all
+                </ButtonBusyContents>
+              </button>
+            ) : null}
             {printError ? <p role="alert" style={{ margin: 0, color: "#c2394a", fontSize: fluidSize(13) }}>{printError}</p> : null}
           </div>
           <div style={{ ...card, borderRadius: 20, padding: cardPad, display: "flex", flexDirection: "column", gap: 8 }}>
@@ -5609,7 +5824,7 @@ export default function SeasonTickets({
                 today={today}
                 scheduleLine={
                   today
-                    ? `Doors open · ${g.doors}`
+                    ? `Doors · ${g.doors}`
                     : `${g.date} · ${g.time}`
                 }
               />
@@ -6777,7 +6992,7 @@ export default function SeasonTickets({
           {screen === "login" && Login()}
           {screen === "code" && CodeScreen()}
           {displaySection === "events" && screen === "events" && Events()}
-          {displaySection === "events" && screen === "event" && (eventDetailPending ? DetailLoader() : EventDetail())}
+          {displaySection === "events" && screen === "event" && (orderLookupFailed ? RoutedEventMissing() : eventDetailPending ? DetailLoader() : EventDetail())}
           {displaySection === "events" && screen === "seasonPackage" && SeasonPackage()}
           {displaySection === "events" && screen === "package" && Package()}
           {displaySection === "listings" && Listings()}
