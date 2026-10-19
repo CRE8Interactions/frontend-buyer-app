@@ -187,6 +187,34 @@ describe("seated tickets route", () => {
     expect(screen.queryByText(/no tickets on sale/i)).not.toBeInTheDocument();
   });
 
+  it("hides the seated on-sale time when inventory says the event is not scheduled", async () => {
+    const detail = demoEventDetail(EVENT.shortCode);
+    mockedGetEvent.mockResolvedValue({
+      data: {
+        ...detail,
+        event: {
+          ...detail.event,
+          generalOnsale: "2026-11-01T17:00:00.000Z",
+        },
+      },
+    } as never);
+    mockedGetTicketGroups.mockResolvedValue({
+      data: {
+        soldout: false,
+        isScheduled: false,
+        scheduledTime: null,
+        ticketGroups: [],
+        offers: [],
+      },
+    } as never);
+
+    render(<SeatedTicketsRoute />);
+
+    expect(
+      await screen.findByText(/no tickets on sale/i, undefined, { timeout: 4000 }),
+    ).toBeInTheDocument();
+  });
+
   it("uses only active inventory offers and shows the seated event schedule", async () => {
     const scheduledTime = "2026-08-28T16:00:00.000Z";
     mockedGetEvent.mockResolvedValue({

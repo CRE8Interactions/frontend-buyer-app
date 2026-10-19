@@ -156,6 +156,33 @@ describe("GA event page tiers", () => {
     expect(screen.queryByText(/no tickets on sale/i)).not.toBeInTheDocument();
   });
 
+  it("hides the on-sale time when inventory says the GA event is not scheduled", async () => {
+    const detail = demoEventDetail(GA_EVENT.shortcode);
+    mockedGetEvent.mockResolvedValue({
+      data: {
+        ...detail,
+        event: {
+          ...detail.event,
+          status: "on_sale",
+          generalOnsale: "2026-11-01T17:00:00.000Z",
+        },
+      },
+    } as never);
+    inventory({
+      soldout: false,
+      isScheduled: false,
+      scheduledTime: null,
+      ticketGroups: [],
+      offers: [],
+    });
+
+    render(<GAEventRoute />);
+
+    expect(
+      await screen.findByText(/no tickets on sale/i, undefined, { timeout: 4000 }),
+    ).toBeInTheDocument();
+  });
+
   it("falls back to the empty notice when nothing is on sale", async () => {
     inventory({ soldout: false, ticketGroups: [], offers: [] });
 
