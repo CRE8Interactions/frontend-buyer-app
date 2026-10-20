@@ -96,6 +96,25 @@ describe("GA event page tiers", () => {
     expect(screen.queryByText(/test offer/i)).not.toBeInTheDocument();
   });
 
+  it("keeps selling when the event record is sold out but ticket groups are not", async () => {
+    const detail = demoEventDetail(GA_EVENT.shortcode);
+    const { ticketGroups, offers } = demoTicketGroups();
+    mockedGetEvent.mockResolvedValue({
+      data: {
+        ...detail,
+        event: { ...detail.event, status: "on_sale", soldOut: true },
+      },
+    } as never);
+    inventory({ soldout: false, ticketGroups, offers });
+
+    render(<GAEventRoute />);
+
+    expect(
+      await screen.findByText(/vip club · live/i, undefined, { timeout: 4000 }),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/event sold out/i)).not.toBeInTheDocument();
+  });
+
   it("keeps selling when the event is flagged sold out but inventory came back", async () => {
     const { ticketGroups, offers } = demoTicketGroups();
     inventory({ soldout: true, ticketGroups, offers });

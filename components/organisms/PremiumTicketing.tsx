@@ -2523,9 +2523,9 @@ export default function PremiumTicketing({
           <div className={`mt-4 flex flex-col gap-[22px] ${mobile ? "" : "max-h-[min(70vh,640px)] overflow-y-auto"}`}>
             <div className="flex flex-col items-center gap-3.5 text-center">
               <div className="flex h-[132px] w-[132px] items-center justify-center overflow-hidden rounded-[22px] border border-[rgba(5,27,53,0.08)] bg-[#f1f3f8]">
-                {d.homeLogoSrc || LOGO ? (
+                {LOGO ? (
                   /* eslint-disable-next-line @next/next/no-img-element */
-                  <img src={d.homeLogoSrc || LOGO} alt={d.homeLabel} className="h-full w-full object-cover" />
+                  <img src={LOGO} alt={d.homeLabel} className="h-full w-full object-cover" />
                 ) : (
                   <span className="font-semibold text-[#051b35]" style={{ fontSize: 28 }}>{(d.homeLabel || "").slice(0, 3).toUpperCase()}</span>
                 )}
