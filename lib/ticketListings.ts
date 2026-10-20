@@ -171,6 +171,7 @@ type QuantityCapGroup = {
   generalAdmission?: boolean;
   offer?: QuantityCapSource | null;
   package?: QuantityCapSource | null;
+  listing?: { id?: string | number | null; quantity?: number | null } | null;
   quantity?: number | null;
   availableCount?: number | null;
   /** Row inventory the seat came from. */
@@ -576,6 +577,10 @@ export function limitsFromTicketGroup(
   group: QuantityCapGroup & RawTicketGroup,
   globalMax?: number | null,
 ): QuantityLimits {
+  const listingQuantity = Number(group.listing?.quantity);
+  if (Number.isFinite(listingQuantity) && listingQuantity > 0) {
+    return { min: listingQuantity, max: listingQuantity, step: 1, valid: true };
+  }
   const source = restrictionSourceFromGroup(group);
   const ga = isGaGroup(group);
   return quantityLimits(source, {

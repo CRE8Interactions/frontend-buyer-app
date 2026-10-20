@@ -1334,23 +1334,24 @@ describe("InteractiveSeatmap canvas", () => {
     expect(screen.getByText("Locked")).toBeInTheDocument();
   });
 
-  it("adds a Resale legend row when the event enables resale", async () => {
+  it("adds a Verified resale legend row when a listing is in the ticket groups", async () => {
     useFiltersStore.setState({
       loadingTicketGroups: false,
-      event: { enableResale: true },
+      ticketGroups: [{ id: "resale", listing: { id: 8, quantity: 2 } }],
     });
     render(<InteractiveSeatmap lookupsMode="external" />);
 
     await waitFor(() => {
       expect(screen.queryByLabelText(/loading seat map/i)).not.toBeInTheDocument();
     });
-    expect(screen.getByTestId("seatmap-legend-resale")).toHaveTextContent("Resale");
+    expect(screen.getByTestId("seatmap-legend-resale")).toHaveTextContent("Verified resale");
   });
 
-  it("hides the Resale legend row when enableResale is false", async () => {
+  it("hides the Verified resale legend row when no listing is present", async () => {
     useFiltersStore.setState({
       loadingTicketGroups: false,
-      event: { enableResale: false },
+      event: { enableResale: true },
+      ticketGroups: [{ id: "primary" }],
     });
     render(<InteractiveSeatmap lookupsMode="external" />);
 

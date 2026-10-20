@@ -25,7 +25,7 @@ export type BrandingOrganization = {
   branding?: OrgBranding | null;
   enableTransfer?: boolean;
   enableResale?: boolean;
-  setting?: { printTickets?: boolean | null } | null;
+  setting?: { printTickets?: boolean | null; allowResales?: boolean | null } | null;
 };
 
 export type BrandingEvent = {

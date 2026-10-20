@@ -263,6 +263,38 @@ export function listingSellerFeeAmount(askingPrice: number, event?: EventLike | 
   return askingPrice * eventSellerFeeRate(event);
 }
 
+export type ResaleFeeRule = {
+  paidBy?: string | null;
+  chargeTo?: string | null;
+  sellerFeePercent?: number | null;
+  percentage?: number | null;
+  percent?: number | null;
+  sellerFeeFlat?: number | null;
+  flat?: number | null;
+  amount?: number | null;
+};
+
+/** Seller fee from resale fee rules, or the event's flat rate when there are none. */
+export function resaleSellerFeeAmount(
+  askingPrice: number,
+  rules: ResaleFeeRule[] | null | undefined,
+  event?: EventLike | null,
+): number {
+  if (!rules?.length) return listingSellerFeeAmount(askingPrice, event);
+  const fee = rules.reduce((sum, rule) => {
+    const who = String(rule.paidBy || rule.chargeTo || "seller").toLowerCase();
+    if (who !== "seller" && who !== "both") return sum;
+    const percent = Number(rule.sellerFeePercent ?? rule.percentage ?? rule.percent ?? 0);
+    const flat = Number(rule.sellerFeeFlat ?? rule.flat ?? rule.amount ?? 0);
+    return (
+      sum +
+      (Number.isFinite(percent) ? askingPrice * (percent / 100) : 0) +
+      (Number.isFinite(flat) ? flat : 0)
+    );
+  }, 0);
+  return Math.round(fee * 100) / 100;
+}
+
 export function listingNetPayout(
   askingPrice: number,
   quantity: number,

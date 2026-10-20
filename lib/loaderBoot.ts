@@ -59,7 +59,7 @@ export const LOADER_BOOT_SCRIPT = `(function(){
     if (
       platPages.indexOf(norm) !== -1 ||
       /^\\/(?:fundraise|group|menu)(\\/|$)/.test(norm) ||
-      /^\\/wallet\\/(?:my-tickets|my-transfers|my-listings|giving|my-profile)(?:\\/|$)/.test(norm) ||
+      /^\\/wallet\\/(?:my-tickets|my-transfers|my-listings|giving|my-profile|bank-account|payouts)(?:\\/|$)/.test(norm) ||
       (norm === "/login" && !loginReturnsToTenant)
     ) {
       var plat = document.createElement("div");
@@ -123,7 +123,7 @@ export const LOADER_BOOT_SCRIPT = `(function(){
         var one = path.match(/^\\/([^/]+)\\/?$/);
         if (one) {
           var seg = one[1].toLowerCase();
-          if (!/^(browse|login|sign-out|search|checkout|settings|www|menu|group|fundraise|e|venue|privacy-policy|terms-conditions|purchase-policy|cookies-policy|disclaimer|my-events|my-transfers|my-listings|my-collectables|my-packages|guest-passes|event-details|my-tickets|my-profile|giving|wallet|concert|nm-state-ticketing|season-tickets|flex-pack)$/.test(seg)) org = seg;
+          if (!/^(browse|login|sign-out|search|checkout|settings|www|menu|group|fundraise|e|venue|privacy-policy|terms-conditions|purchase-policy|cookies-policy|disclaimer|my-events|my-transfers|my-listings|my-collectables|my-packages|guest-passes|event-details|my-tickets|my-profile|giving|wallet|bank-account|payouts|concert|nm-state-ticketing|season-tickets|flex-pack)$/.test(seg)) org = seg;
         }
       }
       if (org) {

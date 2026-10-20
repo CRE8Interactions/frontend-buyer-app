@@ -28,6 +28,7 @@ import ShopperBodyPortal from "@/components/templates/ShopperBodyPortal";
 import UnlockCodeDialog from "@/components/molecules/UnlockCodeDialog";
 import WaitlistEmailForm from "@/components/molecules/WaitlistEmailForm";
 import SectionLocatorThumb from "@/components/molecules/SectionLocatorThumb";
+import OfferChipScroller from "@/components/molecules/OfferChipScroller";
 import {
   ShopperSearchField,
   ShopperSearchProvider,
@@ -59,6 +60,7 @@ import {
   type QuantityRestrictionSource,
   type TicketingSort,
 } from "@/lib/ticketListings";
+import { cartTicketGroups } from "@/lib/listingSelection";
 import {
   accessibleLabelFromSeats,
   getAccessibleLabel,
@@ -66,7 +68,7 @@ import {
 } from "@/lib/ticketAccessibility";
 import { getSeatAdditionalLabel } from "@/lib/seatLabels";
 import { shopperShellVars } from "@/lib/branding";
-import { ORG_SCROLLBAR_CLASS, orgScrollbarCss } from "@/lib/orgScrollbar";
+import { orgScrollbarCss } from "@/lib/orgScrollbar";
 import {
   selectionOfferDescription,
 } from "@/lib/ticketSummary";
@@ -1044,6 +1046,7 @@ export default function PremiumTicketing({
     if (!groups.length) {
       throw new Error("Select tickets before checkout.");
     }
+    const ticketGroups = isGa ? groups : cartTicketGroups(groups);
     const res = isGa
       ? await placeGATicketsIntoCart({
           eventId: d.eventId,
@@ -1051,7 +1054,7 @@ export default function PremiumTicketing({
         })
       : await placeTicketsIntoCart({
           eventId: d.eventId,
-          ticketGroups: groups,
+          ticketGroups,
         });
     const cartId =
       (res.data as { cartId?: string | number; id?: string | number })?.cartId ??
@@ -1059,7 +1062,7 @@ export default function PremiumTicketing({
     if (cartId == null) {
       throw new Error("Cart could not be created. Please try again.");
     }
-    const qty = groups.reduce((sum, g) => sum + Number(g.quantity || 1), 0);
+    const qty = ticketGroups.reduce((sum, g) => sum + Number(g.quantity || 1), 0);
     setStoredCart(cartId, qty || 1);
     return String(cartId);
   }, [d.eventId, isGa]);
@@ -1493,7 +1496,7 @@ export default function PremiumTicketing({
     const icon = compact ? 14 : 17;
     return (
     <>
-      <div className={`nmt-filter-scroll ${ORG_SCROLLBAR_CLASS}`} style={{ display: "flex", alignItems: "center", gap: compact ? 8 : 10, minWidth: 0, overflowX: "auto", flexWrap: "nowrap", padding: compact ? "0 0 6px" : "2px 0 10px 2px" }}>
+      <OfferChipScroller accent={ACC} accentSoft={ACC_SOFT} selectedId={zoneFilter[zoneFilter.length - 1]}>
         <button ref={qtyBtn} onClick={() => setQtyMenu((v) => !v)} style={{ fontFamily: "inherit", display: "inline-flex", alignItems: "center", justifyContent: "space-between", gap: compact ? 6 : 8, minWidth: compact ? 108 : 132, minHeight: compact ? 40 : undefined, boxSizing: "border-box", fontSize: type, fontWeight: 600, color: "#fff", background: ACC, border: `1px solid ${ACC}`, borderRadius: 999, padding: chipPad, whiteSpace: "nowrap", cursor: "pointer", flexShrink: 0 }}>
           {want === 1 ? "1 ticket" : `${want} tickets`}
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" style={{ width: icon, height: icon, opacity: 0.8, transform: qtyMenu ? "rotate(180deg)" : "rotate(0deg)", transition: "transform 180ms ease" }}><polyline points="6 9 12 15 18 9" /></svg>
@@ -1518,6 +1521,7 @@ export default function PremiumTicketing({
             return (
               <button
                 key={z ?? "all"}
+                data-offer-id={z ?? "all"}
                 onClick={() => {
                   if (locked) {
                     setUnlockZone(z);
@@ -1539,7 +1543,7 @@ export default function PremiumTicketing({
               </button>
             );
           })}
-        </div>
+      </OfferChipScroller>
 
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: compact ? 10 : 16, marginTop: compact ? 10 : 22 }}>
         {busy ? <div style={{ height: 20, width: 96, borderRadius: 999, ...shimmer }} /> : <div style={{ fontSize: 16, fontWeight: 500, fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap" }}>{rows.length} Listings</div>}
@@ -1615,6 +1619,8 @@ export default function PremiumTicketing({
         .nmt-sort-option.active:hover { background: ${ACC}; color: #fff; }
         .nmt-filter.active .nmt-star { color: #fff; }
         ${orgScrollbarCss(ACC)}
+        .nmt-noscroll { scrollbar-width: none; -ms-overflow-style: none; }
+        .nmt-noscroll::-webkit-scrollbar { display: none; width: 0; height: 0; }
         .shopper-page .ga-soldout-notify-sheet h2 {
           font-size: var(--t-24) !important;
           letter-spacing: -0.01em;
@@ -1889,7 +1895,7 @@ export default function PremiumTicketing({
           <div
             ref={listingsScroll}
             data-testid="ticketing-listings"
-            className={ORG_SCROLLBAR_CLASS}
+            className="nmt-noscroll"
             style={{
               display: "flex",
               flexDirection: "column",
@@ -1904,6 +1910,7 @@ export default function PremiumTicketing({
               position: "relative",
               zIndex: 0,
               overflowY: wide || listingsSheet ? "auto" : "visible",
+              scrollbarWidth: wide || listingsSheet ? "none" : undefined,
               overscrollBehavior: wide || listingsSheet ? "contain" : undefined,
             }}
           >

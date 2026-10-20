@@ -298,7 +298,9 @@ export type CartEventDetail = {
 export function eventWalletCommerceFlags(event?: EventLike | null) {
   return {
     transfersEnabled: event?.enableTransfers === true,
-    resaleEnabled: event?.enableResale === true,
+    resaleEnabled:
+      event?.enableResale === true &&
+      event?.organization?.setting?.allowResales === true,
   };
 }
 

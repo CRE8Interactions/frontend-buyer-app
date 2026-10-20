@@ -74,6 +74,9 @@ vi.mock("@/lib/api", () => ({
   createListing: vi.fn(),
   updateMyListings: vi.fn(),
   removeMyListings: vi.fn(),
+  getBankAccount: vi.fn(async () => ({ data: { payouts_enabled: true, id: "acct-1" } })),
+  createBankAccount: vi.fn(async () => ({ data: { link: "https://connect.stripe.test/setup" } })),
+  getResaleFeeRules: vi.fn(async () => ({ data: { rules: [] } })),
   getOrder: vi.fn(),
   searchEvents: vi.fn(async () => ({ data: [] })),
   validateEmail: vi.fn(async () => ({ data: { verdict: "Valid" } })),
@@ -140,6 +143,9 @@ import {
   createListing,
   updateMyListings,
   removeMyListings,
+  getBankAccount,
+  createBankAccount,
+  getResaleFeeRules,
   getOrder,
   validateEmail,
 } from "@/lib/api";
@@ -166,6 +172,9 @@ const mockedGetMySentTransfers = looseApiMock(vi.mocked(getMySentTransfers));
 const mockedGetIncomingTransfers = looseApiMock(vi.mocked(getIncomingTransfers));
 const mockedGetMyReceivedTransfers = looseApiMock(vi.mocked(getMyReceivedTransfers));
 const mockedGetMyListings = vi.mocked(getMyListings);
+const mockedGetBankAccount = vi.mocked(getBankAccount);
+const mockedCreateBankAccount = vi.mocked(createBankAccount);
+const mockedGetResaleFeeRules = vi.mocked(getResaleFeeRules);
 const mockedCreateListing = vi.mocked(createListing);
 const mockedUpdateMyListings = vi.mocked(updateMyListings);
 const mockedRemoveMyListings = vi.mocked(removeMyListings);
@@ -321,6 +330,12 @@ async function confirmAcceptTransferInPopup(
   mockedGetMyReceivedTransfers.mockResolvedValue({ data: [] } as never);
   mockedGetMyListings.mockReset();
   mockedGetMyListings.mockResolvedValue({ data: [] } as never);
+  mockedGetBankAccount.mockReset();
+  mockedGetBankAccount.mockResolvedValue({ data: { payouts_enabled: true, id: "acct-1" } } as never);
+  mockedCreateBankAccount.mockReset();
+  mockedCreateBankAccount.mockResolvedValue({ data: { link: "https://connect.stripe.test/setup" } } as never);
+  mockedGetResaleFeeRules.mockReset();
+  mockedGetResaleFeeRules.mockResolvedValue({ data: { rules: [] } } as never);
   mockedCreateListing.mockReset();
   mockedCreateListing.mockResolvedValue({
     data: { id: "listing-created-1", status: "new", askingPrice: 55 },
@@ -9607,6 +9622,41 @@ describe("SeasonTickets listings and sell", { timeout: 30_000 }, () => {
         name: (_accessible, el) => el?.textContent?.trim() === "Close",
       }),
     ).toBeInTheDocument();
+  });
+
+  it("hides Sell when the organization does not allow resales", async () => {
+    const order = demoCompletedTicketOrder({
+      event: {
+        ...icedogs,
+        enableResale: true,
+        organization: {
+          ...icedogs.organization,
+          setting: { printTickets: true, allowResales: false },
+        },
+      },
+    });
+    mockedGetMyEvents.mockResolvedValue({ data: [order] } as never);
+    navigationMocks.pathname = `/wallet/my-tickets/order/${order.orderId}/`;
+    render(<SeasonTickets />);
+
+    expect(await screen.findByText("Manage")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Print all" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Sell" })).not.toBeInTheDocument();
+  });
+
+  it("asks for a payout account before listing tickets", async () => {
+    mockedGetBankAccount.mockResolvedValue({ data: { payouts_enabled: false } } as never);
+    const order = demoCompletedTicketOrder({
+      event: { ...icedogs, enableResale: true },
+    });
+    mockedGetMyEvents.mockResolvedValue({ data: [order] } as never);
+    navigationMocks.pathname = `/wallet/my-tickets/order/${order.orderId}/`;
+    const user = userEvent.setup();
+    render(<SeasonTickets />);
+
+    await user.click(await screen.findByRole("button", { name: "Sell" }));
+    expect(await screen.findByText("Link a bank account")).toBeInTheDocument();
+    expect(screen.queryByText("Select tickets to list")).not.toBeInTheDocument();
   });
 
   it("removes an active listing without refetching listings", async () => {

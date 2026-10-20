@@ -3,7 +3,14 @@
  * SeasonTickets' screen names so the nav, the rendered screen, and the address
  * bar cannot drift apart.
  */
-export type WalletSection = "events" | "listings" | "resale" | "giving" | "profile";
+export type WalletSection =
+  | "events"
+  | "listings"
+  | "resale"
+  | "giving"
+  | "profile"
+  | "bank"
+  | "payouts";
 
 export const WALLET_NAV: {
   id: WalletSection;
@@ -49,6 +56,8 @@ function pathMatchesPrefix(path: string, prefix: string) {
  */
 export function walletSectionFromPath(pathname = ""): WalletSection {
   const path = pathOnly(pathname);
+  if (pathMatchesPrefix(path, "/wallet/bank-account")) return "bank";
+  if (pathMatchesPrefix(path, "/wallet/payouts")) return "payouts";
   if (WALLET_TICKETS_PREFIXES.some((prefix) => pathMatchesPrefix(path, prefix))) {
     return "events";
   }
@@ -62,6 +71,12 @@ export function walletSectionFromPath(pathname = ""): WalletSection {
 /** Any wallet section route, including ticket and package detail pages. */
 export function isWalletSectionPath(pathname = "") {
   const path = pathOnly(pathname);
+  if (
+    pathMatchesPrefix(path, "/wallet/bank-account") ||
+    pathMatchesPrefix(path, "/wallet/payouts")
+  ) {
+    return true;
+  }
   if (WALLET_TICKETS_PREFIXES.some((prefix) => pathMatchesPrefix(path, prefix))) {
     return true;
   }

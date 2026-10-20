@@ -143,7 +143,7 @@ function demoOrg(slug: string, name: string, category?: string) {
     website: DEMO_ORG_WEBSITES[slug],
     enableTransfer: true,
     enableResale: true,
-    setting: { printTickets: true },
+    setting: { printTickets: true, allowResales: true },
   };
 }
 
@@ -733,6 +733,7 @@ export const DEMO_SEATED_TICKET_GROUPS: RawTicketGroup[] = [
     accessible: false,
     resale: true,
     on_sale_status: "resaleAvailable",
+    listing: { id: 8, quantity: 2 },
     offer: {
       id: 90,
       name: "Section A-B",

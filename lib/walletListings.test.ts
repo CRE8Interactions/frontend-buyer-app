@@ -18,6 +18,7 @@ import {
   mapWalletListing,
   mergeListingsById,
   parseListingApiError,
+  resaleSellerFeeAmount,
   sortListingsByEventStart,
   unwrapListingRecords,
 } from "@/lib/walletListings";
@@ -110,5 +111,13 @@ describe("walletListings", () => {
     expect(parseListingApiError({ response: { status: 500 } }, "create")).toBe(
       FIELD_COPY.network,
     );
+  });
+
+  it("uses a resale fee rule instead of the flat seller rate", () => {
+    const event = { secondaryServiceFeeSeller: 0.1 };
+    expect(resaleSellerFeeAmount(80, [], event)).toBe(8);
+    expect(
+      resaleSellerFeeAmount(80, [{ sellerFeePercent: 25 }], event),
+    ).toBe(20);
   });
 });

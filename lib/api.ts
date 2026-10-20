@@ -410,6 +410,11 @@ export const getMyListings = (options?: { signal?: AbortSignal }) =>
 export const getAvailableFunds = () =>
   instance.get("/listings/available-funds");
 
+export const getResaleFeeRules = (eventId: string | number) =>
+  instance.get(`/listings/resale-fee-rules?eventId=${eventId}`);
+
+export const claimResaleFunds = () => instance.post("/listings/claim-funds");
+
 export const removeMyListings = (id: string | number) =>
   instance.delete(`/listings/${id}`);
 

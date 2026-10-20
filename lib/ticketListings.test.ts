@@ -1200,6 +1200,15 @@ describe("listing filters", () => {
     );
   });
 
+  it("shows a resale listing only for its exact quantity", () => {
+    const listing = DEMO_SEATED_TICKET_GROUPS.find((group) => group.listing?.id);
+    expect(listing?.listing?.quantity).toBe(2);
+    expect(filterGroupsForListings([listing!], { quantity: 2 })).toEqual([listing]);
+    for (const quantity of [1, 3, 4]) {
+      expect(filterGroupsForListings([listing!], { quantity })).toEqual([]);
+    }
+  });
+
   it("returns no groups when nothing matches the accessible filter", () => {
     const none = DEMO_SEATED_TICKET_GROUPS.map((group) => ({
       ...group,

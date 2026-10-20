@@ -1824,6 +1824,30 @@ describe("Select tickets page (PremiumTicketing)", { timeout: 20_000 }, () => {
     expect(payload.ticketGroups[0]).not.toHaveProperty("quantity");
   });
 
+  it("sends the whole resale listing when one of its seats is selected", async () => {
+    const listing = DEMO_SEATED_TICKET_GROUPS.find((group) => group.listing?.id);
+    if (!listing) throw new Error("demo fixtures need a resale listing");
+    useSeatmapStore.setState({
+      selectedFromMap: [{ ...listing, seatId: "a-resale-1" }],
+      totalCount: 1,
+      totalPrice: Number(listing.price || 0),
+    });
+    const user = await openLiveMap();
+
+    await user.click(screen.getByRole("button", { name: /^checkout$/i }));
+
+    await waitFor(() => expect(mockedPlaceTickets).toHaveBeenCalled());
+    const [payload] = mockedPlaceTickets.mock.calls[0] as [
+      { ticketGroups: Array<Record<string, unknown>> },
+    ];
+    expect(payload.ticketGroups).toEqual([
+      expect.objectContaining({
+        seatIds: ["a-resale-1", "a-resale-2"],
+        quantity: 2,
+      }),
+    ]);
+  });
+
   it("opens the seat map popup right away and shows the org loader until the map is ready", async () => {
     await renderReady();
     fireEvent.click(screen.getAllByRole("button", { name: /find on map/i })[0]);

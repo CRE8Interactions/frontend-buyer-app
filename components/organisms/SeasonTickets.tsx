@@ -34,6 +34,8 @@ import { QRCodeSVG } from "qrcode.react";
 import EntryQrSheet from "@/components/molecules/EntryQrSheet";
 import MobileStickyFooter from "@/components/molecules/MobileStickyFooter";
 import WalletChrome from "@/components/organisms/WalletChrome";
+import WalletBankAccount from "@/components/organisms/WalletBankAccount";
+import WalletPayouts from "@/components/organisms/WalletPayouts";
 import {
   WalletTicketsBlocksLoading,
 } from "@/components/organisms/WalletTicketsLoader";
@@ -100,10 +102,9 @@ import {
   listingEventName,
   listingFaceValue,
   listingMinimumAskingPrice,
-  listingNetPayout,
   listingSchedule,
   listingSeatLines,
-  listingSellerFeeAmount,
+  resaleSellerFeeAmount,
   listingStatusDotLine,
   listingsForTab,
   mapWalletListing,
@@ -113,6 +114,7 @@ import {
   removeListingById,
   unwrapListingRecords,
   eventResaleMinimumPercent,
+  type ResaleFeeRule,
   type WalletListing,
 } from "@/lib/walletListings";
 import {
@@ -132,6 +134,9 @@ import {
   createListing,
   updateMyListings,
   removeMyListings,
+  getBankAccount,
+  createBankAccount,
+  getResaleFeeRules,
 } from "@/lib/api";
 import { getSession } from "@/lib/auth";
 import { imageUrl, isRequestCanceled, formatCurrency } from "@/lib/helpers";
@@ -1516,7 +1521,9 @@ export default function SeasonTickets({
       ? initialScreen
       : searchParams?.has("login")
         ? "login"
-        : section;
+        : section === "bank" || section === "payouts"
+          ? "profile"
+          : section;
   const [vw, setVw] = useState(1440);
   const [screen, setScreen] = useState<Screen>(resolvedInitialScreen);
   const [tab, setTab] = useState<"upcoming" | "season" | "flex" | "access">("upcoming");
@@ -1543,6 +1550,10 @@ export default function SeasonTickets({
   const [sellError, setSellError] = useState("");
   const [sellPriceErr, setSellPriceErr] = useState<string | null>(null);
   const [sellSaving, setSellSaving] = useState(false);
+  const [sellPayoutReady, setSellPayoutReady] = useState<boolean | null>(null);
+  const [sellFeeRules, setSellFeeRules] = useState<ResaleFeeRule[] | null>(null);
+  const [sellPayoutError, setSellPayoutError] = useState("");
+  const [sellLinking, setSellLinking] = useState(false);
   const [walletListings, setWalletListings] = useState<WalletListing[]>([]);
   const walletListingsRef = useRef<WalletListing[]>([]);
   const [confirmRemoveListing, setConfirmRemoveListing] = useState<WalletListing | null>(null);
@@ -1752,7 +1763,7 @@ export default function SeasonTickets({
     if (lastSection.current === section) return;
     lastSection.current = section;
     if (screen === "login" || screen === "code") return;
-    setScreen(section);
+    setScreen(section === "bank" || section === "payouts" ? "profile" : section);
   }, [screen, section]);
 
   const applyWalletSnapshot = useCallback(
@@ -5270,7 +5281,28 @@ export default function SeasonTickets({
     setSellError("");
     setSellPriceErr(null);
     setSellSaving(false);
+    setSellPayoutReady(null);
+    setSellFeeRules(null);
+    setSellPayoutError("");
     setModal(null);
+    const eventId = ev.event?.id;
+    void getBankAccount()
+      .then((res) => {
+        setSellPayoutReady(
+          (res.data as { payouts_enabled?: boolean } | undefined)?.payouts_enabled === true,
+        );
+      })
+      .catch(() => setSellPayoutReady(false));
+    if (eventId == null) {
+      setSellFeeRules([]);
+    } else {
+      void getResaleFeeRules(eventId)
+        .then((res) => {
+          const rules = (res.data as { rules?: ResaleFeeRule[] } | undefined)?.rules;
+          setSellFeeRules(Array.isArray(rules) ? rules : []);
+        })
+        .catch(() => setSellFeeRules([]));
+    }
   };
   const printTickets = async (
     tickets: EventT["tickets"],
@@ -6341,6 +6373,8 @@ export default function SeasonTickets({
     { title: "Payment", rows: [
       { k: "Card on file", v: isHolder ? "Visa ···4417 · exp 09/29" : "No card saved", action: "Manage", help: "Charged for renewals, add-ons, and Aggie Club gifts." },
       { k: "Billing address", v: isHolder ? "412 Solano Dr, Las Cruces, NM 88001" : "Add an address", action: "Edit", help: "Must match the address on your card statement." },
+      { k: "Bank account", v: "Payout account for resale", action: "Manage", href: "/wallet/bank-account/", help: "Where resale payouts are deposited." },
+      { k: "Payouts", v: "Deposited after the event", action: "View", href: "/wallet/payouts/", help: "Resale payouts waiting to be deposited." },
     ] },
     { title: "Security & preferences", rows: [
       { k: "Sign-in", v: "Passkey + email code", action: "Change", help: "Choose how you verify it is you at sign-in." },
@@ -6403,6 +6437,8 @@ export default function SeasonTickets({
                   <button onClick={() => setToggles((p) => ({ ...p, [r.k]: !on }))} aria-label={r.k} style={{ flexShrink: 0, width: 50, height: 30, borderRadius: 999, border: "none", padding: 3, boxSizing: "border-box", cursor: "pointer", background: on ? ACCENT : "#d7dbe6", display: "flex", justifyContent: on ? "flex-end" : "flex-start" }}>
                     <span style={{ width: 24, height: 24, borderRadius: 999, background: "#fff", boxShadow: "0 2px 5px rgba(5,27,53,0.28)", display: "block" }} />
                   </button>
+                ) : "href" in r && r.href ? (
+                  <Link href={r.href} style={{ fontFamily: "inherit", flexShrink: 0, fontSize: fluidSize(13), fontWeight: 600, color: INK, background: "#f1f3f8", border: "none", borderRadius: 999, padding: "9px 15px", whiteSpace: "nowrap", cursor: "pointer", textDecoration: "none" }}>{r.action}</Link>
                 ) : (
                   <button onClick={() => { setField({ group: g.title, heading: (r as { action: string }).action + " " + r.k.toLowerCase(), label: r.k, help: (r as { help: string }).help, key: r.k }); setFieldValue(String(val)); setModal("field"); }} style={{ fontFamily: "inherit", flexShrink: 0, fontSize: fluidSize(13), fontWeight: 600, color: INK, background: "#f1f3f8", border: "none", borderRadius: 999, padding: "9px 15px", whiteSpace: "nowrap", cursor: "pointer" }}>{(r as { action: string }).action}</button>
                 )}
@@ -6869,14 +6905,33 @@ export default function SeasonTickets({
   const sellMinPercent = eventResaleMinimumPercent(sellEv?.event);
   const sellMinPrice = listingMinimumAskingPrice(sellFace, sellMinPercent);
   const sellAsking = parseAskingPrice(sell?.price || "") ?? 0;
-  const sellFee = listingSellerFeeAmount(sellAsking, sellEv?.event);
-  const sellPayout = listingNetPayout(sellAsking, sellSelectedTickets.length || 1, sellEv?.event);
+  const sellFee = resaleSellerFeeAmount(sellAsking, sellFeeRules, sellEv?.event);
+  const sellPayout = (sellAsking - sellFee) * (sellSelectedTickets.length || 1);
   const closeSellModal = () => {
     if (sellSaving) return;
     setSell(null);
     setSellError("");
     setSellPriceErr(null);
     setSellSaving(false);
+    setSellPayoutReady(null);
+    setSellPayoutError("");
+  };
+  const linkSellBank = async () => {
+    setSellLinking(true);
+    setSellPayoutError("");
+    try {
+      const res = await createBankAccount({});
+      const link = (res.data as { link?: string } | undefined)?.link;
+      if (link) {
+        window.location.assign(link);
+        return;
+      }
+      setSellPayoutError("Unable to open bank account setup. Try again.");
+    } catch {
+      setSellPayoutError("Unable to open bank account setup. Try again.");
+    } finally {
+      setSellLinking(false);
+    }
   };
   const sellCanNext =
     !sellSaving &&
@@ -6982,7 +7037,26 @@ export default function SeasonTickets({
             <h2 style={{ margin: 0, fontSize: transferModalType.title, lineHeight: 1.5, fontWeight: 600, letterSpacing: "-0.02em" }}>Sell</h2>
             {sellSaving ? null : closeX(() => void closeSellModal())}
           </div>
-          {sellStep === 1 && (
+          {sellPayoutReady !== true ? (
+            <div style={{ display: "flex", flexDirection: "column", gap: 12, paddingTop: 18 }}>
+              <div style={{ fontSize: transferModalType.stepTitle, lineHeight: 1.5, fontWeight: 600, letterSpacing: "-0.015em" }}>Link a bank account</div>
+              <p style={{ margin: 0, fontSize: transferModalType.body, lineHeight: browseLeading("body"), color: SUB }}>
+                A payout account is required before you can list tickets. After the event, your payout is sent to that account.
+              </p>
+              {sellPayoutError ? (
+                <div role="alert" style={{ fontSize: transferModalType.error, color: DANGER }}>{sellPayoutError}</div>
+              ) : null}
+              <button
+                type="button"
+                onClick={() => void linkSellBank()}
+                disabled={sellPayoutReady === null || sellLinking}
+                style={{ fontFamily: "inherit", alignSelf: "flex-start", fontSize: transferModalType.button, fontWeight: 600, color: INK, background: ACCENT, border: "none", borderRadius: 999, padding: "14px 18px", minHeight: 48, cursor: "pointer" }}
+              >
+                {sellPayoutReady === null ? "Checking…" : "Link bank account"}
+              </button>
+            </div>
+          ) : null}
+          {sellPayoutReady === true && sellStep === 1 && (
             <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
               <div style={{ fontSize: transferModalType.stepTitle, lineHeight: 1.5, fontWeight: 600, letterSpacing: "-0.015em" }}>Select tickets to list</div>
               <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
@@ -7004,7 +7078,7 @@ export default function SeasonTickets({
               </div>
             </div>
           )}
-          {sellStep === 2 && (
+          {sellPayoutReady === true && sellStep === 2 && (
             <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
               <div style={{ fontSize: transferModalType.stepTitle, lineHeight: 1.5, fontWeight: 600, letterSpacing: "-0.015em" }}>Set price</div>
               <div style={{ display: "flex", flexDirection: "column", gap: 3, background: FIELD, borderRadius: 14, padding: "14px 16px" }}>
@@ -7050,11 +7124,11 @@ export default function SeasonTickets({
               </div>
               <div style={{ display: "flex", flexDirection: "column", gap: 3, background: FIELD, borderRadius: 14, padding: "14px 16px" }}>
                 <div style={{ fontSize: transferModalType.fieldLabel, fontWeight: 600, color: FAINT }}>Seller fee</div>
-                <div style={{ fontSize: transferModalType.fieldValue, fontWeight: 600 }}>{formatCurrency(listingSellerFeeAmount(parseAskingPrice(sell.price) || 0, sellEv?.event))}</div>
+                <div style={{ fontSize: transferModalType.fieldValue, fontWeight: 600 }}>{formatCurrency(sellFee)}</div>
               </div>
             </div>
           )}
-          {sellStep === 3 && (
+          {sellPayoutReady === true && sellStep === 3 && (
             <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
               <div style={{ fontSize: transferModalType.stepTitle, lineHeight: 1.5, fontWeight: 600, letterSpacing: "-0.015em" }}>Payout summary</div>
               {[
@@ -7070,7 +7144,7 @@ export default function SeasonTickets({
               ))}
             </div>
           )}
-          {sellStep === 4 && !inFlight ? (
+          {sellPayoutReady === true && sellStep === 4 && !inFlight ? (
             <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
               <div style={{ fontSize: transferModalType.stepTitle, lineHeight: 1.5, fontWeight: 600, letterSpacing: "-0.015em" }}>{sellConfirmTitle(sellSelectedTickets.length)}</div>
               <div style={{ display: "flex", flexWrap: "wrap", gap: 10 }}>
@@ -7092,7 +7166,7 @@ export default function SeasonTickets({
               </p>
             </div>
           ) : null}
-          {inFlight ? (
+          {sellPayoutReady === true && inFlight ? (
             <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
               <div style={{ fontSize: transferModalType.stepTitle, lineHeight: 1.5, fontWeight: 600, letterSpacing: "-0.015em" }}>{sellLoadingTitle(sellSelectedTickets.length)}</div>
               <p style={{ margin: 0, fontSize: transferModalType.body, lineHeight: browseLeading("body"), color: SUB }}>{sellStayOnScreenLine()}</p>
@@ -7101,7 +7175,7 @@ export default function SeasonTickets({
           {sellError && sellStep !== 2 ? (
             <div role="alert" style={{ fontSize: transferModalType.error, color: DANGER }}>{sellError}</div>
           ) : null}
-          {sellStep === 5 && !sellSaving ? (
+          {sellPayoutReady === true && sellStep === 5 && !sellSaving ? (
             <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 14, padding: "6px 0 2px" }}>
               <div style={{ width: 78, height: 78, borderRadius: 999, background: GREEN, display: "flex", alignItems: "center", justifyContent: "center" }}>
                 <svg viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth={2.6} strokeLinecap="round" strokeLinejoin="round" style={{ width: 38, height: 38 }}><polyline points="20 6 9 17 4 12" /></svg>
@@ -7110,6 +7184,7 @@ export default function SeasonTickets({
               <p style={{ margin: 0, fontSize: transferModalType.body, lineHeight: browseLeading("body"), color: SUB, textAlign: "center" }}>{sellSuccessBody(sellCount)}</p>
             </div>
           ) : null}
+          {sellPayoutReady === true ? (
           <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
             {(sellStep === 2 || sellStep === 3 || (sellStep === 4 && !sellSaving)) ? (
               <button type="button" onClick={() => { setSellError(""); setSellPriceErr(null); setSell({ ...sell, step: sellStep - 1 }); }} style={{ fontFamily: "inherit", flexShrink: 0, display: "flex", alignItems: "center", gap: 8, fontSize: transferModalType.button, lineHeight: 1.5, fontWeight: 600, color: INK, background: "#fff", border: "none", padding: "14px 12px", minHeight: 48, cursor: "pointer" }}><BackArrow />Back</button>
@@ -7134,6 +7209,7 @@ export default function SeasonTickets({
               </ButtonBusyContents>
             </button>
           </div>
+          ) : null}
         </div>
       </div>
     );
@@ -7649,6 +7725,10 @@ export default function SeasonTickets({
           {displaySection === "resale" && Resale()}
           {displaySection === "giving" && Giving()}
           {displaySection === "profile" && Profile()}
+          {displaySection === "bank" && (
+            <WalletBankAccount processing={searchParams.get("processing") === "1"} />
+          )}
+          {displaySection === "payouts" && <WalletPayouts />}
         </>
       )}
 

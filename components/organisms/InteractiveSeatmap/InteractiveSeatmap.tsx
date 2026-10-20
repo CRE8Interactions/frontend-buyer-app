@@ -144,8 +144,8 @@ export default function InteractiveSeatmap({
   const background = useSeatmapStore((s) => s.background);
   const setScale = useSeatmapStore((s) => s.setScale);
   const maxScale = useSeatmapStore((s) => s.maxScale);
-  const eventEnableResale = useFiltersStore(
-    (s) => s.event?.enableResale === true,
+  const hasVerifiedResale = useFiltersStore((s) =>
+    (s.ticketGroups || []).some((group) => Boolean(group.listing)),
   );
   const ticketGroups = useFiltersStore((s) => s.ticketGroups);
   const loadingTicketGroups = useFiltersStore((s) => s.loadingTicketGroups);
@@ -1157,7 +1157,7 @@ export default function InteractiveSeatmap({
                   {item.label}
                 </div>
               ))}
-              {mapLegend === "event" && eventEnableResale ? (
+              {mapLegend === "event" && hasVerifiedResale ? (
                 <div
                   className="flex items-center gap-2 text-[13px]"
                   data-testid="seatmap-legend-resale"
@@ -1172,7 +1172,7 @@ export default function InteractiveSeatmap({
                       <path d="M16.6667 9.99984C16.6667 13.6817 13.6819 16.6665 10 16.6665C7.9025 16.6665 6.05936 15.6969 4.84817 14.1722L6.2476 14.1763C6.70783 14.1776 7.08202 13.8056 7.08337 13.3454C7.08472 12.8851 6.71272 12.511 6.25248 12.5096L3.38343 12.5012C3.35142 12.4992 3.31921 12.4991 3.28694 12.5009L2.91915 12.4998C2.69771 12.4992 2.48512 12.5867 2.32832 12.7431C2.17151 12.8994 2.08337 13.1117 2.08337 13.3332L2.08338 16.6665C2.08338 17.1267 2.45647 17.4998 2.91671 17.4998C3.37695 17.4998 3.75004 17.1267 3.75004 16.6665L3.75004 15.4586C5.2605 17.2162 7.48089 18.3332 10 18.3332C14.6024 18.3332 18.3334 14.6022 18.3334 9.99984C18.3334 9.5396 17.9603 9.1665 17.5 9.1665C17.0398 9.1665 16.6667 9.5396 16.6667 9.99984Z" />
                     </svg>
                   </span>
-                  Resale
+                  Verified resale
                 </div>
               ) : null}
             </div>
