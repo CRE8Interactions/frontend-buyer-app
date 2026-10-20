@@ -405,6 +405,39 @@ describe("Select tickets page (PremiumTicketing)", { timeout: 20_000 }, () => {
     ).toBeTruthy();
   });
 
+  it("uses attraction artwork in the seated header and the brand logo when it is absent", () => {
+    const artwork = "https://cdn.example/bulls.jpg";
+    const brand = "https://cdn.example/brand.svg";
+    const { unmount } = render(
+      <PremiumTicketing
+        data={{
+          ...seatedTicketingFixture,
+          headerLogoSrc: artwork,
+          headerLogoAlt: "North Iowa Bulls",
+          headerLogoIsPhoto: true,
+        }}
+      />,
+    );
+
+    const photo = screen.getByRole("img", { name: "North Iowa Bulls" });
+    expect(photo).toHaveAttribute("src", artwork);
+
+    unmount();
+    render(
+      <PremiumTicketing
+        data={{
+          ...seatedTicketingFixture,
+          headerLogoSrc: brand,
+          headerLogoAlt: "North Iowa Bulls",
+          headerLogoIsPhoto: false,
+        }}
+      />,
+    );
+
+    const logo = screen.getByRole("img", { name: "North Iowa Bulls" });
+    expect(logo).toHaveAttribute("src", brand);
+  });
+
   it("shows the promotional description under the seated event name", () => {
     const promo = "Pink Night. Free bobblehead for the first 1,000 fans.";
     render(

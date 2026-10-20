@@ -156,6 +156,10 @@ export type TicketingData = {
   venueCityState: string; // "Las Cruces, NM"
   mapsQuery: string;
   logoSrc: string;
+  /** Seated header tile. Photo when it is attraction artwork; otherwise the brand logo. */
+  headerLogoSrc?: string;
+  headerLogoAlt?: string;
+  headerLogoIsPhoto?: boolean;
   /** Tenant mark shown top-left on branded events (GA header). Falls back to the Blocktickets lockup. */
   brandLogoSrc?: string;
   /** Storefront the tenant mark links to. */
@@ -1657,9 +1661,9 @@ export default function PremiumTicketing({
                 )
               ) : (
                 <>
-                  <div style={{ width: 64, height: 64, borderRadius: 14, background: "#fff", border: "1px solid rgba(5,27,53,0.08)", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, padding: 9, boxSizing: "border-box" }}>
+                  <div style={{ width: 64, height: 64, borderRadius: 14, background: d.headerLogoIsPhoto ? "rgba(255,255,255,0.12)" : "#fff", border: "1px solid rgba(5,27,53,0.08)", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, padding: d.headerLogoIsPhoto ? 0 : 9, boxSizing: "border-box", overflow: "hidden" }}>
                     {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img src={LOGO} alt={d.homeLabel} style={{ maxWidth: "100%", maxHeight: "100%", objectFit: "contain" }} />
+                    <img src={d.headerLogoSrc || LOGO} alt={d.headerLogoAlt || d.homeLabel} style={d.headerLogoIsPhoto ? { width: "100%", height: "100%", objectFit: "cover", display: "block" } : { maxWidth: "100%", maxHeight: "100%", objectFit: "contain" }} />
                   </div>
                   <div style={{ display: "flex", flexDirection: "column", gap: 3, minWidth: 0 }}>
                     <div style={{ fontSize: fluidSize(19), fontWeight: 600, letterSpacing: "-0.015em", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{d.eventName}</div>
