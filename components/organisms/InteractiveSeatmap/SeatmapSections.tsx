@@ -2,9 +2,13 @@
 
 import { memo, useLayoutEffect, useMemo, useRef, useState } from "react";
 import {
+  countSectionAvailability,
   createSectionInventoryTable,
+  sectionAvailabilityGradientId,
+  sectionOverlayPaint,
   type SeatmapMapping,
   type SeatmapSection,
+  type SectionOverlayPaint,
   zoomableCoverPathD,
 } from "@/lib/seatmapLookups";
 import useSeatmapStore from "@/stores/seatmapStore";
@@ -12,6 +16,7 @@ import type { SeatmapTooltipTarget } from "./SeatmapTooltip";
 
 const AVAILABLE_FILL = "#3E8BF7";
 const UNAVAILABLE_FILL = "#9DA2B3";
+const NO_REVEALED_SECTIONS: string[] = [];
 
 function isWheelchairCompanionSection(section: SeatmapSection) {
   const compact = String(section.sectionNumber ?? "")
@@ -51,7 +56,7 @@ type Props = {
   data: SeatmapMapping;
   sectionCoversEnabled?: boolean;
   showCovers?: boolean;
-  focusedSectionId?: string | null;
+  revealedSectionIds?: string[];
   onZoomableSectionClick?: (sectionId: string, bounds: DOMRect) => void;
   onTooltip: (target: SeatmapTooltipTarget | null) => void;
 };
@@ -60,7 +65,7 @@ const SeatmapSections = memo(function SeatmapSections({
   data,
   sectionCoversEnabled = false,
   showCovers = true,
-  focusedSectionId = null,
+  revealedSectionIds = NO_REVEALED_SECTIONS,
   onZoomableSectionClick,
   onTooltip,
 }: Props) {
@@ -87,6 +92,21 @@ const SeatmapSections = memo(function SeatmapSections({
     [data, sectionLookupTable, seatLookupTable],
   );
 
+  const availabilityBySectionId = useMemo(() => {
+    const map = new Map<string, SectionOverlayPaint>();
+    for (const section of sectionsList) {
+      if (!section.zoomable) continue;
+      map.set(
+        String(section.sectionId),
+        sectionOverlayPaint(
+          section,
+          countSectionAvailability(section, data.rows, seatLookupTable),
+        ),
+      );
+    }
+    return map;
+  }, [data.rows, seatLookupTable, sectionsList]);
+
   useLayoutEffect(() => {
     const next: typeof labels = {};
     sectionsList.forEach((section) => {
@@ -96,7 +116,7 @@ const SeatmapSections = memo(function SeatmapSections({
       if (layout) next[String(section.sectionId)] = layout;
     });
     setLabels(next);
-  }, [sectionsList, showCovers, focusedSectionId, sectionCoversEnabled]);
+  }, [sectionsList, showCovers, revealedSectionIds, sectionCoversEnabled]);
 
   return (
     <g className="polygons">
@@ -108,26 +128,78 @@ const SeatmapSections = memo(function SeatmapSections({
         if (isZoomable && !sectionCoversEnabled) return null;
 
         if (isZoomable) {
+          const inventoryPaint = availabilityBySectionId.get(sid);
+          const soldOut = Boolean(inventoryPaint?.soldOut);
+          // A sold-out cover stays up. Uncovering it draws every physical seat
+          // and reads as a full section even when nothing is for sale.
           const uncovered =
-            focusedSectionId != null && focusedSectionId === sid;
-          const overlayVisible = showCovers && !uncovered;
+            !soldOut && revealedSectionIds.map(String).includes(sid);
+          const overlayVisible = soldOut || (showCovers && !uncovered);
           const coverD = zoomableCoverPathD(section);
           const pathD = overlayVisible ? coverD : section.path || coverD;
-          const coverFill = hasInventory
-            ? section.coverFill ?? section.fill ?? AVAILABLE_FILL
-            : UNAVAILABLE_FILL;
-          const fill = overlayVisible
-            ? coverFill
-            : section.uncoveredFill ?? "#FFFFFF";
-          const stroke = overlayVisible
-            ? section.coverStroke ?? section.stroke ?? "rgba(255,255,255,0.95)"
-            : "rgba(0,0,0,0)";
-          const strokeWidth = overlayVisible
-            ? Number(section.coverStrokeWidth ?? section.strokeWidth ?? 2)
-            : 0;
+          const availableFill =
+            inventoryPaint?.fill ||
+            section.coverFill ||
+            section.fill ||
+            AVAILABLE_FILL;
+          const fill = !overlayVisible
+            ? section.uncoveredFill ?? "#FFFFFF"
+            : soldOut
+              ? inventoryPaint?.fill
+              : inventoryPaint?.kind === "gradient"
+                ? `url(#${sectionAvailabilityGradientId(sid)})`
+                : availableFill;
+          const stroke = !overlayVisible
+            ? "rgba(0,0,0,0)"
+            : soldOut
+              ? "#C5C8D0"
+              : section.coverStroke ??
+                section.stroke ??
+                "rgba(255,255,255,0.95)";
+          const strokeWidth = !overlayVisible
+            ? 0
+            : soldOut
+              ? 2
+              : Number(section.coverStrokeWidth ?? section.strokeWidth ?? 2);
+          const interactive = !soldOut && overlayVisible;
+          const gradientId = sectionAvailabilityGradientId(sid);
 
           return (
-            <g key={sid} data-zoomable-section="true" data-section-root="true">
+            <g
+              key={sid}
+              data-zoomable-section="true"
+              data-section-root={interactive ? "true" : undefined}
+              data-sold-out={soldOut ? "true" : undefined}
+              data-available-ratio={
+                inventoryPaint ? String(inventoryPaint.ratio) : undefined
+              }
+            >
+              {overlayVisible && inventoryPaint?.kind === "gradient" ? (
+                <defs>
+                  <linearGradient
+                    id={gradientId}
+                    x1="0"
+                    y1="0"
+                    x2="0"
+                    y2="1"
+                    gradientUnits="objectBoundingBox"
+                  >
+                    <stop
+                      offset="0%"
+                      stopColor={inventoryPaint.unavailableFill}
+                    />
+                    <stop
+                      offset={`${(1 - inventoryPaint.ratio) * 100}%`}
+                      stopColor={inventoryPaint.unavailableFill}
+                    />
+                    <stop
+                      offset={`${(1 - inventoryPaint.ratio) * 100}%`}
+                      stopColor={inventoryPaint.fill}
+                    />
+                    <stop offset="100%" stopColor={inventoryPaint.fill} />
+                  </linearGradient>
+                </defs>
+              ) : null}
               <path
                 ref={(el) => {
                   pathRefs.current[sid] = el;
@@ -137,17 +209,19 @@ const SeatmapSections = memo(function SeatmapSections({
                 fill={fill}
                 stroke={stroke}
                 strokeWidth={strokeWidth}
-                opacity={overlayVisible && !hasInventory ? 0.45 : 1}
-                className={overlayVisible ? "cursor-pointer" : undefined}
-                pointerEvents={overlayVisible ? "auto" : "none"}
+                opacity={1}
+                className={interactive ? "cursor-pointer" : undefined}
+                pointerEvents={interactive ? "auto" : "none"}
+                style={{ cursor: interactive ? "pointer" : "default" }}
                 onClick={(e) => {
+                  if (!interactive) return;
                   e.stopPropagation();
                   const el = pathRefs.current[sid];
                   if (!el || !onZoomableSectionClick) return;
                   onZoomableSectionClick(sid, el.getBBox() as unknown as DOMRect);
                 }}
                 onTouchEnd={(e) => {
-                  if (!overlayVisible) return;
+                  if (!interactive) return;
                   e.preventDefault();
                   e.stopPropagation();
                   const el = pathRefs.current[sid];
@@ -158,7 +232,11 @@ const SeatmapSections = memo(function SeatmapSections({
               {section.identifier?.path && overlayVisible ? (
                 <path
                   d={section.identifier.path}
-                  fill={section.identifier.fill || "white"}
+                  fill={
+                    soldOut
+                      ? inventoryPaint?.labelFill
+                      : section.identifier.fill || "white"
+                  }
                   opacity={section.identifier.opacity ?? 1}
                   fillRule={section.identifier.evenodd ? "evenodd" : undefined}
                   pointerEvents="none"
@@ -239,10 +317,14 @@ const SeatmapSections = memo(function SeatmapSections({
           const sid = String(section.sectionId);
           if (isWheelchairCompanionSection(section)) return null;
           if (section.identifier?.path) return null;
+          const inventoryPaint = section.zoomable
+            ? availabilityBySectionId.get(sid)
+            : undefined;
           if (section.zoomable && sectionCoversEnabled) {
+            const soldOut = Boolean(inventoryPaint?.soldOut);
             const uncovered =
-              focusedSectionId != null && focusedSectionId === sid;
-            if (!showCovers || uncovered) return null;
+              !soldOut && revealedSectionIds.map(String).includes(sid);
+            if ((!soldOut && !showCovers) || uncovered) return null;
           }
           const layout = labels[sid];
           if (!layout) return null;
@@ -252,7 +334,7 @@ const SeatmapSections = memo(function SeatmapSections({
               key={`label-${sid}`}
               x={layout.x}
               y={layout.y}
-              fill="white"
+              fill={inventoryPaint?.labelFill ?? "white"}
               fontSize={layout.fontSize}
               fontWeight="700"
               fontFamily="Inter, system-ui, sans-serif"

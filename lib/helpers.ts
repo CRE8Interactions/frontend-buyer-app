@@ -160,10 +160,23 @@ export const formatCurrency = (num?: number | string | null) =>
     maximumFractionDigits: 2,
   });
 
+/** Complimentary offers list at $0 even when the inventory price includes fees. */
+export function listedUnitPrice(
+  amount?: number | null,
+  offer?: { freeOffer?: boolean } | null,
+  listing?: { askingPrice?: number | null } | null,
+) {
+  if (offer?.freeOffer) return 0;
+  if (amount != null && Number.isFinite(Number(amount))) return Number(amount);
+  const asking = listing?.askingPrice;
+  if (asking != null && Number.isFinite(Number(asking))) return Number(asking);
+  return 0;
+}
+
 export const formatOfferListPrice = (
   amount: number,
   offer?: { freeOffer?: boolean } | null,
-) => formatCurrency(offer?.freeOffer ? 0 : amount);
+) => formatCurrency(listedUnitPrice(amount, offer));
 
 export const formatNumber = (num?: number | string | null) =>
   parseFloat(String(num ?? 0)).toLocaleString("en-US");
@@ -297,6 +310,42 @@ export const formatOnSaleWhen = (
   const abbr = m.zoneAbbr();
   const when = `${m.format("ddd, MMM D")} at ${m.format("h:mm A")}`;
   return abbr ? `${when} ${abbr}` : when;
+};
+
+/**
+ * Compact on-sale badge. Date only until the sale is inside 24 hours, then
+ * "On sale today · 10 AM MST" or "On sale tomorrow · 10 AM MST". Drops :00
+ * on the hour. The abbreviation is the venue zone at the sale instant.
+ * `now` is for tests.
+ */
+export const formatOnSaleBadge = (
+  start?: string,
+  timezone?: TimezoneLike,
+  now?: string | number | Date,
+) => {
+  if (!start) return "";
+  const tz = toIanaTimezone(timezone);
+  const m = tz ? moment.tz(start, tz) : moment(start);
+  if (!m.isValid()) return "";
+  const current = tz
+    ? now != null
+      ? moment.tz(now, tz)
+      : moment.tz(tz)
+    : now != null
+      ? moment(now)
+      : moment();
+  if (!current.isValid()) return "";
+  const minutesAway = m.diff(current, "minutes", true);
+  const withinDay = minutesAway >= 0 && minutesAway <= 24 * 60;
+  const clock = m.minute() === 0 ? m.format("h A") : m.format("h:mm A");
+  const abbr = m.zoneAbbr();
+  const time = abbr ? `${clock} ${abbr}` : clock;
+  if (!withinDay) return `On sale ${m.format("MMM D")}`;
+  if (m.isSame(current, "day")) return `On sale today · ${time}`;
+  if (m.isSame(current.clone().add(1, "day"), "day")) {
+    return `On sale tomorrow · ${time}`;
+  }
+  return `On sale ${m.format("MMM D")} · ${time}`;
 };
 
 /** Prefer the scheduled doors time the API stores separately from `doorsOpen`. */

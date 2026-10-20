@@ -484,7 +484,7 @@ export function FundraisingCampaignClient({
                 ) : null}
               </div>
 
-              <label className={`flex items-center gap-2 text-[14px] ${muted}`}>
+              <label className={`text-[14px] ${muted}`}>
                 <input
                   type="checkbox"
                   checked={anonymous}

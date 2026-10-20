@@ -7,6 +7,7 @@ import {
   demoSeasonPackage,
   demoTicketGroups,
 } from "@/lib/demo/fixtures";
+import { INVENTORY_UPDATE_LOADER_MESSAGE } from "@/lib/loaderMessages";
 import { MIXED_MAP_SELECTION_ERROR } from "@/lib/mapSelection";
 import { selectionOfferName } from "@/lib/ticketSummary";
 import type { SeatmapBackground } from "@/lib/seatmapLookups";
@@ -24,45 +25,51 @@ vi.mock("next/navigation", () => ({
 
 vi.mock("@/components/organisms/InteractiveSeatmap", async () => {
   const { useEffect } = await import("react");
+  const InteractiveSeatmap = ({
+    dismissTooltipKey,
+    onPaintReady,
+    hideChrome,
+  }: {
+    dismissTooltipKey?: number;
+    onPaintReady?: () => void;
+    hideChrome?: boolean;
+  }) => {
+    useEffect(() => {
+      onPaintReady?.();
+    }, [onPaintReady]);
+    return (
+      <div
+        data-testid="interactive-seatmap"
+        data-dismiss-tooltip-key={String(dismissTooltipKey ?? 0)}
+      >
+        Interactive seat map
+        {hideChrome ? null : (
+          <>
+            <button type="button" aria-label="Zoom in">
+              +
+            </button>
+            <button type="button">Legend</button>
+          </>
+        )}
+      </div>
+    );
+  };
   return {
-    InteractiveSeatmap: ({
-      dismissTooltipKey,
-      onPaintReady,
-      hideChrome,
-    }: {
-      dismissTooltipKey?: number;
-      onPaintReady?: () => void;
-      hideChrome?: boolean;
-    }) => {
-      useEffect(() => {
-        onPaintReady?.();
-      }, [onPaintReady]);
-      return (
-        <div
-          data-testid="interactive-seatmap"
-          data-dismiss-tooltip-key={String(dismissTooltipKey ?? 0)}
-        >
-          Interactive seat map
-          {hideChrome ? null : (
-            <>
-              <button type="button" aria-label="Zoom in">
-                +
-              </button>
-              <button type="button">Legend</button>
-            </>
-          )}
-        </div>
-      );
-    },
-    InteractiveSeatmapMemo: () => (
-      <div data-testid="interactive-seatmap">Interactive seat map</div>
-    ),
+    InteractiveSeatmap,
+    InteractiveSeatmapMemo: InteractiveSeatmap,
   };
 });
 
-vi.mock("@/components/molecules/SectionLocatorThumb", () => ({
-  default: () => <div data-testid="section-thumb">Thumb</div>,
-}));
+vi.mock("@/components/molecules/SectionLocatorThumb", async () => {
+  const { useEffect } = await import("react");
+  const SectionLocatorThumb = ({ onReady }: { onReady?: () => void }) => {
+    useEffect(() => {
+      onReady?.();
+    }, [onReady]);
+    return <div data-testid="section-thumb">Thumb</div>;
+  };
+  return { default: SectionLocatorThumb };
+});
 
 import SeatMapSelectionOverlay from "@/components/organisms/SeatMapSelectionOverlay";
 
@@ -76,6 +83,7 @@ type MapProps = {
   mapMapping?: ReturnType<typeof demoSeatmapMapping> | null;
   mapBackground?: SeatmapBackground | null;
   preparing?: boolean;
+  updatingInventory?: boolean;
   itemPriceNote?: string;
   mapLegend?: "event" | "package";
 };
@@ -172,6 +180,41 @@ describe("SeatMapSelectionOverlay map readiness", () => {
     expect(loaderShowing()).toBe(false);
   });
 
+  it("covers a painted map with Updating inventory while lookups rebuild", () => {
+    renderOverlay({
+      mapMapping: demoSeatmapMapping(),
+      mapBackground: BACKGROUND,
+      updatingInventory: true,
+    });
+    fireEvent.load(backgroundPreload()!);
+
+    expect(screen.getByTestId("interactive-seatmap")).toBeInTheDocument();
+    expect(loaderShowing()).toBe(true);
+    expect(screen.getByText(INVENTORY_UPDATE_LOADER_MESSAGE)).toBeInTheDocument();
+  });
+
+  it("closes an open seat card when a rebuild starts", () => {
+    const { rerender } = renderOverlay({
+      mapMapping: demoSeatmapMapping(),
+      mapBackground: BACKGROUND,
+    });
+    fireEvent.load(backgroundPreload()!);
+    const dismissals = () =>
+      screen.getByTestId("interactive-seatmap").dataset.dismissTooltipKey;
+    const before = dismissals();
+
+    rerender(
+      overlay({
+        mapMapping: demoSeatmapMapping(),
+        mapBackground: BACKGROUND,
+        updatingInventory: true,
+      }),
+    );
+
+    expect(dismissals()).not.toBe(before);
+    expect(screen.getByText(INVENTORY_UPDATE_LOADER_MESSAGE)).toBeInTheDocument();
+  });
+
   it("paints the map when the background image fails so a bad URL cannot trap the shopper", () => {
     renderOverlay({
       mapMapping: demoSeatmapMapping(),
@@ -219,8 +262,54 @@ describe("SeatMapSelectionOverlay map readiness", () => {
       2,
     );
     expect(screen.queryByText(/× 2/)).not.toBeInTheDocument();
+    expect(screen.getAllByText("GA")).toHaveLength(2);
+    expect(screen.queryByText("Sec")).not.toBeInTheDocument();
+    expect(screen.queryByText("Row")).not.toBeInTheDocument();
+    expect(screen.queryByText("Seat")).not.toBeInTheDocument();
     expect(screen.getAllByText(`$${Number(ga.price).toFixed(2)}`)).toHaveLength(2);
     expect(screen.getAllByText(selectionOfferName(ga)).length).toBeGreaterThan(0);
+  });
+
+  it("badges the accessible seating type on the selection card and in ticket details", () => {
+    const accessible = DEMO_SEATED_TICKET_GROUPS.find(
+      (group) => group.accessible,
+    );
+    const standard = DEMO_SEATED_TICKET_GROUPS.find(
+      (group) => !group.accessible,
+    );
+    if (!accessible || !standard) {
+      throw new Error("demo fixtures need accessible and standard seat groups");
+    }
+    useSeatmapStore.setState({
+      selectedFromMap: [
+        { ...accessible, seatId: "a1", seatNumber: 1, quantity: 1 },
+        { ...standard, seatId: "s1", seatNumber: 2, quantity: 1 },
+      ],
+      totalCount: 2,
+      totalPrice: Number(accessible.price || 0) + Number(standard.price || 0),
+    });
+    renderOverlay({
+      mapMapping: demoSeatmapMapping(),
+      mapBackground: BACKGROUND,
+    });
+    fireEvent.load(backgroundPreload()!);
+
+    expect(screen.getAllByText("Sec").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Row").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Seat").length).toBeGreaterThan(0);
+    expect(
+      screen.getAllByText("Open space for wheelchair"),
+    ).toHaveLength(1);
+
+    fireEvent.click(screen.getAllByRole("button", { name: /details/i })[0]);
+
+    expect(screen.getByText("Ticket details")).toBeInTheDocument();
+    const detailHeading = screen.getByText(/· Seat/);
+    expect(
+      within(detailHeading.parentElement!).getByText(
+        "Open space for wheelchair",
+      ),
+    ).toBeInTheDocument();
   });
 
   it("shows one Your selection card per package ticket", () => {
@@ -255,7 +344,7 @@ describe("SeatMapSelectionOverlay map readiness", () => {
       screen.getAllByText(`$${Number(group.price).toFixed(2)}`),
     ).toHaveLength(2);
     expect(screen.getAllByText(`All ${gameCount} games`)).toHaveLength(2);
-    expect(screen.queryByText(/incl\. fees/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/incl\. taxes & fees/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/prices are all-in/i)).not.toBeInTheDocument();
 
     fireEvent.click(screen.getAllByRole("button", { name: /details/i })[0]);
@@ -263,9 +352,60 @@ describe("SeatMapSelectionOverlay map readiness", () => {
     expect(
       screen.getByText(`$${Number(group.price).toFixed(2)} ea`),
     ).toBeInTheDocument();
-    expect(screen.queryByText(/incl\. fees/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/incl\. taxes & fees/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/prices are all-in/i)).not.toBeInTheDocument();
     expect(screen.getByText(/buyer protection/i)).toBeInTheDocument();
+  });
+
+  it("lists a complimentary ticket at $0.00 instead of the fee-inclusive price", () => {
+    const group = DEMO_SEATED_TICKET_GROUPS[0];
+    useSeatmapStore.setState({
+      selectedFromMap: [
+        {
+          ...group,
+          seatId: "s1",
+          seatNumber: 13,
+          price: 1.96,
+          offer: { ...group.offer, name: "COMP TICKET", freeOffer: true },
+        },
+      ],
+      totalCount: 1,
+      totalPrice: 0,
+    });
+    renderOverlay({
+      mapMapping: demoSeatmapMapping(),
+      mapBackground: BACKGROUND,
+    });
+    fireEvent.load(backgroundPreload()!);
+
+    expect(screen.getAllByText("$0.00")).toHaveLength(2);
+    expect(screen.queryByText("$1.96")).not.toBeInTheDocument();
+    expect(screen.getByText("Complimentary")).toBeInTheDocument();
+    expect(screen.queryByText(/incl\. taxes & fees/i)).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: /details/i }));
+    expect(screen.getByText("$0.00 ea")).toBeInTheDocument();
+    expect(screen.getByText("complimentary")).toBeInTheDocument();
+    expect(screen.queryByText(/incl\. taxes & fees/i)).not.toBeInTheDocument();
+  });
+
+  it("shows the seat number without an accessibility suffix", () => {
+    const group = DEMO_SEATED_TICKET_GROUPS[0];
+    useSeatmapStore.setState({
+      selectedFromMap: [
+        { ...group, seatId: "s1", seatNumber: "13_DA", quantity: 1 },
+      ],
+      totalCount: 1,
+      totalPrice: Number(group.price || 0),
+    });
+    renderOverlay({
+      mapMapping: demoSeatmapMapping(),
+      mapBackground: BACKGROUND,
+    });
+    fireEvent.load(backgroundPreload()!);
+
+    expect(screen.getByText("13")).toBeInTheDocument();
+    expect(screen.queryByText(/13_DA/)).not.toBeInTheDocument();
   });
 
   it("shows Your selection with the ticket limit when View selection opens on mobile", () => {
@@ -288,7 +428,9 @@ describe("SeatMapSelectionOverlay map readiness", () => {
     fireEvent.click(screen.getByRole("button", { name: /view selection/i }));
 
     expect(screen.getByText("Your selection")).toBeInTheDocument();
-    expect(screen.getByText("Ticket limit: 1–6 per order")).toBeInTheDocument();
+    expect(
+      screen.getByText(`Ticket limit: 1–${group.seatIds!.length} per order`),
+    ).toBeInTheDocument();
     expect(screen.queryByText("Ticket details")).not.toBeInTheDocument();
   });
 
@@ -353,10 +495,18 @@ describe("SeatMapSelectionOverlay map readiness", () => {
     fireEvent.click(screen.getAllByRole("button", { name: /details/i })[0]);
 
     expect(screen.getByText("Ticket details")).toBeInTheDocument();
-    const detailHeading = screen.getByText(/Sec GA/);
-    expect(within(detailHeading.parentElement!).getByText("1 Ticket")).toBeInTheDocument();
-    expect(within(detailHeading.parentElement!).queryByText("6 Tickets")).not.toBeInTheDocument();
-    expect(screen.getByText(/incl\. fees/i)).toBeInTheDocument();
+    const ticketCount = screen.getByText("1 Ticket");
+    // GA details name the section with no Sec prefix.
+    expect(within(ticketCount.parentElement!).getByText("GA")).toBeInTheDocument();
+    expect(screen.queryByText(/Sec GA/)).not.toBeInTheDocument();
+    expect(within(ticketCount.parentElement!).queryByText("6 Tickets")).not.toBeInTheDocument();
+    expect(screen.getByText(/incl\. taxes & fees/i)).toBeInTheDocument();
+
+    fireEvent.click(screen.getAllByRole("button", { name: "Next view" })[0]);
+    const seatView = screen.queryByRole("img", { name: /view from section/i });
+    if (seatView) fireEvent.error(seatView);
+    expect(screen.getByRole("img", { name: /seat view placeholder/i })).toBeInTheDocument();
+    expect(screen.queryByText(/no seat view/i)).not.toBeInTheDocument();
   });
 
   it("removes one GA card without dropping the rest of the quantity", () => {

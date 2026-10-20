@@ -8,9 +8,14 @@ import { downloadApplePass, downloadGooglePass } from "@/lib/api";
 import {
   downloadBlobPass,
   isPhoneDevice,
+  seatDisplayValue,
   type AccessPassSummary,
   type EventLike,
 } from "@/lib/wallet";
+import {
+  accessibleTypeOf,
+  getAccessibleLabel,
+} from "@/lib/ticketAccessibility";
 
 export type PhoneWalletKind = "apple" | "google";
 
@@ -152,7 +157,13 @@ export function walletPassEvent(
 export function phoneWalletKind(): PhoneWalletKind | null {
   if (!isPhoneDevice()) return null;
   const ua = navigator.userAgent;
-  if (/iPhone|iPod/i.test(ua)) return "apple";
+  if (
+    /iPhone|iPod/i.test(ua) ||
+    /iPhone|iPod/i.test(navigator.platform || "") ||
+    /Macintosh/i.test(ua)
+  ) {
+    return "apple";
+  }
   if (/Android/i.test(ua)) return "google";
   return null;
 }
@@ -204,7 +215,7 @@ export function accessPassWalletRequest(
     checkInCode: pass.checkInCode || pass.pass.checkInCode,
     sectionNumber: pass.pass.sectionNumber,
     rowNumber: pass.pass.rowNumber,
-    seatNumber: pass.pass.seatNumber,
+    seatNumber: walletSeatNumber(pass.pass.seatNumber),
     generalAdmission: pass.pass.generalAdmission,
     name: pass.name || pass.pass.name,
     accessPass: true,
@@ -288,6 +299,45 @@ export async function addAccessPassToPhoneWallet(
   );
 }
 
+const SEAT_NUMBER_FIELDS = [
+  "seatNumber",
+  "seat_number",
+  "seatName",
+  "seat_name",
+] as const;
+
+/** Passes print the seat number only. `13_DA` and `13_DB` become 13. */
+function walletSeatNumber(value: unknown): unknown {
+  if (value == null) return value;
+  const display = seatDisplayValue(value);
+  if (!display || display === String(value).trim()) return value;
+  return display;
+}
+
+function walletSeatFields(
+  ticket: Record<string, unknown>,
+): Record<string, unknown> {
+  const fields: Record<string, unknown> = {};
+  for (const key of SEAT_NUMBER_FIELDS) {
+    if (ticket[key] == null) continue;
+    fields[key] = walletSeatNumber(ticket[key]);
+  }
+  return fields;
+}
+
+/** Pass TICKET field is `ticket.name`, the same value legacy sends from the order. */
+function printablePassName(ticket: Record<string, unknown>): string {
+  const stored = String(ticket.name || "").trim();
+  if (stored) return stored;
+  const raw = ticket.offer;
+  const offer = Array.isArray(raw) ? raw[0] : raw;
+  const fromOffer =
+    offer && typeof offer === "object"
+      ? String((offer as { name?: unknown }).name || "").trim()
+      : "";
+  return fromOffer || String(ticket.offerName || ticket.offer_name || "").trim();
+}
+
 export function ticketWalletRequest(
   event?: EventLike | Record<string, unknown> | null,
   ticket?: Record<string, unknown> | null,
@@ -297,7 +347,21 @@ export function ticketWalletRequest(
   if (!checkInCode) return null;
   const passEvent = walletPassEvent(event, ticket);
   if (!passEvent) return null;
-  return { event: passEvent, obj: ticket };
+  const name = printablePassName(ticket);
+  const accessibleType = accessibleTypeOf(ticket);
+  const passTicket = {
+    ...ticket,
+    ...walletSeatFields(ticket),
+    ...(name ? { name } : {}),
+    ...(accessibleType ? { accessible: true, accessibleType } : {}),
+  };
+  return {
+    event: passEvent,
+    obj: {
+      ...passTicket,
+      accessibilityLabel: getAccessibleLabel(passTicket),
+    },
+  };
 }
 
 export async function addTicketToPhoneWallet(

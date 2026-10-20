@@ -18,6 +18,7 @@ export type PaymentIntentGuest = {
   email: string;
   firstName: string;
   lastName: string;
+  marketingEmailOptIn?: boolean;
 };
 
 /** Package/ticket carts already have an event; flex packs need org/venue for wallets. */
@@ -54,6 +55,8 @@ const paymentIntentTotalFromCart = (cart: CartLike) => {
 export function buildProcessOrderRequest<T extends object>(
   cart: T,
   paymentIntentId: string,
+  trackingCode: string | null = null,
+  marketingEmailOptIn?: boolean,
 ) {
   const nextCart = {
     ...cart,
@@ -62,6 +65,8 @@ export function buildProcessOrderRequest<T extends object>(
   return {
     cart: nextCart,
     paymentIntentId,
+    trackingCode,
+    ...(marketingEmailOptIn === undefined ? {} : { marketingEmailOptIn }),
   };
 }
 

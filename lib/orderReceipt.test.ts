@@ -130,7 +130,7 @@ describe("buildOrderReceipt", () => {
     });
   });
 
-  it("lists the redeemed promo code and still foots to the amount paid", () => {
+  it("lists the promo name and still foots to the amount paid", () => {
     const listing = DEMO_SEATED_TICKET_GROUPS[0];
     const order = demoCompletedTicketOrder({
       tickets: [
@@ -150,7 +150,7 @@ describe("buildOrderReceipt", () => {
       processingFee: 0.5,
       salesTax: 0,
       discountApplied: 2,
-      discountBreakdown: { code: "TESTDIS" },
+      discountBreakdown: { name: "Student Night", code: "TESTDIS" },
     });
     const receipt = buildOrderReceipt(order)!;
 
@@ -160,7 +160,7 @@ describe("buildOrderReceipt", () => {
       { label: "Tax", amount: formatCurrency(0) },
       { label: "Processing Fee", amount: formatCurrency(0.5) },
       { label: "Service Fee", amount: formatCurrency(2.5) },
-      { label: "Promo (TESTDIS)", amount: `-${formatCurrency(2)}` },
+      { label: "Student Night", amount: `-${formatCurrency(2)}` },
       { label: "Total", amount: formatCurrency(5.5), strong: true },
       {
         label: "Amount paid",
@@ -199,6 +199,67 @@ describe("buildOrderReceipt", () => {
       { label: "Processing Fee", amount: "$12.38" },
       { label: "Service Fee", amount: "$40.00" },
     ]);
+  });
+
+  it("names the package custom fee instead of Additional Fee", () => {
+    const order = demoCompletedPackageOrder({
+      total: 507.6,
+      serviceFee: 3,
+      processingFee: 14.6,
+      estimatedProcessingFee: 14.6,
+      salesTax: 0,
+      totalFeeAmount: 20,
+      priceObject: {
+        packageCustomFees: [{ name: "Senior Fee", amount: 20 }],
+      },
+      custom_fees: [{ name: "Senior Fee" }],
+    });
+    const receipt = buildOrderReceipt(order)!;
+
+    expect(receipt.totals.map((row) => row.label)).toEqual([
+      "Subtotal",
+      "Tax",
+      "Processing Fee",
+      "Service Fee",
+      "Senior Fee",
+      "Total",
+      "Amount paid",
+    ]);
+    expect(receipt.totals.find((row) => row.label === "Senior Fee")?.amount).toBe(
+      formatCurrency(20),
+    );
+    expect(receipt.totals.find((row) => row.label === "Subtotal")?.amount).toBe(
+      formatCurrency(470),
+    );
+    expect(receipt.totals.some((row) => row.label === "Additional Fee")).toBe(false);
+  });
+
+  it("prints the seat number without an accessibility suffix", () => {
+    const order = demoCompletedTicketOrder();
+    const ticket = order.tickets[0] as Record<string, unknown>;
+    const receipt = buildOrderReceipt(
+      demoCompletedTicketOrder({
+        tickets: [{ ...ticket, seatNumber: "15_DA" }],
+      }),
+    )!;
+
+    expect(receipt.lines[0].description).toContain("Seat 15");
+    expect(receipt.lines[0].description).not.toContain("15_DA");
+  });
+
+  it("orders accessible seats and collapses consecutive numbers", () => {
+    const order = demoCompletedTicketOrder();
+    const [first, second] = order.tickets as Array<Record<string, unknown>>;
+    const receipt = buildOrderReceipt(
+      demoCompletedTicketOrder({
+        tickets: [
+          { ...first, seatNumber: "13_DA" },
+          { ...second, seatNumber: "12_DA" },
+        ],
+      }),
+    )!;
+
+    expect(receipt.lines[0].description).toContain("Seat 12-13");
   });
 
   it("does not repeat a package seat once per game", () => {

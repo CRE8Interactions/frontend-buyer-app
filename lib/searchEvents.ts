@@ -7,12 +7,13 @@ import {
   sortByDate,
   type ApiImage,
 } from "@/lib/helpers";
+import { withSoldOutFlags } from "@/lib/eventSoldOut";
 import { cacheEventBranding } from "@/lib/orgBrandingCache";
 
 export const SEARCH_DEBOUNCE_MS = 300;
 export const SEARCH_MIN_CHARS = 3;
 export const SEARCH_SUGGESTION_LIMIT = 3;
-export const SEARCH_SPINNER_COLOR = "#3E8BF7";
+export const SEARCH_SPINNER_COLOR = "#A6E773";
 export const SEARCH_IMAGE_FALLBACK = "/blocktickets-emblem-navy.svg";
 
 export type ShopperSearchEvent = {
@@ -27,6 +28,13 @@ export type ShopperSearchEvent = {
   start?: string;
   startDate?: string;
   display_start_time?: boolean;
+  status?: string | null;
+  soldout?: boolean | null;
+  soldOut?: boolean | null;
+  generalOnsale?: string | null;
+  hideGeneralOnsale?: boolean | null;
+  scheduled?: boolean | null;
+  scheduledTime?: string | null;
   image?: ApiImage;
   venue?: {
     name?: string;
@@ -34,6 +42,7 @@ export type ShopperSearchEvent = {
     isGeneralAdmissionOnly?: boolean;
   };
   seatmap?: { ga_only?: boolean };
+  promotionalDescription?: unknown;
   isGeneralAdmissionOnly?: boolean;
   generalAdmissionOnly?: boolean;
   organization?: BrandingOrganization | null;
@@ -104,5 +113,5 @@ export async function fetchSearchEvents(query: string) {
       { touchLast: false },
     ),
   );
-  return events;
+  return withSoldOutFlags(events);
 }

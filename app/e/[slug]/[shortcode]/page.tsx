@@ -8,9 +8,11 @@ import PremiumTicketing, {
   type TicketingData,
 } from "@/components/organisms/PremiumTicketing";
 import { getEventByShortCode, getTicketGroups } from "@/lib/api";
+import { rememberTrackingCode } from "@/lib/trackingLink";
 import { brandingToTicketingTheme, type OrgBranding } from "@/lib/branding";
 import { cacheEventBranding } from "@/lib/orgBrandingCache";
 import { isSportingEvent } from "@/lib/eventCategory";
+import { eventPromotionalCopy } from "@/lib/promotionalDescription";
 import {
   eventAboutText,
   eventDoorsIso,
@@ -55,6 +57,7 @@ type EventData = {
   realDoorsOpen?: string;
   summary?: string;
   description?: string;
+  promotionalDescription?: unknown;
   image?: ApiImage;
   category?: { name?: string | null };
   categoryName?: string | null;
@@ -83,6 +86,9 @@ type EventData = {
     image?: unknown;
     address?: Array<{ address_1?: string; city?: string; state?: string; zipcode?: string }>;
   };
+  status?: string | null;
+  soldout?: boolean | null;
+  soldOut?: boolean | null;
 };
 
 const titleCase = (s?: string) =>
@@ -159,6 +165,7 @@ function toGaData(
     orgLabel,
     providerLabel: `Official ticketing marketplace for ${orgLabel}`,
     aboutText: eventAboutText(ev),
+    promo: eventPromotionalCopy(ev),
     homeLabel: matchup.homeLabel,
     awayLabel: matchup.awayLabel,
     awayShort: matchup.awayShort,
@@ -200,6 +207,7 @@ function GAEvent() {
           return;
         }
         const event = res.data.event as EventData;
+        rememberTrackingCode(event.uuid, searchParams.get("code"));
         cacheEventBranding(event, event.organization);
         if (
           event.uuid &&
@@ -293,9 +301,9 @@ function GAEvent() {
       />
     );
   }
-  // A sold-out event keeps its page and swaps the ticket card for the waitlist.
-  // Anything else with no tiers has nothing to say, so the notice takes over.
-  if (!data.gaTiers?.length && !soldOut && !scheduled) {
+  // A sold-out GA event with nothing left uses the same notice as a seated
+  // event that has no inventory. Scheduled events still show their on-sale time.
+  if (!data.gaTiers?.length && !scheduled) {
     return (
       <BrandedNotice
         title="No tickets on sale"

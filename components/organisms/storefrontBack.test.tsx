@@ -1,4 +1,4 @@
-import { act, render, screen, waitFor } from "@testing-library/react";
+import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { ReactNode } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -18,6 +18,7 @@ import {
 } from "@/lib/eventFromPrice";
 import { teamStorefrontDescription } from "@/lib/teamCopy";
 import { googleMapsDirectionsUrl } from "@/lib/venueLocation";
+import { onSaleBadgeLabel } from "@/lib/eventSoldOut";
 import { eventTypeLabel } from "@/lib/eventType";
 import {
   __resetInAppBackForTests,
@@ -78,6 +79,7 @@ vi.mock("@/lib/api", () => ({
   getVenueUpcomingEvents: vi.fn(),
   getEventsByIds: vi.fn(),
   getOrganizationStorefront: vi.fn(),
+  getTicketGroups: vi.fn(),
 }));
 
 import ClientProfile from "@/components/organisms/ClientProfile";
@@ -86,6 +88,7 @@ import { notFound } from "next/navigation";
 import {
   getEventsByIds,
   getOrganizationStorefront,
+  getTicketGroups,
   getVenue,
   getVenues,
   getVenueUpcomingEvents,
@@ -188,6 +191,123 @@ describe("team and venue back buttons", () => {
     expect(
       screen.getByRole("link", { name: /visit venue website/i }),
     ).toHaveAttribute("href", nmState.homeVenue.website);
+  });
+
+  it("keeps a sold-out team event on the list instead of the tickets page", () => {
+    const event = { ...nmStateEvents[0], status: "on_sale", soldout: true };
+    render(
+      <ClientProfile
+        slug={nmState.slug}
+        initialData={{
+          organization: nmState,
+          events: [event],
+          venues: nmState.venues,
+        }}
+      />,
+    );
+
+    expect(
+      screen.queryByRole("link", { name: new RegExp(event.name, "i") }),
+    ).not.toBeInTheDocument();
+    const row = screen.getByText(event.name).closest(".cp-row");
+    expect(row).not.toBeNull();
+    expect(within(row as HTMLElement).getAllByText(/^sold out$/i)).toHaveLength(2);
+    expect(within(row as HTMLElement).queryByText(/^get tickets$/i)).not.toBeInTheDocument();
+  });
+
+  it("shows a promotional description under the event title", () => {
+    const promo = "Pink Night. Free bobblehead for the first 1,000 fans.";
+    const event = {
+      ...nmStateEvents[0],
+      promotionalDescription: `  ${promo}  `,
+    };
+    render(
+      <ClientProfile
+        slug={nmState.slug}
+        initialData={{
+          organization: nmState,
+          events: [event],
+          venues: nmState.venues,
+        }}
+      />,
+    );
+
+    const row = screen.getByText(event.name).closest(".cp-row");
+    expect(within(row as HTMLElement).getByText(promo)).toBeInTheDocument();
+  });
+
+  it("hides a blank promotional description", () => {
+    const event = { ...nmStateEvents[0], promotionalDescription: "   " };
+    render(
+      <ClientProfile
+        slug={nmState.slug}
+        initialData={{
+          organization: nmState,
+          events: [event],
+          venues: nmState.venues,
+        }}
+      />,
+    );
+
+    const row = screen.getByText(event.name).closest(".cp-row");
+    expect(row?.querySelector("p")).toBeNull();
+  });
+
+  it("shows an on-sale badge on seated and GA team events", () => {
+    const when = "2026-11-01T17:00:00.000Z";
+    const events = raptorsEvents.map((event) => ({
+      ...event,
+      status: "on_sale",
+      generalOnsale: when,
+    }));
+    const label = onSaleBadgeLabel(events[0]);
+    render(
+      <ClientProfile
+        slug={raptors.slug}
+        initialData={{
+          organization: raptors,
+          events,
+          venues: raptors.venues,
+        }}
+      />,
+    );
+
+    for (const event of events) {
+      const row = screen.getByRole("link", { name: new RegExp(event.name, "i") });
+      expect(within(row).getByText(label)).toBeInTheDocument();
+      expect(within(row).getByText(/^remind me$/i)).toBeInTheDocument();
+      expect(within(row).queryByText(/^get tickets$/i)).not.toBeInTheDocument();
+    }
+    expect(events.some((event) => event.seatmap?.ga_only)).toBe(true);
+    expect(events.some((event) => event.seatmap?.ga_only === false)).toBe(true);
+  });
+
+  it("keeps a GA team event off the event page when its inventory is sold out", async () => {
+    const ga = DEMO_EVENTS.find(
+      (event) => event.seatmap?.ga_only && event.status === "on_sale",
+    )!;
+    const event = { ...ga, id: 9101, uuid: "evt-ga-inventory-sold-out", organization: nmState };
+    vi.mocked(getTicketGroups).mockResolvedValueOnce({
+      data: { soldout: true, ticketGroups: [], offers: [] },
+    } as never);
+    render(
+      <ClientProfile
+        slug={nmState.slug}
+        initialData={{
+          organization: nmState,
+          events: [event],
+          venues: nmState.venues,
+        }}
+      />,
+    );
+
+    await waitFor(() => {
+      expect(
+        screen.queryByRole("link", { name: new RegExp(event.name, "i") }),
+      ).not.toBeInTheDocument();
+    });
+    const row = screen.getByText(event.name).closest(".cp-row");
+    expect(within(row as HTMLElement).getAllByText(/^sold out$/i)).toHaveLength(2);
   });
 
   it("keeps the org loader visible until team venue data is ready", async () => {
@@ -600,6 +720,143 @@ describe("venue page events", () => {
     expect(
       screen.queryByRole("button", { name: /see full schedule/i }),
     ).not.toBeInTheDocument();
+  });
+
+  it("keeps a sold-out venue event on the list instead of the tickets page", async () => {
+    const venue = raptors.homeVenue;
+    const schedule = demoVenueEvents(venue.slug).map((event, index) => ({
+      ...event,
+      start: upcomingStart(index),
+      status: "on_sale",
+    }));
+    mockedGetVenue.mockResolvedValue({ data: [venue] } as never);
+    mockedGetVenues.mockResolvedValue({ data: [venue] } as never);
+    mockedGetUpcoming.mockResolvedValue({
+      data: { allEvents: schedule },
+    } as never);
+    const sold = schedule[0];
+    mockedGetEventsByIds.mockResolvedValue({
+      data: {
+        data: [
+          {
+            id: sold.id,
+            attributes: {
+              shortCode: sold.shortCode,
+              uuid: sold.uuid,
+              status: "on_sale",
+              soldOut: true,
+            },
+          },
+        ],
+      },
+    } as never);
+
+    render(<VenueProfile slug={venue.slug} />);
+
+    const live = schedule[1];
+    const soldRow = (await screen.findByText(sold.name)).closest(".vp-row");
+    expect(soldRow).not.toBeNull();
+    expect(
+      screen.queryByRole("link", { name: new RegExp(sold.name, "i") }),
+    ).not.toBeInTheDocument();
+    expect(within(soldRow as HTMLElement).getAllByText(/^sold out$/i)).toHaveLength(2);
+    expect(within(soldRow as HTMLElement).queryByText(/^get tickets$/i)).not.toBeInTheDocument();
+    const liveRow = screen.getByRole("link", { name: new RegExp(live.name, "i") });
+    expect(within(liveRow).getByText(/^get tickets$/i)).toBeInTheDocument();
+    expect(within(liveRow).queryByText(/^sold out$/i)).not.toBeInTheDocument();
+  });
+
+  it("shows a rich-text promotional description under a sold-out venue event title", async () => {
+    const venue = raptors.homeVenue;
+    const [first, ...rest] = demoVenueEvents(venue.slug).map((event, index) => ({
+      ...event,
+      start: upcomingStart(index),
+      soldOut: index === 0,
+    }));
+    const event = {
+      ...first,
+      promotionalDescription: [
+        { type: "paragraph", children: [{ type: "text", text: "Pink Night." }] },
+        { type: "paragraph", children: [{ type: "text", text: "Free bobblehead." }] },
+      ],
+    };
+    mockedGetVenue.mockResolvedValue({ data: [venue] } as never);
+    mockedGetVenues.mockResolvedValue({ data: [venue] } as never);
+    mockedGetUpcoming.mockResolvedValue({
+      data: { allEvents: [event, ...rest] },
+    } as never);
+
+    render(<VenueProfile slug={venue.slug} />);
+
+    const row = (await screen.findByText(event.name)).closest(".vp-row") as HTMLElement;
+    expect(within(row).getByText("Pink Night. Free bobblehead.")).toBeInTheDocument();
+    expect(within(row).getAllByText(/^sold out$/i)).toHaveLength(2);
+  });
+
+  it("hides a blank promotional description on venue event rows", async () => {
+    const venue = raptors.homeVenue;
+    const schedule = demoVenueEvents(venue.slug).map((event, index) => ({
+      ...event,
+      start: upcomingStart(index),
+      promotionalDescription: index === 0 ? "   " : null,
+    }));
+    mockedGetVenue.mockResolvedValue({ data: [venue] } as never);
+    mockedGetVenues.mockResolvedValue({ data: [venue] } as never);
+    mockedGetUpcoming.mockResolvedValue({
+      data: { allEvents: schedule },
+    } as never);
+
+    render(<VenueProfile slug={venue.slug} />);
+
+    const row = (await screen.findByText(schedule[0].name)).closest(".vp-row");
+    expect(row?.querySelector("p")).toBeNull();
+  });
+
+  it("shows an on-sale badge on seated and GA venue events", async () => {
+    const when = "2026-11-01T17:00:00.000Z";
+    const venue = raptors.homeVenue;
+    const schedule = demoVenueEvents(venue.slug).map((event, index) => ({
+      ...event,
+      start: upcomingStart(index),
+      status: "on_sale",
+    }));
+    const seated = schedule.find((event) => event.seatmap?.ga_only === false);
+    const ga = schedule.find((event) => event.seatmap?.ga_only);
+    if (!seated || !ga) throw new Error("venue fixtures need a seated and a GA event");
+    mockedGetVenue.mockResolvedValue({ data: [venue] } as never);
+    mockedGetVenues.mockResolvedValue({ data: [venue] } as never);
+    mockedGetUpcoming.mockResolvedValue({
+      data: { allEvents: schedule },
+    } as never);
+    mockedGetEventsByIds.mockResolvedValue({
+      data: {
+        data: [seated, ga].map((event) => ({
+          id: event.id,
+          attributes: {
+            uuid: event.uuid,
+            shortCode: event.shortCode,
+            status: "on_sale",
+            generalOnsale: when,
+          },
+        })),
+      },
+    } as never);
+
+    render(<VenueProfile slug={venue.slug} />);
+
+    const label = onSaleBadgeLabel({
+      ...seated,
+      generalOnsale: when,
+      status: "on_sale",
+    });
+    for (const event of [seated, ga]) {
+      const row = await screen.findByRole("link", {
+        name: new RegExp(event.name, "i"),
+      });
+      expect(within(row).getByText(label)).toBeInTheDocument();
+      expect(within(row).getByText(/^remind me$/i)).toBeInTheDocument();
+      expect(within(row).queryByText(/^get tickets$/i)).not.toBeInTheDocument();
+    }
   });
 
   it("keeps the org loader visible until venue events are ready", async () => {

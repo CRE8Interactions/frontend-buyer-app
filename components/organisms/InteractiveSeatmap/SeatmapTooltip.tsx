@@ -17,13 +17,12 @@ import {
   gaPopoverDefaultLimitLabel,
   limitsFromSeatedOfferRow,
   limitsFromTicketGroup,
-  offerListRestrictionLabel,
   offerRestrictionLimits,
-  offerRestrictionLimitsForSeatedRow,
-  shouldShowSeatedMapOfferRow,
+  seatedOfferRowRestrictionLabel,
 } from "@/lib/ticketListings";
 import type { QuantityLimits, RawTicketGroup } from "@/lib/ticketListings";
 import { selectionOfferName } from "@/lib/ticketSummary";
+import { mapSectionHeading, seatDisplayValue } from "@/lib/wallet";
 import useFiltersStore from "@/stores/filtersStore";
 import useSeatmapStore from "@/stores/seatmapStore";
 import type { TicketGroup } from "@/stores/filtersStore";
@@ -36,7 +35,11 @@ import {
   SEATMAP_SEAT_OFFER_ROWS_VISIBLE,
 } from "@/lib/seatmapPopup";
 import type { PopupRect } from "@/lib/seatmapPopup";
-import type { SeatmapSeat as SeatmapSeatData } from "@/lib/seatmapLookups";
+import {
+  adjacentSeatWindow,
+  type SeatmapMapping,
+  type SeatmapSeat as SeatmapSeatData,
+} from "@/lib/seatmapLookups";
 
 export type SeatmapTooltipTarget =
   | { kind: "seat"; seatId: string; x: number; y: number; pinned?: boolean }
@@ -112,7 +115,7 @@ function priceIncludesTaxesAndFees(
 function OfferPriceNote({ color }: { color: string }) {
   return (
     <p className="text-[10px]" style={{ color }}>
-      Incl. Taxes &amp; Fees
+      Incl. taxes &amp; fees
     </p>
   );
 }
@@ -133,6 +136,43 @@ function GaOfferLimitNote({
       Ticket limit: {label}
     </p>
   );
+}
+
+function SeatedOfferLimitNote({
+  group,
+  limits,
+  color,
+}: {
+  group: TicketGroup;
+  limits: QuantityLimits;
+  color: string;
+}) {
+  const label = seatedOfferRowRestrictionLabel(
+    group.package || group.offer,
+    limits,
+  );
+  if (!label) return null;
+  return (
+    <p className="text-[10px]" style={{ color }}>
+      {label}
+    </p>
+  );
+}
+
+function seatedSelectionPreview(
+  mapping: SeatmapMapping | null,
+  seatIds: string[] | null,
+) {
+  if (!seatIds?.length) return null;
+  const labels = seatIds.map((id) => {
+    const number = mapping?.seats?.[id]?.seatNumber;
+    return number == null || number === ""
+      ? id
+      : seatDisplayValue(number) || id;
+  });
+  return labels.length === 1
+    ? `Seat ${labels[0]} will be added`
+    : `Seats ${labels[0]}-${labels[labels.length - 1]} will be added`;
 }
 
 function PopoverTicketLimit({
@@ -436,7 +476,7 @@ function MobileSingleOfferSeatPopup({
     seat?.sectionNumber ||
     "—";
   const row = primary?.rowName || primary?.rowNumber || "—";
-  const seatNumber = seat?.seatNumber ?? "—";
+  const seatNumber = seatDisplayValue(seat?.seatNumber) || "—";
 
   useLayoutEffect(() => {
     const nextHeight = cardRef.current?.offsetHeight;
@@ -590,16 +630,8 @@ export default function SeatmapTooltip({
   }, [data?.sections, target]);
 
   const visibleSeatOffers = useMemo(
-    () =>
-      seatOffers
-        .map((offer, index) => ({ offer, index }))
-        .filter(({ offer }) =>
-          shouldShowSeatedMapOfferRow(
-            offer as RawTicketGroup,
-            eventTicketLimit,
-          ),
-        ),
-    [seatOffers, eventTicketLimit],
+    () => seatOffers.map((offer, index) => ({ offer, index })),
+    [seatOffers],
   );
 
   // The GA card grows with its offer list, so its height has to be measured
@@ -656,6 +688,12 @@ export default function SeatmapTooltip({
       offerLocked &&
       Boolean(onUnlockOffer) &&
       (showSeatActions || !isMobileSeatmapViewport());
+    const addPrimarySeat = () => {
+      if (!primary) return;
+      // Quantity rules only apply when the shopper has to choose between
+      // offers. A seat with one offer behaves like standard admission.
+      selectSpecificSeat(target.seatId, primary);
+    };
     const mobileSingleOffer =
       isMobileSeatmapViewport() &&
       visibleSeatOffers.length === 1 &&
@@ -678,7 +716,7 @@ export default function SeatmapTooltip({
               onUnlockOffer!(primary.offer!.name!);
               return;
             }
-            selectSpecificSeat(target.seatId, primary);
+            addPrimarySeat();
             onClose();
           }}
         />
@@ -688,13 +726,7 @@ export default function SeatmapTooltip({
     const seatedOfferPicks = () =>
       seatOffers
         .map((offer, index) => {
-          if (
-            !shouldShowSeatedMapOfferRow(
-              offer as RawTicketGroup,
-              eventTicketLimit,
-            ) ||
-            isLockedOffer(offer)
-          ) {
+          if (isLockedOffer(offer)) {
             return null;
           }
           const key = gaOfferSelectionKey(offer, index);
@@ -708,20 +740,6 @@ export default function SeatmapTooltip({
             offer != null && Number(offer.quantity) > 0,
         );
 
-    const seatRestrictionLabel = offerListRestrictionLabel(
-      visibleSeatOffers.map(({ offer }) =>
-        isLockedOffer(offer)
-          ? null
-          : offerRestrictionLimitsForSeatedRow(
-              offer.package || offer.offer,
-              limitsFromSeatedOfferRow(
-                offer as RawTicketGroup,
-                eventTicketLimit,
-              ),
-            ),
-      ),
-    );
-
     const seatPopupBody = (
       <>
         <div className="flex items-start justify-between gap-3">
@@ -730,16 +748,12 @@ export default function SeatmapTooltip({
               className="text-[12px] font-semibold uppercase tracking-[0.12em]"
               style={{ color: muted }}
             >
-              Seat {seat?.seatNumber ?? "—"}
+              Seat {seatDisplayValue(seat?.seatNumber) || "—"}
             </p>
             <p className="mt-1 text-[15px] font-semibold" style={{ color: ink }}>
-              Sec {primary?.sectionName || primary?.sectionNumber} · Row{" "}
+              {mapSectionHeading(primary?.sectionName || primary?.sectionNumber)} · Row{" "}
               {primary?.rowName || primary?.rowNumber}
             </p>
-            <PopoverTicketLimit
-              label={multiOffer ? seatRestrictionLabel : null}
-              color={muted}
-            />
           </div>
           <button
             type="button"
@@ -770,6 +784,29 @@ export default function SeatmapTooltip({
                   eventTicketLimit,
                 );
                 const selectedQty = seatedResolvedOfferQuantity(offerQtys, key);
+                const preview =
+                  selectedQty > 0 &&
+                  seatedOfferRowRestrictionLabel(
+                    offer.package || offer.offer,
+                    limits,
+                  )
+                    ? seatedSelectionPreview(
+                        data,
+                        adjacentSeatWindow(
+                          data,
+                          String(target.seatId),
+                          Array.isArray(offer.seatIds)
+                            ? offer.seatIds.map(String)
+                            : [],
+                          new Set(
+                            selectedFromMap.map((selected) =>
+                              String(selected.seatId),
+                            ),
+                          ),
+                          selectedQty,
+                        ),
+                      )
+                    : null;
                 return (
                   <div
                     key={key}
@@ -792,9 +829,26 @@ export default function SeatmapTooltip({
                       <p className="text-[10px]" style={{ color: muted }}>
                         Requires access code
                       </p>
-                    ) : priceIncludesTaxesAndFees(offer, pricesIncludeFees) ? (
-                      <OfferPriceNote color={muted} />
-                    ) : null}
+                    ) : (
+                      <>
+                        {priceIncludesTaxesAndFees(offer, pricesIncludeFees) ? (
+                          <OfferPriceNote color={muted} />
+                        ) : null}
+                        <SeatedOfferLimitNote
+                          group={offer}
+                          limits={limits}
+                          color={muted}
+                        />
+                        {preview ? (
+                          <p
+                            className="whitespace-nowrap text-[10px]"
+                            style={{ color: muted }}
+                          >
+                            {preview}
+                          </p>
+                        ) : null}
+                      </>
+                    )}
                     </div>
                     {offerLocked &&
                     showUnlockForLockedOffer(offerLocked) &&
@@ -881,7 +935,7 @@ export default function SeatmapTooltip({
                 className={SINGLE_OFFER_ACTION_BTN_CLASS}
                 style={{ background: actionBg, color: actionInk }}
                 onClick={() => {
-                  selectSpecificSeat(target.seatId, primary);
+                  addPrimarySeat();
                   onClose();
                 }}
               >

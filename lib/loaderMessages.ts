@@ -1,5 +1,6 @@
 /** Caption under every tenant loader. Never use Blocktickets in this line. */
 export const LOADER_MESSAGE = "loading tickets";
+export const INVENTORY_UPDATE_LOADER_MESSAGE = "Updating inventory";
 export const SEARCH_LOADER_MESSAGE = "searching events";
 export const CHECKOUT_LOADER_MESSAGE = "getting payment ready";
 export const CHECKOUT_SUCCESS_LOADER_MESSAGE = "retrieving payment details";

@@ -6,6 +6,7 @@ import { useSearchParams } from "next/navigation";
 import BrandedActionButton, {
   ButtonBusyContents,
 } from "@/components/atoms/BrandedActionButton";
+import AccessibleSeatingBadge from "@/components/atoms/AccessibleSeatingBadge";
 import RouteLoader from "@/components/molecules/RouteLoader";
 import MobileStickyFooter from "@/components/molecules/MobileStickyFooter";
 import { ShopperFluidTypeStyles } from "@/components/templates/ShopperFluidType";
@@ -36,12 +37,13 @@ import { getGuestCheckoutBuyer } from "@/lib/guestCheckout";
 import { hideIntercomLauncher } from "@/lib/intercom";
 import { cacheOrgBranding } from "@/lib/orgBrandingCache";
 import {
-  completedOrderPromoCode,
+  completedOrderPromoName,
   promoSummaryLabel,
   resolveCompletedOrderFees,
   ticketSelectionSummary,
 } from "@/lib/ticketSummary";
 import { ticketsWithGaSections } from "@/lib/gaTicketSections";
+import { showsNamedGaSectionTicketCount } from "@/lib/seatView";
 import {
   flexPackSeasonLine,
   flexPackVoucherCount,
@@ -183,6 +185,7 @@ function CheckoutSuccessPage() {
       if (cancelled) return;
       const orderData =
         gaTickets === tickets ? loaded : { ...loaded, tickets: gaTickets };
+      if (cancelled) return;
       setOrder(orderData);
       setError("");
       clearStoredCart();
@@ -369,19 +372,19 @@ function CheckoutSuccessPage() {
   const selectedTicketAdded = selectedTicket
     ? addedWalletKeySet.has(walletTicketKey(selectedTicket))
     : true;
-  const ticketSummary = ticketSelectionSummary(
-    tickets,
-    order?.package
+  const ticketSummary = ticketSelectionSummary(tickets, {
+    ...(order?.package
       ? {
           defaultOffer: "Standard admission",
           gameCount: Array.isArray(order.package.events)
             ? order.package.events.length
             : undefined,
         }
-      : undefined,
-  );
+      : {}),
+    seatedGaSection: showsNamedGaSectionTicketCount(tickets, order?.event),
+  });
   const thumbSrc = imageUrl(
-    order?.flex_pack?.image || event?.image,
+    order?.package?.image || order?.flex_pack?.image || event?.image,
     branding.theme.logoSrc,
   );
   const title =
@@ -562,15 +565,16 @@ function CheckoutSuccessPage() {
                   label="Service Fee"
                   value={formatCurrency(orderFees.serviceFee)}
                 />
-                {orderFees.additionalFee > 0 ? (
+                {orderFees.customFeeLines.map((line) => (
                   <SummaryRow
-                    label="Additional Fee"
-                    value={formatCurrency(orderFees.additionalFee)}
+                    key={`${line.name}-${line.amount}`}
+                    label={line.name}
+                    value={formatCurrency(line.amount)}
                   />
-                ) : null}
+                ))}
                 {order.discountApplied ? (
                   <SummaryRow
-                    label={promoSummaryLabel(completedOrderPromoCode(order))}
+                    label={promoSummaryLabel(completedOrderPromoName(order))}
                     value={`-${formatCurrency(order.discountApplied)}`}
                   />
                 ) : null}
@@ -667,6 +671,17 @@ function CheckoutSuccessPage() {
                             ? "Your tickets are in your wallet"
                             : "Your tickets have been emailed"}
                   </div>
+                  {ticketSummary.accessibleLabel ? (
+                    <AccessibleSeatingBadge
+                      label={ticketSummary.accessibleLabel}
+                      style={{ marginTop: 4 }}
+                    />
+                  ) : null}
+                  {ticketSummary.additionalLabel ? (
+                    <div className="text-[13px]" style={{ color: MUTED }}>
+                      {ticketSummary.additionalLabel}
+                    </div>
+                  ) : null}
                 </div>
               </div>
               <div className="h-px bg-[rgba(5,27,53,0.08)]" />
@@ -729,7 +744,7 @@ function CheckoutSuccessPage() {
                   </svg>
                   <div className="text-[14px]" style={{ color: "#4a5567" }}>
                     <span className="font-semibold" style={{ color: NAVY }}>
-                      {doorsTime ? `Doors open ${doorsTime}.` : "Arrive early."}
+                      {doorsTime ? `Doors ${doorsTime}.` : "Arrive early."}
                     </span>
                     {startTime ? ` Event starts ${startTime}.` : ""}
                   </div>

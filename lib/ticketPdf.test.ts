@@ -1,9 +1,18 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import {
+  decodePDFRawStream,
+  PDFArray,
+  PDFDocument,
+  PDFRawStream,
+  PDFRef,
+} from "pdf-lib";
 import { DEMO_EVENTS, DEMO_SEATED_TICKET_GROUPS, DEMO_USER } from "@/lib/demo/fixtures";
+import { ACCESSIBLE_LABEL_DA } from "@/lib/ticketAccessibility";
 import {
   NM_STATE_ATHLETICS_ORG_UUID,
   printedTicketHolderName,
   printedTicketIdLayout,
+  printedTicketAccessibilityLayout,
   printedTicketOfferLayout,
   printedTicketSubtitle,
   printedVenueLabel,
@@ -14,6 +23,32 @@ import {
 } from "@/lib/ticketPdf";
 
 const nmState = DEMO_EVENTS.find((event) => event.shortCode === "NMST004")!;
+
+function decodePdfHex(content: string) {
+  return content.replace(/<([0-9A-Fa-f\s]+)>/g, (_, hex: string) => {
+    const bytes = hex.replace(/\s+/g, "");
+    let out = "";
+    for (let i = 0; i < bytes.length; i += 2) {
+      out += String.fromCharCode(parseInt(bytes.slice(i, i + 2), 16));
+    }
+    return out;
+  });
+}
+
+async function pdfPageText(blob: Blob) {
+  const doc = await PDFDocument.load(await blob.arrayBuffer());
+  const contents = doc.getPage(0).node.Contents();
+  const refs = contents instanceof PDFArray ? contents.asArray() : [contents];
+  let text = "";
+  for (const ref of refs) {
+    const stream = doc.context.lookup(ref as PDFRef);
+    if (!(stream instanceof PDFRawStream)) continue;
+    text += decodePdfHex(
+      new TextDecoder("latin1").decode(decodePDFRawStream(stream).decode()),
+    );
+  }
+  return text;
+}
 
 describe("printed ticket branding", () => {
   it("draws a team event in the organization brand colour with a sporting badge", () => {
@@ -213,6 +248,27 @@ describe("printedTicketOfferLayout", () => {
   });
 });
 
+describe("printedTicketAccessibilityLayout", () => {
+  it("prints the accessibility label for an accessible seat", () => {
+    expect(
+      printedTicketAccessibilityLayout({
+        checkInCode: "ADA-1",
+        accessible: true,
+        accessibleType: "DA",
+      }),
+    ).toEqual({ label: "ACCESSIBILITY", value: ACCESSIBLE_LABEL_DA });
+  });
+
+  it("omits accessibility when the ticket is not accessible", () => {
+    expect(
+      printedTicketAccessibilityLayout({
+        checkInCode: "STD-1",
+        seatNumber: 14,
+      }),
+    ).toBeNull();
+  });
+});
+
 describe("printedTicketIdLayout", () => {
   const athleticsEvent = {
     ...nmState,
@@ -278,6 +334,17 @@ describe("ticketPdfSeatColumnValues", () => {
     ).toEqual({ section: "P", row: "12", seat: "8" });
   });
 
+  it("prints the seat number without an accessibility suffix", () => {
+    expect(
+      ticketPdfSeatColumnValues({
+        checkInCode: "RES-DA",
+        sectionNumber: "115ADA",
+        rowNumber: "G",
+        seatNumber: "13_DA",
+      }),
+    ).toEqual({ section: "115ADA", row: "G", seat: "13" });
+  });
+
   it("uses dash placeholders for reserved tickets missing row or seat", () => {
     expect(
       ticketPdfSeatColumnValues({
@@ -332,6 +399,37 @@ describe("printTicketsPdf", () => {
     await expect(
       printTicketsPdf(request({ tickets: [{ id: 3, checkInCode: "" }] })),
     ).rejects.toThrow(/check-in code/i);
+  });
+
+  it("prints the purchasing organization and leaves that line off when the name is blank", async () => {
+    vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => {});
+    const ticket = {
+      id: 1,
+      checkInCode: "NMS-1",
+      holder: "Jaime Convery",
+      sectionNumber: "G",
+      rowNumber: 20,
+      seatNumber: 20,
+    };
+
+    await printTicketsPdf(
+      request({
+        purchasedByOrganizationName: nmState.organization.name,
+        tickets: [ticket],
+      }),
+    );
+    const withOrg = await pdfPageText(blobs[0]);
+    expect(withOrg).toContain("ORGANIZATION");
+    expect(withOrg).toContain(nmState.organization.name);
+
+    blobs.length = 0;
+    await printTicketsPdf(
+      request({
+        purchasedByOrganizationName: "   ",
+        tickets: [ticket],
+      }),
+    );
+    expect(await pdfPageText(blobs[0])).not.toContain("ORGANIZATION");
   });
 
   it("still builds a PDF when the event includes a summary", async () => {

@@ -5,6 +5,7 @@ import {
   codeSubmitError,
   dobBlurError,
   dobSubmitError,
+  editDobInput,
   emailBlurInvalid,
   emailLooksInvalid,
   emailSubmitError,
@@ -125,6 +126,100 @@ describe("date of birth", () => {
     expect(dobBlurError("01/01/2099")).toBe("invalid");
     expect(dobSubmitError("01/01/2099")).toBe("invalid");
     expect(dobBlurError("13/40/2000")).toBe("invalid");
+  });
+
+  it("adds the slash for the next part only while typing", () => {
+    expect(editDobInput("0", "02", 2, "insertText")).toEqual({
+      value: "02/",
+      caret: 3,
+    });
+    expect(editDobInput("02/0", "02/01", 5, "insertText")).toEqual({
+      value: "02/01/",
+      caret: 6,
+    });
+  });
+
+  it("does not add a slash when backspace removes a digit", () => {
+    expect(editDobInput("02/1", "02/", 3, "deleteContentBackward")).toEqual({
+      value: "02",
+      caret: 2,
+    });
+    expect(editDobInput("02/", "02", 2, "deleteContentBackward")).toEqual({
+      value: "02",
+      caret: 2,
+    });
+    expect(editDobInput("02/0/", "02//", 3, "deleteContentBackward")).toEqual({
+      value: "02",
+      caret: 2,
+    });
+  });
+
+  it("drops a leftover slash when backspace empties the field", () => {
+    expect(editDobInput("0/", "0", 1, "deleteContentBackward")).toEqual({
+      value: "0",
+      caret: 1,
+    });
+    expect(editDobInput("1/", "/", 0, "deleteContentBackward")).toEqual({
+      value: "",
+      caret: 0,
+    });
+  });
+
+  it("keeps the caret at a digit removed from the middle", () => {
+    expect(
+      editDobInput(DEMO_USER.dob, "0/01/1995", 1, "deleteContentBackward"),
+    ).toEqual({ value: "0/01/1995", caret: 1 });
+  });
+
+  it("backspaces through a slash by removing the preceding digit", () => {
+    expect(
+      editDobInput(DEMO_USER.dob, "0101/1995", 2, "deleteContentBackward"),
+    ).toEqual({ value: "0/01/1995", caret: 1 });
+  });
+
+  it("deletes through a slash by removing the following digit", () => {
+    expect(
+      editDobInput(DEMO_USER.dob, "0101/1995", 2, "deleteContentForward"),
+    ).toEqual({ value: "01/1/1995", caret: 3 });
+  });
+
+  it("replaces a digit in a complete date without shifting the year", () => {
+    expect(editDobInput(DEMO_USER.dob, "091/01/1995", 2, "insertText")).toEqual(
+      { value: "09/01/1995", caret: 3 },
+    );
+  });
+
+  it("moves into the next block after changing the digit before a slash", () => {
+    expect(editDobInput(DEMO_USER.dob, "01/051/1995", 5, "insertText")).toEqual(
+      { value: "01/05/1995", caret: 6 },
+    );
+  });
+
+  it("replaces digits inside a block and steps forward", () => {
+    const first = editDobInput(DEMO_USER.dob, "01/01/21995", 7, "insertText");
+    expect(first).toEqual({ value: "01/01/2995", caret: 7 });
+    const second = editDobInput(first.value, "01/01/20995", 8, "insertText");
+    expect(second).toEqual({ value: "01/01/2095", caret: 8 });
+    expect(second.caret).not.toBe(second.value.length);
+  });
+
+  it("replaces a digit in a shorter date instead of shifting the rest", () => {
+    expect(editDobInput("02/15/19", "902/15/19", 1, "insertText")).toEqual({
+      value: "92/15/19",
+      caret: 1,
+    });
+  });
+
+  it("keeps the edited demo date valid", () => {
+    const removed = editDobInput(
+      DEMO_USER.dob,
+      "0/01/1995",
+      1,
+      "deleteContentBackward",
+    );
+    const restored = editDobInput(removed.value, DEMO_USER.dob, 2, "insertText");
+    expect(restored).toEqual({ value: DEMO_USER.dob, caret: 3 });
+    expect(isValidDob(restored.value)).toBe(true);
   });
 });
 

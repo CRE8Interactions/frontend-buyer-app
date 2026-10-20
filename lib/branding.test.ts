@@ -1,8 +1,71 @@
 import { describe, expect, it } from "vitest";
-import { fieldFocusVars, shopperShellVars } from "@/lib/branding";
+import {
+  fieldFocusVars,
+  resolvePrimaryAttractionImage,
+  shopperShellVars,
+} from "@/lib/branding";
 import { DEMO_ORGS } from "@/lib/demo/fixtures";
 
 const raptors = DEMO_ORGS.find((org) => org.slug === "ogden-raptors")!;
+
+describe("resolvePrimaryAttractionImage", () => {
+  const bulls = {
+    name: "North Iowa Bulls",
+    primary: true,
+    order: 0,
+    artwork: { url: "https://cdn.example/bulls.jpg" },
+  };
+  const lumberjacks = {
+    name: "Granite City Lumberjacks",
+    primary: false,
+    order: 1,
+    artwork: { url: "https://cdn.example/lumberjacks.jpg" },
+  };
+
+  it("uses the attraction marked primary", () => {
+    expect(
+      resolvePrimaryAttractionImage({
+        attractions: [lumberjacks, bulls],
+      }),
+    ).toEqual({
+      url: "https://cdn.example/bulls.jpg",
+      name: "North Iowa Bulls",
+    });
+  });
+
+  it("falls back to the lowest-order attraction with artwork", () => {
+    expect(
+      resolvePrimaryAttractionImage({
+        attractions: [
+          { ...lumberjacks, primary: false, order: 2 },
+          { ...bulls, primary: false, order: 1 },
+        ],
+      }),
+    ).toEqual({
+      url: "https://cdn.example/bulls.jpg",
+      name: "North Iowa Bulls",
+    });
+  });
+
+  it("skips a primary attraction that has no artwork", () => {
+    expect(
+      resolvePrimaryAttractionImage({
+        attractions: [{ ...bulls, artwork: null }, lumberjacks],
+      }),
+    ).toEqual({
+      url: "https://cdn.example/lumberjacks.jpg",
+      name: "Granite City Lumberjacks",
+    });
+  });
+
+  it("returns null when no attraction has artwork", () => {
+    expect(
+      resolvePrimaryAttractionImage({
+        attractions: [{ name: "Bulls", primary: true, artwork: null }],
+      }),
+    ).toBeNull();
+  });
+});
 
 describe("fieldFocusVars", () => {
   it("hands an org-branded surface its own focus colour", () => {

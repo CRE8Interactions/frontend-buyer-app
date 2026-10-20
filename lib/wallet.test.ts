@@ -5,11 +5,14 @@ import {
   resolveAccessPassTotalEventCount,
   formatPassDateRange,
   formatSeatNumberRanges,
+  seatDisplayValue,
   formatTicketHolderName,
   gaTicketSeatLine,
+  ticketSectionValue,
   groupedWalletSeatLines,
   passMatchesTicketSeat,
   isScannedTicket,
+  mapSectionHeading,
   seatLabel,
   transferGroupLabel,
   transferSeatChip,
@@ -198,7 +201,7 @@ describe("gaTicketSeatLine", () => {
         sectionNumber: "Club",
         offerName: "General admission",
       }),
-    ).toBe("Sec Club");
+    ).toBe("Club");
   });
 
   it("includes the row when present", () => {
@@ -208,7 +211,7 @@ describe("gaTicketSeatLine", () => {
         sectionNumber: "N",
         rowNumber: "I",
       }),
-    ).toBe("Sec N · Row I");
+    ).toBe("N · Row I");
   });
 
   it("includes an actual seat number when present", () => {
@@ -218,7 +221,7 @@ describe("gaTicketSeatLine", () => {
         sectionNumber: "N",
         seatNumber: 12,
       }),
-    ).toBe("Sec N · Seat 12");
+    ).toBe("N · Seat 12");
   });
 
   it("falls back to GA when no concrete section or row exists", () => {
@@ -243,6 +246,23 @@ describe("formatSeatNumberRanges", () => {
 
   it("returns a single seat number", () => {
     expect(formatSeatNumberRanges([6])).toBe("6");
+  });
+
+  it("collapses accessible seat labels by their numbers", () => {
+    expect(formatSeatNumberRanges(["13_DA", "12_DB"])).toBe("12-13");
+  });
+});
+
+describe("seatDisplayValue", () => {
+  it("shows the seat number without an accessibility suffix", () => {
+    expect(seatDisplayValue("13_DA")).toBe("13");
+    expect(seatDisplayValue("13_DB")).toBe("13");
+  });
+
+  it("keeps a seat label that has no number", () => {
+    expect(seatDisplayValue("WC")).toBe("WC");
+    expect(seatDisplayValue("")).toBe("");
+    expect(seatDisplayValue(null)).toBe("");
   });
 });
 
@@ -316,7 +336,7 @@ describe("groupedWalletSeatLines", () => {
           sectionName: "General Admission",
         },
       ]),
-    ).toEqual(["Sec Club"]);
+    ).toEqual(["Club"]);
   });
 
   it("includes GA row and seat when present", () => {
@@ -328,7 +348,7 @@ describe("groupedWalletSeatLines", () => {
           rowNumber: "A",
         },
       ]),
-    ).toEqual(["Sec Club · Row A"]);
+    ).toEqual(["Club · Row A"]);
   });
 
   it("shows GA section or row plus a count for multiple tickets", () => {
@@ -345,7 +365,7 @@ describe("groupedWalletSeatLines", () => {
           sectionName: "General Admission",
         },
       ]),
-    ).toEqual(["Sec Club x 2"]);
+    ).toEqual(["Club x 2"]);
     expect(
       groupedWalletSeatLines([
         {
@@ -359,7 +379,7 @@ describe("groupedWalletSeatLines", () => {
           rowNumber: "I",
         },
       ]),
-    ).toEqual(["Sec N · Row I x 2"]);
+    ).toEqual(["N · Row I x 2"]);
   });
 });
 
@@ -394,7 +414,27 @@ describe("isScannedTicket", () => {
   });
 });
 
+describe("mapSectionHeading", () => {
+  it("keeps a section name that already says Section", () => {
+    expect(mapSectionHeading("Section 124")).toBe("Section 124");
+  });
+
+  it("prefixes a bare section number", () => {
+    expect(mapSectionHeading("124")).toBe("Sec 124");
+  });
+});
+
 describe("seatLabel", () => {
+  it("shows the seat number without an accessibility suffix", () => {
+    expect(
+      seatLabel({
+        sectionNumber: "115ADA",
+        rowNumber: "G",
+        seatNumber: "13_DA",
+      }),
+    ).toBe("Sec 115ADA · Row G · Seat 13");
+  });
+
   it("builds GA wallet lines from concrete section and row values", () => {
     expect(
       seatLabel({
@@ -403,7 +443,7 @@ describe("seatLabel", () => {
         sectionNumber: "Club",
         rowNumber: "A",
       }),
-    ).toBe("Sec Club · Row A");
+    ).toBe("Club · Row A");
   });
 });
 
@@ -417,17 +457,17 @@ describe("transferGroupLabel", () => {
     ).toBe("Sec G · Row 25");
   });
 
-  it("shows Sec only for general admission tickets", () => {
+  it("names the section without Sec for general admission tickets", () => {
     expect(
       transferGroupLabel({
         generalAdmission: true,
         sectionNumber: "ga",
         sectionName: "General Admission",
       }),
-    ).toBe("Sec ga");
+    ).toBe("ga");
   });
 
-  it("shows Sec only for GA tickets even when a row is present", () => {
+  it("names the section without Sec for GA tickets even when a row is present", () => {
     expect(
       transferGroupLabel({
         generalAdmission: true,
@@ -435,7 +475,7 @@ describe("transferGroupLabel", () => {
         sectionName: "General Admission",
         rowNumber: "A",
       }),
-    ).toBe("Sec Club");
+    ).toBe("Club");
   });
 
   it("detects GA from offer metadata when row and seat are missing", () => {
@@ -445,7 +485,7 @@ describe("transferGroupLabel", () => {
         sectionName: "General Admission",
         offerName: "General admission",
       }),
-    ).toBe("Sec ga");
+    ).toBe("ga");
   });
 
   it("falls back to sectionName when sectionNumber is missing", () => {
@@ -458,7 +498,7 @@ describe("transferGroupLabel", () => {
     expect(transferGroupLabel(undefined)).toBe("");
     expect(
       transferGroupLabel({ offerName: "General admission" }),
-    ).toBe("Sec");
+    ).toBe("GA");
   });
 });
 
@@ -488,6 +528,15 @@ describe("transferSeatChip", () => {
     expect(
       transferSeatChip({ sectionNumber: "ga" }, "Sec ga"),
     ).toEqual({ seatNo: "GA", isGA: true, ariaLabel: "GA" });
+  });
+
+  it("shows the seat number without an accessibility suffix", () => {
+    expect(
+      transferSeatChip(
+        { sectionNumber: "115ADA", rowNumber: "G", seatNumber: "13_DA" },
+        "Sec 115ADA · Row G · Seat 13_DA",
+      ),
+    ).toEqual({ seatNo: "13", isGA: false, ariaLabel: "Seat 13" });
   });
 
   it("keeps numbered seats under a Seat label", () => {
@@ -620,6 +669,8 @@ describe("isMobileDevice", () => {
 });
 
 describe("isPhoneDevice", () => {
+  const originalScreen = window.screen;
+
   function setUserAgent(userAgent: string, maxTouchPoints = 0) {
     Object.defineProperty(navigator, "userAgent", {
       configurable: true,
@@ -630,6 +681,20 @@ describe("isPhoneDevice", () => {
       configurable: true,
       writable: true,
       value: maxTouchPoints,
+    });
+  }
+
+  function setPlatform(platform: string) {
+    Object.defineProperty(navigator, "platform", {
+      configurable: true,
+      value: platform,
+    });
+  }
+
+  function setScreen(width: number, height: number) {
+    Object.defineProperty(window, "screen", {
+      configurable: true,
+      value: { width, height },
     });
   }
 
@@ -655,9 +720,14 @@ describe("isPhoneDevice", () => {
   afterEach(() => {
     Reflect.deleteProperty(navigator, "userAgent");
     Reflect.deleteProperty(navigator, "maxTouchPoints");
+    Reflect.deleteProperty(navigator, "platform");
     Reflect.deleteProperty(window, "matchMedia");
     Reflect.deleteProperty(window, "innerWidth");
     Reflect.deleteProperty(window, "innerHeight");
+    Object.defineProperty(window, "screen", {
+      configurable: true,
+      value: originalScreen,
+    });
   });
 
   it("reads phones but not tablets", () => {
@@ -690,6 +760,25 @@ describe("isPhoneDevice", () => {
     stubPointer({ "(pointer: coarse)": true, "(hover: hover)": false }, 390, 844);
     expect(isTabletDevice()).toBe(false);
     expect(isPhoneDevice()).toBe(true);
+  });
+
+  it("reads iPhone Safari requesting the desktop site as a phone", () => {
+    const desktopSafari =
+      "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Safari/605.1.15";
+
+    setUserAgent(desktopSafari, 5);
+    setPlatform("iPhone");
+    expect(isPhoneDevice()).toBe(true);
+    expect(isTabletDevice()).toBe(false);
+
+    setPlatform("MacIntel");
+    setScreen(390, 844);
+    expect(isPhoneDevice()).toBe(true);
+    expect(isTabletDevice()).toBe(false);
+
+    setScreen(768, 1024);
+    expect(isPhoneDevice()).toBe(false);
+    expect(isTabletDevice()).toBe(true);
   });
 });
 

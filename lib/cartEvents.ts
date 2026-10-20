@@ -1,5 +1,7 @@
 import { BLOCKTICKETS_NAVY, resolvePrimaryColor, type BrandingOrganization, type OrgBranding } from "@/lib/branding";
+import { accessibleTypeOf } from "@/lib/ticketAccessibility";
 import { isSportingEvent } from "@/lib/eventCategory";
+import { eventPromotionalCopy } from "@/lib/promotionalDescription";
 import {
   attractionImageUrl,
   descriptionPlainText,
@@ -50,6 +52,8 @@ import {
   isWalletListedEvent,
   ticketRowValue,
   ticketSeatValue,
+  seatDisplayValue,
+  sectionDisplayValue,
   ticketSectionValue,
   type AccessPassLike,
   type AccessPassSummary,
@@ -76,6 +80,7 @@ export type EventLike = {
   realDoorsOpen?: string;
   summary?: string;
   description?: string;
+  promotionalDescription?: unknown;
   venue?: VenueLike;
   image?: ApiImage;
   organization?:
@@ -246,6 +251,8 @@ export type CartEventDetail = {
   brand: string;
   initials: string;
   blurb: string;
+  /** Event promotional line. Empty when the event has none. */
+  promo?: string;
   opp: string;
   heroImage?: string;
   posterSrc?: string;
@@ -306,9 +313,11 @@ function mergeEventOrganization(
   const enableTransfer =
     orderOrg?.enableTransfer ?? ev.organization?.enableTransfer;
   const enableResale = orderOrg?.enableResale ?? ev.organization?.enableResale;
+  const setting = ev.organization?.setting ?? orderOrg?.setting;
   if (
     enableTransfer === ev.organization?.enableTransfer &&
-    enableResale === ev.organization?.enableResale
+    enableResale === ev.organization?.enableResale &&
+    (ev.organization?.setting != null || setting == null)
   ) {
     return ev;
   }
@@ -318,6 +327,7 @@ function mergeEventOrganization(
       ...ev.organization,
       enableTransfer,
       enableResale,
+      setting,
     },
   };
 }
@@ -363,10 +373,10 @@ function ticketSeatLabel(t: Record<string, unknown>) {
   if (t.generalAdmission || t.GA) {
     return gaTicketSeatLine(t);
   }
-  const sec = t.sectionName || t.sectionNumber;
+  const sec = sectionDisplayValue(t.sectionName || t.sectionNumber);
   const row = t.rowNumber;
-  const seat = t.seatNumber;
-  if (sec != null && row != null && seat != null) {
+  const seat = seatDisplayValue(t.seatNumber);
+  if (sec != null && row != null && seat) {
     return `Sec ${sec} · Row ${row} · Seat ${seat}`;
   }
   return String(t.offerName || t.sectionName || "Ticket");
@@ -579,10 +589,16 @@ function printedTicketPayload(ticket: Record<string, unknown>) {
   const offerName = String(
     ticket.offerName || ticket.offer_name || offer?.name || "",
   ).trim();
+  const accessibleType = accessibleTypeOf(ticket);
   return {
     ...(name ? { name } : {}),
     ...(offer ? { offer } : {}),
     ...(offerName ? { offerName } : {}),
+    // The Apple/Google pass reads these, not the label this app computes.
+    ...(ticket.accessible === true || accessibleType
+      ? { accessible: true }
+      : {}),
+    ...(accessibleType ? { accessibleType } : {}),
   };
 }
 
@@ -1887,7 +1903,9 @@ export function promoteRecipientPackageUpcomingRows(
       if (!tickets.length) continue;
 
       const incomingKey = `incoming:${eventUUID}`;
-      const packageDetailKey = packageKey ? `${packageKey}:${eventUUID}` : "";
+      const packageDetailKey = packageKey
+        ? seasonPackageEventDetailKey(packageKey, orderId || "", eventUUID)
+        : "";
       const existingIncoming = out[incomingKey];
       const packageDetail = packageDetailKey ? out[packageDetailKey] : undefined;
       if (existingIncoming?.pendingIncomingTransfer) continue;
@@ -2284,6 +2302,7 @@ function detailFromEvent(
     brand: "#8c0b42",
     initials: eventInitials(ev.name || visitorShort(ev)),
     blurb: eventBlurb(ev),
+    promo: eventPromotionalCopy(ev),
     opp: ev.attractions?.[0]?.name || "",
     heroImage: imageUrl(ev.image, ""),
     posterSrc,
@@ -2675,7 +2694,7 @@ export function walletEventScheduleLine(
 ): string {
   if (row.today) {
     const doors = row.doorsTime || row.startTime;
-    return doors ? `Doors open · ${doors}` : "Today";
+    return doors ? `Doors · ${doors}` : "Today";
   }
   return row.when;
 }
@@ -2942,6 +2961,22 @@ export function buildOrderEventDetails(
   return out;
 }
 
+/**
+ * Package games are keyed by package and order. Two purchases of the same
+ * package would otherwise share one row, and the earlier order's Game tickets
+ * tab would come up empty.
+ */
+function seasonPackageEventDetailKey(
+  packageKey: string,
+  orderId: string,
+  eventKey: string,
+) {
+  const order = String(orderId || "").trim();
+  return order
+    ? `${packageKey}:${order}:${eventKey}`
+    : `${packageKey}:${eventKey}`;
+}
+
 /** Per-game details for season-package orders (Season tickets tab drill-down). */
 export function buildSeasonPackageEventDetails(
   orders: OrderLike[],
@@ -2951,8 +2986,9 @@ export function buildSeasonPackageEventDetails(
 
   for (const order of orders) {
     if (!order.package?.events?.length) continue;
+    const orderId = orderIdOf(order);
     const packageKey =
-      String(order.package.uuid || "").trim() || orderIdOf(order);
+      String(order.package.uuid || "").trim() || orderId;
     const seen = new Set<string>();
     for (const ev of order.package.events) {
       const uuid = String(ev.uuid || ev.name || "");
@@ -2963,7 +2999,7 @@ export function buildSeasonPackageEventDetails(
         out,
         order,
         ev,
-        `${packageKey}:${uuid}`,
+        seasonPackageEventDetailKey(packageKey, orderId, uuid),
         tickets,
         holderEmail,
         "Package",
@@ -3540,6 +3576,7 @@ export function withFullOrder(
     startTime: schedule.startTime || detail.startTime,
     today: event?.start ? schedule.today : detail.today,
     blurb: eventBlurb(event) || detail.blurb,
+    promo: eventPromotionalCopy(event) || detail.promo || "",
     venue: venueLines.venue || detail.venue,
     venueLine: venueLines.venueLine || detail.venueLine,
     city: venueLines.city || detail.city,

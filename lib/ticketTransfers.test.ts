@@ -206,7 +206,7 @@ describe("ticketTransfers", () => {
       },
     ]);
 
-    expect(rows[0]?.seatLines).toEqual(["Sec Club x 2"]);
+    expect(rows[0]?.seatLines).toEqual(["Club x 2"]);
     expect(rows[0]?.ticketCount).toBe(2);
   });
 
@@ -2063,7 +2063,7 @@ describe("ticketTransfers", () => {
     expect(merged[0]?.id).toBe(185);
     expect(merged[0]?.tickets).toEqual([gaTicket]);
     expect(rows).toHaveLength(1);
-    expect(rows[0]?.seatLines?.[0]).toMatch(/^Sec lower\b/);
+    expect(rows[0]?.seatLines?.[0]).toMatch(/^lower\b/);
   });
 
   it("shows seat lines on sent and received tabs when API rows omit ticket payloads", () => {

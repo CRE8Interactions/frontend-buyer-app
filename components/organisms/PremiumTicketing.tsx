@@ -8,21 +8,25 @@
  * prop, so any event can use it. See NM_STATE_DATA for the reference content.
  */
 
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type Dispatch, type ReactNode, type SetStateAction } from "react";
 import { createPortal } from "react-dom";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import AccessibleSeatingBadge from "@/components/atoms/AccessibleSeatingBadge";
+import EventPromo from "@/components/atoms/EventPromo";
 import BrandedActionButton from "@/components/atoms/BrandedActionButton";
+import LockIcon from "@/components/atoms/LockIcon";
+import Spinner from "@/components/atoms/Spinner";
 import { BrandedLoader } from "@/components/molecules/RouteLoader";
-import { Ticket } from "@/components/atoms/icons";
-import EmailField from "@/components/molecules/EmailField";
+import { Accessibility, Ticket } from "@/components/atoms/icons";
 import LoginLink from "@/components/molecules/LoginLink";
 import Modal from "@/components/molecules/Modal";
 import MobileStickyFooter from "@/components/molecules/MobileStickyFooter";
 import BuyerProtectionCard from "@/components/molecules/BuyerProtectionCard";
 import OnSaleSoonCard from "@/components/molecules/OnSaleSoonCard";
 import ShopperBodyPortal from "@/components/templates/ShopperBodyPortal";
-import RedemptionCodeField from "@/components/molecules/RedemptionCodeField";
+import UnlockCodeDialog from "@/components/molecules/UnlockCodeDialog";
+import WaitlistEmailForm from "@/components/molecules/WaitlistEmailForm";
 import SectionLocatorThumb from "@/components/molecules/SectionLocatorThumb";
 import {
   ShopperSearchField,
@@ -46,9 +50,21 @@ import {
   limitsFromListing,
   listingAvailabilityRange,
   listingDetailAvailabilityLabel,
+  listingLocationLabel,
+  listingOfferId,
   quantityIsAllowed,
+  sortListings,
+  withResaleFirst,
   ticketQuantityOptions,
+  type QuantityRestrictionSource,
+  type TicketingSort,
 } from "@/lib/ticketListings";
+import {
+  accessibleLabelFromSeats,
+  getAccessibleLabel,
+  isAccessibleSource,
+} from "@/lib/ticketAccessibility";
+import { getSeatAdditionalLabel } from "@/lib/seatLabels";
 import { shopperShellVars } from "@/lib/branding";
 import { ORG_SCROLLBAR_CLASS, orgScrollbarCss } from "@/lib/orgScrollbar";
 import {
@@ -56,22 +72,15 @@ import {
 } from "@/lib/ticketSummary";
 import { checkoutHref, rememberCheckoutReturnPath, setStoredCart } from "@/lib/cart";
 import {
-  emailBlurInvalid,
-  formString,
   normalizeRedemptionCode,
-  redemptionCodeBlurFieldError,
-  redemptionCodeSubmitError,
-  submittedEmail,
-  type EmailFieldError,
   type RedemptionCodeFieldError,
 } from "@/lib/fieldValidation";
-import { validateSubmittedEmail } from "@/lib/submitEmailValidation";
 import { LOADER_MESSAGE } from "@/lib/loaderMessages";
 import { lockPageScroll, unlockPageScroll } from "@/lib/pageScroll";
 import { beginRouteTransition } from "@/lib/routeTransition";
 import { walletSectionHref } from "@/lib/walletNav";
 import type { SeatmapBackground, SeatmapMapping } from "@/lib/seatmapLookups";
-import { getSeatViewImageCandidates } from "@/lib/seatView";
+import { getSeatViewImageCandidates, SEAT_VIEW_PLACEHOLDER } from "@/lib/seatView";
 import {
   stickyOffsetBelowHeader,
   ticketingChromeReservePx,
@@ -89,6 +98,20 @@ import useFiltersStore from "@/stores/filtersStore";
 import useSeatmapStore from "@/stores/seatmapStore";
 
 const NAVY = "#051b35";
+
+function isZeroListingPrice(price: string) {
+  if (/^free$/i.test(price.trim())) return true;
+  const amount = parseFloat(price.replace(/[^0-9.]/g, ""));
+  return Number.isFinite(amount) && amount === 0;
+}
+
+/** Own line is capitalized; a note beside the price stays lowercase. */
+function listingFeeNote(price: string, sameLine: boolean) {
+  if (isZeroListingPrice(price)) {
+    return sameLine ? "complimentary" : "Complimentary";
+  }
+  return sameLine ? "incl. taxes & fees" : "Incl. taxes & fees";
+}
 
 /** Hover lift on a listing row. The scroller reserves this much headroom so the
  *  top row's border is not clipped while it is raised. */
@@ -108,6 +131,11 @@ export type TicketingListing = {
   /** Strapi ticket-group payload used by place-tickets-into-cart */
   cartGroup?: Record<string, unknown>;
   resale?: boolean;
+  /**
+   * Position in the API payload, which arrives ordered by sort_order then id.
+   * Best-seat sort falls back to this when ranks tie or are missing.
+   */
+  sourceIndex?: number;
 };
 
 export type TicketingData = {
@@ -130,6 +158,10 @@ export type TicketingData = {
   venueCityState: string; // "Las Cruces, NM"
   mapsQuery: string;
   logoSrc: string;
+  /** Seated header tile. Photo when it is attraction artwork; otherwise the brand logo. */
+  headerLogoSrc?: string;
+  headerLogoAlt?: string;
+  headerLogoIsPhoto?: boolean;
   /** Tenant mark shown top-left on branded events (GA header). Falls back to the Blocktickets lockup. */
   brandLogoSrc?: string;
   /** Storefront the tenant mark links to. */
@@ -137,6 +169,8 @@ export type TicketingData = {
   orgLabel: string;
   providerLabel: string;
   aboutText: string;
+  /** Promotional line under the date. Empty when the event has none. */
+  promo?: string;
   homeLabel: string;
   awayLabel: string;
   awayShort: string;
@@ -179,7 +213,12 @@ export type TicketingData = {
 export type TicketingFilters = {
   quantity: number;
   accessible: boolean;
-  sort: "price" | "-price";
+  sort: TicketingSort;
+  offerIds?: Array<string | number>;
+  accessCodes?: string[];
+  accessCodeTokens?: string[];
+  /** Quantity the chip starts on, so the URL can leave it out. */
+  defaultQuantity?: number;
 };
 
 export type GATier = {
@@ -203,6 +242,12 @@ export type GATier = {
  */
 type NotifySubject = { name: string; soldout: boolean; onSaleAt?: string };
 
+/** Sort menu entries, in the order the legacy dropdown listed them. */
+const SORT_OPTIONS: Array<{ value: TicketingSort; label: string }> = [
+  { value: "price", label: "Price" },
+  { value: "bestseat", label: "Best seat" },
+];
+
 const LEGEND = [
   { label: "Unavailable", color: "#dfe3ee" },
   { label: "Available", color: "var(--acc)" },
@@ -213,6 +258,8 @@ const money = (n: number) => "$" + n.toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g,
 const SEATMAP = "/nmstate/seatmap-dummy.svg";
 /** How long the listing placeholders stay up after a filter change. */
 const LIST_SHIMMER_MS = 420;
+/** Floor for the map overlay so a fast inventory response cannot flash it. */
+const MAP_REBUILD_MIN_MS = 420;
 /** Bottom bar height reserved so the map fills the locked mobile viewport. */
 const LISTINGS_SHEET_BAR_PX = 88;
 
@@ -234,34 +281,54 @@ type SeatPick = { sec: string; row: string; seat: string; zone: string; tier: st
 function SeatViewImage({
   src,
   section,
+  onReady,
+  color,
 }: {
   src?: string;
   section: string;
+  onReady?: () => void;
+  color?: string;
 }) {
   const [failedSrc, setFailedSrc] = useState<string | null>(null);
-
-  if (!src || failedSrc === src) {
-    return (
-      <div style={{ width: "100%", height: "100%", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 8, background: "#e7eaf2", color: "#6e7180" }}>
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" style={{ width: 28, height: 28 }}><path d="M3 20V9l9-5 9 5v11" /><path d="M3 20h18" /><path d="M7 20v-6h4v6" /><path d="M14 20v-6h3v6" /></svg>
-        <div style={{ fontSize: fluidSize(13), fontWeight: 500 }}>No seat view for Sec {section}</div>
-      </div>
-    );
-  }
+  const [loadedSrc, setLoadedSrc] = useState<string | null>(null);
+  const onReadyRef = useRef(onReady);
+  onReadyRef.current = onReady;
+  const displaySrc = !src || failedSrc === src ? SEAT_VIEW_PLACEHOLDER : src;
+  const loaded = loadedSrc === displaySrc;
+  const placeholder = displaySrc === SEAT_VIEW_PLACEHOLDER;
 
   return (
-    // eslint-disable-next-line @next/next/no-img-element
-    <img
-      src={src}
-      alt={`View from section ${section}`}
-      onError={() => setFailedSrc(src)}
-      style={{
-        width: "100%",
-        height: "100%",
-        display: "block",
-        objectFit: "cover",
-      }}
-    />
+    <div style={{ position: "relative", width: "100%", height: "100%", background: "#fff" }}>
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img
+        src={displaySrc}
+        alt={placeholder ? "Seat view placeholder" : `View from section ${section}`}
+        onLoad={() => {
+          setLoadedSrc(displaySrc);
+          onReadyRef.current?.();
+        }}
+        onError={() => {
+          if (placeholder || !src) {
+            onReadyRef.current?.();
+            return;
+          }
+          setFailedSrc(src);
+        }}
+        style={{
+          width: "100%",
+          height: "100%",
+          display: "block",
+          objectFit: placeholder ? "contain" : "cover",
+          opacity: loaded ? 1 : 0,
+          background: "#fff",
+        }}
+      />
+      {loaded ? null : (
+        <span style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center" }}>
+          <Spinner size={22} variant="compact" color={color} label="Loading seat image" />
+        </span>
+      )}
+    </div>
   );
 }
 
@@ -270,26 +337,53 @@ const Star = ({ s = 14, filled = true }: { s?: number; filled?: boolean }) => (
     <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" />
   </svg>
 );
-const LockIcon = ({ s = 15 }: { s?: number }) => (
-  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" style={{ width: s, height: s }} aria-hidden>
-    <rect x="4.5" y="11" width="15" height="10" rx="2" />
-    <path d="M8 11V7a4 4 0 0 1 8 0v4" />
-  </svg>
-);
 const TicketIcon = ({ s = 18, color }: { s?: number; color?: string }) => (
   <Ticket width={s} height={s} stroke={color || "currentColor"} strokeWidth={1.8} aria-hidden />
 );
+
+/**
+ * Keep quantity updates inside the ticket-details subtree. If this state lives
+ * on PremiumTicketing, every stepper click also rerenders all listing rows.
+ */
+function TicketDetailsQuantityState({
+  initialQuantity,
+  children,
+}: {
+  initialQuantity: number;
+  children: (
+    quantity: number,
+    setQuantity: Dispatch<SetStateAction<number>>,
+  ) => ReactNode;
+}) {
+  const [quantity, setQuantity] = useState(initialQuantity);
+  return children(quantity, setQuantity);
+}
+
+function EventInfoSection({ label, text }: { label: string; text: string }) {
+  return (
+    <div className="flex flex-col gap-2">
+      <div className="font-semibold uppercase text-[#8a93a3]" style={{ fontSize: 12, letterSpacing: "0.12em" }}>{label}</div>
+      <pre className="m-0 whitespace-pre-wrap font-[inherit] leading-relaxed text-[#4a5567] [overflow-wrap:anywhere]" style={{ fontSize: 14 }}>{text}</pre>
+    </div>
+  );
+}
 
 export default function PremiumTicketing({
   data: d,
   onFiltersChange,
   refreshing = false,
+  initialFilters,
+  initialOfferNames,
+  initialUnlockedZones,
 }: {
   data: TicketingData;
   /** Ask the route to refetch inventory for these filters (server-side truth). */
-  onFiltersChange?: (filters: TicketingFilters) => void;
+  onFiltersChange?: (filters: TicketingFilters) => void | Promise<void>;
   /** True while the route is refetching after a filter change. */
   refreshing?: boolean;
+  initialFilters?: Partial<TicketingFilters>;
+  initialOfferNames?: string[];
+  initialUnlockedZones?: string[];
 }) {
   const { isAuthenticated } = useAuth();
   const router = useRouter();
@@ -310,14 +404,15 @@ export default function PremiumTicketing({
   const gaScheduled = isGa && !!d.scheduled && !activeGaTiers?.length;
   const eventScheduled = gaScheduled || seatedScheduled;
   const gaSoldOut = isGa && !!d.soldOut && !activeGaTiers?.length;
-  const seatedSoldOut = !isGa && !!d.soldOut && !seatedScheduled;
-  const eventSoldOut = gaSoldOut || seatedSoldOut;
   const GA_TIERS: GATier[] =
     activeGaTiers && activeGaTiers.length
       ? activeGaTiers
       : gaSoldOut || gaScheduled || d.gaTiers
         ? []
         : DEFAULT_GA_TIERS;
+  const gaOffersSoldOut =
+    isGa && GA_TIERS.length > 0 && GA_TIERS.every((tier) => tier.state === "soldout");
+  const gaShowSoldOut = gaSoldOut || gaOffersSoldOut;
   // Nav is crimson for reserved, white for GA.
   const navBg = isGa ? "#ffffff" : ACC;
   const navInk = isGa ? NAVY : "#fff";
@@ -344,6 +439,8 @@ export default function PremiumTicketing({
   const storeBackground = useSeatmapStore((s) => s.background);
   const setStoreMapping = useSeatmapStore((s) => s.setData);
   const setStoreBackground = useSeatmapStore((s) => s.setBackground);
+  const ticketGroups = useFiltersStore((s) => s.ticketGroups);
+  const setPurchaseFilters = useFiltersStore((s) => s.setFilters);
 
   // Props and the seatmap store are hydrated from the same payload, but either
   // one can be behind the other (route refetch, Fast Refresh). Take whichever
@@ -358,22 +455,31 @@ export default function PremiumTicketing({
   const [listingsShellReady, setListingsShellReady] = useState(
     () => !usesListingsSheet(),
   );
-  const [want, setWant] = useState(() => initialTicketQuantity(d.listings));
-  const [zoneFilter, setZoneFilter] = useState<string[]>([]);
-  const [unlocked, setUnlocked] = useState<string[]>([]);
+  // Captured on first load: filter refetches narrow d.listings, which would
+  // otherwise move the quantity the shopper never chose.
+  const [defaultQuantity] = useState(() => initialTicketQuantity(d.listings));
+  const [want, setWant] = useState(
+    () => initialFilters?.quantity || defaultQuantity,
+  );
+  const [zoneFilter, setZoneFilter] = useState<string[]>(
+    () => initialOfferNames ?? [],
+  );
+  const [unlocked, setUnlocked] = useState<string[]>(
+    () => initialUnlockedZones ?? [],
+  );
   const [unlockZone, setUnlockZone] = useState<string | null>(null);
-  const [unlockInput, setUnlockInput] = useState("");
-  const [unlockFieldError, setUnlockFieldError] =
-    useState<RedemptionCodeFieldError>(null);
-  const [unlocking, setUnlocking] = useState(false);
   const [qtyMenu, setQtyMenu] = useState(false);
-  const [ada, setAda] = useState(false);
-  const [sortDir, setSortDir] = useState<"price" | "-price">("price");
+  const [sortMenu, setSortMenu] = useState(false);
+  const [ada, setAda] = useState(() => Boolean(initialFilters?.accessible));
+  const [sortDir, setSortDir] = useState<TicketingSort>(
+    () => initialFilters?.sort ?? "price",
+  );
   const [loading, setLoading] = useState(false);
   const [pinned, setPinned] = useState(false);
   const [map, setMap] = useState(false);
   const [mapReady, setMapReady] = useState(false);
   const [preparingMap, setPreparingMap] = useState(false);
+  const [updatingInventory, setUpdatingInventory] = useState(false);
   const [mapExitConfirm, setMapExitConfirm] = useState(false);
   const [zoom, setZoom] = useState(100);
   const [legendOpen, setLegendOpen] = useState(false);
@@ -382,19 +488,32 @@ export default function PremiumTicketing({
   const [media, setMedia] = useState(0);
   const [info, setInfo] = useState(false);
   const [sel, setSel] = useState<number | null>(null);
-  const [panelQty, setPanelQty] = useState(2);
+  // Remember which slides finished loading for this listing. Flipping away and
+  // back keeps the image element mounted, so a loaded slide stays on screen.
+  const [loadedSlides, setLoadedSlides] = useState<{
+    sel: number | null;
+    ready: readonly number[];
+  }>({ sel: null, ready: [] });
+  const seatMediaReady =
+    loadedSlides.sel === sel && loadedSlides.ready.includes(media);
+  const markSlideReady = useCallback((slide: number) => {
+    setLoadedSlides((prev) => {
+      const ready = prev.sel === sel ? prev.ready : [];
+      if (ready.includes(slide)) return prev.sel === sel ? prev : { sel, ready };
+      return { sel, ready: [...ready, slide] };
+    });
+  }, [sel]);
+  const markLocationReady = useCallback(() => markSlideReady(0), [markSlideReady]);
+  const markViewReady = useCallback(() => markSlideReady(1), [markSlideReady]);
   // GA mode state
   const [gaQuantities, setGaQuantities] = useState<Record<number, number>>({});
   const [notifySubject, setNotifySubject] = useState<NotifySubject | null>(null);
+  // Only the confirmed address — the waitlist form owns the value being typed.
   const [notifyEmail, setNotifyEmail] = useState("");
-  const [notifyEmailError, setNotifyEmailError] = useState<EmailFieldError>(null);
-  const [notifyEmailNetworkError, setNotifyEmailNetworkError] = useState(false);
-  const [notifyEmailChecking, setNotifyEmailChecking] = useState(false);
   const [notifySms, setNotifySms] = useState(false);
   const [notifySent, setNotifySent] = useState(false);
   const [notified, setNotified] = useState<Record<string, boolean>>({});
   const [gaSheet, setGaSheet] = useState(false);
-  const [eventSoldOutSheet, setEventSoldOutSheet] = useState(false);
   const [listingsExpanded, setListingsExpanded] = useState(
     () => usesListingsSheet(),
   );
@@ -403,8 +522,12 @@ export default function PremiumTicketing({
   const sticky = useRef<HTMLDivElement | null>(null);
   const listingsScroll = useRef<HTMLDivElement | null>(null);
   const qtyBtn = useRef<HTMLButtonElement | null>(null);
+  const sortBtn = useRef<HTMLButtonElement | null>(null);
   const [headerH, setHeaderH] = useState(TICKETING_HEADER_FALLBACK_PX);
   const loadTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const mapRebuildTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const mapRebuildId = useRef(0);
+  const pendingUnlockRebuild = useRef<(() => void) | null>(null);
 
   useEffect(() => setMounted(true), []);
 
@@ -471,6 +594,13 @@ export default function PremiumTicketing({
   }, [map, info, sel]);
 
   const mobile = vw < 900;
+  const seatedPromo = !isGa ? (
+    <EventPromo
+      text={d.promo || ""}
+      color="#fff"
+      style={{ fontSize: fluidSize(mobile ? 13 : 14), ...(mobile ? {} : { marginBottom: 10 }) }}
+    />
+  ) : null;
   const narrow = mobile || vw < 1120;
   const wide = !narrow;
   const gaDesktop = isGa && !narrow;
@@ -527,14 +657,104 @@ export default function PremiumTicketing({
     };
   }, [stickTop]);
 
-  const requestInventory = (next: Partial<TicketingFilters>) => {
+  const requestInventory = (
+    next: Partial<TicketingFilters> & { accessCodeTokens?: string[] } = {},
+    zones = zoneFilter,
+    unlockedZones = unlocked,
+  ) => {
+    const offerIds = next.offerIds ?? offerIdsForZones(zones);
+    const accessCodes =
+      next.accessCodes ??
+      accessCodesForZones(unlockedZones);
+    const accessCodeTokens =
+      next.accessCodeTokens ??
+      accessCodeTokensForZones(unlockedZones);
     const filters: TicketingFilters = {
       quantity: next.quantity ?? want,
       accessible: next.accessible ?? ada,
       sort: next.sort ?? sortDir,
+      offerIds,
+      accessCodes,
+      accessCodeTokens,
+      defaultQuantity,
     };
-    onFiltersChange?.(filters);
+    return onFiltersChange?.(filters);
   };
+
+  const offerIdsForZones = (zones: string[]) =>
+    zones
+      .map((zone) => {
+        const listing = d.listings.find((row) => row.zone === zone)
+          || d.quantityCatalog?.find((row) => row.zone === zone);
+        return listing ? listingOfferId(listing) : undefined;
+      })
+      .filter((id): id is string | number => id != null);
+
+  const applySeatmapLookups = (
+    offerIds: Array<string | number>,
+    groups = useFiltersStore.getState().ticketGroups,
+  ) => {
+    const lookups = seatmapLookupsFromTicketGroups(groups, offerIds);
+    setSeatLookupTable(lookups.seatLookupTable);
+    setSeatOffersLookupTable(lookups.seatOffersLookupTable);
+    setSectionLookupTable(lookups.sectionLookupTable);
+  };
+
+  /**
+   * The map narrows to the picked offers once the ticket-group request for them
+   * comes back, so the overlay stays up for the whole round trip.
+   */
+  const syncSelectedOfferIds = (
+    offerIds: Array<string | number>,
+    inventory?: void | Promise<void>,
+  ) => {
+    setPurchaseFilters({ selectedOfferIds: offerIds });
+    if (!hasLiveSeatmap) return;
+    if (!map) return;
+    const rebuildId = mapRebuildId.current + 1;
+    mapRebuildId.current = rebuildId;
+    setUpdatingInventory(true);
+    if (mapRebuildTimer.current) clearTimeout(mapRebuildTimer.current);
+    const minimumOverlay = new Promise<void>((resolve) => {
+      mapRebuildTimer.current = setTimeout(resolve, MAP_REBUILD_MIN_MS);
+    });
+    void Promise.all([
+      Promise.resolve(inventory).catch(() => undefined),
+      minimumOverlay,
+    ]).then(() => {
+      if (mapRebuildId.current !== rebuildId) return;
+      mapRebuildTimer.current = null;
+      applySeatmapLookups(offerIds);
+      setUpdatingInventory(false);
+    });
+  };
+
+  const orderQuantitySource = useMemo((): QuantityRestrictionSource | null => {
+    const ids = offerIdsForZones(zoneFilter);
+    if (ids.length !== 1) return null;
+    const id = String(ids[0]);
+    const group = ticketGroups.find((row) => String(row.offer?.id) === id);
+    return (group?.package || group?.offer) ?? null;
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- offerIdsForZones is recreated each render
+  }, [d.listings, d.quantityCatalog, ticketGroups, zoneFilter]);
+
+  useEffect(() => {
+    setPurchaseFilters({ selectedOfferIds: offerIdsForZones(zoneFilter) });
+    // Seed from the URL / initial chips once.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const accessCodesForZones = (zones: string[]) =>
+    zones
+      .map((zone) => lockedMap[zone])
+      .filter(Boolean);
+
+  const accessCodeTokensForZones = (zones: string[]) =>
+    zones.flatMap((zone) => {
+      const id = offerIdsForZones([zone])[0];
+      const code = lockedMap[zone];
+      return id != null && code ? [`${id}:${code}`] : [];
+    });
 
   /**
    * Shimmer the rows for a beat so every filter change reads as a new list,
@@ -561,16 +781,20 @@ export default function PremiumTicketing({
     shimmerListings();
   };
 
-  const toggleSort = () => {
-    const nextSort = sortDir === "price" ? "-price" : "price";
+  const chooseSort = (nextSort: TicketingSort) => {
+    setSortMenu(false);
+    if (nextSort === sortDir) return;
     setSortDir(nextSort);
     requestInventory({ sort: nextSort });
     shimmerListings();
   };
 
   const filterByZones = (next: (current: string[]) => string[]) => {
-    setZoneFilter(next);
+    const zones = next(zoneFilter);
+    setZoneFilter(zones);
     setSel(null);
+    const offerIds = offerIdsForZones(zones);
+    syncSelectedOfferIds(offerIds, requestInventory({ offerIds }, zones));
     shimmerListings();
   };
 
@@ -579,35 +803,17 @@ export default function PremiumTicketing({
     setNotifySent(false);
   };
 
-  const submitEventWaitlist = async (
-    email: string,
-    onSuccess?: () => void,
-  ): Promise<boolean> => {
-    setNotifyEmailNetworkError(false);
-    setNotifyEmailChecking(true);
-    const result = await validateSubmittedEmail(email);
-    setNotifyEmailChecking(false);
-    if (!result.ok) {
-      if (result.error === "required" || result.error === "invalid") {
-        setNotifyEmailError(result.error);
-      } else {
-        setNotifyEmailError(null);
-        setNotifyEmailNetworkError(true);
-      }
-      return false;
-    }
-    setNotifyEmail(result.email);
-    setNotifyEmailError(null);
-    setNotified((current) => ({ ...current, [d.eventName]: true }));
-    onSuccess?.();
-    return true;
-  };
-
   const lockedMap = useMemo(() => {
     const m: Record<string, string> = {};
     (d.lockedZones || []).forEach((z) => { m[z.zone] = z.code.trim().toUpperCase(); });
     return m;
   }, [d.lockedZones]);
+  /** The offer row a zone name came from, as the access-code check needs it. */
+  const offerForZone = (zone: string) =>
+    useFiltersStore
+      .getState()
+      .ticketGroups.find((group) => group.offer?.name?.trim() === zone.trim())
+      ?.offer;
   const eventTicketLimit = useFiltersStore((s) => s.eventTicketLimit);
   const listingQtyLimits = (l: TicketingListing) =>
     limitsFromListing(l, eventTicketLimit);
@@ -626,16 +832,9 @@ export default function PremiumTicketing({
   }, [busy, listingsExpanded, listingsSheet]);
 
   const mapLocked = Boolean(d.soldOut) || eventScheduled;
-  const priceOf = (l: TicketingListing) =>
-    parseFloat(l.price.replace(/[^0-9.]/g, "")) || 0;
   const rows = useMemo(() => {
-    const filtered = d.listings.filter((l) => quantityIsAllowed(want, listingQtyLimits(l)) && (!zoneFilter.length || zoneFilter.includes(l.zone)) && !(!!lockedMap[l.zone] && !unlocked.includes(l.zone)) && (!ada || Boolean(l.cartGroup?.accessible)));
-    const sorted = [...filtered].sort((a, b) => {
-      const resaleDelta = Number(Boolean(b.resale)) - Number(Boolean(a.resale));
-      if (resaleDelta) return resaleDelta;
-      return sortDir === "price" ? priceOf(a) - priceOf(b) : priceOf(b) - priceOf(a);
-    });
-    return sorted.map((l) => ({
+    const filtered = d.listings.filter((l) => quantityIsAllowed(want, listingQtyLimits(l)) && (!zoneFilter.length || zoneFilter.includes(l.zone)) && !(!!lockedMap[l.zone] && !unlocked.includes(l.zone)) && (!ada || isAccessibleSource(l.cartGroup)));
+    return withResaleFirst(sortListings(filtered, sortDir)).map((l) => ({
       ...l,
       range: `${l.min} – ${l.max} Tickets`,
     }));
@@ -693,6 +892,15 @@ export default function PremiumTicketing({
     d.listings.find((l) => !isLocked(l.zone));
   const unit = selRow ? parseFloat(selRow.price.replace(/[^0-9.]/g, "")) : 0;
   const panelOfferDescription = selectionOfferDescription(selRow?.cartGroup);
+  const panelSeatId = selRow?.cartGroup?.seatId;
+  const panelAdditionalLabel = getSeatAdditionalLabel({
+    ticketGroup: selRow?.cartGroup,
+    mapSeat:
+      panelSeatId == null || panelSeatId === ""
+        ? undefined
+        : mapMapping?.seats?.[String(panelSeatId)],
+    seatLabels: mapMapping?.seatLabels,
+  });
   const unlockOfferDescription = selectionOfferDescription(
     GA_TIERS.find((tier) => tier.name === unlockZone)?.cartGroup ??
       d.listings.find((listing) => listing.zone === unlockZone)?.cartGroup ??
@@ -714,13 +922,20 @@ export default function PremiumTicketing({
   const addPick = (z: (typeof ZONES)[number]) => setPicks((list) => [...list, { sec: z.sec, row: z.row, seat: String(21 + list.length), zone: z.zone, tier: z.tier, unit: z.unit, price: "$" + z.unit.toFixed(2) }]);
   const flip = () => setMedia((m) => (m === 0 ? 1 : 0));
 
-  const closeMap = () => {
+  const closeMap = useCallback(() => {
+    if (mapRebuildTimer.current) {
+      clearTimeout(mapRebuildTimer.current);
+      mapRebuildTimer.current = null;
+    }
+    // Abandon a rebuild still waiting on inventory so it cannot reopen the overlay.
+    mapRebuildId.current += 1;
+    setUpdatingInventory(false);
     setMap(false);
     setMapReady(false);
     setPreparingMap(false);
     resetMapState();
     setPicks([]);
-  };
+  }, [resetMapState]);
 
   /** Closing with seats selected needs confirm so the shopper does not lose them by accident. */
   const requestCloseMap = () => {
@@ -768,50 +983,59 @@ export default function PremiumTicketing({
     window.setTimeout(hydrate, 50);
   };
 
-  const submitUnlockCode = async (code = unlockInput) => {
+  const verifyUnlockCode = async (
+    code: string,
+  ): Promise<RedemptionCodeFieldError> => {
     const zone = unlockZone;
-    if (!zone || unlocking) return;
-    const submitErr = redemptionCodeSubmitError(code);
-    if (submitErr) {
-      setUnlockFieldError(submitErr);
-      return;
-    }
+    if (!zone) return null;
     const typed = normalizeRedemptionCode(code);
-    setUnlocking(true);
     const opened = await verifyOfferAccessCode({
-      eventId: d.eventId,
+      offer: offerForZone(zone),
       code: typed,
       expected: lockedMap[zone],
     });
-    setUnlocking(false);
-    if (!opened) {
-      setUnlockFieldError("rejected");
-      return;
-    }
-    setUnlockFieldError(null);
+    if (!opened) return "rejected";
     setUnlocked((u) => (u.includes(zone) ? u : [...u, zone]));
     const filtersState = useFiltersStore.getState();
     const updatedGroups = unlockOfferInTicketGroups(filtersState.ticketGroups, zone);
     filtersState.setTicketGroups(updatedGroups);
-    const lookups = seatmapLookupsFromTicketGroups(
-      updatedGroups,
-      filtersState.filters.selectedOfferIds,
-    );
-    setSeatLookupTable(lookups.seatLookupTable);
-    setSeatOffersLookupTable(lookups.seatOffersLookupTable);
-    setSectionLookupTable(lookups.sectionLookupTable);
-    filterByZones((prev) => (prev.includes(zone) ? prev : [...prev, zone]));
+    const nextUnlocked = unlocked.includes(zone) ? unlocked : [...unlocked, zone];
+    const nextZones = zoneFilter.includes(zone) ? zoneFilter : [...zoneFilter, zone];
+    setZoneFilter(nextZones);
+    setSel(null);
+    // The dialog covers the map, so a rebuild started here would run its whole
+    // overlay behind the backdrop and be over before the shopper sees the map.
+    pendingUnlockRebuild.current = () => {
+      syncSelectedOfferIds(
+        offerIdsForZones(nextZones),
+        requestInventory(
+          { accessCodes: accessCodesForZones(nextUnlocked) },
+          nextZones,
+          nextUnlocked,
+        ),
+      );
+    };
+    shimmerListings();
     setUnlockZone(null);
+    return null;
   };
 
-  const goToCheckout = (cartId: string) => {
+  useEffect(() => {
+    if (unlockZone !== null) return;
+    const rebuild = pendingUnlockRebuild.current;
+    if (!rebuild) return;
+    pendingUnlockRebuild.current = null;
+    rebuild();
+  }, [unlockZone]);
+
+  const goToCheckout = useCallback((cartId: string) => {
     rememberCheckoutReturnPath();
     const href = checkoutHref(cartId);
     beginRouteTransition(href);
     router.push(href);
-  };
+  }, [router]);
 
-  const placeSelectedTickets = async (
+  const placeSelectedTickets = useCallback(async (
     groups: Array<Record<string, unknown> & { quantity?: number }>,
   ) => {
     if (d.eventId == null) {
@@ -838,7 +1062,7 @@ export default function PremiumTicketing({
     const qty = groups.reduce((sum, g) => sum + Number(g.quantity || 1), 0);
     setStoredCart(cartId, qty || 1);
     return String(cartId);
-  };
+  }, [d.eventId, isGa]);
 
   const runCheckoutWithGroup = async (
     group: Record<string, unknown>,
@@ -858,15 +1082,16 @@ export default function PremiumTicketing({
     }
   };
 
-  const startHoldFromMap = async () => {
-    if (holding || !selectedFromMap.length) return;
+  const startHoldFromMap = useCallback(async () => {
+    const seats = useSeatmapStore.getState().selectedFromMap;
+    if (holding || !seats.length) return;
     setHolding(true);
     setHoldError("");
     try {
       // A seat picked off the map has to reach the API without a quantity:
       // any quantity switches it to the quickpick path, which throws the
       // chosen seats away and reserves consecutive ones instead.
-      const groups = selectedFromMap.map((g) => {
+      const groups = seats.map((g) => {
         const group = { ...(g as Record<string, unknown>) };
         if (!g.GA && g.seatId != null) {
           delete group.quantity;
@@ -880,9 +1105,9 @@ export default function PremiumTicketing({
       setSeatedError(checkoutHoldError(err));
       setHolding(false);
     }
-  };
+  }, [goToCheckout, holding, placeSelectedTickets, setSeatedError]);
 
-  const startHold = async () => {
+  const startHold = async (quantity: number) => {
     if (holding) return;
     const listing = selRow as TicketingListing | undefined;
     const group = listing?.cartGroup;
@@ -890,8 +1115,12 @@ export default function PremiumTicketing({
       setSeatedError({ ...CHECKOUT_DEMO_LISTINGS_ERROR });
       return;
     }
-    await runCheckoutWithGroup(group, panelQty);
+    await runCheckoutWithGroup(group, quantity);
   };
+
+  const handleUnlockOffer = useCallback((offerName: string) => {
+    setUnlockZone(offerName);
+  }, []);
 
   // GA tier sheet → place inventory, then the checkout page (which gates login).
   const startGaCheckout = async (
@@ -1006,9 +1235,35 @@ export default function PremiumTicketing({
       sectionId={l.sectionId}
       sectionNumber={l.sec}
       section={l.sec}
+      spinnerColor={ACC}
       thumbnailCandidates={venueImageCandidates(l.sec)}
     />
   );
+
+  /** Accessible listings name their seating type where the ticket icon sits. */
+  const listingSeatIcon = (l: TicketingListing, s: number) => {
+    const accessibleLabel =
+      getAccessibleLabel(l.cartGroup) ||
+      accessibleLabelFromSeats(l.cartGroup, mapMapping);
+    const box = { flexShrink: 0, display: "flex", alignItems: "center" };
+    if (!accessibleLabel) {
+      return (
+        <span style={{ ...box, color: "#6e7180" }}>
+          <TicketIcon s={s} />
+        </span>
+      );
+    }
+    return (
+      <span
+        role="img"
+        aria-label={accessibleLabel}
+        title={accessibleLabel}
+        style={{ ...box, color: NAVY }}
+      >
+        <Accessibility width={s + 2} height={s + 2} strokeWidth={2} />
+      </span>
+    );
+  };
 
   /** Event-level schedule shown only when no offer is currently active. */
   const scheduledPanel = (wideLayout: boolean) => (
@@ -1122,142 +1377,6 @@ export default function PremiumTicketing({
     </MobileStickyFooter>
   );
 
-  const eventSoldOutNotifyButton = (
-    <button
-      type="button"
-      disabled={Boolean(notified[d.eventName])}
-      onClick={() => {
-        setNotifySent(false);
-        setNotifyEmailError(null);
-        setEventSoldOutSheet(true);
-      }}
-      style={{
-        fontFamily: "inherit",
-        flexShrink: 0,
-        border: "none",
-        borderRadius: 999,
-        background: notified[d.eventName] ? ACC_SOFT : ACC,
-        color: notified[d.eventName] ? ACC : BTN_INK,
-        fontSize: fluidSize(15),
-        fontWeight: 600,
-        padding: "14px 22px",
-        cursor: notified[d.eventName] ? "default" : "pointer",
-        whiteSpace: "nowrap",
-        ...(seatedSoldOut ? { width: "100%" } : {}),
-      }}
-    >
-      {notified[d.eventName] ? "Reminder set" : "Join waitlist"}
-    </button>
-  );
-
-  const eventSoldOutNotifyCopy = (
-    <>
-      <div style={{ display: "flex", alignItems: "center", gap: 8, ...(seatedSoldOut ? { justifyContent: "center" } : {}) }}>
-        <span
-          aria-hidden
-          style={{
-            width: 8,
-            height: 8,
-            borderRadius: 999,
-            background: ACC,
-            flexShrink: 0,
-          }}
-        />
-        <span
-          style={{
-            fontSize: fluidSize(12),
-            fontWeight: 600,
-            letterSpacing: "0.12em",
-            textTransform: "uppercase",
-            color: "#6e7180",
-          }}
-        >
-          Sold out
-        </span>
-      </div>
-      <div
-        style={{
-          fontSize: seatedSoldOut
-            ? mobile
-              ? 20
-              : 26
-            : isGa && !mobile
-              ? "22px"
-              : fluidSize(16),
-          fontWeight: 600,
-          color: seatedSoldOut ? "#051b35" : "#4a5567",
-          letterSpacing: seatedSoldOut ? "-0.02em" : undefined,
-          lineHeight: seatedSoldOut ? 1.25 : 1.35,
-          ...(seatedSoldOut ? {} : { paddingLeft: 16 }),
-        }}
-      >
-        Get notified if tickets become available
-      </div>
-    </>
-  );
-
-  const eventSoldOutBodyPanel = () => (
-    <div
-      data-testid="ticketing-soldout-body"
-      style={{
-        flex: "1 1 0",
-        minHeight: 0,
-        alignSelf: "stretch",
-        display: "flex",
-        flexDirection: "column",
-      }}
-    >
-      <div
-        style={{
-          ...card,
-          borderRadius: 20,
-          flex: 1,
-          minHeight: 0,
-          width: "100%",
-          boxSizing: "border-box",
-          display: "flex",
-          flexDirection: "column",
-          alignItems: "center",
-          justifyContent: "center",
-          textAlign: "center",
-          gap: 12,
-          padding: "32px 24px",
-        }}
-      >
-        {eventSoldOutNotifyCopy}
-        <div style={{ width: "100%", maxWidth: 320, marginTop: 8 }}>
-          {eventSoldOutNotifyButton}
-        </div>
-      </div>
-    </div>
-  );
-
-  const eventSoldOutNotifyBarInner = (
-    <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-        <div style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", gap: 4 }}>
-          {eventSoldOutNotifyCopy}
-        </div>
-        {eventSoldOutNotifyButton}
-      </div>
-  );
-
-  const eventSoldOutNotifyBar = (fixed: boolean) =>
-    fixed ? (
-      <MobileStickyFooter
-        accentColor={ACC}
-        data-testid="ticketing-soldout-sticky"
-      >
-        {eventSoldOutNotifyBarInner}
-      </MobileStickyFooter>
-    ) : (
-      <div
-        data-testid="ticketing-soldout-sticky"
-        style={{ padding: "18px 20px", background: "#fff" }}
-      >
-        {eventSoldOutNotifyBarInner}
-    </div>
-  );
-
   // GA tier cards — rendered inline on desktop, inside the mobile bottom sheet.
   const gaTierCards = (
     <>
@@ -1301,7 +1420,7 @@ export default function PremiumTicketing({
               </div>
               <div style={{ textAlign: "right", flexShrink: 0 }}>
                 <div style={{ fontSize: mobile ? 22 : 26, fontWeight: 600, letterSpacing: "-0.03em", fontVariantNumeric: "tabular-nums", color: soldout ? "#6e7180" : NAVY }}>{t.price}</div>
-                <div style={{ fontSize: fluidSize(13), color: "#6e7180" }}>Incl. taxes and fees</div>
+                <div style={{ fontSize: fluidSize(13), color: "#6e7180" }}>{listingFeeNote(t.price, false)}</div>
               </div>
             </div>
             <div style={{ height: 1, background: "rgba(5,27,53,0.08)" }} />
@@ -1346,34 +1465,18 @@ export default function PremiumTicketing({
               ) : locked ? (
                 <BrandedActionButton
                   tone="secondary"
-                  onClick={() => {
-                    setUnlockZone(t.name);
-                    setUnlockInput("");
-                    setUnlockFieldError(null);
-                  }}
+                  onClick={() => setUnlockZone(t.name)}
                   className="text-[16px]"
                   style={{ padding: "13px 22px" }}
                 >
                   <LockIcon s={16} /> Enter access code
                 </BrandedActionButton>
-              ) : done && soldout ? (
-                <div
-                  role="status"
-                  style={{
-                    fontSize: fluidSize(14),
-                    fontWeight: 600,
-                    color: "#3f6b1f",
-                    background: "rgba(166,231,115,0.16)",
-                    borderRadius: 14,
-                    padding: "13px 18px",
-                  }}
-                >
-                  You&rsquo;re on the waiting list
-                </div>
+              ) : soldout ? (
+                <span style={{ fontFamily: "inherit", display: "inline-flex", alignItems: "center", fontSize: fluidSize(15), fontWeight: 600, lineHeight: 1.5, color: "#6e7180", background: "#fff", border: "1px solid rgba(5,27,53,0.14)", borderRadius: 999, padding: "13px 22px", cursor: "default", whiteSpace: "nowrap" }}>Sold out</span>
               ) : (
-                <button onClick={() => openNotify({ name: t.name, soldout, onSaleAt: t.onSaleAt })} style={{ fontFamily: "inherit", display: "inline-flex", alignItems: "center", gap: 9, fontSize: fluidSize(15), fontWeight: 600, color: done ? "#3f6b1f" : NAVY, background: done ? "rgba(166,231,115,0.16)" : "#fff", border: `1px solid ${done ? "rgba(127,190,77,0.45)" : "#d3d6e0"}`, borderRadius: 999, padding: "13px 22px", cursor: "pointer" }}>
+                <button onClick={() => openNotify({ name: t.name, soldout: false, onSaleAt: t.onSaleAt })} style={{ fontFamily: "inherit", display: "inline-flex", alignItems: "center", gap: 9, fontSize: fluidSize(15), fontWeight: 600, color: done ? "#3f6b1f" : NAVY, background: done ? "rgba(166,231,115,0.16)" : "#fff", border: `1px solid ${done ? "rgba(127,190,77,0.45)" : "#d3d6e0"}`, borderRadius: 999, padding: "13px 22px", cursor: "pointer" }}>
                   {done && <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round" style={{ width: 16, height: 16 }}><polyline points="20 6 9 17 4 12" /></svg>}
-                  {done ? "Reminder set" : soldout ? "Join waitlist" : "Remind me"}
+                  {done ? "Reminder set" : "Remind me"}
                 </button>
               )}
             </div>
@@ -1418,8 +1521,6 @@ export default function PremiumTicketing({
                 onClick={() => {
                   if (locked) {
                     setUnlockZone(z);
-                    setUnlockInput("");
-                    setUnlockFieldError(null);
                     return;
                   }
                   if (z === null) {
@@ -1444,15 +1545,31 @@ export default function PremiumTicketing({
         {busy ? <div style={{ height: 20, width: 96, borderRadius: 999, ...shimmer }} /> : <div style={{ fontSize: 16, fontWeight: 500, fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap" }}>{rows.length} Listings</div>}
         <div style={{ display: "flex", alignItems: "center", gap: compact ? 12 : 20 }}>
           <div style={{ display: "flex", alignItems: "center", gap: compact ? 8 : 10, color: "#6e7180" }}>
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" style={{ width: compact ? 18 : 21, height: compact ? 18 : 21 }}><circle cx="16" cy="4" r="1" /><path d="m18 19 1-7-6 1" /><path d="m5 8 3-3 5.5 3-2.36 3.5" /><path d="M4.24 14.5a5 5 0 0 0 6.88 6" /><path d="M13.76 17.5a5 5 0 0 0-6.88-6" /></svg>
+            <Accessibility style={{ width: compact ? 18 : 21, height: compact ? 18 : 21 }} />
             <button onClick={toggleAda} aria-label="Accessible seating only" style={{ width: compact ? 44 : 48, height: compact ? 26 : 28, borderRadius: 999, border: "none", padding: 3, cursor: "pointer", boxSizing: "border-box", display: "flex", alignItems: "center", transition: "background 180ms ease", background: ada ? ACC : "#d3d6e0" }}>
               <span style={{ display: "block", width: compact ? 20 : 22, height: compact ? 20 : 22, borderRadius: 999, background: "#fff", boxShadow: "0 1px 3px rgba(5,27,53,0.3)", transition: "transform 180ms cubic-bezier(0.2,0.8,0.2,1)", transform: ada ? (compact ? "translateX(18px)" : "translateX(20px)") : "translateX(0)" }} />
             </button>
           </div>
-          <button onClick={toggleSort} aria-label={sortDir === "price" ? "Sorted by lowest price" : "Sorted by highest price"} style={{ fontFamily: "inherit", display: "inline-flex", alignItems: "center", gap: 6, fontSize: type, fontWeight: 500, color: NAVY, background: "transparent", border: "none", padding: compact ? "8px 0" : 0, minHeight: compact ? 40 : undefined, whiteSpace: "nowrap", cursor: "pointer" }}>
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" style={{ width: compact ? 16 : 18, height: compact ? 16 : 18, transform: sortDir === "price" ? "none" : "scaleY(-1)" }}><path d="M11 5h10" /><path d="M11 9h7" /><path d="M11 13h4" /><path d="M3 17l3 3 3-3" /><path d="M6 4v16" /></svg>
-            Sort by price
+          <button ref={sortBtn} onClick={() => setSortMenu((v) => !v)} aria-haspopup="listbox" aria-expanded={sortMenu} style={{ fontFamily: "inherit", display: "inline-flex", alignItems: "center", gap: 6, fontSize: type, fontWeight: 500, color: NAVY, background: "transparent", border: "none", padding: compact ? "8px 0" : 0, minHeight: compact ? 40 : undefined, whiteSpace: "nowrap", cursor: "pointer" }}>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" style={{ width: compact ? 16 : 18, height: compact ? 16 : 18 }}><path d="M11 5h10" /><path d="M11 9h7" /><path d="M11 13h4" /><path d="M3 17l3 3 3-3" /><path d="M6 4v16" /></svg>
+            {sortDir === "bestseat" ? "Sort by best seat" : "Sort by price"}
           </button>
+          {sortMenu && mounted && sortBtn.current && createPortal(
+            <>
+              <div onClick={() => setSortMenu(false)} style={{ position: "fixed", inset: 0, zIndex: 29 }} />
+              <div role="listbox" aria-label="Sort listings" style={{ position: "fixed", top: sortBtn.current.getBoundingClientRect().bottom + 8, right: Math.max(8, window.innerWidth - sortBtn.current.getBoundingClientRect().right), zIndex: 30, minWidth: 160, background: "#fff", border: "1px solid rgba(5,27,53,0.10)", borderRadius: 14, boxShadow: "0 20px 44px -18px rgba(5,27,53,0.45)", padding: 6, display: "flex", flexDirection: "column", gap: 4 }}>
+                {SORT_OPTIONS.map((option) => {
+                  const active = option.value === sortDir;
+                  return (
+                    <button key={option.value} role="option" aria-selected={active} onClick={() => chooseSort(option.value)} className={`nmt-sort-option${active ? " active" : ""}`} style={{ fontFamily: "inherit", fontSize: type, color: active ? "#fff" : NAVY, padding: compact ? "10px 12px" : "11px 14px" }}>
+                      {option.label}
+                    </button>
+                  );
+                })}
+              </div>
+            </>,
+            document.body,
+          )}
         </div>
       </div>
       <div style={{ height: 1, background: "rgba(5,27,53,0.08)", margin: compact ? "10px 0 0" : "16px 0 0" }} />
@@ -1492,6 +1609,10 @@ export default function PremiumTicketing({
         .nmt-filter .nmt-star { color: ${ACC}; display: inline-flex; }
         .nmt-filter:hover { border-color: ${NAVY}; background: #f1f3f8; }
         .nmt-filter.active { background: ${ACC}; border-color: ${ACC}; color: #fff; }
+        .nmt-sort-option { display: flex; align-items: center; width: 100%; box-sizing: border-box; text-align: left; font-weight: 600; background: transparent; border: none; border-radius: 10px; cursor: pointer; white-space: nowrap; transition: background 140ms ease; }
+        .nmt-sort-option:hover { background: color-mix(in srgb, ${ACC} 12%, transparent); }
+        .nmt-sort-option.active,
+        .nmt-sort-option.active:hover { background: ${ACC}; color: #fff; }
         .nmt-filter.active .nmt-star { color: #fff; }
         ${orgScrollbarCss(ACC)}
         .shopper-page .ga-soldout-notify-sheet h2 {
@@ -1554,13 +1675,14 @@ export default function PremiumTicketing({
                 )
               ) : (
                 <>
-                  <div style={{ width: 64, height: 64, borderRadius: 14, background: "#fff", border: "1px solid rgba(5,27,53,0.08)", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, padding: 9, boxSizing: "border-box" }}>
+                  <div style={{ width: 64, height: 64, borderRadius: 14, background: d.headerLogoIsPhoto ? "rgba(255,255,255,0.12)" : "#fff", border: "1px solid rgba(5,27,53,0.08)", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, padding: d.headerLogoIsPhoto ? 0 : 9, boxSizing: "border-box", overflow: "hidden" }}>
                     {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img src={LOGO} alt={d.homeLabel} style={{ maxWidth: "100%", maxHeight: "100%", objectFit: "contain" }} />
+                    <img src={d.headerLogoSrc || LOGO} alt={d.headerLogoAlt || d.homeLabel} style={d.headerLogoIsPhoto ? { width: "100%", height: "100%", objectFit: "cover", display: "block" } : { maxWidth: "100%", maxHeight: "100%", objectFit: "contain" }} />
                   </div>
                   <div style={{ display: "flex", flexDirection: "column", gap: 3, minWidth: 0 }}>
                     <div style={{ fontSize: fluidSize(19), fontWeight: 600, letterSpacing: "-0.015em", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{d.eventName}</div>
                     <div style={{ fontSize: fluidSize(14), color: "rgba(255,255,255,0.72)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{d.whenLong} at <span style={{ color: "#fff", fontWeight: 500 }}>{d.venueLine}</span></div>
+                    {seatedPromo}
                     <button onClick={() => setInfo(true)} style={{ fontFamily: "inherit", alignSelf: "flex-start", display: "flex", alignItems: "center", gap: 6, fontSize: fluidSize(13), fontWeight: 500, color: "rgba(255,255,255,0.82)", background: "transparent", border: "none", padding: 0, cursor: "pointer", textDecoration: "underline", textUnderlineOffset: 3 }}>
                       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" style={{ width: 15, height: 15 }}><circle cx="12" cy="12" r="10" /><line x1="12" y1="16" x2="12" y2="12" /><line x1="12" y1="8" x2="12.01" y2="8" /></svg>
                       Event information
@@ -1613,6 +1735,7 @@ export default function PremiumTicketing({
             <div style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", gap: 2 }}>
               <div style={{ fontSize: fluidSize(16), fontWeight: 600, letterSpacing: "-0.015em", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{d.eventName}</div>
               <div style={{ fontSize: fluidSize(13), color: "rgba(255,255,255,0.72)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{d.whenShort}</div>
+              {seatedPromo}
             </div>
           )}
           <button onClick={() => setInfo(true)} aria-label="Event information" style={{ fontFamily: "inherit", width: 44, height: 44, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", background: "transparent", border: "none", color: navInk, cursor: "pointer" }}>
@@ -1623,15 +1746,12 @@ export default function PremiumTicketing({
 
       {/* MAIN (reserved / seatmap flow) */}
       {!isGa && (
-      <main style={{ flex: "1 1 auto", width: "100%", maxWidth: 1320, margin: "0 auto", padding: eventScheduled ? (mobile ? 12 : `${TICKETING_MAIN_PAD_TOP_PX}px 32px ${TICKETING_MAIN_PAD_BOTTOM_PX}px`) : mobile ? `12px 12px ${gaSoldOut ? mobileStickyFooterReservePx() : "12px"}` : seatedSoldOut ? `${TICKETING_MAIN_PAD_TOP_PX}px 32px ${TICKETING_MAIN_PAD_BOTTOM_PX}px` : `${TICKETING_MAIN_PAD_TOP_PX}px 32px ${TICKETING_MAIN_PAD_BOTTOM_PX}px`, ...(eventScheduled || seatedSoldOut ? { display: "flex", flexDirection: "column", minHeight: 0 } : {}), ...(listingsSheet ? { paddingBottom: LISTINGS_SHEET_BAR_PX, minHeight: 0, overflow: "hidden" } : {}), boxSizing: "border-box", display: eventScheduled || seatedSoldOut || narrow ? "flex" : "grid", flexDirection: "column", gridTemplateColumns: eventScheduled || seatedSoldOut || narrow ? undefined : "minmax(0, 1fr) 340px", gap: 16, alignItems: listingsSheet ? "stretch" : "start" }}>
+      <main style={{ flex: "1 1 auto", width: "100%", maxWidth: 1320, margin: "0 auto", padding: eventScheduled ? (mobile ? 12 : `${TICKETING_MAIN_PAD_TOP_PX}px 32px ${TICKETING_MAIN_PAD_BOTTOM_PX}px`) : mobile ? `12px 12px ${gaSoldOut ? mobileStickyFooterReservePx() : "12px"}` : `${TICKETING_MAIN_PAD_TOP_PX}px 32px ${TICKETING_MAIN_PAD_BOTTOM_PX}px`, ...(eventScheduled ? { display: "flex", flexDirection: "column", minHeight: 0 } : {}), ...(listingsSheet ? { paddingBottom: LISTINGS_SHEET_BAR_PX, minHeight: 0, overflow: "hidden" } : {}), boxSizing: "border-box", display: eventScheduled || narrow ? "flex" : "grid", flexDirection: "column", gridTemplateColumns: eventScheduled || narrow ? undefined : "minmax(0, 1fr) 340px", gap: 16, alignItems: listingsSheet ? "stretch" : "start" }}>
         {eventScheduled ? (
           scheduledBodyPanel(!mobile)
-        ) : seatedSoldOut ? (
-          eventSoldOutBodyPanel()
         ) : (
         <>
         {listingsSheet && narrowMapBlock}
-        {!(eventSoldOut && mobile) && (
         <section
           data-testid="ticketing-offers"
           ref={wide ? sticky : undefined}
@@ -1644,9 +1764,7 @@ export default function PremiumTicketing({
               : mobile
                 ? 16
                 : 20,
-            padding: eventSoldOut
-              ? 0
-              : listingsSheet
+            padding: listingsSheet
                 ? listingsExpanded
                   ? "0 16px calc(16px + env(safe-area-inset-bottom))"
                   : "12px 16px calc(12px + env(safe-area-inset-bottom))"
@@ -1679,7 +1797,7 @@ export default function PremiumTicketing({
                       }),
                 }
               : {}),
-            ...(narrow && !eventSoldOut && !listingsSheet
+            ...(narrow && !listingsSheet
               ? {
                   width: "100%",
                   alignSelf: "stretch",
@@ -1688,7 +1806,7 @@ export default function PremiumTicketing({
                   isolation: "isolate",
                 }
               : {}),
-            ...(wide && !eventSoldOut
+            ...(wide
               ? {
                   position: "sticky",
                   top: stickTop,
@@ -1704,9 +1822,6 @@ export default function PremiumTicketing({
               : {}),
           }}
         >
-          {eventSoldOut ? (
-            !mobile ? eventSoldOutNotifyBar(false) : null
-          ) : (
           <>
           {!listingsSheet && narrowMapBlock}
           {wide && (
@@ -1818,10 +1933,15 @@ export default function PremiumTicketing({
                   : zoneFilter.length > 1
                     ? "these offers"
                     : "";
-              const title = noOfferInventory
+              const noAccessible = ada;
+              const title = noAccessible
+                ? "No accessible listings"
+                : noOfferInventory
                 ? `No tickets for ${offerLabel}`
                 : `No listings for ${want === 1 ? "1 ticket" : `${want} tickets`}`;
-              const body = noOfferInventory
+              const body = noAccessible
+                ? "No accessible seating is currently listed. Turn off the accessible seating filter to see all tickets."
+                : noOfferInventory
                 ? zoneFilter.length === 1
                   ? "This offer doesn't have any inventory on sale right now. Try another section, or check back later."
                   : "None of the selected offers have inventory on sale right now. Try another section, or check back later."
@@ -1831,7 +1951,7 @@ export default function PremiumTicketing({
                   <svg viewBox="0 0 24 24" fill="none" stroke={ACC} strokeWidth={1.6} strokeLinecap="round" strokeLinejoin="round" style={{ width: 34, height: 34 }}><path d="M4 9V6a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v3a2 2 0 0 0 0 4v3a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2v-3a2 2 0 0 0 0-4z" /><line x1="9" y1="9" x2="15" y2="15" /><line x1="15" y1="9" x2="9" y2="15" /></svg>
                   <div style={{ fontSize: fluidSize(19), fontWeight: 600, letterSpacing: "-0.015em" }}>{title}</div>
                   <div style={{ fontSize: fluidSize(15), color: "#6e7180", maxWidth: 380 }}>{body}</div>
-                  {!noOfferInventory && want > 1 ? (
+                  {!noAccessible && !noOfferInventory && want > 1 ? (
                     <button className="nmt-primary" onClick={() => reload(quantityOptions[0] || 1)} style={{ ...primaryBtn, marginTop: 6, fontSize: fluidSize(15), padding: "13px 26px" }}>Reset quantity</button>
                   ) : null}
                 </div>
@@ -1840,22 +1960,22 @@ export default function PremiumTicketing({
 
             {!busy &&
               rows.map((l, idx) => (
-                <div key={`${l.sec}-${l.row}-${idx}`} className="nmt-listing" onClick={() => { setSel(idx); setPanelQty(clampQuantity(want, listingQtyLimits(l))); setMedia(0); }} style={{ display: "flex", flexDirection: mobile ? "column" : "row", alignItems: mobile ? "stretch" : "center", gap: mobile ? 8 : 18, background: "#fff", border: "1px solid rgba(5,27,53,0.10)", borderRadius: mobile ? 12 : 16, padding: mobile ? "10px 12px" : "16px 20px", cursor: "pointer" }}>
+                <div key={`${l.sec}-${l.row}-${idx}`} className="nmt-listing" onClick={() => { setSel(idx); setMedia(0); }} style={{ display: "flex", flexDirection: mobile ? "column" : "row", alignItems: mobile ? "stretch" : "center", gap: mobile ? 8 : 18, background: "#fff", border: "1px solid rgba(5,27,53,0.10)", borderRadius: mobile ? 12 : 16, padding: "16px 20px", cursor: "pointer" }}>
                   {mobile ? (
                     <div style={{ display: "flex", alignItems: "center", gap: 10, minWidth: 0 }}>
                       <div style={{ width: thumbSize, height: thumbSize, borderRadius: 8, background: "#f1f3f8", border: "1px solid rgba(5,27,53,0.08)", flexShrink: 0, overflow: "hidden" }}>
                         {listingThumb(l)}
                       </div>
-                      <div style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", gap: 10 }}>
+                      <div style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", gap: 6 }}>
                         {listingOfferBadges(l, true)}
-                        <div style={{ display: "flex", alignItems: "center", gap: 6, minWidth: 0, fontSize: 18, fontWeight: 600, letterSpacing: "-0.015em" }}>
-                          <span style={{ color: "#6e7180", flexShrink: 0, display: "flex", alignItems: "center" }}><TicketIcon s={18} /></span>
-                          <span style={{ minWidth: 0, overflowWrap: "anywhere" }}>Sec {l.sec} · Row {l.row}</span>
+                        <div style={{ display: "flex", alignItems: "center", gap: 6, minWidth: 0, fontSize: 18, lineHeight: 1.5, fontWeight: 600, letterSpacing: "-0.015em" }}>
+                          {listingSeatIcon(l, 18)}
+                          <span style={{ minWidth: 0, overflowWrap: "anywhere" }}>{listingLocationLabel(l)}</span>
                         </div>
-                        <div style={{ fontSize: 15, color: "#6e7180" }}>{l.range}</div>
-                        <div style={{ display: "flex", alignItems: "baseline", flexWrap: "wrap", gap: "2px 6px" }}>
+                        <div style={{ fontSize: 15, lineHeight: 1.5, color: "#6e7180" }}>{l.range}</div>
+                        <div style={{ display: "flex", alignItems: "baseline", flexWrap: "wrap", gap: "2px 6px", lineHeight: 1.5, marginTop: 2 }}>
                           <span style={{ fontSize: 17, fontWeight: 600, fontVariantNumeric: "tabular-nums", letterSpacing: "-0.015em" }}>{l.price} each</span>
-                          <span style={{ fontSize: 13, color: "#6e7180" }}>Incl. fees</span>
+                          <span style={{ fontSize: 13, color: "#6e7180" }}>{listingFeeNote(l.price, true)}</span>
                         </div>
                       </div>
                     </div>
@@ -1867,14 +1987,14 @@ export default function PremiumTicketing({
                       <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 6, minWidth: 0 }}>
                         {listingOfferBadges(l)}
                         <div style={{ display: "flex", alignItems: "center", gap: 9, minWidth: 0, fontSize: 18, fontWeight: 600, letterSpacing: "-0.015em" }}>
-                          <span style={{ color: "#6e7180", flexShrink: 0, display: "flex", alignItems: "center" }}><TicketIcon s={18} /></span>
-                          <span style={{ minWidth: 0, overflowWrap: "anywhere" }}>Sec {l.sec} · Row {l.row}</span>
+                          {listingSeatIcon(l, 18)}
+                          <span style={{ minWidth: 0, overflowWrap: "anywhere" }}>{listingLocationLabel(l)}</span>
                         </div>
                         <div style={{ fontSize: 15, color: "#6e7180" }}>{l.range}</div>
                       </div>
                       <div style={{ textAlign: "right", flexShrink: 0, marginLeft: 8 }}>
                         <div style={{ fontSize: 20, fontWeight: 600, fontVariantNumeric: "tabular-nums", letterSpacing: "-0.015em", whiteSpace: "nowrap" }}>{l.price} each</div>
-                        <div style={{ fontSize: 13, color: "#6e7180", marginTop: 2, whiteSpace: "nowrap" }}>Incl. Taxes & Fees</div>
+                        <div style={{ fontSize: 13, color: "#6e7180", marginTop: 2, whiteSpace: "nowrap" }}>{listingFeeNote(l.price, false)}</div>
                       </div>
                     </>
                   )}
@@ -1883,14 +2003,12 @@ export default function PremiumTicketing({
           </div>
           )}
           </>
-          )}
         </section>
-        )}
-        {narrow && !eventScheduled && !seatedSoldOut && (
+        {narrow && !eventScheduled && (
           <div style={{ flexShrink: 0, width: "100%", alignSelf: "stretch" }}><BuyerProtectionCard accent={ACC} /></div>
         )}
 
-        {wide && !eventScheduled && !seatedSoldOut && (
+        {wide && !eventScheduled && (
           <aside
             data-testid="ticketing-map"
             style={{ display: "flex", flexDirection: "column", gap: 20, position: "sticky", top: stickTop, alignSelf: "start" }}
@@ -1962,21 +2080,31 @@ export default function PremiumTicketing({
               <h1 style={{ margin: 0, fontSize: mobile ? 30 : 42, fontWeight: 600, letterSpacing: "-0.035em", lineHeight: 1.08 }}>{d.eventName}</h1>
               <span style={{ alignSelf: "flex-start", fontSize: 17, fontWeight: 600, color: ACC }}>{d.venueLine}</span>
               <div style={{ fontSize: fluidSize(16), color: "#4a5567" }}>{d.whenLong}</div>
+              <EventPromo
+                text={d.promo || ""}
+                color={NAVY}
+                style={{ fontSize: fluidSize(16) }}
+              />
             </div>
 
-            {/* Sold-out GA uses the notify bar + sheet instead of the inline waitlist panel. */}
-            {eventSoldOut ? (
-              !mobile ? (
-                <div style={{ ...card, borderRadius: 20, overflow: "hidden" }}>
-                  {eventSoldOutNotifyBar(false)}
-                </div>
-              ) : null
-            ) : gaScheduled ? (
+            {/* Sold-out events keep the ticket list. The waitlist is not offered here. */}
+            {gaScheduled ? (
               !mobile ? scheduledPanel(true) : null
             ) : !mobile ? (
               <div style={{ ...card, borderRadius: 20, padding: mobile ? 18 : 24, display: "flex", flexDirection: "column", gap: 16 }}>
-                <div style={{ fontSize: 22, fontWeight: 600, letterSpacing: "-0.025em" }}>Get tickets</div>
-                {gaTierCards}
+                {gaShowSoldOut ? null : (
+                  <div style={{ fontSize: 22, fontWeight: 600, letterSpacing: "-0.025em" }}>Get tickets</div>
+                )}
+                {gaSoldOut ? (
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16 }}>
+                    <span style={{ display: "inline-flex", alignItems: "center", gap: 7, background: "#eef0f6", color: "#6e7180", fontSize: fluidSize(11), fontWeight: 600, letterSpacing: "0.1em", textTransform: "uppercase", padding: "5px 11px", borderRadius: 999 }}>
+                      <span style={{ width: 6, height: 6, borderRadius: 999, background: "#a9b0bd" }} />Sold out
+                    </span>
+                    <span style={{ fontFamily: "inherit", display: "inline-flex", alignItems: "center", fontSize: fluidSize(15), fontWeight: 600, lineHeight: 1.5, color: "#6e7180", background: "#fff", border: "1px solid rgba(5,27,53,0.14)", borderRadius: 999, padding: "13px 22px", cursor: "default" }}>Sold out</span>
+                  </div>
+                ) : (
+                  gaTierCards
+                )}
                 {holdError ? (
                   <div style={{ fontSize: fluidSize(13), color: "#b91c1c", lineHeight: 1.4 }}>{holdError}</div>
                 ) : null}
@@ -2048,11 +2176,20 @@ export default function PremiumTicketing({
       {/* STICKY ON-SALE BAR (GA, mobile) */}
       {isGa && mobile && gaScheduled && scheduledStickyBar}
 
-      {/* STICKY SOLD-OUT BAR (mobile, GA only — seated uses inline body card) */}
-      {gaSoldOut && mobile && eventSoldOutNotifyBar(true)}
-
       {/* STICKY BUY BAR (GA, mobile) */}
-      {isGa && mobile && !gaSoldOut && !gaScheduled && (
+      {isGa && mobile && gaShowSoldOut && (
+        <MobileStickyFooter
+          accentColor={ACC}
+          innerStyle={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 14 }}
+        >
+          <span style={{ display: "inline-flex", alignItems: "center", gap: 7, background: "#eef0f6", color: "#6e7180", fontSize: fluidSize(11), fontWeight: 600, letterSpacing: "0.1em", textTransform: "uppercase", padding: "5px 11px", borderRadius: 999 }}>
+            Sold out
+          </span>
+          <span style={{ fontFamily: "inherit", display: "inline-flex", alignItems: "center", fontSize: fluidSize(15), fontWeight: 600, lineHeight: 1.5, color: "#6e7180", background: "#fff", border: "1px solid rgba(5,27,53,0.14)", borderRadius: 999, padding: "13px 22px", cursor: "default" }}>Sold out</span>
+        </MobileStickyFooter>
+      )}
+
+      {isGa && mobile && !gaShowSoldOut && !gaScheduled && (
         <MobileStickyFooter
           accentColor={ACC}
           innerStyle={{ display: "flex", alignItems: "center", gap: 14 }}
@@ -2066,7 +2203,7 @@ export default function PremiumTicketing({
       )}
 
       {/* GA TIER SHEET (mobile) */}
-      {isGa && gaSheet && !gaSoldOut && !gaScheduled && (
+      {isGa && gaSheet && !gaShowSoldOut && !gaScheduled && (
         <div onClick={() => setGaSheet(false)} style={{ position: "fixed", inset: 0, zIndex: 55, background: "rgba(5,27,53,0.55)", backdropFilter: "blur(6px)", display: "flex", alignItems: "flex-end", justifyContent: "center" }}>
           <div role="dialog" aria-modal="true" aria-labelledby="ga-ticket-sheet-title" onClick={(e) => e.stopPropagation()} style={{ width: "100%", maxWidth: 560, maxHeight: "88vh", background: "#fff", borderTopLeftRadius: 24, borderTopRightRadius: 24, boxShadow: "0 -20px 60px -20px rgba(5,27,53,0.5)", display: "flex", flexDirection: "column", overflow: "hidden" }}>
             <div style={{ display: "flex", justifyContent: "center", paddingTop: 10, flexShrink: 0 }}>
@@ -2090,285 +2227,42 @@ export default function PremiumTicketing({
         </div>
       )}
 
-      {/* EVENT SOLD-OUT NOTIFY SHEET */}
-      {eventSoldOut && eventSoldOutSheet && (!mobile || mounted) &&
-        (() => {
-          const overlay = (
-        <div
-          className="ga-soldout-notify-sheet-overlay"
-          onClick={() => setEventSoldOutSheet(false)}
-          style={{
-            position: "fixed",
-            inset: 0,
-            zIndex: 55,
-            background: "rgba(5,27,53,0.55)",
-            backdropFilter: "blur(6px)",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            padding: 16,
-          }}
-        >
-          <div
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="ga-soldout-sheet-title"
-            className="ga-soldout-notify-sheet"
-            onClick={(e) => e.stopPropagation()}
-            style={{
-              width: "100%",
-              maxWidth: 480,
-              maxHeight: "min(88vh, 640px)",
-              background: "#fff",
-              borderRadius: 24,
-              boxShadow: "rgba(5, 27, 53, 0.6) 0px 40px 90px -30px",
-              display: "flex",
-              flexDirection: "column",
-              overflow: "hidden",
-            }}
-          >
-            <div style={{ flex: 1, minHeight: 0, overflowY: "auto", padding: "22px 20px 20px" }}>
-              {notified[d.eventName] || notifySent ? (
-                <>
-                  <div style={{ marginBottom: 18 }}>
-                    <h2
-                      id="ga-soldout-sheet-title"
-                      className="text-[24px] font-semibold tracking-[-0.01em]"
-                      style={{
-                        margin: 0,
-                        lineHeight: 1.25,
-                        color: NAVY,
-                      }}
-                    >
-                      You&rsquo;re on the list.
-                    </h2>
-                  </div>
-                  <p className="ga-soldout-notify-desc" style={{ margin: "0 0 22px", lineHeight: 1.55, color: "#4a5567" }}>
-                    We&rsquo;ll email{" "}
-                    <strong style={{ fontWeight: 600, color: NAVY }}>{notifyEmail || "you"}</strong>{" "}
-                    the moment a ticket is posted for this event.
-                  </p>
-                  <div style={{ display: "flex", gap: 10 }}>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setNotified((current) => ({ ...current, [d.eventName]: false }));
-                        setNotifySent(false);
-                        setEventSoldOutSheet(false);
-                      }}
-                      style={{
-                        fontFamily: "inherit",
-                        flex: 1,
-                        border: "1px solid #d3d6e0",
-                        borderRadius: 999,
-                        background: "#fff",
-                        color: NAVY,
-                        fontWeight: 600,
-                        padding: "14px 18px",
-                        cursor: "pointer",
-                      }}
-                      className="ga-soldout-notify-action"
-                    >
-                      Turn off
-                    </button>
-                    <Link
-                      href="/browse/"
-                      onClick={() => setEventSoldOutSheet(false)}
-                      style={{
-                        fontFamily: "inherit",
-                        flex: 1,
-                        display: "inline-flex",
-                        alignItems: "center",
-                        justifyContent: "center",
-                        border: "none",
-                        borderRadius: 999,
-                        background: ACC,
-                        color: BTN_INK,
-                        fontWeight: 600,
-                        padding: "14px 18px",
-                        textDecoration: "none",
-                      }}
-                      className="ga-soldout-notify-action"
-                    >
-                      Browse all events
-                    </Link>
-                  </div>
-                </>
-              ) : (
-                <>
-                  <div style={{ marginBottom: 18 }}>
-                    <h2
-                      id="ga-soldout-sheet-title"
-                      className="text-[24px] font-semibold tracking-[-0.01em]"
-                      style={{
-                        margin: 0,
-                        lineHeight: 1.25,
-                        color: NAVY,
-                      }}
-                    >
-                      Join the waitlist
-                    </h2>
-                  </div>
-                  <p className="ga-soldout-notify-desc" style={{ margin: "0 0 18px", lineHeight: 1.55, color: "#4a5567" }}>
-                    Enter your email below to get notified in case a ticket becomes available.
-                  </p>
-                  <form
-                    noValidate
-                    onSubmit={(event) => {
-                      event.preventDefault();
-                      void submitEventWaitlist(
-                        submittedEmail(new FormData(event.currentTarget)),
-                        () => setNotifySent(true),
-                      );
-                    }}
-                    style={{ display: "flex", flexDirection: "column", gap: 14 }}
-                  >
-                    <EmailField
-                      autoFocus
-                      id="ga-soldout-email"
-                      name="email"
-                      label="Email address"
-                      placeholder="you@example.com"
-                      value={notifyEmail}
-                      error={notifyEmailError}
-                      networkError={notifyEmailNetworkError}
-                      disabled={notifyEmailChecking}
-                      onChange={(value) => {
-                        setNotifyEmail(value);
-                        setNotifyEmailError(null);
-                        setNotifyEmailNetworkError(false);
-                      }}
-                      onBlur={(value) =>
-                        setNotifyEmailError(emailBlurInvalid(value) ? "invalid" : null)
-                      }
-                    />
-                    <div style={{ display: "flex", justifyContent: "flex-end", gap: 10 }}>
-                      <BrandedActionButton
-                        type="button"
-                        tone="secondary"
-                        onClick={() => setEventSoldOutSheet(false)}
-                        className="ga-soldout-notify-action"
-                      >
-                        Cancel
-                      </BrandedActionButton>
-                      <BrandedActionButton
-                        type="submit"
-                        primaryColor={ACC}
-                        textColor={BTN_INK}
-                        className="ga-soldout-notify-submit"
-                        loading={notifyEmailChecking}
-                        loadingLabel="Checking email…"
-                        disabled={notifyEmailChecking}
-                      >
-                        Join waitlist
-                      </BrandedActionButton>
-                    </div>
-                  </form>
-                </>
-              )}
-            </div>
-          </div>
-        </div>
-          );
-          return mobile && mounted
-            ? (
-              <ShopperBodyPortal accentColor={ACC}>
-                {overlay}
-              </ShopperBodyPortal>
-            )
-            : overlay;
-        })()}
-
       {/* NOTIFY / WAITLIST MODAL */}
       {notifySubject && (() => {
         const t = notifySubject;
-        const soldout = t.soldout;
-        const title = soldout ? "Join the waitlist" : "Get notified when tickets go on sale";
-        const body = soldout
-          ? `${t.name} is sold out. If tickets are released back to inventory, waitlist members are contacted in order — one purchase window each, 30 minutes to complete.`
-          : `${t.name} goes on sale ${t.onSaleAt || "soon"}. We will send a reminder one hour before, and a second the moment inventory opens.`;
-        const confirm = soldout
-          ? `You are on the waitlist for ${t.name}. We will email ${notifyEmail || "your account address"} if tickets are released.`
-          : `Reminder set. We will email ${notifyEmail || "your account address"} before ${t.name} goes on sale.`;
+        const title = "Get notified when tickets go on sale";
+        const body = `${t.name} goes on sale ${t.onSaleAt || "soon"}. We will send a reminder one hour before, and a second the moment inventory opens.`;
+        const confirm = `Reminder set. We will email ${notifyEmail || "your account address"} before ${t.name} goes on sale.`;
         return (
           <Modal variant="light" title={title} closeOnBackdrop onClose={() => setNotifySubject(null)}>
             <p className="mt-4 text-[14px] text-[#4a5567]">{body}</p>
             {!notifySent ? (
-              <form
-                noValidate
+              <WaitlistEmailForm
+                id="notify-email"
+                submitLabel="Set reminder"
+                accent={ACC}
+                buttonTextColor={BTN_INK}
                 className="mt-5 flex flex-col gap-3.5"
-                onSubmit={(event) => {
-                  event.preventDefault();
-                  void (async () => {
-                    const next = submittedEmail(new FormData(event.currentTarget));
-                    setNotifyEmailNetworkError(false);
-                    setNotifyEmailChecking(true);
-                    const result = await validateSubmittedEmail(next);
-                    setNotifyEmailChecking(false);
-                    if (!result.ok) {
-                      if (result.error === "required" || result.error === "invalid") {
-                        setNotifyEmailError(result.error);
-                      } else {
-                        setNotifyEmailError(null);
-                        setNotifyEmailNetworkError(true);
-                      }
-                      return;
-                    }
-                    setNotifyEmail(result.email);
-                    setNotifyEmailError(null);
-                    setNotifySent(true);
-                    setNotified((m) => ({ ...m, [t.name]: true }));
-                  })();
+                actionsClassName="flex flex-col gap-3 sm:flex-row sm:justify-end"
+                cancelClassName="w-full sm:w-auto"
+                submitClassName="w-full sm:w-auto"
+                onCancel={() => setNotifySubject(null)}
+                onConfirmed={(email) => {
+                  setNotifyEmail(email);
+                  setNotified((m) => ({ ...m, [t.name]: true }));
+                  setNotifySent(true);
                 }}
               >
-                <EmailField
-                  autoFocus
-                  id="notify-email"
-                  name="email"
-                  placeholder="you@example.com"
-                  value={notifyEmail}
-                  error={notifyEmailError}
-                  networkError={notifyEmailNetworkError}
-                  disabled={notifyEmailChecking}
-                  onChange={(value) => {
-                    setNotifyEmail(value);
-                    setNotifyEmailError(null);
-                    setNotifyEmailNetworkError(false);
-                  }}
-                  onBlur={(value) =>
-                    setNotifyEmailError(emailBlurInvalid(value) ? "invalid" : null)
-                  }
-                />
-                <label className="flex cursor-pointer items-start gap-2.5 text-[14px] font-normal text-[#4a5567]">
+                <label className="text-[14px] font-normal text-[#4a5567]">
                   <input
                     type="checkbox"
                     name="notifySms"
                     checked={notifySms}
                     onChange={() => setNotifySms((v) => !v)}
-                    className="mt-0.5 h-[18px] w-[18px]"
-                    style={{ accentColor: ACC }}
                   />
                   <span>Also text me at the number on my account</span>
                 </label>
-                <div className="flex flex-col gap-3 sm:flex-row sm:justify-end">
-                  <BrandedActionButton
-                    type="button"
-                    tone="secondary"
-                    onClick={() => setNotifySubject(null)}
-                    className="w-full sm:w-auto"
-                  >
-                    Cancel
-                  </BrandedActionButton>
-                  <BrandedActionButton
-                    type="submit"
-                    primaryColor={ACC}
-                    textColor={BTN_INK}
-                    className="w-full sm:w-auto"
-                  >
-                    {soldout ? "Join waitlist" : "Set reminder"}
-                  </BrandedActionButton>
-                </div>
-              </form>
+              </WaitlistEmailForm>
             ) : (
               <div className="mt-5 flex flex-col gap-4">
                 <div className="flex items-center gap-3 rounded-[14px] border border-[rgba(127,190,77,0.35)] bg-[rgba(166,231,115,0.16)] px-4 py-3.5">
@@ -2413,20 +2307,18 @@ export default function PremiumTicketing({
           buttonTextColor={BTN_INK}
           mobile={mobile}
           onClose={closeMap}
-          onCheckout={() => void startHoldFromMap()}
+          onCheckout={startHoldFromMap}
           checkoutLoading={holding}
           checkoutError=""
           mapBackground={mapBackground}
           mapMapping={mapMapping}
           venueSlug={d.venueSlug}
           preparing={preparingMap || !mapReady || !hasLiveSeatmap}
+          updatingInventory={updatingInventory}
           orgName={d.orgLabel}
           logoSrc={d.brandLogoSrc || d.logoSrc}
-          onUnlockOffer={(offerName) => {
-            setUnlockZone(offerName);
-            setUnlockInput("");
-            setUnlockFieldError(null);
-          }}
+          orderQuantitySource={orderQuantitySource}
+          onUnlockOffer={handleUnlockOffer}
           keepTooltipOpen={unlockZone !== null}
         />
       )}
@@ -2465,6 +2357,11 @@ export default function PremiumTicketing({
 
       {/* TICKET DETAIL DRAWER */}
       {panelOpen && selRow && (
+        <TicketDetailsQuantityState
+          key={`${selRow.sec}-${selRow.row}-${sel}`}
+          initialQuantity={clampQuantity(want, listingQtyLimits(selRow))}
+        >
+          {(panelQty, setPanelQty) => (
         <>
           <div style={{ position: "fixed", inset: 0, zIndex: 20, background: "rgba(5,27,53,0.42)", backdropFilter: "blur(3px)" }} />
           <div className="ticket-details-sheet" style={{ position: "fixed", zIndex: 21, display: "flex", flexDirection: "column", background: "#fff", overflow: "hidden", boxShadow: "-30px 0 80px -20px rgba(5,27,53,0.45)", top: mobile ? "auto" : 0, right: 0, bottom: 0, left: "auto", width: mobile ? "100%" : 480, height: mobile ? "86vh" : "auto", maxWidth: "100%", borderRadius: mobile ? "24px 24px 0 0" : 0 }}>
@@ -2477,23 +2374,30 @@ export default function PremiumTicketing({
             </div>
             <div style={{ flex: 1, overflowY: "auto", padding: 20 }}>
               <div style={{ position: "relative", borderRadius: 16, background: "#f1f3f8", border: "1px solid rgba(5,27,53,0.08)", overflow: "hidden", height: 220 }}>
-                {media === 0 ? (
+                <div style={{ position: "absolute", inset: 0, visibility: media === 0 ? "visible" : "hidden" }} aria-hidden={media === 0 ? undefined : true}>
                   <SectionLocatorThumb
                     background={mapBackground}
                     mapping={mapMapping}
                     sectionId={selRow.sectionId}
                     sectionNumber={selRow.sec}
                     section={selRow.sec}
-                    pinColor={ACC}
+                    spinnerColor={ACC}
+                    priority
+                    onReady={markLocationReady}
                     thumbnailCandidates={venueImageCandidates(selRow.sec)}
                   />
-                ) : (
+                </div>
+                <div style={{ position: "absolute", inset: 0, visibility: media === 1 ? "visible" : "hidden" }} aria-hidden={media === 1 ? undefined : true}>
                   <SeatViewImage
                     src={venueImage(selRow.sec, "seat-view")}
                     section={selRow.sec}
+                    onReady={markViewReady}
+                    color={ACC}
                   />
-                )}
-                <div style={{ position: "absolute", left: 0, right: 0, bottom: 12, display: "flex", alignItems: "center", justifyContent: "center", gap: 12 }}>
+                </div>
+                {seatMediaReady ? (
+                <>
+                <div style={{ position: "absolute", left: 0, right: 0, bottom: 12, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 8 }}>
                   <span style={{ display: "inline-flex", alignItems: "center", gap: 7, background: "rgba(5,27,53,0.82)", color: "#fff", fontSize: fluidSize(12), fontWeight: 600, letterSpacing: "0.06em", textTransform: "uppercase", padding: "6px 14px", borderRadius: 999 }}>{media === 0 ? "Seat location" : "Seat view"}</span>
                   <span style={{ display: "flex", alignItems: "center", gap: 6 }}>
                     <span style={{ width: 7, height: 7, borderRadius: 999, background: media === 0 ? ACC : "rgba(5,27,53,0.22)" }} />
@@ -2506,6 +2410,8 @@ export default function PremiumTicketing({
                 <button onClick={flip} aria-label="Next view" style={{ fontFamily: "inherit", position: "absolute", right: 12, top: "50%", transform: "translateY(-50%)", width: 44, height: 44, borderRadius: 999, background: "#fff", border: "1px solid rgba(5,27,53,0.10)", color: NAVY, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", boxShadow: "0 6px 18px -8px rgba(5,27,53,0.4)" }}>
                   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" style={{ width: 20, height: 20 }}><polyline points="9 18 15 12 9 6" /></svg>
                 </button>
+                </>
+                ) : null}
               </div>
               <div style={{ display: "flex", flexDirection: "column", gap: 8, padding: "18px 0 16px" }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
@@ -2515,7 +2421,13 @@ export default function PremiumTicketing({
                   ) : null}
                 </div>
                 <div style={{ display: "flex", flexDirection: "column", gap: 5, minWidth: 0 }}>
-                  <div style={{ fontSize: 22, fontWeight: 600, letterSpacing: "-0.02em", lineHeight: 1.5 }}>Sec {selRow.sec} · Row {selRow.row}</div>
+                  <div style={{ fontSize: 22, fontWeight: 600, letterSpacing: "-0.02em", lineHeight: 1.5 }}>{listingLocationLabel(selRow)}</div>
+                  <AccessibleSeatingBadge source={selRow.cartGroup} />
+                  {panelAdditionalLabel ? (
+                    <div style={{ fontSize: 14, lineHeight: 1.5, color: "#6e7180" }}>
+                      {panelAdditionalLabel}
+                    </div>
+                  ) : null}
                   <div style={{ fontSize: 14, lineHeight: 1.5, color: "#6e7180" }}>{listingDetailAvailabilityLabel(selRow.min, selRow.max, selRow.multipleOf)}</div>
                 </div>
               </div>
@@ -2523,7 +2435,7 @@ export default function PremiumTicketing({
               <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, padding: "18px 0" }}>
                 <div style={{ display: "flex", alignItems: "baseline", gap: 5, minWidth: 0, flexShrink: 1, whiteSpace: "nowrap" }}>
                   <span style={{ fontSize: 22, fontWeight: 600, fontVariantNumeric: "tabular-nums", letterSpacing: "-0.02em", lineHeight: 1.5 }}>{selRow.price} ea</span>
-                  <span style={{ fontSize: 14, lineHeight: 1.5, color: "#6e7180" }}>incl. fees</span>
+                  <span style={{ fontSize: 14, lineHeight: 1.5, color: "#6e7180" }}>{listingFeeNote(selRow.price, true)}</span>
                 </div>
                 <div style={{ display: "flex", alignItems: "center", gap: 6, border: "1px solid #d3d6e0", borderRadius: 999, padding: mobile ? "4px 6px" : "5px 8px", flexShrink: 0 }}>
                   <button
@@ -2565,7 +2477,7 @@ export default function PremiumTicketing({
                 textColor={BTN_INK}
                 loading={holding}
                 loadingLabel="Holding seats…"
-                onClick={() => void startHold()}
+                onClick={() => void startHold(panelQty)}
                 className="w-full"
                 style={{ ...checkoutBtnRow, padding: mobile ? 16 : 17, minHeight: 48, fontSize: 17, lineHeight: 1.5 }}
               >
@@ -2574,85 +2486,22 @@ export default function PremiumTicketing({
             </div>
           </div>
         </>
+          )}
+        </TicketDetailsQuantityState>
       )}
 
       {unlockZone !== null && (
-        <Modal
-          variant="light"
-          hideHeader
-          hideClose
-          title={isGa ? `${unlockZone} requires a code` : `${unlockZone} is locked`}
-          className="unlock-code-dialog !max-w-[400px] !p-6"
+        <UnlockCodeDialog
+          key={unlockZone}
+          zone={unlockZone}
+          isGa={isGa}
+          offerDescription={unlockOfferDescription}
+          accent={ACC}
+          accentSoft={ACC_SOFT}
+          buttonTextColor={BTN_INK}
+          onVerify={verifyUnlockCode}
           onClose={() => setUnlockZone(null)}
-        >
-          <form
-            noValidate
-            className="flex flex-col gap-4"
-            onSubmit={(e) => {
-              e.preventDefault();
-              void submitUnlockCode(formString(new FormData(e.currentTarget), "accessCode"));
-            }}
-          >
-            <div className="flex items-center justify-between">
-              <div
-                className="flex h-[46px] w-[46px] items-center justify-center rounded-xl"
-                style={{ background: ACC_SOFT, color: ACC }}
-              >
-                <LockIcon s={22} />
-              </div>
-              <button
-                type="button"
-                aria-label="Close"
-                onClick={() => setUnlockZone(null)}
-                className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-[rgba(5,27,53,0.16)] text-[#051b35] transition-colors hover:bg-[rgba(5,27,53,0.06)]"
-              >
-                <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden>
-                  <path d="M6 6l12 12M18 6 6 18" />
-                </svg>
-              </button>
-            </div>
-            <h2 className="m-0 font-semibold">
-              {isGa ? `${unlockZone} requires a code` : `${unlockZone} is locked`}
-            </h2>
-            {unlockOfferDescription ? (
-              <pre className="m-0 whitespace-pre-wrap font-[inherit] text-[14px] leading-[1.5] text-[#4a5567] [overflow-wrap:anywhere]">
-                {unlockOfferDescription}
-              </pre>
-            ) : null}
-            <p className="text-[14px] text-[#6e7180]">
-              Enter your access code to unlock {isGa ? "this offer" : "these seats"}.
-            </p>
-            <RedemptionCodeField
-              name="accessCode"
-              label="Access code"
-              hideLabel
-              value={unlockInput}
-              autoFocus
-              placeholder="Access code"
-              error={unlockFieldError}
-              onChange={(value) => {
-                setUnlockInput(value);
-                setUnlockFieldError(null);
-              }}
-              onBlur={(value) =>
-                setUnlockFieldError((current) =>
-                  redemptionCodeBlurFieldError(current, value),
-                )
-              }
-              inputClassName="tracking-[0.06em]"
-            />
-            <BrandedActionButton
-              type="submit"
-              primaryColor={ACC}
-              textColor={BTN_INK}
-              loading={unlocking}
-              loadingLabel="Checking…"
-              className="w-full text-[16px]"
-            >
-              <LockIcon s={16} /> {isGa ? "Unlock offer" : "Unlock seats"}
-            </BrandedActionButton>
-          </form>
-        </Modal>
+        />
       )}
 
       {seatedError && !map ? (
@@ -2693,15 +2542,18 @@ export default function PremiumTicketing({
           <div className={`mt-4 flex flex-col gap-[22px] ${mobile ? "" : "max-h-[min(70vh,640px)] overflow-y-auto"}`}>
             <div className="flex flex-col items-center gap-3.5 text-center">
               <div className="flex h-[132px] w-[132px] items-center justify-center overflow-hidden rounded-[22px] border border-[rgba(5,27,53,0.08)] bg-[#f1f3f8]">
-                {d.homeLogoSrc || LOGO ? (
+                {LOGO ? (
                   /* eslint-disable-next-line @next/next/no-img-element */
-                  <img src={d.homeLogoSrc || LOGO} alt={d.homeLabel} className="h-full w-full object-cover" />
+                  <img src={LOGO} alt={d.homeLabel} className="h-full w-full object-cover" />
                 ) : (
                   <span className="font-semibold text-[#051b35]" style={{ fontSize: 28 }}>{(d.homeLabel || "").slice(0, 3).toUpperCase()}</span>
                 )}
               </div>
               <div className="font-semibold" style={{ fontSize: 22, letterSpacing: "-0.025em" }}>{d.eventName}</div>
               <div className="text-[#6e7180]" style={{ fontSize: 15 }}>{d.doorsLine}</div>
+              {d.promo?.trim() ? (
+                <div className="bt-event-promo" style={{ fontSize: 15, fontWeight: 500, lineHeight: 1.4, color: "#051b35" }}>{d.promo.trim()}</div>
+              ) : null}
             </div>
             <div className="flex flex-wrap items-center justify-between gap-4 rounded-2xl border border-[rgba(5,27,53,0.08)] bg-[#f7f8fc] p-[18px]">
               <div className="flex min-w-0 flex-col gap-1">
@@ -2752,20 +2604,11 @@ export default function PremiumTicketing({
                 </div>
                 ) : null}
               </div>
-              {d.aboutText ? (
-                <>
-              <div className="h-px bg-[rgba(5,27,53,0.08)]" />
-              <div className="flex flex-col gap-2">
-                <div className="font-semibold uppercase text-[#8a93a3]" style={{ fontSize: 12, letterSpacing: "0.12em" }}>About this event</div>
-                    <pre className="m-0 whitespace-pre-wrap font-[inherit] leading-relaxed text-[#4a5567] [overflow-wrap:anywhere]" style={{ fontSize: 14 }}>{d.aboutText}</pre>
-              </div>
-                </>
-              ) : null}
             </div>
-            ) : d.aboutText ? (
+            ) : null}
+            {d.aboutText ? (
               <div className="flex flex-col gap-2 rounded-2xl border border-[rgba(5,27,53,0.08)] bg-[#f7f8fc] p-[18px]">
-                <div className="font-semibold uppercase text-[#8a93a3]" style={{ fontSize: 12, letterSpacing: "0.12em" }}>About this event</div>
-                <pre className="m-0 whitespace-pre-wrap font-[inherit] leading-relaxed text-[#4a5567] [overflow-wrap:anywhere]" style={{ fontSize: 14 }}>{d.aboutText}</pre>
+                <EventInfoSection label="About this event" text={d.aboutText} />
               </div>
             ) : null}
           </div>

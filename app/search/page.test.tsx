@@ -1,7 +1,8 @@
-import { render, screen } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { ReactNode } from "react";
 import { DEMO_EVENTS } from "@/lib/demo/fixtures";
+import { onSaleBadgeLabel } from "@/lib/eventSoldOut";
 import { eventPurchasePath } from "@/lib/helpers";
 
 const searchParams = new URLSearchParams();
@@ -78,6 +79,77 @@ describe("Search page", () => {
     expect(
       screen.getByRole("link", { name: new RegExp(seated.name, "i") }),
     ).toHaveAttribute("href", eventPurchasePath(seated));
+  });
+
+  it("shows a sold-out badge and does not link a sold-out search result", async () => {
+    const hits = DEMO_EVENTS.filter((event) => /raptors/i.test(event.name));
+    const sold = { ...hits[0], status: "on_sale", soldOut: true };
+    const live = hits[1];
+    searchParams.set("query", "raptors");
+    mockedSearch.mockResolvedValue({ data: [sold, live] } as never);
+
+    render(<SearchPage />);
+
+    expect(await screen.findByText(sold.name)).toBeInTheDocument();
+    expect(screen.getByText(/^sold out$/i)).toBeInTheDocument();
+    expect(
+      screen.queryByRole("link", { name: new RegExp(sold.name, "i") }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.getByRole("link", { name: new RegExp(live.name, "i") }),
+    ).toHaveAttribute("href", eventPurchasePath(live));
+  });
+
+  it("shows an on-sale badge for seated and GA results", async () => {
+    const when = "2026-11-01T17:00:00.000Z";
+    const seated = {
+      ...DEMO_EVENTS.find((event) => event.shortCode === "RAPT006")!,
+      generalOnsale: when,
+    };
+    const ga = {
+      ...DEMO_EVENTS.find(
+        (event) => event.seatmap?.ga_only && event.status === "on_sale",
+      )!,
+      generalOnsale: when,
+    };
+    searchParams.set("query", "vs");
+    mockedSearch.mockResolvedValue({ data: [seated, ga] } as never);
+
+    render(<SearchPage />);
+
+    expect(await screen.findByText(seated.name)).toBeInTheDocument();
+    for (const event of [seated, ga]) {
+      expect(
+        within(
+          screen.getByRole("link", { name: new RegExp(event.name, "i") }),
+        ).getByText(onSaleBadgeLabel(event)),
+      ).toBeInTheDocument();
+    }
+  });
+
+  it("does not badge a result whose on-sale time has passed or that is sold out", async () => {
+    const when = "2026-11-01T17:00:00.000Z";
+    const past = {
+      ...DEMO_EVENTS.find((event) => event.shortCode === "BUCS002")!,
+      generalOnsale: "2020-11-01T17:00:00.000Z",
+    };
+    const sold = {
+      ...DEMO_EVENTS.find((event) => event.shortCode === "RAPT006")!,
+      status: "on_sale",
+      soldOut: true,
+      generalOnsale: when,
+    };
+    searchParams.set("query", "vs");
+    mockedSearch.mockResolvedValue({ data: [past, sold] } as never);
+
+    render(<SearchPage />);
+
+    expect(await screen.findByText(past.name)).toBeInTheDocument();
+    expect(screen.queryByText(onSaleBadgeLabel({ ...past, generalOnsale: when }))).not.toBeInTheDocument();
+    expect(screen.getByText(/^sold out$/i)).toBeInTheDocument();
+    expect(
+      screen.queryByRole("link", { name: new RegExp(sold.name, "i") }),
+    ).not.toBeInTheDocument();
   });
 
   it("shows zero results copy when nothing matches", async () => {

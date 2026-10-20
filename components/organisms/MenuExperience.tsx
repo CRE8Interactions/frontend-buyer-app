@@ -25,6 +25,7 @@ import { BLOCKTICKETS_NAVY } from "@/lib/branding";
 import { fieldClass, fieldErrorTextClass } from "@/lib/fieldValidation";
 import { formatCurrency } from "@/lib/helpers";
 import { MENU_LOADER_MESSAGE } from "@/lib/loaderMessages";
+import { menuTabTitle } from "@/lib/seo";
 import {
   stripePaymentElementAppearance,
   STRIPE_PAYMENT_ELEMENT_FONTS,
@@ -215,6 +216,10 @@ export default function MenuExperience({
           res?.data?.accessMode === "pickup" ? "pickup" : "seat_delivery",
         );
         setLocationName(res?.data?.location?.name || null);
+        document.title = menuTabTitle(
+          res?.data?.organization?.name,
+          res?.data?.accessMode === "pickup",
+        );
       })
       .catch(() => {
         if (!cancelled) setAccessMode("seat_delivery");
@@ -297,6 +302,10 @@ export default function MenuExperience({
         setCategories(res.data?.categories || []);
         setItems(res.data?.items || []);
         setLocationName(res.data?.location?.name || null);
+        document.title = menuTabTitle(
+          res.data?.organization?.name,
+          isPickup,
+        );
       })
       .catch(() => {
         if (!cancelled) setMenuError("Unable to load this menu.");
@@ -529,7 +538,7 @@ export default function MenuExperience({
               }}
             />
           </div>
-          <label className={`flex items-center gap-2 text-[14px] ${muted}`}>
+          <label className={`text-[14px] ${muted}`}>
             <input
               type="checkbox"
               checked={rememberSeat}

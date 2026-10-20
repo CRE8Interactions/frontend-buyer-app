@@ -114,6 +114,7 @@ describe("Flex pack detail (FlexPackDetailClient)", () => {
       screen.getByRole("button", { name: `Get ${pack.gameTickets} vouchers` }),
     ).toBeInTheDocument();
     expect(screen.getByText(formatCurrency(pack.price))).toBeInTheDocument();
+    expect(screen.getByText("Fees added at checkout")).toBeInTheDocument();
     expect(screen.getByText("How the flex pack works")).toBeInTheDocument();
     expect(screen.getByText("Redeem when you know")).toBeInTheDocument();
     expect(

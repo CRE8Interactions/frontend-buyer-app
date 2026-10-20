@@ -4,15 +4,18 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ReactNode } from "react";
 import {
   DEMO_EVENTS,
+  DEMO_GA_SECTION_ID,
   DEMO_ORGS,
   DEMO_SEATED_TICKET_GROUPS,
   DEMO_USER,
   demoAccessPassCheckoutCart,
   demoCheckoutCart,
+  demoSeatmapMapping,
   demoFlexPackCheckoutCart,
   demoPackageCheckoutCart,
   demoTicketGroups,
 } from "@/lib/demo/fixtures";
+import { rememberTrackingCode } from "@/lib/trackingLink";
 import { packageOrderSummary, gaTierSubtitle, ticketSelectionSummary } from "@/lib/ticketSummary";
 import { formatVenueLocationFromVenue } from "@/lib/venueLocation";
 
@@ -109,6 +112,7 @@ vi.mock("@/lib/api", () => ({
   dropUserCart: vi.fn(),
   getCart: vi.fn(),
   getPaymentIntent: vi.fn(),
+  getSeatmapByShortCode: vi.fn(),
   getTicketGroups: vi.fn(),
   processFreeOrder: vi.fn(),
   processOrder: vi.fn(),
@@ -145,6 +149,7 @@ import {
   dropUserCart,
   getCart,
   getPaymentIntent,
+  getSeatmapByShortCode,
   getTicketGroups,
   processFreeOrder,
   processOrder,
@@ -162,7 +167,7 @@ import { eventPurchasePath, flexPackPurchasePath, formatCurrency, imageUrl, pack
 import { FIELD_COPY, PROMO_CODE_API_ERROR_MESSAGES } from "@/lib/fieldValidation";
 import { GUEST_CONTACT_COPY } from "@/lib/guestCheckout";
 import { cacheOrgBranding } from "@/lib/orgBrandingCache";
-import { getSeatViewImageCandidates } from "@/lib/seatView";
+import { GA_TICKET_PLACEHOLDER, getSeatViewImageCandidates } from "@/lib/seatView";
 import { markCheckoutLoginDetour, setCheckoutReturnPath } from "@/lib/cart";
 import { msUntilStripePaymentSyncReady } from "@/lib/stripePaymentSync";
 import type { UserEvent } from "@testing-library/user-event";
@@ -174,6 +179,7 @@ async function fillBillingAndPay(user: UserEvent, payName: string) {
 
 const mockedGetCart = vi.mocked(getCart);
 const mockedGetPaymentIntent = vi.mocked(getPaymentIntent);
+const mockedGetSeatmap = vi.mocked(getSeatmapByShortCode);
 const mockedGetTicketGroups = vi.mocked(getTicketGroups);
 const mockedProcessFreeOrder = vi.mocked(processFreeOrder);
 const mockedDropUserCart = vi.mocked(dropUserCart);
@@ -249,6 +255,8 @@ describe("Checkout page", { timeout: 20_000 }, () => {
     mockedGetCart.mockResolvedValue({
       data: demoCheckoutCart(),
     } as never);
+    mockedGetSeatmap.mockReset();
+    mockedGetSeatmap.mockResolvedValue({ data: null } as never);
     mockedGetTicketGroups.mockResolvedValue({
       data: { ticketGroups: demoTicketGroups().ticketGroups },
     } as never);
@@ -354,15 +362,23 @@ describe("Checkout page", { timeout: 20_000 }, () => {
     ).not.toBeInTheDocument();
     expect(
       screen.getByText(
-        `Sec ${ticket.sectionName} · Row ${ticket.rowNumber} · Seat ${ticket.seatNumber}`,
+        `Sec ${ticket.sectionName} · Row ${ticket.rowNumber}`,
       ),
     ).toBeInTheDocument();
-    expect(screen.getByAltText(/seat view for this ticket/i)).toHaveAttribute(
+    expect(
+      screen.getByText(`1 ticket · Seat ${ticket.seatNumber}`),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByAltText(
+        new RegExp(`location of section ${ticket.sectionNumber}`, "i"),
+      ),
+    ).toHaveAttribute(
       "src",
       getSeatViewImageCandidates(
         raptorsEvent.venue.slug,
         ticket.sectionNumber,
-        ticket.sectionName,
+        ticket.sectionNumber,
+        ["highlights", "thumbnail"],
       )[0],
     );
     expect(screen.getByText("Total")).toBeInTheDocument();
@@ -415,7 +431,54 @@ describe("Checkout page", { timeout: 20_000 }, () => {
         total: cart.total,
       }),
       paymentIntentId: "pi_test",
+      trackingCode: null,
+      marketingEmailOptIn: false,
     });
+  });
+
+  it("sends marketing opt-in when a signed-in buyer checks the box", async () => {
+    const cart = demoCheckoutCart();
+    const user = userEvent.setup();
+    render(<CheckoutPageRoute />);
+
+    await user.click(
+      await screen.findByRole("checkbox", {
+        name: new RegExp(
+          `Send me emails from ${raptorsOrg.name} about upcoming events and offers`,
+          "i",
+        ),
+      }),
+    );
+    await fillBillingAndPay(user, `Pay ${formatCurrency(cart.total)}`);
+
+    expect(mockedProcessOrder).toHaveBeenCalledWith(
+      expect.objectContaining({ marketingEmailOptIn: true }),
+    );
+  });
+
+  it("shows a custom seat label on the ticket summary", async () => {
+    const cart = demoCheckoutCart();
+    const tickets = [{ ...cart.tickets[0], additionalLabel: "Aisle" }];
+    mockedGetCart.mockResolvedValue({
+      data: { ...cart, tickets },
+    } as never);
+    render(<CheckoutPageRoute />);
+
+    expect(await screen.findByText("Aisle")).toBeInTheDocument();
+    expect(
+      screen.getByText(ticketSelectionSummary(tickets).seatLine),
+    ).toBeInTheDocument();
+  });
+
+  it("leaves the ticket summary unlabeled when the seat has no custom label", async () => {
+    const cart = demoCheckoutCart();
+    mockedGetCart.mockResolvedValue({ data: cart } as never);
+    render(<CheckoutPageRoute />);
+
+    expect(
+      await screen.findByText(ticketSelectionSummary(cart.tickets).seatLine),
+    ).toBeInTheDocument();
+    expect(screen.queryByText("Aisle")).not.toBeInTheDocument();
   });
 
   it("shows a thrown Stripe confirm error after process succeeds", async () => {
@@ -785,13 +848,99 @@ describe("Checkout page", { timeout: 20_000 }, () => {
   });
 
   it("shows the GA offer subtitle instead of a ticket count", async () => {
-    const cart = demoCheckoutCart({ ga: true });
+    const cart = liveGaCheckoutCart();
     const group = demoTicketGroups().ticketGroups[0];
     mockedGetCart.mockResolvedValue({ data: cart } as never);
     render(<CheckoutPageRoute />);
 
     expect(await screen.findByText(gaTierSubtitle(group))).toBeInTheDocument();
     expect(screen.queryByText("1 ticket")).not.toBeInTheDocument();
+    expect(screen.getByRole("img", { name: /general admission/i })).toHaveAttribute(
+      "src",
+      GA_TICKET_PLACEHOLDER,
+    );
+    expect(
+      screen.queryByAltText(/seat view for this ticket/i),
+    ).not.toBeInTheDocument();
+  });
+
+  it("shows the seat location for a GA section on an event that has a seatmap", async () => {
+    const section = demoSeatmapMapping().sections?.[DEMO_GA_SECTION_ID];
+    const cart = demoCheckoutCart();
+    cart.tickets = cart.tickets.map((ticket) => ({
+      ...ticket,
+      GA: true,
+      generalAdmission: true,
+      sectionId: section?.sectionId,
+      sectionName: section?.sectionNumber,
+      sectionNumber: section?.sectionNumber,
+      rowNumber: undefined,
+      seatNumber: undefined,
+    }));
+    mockedGetSeatmap.mockResolvedValue({
+      data: {
+        ga_only: false,
+        background: {
+          url: "https://example.com/rink.svg",
+          width: 1000,
+          height: 800,
+        },
+        mapping: demoSeatmapMapping(),
+      },
+    } as never);
+    mockedGetCart.mockResolvedValue({ data: cart } as never);
+    render(<CheckoutPageRoute />);
+
+    expect(
+      await screen.findByRole("img", {
+        name: new RegExp(`location of section ${section?.sectionNumber}`, "i"),
+      }),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("img", { name: /general admission/i }),
+    ).not.toBeInTheDocument();
+    expect(screen.getByText(String(section?.sectionNumber))).toBeInTheDocument();
+    expect(screen.getByText("1 ticket • unreserved seating")).toBeInTheDocument();
+    expect(screen.queryByText("1 ticket")).not.toBeInTheDocument();
+    expect(screen.queryByText("unreserved seating")).not.toBeInTheDocument();
+    expect(
+      screen.queryByText(`${section?.sectionNumber} · unreserved seating`),
+    ).not.toBeInTheDocument();
+  });
+
+  it("shows the same seat location image the tickets listing uses", async () => {
+    const cart = demoCheckoutCart();
+    const sectionNumber = cart.tickets[0].sectionNumber;
+    mockedGetSeatmap.mockResolvedValue({
+      data: {
+        ga_only: false,
+        background: {
+          url: "https://example.com/rink.svg",
+          width: 1000,
+          height: 800,
+        },
+        mapping: demoSeatmapMapping(),
+      },
+    } as never);
+    mockedGetCart.mockResolvedValue({ data: cart } as never);
+    render(<CheckoutPageRoute />);
+
+    expect(
+      await screen.findByRole("img", {
+        name: new RegExp(`location of section ${sectionNumber}`, "i"),
+      }),
+    ).toHaveAttribute(
+      "src",
+      getSeatViewImageCandidates(
+        raptorsEvent.venue.slug,
+        sectionNumber,
+        sectionNumber,
+        ["highlights", "thumbnail"],
+      )[0],
+    );
+    expect(
+      screen.queryByAltText(/seat view for this ticket/i),
+    ).not.toBeInTheDocument();
   });
 
   it("replaces a generic ga section with the ticket-group section name", async () => {
@@ -818,14 +967,113 @@ describe("Checkout page", { timeout: 20_000 }, () => {
 
     expect(
       await screen.findByText(
-        `Tickets: ${formatCurrency(summary.unit)} x ${summary.count}`,
+        `Tickets: ${formatCurrency(summary.unit)} × ${summary.count}`,
       ),
     ).toBeInTheDocument();
-    expect(screen.getByText("Tax")).toBeInTheDocument();
+    expect(screen.getByText("No tax applies")).toBeInTheDocument();
+    expect(screen.queryByText("Tax")).not.toBeInTheDocument();
     expect(screen.getByText("Total")).toBeInTheDocument();
     expect(screen.queryByText("Subtotal")).not.toBeInTheDocument();
     expect(screen.queryByText("Processing Fee")).not.toBeInTheDocument();
     expect(screen.queryByText("Service Fee")).not.toBeInTheDocument();
+  });
+
+  it("shows included tax on a single event without listing fees or changing the total", async () => {
+    const base = demoCheckoutCart({ ticketCount: 2 });
+    const perTicket = {
+      taxPerTicket: 1.4,
+      estimatedPaymentProcessingFee: 0.83,
+      serviceFee: 2,
+    };
+    const cart = {
+      ...base,
+      totalTax: 0,
+      am_pricing_objects: [
+        { id: 1, totalDue: base.tickets[0].cost, ...perTicket },
+      ],
+    };
+    mockedGetCart.mockResolvedValue({ data: cart } as never);
+    render(<CheckoutPageRoute />);
+
+    expect(
+      await screen.findByText(
+        `Includes ${formatCurrency(perTicket.taxPerTicket * cart.tickets.length)} tax`,
+      ),
+    ).toBeInTheDocument();
+    expect(screen.getByText("Total").parentElement).toHaveTextContent(
+      formatCurrency(cart.total),
+    );
+    expect(screen.queryByText("Tax (included)")).not.toBeInTheDocument();
+    expect(screen.queryByText(/processing fee/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/service fee/i)).not.toBeInTheDocument();
+  });
+
+  it("shows the same included-tax summary while guest contact is open", async () => {
+    mockedUseAuth.mockReturnValue(authState(false));
+    const base = demoCheckoutCart({ ticketCount: 2 });
+    const taxPerTicket = 1.4;
+    const cart = {
+      ...base,
+      totalTax: 0,
+      am_pricing_objects: [
+        { id: 1, totalDue: base.tickets[0].cost, taxPerTicket },
+      ],
+    };
+    mockedGetCart.mockResolvedValue({ data: cart } as never);
+    render(<CheckoutPageRoute />);
+
+    expect(
+      await screen.findByRole("heading", {
+        name: /where should we send your tickets/i,
+      }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        `Includes ${formatCurrency(taxPerTicket * cart.tickets.length)} tax`,
+      ),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/processing fee/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/service fee/i)).not.toBeInTheDocument();
+  });
+
+  it("keeps the plain Tax row when the cart charges tax on top of the ticket price", async () => {
+    const base = demoCheckoutCart({ ticketCount: 2 });
+    const cart = {
+      ...base,
+      totalTax: 2.5,
+      am_pricing_objects: [
+        { id: 1, totalDue: base.tickets[0].cost, taxPerTicket: 1.4, serviceFee: 2 },
+      ],
+    };
+    mockedGetCart.mockResolvedValue({ data: cart } as never);
+    render(<CheckoutPageRoute />);
+
+    expect((await screen.findByText("Tax")).parentElement).toHaveTextContent(
+      formatCurrency(2.5),
+    );
+    expect(
+      screen.queryByText(/includes .* tax/i),
+    ).not.toBeInTheDocument();
+    expect(screen.queryByText(/service fee/i)).not.toBeInTheDocument();
+  });
+
+  it("shows the accessible seating label on checkout tickets", async () => {
+    const ada = DEMO_SEATED_TICKET_GROUPS.find((group) => group.accessible)!;
+    const cart = demoCheckoutCart({ ticketCount: 1 });
+    cart.tickets = cart.tickets.map((ticket) => ({
+      ...ticket,
+      accessible: true,
+      accessibleType: ada.accessibleType,
+      sectionName: ada.sectionNumber,
+      sectionNumber: ada.sectionNumber,
+      rowNumber: ada.rowNumber,
+    }));
+    mockedGetCart.mockResolvedValue({ data: cart } as never);
+    render(<CheckoutPageRoute />);
+
+    expect(
+      await screen.findByText("Open space for wheelchair"),
+    ).toBeInTheDocument();
   });
 
   it("lists each offer on its own price row when the cart mixes offers", async () => {
@@ -879,7 +1127,8 @@ describe("Checkout page", { timeout: 20_000 }, () => {
     expect(
       await screen.findByText(/Tickets:/),
     ).toBeInTheDocument();
-    expect(screen.getByText("Tax")).toBeInTheDocument();
+    expect(screen.getByText("No tax applies")).toBeInTheDocument();
+    expect(screen.queryByText("Tax")).not.toBeInTheDocument();
     expect(screen.queryByText("Processing Fee")).not.toBeInTheDocument();
     expect(screen.queryByText("Service Fee")).not.toBeInTheDocument();
   });
@@ -895,6 +1144,7 @@ describe("Checkout page", { timeout: 20_000 }, () => {
     expect(screen.getByText(summary.venueName)).toBeInTheDocument();
     expect(screen.getByText(summary.seats[0].seatLine)).toBeInTheDocument();
     expect(screen.getByText(summary.seats[0].context)).toBeInTheDocument();
+    expect(screen.queryByText("Accessible seating")).not.toBeInTheDocument();
     expect(screen.getByText("Subtotal")).toBeInTheDocument();
     expect(
       screen.getAllByText(formatCurrency(summary.subtotal)).length,
@@ -906,11 +1156,72 @@ describe("Checkout page", { timeout: 20_000 }, () => {
     ).toBeInTheDocument();
     expect(screen.getByText("Service Fee")).toBeInTheDocument();
     expect(screen.getByText(formatCurrency(cart.serviceFee))).toBeInTheDocument();
+    expect(screen.queryByText("Senior Fee")).not.toBeInTheDocument();
     expect(screen.getByText("Total")).toBeInTheDocument();
     expect(
       await screen.findByRole("button", {
         name: `Pay ${formatCurrency(cart.total)}`,
       }),
+    ).toBeInTheDocument();
+  });
+
+  it("lists a package custom fee on its own summary row", async () => {
+    const priced = demoPackageCheckoutCart({
+      tickets: [
+        {
+          sectionNumber: "113",
+          rowNumber: "B",
+          seatNumber: 3,
+          cost: 0,
+          price: 0,
+        },
+        {
+          sectionNumber: "113",
+          rowNumber: "B",
+          seatNumber: 4,
+          cost: 0,
+          price: 0,
+        },
+      ],
+      serviceFee: 3,
+      processingFee: 14.6,
+      total: 507.6,
+    });
+    const cart = {
+      ...priced,
+      package: { ...priced.package, pricingTiers: [], price: 0 },
+      packageWebsiteFeeSnapshot: {
+        customFeeLines: [{ name: "Senior Fee", amount: 20 }],
+      },
+    };
+    mockedGetCart.mockResolvedValue({ data: cart } as never);
+    render(<CheckoutPageRoute />);
+
+    expect(await screen.findByText("Senior Fee")).toBeInTheDocument();
+    expect(screen.getByText(formatCurrency(20))).toBeInTheDocument();
+    expect(screen.getAllByText(formatCurrency(470)).length).toBeGreaterThan(0);
+    expect(screen.queryByText(formatCurrency(490))).not.toBeInTheDocument();
+    expect(
+      await screen.findByRole("button", {
+        name: `Pay ${formatCurrency(507.6)}`,
+      }),
+    ).toBeInTheDocument();
+  });
+
+  it("shows the accessibility badge for accessible package seats", async () => {
+    const base = demoPackageCheckoutCart();
+    const cart = demoPackageCheckoutCart({
+      tickets: base.tickets.map((ticket) => ({
+        ...ticket,
+        accessible: true,
+        accessibleType: "DA",
+      })),
+    });
+    mockedGetCart.mockResolvedValue({ data: cart } as never);
+    render(<CheckoutPageRoute />);
+
+    expect(
+      await screen.findByText("Open space for wheelchair"),
     ).toBeInTheDocument();
   });
 
@@ -1074,7 +1385,8 @@ describe("Checkout page", { timeout: 20_000 }, () => {
   });
 
   it("summarizes a flex pack with the $1 voucher fee and processing fee", async () => {
-    const cart = demoFlexPackCheckoutCart();
+    // Legacy reads only cart.totalTax; a stray salesTax must not show as tax.
+    const cart = { ...demoFlexPackCheckoutCart(), salesTax: 3.5 };
     mockedGetCart.mockResolvedValue({ data: cart } as never);
     render(<CheckoutPageRoute />);
 
@@ -1090,7 +1402,10 @@ describe("Checkout page", { timeout: 20_000 }, () => {
       screen.getByText(`${cart.flex_pack.gameTickets} flex vouchers`),
     ).toBeInTheDocument();
     expect(screen.getByText("Subtotal")).toBeInTheDocument();
-    expect(screen.getByText("Tax")).toBeInTheDocument();
+    expect(screen.getByText("Tax").parentElement).toHaveTextContent(
+      formatCurrency(0),
+    );
+    expect(screen.queryByText(formatCurrency(3.5))).not.toBeInTheDocument();
     expect(screen.getByText("Processing Fee")).toBeInTheDocument();
     expect(
       screen.getByText(formatCurrency(cart.processingFee)),
@@ -1107,6 +1422,25 @@ describe("Checkout page", { timeout: 20_000 }, () => {
     expect(
       await screen.findByRole("button", {
         name: `Pay ${formatCurrency(cart.total)}`,
+      }),
+    ).toBeInTheDocument();
+  });
+
+  it("charges flex pack tax on top of the price and fees like legacy", async () => {
+    const base = demoFlexPackCheckoutCart({ processingFee: 1.85 });
+    const cart = { ...base, totalTax: 3.5 };
+    const expectedTotal =
+      Number(base.flex_pack.price) + Number(base.serviceFee) + 1.85 + 3.5;
+    mockedGetCart.mockResolvedValue({ data: cart } as never);
+    render(<CheckoutPageRoute />);
+
+    expect(await screen.findByText(cart.flex_pack.name)).toBeInTheDocument();
+    expect(screen.getByText("Tax").parentElement).toHaveTextContent(
+      formatCurrency(3.5),
+    );
+    expect(
+      await screen.findByRole("button", {
+        name: `Pay ${formatCurrency(expectedTotal)}`,
       }),
     ).toBeInTheDocument();
   });
@@ -1130,6 +1464,7 @@ describe("Checkout page", { timeout: 20_000 }, () => {
     mockedRedeemPromo.mockResolvedValue({
       data: {
         promoPricingDetails: {
+          name: "Student Night",
           code: "TESTDIS",
           originalPrice: cart.total,
           discountedPrice: cart.total - discount,
@@ -1146,7 +1481,7 @@ describe("Checkout page", { timeout: 20_000 }, () => {
     );
     await user.click(screen.getByRole("button", { name: /apply/i }));
 
-    expect(await screen.findByText("Promo (TESTDIS)")).toBeInTheDocument();
+    expect(await screen.findByText("Student Night")).toBeInTheDocument();
     expect(
       screen.getByText(`-${formatCurrency(discount)}`),
     ).toBeInTheDocument();
@@ -1159,7 +1494,7 @@ describe("Checkout page", { timeout: 20_000 }, () => {
     await user.click(screen.getByRole("button", { name: /remove/i }));
 
     await waitFor(() => {
-      expect(screen.queryByText("Promo (TESTDIS)")).not.toBeInTheDocument();
+      expect(screen.queryByText("Student Night")).not.toBeInTheDocument();
     });
     expect(
       screen.queryByText(`-${formatCurrency(discount)}`),
@@ -1188,7 +1523,7 @@ describe("Checkout page", { timeout: 20_000 }, () => {
       "aria-invalid",
       "true",
     );
-    expect(screen.queryByText(/^Promo \(/)).not.toBeInTheDocument();
+    expect(screen.queryByText("Promo")).not.toBeInTheDocument();
     expect(
       screen.getByRole("button", { name: `Pay ${formatCurrency(cart.total)}` }),
     ).toBeInTheDocument();
@@ -1316,6 +1651,7 @@ describe("Checkout page", { timeout: 20_000 }, () => {
             email: DEMO_USER.email,
             firstName: DEMO_USER.firstName,
             lastName: DEMO_USER.lastName,
+            marketingEmailOptIn: false,
           },
         }),
       );
@@ -1474,13 +1810,58 @@ describe("Checkout page", { timeout: 20_000 }, () => {
     render(<CheckoutPageRoute />);
 
     await waitFor(() => {
-      expect(mockedProcessFreeOrder).toHaveBeenCalledWith({ cartId: cart.id });
+      expect(mockedProcessFreeOrder).toHaveBeenCalledWith({
+        cartId: cart.id,
+        trackingCode: null,
+      });
       expect(routerMocks.replace).toHaveBeenCalledWith(
         "/checkout/success/?intentId=pi_free",
       );
     });
     expect(mockedGetPaymentIntent).not.toHaveBeenCalled();
     expect(screen.queryByTestId("payment-element")).not.toBeInTheDocument();
+  });
+
+  it("sends a stored tracking-link code with a complimentary order", async () => {
+    const base = demoCheckoutCart({ ga: true });
+    const cart = {
+      ...base,
+      tickets: base.tickets.map((ticket) => ({ ...ticket, free: true })),
+    };
+    rememberTrackingCode(cart.event.uuid, "1234");
+    navState.cartId = String(cart.id);
+    stubLocation("/checkout/", `?cartId=${cart.id}`);
+    mockedGetCart.mockResolvedValue({ data: cart } as never);
+
+    render(<CheckoutPageRoute />);
+
+    await waitFor(() => {
+      expect(mockedProcessFreeOrder).toHaveBeenCalledWith({
+        cartId: cart.id,
+        trackingCode: "1234",
+      });
+    });
+  });
+
+  it("sends a stored tracking-link code when processing a paid order", async () => {
+    const cart = demoCheckoutCart();
+    rememberTrackingCode(cart.event.uuid, "5678");
+    navState.cartId = String(cart.id);
+    stubLocation("/checkout/", `?cartId=${cart.id}`);
+    mockedGetCart.mockResolvedValue({ data: cart } as never);
+    const user = userEvent.setup();
+    render(<CheckoutPageRoute />);
+
+    await fillBillingAndPay(user, `Pay ${formatCurrency(cart.total)}`);
+
+    await waitFor(() => {
+      expect(mockedProcessOrder).toHaveBeenCalledWith(
+        expect.objectContaining({
+          paymentIntentId: "pi_test",
+          trackingCode: "5678",
+        }),
+      );
+    });
   });
 
   it("shows checkout unavailable when there is no cart", async () => {
@@ -1573,6 +1954,64 @@ describe("Checkout page", { timeout: 20_000 }, () => {
     vi.useRealTimers();
   });
 
+  it("releases tickets when a guest cancels from the contact step", async () => {
+    mockedUseAuth.mockReturnValue(authState(false));
+    const cart = demoCheckoutCart();
+    mockedGetCart.mockResolvedValue({ data: cart } as never);
+    const user = userEvent.setup();
+    render(<CheckoutPageRoute />);
+
+    expect(
+      await screen.findByRole("heading", {
+        name: /where should we send your tickets/i,
+      }),
+    ).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: /back/i }));
+    await user.click(
+      await screen.findByRole("button", { name: /cancel order/i }),
+    );
+
+    await waitFor(() => {
+      expect(mockedDropUserCart).toHaveBeenCalledWith({
+        eventUUID: cart.event.uuid,
+        cartId: cart.id,
+      });
+      expect(routerMocks.replace).toHaveBeenCalledWith(
+        eventPurchasePath(raptorsEvent),
+      );
+    });
+  });
+
+  it("stays in checkout and allows retry when releasing tickets fails", async () => {
+    const cart = demoCheckoutCart();
+    mockedGetCart.mockResolvedValue({ data: cart } as never);
+    mockedDropUserCart.mockRejectedValueOnce(new Error("network unavailable"));
+    const user = userEvent.setup();
+    render(<CheckoutPageRoute />);
+    expect(await screen.findByText("Secure checkout")).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: /back/i }));
+    await user.click(
+      await screen.findByRole("button", { name: /cancel order/i }),
+    );
+
+    expect(
+      await screen.findByRole("alert"),
+    ).toHaveTextContent(/couldn't release your tickets/i);
+    expect(routerMocks.back).not.toHaveBeenCalled();
+    expect(routerMocks.replace).not.toHaveBeenCalled();
+
+    mockedDropUserCart.mockResolvedValue({} as never);
+    await user.click(screen.getByRole("button", { name: /cancel order/i }));
+
+    await waitFor(() => {
+      expect(mockedDropUserCart).toHaveBeenCalledTimes(2);
+      expect(routerMocks.replace).toHaveBeenCalledWith(
+        eventPurchasePath(raptorsEvent),
+      );
+    });
+  });
+
   it("drops a GA cart and returns to that GA event instead of a leftover seated event", async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
     const cart = liveGaCheckoutCart({ remainingTime: 3 });
@@ -1660,7 +2099,10 @@ describe("Checkout page", { timeout: 20_000 }, () => {
     await screen.findByRole("dialog", { name: /are you sure/i });
     await user.click(screen.getByRole("button", { name: /cancel order/i }));
 
-    expect(await screen.findByText(/cancelling/i)).toBeInTheDocument();
+    await waitFor(() => expect(mockedDropUserCart).toHaveBeenCalled());
+    expect(
+      screen.getByRole("button", { name: /cancelling/i }),
+    ).toHaveAttribute("aria-busy", "true");
     expect(screen.getByText(cart.package.name)).toBeInTheDocument();
     expect(screen.queryByText(/loading tickets/i)).not.toBeInTheDocument();
     expect(routerMocks.replace).not.toHaveBeenCalled();
@@ -1776,6 +2218,32 @@ describe("Checkout page", { timeout: 20_000 }, () => {
     });
     expect(routerMocks.replace).not.toHaveBeenCalledWith(
       `/${raptorsOrg.slug}/`,
+    );
+  });
+
+  it("starts over from an expired GA section on the seated tickets page", async () => {
+    const cart = demoCheckoutCart({ remainingTime: 0 });
+    cart.tickets = cart.tickets.map((ticket) => ({
+      ...ticket,
+      GA: true,
+      generalAdmission: true,
+    }));
+    mockedGetCart.mockResolvedValue({ data: cart } as never);
+    const user = userEvent.setup();
+    render(<CheckoutPageRoute />);
+
+    expect(
+      await screen.findByRole("dialog", { name: /cart expired/i }),
+    ).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: /start over/i }));
+    await waitFor(() => {
+      expect(routerMocks.replace).toHaveBeenCalledWith(
+        eventPurchasePath(raptorsEvent),
+      );
+    });
+    expect(routerMocks.replace).not.toHaveBeenCalledWith(
+      `/e/${raptorsEvent.slug}/${raptorsEvent.shortCode}/`,
     );
   });
 

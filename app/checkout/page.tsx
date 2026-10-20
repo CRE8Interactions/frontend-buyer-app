@@ -13,30 +13,34 @@ import {
 import BrandedCheckoutShell from "@/components/organisms/BrandedCheckoutShell";
 import GuestContact from "@/components/organisms/GuestContact";
 import BrandedActionButton from "@/components/atoms/BrandedActionButton";
+import AccessibleSeatingBadge from "@/components/atoms/AccessibleSeatingBadge";
 import MobileStickyFooter from "@/components/molecules/MobileStickyFooter";
 import Button from "@/components/atoms/Button";
 import Spinner from "@/components/atoms/Spinner";
 import Modal from "@/components/molecules/Modal";
 import { BrandedLoader } from "@/components/molecules/RouteLoader";
 import SeatViewImage from "@/components/molecules/SeatViewImage";
+import SectionLocatorThumb from "@/components/molecules/SectionLocatorThumb";
 import { BLOCKTICKETS_NAVY, type BrandingOrganization } from "@/lib/branding";
 import {
   cachedBrandingForCheckout,
   checkoutBrandingFromCart,
   checkoutHoldSeconds,
-  resolveCheckoutTax,
   type CheckoutCartBrandingSource,
 } from "@/lib/checkoutBranding";
 import { cacheOrgBranding, orgSlugFromPathname } from "@/lib/orgBrandingCache";
 import { beginRouteTransition } from "@/lib/routeTransition";
 import { useClientReady } from "@/lib/useClientReady";
-import { formString, normalizeRedemptionCode, promoCodeRedeemDisplayMessage, redemptionCodeBlurFieldError, redemptionCodeSubmitError, type RedemptionCodeFieldError } from "@/lib/fieldValidation";
-import RedemptionCodeField from "@/components/molecules/RedemptionCodeField";
+import { promoCodeRedeemDisplayMessage } from "@/lib/fieldValidation";
+import MarketingOptIn from "@/components/molecules/MarketingOptIn";
+import PromoCodeForm, { type PromoRedeemResult } from "@/components/molecules/PromoCodeForm";
 import {
   flexPackSeasonLine,
   flexPackVoucherCount,
 } from "@/lib/flexPackDisplay";
 import {
+  alignPackageSeatPrices,
+  checkoutTaxLine,
   packageCartTickets,
   packageOrderSummary,
   promoSummaryLabel,
@@ -50,6 +54,7 @@ import {
   dropUserCart,
   getCart,
   getPaymentIntent,
+  getSeatmapByShortCode,
   processFreeOrder,
   processOrder,
   redeemPromoCode,
@@ -57,6 +62,7 @@ import {
   resolveFundraisingCampaign,
 } from "@/lib/api";
 import { buildProcessOrderRequest } from "@/lib/checkoutPaymentIntent";
+import { readTrackingCodeForCart } from "@/lib/trackingLink";
 import {
   buildFundraisingPayload,
   buildPaymentIntentRequest,
@@ -87,6 +93,7 @@ import {
   setGuestCheckoutBuyer,
   type GuestBuyer,
 } from "@/lib/guestCheckout";
+import { checkoutMarketingOrganization } from "@/lib/marketingOptIn";
 import { setLastKnown, useAuth } from "@/lib/auth";
 import {
   captureCheckoutReferrer,
@@ -112,7 +119,19 @@ import {
   paymentIntentAlreadySucceeded,
   succeededStripeRedirectIntentId,
 } from "@/lib/checkoutSuccess";
-import { getSeatViewImageCandidates } from "@/lib/seatView";
+import {
+  cartShowsGaTicketIcon,
+  eventIsExplicitlyGaOnly,
+  GA_TICKET_PLACEHOLDER,
+  getSeatViewImageCandidates,
+  seatLocationSection,
+  showsSeatedGaTicketCount,
+} from "@/lib/seatView";
+import {
+  normalizeSeatmapBackground,
+  type SeatmapBackground,
+  type SeatmapMapping,
+} from "@/lib/seatmapLookups";
 import {
   injectMetaPixel,
   trackAddPaymentInfo,
@@ -205,11 +224,36 @@ type CartData = {
   [key: string]: unknown;
 };
 
+async function loadCheckoutSeatLocation(event: CartData["event"]) {
+  const slug = event?.slug || event?.seoUrl;
+  const code = event?.shortCode || event?.shortcode;
+  if (!slug || !code) return null;
+  try {
+    const res = await getSeatmapByShortCode(String(code), String(slug));
+    const raw = res?.data as
+      | {
+          ga_only?: boolean;
+          background?: unknown;
+          mapping?: SeatmapMapping;
+        }
+      | null
+      | undefined;
+    if (!raw || raw.ga_only) return { ga_only: true, background: null, mapping: null };
+    return {
+      ga_only: false,
+      background: normalizeSeatmapBackground(raw.background),
+      mapping: (raw.mapping || null) as SeatmapMapping | null,
+    };
+  } catch {
+    return null;
+  }
+}
+
 const lightCard =
   "rounded-[18px] border border-[rgba(5,27,53,0.08)] bg-white shadow-[0_10px_30px_-20px_rgba(5,27,53,0.35)]";
 const muted = "text-[#6e7180]";
 
-type CheckoutPromoDiscount = { code: string; amount: number };
+type CheckoutPromoDiscount = { label: string; amount: number };
 
 function CheckoutPaymentForm({
   intentId,
@@ -227,6 +271,9 @@ function CheckoutPaymentForm({
   onSuccess,
   onDeclined,
   onExpired,
+  showMarketingOptIn = false,
+  organizationName,
+  optInMessage,
 }: {
   intentId: string;
   clientSecret: string;
@@ -243,21 +290,23 @@ function CheckoutPaymentForm({
   onSuccess: () => void;
   onDeclined: (msg: string) => void;
   onExpired: () => void;
+  showMarketingOptIn?: boolean;
+  organizationName?: string | null;
+  optInMessage?: string | null;
 }) {
   const stripe = useStripe();
   const elements = useElements();
+  // Only the applied code — the promo form owns the value being typed.
   const [promoCode, setPromoCode] = useState("");
   const [isDiscountApplied, setIsDiscountApplied] = useState(false);
   const [discountedPrice, setDiscountedPrice] = useState<number | null>(null);
   const [promoDetails, setPromoDetails] = useState<Record<string, unknown> | null>(
     null,
   );
-  const [promoFieldError, setPromoFieldError] = useState<RedemptionCodeFieldError>(null);
-  const [promoRejectedMessage, setPromoRejectedMessage] = useState("");
-  const [submittingPromo, setSubmittingPromo] = useState(false);
   const [removingPromo, setRemovingPromo] = useState(false);
   const [purchasing, setPurchasing] = useState(false);
   const [paymentReady, setPaymentReady] = useState(false);
+  const [marketingEmailOptIn, setMarketingEmailOptIn] = useState(false);
   const hasTrackedPaymentInfoRef = useRef(false);
 
   const flexPackTotals = cart.flex_pack
@@ -291,6 +340,7 @@ function CheckoutPaymentForm({
   const promoPricing = promoDetails?.promoPricingDetails as
     | {
         code?: string;
+        name?: string;
         amountDiscounted?: number;
         originalPrice?: number;
         discountedPrice?: number;
@@ -307,43 +357,31 @@ function CheckoutPaymentForm({
       )
     : 0;
   const promoDiscountCode = promoPricing?.code || promoCode.trim();
+  const promoDiscountLabel =
+    String(promoPricing?.name || "").trim() || promoDiscountCode;
 
   useEffect(() => {
     onPromoChange?.(
       promoDiscountAmount > 0
-        ? { code: promoDiscountCode, amount: promoDiscountAmount }
+        ? { label: promoDiscountLabel, amount: promoDiscountAmount }
         : null,
     );
-  }, [onPromoChange, promoDiscountAmount, promoDiscountCode]);
+  }, [onPromoChange, promoDiscountAmount, promoDiscountLabel]);
 
-  const submitPromo = async (e: React.FormEvent<HTMLFormElement>) => {
-    e.preventDefault();
-    const code =
-      formString(new FormData(e.currentTarget), "promo") || promoCode;
-    setPromoCode(code);
-    const submitErr = redemptionCodeSubmitError(code);
-    if (submitErr) {
-      setPromoFieldError(submitErr);
-      setPromoRejectedMessage("");
-      return;
-    }
-    setSubmittingPromo(true);
-    setPromoFieldError(null);
-    setPromoRejectedMessage("");
+  const redeemPromo = async (code: string): Promise<PromoRedeemResult> => {
     try {
       const res = await redeemPromoCode({
         code: code.trim(),
         paymentIntentId: intentId,
         cart,
       });
+      setPromoCode(code);
       setIsDiscountApplied(true);
       setDiscountedPrice(res.data?.promoPricingDetails?.discountedPrice);
       setPromoDetails(res.data);
+      return null;
     } catch (err: unknown) {
-      setPromoFieldError("rejected");
-      setPromoRejectedMessage(promoCodeRedeemDisplayMessage(err));
-    } finally {
-      setSubmittingPromo(false);
+      return { rejectedMessage: promoCodeRedeemDisplayMessage(err) };
     }
   };
 
@@ -355,8 +393,6 @@ function CheckoutPaymentForm({
       setDiscountedPrice(null);
       setPromoDetails(null);
       setPromoCode("");
-      setPromoFieldError(null);
-      setPromoRejectedMessage("");
     } catch {
       /* ignore */
     } finally {
@@ -373,7 +409,14 @@ function CheckoutPaymentForm({
       // Elements already has the PaymentIntent client secret. Legacy checkout
       // confirms once; a prior elements.submit() makes confirmPayment reject
       // in the browser before Stripe's confirm request.
-      await processOrder(buildProcessOrderRequest(cart, intentId));
+      await processOrder(
+        buildProcessOrderRequest(
+          cart,
+          intentId,
+          readTrackingCodeForCart(cart),
+          showMarketingOptIn ? marketingEmailOptIn : undefined,
+        ),
+      );
       const confirmed = await stripe.confirmPayment({
         elements,
         confirmParams: {
@@ -460,52 +503,24 @@ function CheckoutPaymentForm({
               <p className="mb-2 text-[12px] font-semibold uppercase tracking-[0.1em] text-[#8a93a3]">
                 Promo code
               </p>
-              <form noValidate onSubmit={submitPromo} className="flex items-start gap-2.5">
-                <RedemptionCodeField
-                  id="promo"
-                  name="promo"
-                  label="Promo code"
-                  hideLabel
-                  value={promoCode}
-                  placeholder="Enter promo code"
-                  error={promoFieldError}
-                  rejectedMessage={promoRejectedMessage}
-                  className="min-w-0 flex-1"
-                  inputClassName="!h-12 !rounded-[10px] !bg-white !px-[18px] !text-[15px]"
-                  onChange={(value) => {
-                    setPromoCode(value);
-                    setPromoFieldError(null);
-                    setPromoRejectedMessage("");
-                  }}
-                  onBlur={(value) =>
-                    setPromoFieldError((current) =>
-                      redemptionCodeBlurFieldError(current, value),
-                    )
-                  }
-                />
-                <BrandedActionButton
-                  type="submit"
-                  tone="secondary"
-                  loading={submittingPromo}
-                  loadingLabel="Applying…"
-                  disabled={!normalizeRedemptionCode(promoCode)}
-                  className="!rounded-[10px] px-6 !h-12"
-                >
-                  Apply
-                </BrandedActionButton>
-              </form>
+              <PromoCodeForm onRedeem={redeemPromo} />
             </div>
           )}
         </div>
       ) : null}
 
-      <label className="mt-6 flex cursor-pointer items-start gap-2.5">
-        <input
-          type="checkbox"
-          defaultChecked
-          className="mt-0.5 h-[19px] w-[19px] shrink-0 rounded-[5px] border-[1.5px]"
-          style={{ accentColor: accent }}
+      {showMarketingOptIn ? (
+        <MarketingOptIn
+          className="mt-6"
+          checked={marketingEmailOptIn}
+          onChange={setMarketingEmailOptIn}
+          organizationName={organizationName}
+          optInMessage={optInMessage}
+          disabled={purchasing || isRefreshingIntent}
         />
+      ) : null}
+      <label className="mt-6">
+        <input type="checkbox" defaultChecked />
         <span className="text-[13px] text-[#4a5567]">
           Save my info for one-click checkout with Link
           {orgLabel && orgLabel !== "Blocktickets"
@@ -598,6 +613,11 @@ function CheckoutPage() {
   const [loading, setLoading] = useState(true);
   const [cart, setCart] = useState<CartData | null>(null);
   const [event, setEvent] = useState<CartData["event"]>(null);
+  const [seatLocation, setSeatLocation] = useState<{
+    ga_only?: boolean;
+    background: SeatmapBackground | null;
+    mapping: SeatmapMapping | null;
+  } | null>(null);
   const [clientSecret, setClientSecret] = useState("");
   const [intentId, setIntentId] = useState("");
   const [stripe, setStripe] = useState<Stripe | null>(null);
@@ -614,6 +634,7 @@ function CheckoutPage() {
   const [expiredOpen, setExpiredOpen] = useState(false);
   const [leaveOpen, setLeaveOpen] = useState(false);
   const [cancelling, setCancelling] = useState(false);
+  const [cancelError, setCancelError] = useState("");
   const [declineMsg, setDeclineMsg] = useState("");
   const [dueTotal, setDueTotal] = useState(0);
   const [promoDiscount, setPromoDiscount] =
@@ -626,6 +647,8 @@ function CheckoutPage() {
 
   const cartRef = useRef<CartData | null>(null);
   const eventRef = useRef<CartData["event"]>(null);
+  const seatLocationRef = useRef(seatLocation);
+  seatLocationRef.current = seatLocation;
   const leavingForSuccessRef = useRef(false);
   const leavingForLoginRef = useRef(false);
   const paymentContextRef = useRef<{
@@ -691,7 +714,12 @@ function CheckoutPage() {
     setRestarting(true);
     const eventData = eventRef.current || cartRef.current?.event;
     const dest =
-      checkoutLeavePath(cartRef.current, eventData, leaveOrgSlug()) ||
+      checkoutLeavePath(
+        cartRef.current,
+        eventData,
+        leaveOrgSlug(),
+        seatLocationRef.current,
+      ) ||
       BACK_FALLBACK_HREF;
     const returnPath = getCheckoutReturnPath();
     const loginDetour = hadCheckoutLoginDetour();
@@ -716,6 +744,7 @@ function CheckoutPage() {
         cartRef.current,
         eventData ?? cartRef.current?.event,
         leaveOrgSlug(),
+        seatLocationRef.current,
       );
       const payload = dropUserCartPayload(
         cartRef.current,
@@ -732,11 +761,13 @@ function CheckoutPage() {
   const cancelOrder = useCallback(async () => {
     if (cancelling) return;
     setCancelling(true);
+    setCancelError("");
     const eventData = eventRef.current || cartRef.current?.event;
     const dest = resolveCheckoutReturnPath(
       cartRef.current,
       eventData,
       leaveOrgSlug(),
+      seatLocationRef.current,
     );
     const returnPath = getCheckoutReturnPath();
     const loginDetour = hadCheckoutLoginDetour();
@@ -745,7 +776,11 @@ function CheckoutPage() {
         dropUserCartPayload(cartRef.current, eventData, getStoredCart()),
       );
     } catch {
-      /* release best-effort — still leave checkout */
+      setCancelling(false);
+      setCancelError(
+        "We couldn't release your tickets. Please try cancelling again.",
+      );
+      return;
     }
     clearStoredCart();
     setLeaving(true);
@@ -806,6 +841,7 @@ function CheckoutPage() {
     const run = async () => {
       setLoading(true);
       setLoadError("");
+      setSeatLocation(null);
       let cartId = cartIdFromQuery;
       if (!cartId) {
         cartId = getStoredCart()?.cartId ?? null;
@@ -829,6 +865,16 @@ function CheckoutPage() {
           cartData.tickets || [],
           cartData.event,
         );
+        // The listing image does not need the venue map. Loading that map
+        // first kept the thumbnail on a spinner after the summary was ready.
+        if (
+          (cartData.tickets?.length ?? 0) > 0 &&
+          !eventIsExplicitlyGaOnly(cartData.event)
+        ) {
+          void loadCheckoutSeatLocation(cartData.event).then((location) => {
+            if (!cancelled) setSeatLocation(location);
+          });
+        }
         if (cancelled) return;
         setCart(cartData);
         cartRef.current = cartData;
@@ -849,7 +895,10 @@ function CheckoutPage() {
             sendToLogin();
             return;
           }
-          const processRes = await processFreeOrder({ cartId: cartData.id });
+          const processRes = await processFreeOrder({
+            cartId: cartData.id,
+            trackingCode: readTrackingCodeForCart(cartData),
+          });
           sessionStorage.setItem(
             "order",
             JSON.stringify({ id: processRes.data?.id }),
@@ -1106,7 +1155,13 @@ function CheckoutPage() {
           address?: Array<{ city?: string; state?: string; country?: string }>;
         }
       | undefined);
-  const ticketSummary = ticketSelectionSummary(cart?.tickets || []);
+  const ticketSummary = ticketSelectionSummary(cart?.tickets || [], {
+    seatedGaSection: showsSeatedGaTicketCount(
+      cart?.tickets,
+      event,
+      seatLocation,
+    ),
+  });
   const packageSummary = cart?.package
     ? packageOrderSummary(cart.package, packageCartTickets(cart))
     : null;
@@ -1114,8 +1169,11 @@ function CheckoutPage() {
     cart,
     packageSummary?.subtotal || 0,
   );
-  const packageSeats = withPackageCheckoutSeatPrices(
-    packageSummary?.seats || [],
+  const packageSeats = alignPackageSeatPrices(
+    withPackageCheckoutSeatPrices(
+      packageSummary?.seats || [],
+      packageTotals.subtotal,
+    ),
     packageTotals.subtotal,
   );
   const flexTotals = cart?.flex_pack
@@ -1142,11 +1200,35 @@ function CheckoutPage() {
     (event?.venue as { slug?: string } | undefined)?.slug ||
     (cart?.event as { venue?: { slug?: string } } | undefined)?.venue?.slug;
   const summaryTicket = cart?.tickets?.[0];
-  const seatViewCandidates = getSeatViewImageCandidates(
-    venueSlug,
-    summaryTicket?.sectionNumber as string | number | undefined,
-    summaryTicket?.sectionName as string | number | undefined,
+  const gaTicketIcon = cartShowsGaTicketIcon(cart?.tickets, event, seatLocation);
+  const locatedSection = seatLocationSection(summaryTicket);
+  const venueMapReady = Boolean(
+    !gaTicketIcon &&
+      seatLocation &&
+      !seatLocation.ga_only &&
+      seatLocation.background?.url &&
+      seatLocation.mapping,
   );
+  // Same highlights image the tickets listing uses, then the venue map.
+  const seatLocationCandidates =
+    !gaTicketIcon && locatedSection.sectionNumber
+      ? getSeatViewImageCandidates(
+          venueSlug,
+          locatedSection.sectionNumber,
+          locatedSection.sectionNumber,
+          ["highlights", "thumbnail"],
+        )
+      : [];
+  const showSeatLocationThumb =
+    seatLocationCandidates.length > 0 || venueMapReady;
+  const seatViewCandidates =
+    gaTicketIcon || showSeatLocationThumb
+      ? []
+      : getSeatViewImageCandidates(
+          venueSlug,
+          summaryTicket?.sectionNumber as string | number | undefined,
+          summaryTicket?.sectionName as string | number | undefined,
+        );
   const dueAmount =
     dueTotal ||
     (cart?.package
@@ -1154,6 +1236,14 @@ function CheckoutPage() {
       : cart?.flex_pack
         ? flexTotals?.total || 0
         : Number(cart?.total || 0));
+  const taxLine = checkoutTaxLine(cart);
+  const singleEvent =
+    Boolean(cart?.tickets?.length) &&
+    !cart?.package &&
+    !cart?.flex_pack &&
+    !cart?.access_pass_template;
+  const singleEventAllIn = singleEvent && taxLine.label === "Tax (included)";
+  const singleEventNoTax = singleEvent && taxLine.amount === 0;
 
   const elementsOptions = useMemo(
     () =>
@@ -1176,6 +1266,7 @@ function CheckoutPage() {
     !isAuthenticated &&
     !guestBuyer &&
     isGuestEligibleCart(cart);
+  const marketingOrg = checkoutMarketingOrganization(cart, event);
   const awaitingAuth = !authReady;
   const shellLoading = awaitingAuth || (loading && !expiredOpen);
   const loaderBranding = branding.organization
@@ -1205,7 +1296,10 @@ function CheckoutPage() {
           : null
       }
       holdPaused={leaveOpen || cancelling}
-      onBack={() => setLeaveOpen(true)}
+      onBack={() => {
+        setCancelError("");
+        setLeaveOpen(true);
+      }}
       onExpire={handleHoldExpired}
       loading={shellLoading}
       loaderBranding={loaderBranding}
@@ -1281,6 +1375,8 @@ function CheckoutPage() {
                     onContinue={confirmGuestBuyer}
                     buttonColor={branding.theme.buttonColor}
                     buttonTextColor={branding.theme.buttonTextColor}
+                    organizationName={marketingOrg?.name}
+                    optInMessage={marketingOrg?.opt_in_message}
                   />
                 ) : clientSecret && stripe && elementsOptions && checkoutCart ? (
                   <Elements
@@ -1304,6 +1400,9 @@ function CheckoutPage() {
                       onSuccess={() => goToSuccess(intentId)}
                       onDeclined={setDeclineMsg}
                       onExpired={handleHoldExpired}
+                      showMarketingOptIn={isAuthenticated}
+                      organizationName={marketingOrg?.name}
+                      optInMessage={marketingOrg?.opt_in_message}
                     />
                   </Elements>
                 ) : (
@@ -1371,6 +1470,17 @@ function CheckoutPage() {
                               <div className={`min-w-0 text-[12px] ${muted}`}>
                                 {seat.context}
                               </div>
+                              {seat.accessibleLabel ? (
+                                <AccessibleSeatingBadge
+                                  label={seat.accessibleLabel}
+                                  style={{ marginTop: 4 }}
+                                />
+                              ) : null}
+                              {seat.additionalLabel ? (
+                                <div className={`text-[13px] ${muted}`}>
+                                  {seat.additionalLabel}
+                                </div>
+                              ) : null}
                             </div>
                             <div className="shrink-0 text-[14px] font-semibold tabular-nums">
                               {formatCurrency(seat.price)}
@@ -1396,9 +1506,9 @@ function CheckoutPage() {
                       </span>
                     </div>
                     <div className="flex justify-between gap-3">
-                      <span>Tax</span>
+                      <span>{taxLine.label}</span>
                       <span className="tabular-nums text-[#051b35]">
-                        {formatCurrency(resolveCheckoutTax(cart))}
+                        {formatCurrency(taxLine.amount)}
                       </span>
                     </div>
                     <div className="flex justify-between gap-3">
@@ -1413,6 +1523,17 @@ function CheckoutPage() {
                         {formatCurrency(packageTotals.serviceFee)}
                       </span>
                     </div>
+                    {packageTotals.customFeeLines.map((line) => (
+                      <div
+                        key={`${line.name}-${line.amount}`}
+                        className="flex justify-between gap-3"
+                      >
+                        <span>{line.name}</span>
+                        <span className="tabular-nums text-[#051b35]">
+                          {formatCurrency(line.amount)}
+                        </span>
+                      </div>
+                    ))}
                   </div>
                 </>
               ) : cart?.flex_pack ? (
@@ -1446,9 +1567,9 @@ function CheckoutPage() {
                       </span>
                     </div>
                     <div className="flex justify-between gap-3">
-                      <span>Tax</span>
+                      <span>{taxLine.label}</span>
                       <span className="tabular-nums text-[#051b35]">
-                        {formatCurrency(resolveCheckoutTax(cart))}
+                        {formatCurrency(taxLine.amount)}
                       </span>
                     </div>
                     <div className="flex justify-between gap-3">
@@ -1470,16 +1591,36 @@ function CheckoutPage() {
                   <div className="h-px bg-[rgba(5,27,53,0.08)]" />
                   <div className="flex items-start gap-3.5">
                     <div className="h-[84px] w-[84px] shrink-0 overflow-hidden rounded-xl border border-[rgba(5,27,53,0.10)] bg-[#f1f3f8]">
-                      <SeatViewImage
-                        candidates={seatViewCandidates}
-                        alt="Seat view for this ticket"
-                        className="h-full w-full object-cover"
-                      />
+                      {gaTicketIcon ? (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img
+                          src={GA_TICKET_PLACEHOLDER}
+                          alt="General admission"
+                          className="h-full w-full object-cover"
+                        />
+                      ) : showSeatLocationThumb ? (
+                        <SectionLocatorThumb
+                          background={seatLocation?.background}
+                          mapping={seatLocation?.mapping}
+                          sectionId={locatedSection.sectionId}
+                          sectionNumber={locatedSection.sectionNumber}
+                          thumbnailCandidates={seatLocationCandidates}
+                          spinnerColor={branding.theme.accent}
+                          priority
+                          className="h-full w-full"
+                        />
+                      ) : (
+                        <SeatViewImage
+                          candidates={seatViewCandidates}
+                          alt="Seat view for this ticket"
+                          className="h-full w-full object-cover"
+                        />
+                      )}
                     </div>
                     <div className="flex min-w-0 flex-1 flex-col gap-1.5">
                       {ticketSummary.offerName ? (
                         <span
-                          className="inline-flex w-fit items-center gap-1 rounded-full px-2.5 py-1 text-[12px] font-semibold"
+                          className="inline-flex w-fit items-center gap-1 rounded-full px-2.5 py-1 text-[13px] font-semibold"
                           style={{
                             background: branding.theme.accentSoft,
                             color: branding.theme.accent,
@@ -1502,42 +1643,66 @@ function CheckoutPage() {
                       <div className={`text-[13px] ${muted}`}>
                         {ticketSummary.subtitle}
                       </div>
+                      {ticketSummary.accessibleLabel ? (
+                        <AccessibleSeatingBadge
+                          label={ticketSummary.accessibleLabel}
+                          style={{ marginTop: 4 }}
+                        />
+                      ) : null}
+                      {ticketSummary.additionalLabel ? (
+                        <div className={`text-[13px] ${muted}`}>
+                          {ticketSummary.additionalLabel}
+                        </div>
+                      ) : null}
                     </div>
                   </div>
                   <div className="h-px bg-[rgba(5,27,53,0.08)]" />
                   <div className="flex flex-col gap-2.5 text-[14px] text-[#4a5567]">
-                    {ticketSummary.offerLines.length > 1
-                      ? ticketSummary.offerLines.map((line) => (
-                          <div
-                            key={`${line.offerName}-${line.unit}`}
-                            className="flex justify-between gap-3"
-                          >
-                            <span>
-                              {line.offerName} x {line.count} (
-                              {formatCurrency(line.unit)})
-                            </span>
-                            <span className="tabular-nums text-[#051b35]">
-                              {formatCurrency(line.subtotal)}
-                            </span>
-                          </div>
-                        ))
-                      : (
-                          <div className="flex justify-between gap-3">
-                            <span>
-                              Tickets: {formatCurrency(ticketSummary.unit)} x{" "}
-                              {ticketSummary.count}
-                            </span>
-                            <span className="tabular-nums text-[#051b35]">
-                              {formatCurrency(ticketSummary.subtotal)}
-                            </span>
-                          </div>
-                        )}
-                    <div className="flex justify-between gap-3">
-                      <span>Tax</span>
-                      <span className="tabular-nums text-[#051b35]">
-                        {formatCurrency(resolveCheckoutTax(cart))}
-                      </span>
+                    <div className="flex flex-col gap-0.5">
+                      {ticketSummary.offerLines.length > 1
+                        ? ticketSummary.offerLines.map((line) => (
+                            <div
+                              key={`${line.offerName}-${line.unit}`}
+                              className="flex justify-between gap-3"
+                            >
+                              <span>
+                                {line.offerName} x {line.count} (
+                                {formatCurrency(line.unit)})
+                              </span>
+                              <span className="tabular-nums text-[#051b35]">
+                                {formatCurrency(line.subtotal)}
+                              </span>
+                            </div>
+                          ))
+                        : (
+                            <div className="flex justify-between gap-3">
+                              <span className="text-[14px] text-[#4a5567]">
+                                Tickets: {formatCurrency(ticketSummary.unit)} ×{" "}
+                                {ticketSummary.count}
+                              </span>
+                              <span className="tabular-nums text-[#051b35]">
+                                {formatCurrency(ticketSummary.subtotal)}
+                              </span>
+                            </div>
+                          )}
+                      {singleEventAllIn ? (
+                        <p className="text-[13px] leading-tight text-[#4a5567]">
+                          Includes {formatCurrency(taxLine.amount)} tax
+                        </p>
+                      ) : singleEventNoTax ? (
+                        <p className="text-[13px] leading-tight text-[#4a5567]">
+                          No tax applies
+                        </p>
+                      ) : null}
                     </div>
+                    {singleEventAllIn || singleEventNoTax ? null : (
+                      <div className="flex justify-between gap-3">
+                        <span>{taxLine.label}</span>
+                        <span className="tabular-nums text-[#051b35]">
+                          {formatCurrency(taxLine.amount)}
+                        </span>
+                      </div>
+                    )}
                   </div>
                 </>
               ) : cart?.package?.name ? (
@@ -1554,15 +1719,15 @@ function CheckoutPage() {
               !cart?.flex_pack &&
               cart?.access_pass_template ? (
                 <div className="flex justify-between gap-3 text-[14px] text-[#4a5567]">
-                  <span>Tax</span>
+                  <span>{taxLine.label}</span>
                   <span className="tabular-nums text-[#051b35]">
-                    {formatCurrency(resolveCheckoutTax(cart))}
+                    {formatCurrency(taxLine.amount)}
                   </span>
                 </div>
               ) : null}
               {promoDiscount ? (
                 <div className="flex justify-between gap-3 text-[14px] text-[#4a5567]">
-                  <span>{promoSummaryLabel(promoDiscount.code)}</span>
+                  <span>{promoSummaryLabel(promoDiscount.label)}</span>
                   <span className="tabular-nums text-[#051b35]">
                     -{formatCurrency(promoDiscount.amount)}
                   </span>
@@ -1616,9 +1781,14 @@ function CheckoutPage() {
           hideClose
         >
           <p className="mt-4 text-[15px] text-[#6e7180]">
-            If you leave this page, you&apos;ll lose your chance to purchase
-            these tickets.
+            Cancelling releases these tickets so another shopper can purchase
+            them.
           </p>
+          {cancelError ? (
+            <p role="alert" className="mt-3 text-[14px] text-[#b42318]">
+              {cancelError}
+            </p>
+          ) : null}
           <div className="mt-5 flex flex-col gap-3">
             <BrandedActionButton
               tone="secondary"
@@ -1633,7 +1803,10 @@ function CheckoutPage() {
               primaryColor={branding.theme.accent}
               textColor={branding.theme.buttonTextColor}
               disabled={cancelling}
-              onClick={() => setLeaveOpen(false)}
+              onClick={() => {
+                setCancelError("");
+                setLeaveOpen(false);
+              }}
               className="w-full"
             >
               Continue with checkout

@@ -58,157 +58,67 @@
 
 %% | 500 / other | (any other) | We're experiencing technical difficulties. Please try again later. |
 
-
-
 flowchart TD
-
   profileStep[Step 2: create account] --> fillForm[Type in fields]
-
   fillForm --> blurField[Blur field]
-
   blurField --> blurValidate[Run blur validation for that field]
-
   blurValidate --> blurHint[Show inline hint if non-empty invalid]
-
   blurHint --> fillForm
-
   fillForm --> submit[Submit form]
-
   submit --> readDom[Read form values]
-
   readDom --> clientValidate[Validate all fields on submit]
-
-
-
   clientValidate --> clientFail{Any client error?}
-
   clientFail -->|yes| inlineErrors[Show inline error on each invalid field]
-
   clientFail -->|no| createUser[POST /verifies/newUser createNewUser]
-
-
-
   createUser --> createNet{Request failed?}
-
   createNet -->|yes| apiNetwork["We're experiencing technical difficulties. Please try again later."]
-
   createNet -->|no| apiStatus{HTTP status?}
-
   apiStatus -->|200| sessionOk[setSession and redirect]
-
   apiStatus -->|226| phoneExists["An account with this phone number already exists."]
-
   apiStatus -->|500| apiNetwork
-
-
-
   subgraph blurClientChecks [blur — client checks]
-
     fnBlur{First name non-empty on blur?}
-
     fnBlur -->|no| fnBlurQuiet[No error]
-
     fnBlur -->|yes| fnBlurPat{Valid name pattern?}
-
     fnBlurPat -->|no| fnBlurBad[Letters only — no digits.]
-
     fnBlurPat -->|yes| fnBlurQuiet
-
-
-
     lnBlur{Last name non-empty on blur?}
-
     lnBlur -->|no| lnBlurQuiet[No error]
-
     lnBlur -->|yes| lnBlurPat{Valid name pattern?}
-
     lnBlurPat -->|no| lnBlurBad[Letters only — no digits.]
-
     lnBlurPat -->|yes| lnBlurQuiet
-
-
-
     phBlur{Phone non-empty on blur?}
-
     phBlur -->|no| phBlurQuiet[No error]
-
     phBlur -->|yes| phBlurVal{Valid phone number?}
-
     phBlurVal -->|no| phBlurBad[Phone number is not valid. Please try again]
-
     phBlurVal -->|yes| phBlurQuiet
-
-
-
     dobBlur{Date of birth non-empty on blur?}
-
     dobBlur -->|no| dobBlurQuiet[No error]
-
     dobBlur -->|yes| dobBlurVal{Valid MM/DD/YYYY?}
-
     dobBlurVal -->|no| dobBlurBad["Date of birth is incorrect. Make sure it is in the correct format: MM/DD/YYYY"]
-
     dobBlurVal -->|yes| dobBlurQuiet
-
   end
-
-
-
   subgraph submitClientChecks [submit — client checks]
-
     fn{First name empty?}
-
     fn -->|yes| fnReq[First name is required.]
-
     fn -->|no| fnPat{Valid name pattern?}
-
     fnPat -->|no| fnBad[Letters only — no digits.]
-
-
-
     ln{Last name empty?}
-
     ln -->|yes| lnReq[Last name is required.]
-
     ln -->|no| lnPat{Valid name pattern?}
-
     lnPat -->|no| lnBad[Letters only — no digits.]
-
-
-
     ph{Phone empty?}
-
     ph -->|yes| phReq[Phone number is required.]
-
     ph -->|no| phVal{Valid phone number?}
-
     phVal -->|no| phBad[Phone number is not valid. Please try again]
-
-
-
     dob{Date of birth empty?}
-
     dob -->|yes| dobReq[Date of birth is required.]
-
     dob -->|no| dobVal{Valid MM/DD/YYYY?}
-
     dobVal -->|no| dobBad["Date of birth is incorrect. Make sure it is in the correct format: MM/DD/YYYY"]
-
-
-
     em{Email empty?}
-
     em -->|yes| emReq[Email address is required.]
-
     em -->|no| emVal{Invalid email?}
-
     emVal -->|yes| emBad[Email is invalid. Please try again.]
-
   end
-
-
-
   blurValidate -.-> blurClientChecks
-
   clientValidate -.-> submitClientChecks
-

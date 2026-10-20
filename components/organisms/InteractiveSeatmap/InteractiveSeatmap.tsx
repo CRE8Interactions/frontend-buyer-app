@@ -4,16 +4,25 @@ import {
   memo,
   useCallback,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
 } from "react";
 import Spinner from "@/components/atoms/Spinner";
 import {
+  countSectionAvailability,
   createSeatLookupTables,
   createSectionLookupTable,
+  expandWcSeamPairSectionIds,
   isSectionCoverVenue,
+  isSectionSoldOut,
   mappingStageSize,
+  neighborSectionIds,
+  sectionIdInViewport,
+  seatsRevealAtScale,
+  viewportContentRect,
+  type ContentRect,
 } from "@/lib/seatmapLookups";
 import {
   panDeltaToRevealPopup,
@@ -27,6 +36,7 @@ import SeatmapSeat, {
   TOOLTIP_DISMISS_DELAY_MS,
 } from "./SeatmapSeat";
 import SeatmapSections from "./SeatmapSections";
+import { seatmapAccessibilityLegendRows } from "@/lib/ticketAccessibility";
 import SeatmapTooltip, { type SeatmapTooltipTarget } from "./SeatmapTooltip";
 
 const PAN_THRESHOLD_PX = SEATMAP_TAP_THRESHOLD_PX;
@@ -41,19 +51,6 @@ function tooltipTargetKey(target: SeatmapTooltipTarget) {
     : `section:${target.sectionId}`;
 }
 
-/**
- * Same ZoomLevel % formula as the legacy SvgSeatmap `calculateScalePercentage`.
- * Default fit ≈ 0; ~3.2× fit ≈ 22.
- */
-function calculateScalePercentage(scale: number, originalScale: number) {
-  const base = Math.max(originalScale, 0.001);
-  const ratio = scale / base;
-  return Number(((ratio * 100 - 100) / 10).toFixed(0));
-}
-
-/** Legacy zoom-level % below which cover-venue seats stay hidden without a section focus. */
-const SEAT_HIDE_MAX_PERCENT = 22;
-
 type Viewport = { scale: number; posX: number; posY: number };
 type Point = { x: number; y: number };
 
@@ -63,6 +60,10 @@ function getTouchDistance(p1: Point, p2: Point) {
 
 function getTouchCenter(p1: Point, p2: Point): Point {
   return { x: (p1.x + p2.x) / 2, y: (p1.y + p2.y) / 2 };
+}
+
+function sameIds(a: string[], b: string[]) {
+  return a.length === b.length && a.every((id, index) => id === b[index]);
 }
 
 function runViewportAnimation(
@@ -139,6 +140,7 @@ export default function InteractiveSeatmap({
   onPaintReady,
 }: Props) {
   const data = useSeatmapStore((s) => s.data);
+  const seatLookupTable = useSeatmapStore((s) => s.seatLookupTable);
   const background = useSeatmapStore((s) => s.background);
   const setScale = useSeatmapStore((s) => s.setScale);
   const maxScale = useSeatmapStore((s) => s.maxScale);
@@ -322,8 +324,25 @@ export default function InteractiveSeatmap({
 
   useEffect(() => () => clearDismissTooltipTimer(), [clearDismissTooltipTimer]);
   const [focusedSectionId, setFocusedSectionId] = useState<string | null>(null);
+  const [lockedSectionId, setLockedSectionId] = useState<string | null>(null);
+  const [revealedSectionIds, setRevealedSectionIds] = useState<string[]>([]);
   const [activeRowIds, setActiveRowIds] = useState<string[] | null>(null);
+  const sectionBoundsRef = useRef<Record<string, ContentRect>>({});
+  const boundsDataRef = useRef(data);
+  const revealedSectionIdsRef = useRef<string[]>([]);
+  const sectionCoversEnabledRef = useRef(false);
+  const suppressRevealRef = useRef(false);
+  revealedSectionIdsRef.current = revealedSectionIds;
+  sectionCoversEnabledRef.current = sectionCoversEnabled;
   const [lookupsReady, setLookupsReady] = useState(lookupsMode === "external");
+  const accessibilityLegend = useMemo(
+    () =>
+      seatmapAccessibilityLegendRows([
+        ...Object.values(data?.seats || {}),
+        ...ticketGroups,
+      ]),
+    [data?.seats, ticketGroups],
+  );
   const [legendOpen, setLegendOpen] = useState(!compactChrome);
   const [fitScale, setFitScale] = useState(1);
   // Venue artwork can arrive after geometry — keep the Find-on-map spinner up
@@ -445,14 +464,19 @@ export default function InteractiveSeatmap({
 
   const resetView = useCallback(() => {
     if (!defaultViewRef.current) return;
+    suppressRevealRef.current = true;
     setFocusedSectionId(null);
+    setLockedSectionId(null);
+    setRevealedSectionIds([]);
     setActiveRowIds(null);
     runViewportAnimation(
       viewport,
       defaultViewRef.current,
       280,
       setViewport,
-      undefined,
+      () => {
+        suppressRevealRef.current = false;
+      },
       zoomAnimRafRef,
     );
   }, [viewport]);
@@ -460,6 +484,14 @@ export default function InteractiveSeatmap({
   const focusSection = useCallback(
     (sectionId: string, bounds: DOMRect) => {
       if (!size.width || !size.height) return;
+      const section = data?.sections?.[sectionId];
+      if (
+        isSectionSoldOut(
+          countSectionAvailability(section, data?.rows, seatLookupTable),
+        )
+      ) {
+        return;
+      }
       const pad = 48;
       const scale = Math.min(
         (size.width - pad * 2) / Math.max(bounds.width, 1),
@@ -471,9 +503,10 @@ export default function InteractiveSeatmap({
       const posY =
         size.height / 2 - (bounds.y + bounds.height / 2) * scale;
 
+      suppressRevealRef.current = false;
       setFocusedSectionId(sectionId);
-      const section = data?.sections?.[sectionId];
-      setActiveRowIds(section?.rows ? [...section.rows] : null);
+      setLockedSectionId(sectionId);
+      setActiveRowIds(section?.rows ? section.rows.map(String) : null);
 
       runViewportAnimation(
         viewport,
@@ -484,7 +517,7 @@ export default function InteractiveSeatmap({
         zoomAnimRafRef,
       );
     },
-    [data?.sections, maxScale, size.height, size.width, viewport],
+    [data?.rows, data?.sections, maxScale, seatLookupTable, size.height, size.width, viewport],
   );
 
   // Wheel zoom
@@ -604,6 +637,7 @@ export default function InteractiveSeatmap({
           originX: newPos.x,
           originY: newPos.y,
         };
+        if (sectionCoversEnabledRef.current) setLockedSectionId(null);
         return;
       }
 
@@ -668,6 +702,7 @@ export default function InteractiveSeatmap({
         if (!pan.active) {
           pan.active = true;
           dismissTooltipNow();
+          if (sectionCoversEnabledRef.current) setLockedSectionId(null);
         }
         setViewport((prev) => ({
           ...prev,
@@ -738,6 +773,7 @@ export default function InteractiveSeatmap({
     if (!pan.active) {
       pan.active = true;
       dismissTooltipNow();
+      if (sectionCoversEnabledRef.current) setLockedSectionId(null);
       (e.currentTarget as HTMLElement).setPointerCapture?.(e.pointerId);
     }
     setViewport((prev) => ({
@@ -756,23 +792,83 @@ export default function InteractiveSeatmap({
     }
   };
 
-  // Cover venues: seats only appear after clicking a section (or when that
-  // focus is still active). Never dump every row at overview — that painted
-  // seats on top of covers. Also clear seats if the user zooms back out
-  // without using "Back to map".
+  useLayoutEffect(() => {
+    const svg = svgRef.current;
+    if (!svg || !sectionCoversEnabled) return;
+    const revealed = new Set(revealedSectionIdsRef.current);
+    const resetBounds = boundsDataRef.current !== data;
+    boundsDataRef.current = data;
+    const next: Record<string, ContentRect> = resetBounds
+      ? {}
+      : { ...sectionBoundsRef.current };
+    svg.querySelectorAll("[data-zoomable-section] path[id]").forEach((node) => {
+      const path = node as SVGPathElement;
+      const id = path.id;
+      if (!id || (revealed.has(id) && next[id])) return;
+      const box = path.getBBox();
+      next[id] = { x: box.x, y: box.y, width: box.width, height: box.height };
+    });
+    sectionBoundsRef.current = next;
+  }, [data, revealedSectionIds, sectionCoversEnabled, stage]);
+
+  // Cover venues: hide every seat at overview. A section click (until Back to
+  // map) or zooming past the legacy threshold opens seat view. In seat view the
+  // clicked section holds until the first pan, then the section under the
+  // view and its neighbors open. Moving away puts covers back. A sold-out
+  // cover never opens.
   useEffect(() => {
     if (!sectionCoversEnabled || !defaultViewRef.current) return;
-    if (focusedSectionId) return;
-    const pct = calculateScalePercentage(
-      viewport.scale,
-      defaultViewRef.current.scale,
-    );
-    // Legacy zoom-reveal (viewport section at ~3.2×) is not ported yet; keep
-    // seats hidden until a section is focused.
-    if (pct < SEAT_HIDE_MAX_PERCENT) {
+    if (suppressRevealRef.current) return;
+    if (
+      !focusedSectionId &&
+      !seatsRevealAtScale(viewport.scale, defaultViewRef.current.scale)
+    ) {
       setActiveRowIds(null);
+      setRevealedSectionIds((prev) => (prev.length ? [] : prev));
+      return;
     }
-  }, [focusedSectionId, sectionCoversEnabled, viewport.scale]);
+
+    const bounds = sectionBoundsRef.current;
+    const anchorId =
+      lockedSectionId ??
+      (() => {
+        const view = viewportContentRect(viewport, size);
+        return view ? sectionIdInViewport(view, bounds) : null;
+      })();
+    const anchorRect = anchorId ? bounds[anchorId] : undefined;
+    const neighbors =
+      anchorId && anchorRect
+        ? neighborSectionIds(anchorId, anchorRect, bounds)
+        : [];
+    const opened = expandWcSeamPairSectionIds(
+      anchorId ? [anchorId, ...neighbors] : neighbors,
+      data?.sections,
+    ).filter((id) => {
+      const section = data?.sections?.[id] ?? data?.sections?.[String(id)];
+      return (
+        Boolean(section) &&
+        !isSectionSoldOut(
+          countSectionAvailability(section, data?.rows, seatLookupTable),
+        )
+      );
+    });
+    const rows = opened.flatMap((id) => {
+      const section = data?.sections?.[id] ?? data?.sections?.[String(id)];
+      return (section?.rows || []).map(String);
+    });
+    setRevealedSectionIds((prev) => (sameIds(prev, opened) ? prev : opened));
+    setActiveRowIds((prev) =>
+      prev && sameIds(prev, rows) ? prev : rows.length ? rows : null,
+    );
+  }, [
+    data,
+    focusedSectionId,
+    lockedSectionId,
+    seatLookupTable,
+    sectionCoversEnabled,
+    size,
+    viewport,
+  ]);
 
   const rowsSource = useMemo(() => {
     if (!data?.rows) return [];
@@ -780,7 +876,7 @@ export default function InteractiveSeatmap({
     if (sectionCoversEnabled && Array.isArray(activeRowIds)) {
       const seenRows = new Set<string>();
       return activeRowIds
-        .map((id) => data.rows?.[id])
+        .map((id) => data.rows?.[id] ?? data.rows?.[String(id)])
         .filter((row): row is NonNullable<typeof row> => {
           if (!row?.rowId) return false;
           const rid = String(row.rowId);
@@ -888,8 +984,7 @@ export default function InteractiveSeatmap({
                 <SeatmapSections
                   data={data}
                   sectionCoversEnabled={sectionCoversEnabled}
-                  showCovers={!focusedSectionId}
-                  focusedSectionId={focusedSectionId}
+                  revealedSectionIds={revealedSectionIds}
                   onZoomableSectionClick={focusSection}
                   onTooltip={openTooltip}
                 />
@@ -1040,7 +1135,7 @@ export default function InteractiveSeatmap({
                       { label: "Unavailable", color: "#E6E8EC" },
                       { label: "Available", color: "#3E8BF7" },
                       { label: "Selected", color: accent },
-                      { label: "Accessibility", color: "#F4BC16" },
+                      ...accessibilityLegend,
                     ]
                   : [
                       { label: "Unavailable", color: "#E6E8EC" },
@@ -1048,7 +1143,7 @@ export default function InteractiveSeatmap({
                       { label: "Selected", color: accent },
                       { label: "Locked", color: "#353945" },
                       { label: "Exclusive", color: "#9757D7" },
-                      { label: "Accessibility", color: "#F4BC16" },
+                      ...accessibilityLegend,
                     ]
               ).map((item) => (
                 <div

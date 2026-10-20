@@ -53,8 +53,16 @@ export type TicketGroup = {
   allSeatIds?: string[] | Record<string, unknown>;
   GA?: boolean;
   accessible?: boolean;
+  accessibleType?: string;
+  additionalLabel?: string;
+  accessiblityType?: string;
+  accessibilityType?: string;
   resale?: boolean;
   on_sale_status?: string;
+  listing?: {
+    askingPrice?: number | null;
+    offer?: { freeOffer?: boolean } | null;
+  } | null;
   ticketGroupUUID?: string;
   offer?: {
     id?: string | number;

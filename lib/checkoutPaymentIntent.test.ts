@@ -38,10 +38,30 @@ describe("buildProcessOrderRequest", () => {
     const request = buildProcessOrderRequest(cart, "pi_test");
 
     expect(request.paymentIntentId).toBe("pi_test");
+    expect(request.trackingCode).toBeNull();
     expect(request.cart.accessPassQuantity).toBeNull();
     expect(request.cart.id).toBe(cart.id);
     expect(request.cart.tickets).toEqual(cart.tickets);
     expect(request.cart.total).toBe(cart.total);
+  });
+
+  it("attaches a tracking-link code to the process payload", () => {
+    const cart = demoCheckoutCart({ ga: true });
+    const request = buildProcessOrderRequest(cart, "pi_test", "1234");
+
+    expect(request.trackingCode).toBe("1234");
+    expect(request.paymentIntentId).toBe("pi_test");
+    expect(request.cart.id).toBe(cart.id);
+    expect(request).not.toHaveProperty("marketingEmailOptIn");
+  });
+
+  it("includes marketing opt-in only when the signed-in buyer sends it", () => {
+    const cart = demoCheckoutCart({ ga: true });
+    const optedIn = buildProcessOrderRequest(cart, "pi_test", null, true);
+    const declined = buildProcessOrderRequest(cart, "pi_test", null, false);
+
+    expect(optedIn.marketingEmailOptIn).toBe(true);
+    expect(declined.marketingEmailOptIn).toBe(false);
   });
 });
 
@@ -65,6 +85,7 @@ describe("buildPaymentIntentRequest", () => {
       email: DEMO_USER.email,
       firstName: DEMO_USER.firstName,
       lastName: DEMO_USER.lastName,
+      marketingEmailOptIn: true,
     };
     const request = buildPaymentIntentRequest(cart, cart.event, guest);
 

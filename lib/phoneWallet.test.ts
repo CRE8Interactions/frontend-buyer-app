@@ -7,6 +7,7 @@ vi.mock("@/lib/api", () => ({
 
 import { downloadApplePass, downloadGooglePass } from "@/lib/api";
 import { DEMO_EVENTS, demoAccessPass, demoCompletedTicketOrder, demoPackageAccessPass, demoSeasonPackage } from "@/lib/demo/fixtures";
+import { ACCESSIBLE_LABEL_DA } from "@/lib/ticketAccessibility";
 import {
   addAccessPassToPhoneWallet,
   addTicketToPhoneWallet,
@@ -64,6 +65,7 @@ beforeEach(() => {
 
 afterEach(() => {
   Reflect.deleteProperty(navigator, "userAgent");
+  Reflect.deleteProperty(navigator, "platform");
 });
 
 describe("phoneWalletTheme", () => {
@@ -110,6 +112,19 @@ describe("phoneWalletKind", () => {
       "Mozilla/5.0 (Linux; Android 13; SM-X900) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36",
     );
     expect(phoneWalletKind()).toBeNull();
+  });
+
+  it("offers Apple Wallet when iPhone Safari requests the desktop site", () => {
+    setUserAgent(
+      "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Safari/605.1.15",
+      5,
+    );
+    Object.defineProperty(navigator, "platform", {
+      configurable: true,
+      value: "iPhone",
+    });
+
+    expect(phoneWalletKind()).toBe("apple");
   });
 });
 
@@ -199,7 +214,7 @@ describe("addTicketToPhoneWallet", () => {
     expect(await addTicketToPhoneWallet(event, ticket, "apple")).toBeNull();
     expect(mockedApplePass).toHaveBeenCalledWith({
       event: expect.objectContaining({ uuid: event.uuid }),
-      obj: ticket,
+      obj: { ...ticket, name: ticket.offerName, accessibilityLabel: "" },
     });
   });
 
@@ -211,13 +226,58 @@ describe("addTicketToPhoneWallet", () => {
     expect(await addTicketToPhoneWallet(event, ticket, "google")).toBeNull();
     expect(mockedGooglePass).toHaveBeenCalledWith({
       event: expect.objectContaining({ uuid: event.uuid }),
-      ticket,
+      ticket: { ...ticket, name: ticket.offerName, accessibilityLabel: "" },
     });
     expect(open).toHaveBeenCalledWith(
       "https://pay.google.com/gp/v/save/ticket-1",
       "_blank",
       "noopener,noreferrer",
     );
+  });
+
+  it("sends the printable offer name and the DA accessibility type", async () => {
+    mockedApplePass.mockResolvedValue({
+      data: new Blob(["pkpass"], { type: "application/vnd.apple.pkpass" }),
+    } as never);
+    const accessible = {
+      ...ticket,
+      name: undefined,
+      offerName: "Field Club",
+      accessible: true,
+      accessibleType: "DA",
+    };
+
+    expect(await addTicketToPhoneWallet(event, accessible, "apple")).toBeNull();
+    expect(mockedApplePass).toHaveBeenCalledWith({
+      event: expect.objectContaining({ uuid: event.uuid }),
+      obj: expect.objectContaining({
+        name: "Field Club",
+        accessible: true,
+        accessibleType: "DA",
+        accessibilityLabel: ACCESSIBLE_LABEL_DA,
+      }),
+    });
+  });
+
+  it("sends the seat number without the accessibility suffix", async () => {
+    mockedApplePass.mockResolvedValue({
+      data: new Blob(["pkpass"], { type: "application/vnd.apple.pkpass" }),
+    } as never);
+    const accessible = {
+      ...ticket,
+      seatNumber: "13_DA",
+      seat_number: "13_DA",
+      accessibleType: "DA",
+    };
+
+    expect(await addTicketToPhoneWallet(event, accessible, "apple")).toBeNull();
+    expect(mockedApplePass).toHaveBeenCalledWith({
+      event: expect.objectContaining({ uuid: event.uuid }),
+      obj: expect.objectContaining({
+        seatNumber: "13",
+        seat_number: "13",
+      }),
+    });
   });
 
   it("explains when the ticket cannot be added", async () => {
@@ -245,7 +305,7 @@ describe("addTicketToPhoneWallet", () => {
     ).toBeNull();
     expect(mockedGooglePass).toHaveBeenCalledWith({
       event: expect.objectContaining({ uuid: ticket.eventUUID }),
-      ticket,
+      ticket: { ...ticket, name: ticket.offerName, accessibilityLabel: "" },
     });
   });
 

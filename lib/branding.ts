@@ -25,6 +25,7 @@ export type BrandingOrganization = {
   branding?: OrgBranding | null;
   enableTransfer?: boolean;
   enableResale?: boolean;
+  setting?: { printTickets?: boolean | null } | null;
 };
 
 export type BrandingEvent = {
@@ -119,6 +120,45 @@ export function resolveButtonTextColor(
 ): string {
   const branding = getActiveBranding(event, organization);
   return branding?.buttonTextColor || "#FFFFFF";
+}
+
+type AttractionArtwork = {
+  name?: string | null;
+  primary?: boolean;
+  order?: number | null;
+  artwork?: ApiImage | null;
+};
+
+/**
+ * Artwork for the attraction marked primary. If none is marked, the
+ * lowest-order attraction with artwork is used.
+ */
+export function resolvePrimaryAttractionImage(
+  event?: { attractions?: AttractionArtwork[] | null } | null,
+): { url: string; name: string | null } | null {
+  const attractions = Array.isArray(event?.attractions) ? event.attractions : [];
+  const withArtwork = attractions
+    .map((attraction) => ({
+      attraction,
+      url: mediaUrl(attraction?.artwork),
+    }))
+    .filter((item): item is { attraction: AttractionArtwork; url: string } =>
+      Boolean(item.url),
+    );
+
+  if (withArtwork.length === 0) return null;
+
+  const primary = withArtwork.find((item) => item.attraction?.primary === true);
+  const chosen =
+    primary ||
+    [...withArtwork].sort(
+      (a, b) => (a.attraction?.order ?? 0) - (b.attraction?.order ?? 0),
+    )[0];
+
+  return {
+    url: chosen.url,
+    name: chosen.attraction?.name || null,
+  };
 }
 
 /** Branding logo → org image → darkLogo. */

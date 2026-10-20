@@ -1,14 +1,20 @@
 import type { Metadata } from "next";
-import { pageMetadata } from "@/lib/seo";
+import {
+  BROWSE_PAGE_DESCRIPTION,
+  BROWSE_PAGE_OG_TITLE,
+  BROWSE_PAGE_TITLE,
+  DEFAULT_OG_IMAGE,
+  pageMetadata,
+} from "@/lib/seo";
 
 export const metadata: Metadata = pageMetadata({
-  title: "Browse Events — Blocktickets",
-  description:
-    "Find tickets to upcoming events, organizations, and experiences on Blocktickets.",
+  title: BROWSE_PAGE_TITLE,
+  ogTitle: BROWSE_PAGE_OG_TITLE,
+  description: BROWSE_PAGE_DESCRIPTION,
   path: "/browse/",
-  ogHeadline: "Browse upcoming events",
-  subtitle: "Find tickets near you",
-  cta: "Browse Tickets",
+  image: DEFAULT_OG_IMAGE,
+  keywords: BROWSE_PAGE_DESCRIPTION,
+  exactCopy: true,
 });
 
 export default function BrowseLayout({

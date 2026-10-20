@@ -3,24 +3,34 @@
 import { browseLeading } from "@/lib/browseType";
 import { fluidSize } from "@/lib/shopperFluidType";
 
-import { useEffect, useState } from "react";
+import { memo, useCallback, useEffect, useRef, useState } from "react";
 import { lockPageScroll, unlockPageScroll } from "@/lib/pageScroll";
+import AccessibleSeatingBadge from "@/components/atoms/AccessibleSeatingBadge";
 import BrandedActionButton from "@/components/atoms/BrandedActionButton";
+import Spinner from "@/components/atoms/Spinner";
 import BuyerProtectionCard from "@/components/molecules/BuyerProtectionCard";
 import Modal from "@/components/molecules/Modal";
 import { BrandedLoader } from "@/components/molecules/RouteLoader";
+import { INVENTORY_UPDATE_LOADER_MESSAGE } from "@/lib/loaderMessages";
 import SectionLocatorThumb from "@/components/molecules/SectionLocatorThumb";
-import { InteractiveSeatmap } from "@/components/organisms/InteractiveSeatmap";
+import { InteractiveSeatmapMemo } from "@/components/organisms/InteractiveSeatmap";
 import type { SeatmapBackground, SeatmapMapping } from "@/lib/seatmapLookups";
-import { getSeatViewImageCandidates } from "@/lib/seatView";
+import { getSeatViewImageCandidates, SEAT_VIEW_PLACEHOLDER } from "@/lib/seatView";
 import {
   quantityLimits,
   quantityRestrictionLabel,
   selectionPaneRestrictionLabel,
 } from "@/lib/ticketListings";
 import type { QuantityRestrictionSource } from "@/lib/ticketListings";
+import { listedUnitPrice } from "@/lib/helpers";
+import { getSeatAdditionalLabel } from "@/lib/seatLabels";
 import { selectionOfferDescription, selectionOfferName, selectionTicketCards } from "@/lib/ticketSummary";
-import { gaTicketSeatLine } from "@/lib/wallet";
+import {
+  gaTicketSeatLine,
+  mapSectionHeading,
+  seatDisplayValue,
+  sectionDisplayValue,
+} from "@/lib/wallet";
 import useFiltersStore from "@/stores/filtersStore";
 import useSeatmapStore from "@/stores/seatmapStore";
 
@@ -33,6 +43,9 @@ const NAVY = "#051b35";
  * would leave the shopper with nothing.
  */
 const MAX_PREPARING_MS = 6000;
+
+/** Clears the seat map's own zoom pill and legend, which sit at z-10. */
+const MAP_LOADER_Z = 20;
 
 /**
  * Artwork downloaded once this session should not put the loader back up when
@@ -73,57 +86,57 @@ const pill = (
   lineHeight: wrap ? 1.35 : undefined,
 });
 
-function SeatViewImage({ src, section }: { src?: string; section: string }) {
+function SeatViewImage({
+  src,
+  section,
+  onReady,
+  color,
+}: {
+  src?: string;
+  section: string;
+  onReady?: () => void;
+  color?: string;
+}) {
   const [failedSrc, setFailedSrc] = useState<string | null>(null);
-  if (!src || failedSrc === src) {
-    return (
-      <div
+  const [loadedSrc, setLoadedSrc] = useState<string | null>(null);
+  const onReadyRef = useRef(onReady);
+  onReadyRef.current = onReady;
+  const displaySrc = !src || failedSrc === src ? SEAT_VIEW_PLACEHOLDER : src;
+  const loaded = loadedSrc === displaySrc;
+  const placeholder = displaySrc === SEAT_VIEW_PLACEHOLDER;
+
+  return (
+    <div style={{ position: "relative", width: "100%", height: "100%", background: "#fff" }}>
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img
+        src={displaySrc}
+        alt={placeholder ? "Seat view placeholder" : `View from section ${section}`}
+        onLoad={() => {
+          setLoadedSrc(displaySrc);
+          onReadyRef.current?.();
+        }}
+        onError={() => {
+          if (placeholder || !src) {
+            onReadyRef.current?.();
+            return;
+          }
+          setFailedSrc(src);
+        }}
         style={{
           width: "100%",
           height: "100%",
-          display: "flex",
-          flexDirection: "column",
-          alignItems: "center",
-          justifyContent: "center",
-          gap: 8,
-          background: "#e7eaf2",
-          color: "#6e7180",
+          display: "block",
+          objectFit: placeholder ? "contain" : "cover",
+          opacity: loaded ? 1 : 0,
+          background: "#fff",
         }}
-      >
-        <svg
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth={1.8}
-          strokeLinecap="round"
-          strokeLinejoin="round"
-          style={{ width: 28, height: 28 }}
-        >
-          <path d="M3 20V9l9-5 9 5v11" />
-          <path d="M3 20h18" />
-          <path d="M7 20v-6h4v6" />
-          <path d="M14 20v-6h3v6" />
-        </svg>
-        <div style={{ fontSize: fluidSize(13), fontWeight: 500 }}>
-          No seat view for Sec {section}
-        </div>
-      </div>
-    );
-  }
-
-  return (
-    // eslint-disable-next-line @next/next/no-img-element
-    <img
-      src={src}
-      alt={`View from section ${section}`}
-      onError={() => setFailedSrc(src)}
-      style={{
-        width: "100%",
-        height: "100%",
-        display: "block",
-        objectFit: "cover",
-      }}
-    />
+      />
+      {loaded ? null : (
+        <span style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center" }}>
+          <Spinner size={22} variant="compact" color={color} label="Loading seat image" />
+        </span>
+      )}
+    </div>
   );
 }
 
@@ -138,7 +151,7 @@ const Star = ({ s = 14 }: { s?: number }) => (
   </svg>
 );
 
-export default function SeatMapSelectionOverlay({
+function SeatMapSelectionOverlay({
   title,
   accent,
   accentSoft,
@@ -149,12 +162,13 @@ export default function SeatMapSelectionOverlay({
   onCheckout,
   checkoutLoading = false,
   checkoutError = "",
-  itemPriceNote = "Incl. Taxes & Fees",
+  itemPriceNote = "Incl. taxes & fees",
   subtotalCaption,
   mapBackground,
   mapMapping,
   venueSlug,
   preparing = false,
+  updatingInventory = false,
   orgName,
   logoSrc,
   orderQuantitySource,
@@ -178,6 +192,7 @@ export default function SeatMapSelectionOverlay({
   mapMapping?: SeatmapMapping | null;
   venueSlug?: string;
   preparing?: boolean;
+  updatingInventory?: boolean;
   orgName?: string | null;
   logoSrc?: string | null;
   orderQuantitySource?: QuantityRestrictionSource | null;
@@ -208,11 +223,14 @@ export default function SeatMapSelectionOverlay({
     if (target.closest("[data-seatmap-canvas]")) return;
     dismissMapTooltip();
   };
-  const paneRestrictionLabel = selectionPaneRestrictionLabel(
-    seatmapTicketLimit ?? eventTicketLimit,
-    selectedFromMap,
-    orderQuantitySource,
-  );
+  const paneRestrictionLabel =
+    mapLegend === "package"
+      ? null
+      : selectionPaneRestrictionLabel(
+          seatmapTicketLimit ?? eventTicketLimit,
+          selectedFromMap,
+          orderQuantitySource,
+        );
 
   const mapping = mapMapping || storeMapping;
   const background = mapBackground || storeBackground;
@@ -233,19 +251,16 @@ export default function SeatMapSelectionOverlay({
     setLoadedBackgroundUrl(backgroundUrl);
   };
   const mapPaintable = mapHasSeats && (backgroundReady || prepareExpired);
-  const [seatmapPaintReady, setSeatmapPaintReady] = useState(false);
+  const paintToken = `${backgroundUrl}|${mapHasSeats ? "seats" : "empty"}`;
+  const [readyToken, setReadyToken] = useState("");
+  const handlePaintReady = useCallback(() => {
+    setReadyToken(paintToken);
+  }, [paintToken]);
+  const seatmapPaintReady = readyToken === paintToken;
   const geometryPending = preparing && !mapHasSeats;
   const showMapLoader =
     preparing ||
     (mapHasSeats && (!mapPaintable || !seatmapPaintReady));
-
-  useEffect(() => {
-    setSeatmapPaintReady(false);
-  }, [backgroundUrl, mapHasSeats]);
-
-  useEffect(() => {
-    if (preparing) setSeatmapPaintReady(false);
-  }, [preparing]);
 
   const [mapDetail, setMapDetail] = useState<number | null>(null);
   const [mapSelectionOpen, setMapSelectionOpen] = useState(false);
@@ -260,7 +275,31 @@ export default function SeatMapSelectionOverlay({
     mapDetailGroup?.sectionNumber || mapDetailGroup?.sectionName || "GA",
   );
   const mapDetailOffer = selectionOfferName(mapDetailGroup);
+  // Remember which slides finished loading for this seat. Flipping away and
+  // back keeps the image element mounted, so a loaded slide stays on screen.
+  const [loadedSlides, setLoadedSlides] = useState<{
+    detail: number | null;
+    ready: readonly number[];
+  }>({ detail: null, ready: [] });
+  const seatMediaReady =
+    loadedSlides.detail === mapDetail && loadedSlides.ready.includes(media);
+  const markSlideReady = useCallback((slide: number) => {
+    setLoadedSlides((prev) => {
+      const ready = prev.detail === mapDetail ? prev.ready : [];
+      if (ready.includes(slide)) {
+        return prev.detail === mapDetail ? prev : { detail: mapDetail, ready };
+      }
+      return { detail: mapDetail, ready: [...ready, slide] };
+    });
+  }, [mapDetail]);
+  const markLocationReady = useCallback(() => markSlideReady(0), [markSlideReady]);
+  const markViewReady = useCallback(() => markSlideReady(1), [markSlideReady]);
   const mapDetailOfferDescription = selectionOfferDescription(mapDetailGroup);
+  const mapDetailUnitPrice = listedUnitPrice(
+    mapDetailGroup?.price,
+    mapDetailGroup?.offer || mapDetailGroup?.package,
+    mapDetailGroup?.listing,
+  );
   const selectionCards = selectionTicketCards(selectedFromMap);
   const mapTicketCount = totalCount || selectedFromMap.length;
   const mapTicketLabel = subtotalCaption
@@ -277,7 +316,10 @@ export default function SeatMapSelectionOverlay({
     selectedFromMap.length > 0 &&
     (!mobile || mapSelectionOpen || mapDetail != null);
   const checkoutDisabled =
-    checkoutLoading || showMapLoader || selectedFromMap.length === 0;
+    checkoutLoading ||
+    showMapLoader ||
+    updatingInventory ||
+    selectedFromMap.length === 0;
   const handleCheckout = () => {
     if (checkoutDisabled) return;
     dismissMapTooltip();
@@ -290,6 +332,13 @@ export default function SeatMapSelectionOverlay({
       setMapDetail(null);
     }
   }, [selectedFromMap.length]);
+
+  // Seat cards are fixed above the map, so one left open during a rebuild
+  // floats stale inventory over the loader.
+  useEffect(() => {
+    if (!updatingInventory) return;
+    setDismissTooltipKey((key) => key + 1);
+  }, [updatingInventory]);
 
   // Never reset this: closing the overlay unmounts it, and clearing the flag
   // while the loader is up would flip it straight back on.
@@ -340,6 +389,43 @@ export default function SeatMapSelectionOverlay({
         )
       : [];
 
+  const backgroundPreload = backgroundUrl ? (
+    // Warms the browser cache so the seatmap's own <image> paints on its
+    // first frame instead of after the seats. Stay mounted while the URL is
+    // known — jsdom (and a cached browser image) can finish before the loader
+    // branch would have rendered this tag.
+    // eslint-disable-next-line @next/next/no-img-element
+    <img
+      src={backgroundUrl}
+      alt=""
+      aria-hidden
+      data-seatmap-background-preload="true"
+      ref={(el) => {
+        if (el?.complete) markBackgroundLoaded();
+      }}
+      onLoad={markBackgroundLoaded}
+      onError={markBackgroundLoaded}
+      style={{
+        position: "absolute",
+        width: 1,
+        height: 1,
+        opacity: 0,
+        pointerEvents: "none",
+      }}
+    />
+  ) : null;
+  /** One loader for preparing and rebuilding, so both read the same. */
+  const mapLoader = (message?: string) => (
+    <BrandedLoader
+      embedded
+      message={message}
+      branding={{
+        primaryColor: accent,
+        logoSrc,
+        name: orgName,
+      }}
+    />
+  );
   const pricesIncludeFees = mapLegend !== "package";
   const selectionPriceNote = pricesIncludeFees
     ? itemPriceNote
@@ -388,10 +474,11 @@ export default function SeatMapSelectionOverlay({
           display: "flex",
           flexDirection: "column",
           borderRadius: mobile ? 0 : 22,
-          overflow: "hidden",
+            overflow: "hidden",
           boxShadow: "0 24px 64px -20px rgba(5,27,53,0.45)",
         }}
       >
+      {backgroundPreload}
       <div
         style={{
           display: "flex",
@@ -477,38 +564,7 @@ export default function SeatMapSelectionOverlay({
             position: "relative",
           }}
         >
-          <BrandedLoader
-            embedded
-            branding={{
-              primaryColor: accent,
-              logoSrc,
-              name: orgName,
-            }}
-          />
-          {backgroundUrl ? (
-            // Warms the browser cache behind the loader so the seatmap's own
-            // <image> paints on its first frame instead of after the seats.
-            // eslint-disable-next-line @next/next/no-img-element
-            <img
-              src={backgroundUrl}
-              alt=""
-              aria-hidden
-              data-seatmap-background-preload="true"
-              // An already-cached image can finish before React attaches onLoad.
-              ref={(el) => {
-                if (el?.complete) markBackgroundLoaded();
-              }}
-              onLoad={markBackgroundLoaded}
-              onError={markBackgroundLoaded}
-              style={{
-                position: "absolute",
-                width: 1,
-                height: 1,
-                opacity: 0,
-                pointerEvents: "none",
-              }}
-            />
-          ) : null}
+          {mapLoader()}
         </div>
       ) : (
         <div
@@ -539,38 +595,22 @@ export default function SeatMapSelectionOverlay({
                 style={{
                   position: "absolute",
                   inset: 0,
-                  zIndex: 2,
+                  zIndex: MAP_LOADER_Z,
                 }}
               >
-                <BrandedLoader
-                  embedded
-                  branding={{
-                    primaryColor: accent,
-                    logoSrc,
-                    name: orgName,
-                  }}
-                />
-                {backgroundUrl ? (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img
-                    src={backgroundUrl}
-                    alt=""
-                    aria-hidden
-                    data-seatmap-background-preload="true"
-                    ref={(el) => {
-                      if (el?.complete) markBackgroundLoaded();
-                    }}
-                    onLoad={markBackgroundLoaded}
-                    onError={markBackgroundLoaded}
-                    style={{
-                      position: "absolute",
-                      width: 1,
-                      height: 1,
-                      opacity: 0,
-                      pointerEvents: "none",
-                    }}
-                  />
-                ) : null}
+                {mapLoader()}
+              </div>
+            ) : null}
+            {updatingInventory && !showMapLoader ? (
+              <div
+                style={{
+                  position: "absolute",
+                  inset: 0,
+                  zIndex: MAP_LOADER_Z,
+                  background: "rgba(255,255,255,0.78)",
+                }}
+              >
+                {mapLoader(INVENTORY_UPDATE_LOADER_MESSAGE)}
               </div>
             ) : null}
             <div
@@ -582,7 +622,8 @@ export default function SeatMapSelectionOverlay({
                 visibility: showMapLoader ? "hidden" : "visible",
               }}
             >
-              <InteractiveSeatmap
+              <InteractiveSeatmapMemo
+                key={paintToken}
                 className={mobile ? "h-full min-h-0" : "h-full min-h-[60vh]"}
                 lookupsMode="external"
                 accent={accent}
@@ -595,7 +636,7 @@ export default function SeatMapSelectionOverlay({
                 dismissTooltipKey={dismissTooltipKey}
                 onUnlockOffer={onUnlockOffer}
                 keepTooltipOpen={keepTooltipOpen}
-                onPaintReady={() => setSeatmapPaintReady(true)}
+                onPaintReady={handlePaintReady}
               />
             {showMobileMapBar ? (
               <div
@@ -768,7 +809,14 @@ export default function SeatMapSelectionOverlay({
                         overflow: "hidden",
                       }}
                     >
-                      {media === 0 ? (
+                      <div
+                        style={{
+                          position: "absolute",
+                          inset: 0,
+                          visibility: media === 0 ? "visible" : "hidden",
+                        }}
+                        aria-hidden={media === 0 ? undefined : true}
+                      >
                         <SectionLocatorThumb
                           background={background}
                           mapping={mapping}
@@ -779,17 +827,31 @@ export default function SeatMapSelectionOverlay({
                           }
                           sectionNumber={mapDetailSection}
                           section={mapDetailSection}
-                          pinColor={accent}
+                          spinnerColor={accent}
+                          priority
+                          onReady={markLocationReady}
                           thumbnailCandidates={venueImageCandidates(
                             mapDetailSection,
                           )}
                         />
-                      ) : (
+                      </div>
+                      <div
+                        style={{
+                          position: "absolute",
+                          inset: 0,
+                          visibility: media === 1 ? "visible" : "hidden",
+                        }}
+                        aria-hidden={media === 1 ? undefined : true}
+                      >
                         <SeatViewImage
                           src={venueImage(mapDetailSection, "seat-view")}
                           section={mapDetailSection}
+                          onReady={markViewReady}
+                          color={accent}
                         />
-                      )}
+                      </div>
+                      {seatMediaReady ? (
+                      <>
                       <div
                         style={{
                           position: "absolute",
@@ -797,9 +859,10 @@ export default function SeatMapSelectionOverlay({
                           right: 0,
                           bottom: 12,
                           display: "flex",
+                          flexDirection: "column",
                           alignItems: "center",
                           justifyContent: "center",
-                          gap: 12,
+                          gap: 8,
                         }}
                       >
                         <span
@@ -914,6 +977,8 @@ export default function SeatMapSelectionOverlay({
                           <polyline points="9 18 15 12 9 6" />
                         </svg>
                       </button>
+                      </>
+                      ) : null}
                     </div>
                     <div
                       style={{
@@ -953,8 +1018,9 @@ export default function SeatMapSelectionOverlay({
                         >
                           {mapDetailGroup.GA
                             ? gaTicketSeatLine(mapDetailGroup)
-                            : `Sec ${mapDetailSection} · Row ${mapDetailGroup.rowNumber || mapDetailGroup.rowName || "—"} · Seat ${mapDetailGroup.seatNumber ?? "—"}`}
+                            : `${mapSectionHeading(mapDetailSection)} · Row ${mapDetailGroup.rowNumber || mapDetailGroup.rowName || "—"} · Seat ${seatDisplayValue(mapDetailGroup.seatNumber) || "—"}`}
                         </div>
+                        <AccessibleSeatingBadge source={mapDetailGroup} />
                         <div style={{ fontSize: 14, lineHeight: 1.5, color: "#6e7180" }}>
                           1 Ticket
                         </div>
@@ -980,11 +1046,15 @@ export default function SeatMapSelectionOverlay({
                           lineHeight: 1.5,
                         }}
                       >
-                        {money(Number(mapDetailGroup.price || 0))} ea
+                        {money(mapDetailUnitPrice)} ea
                       </span>
-                      {pricesIncludeFees ? (
+                      {mapDetailUnitPrice === 0 ? (
                         <span style={{ fontSize: 14, lineHeight: 1.5, color: "#6e7180" }}>
-                          incl. fees
+                          complimentary
+                        </span>
+                      ) : pricesIncludeFees ? (
+                        <span style={{ fontSize: 14, lineHeight: 1.5, color: "#6e7180" }}>
+                          incl. taxes & fees
                         </span>
                       ) : null}
                     </div>
@@ -1159,12 +1229,28 @@ export default function SeatMapSelectionOverlay({
                         }}
                       >
                         {selectionCards.map(({ group: g, groupIndex, unitIndex }) => {
+                          const isGA = Boolean(g.GA || g.generalAdmission);
                           const section =
-                            g.sectionNumber || g.sectionName || "GA";
+                            sectionDisplayValue(
+                              g.sectionNumber || g.sectionName,
+                            ) || "GA";
                           const row = g.rowNumber || g.rowName || "—";
-                          const seat = g.seatNumber || "—";
+                          const seat = seatDisplayValue(g.seatNumber) || "—";
                           const offer = selectionOfferName(g);
-                          const itemPrice = Number(g.price || 0);
+                          const mapSeat =
+                            g.seatId == null || g.seatId === ""
+                              ? undefined
+                              : mapMapping?.seats?.[String(g.seatId)];
+                          const additionalLabel = getSeatAdditionalLabel({
+                            ticketGroup: g,
+                            mapSeat,
+                            seatLabels: mapMapping?.seatLabels,
+                          });
+                          const itemPrice = listedUnitPrice(
+                            g.price,
+                            g.offer || g.package,
+                            g.listing,
+                          );
                           return (
                             <li
                               key={`${g.seatId ?? g.id}-${groupIndex}-${unitIndex}`}
@@ -1208,44 +1294,60 @@ export default function SeatMapSelectionOverlay({
                               <div
                                 style={{
                                   display: "grid",
-                                  gridTemplateColumns: "58px 58px 58px 1fr",
+                                  gridTemplateColumns: isGA
+                                    ? "minmax(0, 1fr) auto"
+                                    : "58px 58px 58px 1fr",
                                   gap: 10,
                                   alignItems: "start",
                                 }}
                               >
-                                {[
-                                  ["Sec", section],
-                                  ["Row", row],
-                                  ["Seat", seat],
-                                ].map(([label, value]) => (
-                                  <div key={label}>
-                                    <div
-                                      style={{
-                                        fontSize: "11px",
-                                        fontWeight: 600,
-                                        color: "#9DA2B3",
-                                        textTransform: "uppercase",
-                                        letterSpacing: "0.12em",
-                                      }}
-                                    >
-                                      {label}
-                                    </div>
-                                    <div
-                                      style={{
-                                        marginTop: 1,
-                                        fontSize: "17px",
-                                        fontWeight: 600,
-                                      }}
-                                    >
-                                      {value}
-                                    </div>
+                                {isGA ? (
+                                  // GA has no row or seat: the section name alone, no Sec label.
+                                  <div
+                                    style={{
+                                      minWidth: 0,
+                                      fontSize: "17px",
+                                      fontWeight: 600,
+                                      overflowWrap: "anywhere",
+                                    }}
+                                  >
+                                    {section}
                                   </div>
-                                ))}
+                                ) : (
+                                  [
+                                    ["Sec", section],
+                                    ["Row", row],
+                                    ["Seat", seat],
+                                  ].map(([label, value]) => (
+                                    <div key={label}>
+                                      <div
+                                        style={{
+                                          fontSize: "11px",
+                                          fontWeight: 600,
+                                          color: "#9DA2B3",
+                                          textTransform: "uppercase",
+                                          letterSpacing: "0.12em",
+                                        }}
+                                      >
+                                        {label}
+                                      </div>
+                                      <div
+                                        style={{
+                                          marginTop: 1,
+                                          fontSize: "17px",
+                                          fontWeight: 600,
+                                        }}
+                                      >
+                                        {value}
+                                      </div>
+                                    </div>
+                                  ))
+                                )}
                                 <div style={{ textAlign: "right" }}>
                                   <div style={{ fontSize: "17px", fontWeight: 600 }}>
                                     {money(itemPrice)}
                                   </div>
-                                  {selectionPriceNote ? (
+                                  {itemPrice === 0 || selectionPriceNote ? (
                                   <div
                                     style={{
                                       marginTop: 1,
@@ -1254,11 +1356,27 @@ export default function SeatMapSelectionOverlay({
                                       whiteSpace: "nowrap",
                                     }}
                                   >
-                                    {selectionPriceNote}
+                                    {itemPrice === 0 ? "Complimentary" : selectionPriceNote}
                                   </div>
                                   ) : null}
                                 </div>
                               </div>
+                              <AccessibleSeatingBadge
+                                source={g}
+                                style={{ marginTop: 10 }}
+                              />
+                              {additionalLabel ? (
+                                <div
+                                  style={{
+                                    marginTop: 8,
+                                    fontSize: fluidSize(13),
+                                    lineHeight: 1.5,
+                                    color: "#6e7180",
+                                  }}
+                                >
+                                  {additionalLabel}
+                                </div>
+                              ) : null}
                               <div
                                 style={{
                                   height: 1,
@@ -1470,3 +1588,5 @@ export default function SeatMapSelectionOverlay({
     </div>
   );
 }
+
+export default memo(SeatMapSelectionOverlay);

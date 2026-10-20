@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { DEMO_EVENTS, DEMO_USER, demoFlexPack, demoSeasonPackage } from "@/lib/demo/fixtures";
+import {
+  DEMO_EVENTS,
+  DEMO_USER,
+  demoFlexPack,
+  demoSeasonPackage,
+  demoTicketGroups,
+} from "@/lib/demo/fixtures";
 import {
   attractionImageUrl,
   emailPatternMatch,
@@ -9,7 +15,9 @@ import {
   flexPackPurchasePath,
   formatDoorsTime,
   formatEventWhen,
+  formatOnSaleBadge,
   formatOnSaleWhen,
+  listedUnitPrice,
   imageUrl,
   isBlockedEmail,
   isRequestCanceled,
@@ -21,6 +29,30 @@ import {
 } from "@/lib/helpers";
 
 const seated = DEMO_EVENTS.find((e) => e.shortcode === "RAPT006")!;
+
+describe("listedUnitPrice", () => {
+  const group = demoTicketGroups().ticketGroups.find(
+    (row) => row.offer && row.price != null && !row.offer.freeOffer,
+  )!;
+
+  it("keeps a listed price and falls back to the asking price only when price is missing", () => {
+    expect(listedUnitPrice(group.price, group.offer, { askingPrice: 1 })).toBe(
+      group.price,
+    );
+    expect(listedUnitPrice(null, group.offer, { askingPrice: group.price })).toBe(
+      group.price,
+    );
+    expect(listedUnitPrice(0, group.offer, { askingPrice: group.price })).toBe(0);
+  });
+
+  it("lists a complimentary offer at zero", () => {
+    expect(
+      listedUnitPrice(group.price, { ...group.offer, freeOffer: true }, {
+        askingPrice: group.price,
+      }),
+    ).toBe(0);
+  });
+});
 
 describe("eventDoorsIso", () => {
   it("prefers realDoorsOpen and falls back to doorsOpen", () => {
@@ -64,6 +96,43 @@ describe("formatOnSaleWhen", () => {
 
   it("returns empty when the timestamp is missing", () => {
     expect(formatOnSaleWhen(undefined, seated.venue.timezone)).toBe("");
+  });
+});
+
+describe("formatOnSaleBadge", () => {
+  const sale = "2026-11-01T17:00:00.000Z";
+
+  it("leaves the clock off until the sale is inside 24 hours", () => {
+    expect(
+      formatOnSaleBadge(sale, "America/Denver", "2026-10-15T16:00:00.000Z"),
+    ).toBe("On sale Nov 1");
+    expect(
+      formatOnSaleBadge(
+        "2026-09-04T09:15:00.000Z",
+        "America/New_York",
+        "2026-08-01T12:00:00.000Z",
+      ),
+    ).toBe("On sale Sep 4");
+  });
+
+  it("says today or tomorrow with the time inside the next 24 hours", () => {
+    expect(
+      formatOnSaleBadge(sale, "America/Denver", "2026-11-01T15:00:00.000Z"),
+    ).toBe("On sale today · 10 AM MST");
+    expect(
+      formatOnSaleBadge(sale, "America/Denver", "2026-10-31T18:00:00.000Z"),
+    ).toBe("On sale tomorrow · 10 AM MST");
+    expect(
+      formatOnSaleBadge(
+        "2026-09-04T09:15:00.000Z",
+        "America/New_York",
+        "2026-09-04T08:00:00.000Z",
+      ),
+    ).toBe("On sale today · 5:15 AM EDT");
+  });
+
+  it("returns empty when the timestamp is missing", () => {
+    expect(formatOnSaleBadge(undefined, seated.venue.timezone)).toBe("");
   });
 });
 

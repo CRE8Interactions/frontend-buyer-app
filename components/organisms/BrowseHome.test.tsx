@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { ReactNode } from "react";
@@ -12,6 +12,7 @@ import {
   eventFromPriceLabel,
   monthEventCountLabel,
 } from "@/lib/eventFromPrice";
+import { onSaleBadgeLabel } from "@/lib/eventSoldOut";
 import { eventTypeLabel, pickFeaturedEvents } from "@/lib/eventType";
 
 vi.mock("next/link", () => ({
@@ -43,12 +44,14 @@ vi.mock("@/lib/api", () => ({
   getVenues: vi.fn(),
   getVenueUpcomingEvents: vi.fn(),
   searchEvents: vi.fn(),
+  getTicketGroups: vi.fn(),
 }));
 
 import {
   getEvents,
   getEventsByIds,
   getOrganizationsOnSale,
+  getTicketGroups,
   getVenueUpcomingEvents,
   getVenues,
   searchEvents,
@@ -186,6 +189,25 @@ describe("Browse page", () => {
     ).not.toBeInTheDocument();
   });
 
+  it("shows the promotional description on the featured slider but not on the event card", async () => {
+    const promo = "Pink Night. Free bobblehead for the first 1,000 fans.";
+    const [featured, ...rest] = DEMO_EVENTS;
+    mockBrowseApis({
+      events: [{ ...featured, promotionalDescription: promo }, ...rest],
+    });
+
+    render(<BrowseHome />);
+
+    const hero = (await screen.findByText(/featured · /i)).closest("section") as HTMLElement;
+    expect(within(hero).getByText(promo)).toBeInTheDocument();
+    expect(screen.getAllByText(promo)).toHaveLength(1);
+    const card = screen
+      .getAllByText(featured.name)
+      .map((title) => title.closest(".bh-ev"))
+      .find(Boolean) as HTMLElement;
+    expect(within(card).queryByText(promo)).not.toBeInTheDocument();
+  });
+
   it("keeps a plain get-tickets CTA when the featured event has no price", async () => {
     const { pricingLevels: _levels, ticketGroups: _groups, ...bare } =
       DEMO_EVENTS[0] as (typeof DEMO_EVENTS)[0] & { ticketGroups?: unknown };
@@ -316,6 +338,28 @@ describe("Browse page", () => {
     expect(screen.getAllByText(/6 events/i).length).toBeGreaterThan(0);
   });
 
+  it("does not show the promotional description on a search result", async () => {
+    const user = userEvent.setup();
+    const match = DEMO_EVENTS.find((event) => /raptors/i.test(event.name))!;
+    mockedSearchEvents.mockResolvedValue({
+      data: [
+        {
+          ...match,
+          promotionalDescription: [
+            { type: "paragraph", children: [{ type: "text", text: "Kids eat free." }] },
+          ],
+        },
+      ],
+    } as never);
+    render(<BrowseHome />);
+    await screen.findByRole("heading", { name: /^events$/i });
+
+    await user.type(screen.getByPlaceholderText(/search for events/i), "rap");
+
+    expect(await screen.findByText(match.name)).toBeInTheDocument();
+    expect(screen.queryByText("Kids eat free.")).not.toBeInTheDocument();
+  });
+
   it("shows search no-match copy without emptying the browse grid", async () => {
     const user = userEvent.setup();
     mockedSearchEvents.mockResolvedValue({ data: [] } as never);
@@ -432,7 +476,9 @@ describe("Browse page", () => {
     expect(
       (await screen.findAllByText(DEMO_EVENTS[0].name)).length,
     ).toBeGreaterThan(0);
-    const seated = DEMO_EVENTS.find((e) => e.seatmap.ga_only === false)!;
+    const seated = DEMO_EVENTS.find(
+      (e) => e.seatmap.ga_only === false && e.status !== "presale",
+    )!;
     const href = `/e/${seated.slug}/${seated.shortCode}/tickets/`;
     const card = screen
       .getAllByRole("link")
@@ -485,6 +531,173 @@ describe("Browse page", () => {
         .getAllByRole("link", { name: /meridian centre/i })
         .some((el) => el.getAttribute("href") === "/venue/meridian-centre/"),
     ).toBe(true);
+  });
+
+  it("keeps sold-out and not-yet-on-sale events out of the slider", async () => {
+    const sold = DEMO_EVENTS[0];
+    const presale = DEMO_EVENTS.find((event) => event.status === "presale")!;
+    const featured = DEMO_EVENTS.find((event) => event.shortCode === "BUCS002")!;
+    mockedGetEventsByIds.mockResolvedValue({
+      data: {
+        data: [
+          {
+            id: sold.id,
+            attributes: {
+              uuid: sold.uuid,
+              shortCode: sold.shortCode,
+              status: "on_sale",
+              soldOut: true,
+            },
+          },
+        ],
+      },
+    } as never);
+    render(<BrowseHome />);
+
+    const hero = (await screen.findByText(/featured · /i)).closest("section");
+    expect(hero).not.toBeNull();
+    expect(hero).toHaveTextContent(featured.name);
+    expect(hero).not.toHaveTextContent(sold.name);
+    expect(hero).not.toHaveTextContent(presale.name);
+
+    expect(screen.getAllByText(/^sold out$/i)).toHaveLength(2);
+    expect(screen.getByText(/remind me/i)).toBeInTheDocument();
+    expect(
+      screen
+        .queryAllByRole("link")
+        .some((el) => (el.getAttribute("href") || "").includes(sold.shortCode)),
+    ).toBe(false);
+    expect(
+      screen
+        .getAllByRole("link")
+        .some((el) => (el.getAttribute("href") || "").includes(presale.shortCode)),
+    ).toBe(true);
+    expect(
+      screen
+        .getAllByRole("link")
+        .some((el) => (el.getAttribute("href") || "").includes(featured.shortCode)),
+    ).toBe(true);
+  });
+
+  it("keeps an event with a future on-sale time out of the slider", async () => {
+    const when = "2026-11-01T17:00:00.000Z";
+    const waiting = DEMO_EVENTS.find((event) => event.shortCode === "RAPT006")!;
+    const live = DEMO_EVENTS.find((event) => event.shortCode === "BUCS002")!;
+    mockBrowseApis({ events: [waiting, live] });
+    mockedGetEventsByIds.mockResolvedValue({
+      data: {
+        data: [
+          {
+            id: waiting.id,
+            attributes: {
+              uuid: waiting.uuid,
+              shortCode: waiting.shortCode,
+              status: "on_sale",
+              generalOnsale: when,
+            },
+          },
+        ],
+      },
+    } as never);
+
+    render(<BrowseHome />);
+
+    const hero = (await screen.findByText(/featured · /i)).closest("section");
+    expect(hero).not.toBeNull();
+    expect(hero).toHaveTextContent(live.name);
+    expect(hero).not.toHaveTextContent(waiting.name);
+    expect(await screen.findByText(/^remind me$/i)).toBeInTheDocument();
+    expect(
+      screen
+        .getAllByRole("link")
+        .some((el) => (el.getAttribute("href") || "").includes(waiting.shortCode)),
+    ).toBe(true);
+  });
+
+  it("shows a GA event as sold out and unclickable when its inventory is sold out", async () => {
+    const ga = DEMO_EVENTS.find(
+      (event) => event.seatmap?.ga_only && event.status === "on_sale",
+    )!;
+    const soldGa = { ...ga, id: 9201, uuid: "evt-browse-ga-sold-out" };
+    mockBrowseApis({ events: [soldGa] });
+    vi.mocked(getTicketGroups).mockImplementation(((payload: { event: { uuid: string } }) =>
+      Promise.resolve({
+        data:
+          payload.event.uuid === soldGa.uuid
+            ? { soldout: true, ticketGroups: [], offers: [] }
+            : { soldout: false, ticketGroups: [], offers: [] },
+      })) as never);
+    render(<BrowseHome />);
+
+    expect((await screen.findAllByText(soldGa.name)).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/^sold out$/i)).toHaveLength(2);
+    expect(
+      screen
+        .queryAllByRole("link")
+        .some((el) => (el.getAttribute("href") || "").includes(soldGa.shortCode)),
+    ).toBe(false);
+    vi.mocked(getTicketGroups).mockReset();
+  });
+
+  it("shows an on-sale badge on seated and GA event cards", async () => {
+    const when = "2026-11-01T17:00:00.000Z";
+    const seated = DEMO_EVENTS.find(
+      (event) => event.seatmap?.ga_only === false && event.status === "on_sale",
+    )!;
+    const ga = DEMO_EVENTS.find(
+      (event) => event.seatmap?.ga_only && event.status === "on_sale",
+    )!;
+    mockBrowseApis({ events: [seated, ga] });
+    mockedGetEventsByIds.mockResolvedValue({
+      data: {
+        data: [seated, ga].map((event) => ({
+          id: event.id,
+          attributes: {
+            uuid: event.uuid,
+            shortCode: event.shortCode,
+            status: "on_sale",
+            generalOnsale: when,
+            hideGeneralOnsale: false,
+          },
+        })),
+      },
+    } as never);
+
+    render(<BrowseHome />);
+
+    for (const event of [seated, ga]) {
+      const titles = await screen.findAllByText(event.name);
+      const card = titles.map((title) => title.closest(".bh-ev")).find(Boolean);
+      expect(card).not.toBeNull();
+      expect(
+        within(card as HTMLElement).getByText(
+          onSaleBadgeLabel({ ...event, generalOnsale: when, status: "on_sale" }),
+        ),
+      ).toBeInTheDocument();
+      expect(within(card as HTMLElement).getByText(/^remind me$/i)).toBeInTheDocument();
+      expect(within(card as HTMLElement).queryByText(/^get tickets$/i)).not.toBeInTheDocument();
+    }
+  });
+
+  it("does not badge an event card whose on-sale time is hidden or already past", async () => {
+    const hidden = {
+      ...DEMO_EVENTS.find((event) => event.shortCode === "RAPT006")!,
+      generalOnsale: "2026-11-01T17:00:00.000Z",
+      hideGeneralOnsale: true,
+    };
+    const past = {
+      ...DEMO_EVENTS.find(
+        (event) => event.seatmap?.ga_only && event.status === "on_sale",
+      )!,
+      generalOnsale: "2020-11-01T17:00:00.000Z",
+    };
+    mockBrowseApis({ events: [hidden, past] });
+
+    render(<BrowseHome />);
+
+    expect((await screen.findAllByText(hidden.name)).length).toBeGreaterThan(0);
+    expect(screen.queryByText(/on sale nov 1/i)).not.toBeInTheDocument();
+    expect(screen.getAllByText(/^on sale$/i).length).toBeGreaterThan(0);
   });
 
   it("shows On sale and Remind me status treatments in the event cards", async () => {

@@ -22,6 +22,7 @@ export type GuestBuyer = {
   email: string;
   firstName: string;
   lastName: string;
+  marketingEmailOptIn?: boolean;
 };
 
 export type GuestCheckoutCart = {
@@ -60,13 +61,19 @@ export function parseGuestBuyer(input: {
   email: string;
   firstName: string;
   lastName: string;
+  marketingEmailOptIn?: boolean;
 }): GuestBuyer | null {
   const email = normalizeEmail(input.email);
   const firstName = input.firstName.trim();
   const lastName = input.lastName.trim();
   if (!email || emailLooksInvalid(email)) return null;
   if (nameFieldError(firstName) || nameFieldError(lastName)) return null;
-  return { email, firstName, lastName };
+  return {
+    email,
+    firstName,
+    lastName,
+    marketingEmailOptIn: Boolean(input.marketingEmailOptIn),
+  };
 }
 
 function readGuestCheckout(): GuestBuyer {
@@ -80,11 +87,15 @@ function readGuestCheckout(): GuestBuyer {
       email?: unknown;
       firstName?: unknown;
       lastName?: unknown;
+      marketingEmailOptIn?: unknown;
     };
     return {
       email: typeof parsed?.email === "string" ? parsed.email : "",
       firstName: typeof parsed?.firstName === "string" ? parsed.firstName : "",
       lastName: typeof parsed?.lastName === "string" ? parsed.lastName : "",
+      ...(typeof parsed?.marketingEmailOptIn === "boolean"
+        ? { marketingEmailOptIn: parsed.marketingEmailOptIn }
+        : {}),
     };
   } catch {
     return { email: "", firstName: "", lastName: "" };

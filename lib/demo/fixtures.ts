@@ -143,6 +143,7 @@ function demoOrg(slug: string, name: string, category?: string) {
     website: DEMO_ORG_WEBSITES[slug],
     enableTransfer: true,
     enableResale: true,
+    setting: { printTickets: true },
   };
 }
 
@@ -233,6 +234,10 @@ export const DEMO_ORGS = [
     events: DEMO_ORG_EVENT_COUNT(7),
   },
 ];
+
+for (const org of DEMO_ORGS) {
+  Object.assign(org, { setting: { printTickets: true } });
+}
 
 /** Events shown on Browse (trending) + event detail. */
 export const DEMO_EVENTS = [
@@ -576,6 +581,8 @@ export const DEMO_SEATED_TICKET_GROUPS: RawTicketGroup[] = [
     sectionId: "sec-m",
     sectionNumber: "M",
     rowNumber: "M3",
+    // Best-seat rank from the API: lower is closer to the action.
+    sortOrder: 1,
     price: 33.59,
     availableCount: 4,
     maxContiguous: 4,
@@ -599,12 +606,14 @@ export const DEMO_SEATED_TICKET_GROUPS: RawTicketGroup[] = [
     sectionNumber: "A",
     rowNumber: "12",
     PLName: "Level A",
+    sortOrder: 2,
     price: 21.94,
     availableCount: 6,
     maxContiguous: 6,
     seatIds: ["a1", "a2", "a3", "a4", "a5", "a6"],
     GA: false,
     accessible: true,
+    accessibleType: "DA",
     offer: {
       id: 11,
       name: "Section A-B",
@@ -663,12 +672,14 @@ export const DEMO_SEATED_TICKET_GROUPS: RawTicketGroup[] = [
     sectionNumber: "A",
     rowNumber: "12",
     PLName: "Level A",
+    sortOrder: 2,
     price: 21.94,
     availableCount: 6,
     maxContiguous: 6,
     seatIds: ["a1", "a2", "a3", "a4", "a5", "a6"],
     GA: false,
     accessible: true,
+    accessibleType: "DA",
     offer: {
       id: 11,
       name: "Section A-B",
@@ -693,6 +704,7 @@ export const DEMO_SEATED_TICKET_GROUPS: RawTicketGroup[] = [
     sectionId: "sec-n",
     sectionNumber: "N",
     rowNumber: "I",
+    sortOrder: 3,
     price: 11.64,
     availableCount: 8,
     maxContiguous: 8,
@@ -798,6 +810,12 @@ export function demoSeatmapMapping(): SeatmapMapping {
         cy: 200 + sectionIndex * 60,
         w: 10,
         h: 10,
+        ...(section.sectionId === "sec-a"
+          ? { accessible: true, accessibleType: "DA" }
+          : {}),
+        ...(section.sectionId === "sec-n" && seatIndex < 2
+          ? { accessible: true, accessibleType: "DB" }
+          : {}),
       };
     });
     sections[section.sectionId] = {
@@ -893,6 +911,11 @@ export function demoCheckoutCart(
       cost: unitPrice,
       price: unitPrice,
       offerName: listing.offer?.name,
+      accessible: Boolean("accessible" in listing && listing.accessible),
+      accessibleType:
+        "accessibleType" in listing
+          ? (listing as { accessibleType?: string }).accessibleType
+          : undefined,
       ...(ga
         ? { GA: true, generalAdmission: true, offer: listing.offer }
         : {}),
@@ -1127,6 +1150,8 @@ type DemoPackageCartTicket = {
   offerName?: string;
   generalAdmission?: boolean;
   GA?: boolean;
+  accessible?: boolean;
+  accessibleType?: string;
 };
 
 /** Checkout cart for a season package hold — NM State seats by default. */

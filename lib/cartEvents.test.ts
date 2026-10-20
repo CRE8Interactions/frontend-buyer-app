@@ -87,7 +87,7 @@ describe("cartEvents wallet schedule", () => {
     expect(summary.today).toBe(true);
     expect(summary.when).toBe("Tonight · 7:35 PM");
     expect(summary.whenDate).toBe("Sat, Aug 15 · 7:35 PM");
-    expect(walletEventScheduleLine(summary)).toMatch(/^Doors open · /);
+    expect(walletEventScheduleLine(summary)).toMatch(/^Doors · /);
     expect(walletEventScheduleLine(summary)).toContain("6:35 PM");
   });
 
@@ -140,6 +140,25 @@ describe("wallet event detail venue and summary", () => {
 
   it("leaves the summary empty when the event has neither", () => {
     expect(detailFor(withStreet).blurb).toBe("");
+  });
+
+  it("shows the promotional description under the event summary", () => {
+    const promo = "Free bobblehead to the first 1,000 attendees";
+    expect(
+      detailFor({
+        ...withStreet,
+        promotionalDescription: [
+          { type: "paragraph", children: [{ type: "text", text: promo }] },
+        ],
+      }).promo,
+    ).toBe(promo);
+  });
+
+  it("leaves the promotional line empty when the event has none", () => {
+    expect(detailFor(withStreet).promo).toBe("");
+    expect(
+      detailFor({ ...withStreet, promotionalDescription: "   " }).promo,
+    ).toBe("");
   });
 
   it("takes the summary and street address from a fetched order", () => {
@@ -229,6 +248,8 @@ describe("wallet order totals", () => {
         checkInCode: ticket.code,
         name: "Prelims",
         offer: { name: "Prelims", description: "Morning session" },
+        accessible: true,
+        accessibleType: "DA",
       })),
     });
 
@@ -236,6 +257,8 @@ describe("wallet order totals", () => {
       name: "Prelims",
       offerName: "Prelims",
       offer: { name: "Prelims", description: "Morning session" },
+      accessible: true,
+      accessibleType: "DA",
     });
   });
 
@@ -334,6 +357,44 @@ describe("wallet order totals", () => {
 
 describe("wallet ticket seat order", () => {
   const upcoming = DEMO_EVENTS.find((event) => event.shortCode === "NMST004")!;
+
+  it("does not repeat Sec when the section name already says Section", () => {
+    const [ticket] = demoCheckoutCart({ ticketCount: 1 }).tickets;
+    const detail = Object.values(
+      buildOrderEventDetails([
+        demoCompletedTicketOrder({
+          event: upcoming,
+          tickets: [
+            {
+              ...ticket,
+              sectionName: "Section 115",
+              sectionNumber: "115",
+              rowNumber: "C",
+              seatNumber: 9,
+            },
+          ],
+        }),
+      ]),
+    )[0];
+
+    expect(detail.tickets[0]?.seat).toBe("Sec 115 · Row C · Seat 9");
+  });
+
+  it("shows the seat number without an accessibility suffix", () => {
+    const [ticket] = demoCheckoutCart({ ticketCount: 1 }).tickets;
+    const detail = Object.values(
+      buildOrderEventDetails([
+        demoCompletedTicketOrder({
+          event: upcoming,
+          tickets: [{ ...ticket, seatNumber: "13_DB" }],
+        }),
+      ]),
+    )[0];
+
+    expect(detail.tickets[0]?.seat).toBe(
+      `Sec ${ticket.sectionNumber} · Row ${ticket.rowNumber} · Seat 13`,
+    );
+  });
 
   it("lists seats in ascending order when the API returns them reversed", () => {
     const [first, second] = demoCheckoutCart({ ticketCount: 2 }).tickets;
@@ -497,6 +558,23 @@ describe("wallet season-package orders", () => {
 
     expect(buildSeasonPackageSummaries(apiOrder).map((row) => row.orderId)).toEqual(
       ["later-package-order", "sooner-package-order"],
+    );
+  });
+
+  it("keeps each order's games when two purchases share a package", () => {
+    const earlier = demoCompletedPackageOrder();
+    const later = demoCompletedPackageOrder({
+      id: 1500,
+      orderId: "1500-000000-0001",
+    });
+    const details = buildSeasonPackageEventDetails([earlier, later]);
+    const gamesFor = (orderId: string) =>
+      Object.values(details).filter((detail) => detail.orderId === orderId);
+
+    expect(gamesFor(String(earlier.orderId))).toHaveLength(pkg.events.length);
+    expect(gamesFor(String(later.orderId))).toHaveLength(pkg.events.length);
+    expect(gamesFor(String(earlier.orderId)).map((detail) => detail.eventUUID)).toEqual(
+      pkg.events.map((event) => event.uuid),
     );
   });
 
@@ -1502,7 +1580,7 @@ describe("wallet season-package orders", () => {
     const [row] = summarizeEventDetails(merged);
 
     expect(row?.ticketCount).toBe(2);
-    expect(row?.ticketSeats).toEqual(["Sec Club x 2"]);
+    expect(row?.ticketSeats).toEqual(["Club x 2"]);
   });
 
   it("does not duplicate a single pending incoming transfer in upcoming", () => {
@@ -2340,7 +2418,7 @@ describe("wallet season-package orders", () => {
       package: { ...order.package, events: [activeEvent] },
       tickets,
     });
-    const packageKey = `${String(packageOrder.package?.uuid || packageOrder.orderId)}:${activeEvent.uuid}`;
+    const packageKey = `${String(packageOrder.package?.uuid || packageOrder.orderId)}:${packageOrder.orderId}:${activeEvent.uuid}`;
     const wallet = buildWalletEventDetails(
       [packageOrder],
       packageOrder.email,
@@ -2680,7 +2758,7 @@ describe("wallet season-package orders", () => {
     const wallet = buildSeasonPackageEventDetails([packageOrder]);
     const afterClaim = pruneTransferredWalletDetails(wallet);
     const schedule = summarizeEventDetails(afterClaim, "schedule");
-    const packageKey = `${String(packageOrder.package?.uuid || packageOrder.orderId)}:${activeEvent.uuid}`;
+    const packageKey = `${String(packageOrder.package?.uuid || packageOrder.orderId)}:${packageOrder.orderId}:${activeEvent.uuid}`;
 
     expect(afterClaim[packageKey]?.availability).toBe("transferred");
     expect(schedule.some((row) => row.key === packageKey)).toBe(true);

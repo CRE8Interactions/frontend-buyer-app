@@ -26,6 +26,7 @@ import {
   useState,
   type CSSProperties,
   type KeyboardEvent as ReactKeyboardEvent,
+  type ReactNode,
 } from "react";
 import Link from "next/link";
 import { useParams, usePathname, useSearchParams } from "next/navigation";
@@ -234,6 +235,8 @@ import {
   transferSeatChip,
   ticketRowValue,
   ticketSeatValue,
+  seatDisplayValue,
+  sectionDisplayValue,
   ticketSectionValue,
   unwrapList,
   unwrapAccessPassList,
@@ -243,6 +246,9 @@ import {
   type OrderLike,
   type TicketLike,
 } from "@/lib/wallet";
+import { getAccessibleLabel } from "@/lib/ticketAccessibility";
+import { getSeatAdditionalLabel } from "@/lib/seatLabels";
+import AccessibleSeatingBadge from "@/components/atoms/AccessibleSeatingBadge";
 import {
   addAccessPassToPhoneWallet,
   addTicketToPhoneWallet,
@@ -305,6 +311,48 @@ const walletEmptyState: React.CSSProperties = {
 const eyebrow: React.CSSProperties = {
   fontSize: fluidSize(10), fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.12em", lineHeight: 1.5, color: MUTE,
 };
+
+/**
+ * Keeps the edited value local. The wallet renders every event, ticket, and
+ * transfer from the same tree, so holding it on the page made each keystroke
+ * rebuild all of it.
+ */
+function ProfileFieldForm({
+  label,
+  help,
+  initialValue,
+  onCancel,
+  onSave,
+}: {
+  label?: string;
+  help?: string;
+  initialValue: string;
+  onCancel: () => void;
+  onSave: (next: string) => void;
+}) {
+  const autoFocusField = useAutoFocus<HTMLInputElement>(true);
+  const [value, setValue] = useState(initialValue);
+  return (
+    <form
+      noValidate
+      style={{ display: "flex", flexDirection: "column", gap: 18 }}
+      onSubmit={(e) => {
+        e.preventDefault();
+        onSave(String(new FormData(e.currentTarget).get("fieldValue") || value));
+      }}
+    >
+      <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+        <label style={{ fontSize: fluidSize(12), fontWeight: 600, color: FAINT }}>{label}</label>
+        <input ref={autoFocusField} name="fieldValue" value={value} onChange={(e) => setValue(e.target.value)} style={{ fontFamily: "inherit", width: "100%", boxSizing: "border-box", fontSize: fluidSize(16), color: INK, background: "#fff", border: "1px solid rgba(5,27,53,0.12)", borderRadius: 14, padding: "14px 16px", outline: "none" }} />
+        <div style={{ fontSize: fluidSize(12), lineHeight: browseLeading("body"), color: MUTE }}>{help}</div>
+      </div>
+      <div style={{ display: "flex", gap: 8 }}>
+        <button type="button" onClick={onCancel} style={{ fontFamily: "inherit", flex: 1, fontSize: fluidSize(15), fontWeight: 600, color: INK, background: "#f1f3f8", border: "none", borderRadius: 999, padding: 14, minHeight: 48, cursor: "pointer" }}>Cancel</button>
+        <button type="submit" style={{ fontFamily: "inherit", flex: 1, fontSize: fluidSize(15), fontWeight: 600, color: INK, background: ACCENT, border: "none", borderRadius: 999, padding: 14, minHeight: 48, cursor: "pointer" }}>Save</button>
+      </div>
+    </form>
+  );
+}
 
 function EventScheduleMeta({
   today,
@@ -791,7 +839,7 @@ function SplitAttractionHero({
 
 type EventT = {
   title: string; when: string; whenDate?: string; doors: string; venue: string; city: string; address: string;
-  id: string; brand: string; initials: string; blurb: string; rec: string; opp: string;
+  id: string; brand: string; initials: string; blurb: string; promo?: string; rec: string; opp: string;
   teams: { name: string; role: string; rec: string; initials: string; brand: string; logo?: string }[];
   tickets: { id?: number | string; seat: string; holder: string; code: string; raw?: Record<string, unknown> }[];
   attractions?: AttractionCard[];
@@ -815,6 +863,10 @@ type EventT = {
   incomingTransferOn?: string;
 };
 
+function mobileEventWhen(ev: Pick<EventT, "when" | "doors" | "venue">) {
+  return [ev.when, ev.doors ? `Doors ${ev.doors}` : "", ev.venue].filter(Boolean).join(" · ");
+}
+
 function detailToEventT(d: CartEventDetail, isCart = false): EventT {
   return {
     id: d.key,
@@ -828,6 +880,7 @@ function detailToEventT(d: CartEventDetail, isCart = false): EventT {
     brand: d.brand,
     initials: d.initials,
     blurb: d.blurb,
+    promo: d.promo,
     rec: "",
     opp: d.opp,
     teams: d.teams,
@@ -1104,6 +1157,325 @@ type SellWizard = {
   price: string;
 };
 
+/**
+ * Owns the complete transfer wizard state so selecting seats and typing an
+ * address do not re-render the wallet page behind the modal.
+ */
+function TransferModal({
+  initial,
+  event,
+  currentUserEmail,
+  mobile,
+  overlay,
+  sheet,
+  onClose,
+  onTransfer,
+  onViewTransfers,
+}: {
+  initial: TransferWizard;
+  event: EventT;
+  currentUserEmail: string;
+  mobile: boolean;
+  overlay: CSSProperties;
+  sheet: CSSProperties;
+  onClose: () => void;
+  onTransfer: (transfer: TransferWizard) => Promise<string | null>;
+  onViewTransfers: () => void;
+}) {
+  const [transfer, setTransfer] = useState(initial);
+  const [emailError, setEmailError] = useState<EmailFieldError>(null);
+  const [error, setError] = useState("");
+  const [saving, setSaving] = useState(false);
+  const emailFormRef = useRef<HTMLFormElement>(null);
+  const tickets = event.tickets
+    .map((ticket, index) => {
+      const chip = transferSeatChip(ticket.raw, ticket.seat);
+      return {
+        ticket,
+        key: String(ticket.id ?? ticket.code ?? index),
+        ...chip,
+      };
+    })
+    .filter(({ ticket }) => ticket.id != null);
+  const rowLabel = transferGroupLabel(
+    event.tickets[0]?.raw as TicketLike | undefined,
+  );
+  const selectedTickets = tickets.filter(({ key }) =>
+    transfer.sel.includes(key),
+  );
+  const kind: TransferModalKind = transfer.passKind ?? "ticket";
+  const count =
+    kind === "ticket"
+      ? Math.max(transfer.sel.length, selectedTickets.length)
+      : 1;
+  const canNext =
+    !saving &&
+    (transfer.step === 1
+      ? selectedTickets.length > 0
+      : transfer.step === 2
+        ? Boolean(normalizeEmail(transfer.email))
+        : true);
+  const modalType = {
+    title: 21,
+    stepTitle: 17,
+    meta: fluidSize(14),
+    metaMuted: fluidSize(13),
+    body: fluidSize(14),
+    fieldLabel: fluidSize(12),
+    fieldValue: fluidSize(15),
+    button: fluidSize(15),
+    error: fluidSize(13),
+    success: 21,
+  };
+  const chipStyle = {
+    width: 92,
+    height: 87,
+    boxSizing: "border-box" as const,
+    padding: "16px 10px",
+    flexShrink: 0,
+    justifyContent: "center",
+  };
+  const chipType = {
+    seatLabel: fluidSize(12),
+    seatNo: 22,
+  };
+
+  const next = async (rawEmail?: string) => {
+    if (transfer.step === 1) {
+      if (!selectedTickets.length) return;
+      setError("");
+      setEmailError(null);
+      setTransfer((current) => ({ ...current, step: 2 }));
+      return;
+    }
+    if (transfer.step === 2) {
+      setSaving(true);
+      setEmailError(null);
+      setError("");
+      const result = await validateSubmittedEmail(rawEmail ?? transfer.email);
+      setSaving(false);
+      if (!result.ok) {
+        if (result.error === "required" || result.error === "invalid") {
+          setEmailError(result.error);
+        } else {
+          setError(FIELD_COPY.network);
+        }
+        return;
+      }
+      if (result.email === normalizeEmail(currentUserEmail)) {
+        setError(
+          transfer.passKind
+            ? PASS_TRANSFER_DISPLAY_COPY.assigned
+            : ticketTransferAssignedCopy(selectedTickets.length),
+        );
+        return;
+      }
+      setTransfer((current) => ({
+        ...current,
+        email: result.email,
+        step: 3,
+      }));
+      return;
+    }
+    if (transfer.step === 3) {
+      setSaving(true);
+      setError("");
+      const transferError = await onTransfer(transfer);
+      setSaving(false);
+      if (transferError) {
+        setError(transferError);
+        return;
+      }
+      setTransfer((current) => ({ ...current, step: 4 }));
+      return;
+    }
+    onClose();
+  };
+
+  return (
+    <div style={{ ...overlay, zIndex: 85, alignItems: mobile ? "flex-end" : "center", padding: mobile ? 0 : 32 }}>
+      <div className={mobile ? "st-sheet-up st-transfer-sheet" : undefined} onClick={(e) => e.stopPropagation()} style={{ ...sheet, maxWidth: mobile ? "100%" : 460, width: "100%", maxHeight: mobile ? "92vh" : "88vh", overflowY: "auto", borderRadius: mobile ? "26px 26px 0 0" : 26, paddingBottom: mobile ? "calc(22px + env(safe-area-inset-bottom))" : 22 }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, paddingBottom: 16, borderBottom: "1px solid rgba(5,27,53,0.08)" }}>
+          <h2 style={{ margin: 0, fontSize: modalType.title, lineHeight: 1.5, fontWeight: 600, letterSpacing: "-0.02em" }}>Transfer</h2>
+          {!saving ? (
+            <button type="button" onClick={onClose} aria-label="Close" style={{ fontFamily: "inherit", flexShrink: 0, width: 34, height: 34, borderRadius: 999, background: "#f1f3f8", border: "none", color: FAINT, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}>
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" style={{ width: 16, height: 16 }}><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
+            </button>
+          ) : null}
+        </div>
+
+        {transfer.step === 1 ? (
+          <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+            <div style={{ fontSize: modalType.stepTitle, lineHeight: 1.5, fontWeight: 600, letterSpacing: "-0.015em" }}>Select tickets to transfer</div>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
+              <div style={{ fontSize: modalType.meta, lineHeight: 1.5, fontWeight: 600, color: mobile ? SUB : FAINT }}>{rowLabel}</div>
+              <div style={{ fontSize: modalType.metaMuted, lineHeight: 1.5, fontWeight: 600, color: mobile ? SUB : MUTE }}>{tickets.length} {tickets.length === 1 ? "ticket" : "tickets"}</div>
+            </div>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 10 }}>
+              {tickets.map(({ key, seatNo, isGA, ariaLabel }) => {
+                const picked = transfer.sel.includes(key);
+                return (
+                  <button key={key} type="button" aria-pressed={picked} aria-label={ariaLabel} onClick={() => setTransfer((current) => ({ ...current, sel: picked ? current.sel.filter((value) => value !== key) : [...current.sel, key] }))} style={{ fontFamily: "inherit", ...chipStyle, display: "flex", flexDirection: "column", alignItems: "center", gap: isGA ? 0 : 2, background: picked ? ACCENT : FIELD, color: INK, border: `1px solid ${picked ? ACCENT : "rgba(5,27,53,0.10)"}`, borderRadius: 16, cursor: "pointer" }}>
+                    {!isGA ? <span style={{ fontSize: chipType.seatLabel, lineHeight: 1.5, fontWeight: 500, color: picked ? "rgba(255,255,255,0.72)" : MUTE }}>Seat</span> : null}
+                    <span style={{ fontSize: chipType.seatNo, fontWeight: 600, letterSpacing: "-0.02em", lineHeight: 1.5 }}>{seatNo}</span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        ) : null}
+
+        {transfer.step === 2 ? (
+          <form ref={emailFormRef} id="season-xfer" noValidate style={{ display: "flex", flexDirection: "column", gap: 14 }} onSubmit={(event) => { event.preventDefault(); void next(submittedEmail(new FormData(event.currentTarget))); }}>
+            <div style={{ fontSize: modalType.stepTitle, fontWeight: 600, letterSpacing: "-0.015em" }}>Enter the recipient&apos;s email address</div>
+            <p style={{ margin: 0, fontSize: modalType.body, lineHeight: browseLeading("body"), color: SUB }}>{transferRecipientNotifyCopy(kind, count)}</p>
+            <EmailField
+              autoFocus
+              id="season-xfer-email"
+              name="email"
+              placeholder="name@email.com"
+              value={transfer.email}
+              error={emailError}
+              errorMessage={error || null}
+              disabled={saving}
+              onChange={(value) => {
+                setTransfer((current) => ({ ...current, email: value }));
+                setEmailError(null);
+                setError("");
+              }}
+              onBlur={(value) =>
+                setEmailError(emailBlurInvalid(value) ? "invalid" : null)
+              }
+            />
+          </form>
+        ) : null}
+
+        {transfer.step === 3 && saving ? (
+          <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 14, padding: "18px 0 8px" }}>
+            <div style={{ fontSize: modalType.stepTitle, fontWeight: 600, letterSpacing: "-0.015em", textAlign: "center" }}>{transferLoadingTitle(kind, count)}</div>
+            <p style={{ margin: 0, fontSize: modalType.body, lineHeight: browseLeading("body"), color: SUB, textAlign: "center" }}>Stay on this screen until the transfer finishes.</p>
+          </div>
+        ) : null}
+
+        {transfer.step === 3 && !saving ? (
+          <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+            <div style={{ fontSize: modalType.stepTitle, fontWeight: 600, letterSpacing: "-0.015em" }}>{transferConfirmTitle(kind, count)}</div>
+            {kind === "ticket" ? (
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 10 }}>
+                {selectedTickets.map(({ key, seatNo, isGA }) => (
+                  <div key={key} style={{ ...chipStyle, display: "flex", flexDirection: "column", alignItems: "center", gap: isGA ? 0 : 2, background: ACCENT, color: INK, borderRadius: 16 }}>
+                    {!isGA ? <span style={{ fontSize: chipType.seatLabel, lineHeight: 1.5, fontWeight: 500, color: "rgba(255,255,255,0.72)" }}>Seat</span> : null}
+                    <span style={{ fontSize: chipType.seatNo, fontWeight: 600, letterSpacing: "-0.02em", lineHeight: 1.5 }}>{seatNo}</span>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div style={{ display: "flex", flexDirection: "column", gap: 4, background: FIELD, borderRadius: 14, padding: "14px 16px" }}>
+                <div style={{ fontSize: modalType.fieldValue, fontWeight: 600 }}>{transfer.pass?.name}</div>
+                {kind === "access pass" ? (
+                  (transfer.pass?.eventCount ?? 0) > 0 ? <div style={{ fontSize: modalType.fieldLabel, color: MUTE }}>{formatAccessPassRemainingLine(0, transfer.pass?.eventCount ?? 0)}</div> : null
+                ) : transfer.pass?.seat && transfer.pass.seat !== "Ticket" ? (
+                  <div style={{ fontSize: modalType.fieldLabel, color: MUTE }}>{transfer.pass.seat}</div>
+                ) : null}
+              </div>
+            )}
+            <div style={{ display: "flex", flexDirection: "column", gap: 4, background: FIELD, borderRadius: 14, padding: "14px 16px" }}>
+              <div style={{ fontSize: modalType.fieldLabel, color: MUTE }}>Recipient email address</div>
+              <div style={{ fontSize: modalType.fieldValue, fontWeight: 600, overflowWrap: "anywhere" }}>{transfer.email}</div>
+            </div>
+            <p style={{ margin: 0, fontSize: modalType.body, lineHeight: browseLeading("body"), color: SUB }}>{transferWalletRemovalCopy(kind, count)}</p>
+          </div>
+        ) : null}
+
+        {error && transfer.step !== 2 ? <div role="alert" style={{ fontSize: modalType.error, color: DANGER }}>{error}</div> : null}
+
+        {transfer.step === 4 && !saving ? (
+          <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 14, padding: "6px 0 2px" }}>
+            <div style={{ width: 78, height: 78, borderRadius: 999, background: GREEN, display: "flex", alignItems: "center", justifyContent: "center" }}>
+              <svg viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth={2.6} strokeLinecap="round" strokeLinejoin="round" style={{ width: 38, height: 38 }}><polyline points="20 6 9 17 4 12" /></svg>
+            </div>
+            <div style={{ fontSize: modalType.success, lineHeight: 1.5, fontWeight: 600, letterSpacing: "-0.02em", textAlign: "center" }}>{transferSuccessTitle(kind, count)}</div>
+            <p style={{ margin: 0, fontSize: modalType.body, lineHeight: browseLeading("body"), color: SUB, textAlign: "center" }}>{transferSuccessBody(kind, count)}</p>
+          </div>
+        ) : null}
+
+        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          {(transfer.step === 2 && !transfer.passKind) || (transfer.step === 3 && !saving) ? (
+            <button type="button" onClick={() => { setEmailError(null); setError(""); setTransfer((current) => ({ ...current, step: current.step - 1 })); }} style={{ fontFamily: "inherit", flexShrink: 0, display: "flex", alignItems: "center", gap: 8, fontSize: modalType.button, lineHeight: 1.5, fontWeight: 600, color: INK, background: "#fff", border: "none", padding: "14px 12px", minHeight: 48, cursor: "pointer" }}>
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" style={{ width: 16, height: 16 }}><line x1="19" y1="12" x2="5" y2="12" /><polyline points="12 19 5 12 12 5" /></svg>
+              Back
+            </button>
+          ) : null}
+          {transfer.step === 4 && !saving ? (
+            <Link href={walletSectionHref("listings")} onClick={onViewTransfers} style={{ fontFamily: "inherit", flex: 1, display: "flex", alignItems: "center", justifyContent: "center", fontSize: modalType.button, fontWeight: 600, color: INK, background: "#f1f3f8", borderRadius: 999, padding: 14, minHeight: 48, textDecoration: "none", cursor: "pointer" }}>My transfers</Link>
+          ) : null}
+          {/*
+            Stays a plain button on every step. The same DOM node carries the
+            wizard from step 1 to step 2 (and back from step 3); if it flipped to
+            a native submit button during that click, the browser would run its
+            submit activation against the freshly rendered email form and push a
+            retained address straight through to the confirm step.
+          */}
+          <button
+            type="button"
+            onClick={
+              transfer.step === 2
+                ? () => emailFormRef.current?.requestSubmit()
+                : () => void next()
+            }
+            disabled={!canNext || saving}
+            aria-busy={saving || undefined}
+            style={{ fontFamily: "inherit", flex: 1, display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 8, fontSize: modalType.button, lineHeight: 1.5, fontWeight: 600, color: canNext ? INK : MUTE, background: canNext ? ACCENT : "#d7dbe6", border: "none", borderRadius: 999, padding: 14, minHeight: 48, cursor: "pointer" }}
+          >
+            <ButtonBusyContents loading={saving} loadingLabel={transfer.step === 2 ? "Checking email…" : "Transferring…"} spinnerColor={INK} trackColor="rgba(5,27,53,0.2)">
+              {transfer.step === 3 ? "Transfer" : transfer.step === 4 ? "Close" : "Next"}
+            </ButtonBusyContents>
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function soonestLinkedOrderDetail(rows: CartEventDetail[]) {
+  return (
+    [...rows].sort((a, b) =>
+      String(a.event?.start || "").localeCompare(String(b.event?.start || "")),
+    )[0] ?? null
+  );
+}
+
+/** Event detail for an emailed order that is not already in the wallet list. */
+function linkedDetailForRoute(
+  details: Record<string, CartEventDetail>,
+  routedOrderId?: string,
+  routedEventUUID?: string,
+  routedPackageUUID?: string,
+): CartEventDetail | null {
+  if (!routedOrderId) return null;
+  const rows = Object.values(details).filter(
+    (detail) => detail.orderId === routedOrderId,
+  );
+  if (!rows.length) return null;
+  if (routedPackageUUID && routedEventUUID) {
+    return (
+      rows.find(
+        (detail) =>
+          detail.eventUUID === routedEventUUID &&
+          detail.key.startsWith(`${routedPackageUUID}:`),
+      ) ?? null
+    );
+  }
+  if (routedEventUUID) {
+    return rows.find((detail) => detail.eventUUID === routedEventUUID) ?? null;
+  }
+  if (routedPackageUUID) return null;
+  return (
+    rows.find((detail) => !detail.key.includes(":")) ??
+    soonestLinkedOrderDetail(rows)
+  );
+}
+
 let walletApiHydratedInBrowserSession = false;
 
 /** Reset first-load API-only hydration (tests simulate a fresh browser session). */
@@ -1167,9 +1539,6 @@ export default function SeasonTickets({
   const [pvals, setPvals] = useState<Record<string, string>>({});
   const [toggles, setToggles] = useState<Record<string, boolean>>({});
   const [tf, setTf] = useState<TransferWizard | null>(null);
-  const [tfEmailErr, setTfEmailErr] = useState<EmailFieldError>(null);
-  const [tfError, setTfError] = useState("");
-  const [tfSaving, setTfSaving] = useState(false);
   const [sell, setSell] = useState<SellWizard | null>(null);
   const [sellError, setSellError] = useState("");
   const [sellPriceErr, setSellPriceErr] = useState<string | null>(null);
@@ -1282,9 +1651,19 @@ export default function SeasonTickets({
     ) => Promise<void>
   >(async () => undefined);
   const [fullOrders, setFullOrders] = useState<Record<string, OrderLike>>({});
+  const fullOrdersRef = useRef(fullOrders);
+  fullOrdersRef.current = fullOrders;
+  const [fullOrderFailed, setFullOrderFailed] = useState<
+    Record<string, boolean>
+  >({});
   const [fullOrderChecked, setFullOrderChecked] = useState<
     Record<string, boolean>
   >({});
+  const [linkedOrder, setLinkedOrder] = useState<{
+    orderId: string;
+    order: OrderLike | null;
+  } | null>(null);
+  const [linkedOrderPending, setLinkedOrderPending] = useState(false);
   const [matchupHeroReadyKey, setMatchupHeroReadyKey] = useState("");
   const [packageView, setPackageView] = useState<"pass" | "events">("pass");
   const [flexPacks, setFlexPacks] = useState<FlexPackSummary[]>([]);
@@ -1347,7 +1726,7 @@ export default function SeasonTickets({
     }
   };
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     setVw(window.innerWidth);
     setPhoneDevice(isPhoneDevice());
     setPassWallet(phoneWalletKind());
@@ -1915,8 +2294,9 @@ export default function SeasonTickets({
   ]);
 
   const mobile = vw < 900;
-  // Swipeable cards are phone-only: narrow width plus a phone UA (not tablet / DevTools iPad).
-  const mobileTicketView = vw <= 767 && phoneDevice;
+  // Swipeable cards follow the phone, including iPhone Safari requesting the
+  // desktop site (Macintosh UA and a wide layout width).
+  const mobileTicketView = phoneDevice;
   const isHolder = email.trim().toLowerCase() === "harrison.cogan@gmail.com";
   const events = useMemo(buildEvents, []);
   const showRoutedWallet = Boolean(
@@ -1926,7 +2306,7 @@ export default function SeasonTickets({
       routedPackageUUID ||
       routedAccessPassUUID,
   );
-  const routedSeasonPackage = useMemo(
+  const walletRoutedSeasonPackage = useMemo(
     () =>
       routedPackageUUID
         ? seasonPackages.find(
@@ -1943,13 +2323,7 @@ export default function SeasonTickets({
         : null,
     [routedOrderId, routedPackageUUID, seasonPackages],
   );
-  const routedPackagePassPending = Boolean(
-    routedSeasonPackage &&
-      (routedOrderId || routedSeasonPackage.orderId) &&
-      !routedEventUUID &&
-      !packagePassChecked[routedSeasonPackage.key],
-  );
-  const routedDetail = useMemo(() => {
+  const walletRoutedDetail = useMemo(() => {
     const list = Object.values(eventDetails);
     const sameOrder = (d: CartEventDetail) =>
       !routedOrderId || d.orderId === routedOrderId;
@@ -2006,7 +2380,42 @@ export default function SeasonTickets({
     routedPackageUUID,
     eventDetails,
   ]);
-  const routedFlexPack = useMemo(
+  const linkedOrderForRoute =
+    routedOrderId && linkedOrder?.orderId === routedOrderId
+      ? linkedOrder.order
+      : null;
+  const linkedDetails = useMemo(() => {
+    if (!linkedOrderForRoute) return {} as Record<string, CartEventDetail>;
+    const holderEmail = String(getSession()?.user?.email || email);
+    return buildWalletEventDetails([linkedOrderForRoute], holderEmail).allDetails;
+  }, [email, linkedOrderForRoute]);
+  const linkedSeasonPackage = useMemo(() => {
+    if (!routedPackageUUID || !linkedOrderForRoute) return null;
+    return (
+      buildSeasonPackageSummaries([linkedOrderForRoute]).find(
+        (row) =>
+          row.packageUUID === routedPackageUUID || row.key === routedPackageUUID,
+      ) ?? null
+    );
+  }, [linkedOrderForRoute, routedPackageUUID]);
+  const linkedFlexPacks = useMemo(
+    () =>
+      linkedOrderForRoute ? buildFlexPackSummaries([linkedOrderForRoute]) : [],
+    [linkedOrderForRoute],
+  );
+  const linkedRoutedDetail = useMemo(
+    () =>
+      linkedDetailForRoute(
+        linkedDetails,
+        routedOrderId,
+        routedEventUUID,
+        routedPackageUUID,
+      ),
+    [linkedDetails, routedEventUUID, routedOrderId, routedPackageUUID],
+  );
+  const routedDetail = walletRoutedDetail ?? linkedRoutedDetail;
+  const routedSeasonPackage = walletRoutedSeasonPackage ?? linkedSeasonPackage;
+  const walletFlexPack = useMemo(
     () =>
       routedFlexPackUUID
         ? flexPacks.find(
@@ -2024,6 +2433,77 @@ export default function SeasonTickets({
         : null,
     [routedFlexPackUUID, routedOrderId, flexPacks],
   );
+  const walletRouteHasTarget = routedFlexPackUUID
+    ? Boolean(walletFlexPack)
+    : routedPackageUUID && !routedEventUUID
+      ? Boolean(walletRoutedSeasonPackage)
+      : Boolean(walletRoutedDetail);
+  const linkedOrderFetchNeeded = Boolean(
+    routedOrderId &&
+      !routedAccessPassUUID &&
+      eventsChecked &&
+      !eventsLoading &&
+      !walletRouteHasTarget &&
+      linkedOrder?.orderId !== routedOrderId,
+  );
+  useEffect(() => {
+    if (!linkedOrderFetchNeeded || !routedOrderId) {
+      setLinkedOrderPending(false);
+      return;
+    }
+    let cancelled = false;
+    setLinkedOrderPending(true);
+    void (async () => {
+      try {
+        const order = unwrapOrder((await getOrder(routedOrderId)).data);
+        if (cancelled) return;
+        setLinkedOrder({ orderId: routedOrderId, order });
+        if (!order) return;
+        const storedId = String(order.orderId || order.id || routedOrderId);
+        setFullOrders((current) => ({
+          ...current,
+          [storedId]: order,
+          [routedOrderId]: order,
+        }));
+        setFullOrderFailed((current) => ({
+          ...current,
+          [storedId]: false,
+          [routedOrderId]: false,
+        }));
+        setFullOrderChecked((current) => ({
+          ...current,
+          [storedId]: true,
+          [routedOrderId]: true,
+        }));
+      } catch {
+        if (!cancelled) setLinkedOrder({ orderId: routedOrderId, order: null });
+      } finally {
+        if (!cancelled) setLinkedOrderPending(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [linkedOrderFetchNeeded, routedOrderId]);
+  const linkedFlexPack = useMemo(
+    () =>
+      routedFlexPackUUID
+        ? linkedFlexPacks.find(
+            (row) =>
+              (row.flexPackUUID === routedFlexPackUUID ||
+                row.key === routedFlexPackUUID) &&
+              (!routedOrderId || row.orderId === routedOrderId),
+          ) ||
+          linkedFlexPacks.find(
+            (row) =>
+              row.flexPackUUID === routedFlexPackUUID ||
+              row.key === routedFlexPackUUID,
+          ) ||
+          null
+        : null,
+    [linkedFlexPacks, routedFlexPackUUID, routedOrderId],
+  );
+  const routedFlexPack = walletFlexPack ?? linkedFlexPack;
   const routedAccessPass = useMemo(() => {
     if (!routedAccessPassUUID) return null;
     if (
@@ -2055,6 +2535,12 @@ export default function SeasonTickets({
     accessPasses,
     sentTransferRecords,
   ]);
+  const routedPackagePassPending = Boolean(
+    routedSeasonPackage &&
+      (routedOrderId || routedSeasonPackage.orderId) &&
+      !routedEventUUID &&
+      !packagePassChecked[routedSeasonPackage.key],
+  );
   const routedAccessPassPending = Boolean(
     routedAccessPassUUID &&
       !routedAccessPass &&
@@ -2076,19 +2562,29 @@ export default function SeasonTickets({
       ? evId.slice(6)
       : null;
   const activeEvId = orderEventKey ? `order:${orderEventKey}` : evId;
-  const activeDetail = orderEventKey ? eventDetails[orderEventKey] ?? null : null;
-  const activeOrderId = activeDetail?.orderId ?? "";
-  const activeWalletOrder =
-    activeOrderId
-      ? walletOrders.find(
-          (order) =>
-            String(order.orderId ?? order.id ?? "").trim() === activeOrderId,
-        ) ?? null
-      : null;
-  const sessionUser = getSession()?.user;
-  const ticketOrder = activeOrderId
-    ? fullOrders[activeOrderId] ?? activeWalletOrder
+  const activeDetail = orderEventKey
+    ? eventDetails[orderEventKey] ?? linkedDetails[orderEventKey] ?? null
     : null;
+  const activeOrderId = activeDetail?.orderId ?? "";
+  const sessionUser = getSession()?.user;
+  const linkedFullOrder =
+    linkedOrderForRoute &&
+    (String(linkedOrderForRoute.orderId ?? "").trim() === activeOrderId ||
+      String(linkedOrderForRoute.id ?? "").trim() === activeOrderId)
+      ? linkedOrderForRoute
+      : null;
+  // Tickets on this screen come from the order lookup. The upcoming-events
+  // list is not a substitute when that lookup fails. An emailed order that
+  // never appears on the list still renders from its own successful lookup.
+  const ticketOrder = activeOrderId
+    ? fullOrders[activeOrderId] ?? linkedFullOrder ?? null
+    : null;
+  const orderLookupFailed = Boolean(
+    activeOrderId &&
+      fullOrderFailed[activeOrderId] &&
+      !fullOrders[activeOrderId] &&
+      !linkedFullOrder,
+  );
   const ticketBuyer = {
     firstName: ticketOrder?.firstName || sessionUser?.firstName,
     lastName: ticketOrder?.lastName || sessionUser?.lastName,
@@ -2124,7 +2620,7 @@ export default function SeasonTickets({
         initials: t.initials,
       }));
   const eventOrderPending = Boolean(
-    activeOrderId && !fullOrderChecked[activeOrderId],
+    activeOrderId && !fullOrderChecked[activeOrderId] && !orderLookupFailed,
   );
   const matchupHeroKey = splitAttractionHeroKey(
     activeEvId,
@@ -2132,30 +2628,39 @@ export default function SeasonTickets({
     ev,
   );
   const matchupHeroPending = Boolean(
-    !eventOrderPending &&
+    !orderLookupFailed &&
+      !eventOrderPending &&
       matchupHeroKey &&
       matchupHeroReadyKey !== matchupHeroKey,
   );
-  const eventDetailPending = eventOrderPending || matchupHeroPending;
+  const eventDetailPending =
+    !orderLookupFailed && (eventOrderPending || matchupHeroPending);
   const routedWalletPending =
-    routedPackagePassPending ||
-    routedAccessPassPending ||
-    eventDetailPending ||
-    (showRoutedWallet &&
-      !routedTargetFound &&
-      (eventsLoading || !eventsChecked));
+    !orderLookupFailed &&
+    (routedPackagePassPending ||
+      routedAccessPassPending ||
+      eventDetailPending ||
+      linkedOrderPending ||
+      linkedOrderFetchNeeded ||
+      (showRoutedWallet &&
+        !routedTargetFound &&
+        (eventsLoading || !eventsChecked)));
   const routedWalletMissing =
-    showRoutedWallet && !routedTargetFound && !routedWalletPending;
+    showRoutedWallet &&
+    !routedWalletPending &&
+    (!routedTargetFound || orderLookupFailed);
   const showingEventDetail =
     showRoutedWallet
       ? Boolean(
           routedDetail &&
+            !orderLookupFailed &&
             !routedDetail.pendingIncomingTransfer &&
             !eventDetailPending &&
             !routedWalletPending &&
             !routedWalletMissing,
         )
       : screen === "event" &&
+          !orderLookupFailed &&
           !eventDetailPending &&
           !activeDetail?.pendingIncomingTransfer;
   const showingSeasonPackage =
@@ -2940,7 +3445,7 @@ export default function SeasonTickets({
   const seasonPackageGames = selectedSeasonPackage
     ? summarizeEventDetails(
         Object.fromEntries(
-          Object.entries(eventDetails).filter(
+          Object.entries({ ...eventDetails, ...linkedDetails }).filter(
             ([key, detail]) =>
               (!selectedSeasonPackage.orderId ||
                 detail.orderId === selectedSeasonPackage.orderId) &&
@@ -3010,11 +3515,17 @@ export default function SeasonTickets({
           rawPasses,
           sentTransferRecordsRef.current,
         );
-        const packageOrder = walletOrdersRef.current.find(
-          (row) =>
-            String(row.orderId || "") === orderId ||
-            String(row.id || "") === orderId,
-        );
+        const packageOrder =
+          walletOrdersRef.current.find(
+            (row) =>
+              String(row.orderId || "") === orderId ||
+              String(row.id || "") === orderId,
+          ) ??
+          (linkedOrderForRoute &&
+          (String(linkedOrderForRoute.orderId || "") === orderId ||
+            String(linkedOrderForRoute.id || "") === orderId)
+            ? linkedOrderForRoute
+            : undefined);
         const passes = buildAccessPassSummaries(owned, {
           includeInactive: true,
           packageEvents: packageOrder?.package?.events,
@@ -3043,7 +3554,7 @@ export default function SeasonTickets({
         setPackagePassChecked((current) => ({ ...current, [key]: true }));
       }
     },
-    [email],
+    [email, linkedOrderForRoute],
   );
 
   const closeTransferModal = useCallback(async () => {
@@ -3152,13 +3663,22 @@ export default function SeasonTickets({
   );
 
   const loadFullOrder = useCallback(async (orderId: string) => {
+    const noteLookupMiss = () => {
+      if (fullOrdersRef.current[orderId]) return;
+      setFullOrderFailed((current) => ({ ...current, [orderId]: true }));
+    };
     try {
       const order = unwrapOrder((await getOrder(orderId)).data);
       if (order) {
         setFullOrders((current) => ({ ...current, [orderId]: order }));
+        setFullOrderFailed((current) => ({ ...current, [orderId]: false }));
+      } else {
+        noteLookupMiss();
       }
     } catch {
-      // Screens fall back to what the wallet list returned for the order.
+      // A failed lookup must not keep tickets that only exist on the
+      // upcoming-events list. A lookup that already succeeded stays put.
+      noteLookupMiss();
     } finally {
       setFullOrderChecked((current) => ({ ...current, [orderId]: true }));
     }
@@ -3735,13 +4255,28 @@ export default function SeasonTickets({
     const pendingIncoming = row.pendingIncomingTransfer === true;
     const incomingPass = row.incomingPassTransfer === true;
     const passEventCountLabel = incomingPassEventCountLabel(row.passEventCount);
-    const orderNavReady = Boolean(row.orderId);
+    // Package games always navigate to /event/<uuid>. Fall back to the package
+    // being viewed when a rebuilt wallet row lost its own order or event id, so
+    // the row never opens in place with the package URL left in the address bar.
+    const rowDetail = eventDetails[row.key];
+    const rowOrderId = packageUUID
+      ? row.orderId ||
+        rowDetail?.orderId ||
+        selectedSeasonPackage?.orderId ||
+        routedOrderId ||
+        ""
+      : row.orderId || "";
+    const rowEventUUID =
+      row.eventUUID ||
+      rowDetail?.eventUUID ||
+      String(rowDetail?.event?.uuid || "").trim();
+    const orderNavReady = Boolean(rowOrderId);
     const href = packageUUID
       ? orderNavReady
-        ? walletPackageEventPath(row.orderId, packageUUID, row.eventUUID)
+        ? walletPackageEventPath(rowOrderId, packageUUID, rowEventUUID)
         : ""
       : orderNavReady
-        ? walletEventTicketsPath(row.orderId)
+        ? walletEventTicketsPath(rowOrderId)
         : "";
     const eventRowLayout = {
       position: "relative" as const,
@@ -4067,9 +4602,6 @@ export default function SeasonTickets({
     pass: AccessPassSummary,
     kind: Exclude<TransferModalKind, "ticket">,
   ) => {
-    setTfEmailErr(null);
-    setTfError("");
-    setTfSaving(false);
     setTf({
       step: 2,
       sel: [],
@@ -4247,6 +4779,11 @@ export default function SeasonTickets({
       const eventUUID = String(event.uuid || "").trim();
       const matchingDetail = eventUUID
         ? Object.values(eventDetails).find(
+            (detail) =>
+              detail.eventUUID === eventUUID &&
+              (!pass.orderId || detail.orderId === pass.orderId),
+          ) ||
+          Object.values(eventDetails).find(
             (detail) => detail.eventUUID === eventUUID,
           )
         : undefined;
@@ -4331,18 +4868,17 @@ export default function SeasonTickets({
         <Link
           key={`${highlighted ? "next-link-" : ""}${event.uuid || event.name}`}
           href={(() => {
-            const detail = Object.values(eventDetails).find(
-              (d) => d.eventUUID === eventUUID,
-            );
-            if (detail?.key.includes(":")) {
-              const packageUUID = detail.key.split(":")[0];
+            if (matchingDetail?.key.includes(":")) {
+              const packageUUID = matchingDetail.key.split(":")[0];
               return walletPackageEventPath(
-                detail.orderId,
+                matchingDetail.orderId,
                 packageUUID,
                 eventUUID,
               );
             }
-            return walletEventTicketsPath(detail?.orderId || routedOrderId);
+            return walletEventTicketsPath(
+              matchingDetail?.orderId || routedOrderId,
+            );
           })()}
           aria-label={`View ${event.name || "event"}`}
           style={{ color: "inherit", textDecoration: "none" }}
@@ -4626,14 +5162,18 @@ export default function SeasonTickets({
     const offerBadge = printedOfferBadgeName(t.raw);
     const raw = t.raw as TicketLike | undefined;
     const isGA = Boolean(raw?.generalAdmission || raw?.GA);
+    const additionalLabel = getSeatAdditionalLabel({ ticket: raw });
     if (isGA) {
       return {
         ...t,
-        sec: ticketSectionValue(raw) || "GA",
+        isGA: true,
+        sec: sectionDisplayValue(ticketSectionValue(raw)) || "GA",
         row: ticketRowValue(raw) || "GA",
-        seatNo: ticketSeatValue(raw) || "GA",
+        seatNo: seatDisplayValue(ticketSeatValue(raw)) || "GA",
         entryLine,
         offerBadge,
+        accessibleLabel: getAccessibleLabel(raw),
+        additionalLabel,
       };
     }
     const parts = t.seat.split("·").map((p) => p.trim());
@@ -4644,40 +5184,52 @@ export default function SeasonTickets({
     if (parts.length >= 3) {
       return {
         ...t,
-        sec: peel(parts[0], /^Sec\s*/i),
+        isGA: false,
+        sec: sectionDisplayValue(peel(parts[0], /^Sec\s*/i)),
         row: peel(parts[1], /^Row\s*/i),
-        seatNo: peel(parts[2], /^Seat\s*/i),
+        seatNo: seatDisplayValue(peel(parts[2], /^Seat\s*/i)) || "—",
         entryLine,
         offerBadge,
+        accessibleLabel: getAccessibleLabel(raw),
+        additionalLabel,
       };
     }
     if (parts.length === 2 && /^GA$/i.test(parts[1])) {
       return {
         ...t,
-        sec: peel(parts[0], /^Sec\s*/i),
+        isGA: true,
+        sec: sectionDisplayValue(peel(parts[0], /^Sec\s*/i)),
         row: "GA",
         seatNo: "GA",
         entryLine,
         offerBadge,
+        accessibleLabel: getAccessibleLabel(raw),
+        additionalLabel,
       };
     }
     if (parts.length === 2) {
       return {
         ...t,
-        sec: peel(parts[0], /^Sec\s*/i),
+        isGA: false,
+        sec: sectionDisplayValue(peel(parts[0], /^Sec\s*/i)),
         row: peel(parts[1], /^Row\s*/i),
         seatNo: "—",
         entryLine,
         offerBadge,
+        accessibleLabel: getAccessibleLabel(raw),
+        additionalLabel,
       };
     }
     return {
       ...t,
-      sec: peel(parts[0] || "GA", /^Sec\s*/i),
+      isGA: true,
+      sec: sectionDisplayValue(peel(parts[0] || "GA", /^Sec\s*/i)),
       row: "GA",
       seatNo: "GA",
       entryLine,
       offerBadge,
+      accessibleLabel: getAccessibleLabel(raw),
+      additionalLabel,
     };
   });
   const acquiredAtLabel = orderAcquiredLabel(
@@ -4711,8 +5263,6 @@ export default function SeasonTickets({
       : "");
   const openTransfer = () => {
     setTf({ step: 1, sel: [], email: "", evId: activeEvId });
-    setTfEmailErr(null);
-    setTfError("");
     setModal(null);
   };
   const openSell = () => {
@@ -4738,6 +5288,7 @@ export default function SeasonTickets({
           organization: { name: ev.teams[0]?.name },
         },
         buyer: ticketBuyer,
+        purchasedByOrganizationName: ticketOrder?.purchasedByOrganizationName,
         tickets: tickets.map((ticket) => ({
           ...(ticket.raw || {}),
           id: ticket.id,
@@ -4785,6 +5336,8 @@ export default function SeasonTickets({
     !pendingIncomingEvent &&
     ev.resaleEnabled === true &&
     ev.tickets.some((ticket) => ticket.id != null);
+  const canPrintTickets =
+    ev.event?.organization?.setting?.printTickets === true;
   const showEventActionsFooter =
     pendingIncomingEvent || canTransferEvent || canSellEvent;
   const manageActionBtnStyle: React.CSSProperties = {
@@ -4952,15 +5505,18 @@ export default function SeasonTickets({
   const MobileEvent = () => (
     <>
       {/* Blocktickets mobile event bar — fluid type, not desktop-pinned with ticket cards */}
-      <div style={{ position: "fixed", left: 0, right: 0, top: 0, zIndex: 45, boxSizing: "border-box", background: INK, boxShadow: "0 12px 30px -18px rgba(3,16,31,0.9)", padding: "calc(env(safe-area-inset-top) + 12px) 16px 12px", display: "flex", alignItems: "center", gap: 12 }}>
+      <div style={{ position: "sticky", top: 0, zIndex: 45, boxSizing: "border-box", background: INK, boxShadow: "0 12px 30px -18px rgba(3,16,31,0.9)", padding: "calc(env(safe-area-inset-top) + 12px) 16px 12px", display: "flex", alignItems: "flex-start", gap: 12 }}>
         {EventBackControl(mobileEventBackBtn, <BackArrow />, "Back")}
-        <div style={{ minWidth: 0, display: "flex", flexDirection: "column", gap: 2 }}>
+        <div style={{ minWidth: 0, flex: 1, display: "flex", flexDirection: "column", gap: 2 }}>
           <div style={{ fontSize: fluidSize(16), fontWeight: 600, lineHeight: 1.5, color: "#fff", letterSpacing: "-0.015em", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{ev.title}</div>
-          <div style={{ fontSize: fluidSize(12), lineHeight: 1.5, color: "rgba(255,255,255,0.78)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{ev.when} · {ev.venue}</div>
+          <div style={{ fontSize: fluidSize(12), lineHeight: 1.5, color: "rgba(255,255,255,0.78)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{mobileEventWhen(ev)}</div>
+          {ev.promo ? (
+            <div className="bt-event-promo" style={{ fontSize: fluidSize(12), fontWeight: 500, lineHeight: 1.4, color: "#fff", overflowWrap: "anywhere" }}>{ev.promo}</div>
+          ) : null}
         </div>
       </div>
 
-    <div className="st-mobile-ticket" style={{ boxSizing: "border-box", padding: `calc(env(safe-area-inset-top) + 74px) 12px ${showEventActionsFooter ? mobileStickyFooterReservePx(74) : "calc(28px + env(safe-area-inset-bottom))"}`, display: "flex", flexDirection: "column", gap: 16 }}>
+    <div className="st-mobile-ticket" style={{ boxSizing: "border-box", padding: `12px 12px ${showEventActionsFooter ? mobileStickyFooterReservePx(74, 24) : "calc(28px + env(safe-area-inset-bottom))"}`, display: "flex", flexDirection: "column", gap: 16 }}>
       {pendingIncomingEvent ? (
         <div style={{ ...card, borderRadius: 16, padding: "14px 16px", display: "flex", flexDirection: "column", gap: 6, border: "1px solid rgba(192,122,18,0.28)", background: "#fffaf2" }}>
           <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: fluidSize(13), fontWeight: 600, color: "#c07a12" }}>
@@ -4979,11 +5535,6 @@ export default function SeasonTickets({
             {/* card header — matchup */}
             <div style={{ position: "relative", height: 210, overflow: "hidden", background: "#06203c" }}>
               {renderEventHero({ radius: 0, logoSize: 72, compactTextSize: 16, fullTextSize: 16 })}
-              <div style={{ position: "absolute", inset: 0, zIndex: 5, background: "linear-gradient(180deg, rgba(6,8,14,0.05) 30%, rgba(6,8,14,0.86) 100%)" }} />
-              <div style={{ position: "absolute", zIndex: 6, left: 0, right: 0, bottom: 0, padding: 16, display: "flex", flexDirection: "column", gap: 4 }}>
-                <div style={{ fontSize: fluidSize(16), fontWeight: 600, color: "#fff", letterSpacing: "-0.02em", lineHeight: 1.25, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{ev.title}</div>
-                <div style={{ fontSize: fluidSize(12), lineHeight: 1.5, color: "rgba(255,255,255,0.74)" }}>{ev.when} · {ev.venue}</div>
-              </div>
             </div>
 
             {/* seat strip */}
@@ -4994,15 +5545,27 @@ export default function SeasonTickets({
                   <span style={{ alignSelf: "flex-start", fontSize: fluidSize(11), fontWeight: 600, color: INK, background: SOFT, borderRadius: 999, padding: "4px 10px" }}>{t.offerBadge}</span>
                 ) : null}
                 <div style={{ display: "flex", alignItems: "baseline", gap: 14 }}>
-                  {[["Sec", t.sec], ["Row", t.row], ["Seat", t.seatNo]].map(([k, v]) => (
-                    <div key={k} style={{ display: "flex", alignItems: "baseline", gap: 6 }}>
-                      <span style={{ fontSize: fluidSize(10), fontWeight: 600, lineHeight: 1.5, letterSpacing: "0.14em", textTransform: "uppercase", color: MUTE }}>{k}</span>
+                  {/* GA has no row or seat, so the strip is just the section name. */}
+                  {(t.isGA
+                    ? [["", t.sec]]
+                    : [["Sec", t.sec], ["Row", t.row], ["Seat", t.seatNo]]
+                  ).map(([k, v]) => (
+                    <div key={k || "section"} style={{ display: "flex", alignItems: "baseline", gap: 6 }}>
+                      {k ? (
+                        <span style={{ fontSize: fluidSize(10), fontWeight: 600, lineHeight: 1.5, letterSpacing: "0.14em", textTransform: "uppercase", color: MUTE }}>{k}</span>
+                      ) : null}
                       <span style={{ fontSize: 24, fontWeight: 600, lineHeight: 1.5, letterSpacing: "-0.025em", fontVariantNumeric: "tabular-nums" }}>{v === "—" ? "GA" : v}</span>
                     </div>
                   ))}
                 </div>
                 {t.entryLine ? (
                   <div style={{ fontSize: fluidSize(13), lineHeight: 1.5, color: SUB }}>{t.entryLine}</div>
+                ) : null}
+                {t.accessibleLabel ? (
+                  <AccessibleSeatingBadge label={t.accessibleLabel} style={{ marginTop: 4 }} />
+                ) : null}
+                {t.additionalLabel ? (
+                  <div style={{ fontSize: fluidSize(13), lineHeight: 1.5, color: SUB }}>{t.additionalLabel}</div>
                 ) : null}
               </div>
             </div>
@@ -5029,7 +5592,7 @@ export default function SeasonTickets({
               </button>
               ) : null}
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
-                <button onClick={() => { setDetail(t); setModal("qr"); }} style={{ fontFamily: "inherit", minHeight: 48, fontSize: fluidSize(14), fontWeight: 600, lineHeight: 1.5, color: INK, background: "#fff", border: `1px solid ${ACCENT}`, borderRadius: 12, cursor: "pointer" }}>View QR-Code</button>
+                <button onClick={() => { setDetail(t); setModal("qr"); }} style={{ fontFamily: "inherit", minHeight: 48, fontSize: fluidSize(14), fontWeight: 600, lineHeight: 1.5, color: INK, background: "#fff", border: `1px solid ${ACCENT}`, borderRadius: 12, cursor: "pointer" }}>View QR code</button>
                 <button onClick={() => { setDetail(t); setModal("details"); }} style={{ fontFamily: "inherit", minHeight: 48, fontSize: fluidSize(14), fontWeight: 600, lineHeight: 1.5, color: INK, background: "#fff", border: "1px solid rgba(5,27,53,0.14)", borderRadius: 12, cursor: "pointer" }}>Ticket details</button>
               </div>
               {ticketWalletError ? (
@@ -5146,8 +5709,11 @@ export default function SeasonTickets({
             <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
               <h1 className="st-ev-title" style={{ margin: 0, fontWeight: 600, letterSpacing: "-0.03em", ...(mobile ? { lineHeight: browseLeading("h2") } : { fontSize: 30, lineHeight: 1.1 }) }}>{ev.title}</h1>
               <div style={{ display: "flex", flexWrap: "wrap", gap: "4px 20px", fontSize: fluidSize(14), lineHeight: 1.5, color: SUB }}>
-                <span style={{ fontWeight: 600, color: INK }}>{ev.when}</span>{ev.doors ? <span>Doors open {ev.doors}</span> : null}
+                <span style={{ fontWeight: 600, color: INK }}>{ev.when}</span>{ev.doors ? <span>Doors {ev.doors}</span> : null}
               </div>
+              {ev.promo ? (
+                <p className="bt-event-promo" style={{ fontSize: fluidSize(14), fontWeight: 500, lineHeight: browseLeading("body"), color: FAINT }}>{ev.promo}</p>
+              ) : null}
             </div>
             <div style={{ height: 1, background: "rgba(5,27,53,0.08)" }} />
             <AttractionCards />
@@ -5168,36 +5734,44 @@ export default function SeasonTickets({
                 </div>
                 <div style={{ flex: 1, minWidth: 150, display: "flex", flexDirection: "column", gap: 5 }}>
                   <span style={{ alignSelf: "flex-start", fontSize: fluidSize(11), lineHeight: 1.5, fontWeight: 600, color: INK, background: SOFT, borderRadius: 999, padding: "4px 10px" }}>{t.offerBadge || "Tickets"}</span>
-                  <div style={{ fontSize: mobile ? fluidSize(17) : 17, lineHeight: 1.5, fontWeight: 600, letterSpacing: "-0.015em" }}>{t.seat}</div>
+                  <div style={{ fontSize: mobile ? fluidSize(17) : 17, lineHeight: 1.5, fontWeight: 600, letterSpacing: "-0.015em" }}>{t.isGA ? t.sec : t.seat}</div>
+                  {t.accessibleLabel ? (
+                    <AccessibleSeatingBadge label={t.accessibleLabel} style={{ marginTop: 2 }} />
+                  ) : null}
+                  {t.additionalLabel ? (
+                    <div style={{ fontSize: fluidSize(13), lineHeight: 1.5, color: SUB }}>{t.additionalLabel}</div>
+                  ) : null}
                 </div>
                 <div className="st-ev-seat-actions">
-                  <button
-                    type="button"
-                    disabled={printing !== null}
-                    aria-busy={printing === String(t.id || t.code) || undefined}
-                    onClick={() => void printTickets([t], "open")}
-                    style={{
-                      ...ghostBtn,
-                      fontSize: fluidSize(13),
-                      lineHeight: 1.5,
-                      padding: "11px 18px",
-                      display: "inline-flex",
-                      alignItems: "center",
-                      justifyContent: "center",
-                      gap: 8,
-                      cursor: printing !== null ? "default" : "pointer",
-                      opacity: printing !== null ? 0.55 : 1,
-                    }}
-                  >
-                    <ButtonBusyContents
-                      loading={printing === String(t.id || t.code)}
-                      loadingLabel="Preparing…"
-                      spinnerColor={INK}
-                      trackColor="rgba(5,27,53,0.2)"
+                  {canPrintTickets ? (
+                    <button
+                      type="button"
+                      disabled={printing !== null}
+                      aria-busy={printing === String(t.id || t.code) || undefined}
+                      onClick={() => void printTickets([t], "open")}
+                      style={{
+                        ...ghostBtn,
+                        fontSize: fluidSize(13),
+                        lineHeight: 1.5,
+                        padding: "11px 18px",
+                        display: "inline-flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        gap: 8,
+                        cursor: printing !== null ? "default" : "pointer",
+                        opacity: printing !== null ? 0.55 : 1,
+                      }}
                     >
-                      Print PDF
-                    </ButtonBusyContents>
-                  </button>
+                      <ButtonBusyContents
+                        loading={printing === String(t.id || t.code)}
+                        loadingLabel="Preparing…"
+                        spinnerColor={INK}
+                        trackColor="rgba(5,27,53,0.2)"
+                      >
+                        Print PDF
+                      </ButtonBusyContents>
+                    </button>
+                  ) : null}
                   <button onClick={() => { setDetail(t); setModal("details"); }} style={{ fontFamily: "inherit", fontSize: fluidSize(13), lineHeight: 1.5, fontWeight: 600, color: INK, background: "#f1f3f8", border: "none", borderRadius: 999, padding: "11px 18px", cursor: "pointer" }}>Details</button>
                 </div>
               </div>
@@ -5230,39 +5804,41 @@ export default function SeasonTickets({
             {canSellEvent ? (
               <button type="button" onClick={openSell} style={manageActionBtnStyle}>Sell</button>
             ) : null}
-            <button
-              type="button"
-              disabled={printing !== null || ev.tickets.length === 0}
-              aria-busy={printing === "all" || undefined}
-              onClick={() => void printTickets(ev.tickets, "download")}
-              style={{
-                fontFamily: "inherit",
-                width: "100%",
-                display: "flex",
-                alignItems: "center",
-                gap: 8,
-                textAlign: "left",
-                fontSize: fluidSize(14),
-                lineHeight: 1.5,
-                fontWeight: 600,
-                color: INK,
-                background: "#fff",
-                border: "1px solid rgba(5,27,53,0.14)",
-                borderRadius: 12,
-                padding: "13px 16px",
-                cursor: printing !== null || ev.tickets.length === 0 ? "default" : "pointer",
-                opacity: printing !== null || ev.tickets.length === 0 ? 0.55 : 1,
-              }}
-            >
-              <ButtonBusyContents
-                loading={printing === "all"}
-                loadingLabel="Preparing…"
-                spinnerColor={INK}
-                trackColor="rgba(5,27,53,0.2)"
+            {canPrintTickets ? (
+              <button
+                type="button"
+                disabled={printing !== null || ev.tickets.length === 0}
+                aria-busy={printing === "all" || undefined}
+                onClick={() => void printTickets(ev.tickets, "download")}
+                style={{
+                  fontFamily: "inherit",
+                  width: "100%",
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 8,
+                  textAlign: "left",
+                  fontSize: fluidSize(14),
+                  lineHeight: 1.5,
+                  fontWeight: 600,
+                  color: INK,
+                  background: "#fff",
+                  border: "1px solid rgba(5,27,53,0.14)",
+                  borderRadius: 12,
+                  padding: "13px 16px",
+                  cursor: printing !== null || ev.tickets.length === 0 ? "default" : "pointer",
+                  opacity: printing !== null || ev.tickets.length === 0 ? 0.55 : 1,
+                }}
               >
-                Print all
-              </ButtonBusyContents>
-            </button>
+                <ButtonBusyContents
+                  loading={printing === "all"}
+                  loadingLabel="Preparing…"
+                  spinnerColor={INK}
+                  trackColor="rgba(5,27,53,0.2)"
+                >
+                  Print all
+                </ButtonBusyContents>
+              </button>
+            ) : null}
             {printError ? <p role="alert" style={{ margin: 0, color: "#c2394a", fontSize: fluidSize(13) }}>{printError}</p> : null}
           </div>
           <div style={{ ...card, borderRadius: 20, padding: cardPad, display: "flex", flexDirection: "column", gap: 8 }}>
@@ -5319,7 +5895,7 @@ export default function SeasonTickets({
                 today={today}
                 scheduleLine={
                   today
-                    ? `Doors open · ${g.doors}`
+                    ? `Doors · ${g.doors}`
                     : `${g.date} · ${g.time}`
                 }
               />
@@ -5939,9 +6515,19 @@ export default function SeasonTickets({
   };
 
   const offerLine = formatPrintedOfferLine(detail?.raw);
-  const detailRows = [
-    { k: "Ticket", v: detail?.seat || "" },
+  const accessibleLine = getAccessibleLabel(detail?.raw);
+  const detailRows: { k: string; v: ReactNode }[] = [
+    {
+      k: "Ticket",
+      v:
+        detail && (detail.raw?.generalAdmission || detail.raw?.GA)
+          ? sectionDisplayValue(ticketSectionValue(detail.raw)) ||
+            sectionDisplayValue(detail.seat) ||
+            "GA"
+          : detail?.seat || "",
+    },
     ...(offerLine ? [{ k: "Offer", v: offerLine }] : []),
+    ...(accessibleLine ? [{ k: "Accessibility", v: accessibleLine }] : []),
     {
       k: "Holder",
       v: printedTicketHolderName(
@@ -6005,77 +6591,44 @@ export default function SeasonTickets({
           </div>
           {closeX(() => setModal(null))}
         </div>
-        <form
-          noValidate
-          style={{ display: "flex", flexDirection: "column", gap: 18 }}
-          onSubmit={(e) => {
-            e.preventDefault();
-            const next = String(new FormData(e.currentTarget).get("fieldValue") || fieldValue);
-            setFieldValue(next);
+        <ProfileFieldForm
+          key={field?.key}
+          label={field?.label}
+          help={field?.help}
+          initialValue={fieldValue}
+          onCancel={() => setModal(null)}
+          onSave={(next) => {
             if (field) {
               setPvals((p) => ({ ...p, [field.key]: next }));
               flashToast(field.key + " updated");
             }
             setModal(null);
           }}
-        >
-        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-          <label style={{ fontSize: fluidSize(12), fontWeight: 600, color: FAINT }}>{field?.label}</label>
-          <input ref={autoFocusField} name="fieldValue" value={fieldValue} onChange={(e) => setFieldValue(e.target.value)} style={{ fontFamily: "inherit", width: "100%", boxSizing: "border-box", fontSize: fluidSize(16), color: INK, background: "#fff", border: "1px solid rgba(5,27,53,0.12)", borderRadius: 14, padding: "14px 16px", outline: "none" }} />
-          <div style={{ fontSize: fluidSize(12), lineHeight: browseLeading("body"), color: MUTE }}>{field?.help}</div>
-        </div>
-        <div style={{ display: "flex", gap: 8 }}>
-          <button type="button" onClick={() => setModal(null)} style={{ fontFamily: "inherit", flex: 1, fontSize: fluidSize(15), fontWeight: 600, color: INK, background: "#f1f3f8", border: "none", borderRadius: 999, padding: 14, minHeight: 48, cursor: "pointer" }}>Cancel</button>
-          <button type="submit" style={{ fontFamily: "inherit", flex: 1, fontSize: fluidSize(15), fontWeight: 600, color: INK, background: ACCENT, border: "none", borderRadius: 999, padding: 14, minHeight: 48, cursor: "pointer" }}>Save</button>
-        </div>
-        </form>
+        />
       </div>
     </div>
   );
 
-  /* transfer wizard */
-  const tfEv = tf ? (events[tf.evId] || ev) : ev;
-  const tfTickets = (tfEv?.tickets || [])
-    .map((ticket, index) => {
-      const chip = transferSeatChip(ticket.raw, ticket.seat);
-      return {
+  /* Transfer side effects stay in the wallet; the modal owns wizard state. */
+  const submitTransfer = async (
+    activeTf: TransferWizard,
+  ): Promise<string | null> => {
+    const activeTfEv = events[activeTf.evId] || ev;
+    const activeTfTickets = (activeTfEv.tickets || [])
+      .map((ticket, index) => ({
         ticket,
         key: String(ticket.id ?? ticket.code ?? index),
-        ...chip,
-      };
-    })
-    .filter(({ ticket }) => ticket.id != null);
-  const tfRowLabel = transferGroupLabel(
-    tfEv?.tickets?.[0]?.raw as TicketLike | undefined,
-  );
-  const tfStep = tf?.step || 1;
-  const tfSel = tf?.sel || [];
-  const tfSelectedTickets = tfTickets.filter(({ key }) => tfSel.includes(key));
-  const tfKind: TransferModalKind = tf?.passKind ?? "ticket";
-  const tfCount = tfKind === "ticket" ? Math.max(tfSel.length, tfSelectedTickets.length) : 1;
-  const tfCanNext =
-    !tfSaving &&
-    (tfStep === 1
-      ? tfSelectedTickets.length > 0
-      : tfStep === 2
-        ? Boolean(normalizeEmail(tf?.email))
-        : true);
-  const doTfPrimary = async (rawEmail?: string) => {
-    if (!tf) return;
-    if (tfStep === 1 && tfSelectedTickets.length === 0) return;
-    if (tfStep === 4) {
-      await closeTransferModal();
-      return;
-    }
-    if (tfStep === 3) {
-      setTfSaving(true);
-      setTfError("");
-      try {
-        if (tf.passKind && tf.pass?.accessPassUUID) {
-          const optimisticPassId = `access-pass-transfer-${tf.pass.accessPassUUID}`;
+      }))
+      .filter(({ ticket }) => ticket.id != null);
+    const activeTfSelectedTickets = activeTfTickets.filter(({ key }) =>
+      activeTf.sel.includes(key),
+    );
+    try {
+        if (activeTf.passKind && activeTf.pass?.accessPassUUID) {
+          const optimisticPassId = `access-pass-transfer-${activeTf.pass.accessPassUUID}`;
           const passResponse = await createTicketTransfer({
-            accessPassId: tf.pass.accessPassUUID,
-            email: tf.email,
+            accessPassId: activeTf.pass.accessPassUUID,
+            email: activeTf.email,
           });
           const passCreatedAt = new Date().toISOString();
           const { id: transferId, createdAt } = resolveCreatedTransferMeta(
@@ -6083,9 +6636,9 @@ export default function SeasonTickets({
             { id: optimisticPassId, createdAt: passCreatedAt },
           );
           const seatLines =
-            tf.passKind === "season pass" ? [tf.pass.seat].filter(Boolean) : [];
+            activeTf.passKind === "season pass" ? [activeTf.pass.seat].filter(Boolean) : [];
           const passOrderId =
-            tf.pass.orderId ||
+            activeTf.pass.orderId ||
             routedOrderId ||
             selectedSeasonPackage?.orderId ||
             "";
@@ -6095,16 +6648,16 @@ export default function SeasonTickets({
               String(order.id || "") === passOrderId,
           );
           const stubPassEvents = mergeUniquePackageEvents(
-            tf.pass.events,
-            tf.pass.pass.events,
+            activeTf.pass.events,
+            activeTf.pass.pass.events,
           );
           const totalPassEvents =
-            tf.passKind === "access pass"
-              ? tf.pass.eventCount || stubPassEvents.length
+            activeTf.passKind === "access pass"
+              ? activeTf.pass.eventCount || stubPassEvents.length
               : stubPassEvents.length;
           const remainingCount = Math.max(
             0,
-            tf.pass.eventCount - tf.pass.attendedCount,
+            activeTf.pass.eventCount - activeTf.pass.attendedCount,
           );
           const eventCountLine =
             totalPassEvents === 1
@@ -6112,43 +6665,43 @@ export default function SeasonTickets({
               : `${totalPassEvents} events`;
           const entry: Sent = {
             id: transferId,
-            to: tf.email,
+            to: activeTf.email,
             from: String(getSession()?.user?.email || email || ""),
-            title: tf.pass.name,
+            title: activeTf.pass.name,
             seat: seatLines.join(" · "),
             seatLines,
             schedule:
-              tf.passKind === "access pass"
+              activeTf.passKind === "access pass"
                 ? formatAccessPassRemainingLine(remainingCount, totalPassEvents)
                 : eventCountLine,
             on: "Just now",
             createdAt,
             status: "pending",
-            passKind: tf.passKind,
-            accessPassId: tf.pass.accessPassUUID,
+            passKind: activeTf.passKind,
+            accessPassId: activeTf.pass.accessPassUUID,
             eventCount: totalPassEvents,
-            ...(tf.passKind === "access pass" ? { remainingCount } : {}),
+            ...(activeTf.passKind === "access pass" ? { remainingCount } : {}),
           };
           const passOrderSnapshot = buildPassTransferOrderSnapshot(
             packageOrder,
             stubPassEvents,
           );
           const accessPassSnapshot = {
-            uuid: tf.pass.accessPassUUID,
-            name: tf.pass.name,
-            type: tf.passKind === "season pass" ? "package" : "organizer",
+            uuid: activeTf.pass.accessPassUUID,
+            name: activeTf.pass.name,
+            type: activeTf.passKind === "season pass" ? "package" : "organizer",
             ...(passOrderId ? { orderId: passOrderId } : {}),
             events: stubPassEvents,
             artwork:
-              tf.pass.pass.artwork ??
+              activeTf.pass.pass.artwork ??
               packageOrder?.package?.image ??
               selectedSeasonPackage?.thumb,
-            ...(tf.passKind === "season pass"
+            ...(activeTf.passKind === "season pass"
               ? {
-                  sectionNumber: tf.pass.pass.sectionNumber,
-                  rowNumber: tf.pass.pass.rowNumber,
-                  seatNumber: tf.pass.pass.seatNumber,
-                  generalAdmission: tf.pass.pass.generalAdmission,
+                  sectionNumber: activeTf.pass.pass.sectionNumber,
+                  rowNumber: activeTf.pass.pass.rowNumber,
+                  seatNumber: activeTf.pass.pass.seatNumber,
+                  generalAdmission: activeTf.pass.pass.generalAdmission,
                 }
               : {}),
           };
@@ -6157,10 +6710,10 @@ export default function SeasonTickets({
             status: "pending",
             createdAt,
             fromUserEmail: String(getSession()?.user?.email || email || ""),
-            emailAddressToUser: tf.email,
+            emailAddressToUser: activeTf.email,
             transferType: "access_pass",
             orderId: passOrderId || undefined,
-            accessPassId: tf.pass.accessPassUUID,
+            accessPassId: activeTf.pass.accessPassUUID,
             ...(passOrderSnapshot ? { order: passOrderSnapshot } : {}),
             accessPassSnapshot,
             access_pass: accessPassSnapshot,
@@ -6168,9 +6721,9 @@ export default function SeasonTickets({
           setSent((current) => mergeWalletTransferRows([entry], current ?? []));
           let nextOrders = walletOrders;
           let removedTicketIds: Array<number | string> = [];
-          if (tf.passKind === "season pass" && packageOrder) {
+          if (activeTf.passKind === "season pass" && packageOrder) {
             const passSnapshot =
-              tf.pass.pass ??
+              activeTf.pass!.pass ??
               passStub.access_pass ??
               passStub.accessPass ??
               null;
@@ -6190,24 +6743,24 @@ export default function SeasonTickets({
           });
         } else {
           const transferWalletOrderId =
-            tfEv?.orderId ?? tfEv?.cartId ?? String(tfEv?.orderRecordId ?? "");
+            activeTfEv?.orderId ?? activeTfEv?.cartId ?? String(activeTfEv?.orderRecordId ?? "");
           const transferApiOrderId =
-            tfEv?.orderRecordId ??
+            activeTfEv?.orderRecordId ??
             walletOrders.find(
               (order) =>
                 String(order.orderId || "") === transferWalletOrderId ||
                 String(order.id || "") === transferWalletOrderId,
             )?.id;
           const transferEventUUID =
-            tfEv?.eventUUID ?? tfEv?.event?.uuid ?? undefined;
-          const optimisticTransferId = `transfer-${tfSelectedTickets
+            activeTfEv?.eventUUID ?? activeTfEv?.event?.uuid ?? undefined;
+          const optimisticTransferId = `transfer-${activeTfSelectedTickets
             .map(({ key }) => key)
             .join("-")}`;
           const ticketResponse = await createTicketTransfer({
-            email: tf.email,
+            email: activeTf.email,
             orderId: transferApiOrderId,
-            event: tfEv?.event,
-            ticketIds: tfSelectedTickets.map(({ ticket }) => ticket.id),
+            event: activeTfEv?.event,
+            ticketIds: activeTfSelectedTickets.map(({ ticket }) => ticket.id),
             eventUUID: transferEventUUID,
           });
           const ticketCreatedAt = new Date().toISOString();
@@ -6215,37 +6768,37 @@ export default function SeasonTickets({
             ticketResponse.data,
             { id: optimisticTransferId, createdAt: ticketCreatedAt },
           );
-          const selectedTicketPayloads = tfSelectedTickets.map(({ ticket }) => ({
+          const selectedTicketPayloads = activeTfSelectedTickets.map(({ ticket }) => ({
             ...(ticket.raw ?? {}),
             id: ticket.id,
           }));
           const seatLines = groupedWalletSeatLines(selectedTicketPayloads);
           const entry: Sent = {
             id: transferId,
-            to: tf.email,
-            title: tfEv?.title || "",
+            to: activeTf.email,
+            title: activeTfEv?.title || "",
             seat: seatLines.join(", "),
             seatLines,
             on: "Just now",
             createdAt,
             status: "pending",
-            ticketCount: tfSelectedTickets.length,
+            ticketCount: activeTfSelectedTickets.length,
           };
           const sentStub: PendingSentTransfer = {
             id: transferId,
             status: "pending",
             createdAt,
-            emailAddressToUser: tf.email,
+            emailAddressToUser: activeTf.email,
             orderId: transferWalletOrderId,
             eventUUID: transferEventUUID,
-            event: tfEv?.event,
-            tickets: tfSelectedTickets.map(({ ticket }) => ({
+            event: activeTfEv?.event,
+            tickets: activeTfSelectedTickets.map(({ ticket }) => ({
               ...(ticket.raw ?? {}),
               id: ticket.id,
               eventUUID: transferEventUUID,
             })),
           };
-          const removedTicketIds = tfSelectedTickets
+          const removedTicketIds = activeTfSelectedTickets
             .map(({ ticket }) => ticket.id)
             .filter((id): id is number | string => id != null && id !== "");
           const nextOrders = removeTicketsFromWalletOrders(
@@ -6261,46 +6814,12 @@ export default function SeasonTickets({
           });
         }
 
-      setTf({ ...tf, step: 4 });
-      } catch (err) {
-        setTfError(
-          tf.passKind
-            ? parsePassTransferApiError(err, tf.passKind)
-            : parseTicketTransferApiError(err, tfSelectedTickets.length),
-        );
-      } finally {
-        setTfSaving(false);
-      }
-      return;
+      return null;
+    } catch (err) {
+      return activeTf.passKind
+        ? parsePassTransferApiError(err, activeTf.passKind)
+        : parseTicketTransferApiError(err, activeTfSelectedTickets.length);
     }
-    if (tfStep === 2) {
-      setTfSaving(true);
-      setTfEmailErr(null);
-      setTfError("");
-      const result = await validateSubmittedEmail(rawEmail ?? tf.email);
-      setTfSaving(false);
-      if (!result.ok) {
-        if (result.error === "required" || result.error === "invalid") {
-          setTfEmailErr(result.error);
-        } else {
-          setTfError(FIELD_COPY.network);
-        }
-        return;
-      }
-      if (result.email === normalizeEmail(email)) {
-        setTfError(
-          tf.passKind
-            ? PASS_TRANSFER_DISPLAY_COPY.assigned
-            : ticketTransferAssignedCopy(tfSelectedTickets.length),
-        );
-        return;
-      }
-      setTf({ ...tf, email: result.email, step: 3 });
-      return;
-    }
-    setTfError("");
-    setTfEmailErr(null);
-    setTf({ ...tf, step: tfStep + 1 });
   };
   const transferModalType = {
     title: 21,
@@ -6326,169 +6845,6 @@ export default function SeasonTickets({
     seatLabel: fluidSize(12),
     seatNo: 22,
   };
-  const TransferModal = () => (
-    <div style={{ ...overlay, zIndex: 85, alignItems: mobile ? "flex-end" : "center", padding: mobile ? 0 : 32 }}>
-      <div className={mobile ? "st-sheet-up st-transfer-sheet" : undefined} onClick={(e) => e.stopPropagation()} style={{ ...sheet, maxWidth: mobile ? "100%" : 460, width: "100%", maxHeight: mobile ? "92vh" : "88vh", overflowY: "auto", borderRadius: mobile ? "26px 26px 0 0" : 26, paddingBottom: mobile ? "calc(22px + env(safe-area-inset-bottom))" : 22 }}>
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, paddingBottom: 16, borderBottom: "1px solid rgba(5,27,53,0.08)" }}>
-          <h2 style={{ margin: 0, fontSize: transferModalType.title, lineHeight: 1.5, fontWeight: 600, letterSpacing: "-0.02em" }}>Transfer</h2>
-          {tfSaving ? null : closeX(() => void closeTransferModal())}
-        </div>
-
-        {tfStep === 1 && (
-          <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-            <div style={{ fontSize: transferModalType.stepTitle, lineHeight: 1.5, fontWeight: 600, letterSpacing: "-0.015em" }}>Select tickets to transfer</div>
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
-              <div style={{ fontSize: transferModalType.meta, lineHeight: 1.5, fontWeight: 600, color: mobile ? SUB : FAINT }}>{tfRowLabel}</div>
-              <div style={{ fontSize: transferModalType.metaMuted, lineHeight: 1.5, fontWeight: 600, color: mobile ? SUB : MUTE }}>{tfTickets.length} {tfTickets.length === 1 ? "ticket" : "tickets"}</div>
-            </div>
-            <div style={{ display: "flex", flexWrap: "wrap", gap: 10 }}>
-              {tfTickets.map(({ key, seatNo, isGA, ariaLabel }) => {
-                const picked = tfSel.includes(key);
-                return (
-                  <button key={key} type="button" aria-pressed={picked} aria-label={ariaLabel} onClick={() => setTf({ ...tf!, sel: picked ? tfSel.filter((x) => x !== key) : [...tfSel, key] })} style={{ fontFamily: "inherit", ...transferChipStyle, display: "flex", flexDirection: "column", alignItems: "center", gap: isGA ? 0 : 2, background: picked ? ACCENT : FIELD, color: INK, border: `1px solid ${picked ? ACCENT : "rgba(5,27,53,0.10)"}`, borderRadius: 16, cursor: "pointer" }}>
-                    {!isGA ? (
-                      <span style={{ fontSize: transferChipType.seatLabel, lineHeight: 1.5, fontWeight: 500, color: picked ? "rgba(255,255,255,0.72)" : MUTE }}>Seat</span>
-                    ) : null}
-                    <span style={{ fontSize: transferChipType.seatNo, fontWeight: 600, letterSpacing: "-0.02em", lineHeight: 1.5 }}>{seatNo}</span>
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-        )}
-        {tfStep === 2 && (
-          <form
-            id="season-xfer"
-            noValidate
-            style={{ display: "flex", flexDirection: "column", gap: 14 }}
-            onSubmit={(e) => {
-              e.preventDefault();
-              doTfPrimary(submittedEmail(new FormData(e.currentTarget)));
-            }}
-          >
-            <div style={{ fontSize: transferModalType.stepTitle, fontWeight: 600, letterSpacing: "-0.015em" }}>Enter the recipient&apos;s email address</div>
-            <p style={{ margin: 0, fontSize: transferModalType.body, lineHeight: browseLeading("body"), color: SUB }}>
-              {transferRecipientNotifyCopy(tfKind, tfCount)}
-            </p>
-            <EmailField
-              autoFocus
-              id="season-xfer-email"
-              name="email"
-              placeholder="name@email.com"
-              value={tf?.email || ""}
-              error={tfEmailErr}
-              errorMessage={tfError || null}
-              disabled={tfSaving}
-              onChange={(value) => {
-                setTf({ ...tf!, email: value });
-                setTfEmailErr(null);
-                setTfError("");
-              }}
-              onBlur={(value) =>
-                setTfEmailErr(emailBlurInvalid(value) ? "invalid" : null)
-              }
-            />
-          </form>
-        )}
-        {tfStep === 3 && tfSaving ? (
-          <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 14, padding: "18px 0 8px" }}>
-            <div style={{ fontSize: transferModalType.stepTitle, fontWeight: 600, letterSpacing: "-0.015em", textAlign: "center" }}>
-              {transferLoadingTitle(tfKind, tfCount)}
-            </div>
-            <p style={{ margin: 0, fontSize: transferModalType.body, lineHeight: browseLeading("body"), color: SUB, textAlign: "center" }}>
-              Stay on this screen until the transfer finishes.
-            </p>
-          </div>
-        ) : null}
-        {tfStep === 3 && !tfSaving ? (
-          <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-            <div style={{ fontSize: transferModalType.stepTitle, fontWeight: 600, letterSpacing: "-0.015em" }}>{transferConfirmTitle(tfKind, tfCount)}</div>
-            {tfKind === "ticket" ? (
-            <div style={{ display: "flex", flexWrap: "wrap", gap: 10 }}>
-              {tfSelectedTickets.map(({ key, seatNo, isGA }) => (
-                <div key={key} style={{ ...transferChipStyle, display: "flex", flexDirection: "column", alignItems: "center", gap: isGA ? 0 : 2, background: ACCENT, color: INK, borderRadius: 16 }}>
-                  {!isGA ? (
-                    <span style={{ fontSize: transferChipType.seatLabel, lineHeight: 1.5, fontWeight: 500, color: "rgba(255,255,255,0.72)" }}>Seat</span>
-                  ) : null}
-                  <span style={{ fontSize: transferChipType.seatNo, fontWeight: 600, letterSpacing: "-0.02em", lineHeight: 1.5 }}>{seatNo}</span>
-                </div>
-              ))}
-            </div>
-            ) : (
-            <div style={{ display: "flex", flexDirection: "column", gap: 4, background: FIELD, borderRadius: 14, padding: "14px 16px" }}>
-              <div style={{ fontSize: transferModalType.fieldValue, fontWeight: 600 }}>{tf?.pass?.name}</div>
-              {tfKind === "access pass" ? (
-                (tf?.pass?.eventCount ?? 0) > 0 ? (
-                  <div style={{ fontSize: transferModalType.fieldLabel, color: MUTE }}>
-                    {formatAccessPassRemainingLine(0, tf?.pass?.eventCount ?? 0)}
-                  </div>
-                ) : null
-              ) : tf?.pass?.seat && tf.pass.seat !== "Ticket" ? (
-                <div style={{ fontSize: transferModalType.fieldLabel, color: MUTE }}>{tf.pass.seat}</div>
-              ) : null}
-          </div>
-        )}
-            <div style={{ display: "flex", flexDirection: "column", gap: 4, background: FIELD, borderRadius: 14, padding: "14px 16px" }}>
-              <div style={{ fontSize: transferModalType.fieldLabel, color: MUTE }}>Recipient email address</div>
-              <div style={{ fontSize: transferModalType.fieldValue, fontWeight: 600, overflowWrap: "anywhere" }}>{tf?.email}</div>
-            </div>
-            <p style={{ margin: 0, fontSize: transferModalType.body, lineHeight: browseLeading("body"), color: SUB }}>
-              {transferWalletRemovalCopy(tfKind, tfCount)}
-            </p>
-          </div>
-        ) : null}
-        {tfError && tfStep !== 2 ? (
-          <div role="alert" style={{ fontSize: transferModalType.error, color: DANGER }}>
-            {tfError}
-          </div>
-        ) : null}
-        {tfStep === 4 && !tfSaving && (
-          <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 14, padding: "6px 0 2px" }}>
-            <div style={{ width: 78, height: 78, borderRadius: 999, background: GREEN, display: "flex", alignItems: "center", justifyContent: "center" }}>
-              <svg viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth={2.6} strokeLinecap="round" strokeLinejoin="round" style={{ width: 38, height: 38 }}><polyline points="20 6 9 17 4 12" /></svg>
-            </div>
-            <div style={{ fontSize: transferModalType.success, lineHeight: 1.5, fontWeight: 600, letterSpacing: "-0.02em", textAlign: "center" }}>{transferSuccessTitle(tfKind, tfCount)}</div>
-            <p style={{ margin: 0, fontSize: transferModalType.body, lineHeight: browseLeading("body"), color: SUB, textAlign: "center" }}>{transferSuccessBody(tfKind, tfCount)}</p>
-          </div>
-        )}
-
-        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-          {(tfStep === 2 && !tf?.passKind) || (tfStep === 3 && !tfSaving) ? (
-            <button type="button" onClick={() => { setTfEmailErr(null); setTfError(""); setTf({ ...tf!, step: tfStep - 1 }); }} style={{ fontFamily: "inherit", flexShrink: 0, display: "flex", alignItems: "center", gap: 8, fontSize: transferModalType.button, lineHeight: 1.5, fontWeight: 600, color: INK, background: "#fff", border: "none", padding: "14px 12px", minHeight: 48, cursor: "pointer" }}><BackArrow />Back</button>
-          ) : null}
-          {tfStep === 4 && !tfSaving && (
-            <Link href={walletSectionHref("listings")} onClick={() => { setListingsSnapshotStale(true); void closeTransferModal(); setListTab("active"); }} style={{ fontFamily: "inherit", flex: 1, display: "flex", alignItems: "center", justifyContent: "center", fontSize: transferModalType.button, fontWeight: 600, color: INK, background: "#f1f3f8", borderRadius: 999, padding: 14, minHeight: 48, textDecoration: "none", cursor: "pointer" }}>My transfers</Link>
-          )}
-          <button
-            type="button"
-            onClick={() => {
-              if (tfStep === 2) {
-                const form = document.getElementById("season-xfer") as HTMLFormElement | null;
-                void doTfPrimary(
-                  form ? submittedEmail(new FormData(form)) : tf?.email,
-                );
-                return;
-              }
-              void doTfPrimary();
-            }}
-            disabled={!tfCanNext || tfSaving}
-            aria-busy={tfSaving || undefined}
-            style={{ fontFamily: "inherit", flex: 1, display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 8, fontSize: transferModalType.button, lineHeight: 1.5, fontWeight: 600, color: tfCanNext ? INK : MUTE, background: tfCanNext ? ACCENT : "#d7dbe6", border: "none", borderRadius: 999, padding: 14, minHeight: 48, cursor: "pointer" }}
-          >
-            <ButtonBusyContents
-              loading={tfSaving}
-              loadingLabel={tfStep === 2 ? "Checking email…" : "Transferring…"}
-              spinnerColor={INK}
-              trackColor="rgba(5,27,53,0.2)"
-            >
-              {tfStep === 3 ? "Transfer" : tfStep === 4 ? "Close" : "Next"}
-            </ButtonBusyContents>
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-
   const sellEv = sell ? (events[sell.evId] || ev) : ev;
   const sellTickets = (sellEv?.tickets || [])
     .map((ticket, index) => {
@@ -7286,7 +7642,7 @@ export default function SeasonTickets({
           {screen === "login" && Login()}
           {screen === "code" && CodeScreen()}
           {displaySection === "events" && screen === "events" && Events()}
-          {displaySection === "events" && screen === "event" && (eventDetailPending ? DetailLoader() : EventDetail())}
+          {displaySection === "events" && screen === "event" && (orderLookupFailed ? RoutedEventMissing() : eventDetailPending ? DetailLoader() : EventDetail())}
           {displaySection === "events" && screen === "seasonPackage" && SeasonPackage()}
           {displaySection === "events" && screen === "package" && Package()}
           {displaySection === "listings" && Listings()}
@@ -7299,7 +7655,24 @@ export default function SeasonTickets({
       {modal === "details" && DetailsModal()}
       {modal === "qr" && TicketQrModal()}
       {modal === "field" && FieldModal()}
-      {tf && TransferModal()}
+      {tf ? (
+        <TransferModal
+          key={`${tf.evId}-${tf.pass?.accessPassUUID ?? "tickets"}`}
+          initial={tf}
+          event={events[tf.evId] || ev}
+          currentUserEmail={email}
+          mobile={mobile}
+          overlay={overlay}
+          sheet={sheet}
+          onClose={() => void closeTransferModal()}
+          onTransfer={submitTransfer}
+          onViewTransfers={() => {
+            setListingsSnapshotStale(true);
+            void closeTransferModal();
+            setListTab("active");
+          }}
+        />
+      ) : null}
       {sell && SellModal()}
       {qrPass && AccessPassQrModal()}
       {confirmAccept && ConfirmAccept()}

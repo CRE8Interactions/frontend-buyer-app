@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within, act } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ReactNode } from "react";
@@ -21,6 +21,7 @@ import {
 } from "@/lib/mapSelection";
 import {
   groupsToGaTiers,
+  groupsToListings,
   lockedZonesFromGroups,
 } from "@/lib/ticketListings";
 import {
@@ -67,39 +68,49 @@ vi.mock("next/navigation", () => ({
 vi.mock("@/components/organisms/InteractiveSeatmap", async () => {
   const { useEffect } = await import("react");
   const { default: useFiltersStore } = await import("@/stores/filtersStore");
-  return {
-    InteractiveSeatmap: ({
-      onPaintReady,
-    }: {
-      onPaintReady?: () => void;
-    }) => {
-      const loading = useFiltersStore.getState().loadingTicketGroups;
-      useEffect(() => {
-        if (!loading) onPaintReady?.();
-      }, [loading, onPaintReady]);
-      return loading ? (
-        <div
-          data-testid="interactive-seatmap"
-          role="status"
-          aria-label="Loading seat map"
-        >
-          Loading seat map
-        </div>
-      ) : (
-        <div data-testid="interactive-seatmap">Interactive seat map</div>
-      );
-    },
-    InteractiveSeatmapMemo: () => (
+  const InteractiveSeatmap = ({
+    onPaintReady,
+  }: {
+    onPaintReady?: () => void;
+  }) => {
+    const loading = useFiltersStore.getState().loadingTicketGroups;
+    useEffect(() => {
+      if (!loading) onPaintReady?.();
+    }, [loading, onPaintReady]);
+    return loading ? (
+      <div
+        data-testid="interactive-seatmap"
+        role="status"
+        aria-label="Loading seat map"
+      >
+        Loading seat map
+      </div>
+    ) : (
       <div data-testid="interactive-seatmap">Interactive seat map</div>
-    ),
+    );
+  };
+  return {
+    InteractiveSeatmap,
+    InteractiveSeatmapMemo: InteractiveSeatmap,
   };
 });
 
-vi.mock("@/components/molecules/SectionLocatorThumb", () => ({
-  default: ({ sectionNumber }: { sectionNumber?: string | number }) => (
-    <div data-testid="section-thumb">Thumb {String(sectionNumber || "")}</div>
-  ),
-}));
+vi.mock("@/components/molecules/SectionLocatorThumb", async () => {
+  const { useEffect } = await import("react");
+  const SectionLocatorThumb = ({
+    sectionNumber,
+    onReady,
+  }: {
+    sectionNumber?: string | number;
+    onReady?: () => void;
+  }) => {
+    useEffect(() => {
+      onReady?.();
+    }, [onReady]);
+    return <div data-testid="section-thumb">Thumb {String(sectionNumber || "")}</div>;
+  };
+  return { default: SectionLocatorThumb };
+});
 
 vi.mock("@/lib/api", () => ({
   placeTicketsIntoCart: vi.fn(),
@@ -163,10 +174,13 @@ async function renderReady(
     onFiltersChange?: (filters: {
       quantity: number;
       accessible: boolean;
-      sort: "price" | "-price";
-    }) => void;
+      sort: "price" | "bestseat";
+      offerIds?: Array<string | number>;
+      accessCodes?: string[];
+    }) => void | Promise<void>;
     refreshing?: boolean;
     waitForListing?: RegExp | string;
+    initialFilters?: { quantity?: number; accessible?: boolean; sort?: "price" | "bestseat" };
   } = {},
 ) {
   const user = userEvent.setup();
@@ -175,6 +189,7 @@ async function renderReady(
       data={data}
       onFiltersChange={props.onFiltersChange}
       refreshing={props.refreshing}
+      initialFilters={props.initialFilters}
     />,
   );
   const waitForListing = props.waitForListing ?? /sec m · row m3/i;
@@ -206,16 +221,19 @@ function seedMapSelection() {
   return selected;
 }
 
-async function openLiveMap() {
-  const user = await renderReady({
-    ...seatedTicketingFixture,
-    seatmapMapping: demoSeatmapMapping(),
-    mapBackground: {
-      url: "https://example.com/bg.svg",
-      width: 1000,
-      height: 800,
+async function openLiveMap(props: Parameters<typeof renderReady>[1] = {}) {
+  const user = await renderReady(
+    {
+      ...seatedTicketingFixture,
+      seatmapMapping: demoSeatmapMapping(),
+      mapBackground: {
+        url: "https://example.com/bg.svg",
+        width: 1000,
+        height: 800,
+      },
     },
-  });
+    props,
+  );
   await user.click(screen.getAllByText(/find on map/i)[0]);
   await finishSeatmapBackgroundLoad();
   await waitFor(() => {
@@ -241,7 +259,19 @@ describe("Select tickets page (PremiumTicketing)", { timeout: 20_000 }, () => {
     mockedValidateEmail.mockResolvedValue({
       data: { verdict: "Valid" },
     } as never);
-    useFiltersStore.setState({ loadingTicketGroups: false, eventTicketLimit: null });
+    useFiltersStore.setState({
+      loadingTicketGroups: false,
+      eventTicketLimit: null,
+      filters: {
+        quantity: 2,
+        sort: "price",
+        accessible: false,
+        priceRange: [0, 500],
+        selectedOfferIds: [],
+        accessCodes: [],
+      },
+      ticketGroups: DEMO_SEATED_TICKET_GROUPS,
+    });
     resetSeatmapBackgroundCache();
     useSeatmapStore.setState({
       selectedFromMap: [],
@@ -281,6 +311,27 @@ describe("Select tickets page (PremiumTicketing)", { timeout: 20_000 }, () => {
     expect(screen.getByText(/1 – 4 tickets/i)).toBeInTheDocument();
     expect(screen.getByText(/\$33\.59 each/i)).toBeInTheDocument();
     expect(screen.getByText(/mobile tickets/i)).toBeInTheDocument();
+  });
+
+  it("lists a complimentary offer at $0.00 with a Complimentary note", async () => {
+    const group = DEMO_SEATED_TICKET_GROUPS[0];
+    const [listing] = groupsToListings([
+      {
+        ...group,
+        price: 1.96,
+        offer: { ...group.offer, name: "COMP TICKET", freeOffer: true },
+      },
+    ]);
+    await renderReady({
+      ...seatedTicketingFixture,
+      listings: [listing],
+      offerNames: ["COMP TICKET"],
+    });
+
+    expect(screen.getByText("$0.00 each")).toBeInTheDocument();
+    expect(screen.getByText("Complimentary")).toBeInTheDocument();
+    expect(screen.queryByText("$1.96 each")).not.toBeInTheDocument();
+    expect(screen.queryByText(/incl\. taxes & fees/i)).not.toBeInTheDocument();
   });
 
   it("closes event information when the backdrop is clicked", async () => {
@@ -328,6 +379,133 @@ describe("Select tickets page (PremiumTicketing)", { timeout: 20_000 }, () => {
     expect(
       screen.getByRole("link", { name: /blocktickets home/i }),
     ).toHaveAttribute("href", "/browse");
+  });
+
+  it("shows the promotional description under the ga event name", () => {
+    const promo = "Pink Night. Free bobblehead for the first 1,000 fans.";
+    render(
+      <PremiumTicketing
+        data={{
+          ...seatedTicketingFixture,
+          eventType: "ga",
+          promo,
+        }}
+      />,
+    );
+
+    const name = screen.getByRole("heading", { name: seatedTicketingFixture.eventName });
+    const line = screen.getByText(promo);
+    const when = screen.getByText(seatedTicketingFixture.whenLong);
+    expect(name.parentElement).toBe(line.parentElement);
+    expect(
+      name.compareDocumentPosition(when) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    expect(
+      when.compareDocumentPosition(line) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+  });
+
+  it("uses attraction artwork in the seated header and the brand logo when it is absent", () => {
+    const artwork = "https://cdn.example/bulls.jpg";
+    const brand = "https://cdn.example/brand.svg";
+    const { unmount } = render(
+      <PremiumTicketing
+        data={{
+          ...seatedTicketingFixture,
+          headerLogoSrc: artwork,
+          headerLogoAlt: "North Iowa Bulls",
+          headerLogoIsPhoto: true,
+        }}
+      />,
+    );
+
+    const photo = screen.getByRole("img", { name: "North Iowa Bulls" });
+    expect(photo).toHaveAttribute("src", artwork);
+
+    unmount();
+    render(
+      <PremiumTicketing
+        data={{
+          ...seatedTicketingFixture,
+          headerLogoSrc: brand,
+          headerLogoAlt: "North Iowa Bulls",
+          headerLogoIsPhoto: false,
+        }}
+      />,
+    );
+
+    const logo = screen.getByRole("img", { name: "North Iowa Bulls" });
+    expect(logo).toHaveAttribute("src", brand);
+  });
+
+  it("shows the event image in event information", () => {
+    render(<PremiumTicketing data={seatedTicketingFixture} />);
+    fireEvent.click(screen.getByRole("button", { name: "Event information" }));
+
+    const dialog = screen.getByRole("dialog", { name: "Event information" });
+    expect(
+      within(dialog).getByRole("img", { name: seatedTicketingFixture.homeLabel }),
+    ).toHaveAttribute("src", seatedTicketingFixture.logoSrc);
+    expect(
+      within(dialog).getAllByRole("img").some(
+        (img) => img.getAttribute("src") === seatedTicketingFixture.homeLogoSrc,
+      ),
+    ).toBe(true);
+  });
+
+  it("shows the home initials in event information when the event has no image", () => {
+    render(
+      <PremiumTicketing
+        data={{ ...seatedTicketingFixture, logoSrc: "" }}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Event information" }));
+
+    const dialog = screen.getByRole("dialog", { name: "Event information" });
+    expect(
+      within(dialog).queryByRole("img", { name: seatedTicketingFixture.homeLabel }),
+    ).toBeNull();
+    expect(
+      within(dialog).getByText(
+        seatedTicketingFixture.homeLabel.slice(0, 3).toUpperCase(),
+      ),
+    ).toBeTruthy();
+  });
+
+  it("shows the promotional description under the seated event name", () => {
+    const promo = "Pink Night. Free bobblehead for the first 1,000 fans.";
+    render(
+      <PremiumTicketing data={{ ...seatedTicketingFixture, promo }} />,
+    );
+
+    const name = screen.getByText(seatedTicketingFixture.eventName);
+    const line = screen.getByText(promo);
+    const when = screen.getByText(new RegExp(seatedTicketingFixture.whenLong));
+    expect(line.closest("header")).toBe(name.closest("header"));
+    expect(
+      name.compareDocumentPosition(when) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    expect(
+      when.compareDocumentPosition(line) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+  });
+
+  it("hides the promotional description on a seated event that has none", () => {
+    render(<PremiumTicketing data={seatedTicketingFixture} />);
+
+    expect(screen.getByText(seatedTicketingFixture.eventName)).toBeInTheDocument();
+    expect(screen.queryByText(/pink night/i)).not.toBeInTheDocument();
+  });
+
+  it("hides the promotional description when the event has none", () => {
+    render(
+      <PremiumTicketing
+        data={{ ...seatedTicketingFixture, eventType: "ga" }}
+      />,
+    );
+
+    expect(screen.getByText(seatedTicketingFixture.whenLong)).toBeInTheDocument();
+    expect(screen.queryByText(/pink night/i)).not.toBeInTheDocument();
   });
 
   it("links the header to My tickets as My wallet when logged in", async () => {
@@ -503,8 +681,13 @@ describe("Select tickets page (PremiumTicketing)", { timeout: 20_000 }, () => {
     await user.click(screen.getByRole("button", { name: /^4 tickets$/i }));
     expect(onFiltersChange).toHaveBeenCalledWith({
       quantity: 4,
+      // The starting quantity travels with the change so the URL can omit it.
+      defaultQuantity: 2,
       accessible: false,
       sort: "price",
+      offerIds: [],
+      accessCodes: [],
+      accessCodeTokens: [],
     });
 
     await user.click(
@@ -514,11 +697,15 @@ describe("Select tickets page (PremiumTicketing)", { timeout: 20_000 }, () => {
       expect.objectContaining({ accessible: true }),
     );
 
+    await user.click(screen.getByRole("button", { name: /^sort by price$/i }));
     await user.click(
-      screen.getByRole("button", { name: /sorted by lowest price/i }),
+      within(screen.getByRole("listbox", { name: /sort listings/i })).getByRole(
+        "option",
+        { name: /^best seat$/i },
+      ),
     );
     expect(onFiltersChange).toHaveBeenCalledWith(
-      expect.objectContaining({ sort: "-price" }),
+      expect.objectContaining({ sort: "bestseat" }),
     );
   });
 
@@ -547,53 +734,23 @@ describe("Select tickets page (PremiumTicketing)", { timeout: 20_000 }, () => {
     ).not.toBeInTheDocument();
   });
 
-  it("replaces the listings with the sold-out body card when the event is sold out", async () => {
-    const user = userEvent.setup();
+  it("keeps listings and does not offer a waitlist when the event is sold out", async () => {
     render(
       <PremiumTicketing data={{ ...seatedTicketingFixture, soldOut: true }} />,
     );
 
-    const body = await screen.findByTestId("ticketing-soldout-body");
-    expect(body).toBeInTheDocument();
+    expect(await screen.findByText(/sec m · row m3/i)).toBeInTheDocument();
     expect(
-      screen.getByText(/get notified if tickets become available/i),
-    ).toBeInTheDocument();
-    expect(
-      within(body).getByRole("button", { name: /join waitlist/i }),
-    ).toBeInTheDocument();
-    expect(screen.queryByText(/sec m · row m3/i)).not.toBeInTheDocument();
-    expect(
-      screen.queryByRole("button", { name: /^all$/i }),
+      screen.queryByRole("button", { name: /join waitlist/i }),
     ).not.toBeInTheDocument();
-    expect(screen.queryByText(/sort by price/i)).not.toBeInTheDocument();
-    expect(screen.queryByTestId("ticketing-map")).not.toBeInTheDocument();
     expect(
-      screen.queryByRole("button", { name: /find on map/i }),
+      screen.queryByText(/get notified if tickets become available/i),
     ).not.toBeInTheDocument();
-    expect(screen.queryByText(/mobile tickets/i)).not.toBeInTheDocument();
-    expect(screen.queryByText(/buyer protection/i)).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("dialog", { name: /join the waitlist/i }),
+    ).not.toBeInTheDocument();
+    expect(screen.queryByTestId("ticketing-soldout-body")).not.toBeInTheDocument();
     expect(screen.queryByTestId("ticketing-soldout-sticky")).not.toBeInTheDocument();
-    expect(screen.queryByTestId("ticketing-offers")).not.toBeInTheDocument();
-    expect(
-      screen.queryByText(/we’re sorry, the event is sold out/i),
-    ).not.toBeInTheDocument();
-    expect(screen.queryByLabelText(/email address/i)).not.toBeInTheDocument();
-
-    await user.click(screen.getByRole("button", { name: /join waitlist/i }));
-
-    const dialog = screen.getByRole("dialog", { name: /join the waitlist/i });
-    await user.type(within(dialog).getByLabelText(/email address/i), "fan@example.com");
-    expect(within(dialog).queryByText(/^sold out$/i)).not.toBeInTheDocument();
-    await user.click(
-      within(dialog).getByRole("button", { name: /^join waitlist$/i }),
-    );
-
-    expect(
-      await within(dialog).findByText(/you.re on the list/i),
-    ).toBeInTheDocument();
-    expect(
-      await screen.findByRole("button", { name: /reminder set/i }),
-    ).toBeDisabled();
   });
 
   it("hides scheduled seated offers and shows the event on-sale time", async () => {
@@ -674,7 +831,6 @@ describe("Select tickets page (PremiumTicketing)", { timeout: 20_000 }, () => {
       },
       /on sale soon/i,
     ],
-    ["sold out", { soldOut: true }, /get notified if tickets become available/i],
   ])(
     "hides listing filters on mobile when the event is %s",
     async (_label, extra, ready) => {
@@ -703,17 +859,6 @@ describe("Select tickets page (PremiumTicketing)", { timeout: 20_000 }, () => {
       expect(
         screen.queryByRole("button", { name: /\d+ tickets?/i }),
       ).not.toBeInTheDocument();
-      if (_label === "sold out") {
-        const body = screen.getByTestId("ticketing-soldout-body");
-        expect(body).toBeInTheDocument();
-        expect(within(body).getByRole("button", { name: /join waitlist/i })).toBeInTheDocument();
-        expect(screen.queryByTestId("ticketing-soldout-sticky")).not.toBeInTheDocument();
-        expect(screen.queryByText(/mobile tickets/i)).not.toBeInTheDocument();
-        expect(screen.queryByText(/buyer protection/i)).not.toBeInTheDocument();
-        expect(screen.queryByText(/prices are all-in/i)).not.toBeInTheDocument();
-        expect(screen.queryByTestId("ticketing-map")).not.toBeInTheDocument();
-        expect(screen.queryByTestId("ticketing-offers")).not.toBeInTheDocument();
-      }
       expect(
         screen.queryByRole("button", { name: /select tickets/i }),
       ).not.toBeInTheDocument();
@@ -781,6 +926,21 @@ describe("Select tickets page (PremiumTicketing)", { timeout: 20_000 }, () => {
     expect(screen.getByRole("button", { name: /^2 tickets$/i })).toBeInTheDocument();
   });
 
+  it("shows the offer badge on mobile listing cards", async () => {
+    Object.defineProperty(window, "innerWidth", {
+      configurable: true,
+      writable: true,
+      value: 390,
+    });
+    await renderReady();
+
+    const listings = Array.from(document.querySelectorAll(".nmt-listing"));
+    expect(listings.length).toBeGreaterThan(0);
+    listings.forEach((listing, idx) => {
+      expect(within(listing as HTMLElement).getByText(seatedTicketingFixture.listings[idx].zone)).toBeInTheDocument();
+    });
+  });
+
   it("does not offer quantities above the highest offer maxQuantity", async () => {
     const fieldClub = DEMO_SEATED_TICKET_GROUPS[0];
     const user = await renderReady({
@@ -845,7 +1005,15 @@ describe("Select tickets page (PremiumTicketing)", { timeout: 20_000 }, () => {
     ).toBeInTheDocument();
 
     await user.click(screen.getByRole("button", { name: /next view/i }));
+    const seatView = screen.getByRole("img", { name: /view from section/i });
+    fireEvent.load(seatView);
     expect(screen.getByText(/seat view/i)).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: /previous view/i }));
+    expect(screen.getByText(/seat location/i)).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: /next view/i }));
+    expect(screen.getByRole("img", { name: /view from section/i })).toBe(seatView);
+    expect(screen.queryByRole("status", { name: /loading seat image/i })).not.toBeInTheDocument();
   });
 
   it("closes the ticket details drawer from Back and does not show Close", async () => {
@@ -858,6 +1026,16 @@ describe("Select tickets page (PremiumTicketing)", { timeout: 20_000 }, () => {
     await user.click(screen.getByRole("button", { name: "Back" }));
 
     expect(screen.queryByText("Ticket details")).not.toBeInTheDocument();
+  });
+
+  it("shows the accessible seating label in ticket details", async () => {
+    const user = await renderReady();
+    await user.click(screen.getAllByText(/sec a · row 12/i)[0]);
+
+    expect(await screen.findByText("Ticket details")).toBeInTheDocument();
+    expect(
+      screen.getByText(/open space for wheelchair/i),
+    ).toBeInTheDocument();
   });
 
   it("adjusts drawer quantity and checkout subtotal", async () => {
@@ -917,8 +1095,7 @@ describe("Select tickets page (PremiumTicketing)", { timeout: 20_000 }, () => {
     expect(screen.queryByText(/^3 tickets$/i)).not.toBeInTheDocument();
   });
 
-  it("badges a sold-out GA offer and offers its waitlist instead of checkout", async () => {
-    const user = userEvent.setup();
+  it("shows a sold-out GA offer without a waitlist", async () => {
     render(
       <PremiumTicketing
         data={{
@@ -939,7 +1116,7 @@ describe("Select tickets page (PremiumTicketing)", { timeout: 20_000 }, () => {
     );
 
     await screen.findByText("Student Rush");
-    expect(screen.getByText(/^sold out$/i)).toBeInTheDocument();
+    expect(screen.getAllByText(/^sold out$/i).length).toBeGreaterThanOrEqual(2);
     expect(screen.getByText(/all tickets claimed/i)).toBeInTheDocument();
     expect(
       screen.queryByRole("button", { name: /checkout/i }),
@@ -947,37 +1124,21 @@ describe("Select tickets page (PremiumTicketing)", { timeout: 20_000 }, () => {
     expect(
       screen.queryByRole("button", { name: /add a ticket/i }),
     ).not.toBeInTheDocument();
-
-    await user.click(screen.getByRole("button", { name: /join waitlist/i }));
-    const dialog = await screen.findByRole("dialog", {
-      name: /join the waitlist/i,
-    });
-    const join = within(dialog).getByRole("button", {
-      name: /join waitlist/i,
-    });
-    expect(join).toBeEnabled();
-    await user.click(join);
     expect(
-      await within(dialog).findByText(/email address is required/i),
-    ).toBeInTheDocument();
-
-    await user.type(
-      within(dialog).getByLabelText(/email address/i),
-      DEMO_USER.email,
-    );
-    await user.click(join);
-    await user.click(within(dialog).getByRole("button", { name: /done/i }));
-
-    expect(
-      screen.getByText(/you’re on the waiting list/i),
-    ).toBeInTheDocument();
+      screen.queryByRole("button", { name: /^sold out$/i }),
+    ).not.toBeInTheDocument();
     expect(
       screen.queryByRole("button", { name: /join waitlist/i }),
     ).not.toBeInTheDocument();
+    expect(
+      screen.queryByText(/you’re on the waiting list/i),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("dialog", { name: /join the waitlist/i }),
+    ).not.toBeInTheDocument();
   });
 
-  it("closes the waitlist popup when the backdrop is clicked", async () => {
-    const user = userEvent.setup();
+  it("does not open a waitlist when a GA offer is sold out", async () => {
     render(
       <PremiumTicketing
         data={{
@@ -997,22 +1158,16 @@ describe("Select tickets page (PremiumTicketing)", { timeout: 20_000 }, () => {
       />,
     );
 
-    await user.click(await screen.findByRole("button", { name: /join waitlist/i }));
-    const dialog = await screen.findByRole("dialog", {
-      name: /join the waitlist/i,
-    });
-    fireEvent.click(dialog);
+    await screen.findByText("Student Rush");
     expect(
-      screen.getByRole("dialog", { name: /join the waitlist/i }),
-    ).toBeInTheDocument();
-
-    fireEvent.click(dialog.parentElement!.parentElement!);
+      screen.queryByRole("button", { name: /join waitlist/i }),
+    ).not.toBeInTheDocument();
     expect(
       screen.queryByRole("dialog", { name: /join the waitlist/i }),
     ).not.toBeInTheDocument();
   });
 
-  it("offers only the notify bar when a GA event is sold out with no inventory", async () => {
+  it("does not offer a waitlist when a GA event is sold out with no inventory", async () => {
     render(
       <PremiumTicketing
         data={{
@@ -1024,36 +1179,28 @@ describe("Select tickets page (PremiumTicketing)", { timeout: 20_000 }, () => {
       />,
     );
 
-    expect(await screen.findByTestId("ticketing-soldout-sticky")).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { level: 1 })).toBeInTheDocument();
+    expect(screen.getAllByText(/^sold out$/i).length).toBeGreaterThanOrEqual(2);
+    expect(screen.queryByRole("button", { name: /buy tickets/i })).not.toBeInTheDocument();
+    expect(screen.queryByTestId("ticketing-soldout-sticky")).not.toBeInTheDocument();
     expect(
-      screen.getByText(/get notified if tickets become available/i),
-    ).toBeInTheDocument();
-    expect(
-      screen.getByRole("button", { name: /join waitlist/i }),
-    ).toBeInTheDocument();
-    expect(
-      screen.queryByText(/we’re sorry, the event is sold out/i),
+      screen.queryByText(/get notified if tickets become available/i),
     ).not.toBeInTheDocument();
     expect(
-      screen.queryByRole("button", { name: /get notified/i }),
+      screen.queryByRole("button", { name: /join waitlist/i }),
     ).not.toBeInTheDocument();
-    expect(screen.queryByLabelText(/email address/i)).not.toBeInTheDocument();
-    // The waitlist stands alone — no "Get tickets" heading over a sold-out event.
-    expect(screen.queryByText(/^get tickets$/i)).not.toBeInTheDocument();
-    // Never the placeholder tiers that stand in for an unwired GA page.
     expect(screen.queryByText(/standard admission/i)).not.toBeInTheDocument();
     expect(
       screen.queryByRole("button", { name: /checkout/i }),
     ).not.toBeInTheDocument();
   });
 
-  it("shows a sticky sold-out bar and notify sheet on mobile GA sold-out events", async () => {
+  it("does not show a waitlist bar on a mobile sold-out GA event", async () => {
     Object.defineProperty(window, "innerWidth", {
       configurable: true,
       writable: true,
       value: 390,
     });
-    const user = userEvent.setup();
     render(
       <PremiumTicketing
         data={{
@@ -1065,180 +1212,20 @@ describe("Select tickets page (PremiumTicketing)", { timeout: 20_000 }, () => {
       />,
     );
 
-    expect(await screen.findByTestId("ticketing-soldout-sticky")).toBeInTheDocument();
-    expect(
-      screen.getByText(/get notified if tickets become available/i),
-    ).toBeInTheDocument();
-    expect(
-      screen.queryByRole("button", { name: /get notified/i }),
-    ).not.toBeInTheDocument();
-
-    await user.click(screen.getByRole("button", { name: /join waitlist/i }));
-
-    const dialog = screen.getByRole("dialog", { name: /join the waitlist/i });
-    expect(
-      within(dialog).getByText(
-        /enter your email below to get notified in case a ticket becomes available/i,
-      ),
-    ).toBeInTheDocument();
-    expect(
-      within(dialog).getByRole("button", { name: /^cancel$/i }),
-    ).toBeInTheDocument();
-    expect(
-      within(dialog).getByRole("button", { name: /^join waitlist$/i }),
-    ).toBeInTheDocument();
-
-    await user.type(within(dialog).getByLabelText(/email address/i), "fan@example.com");
-    expect(within(dialog).queryByText(/^sold out$/i)).not.toBeInTheDocument();
-    await user.click(
-      within(dialog).getByRole("button", { name: /^join waitlist$/i }),
-    );
-
-    expect(
-      await within(dialog).findByText(/you.re on the list/i),
-    ).toBeInTheDocument();
-    expect(within(dialog).queryByText(/alert set/i)).not.toBeInTheDocument();
-    expect(
-      within(dialog).getByText(/the moment a ticket is posted for this event/i),
-    ).toBeInTheDocument();
-    expect(
-      within(dialog).getByRole("link", { name: /browse all events/i }),
-    ).toHaveAttribute("href", "/browse/");
-    expect(
-      await screen.findByRole("button", { name: /reminder set/i }),
-    ).toBeDisabled();
+    expect(await screen.findByRole("heading", { level: 1 })).toBeInTheDocument();
+    expect(screen.getAllByText(/^sold out$/i).length).toBeGreaterThanOrEqual(2);
+    expect(screen.queryByRole("button", { name: /buy tickets/i })).not.toBeInTheDocument();
+    expect(screen.queryByTestId("ticketing-soldout-sticky")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /join waitlist/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("dialog", { name: /join the waitlist/i })).not.toBeInTheDocument();
   });
 
-  it("closes the sold-out notify sheet when the backdrop is clicked", async () => {
-    Object.defineProperty(window, "innerWidth", {
-      configurable: true,
-      writable: true,
-      value: 390,
-    });
-    const user = userEvent.setup();
-    render(
-      <PremiumTicketing
-        data={{
-          ...seatedTicketingFixture,
-          eventType: "ga",
-          gaTiers: undefined,
-          soldOut: true,
-        }}
-      />,
-    );
-
-    await user.click(screen.getByRole("button", { name: /join waitlist/i }));
-    const dialog = screen.getByRole("dialog", { name: /join the waitlist/i });
-    expect(
-      within(dialog).queryByRole("button", { name: "Close" }),
-    ).not.toBeInTheDocument();
-    fireEvent.click(dialog);
-    expect(
-      screen.getByRole("dialog", { name: /join the waitlist/i }),
-    ).toBeInTheDocument();
-
-    fireEvent.click(dialog.parentElement!);
-    expect(
-      screen.queryByRole("dialog", { name: /join the waitlist/i }),
-    ).not.toBeInTheDocument();
-  });
-
-  it("closes the GA ticket sheet when the backdrop is clicked", async () => {
-    Object.defineProperty(window, "innerWidth", {
-      configurable: true,
-      writable: true,
-      value: 390,
-    });
-    const user = userEvent.setup();
-    const gaGroup = demoTicketGroups().ticketGroups[0];
-    render(
-      <PremiumTicketing
-        data={{
-          ...seatedTicketingFixture,
-          eventType: "ga",
-          gaTiers: [
-            {
-              name: gaGroup.sectionName,
-              sub: "General admission",
-              price: "$25.00",
-              unit: 25,
-              note: "Ticket limit: 1–100 per order",
-              state: "live",
-              cartGroup: gaGroup,
-            },
-          ],
-        }}
-      />,
-    );
-
-    await user.click(screen.getByRole("button", { name: /buy tickets/i }));
-    const dialog = screen.getByRole("dialog", { name: /get tickets/i });
-    expect(within(dialog).getByText(gaGroup.sectionName)).toBeInTheDocument();
-
-    fireEvent.click(dialog);
-    expect(screen.getByRole("dialog", { name: /get tickets/i })).toBeInTheDocument();
-
-    fireEvent.click(dialog.parentElement!);
-    expect(
-      screen.queryByRole("dialog", { name: /get tickets/i }),
-    ).not.toBeInTheDocument();
-  });
-
-  it("keeps holding checkout inside the GA ticket sheet", async () => {
-    Object.defineProperty(window, "innerWidth", {
-      configurable: true,
-      writable: true,
-      value: 390,
-    });
-    mockedPlaceGaTickets.mockImplementation(() => new Promise(() => {}));
-    const gaGroup = demoTicketGroups().ticketGroups[0];
-    const user = userEvent.setup();
-    render(
-      <PremiumTicketing
-        data={{
-          ...seatedTicketingFixture,
-          eventType: "ga",
-          gaTiers: [
-            {
-              name: gaGroup.sectionName,
-              sub: "General admission",
-              price: `$${Number(gaGroup.price).toFixed(2)}`,
-              unit: Number(gaGroup.price),
-              note: "Ticket limit: 1–100 per order",
-              state: "live",
-              cartGroup: gaGroup,
-            },
-          ],
-        }}
-      />,
-    );
-
-    await user.click(screen.getByRole("button", { name: /buy tickets/i }));
-    const dialog = screen.getByRole("dialog", { name: /get tickets/i });
-    await user.click(
-      within(dialog).getByRole("button", {
-        name: new RegExp(`checkout \\$${Number(gaGroup.price)}`, "i"),
-      }),
-    );
-
-    expect(
-      await within(dialog).findByRole("button", { name: /holding seats/i }),
-    ).toBeDisabled();
-    expect(
-      screen.getByRole("dialog", { name: /get tickets/i }),
-    ).toBeInTheDocument();
-    expect(screen.getAllByRole("button", { name: /holding seats/i })).toHaveLength(
-      1,
-    );
-  });
-
-  it("shows the sold-out sticky bar on desktop GA sold-out events", async () => {
+  it("does not show a waitlist bar on a desktop sold-out GA event", async () => {
     Object.defineProperty(window, "innerWidth", {
       configurable: true,
       writable: true,
       value: 1200,
     });
-    const user = userEvent.setup();
     render(
       <PremiumTicketing
         data={{
@@ -1250,23 +1237,11 @@ describe("Select tickets page (PremiumTicketing)", { timeout: 20_000 }, () => {
       />,
     );
 
-    const bar = await screen.findByTestId("ticketing-soldout-sticky");
-    expect(bar).toBeInTheDocument();
-    expect(bar).not.toHaveStyle({ position: "fixed" });
-    expect(
-      screen.getByRole("button", { name: /join waitlist/i }),
-    ).toBeInTheDocument();
-    expect(
-      screen.queryByRole("button", { name: /get notified/i }),
-    ).not.toBeInTheDocument();
-
-    await user.click(screen.getByRole("button", { name: /join waitlist/i }));
-    const dialog = screen.getByRole("dialog", { name: /join the waitlist/i });
-    expect(dialog).toBeInTheDocument();
-    await user.click(within(dialog).getByRole("button", { name: /^cancel$/i }));
-    expect(
-      screen.queryByRole("dialog", { name: /join the waitlist/i }),
-    ).not.toBeInTheDocument();
+    expect(await screen.findByRole("heading", { level: 1 })).toBeInTheDocument();
+    expect(screen.getAllByText(/^sold out$/i).length).toBeGreaterThanOrEqual(2);
+    expect(screen.queryByRole("button", { name: /get tickets/i })).not.toBeInTheDocument();
+    expect(screen.queryByTestId("ticketing-soldout-sticky")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /join waitlist/i })).not.toBeInTheDocument();
   });
 
   it("hides scheduled GA offers until their on-sale time", async () => {
@@ -1757,9 +1732,18 @@ describe("Select tickets page (PremiumTicketing)", { timeout: 20_000 }, () => {
     expect(routerMocks.push.mock.calls[0][0]).not.toMatch(/\/wallet\/|\/tickets\//);
   });
 
-  it("stays on tickets and shows an error when the cart cannot be created", async () => {
+  it("stays on tickets and shows the API reason when the cart cannot be created", async () => {
     mockedPlaceTickets.mockRejectedValue({
-      response: { data: { error: { message: "Unable to hold tickets." } } },
+      response: {
+        status: 410,
+        data: {
+          error: {
+            status: 410,
+            message:
+              'Invalid quantity selected. Offer "BOGO OFFER" requires exactly 4 item(s).',
+          },
+        },
+      },
     });
     const user = await renderReady();
     await user.click(screen.getByText(/sec m · row m3/i));
@@ -1773,7 +1757,9 @@ describe("Select tickets page (PremiumTicketing)", { timeout: 20_000 }, () => {
       }),
     ).toBeInTheDocument();
     expect(
-      screen.getByText(CHECKOUT_UNAVAILABLE_ERROR.message),
+      screen.getByText(
+        'Invalid quantity selected. Offer "BOGO OFFER" requires exactly 4 item(s).',
+      ),
     ).toBeInTheDocument();
     expect(routerMocks.push).not.toHaveBeenCalled();
     expect(screen.queryByText(/getting payment ready/i)).not.toBeInTheDocument();
@@ -2028,12 +2014,12 @@ describe("Select tickets page (PremiumTicketing)", { timeout: 20_000 }, () => {
   });
 
   it("shows the event ticket limit under Your selection", async () => {
-    useFiltersStore.setState({ eventTicketLimit: 6 });
+    useFiltersStore.setState({ eventTicketLimit: 3 });
     seedMapSelection();
     await openLiveMap();
 
     expect(screen.getByText(/your selection/i)).toBeInTheDocument();
-    expect(screen.getByText("Ticket limit: 1–6 per order")).toBeInTheDocument();
+    expect(screen.getByText("Ticket limit: 1–3 per order")).toBeInTheDocument();
   });
 
   it("shows the highest offer maxQuantity on Your selection when one is set", async () => {
@@ -2072,12 +2058,14 @@ describe("Select tickets page (PremiumTicketing)", { timeout: 20_000 }, () => {
     ).toBeInTheDocument();
   });
 
-  it("shows the seated default ticket limit when the event and offer have none", async () => {
-    seedMapSelection();
+  it("shows the seats left in the row when the event and offer set no limit", async () => {
+    const selected = seedMapSelection();
     await openLiveMap();
 
     expect(screen.getByText(/your selection/i)).toBeInTheDocument();
-    expect(screen.getByText("Ticket limit: 1–50 per order")).toBeInTheDocument();
+    expect(
+      screen.getByText(`Ticket limit: 1–${selected.seatIds!.length} per order`),
+    ).toBeInTheDocument();
   });
 
   it("shows the GA default ticket limit on Your selection for GA seats", async () => {
@@ -2186,6 +2174,91 @@ describe("Select tickets page (PremiumTicketing)", { timeout: 20_000 }, () => {
     expect(screen.queryByTestId("interactive-seatmap")).not.toBeInTheDocument();
   });
 
+  it("keeps Updating inventory on the open map until the offer inventory request answers", async () => {
+    let releaseInventory = () => {};
+    const onFiltersChange = vi.fn(
+      () =>
+        new Promise<void>((resolve) => {
+          releaseInventory = resolve;
+        }),
+    );
+    const user = await openLiveMap({ onFiltersChange });
+
+    await user.click(screen.getByRole("button", { name: /field club/i }));
+
+    expect(screen.getByText("Updating inventory")).toBeInTheDocument();
+    expect(screen.getByTestId("interactive-seatmap")).toBeInTheDocument();
+    await new Promise((resolve) => setTimeout(resolve, 600));
+    expect(screen.getByText("Updating inventory")).toBeInTheDocument();
+
+    await act(async () => {
+      releaseInventory();
+    });
+    await waitFor(() => {
+      expect(screen.queryByText("Updating inventory")).not.toBeInTheDocument();
+    });
+    expect(screen.getByTestId("interactive-seatmap")).toBeInTheDocument();
+  });
+
+  it("clears Updating inventory when the offer inventory request fails", async () => {
+    const onFiltersChange = vi.fn(() => Promise.reject(new Error("offline")));
+    const user = await openLiveMap({ onFiltersChange });
+
+    await user.click(screen.getByRole("button", { name: /field club/i }));
+
+    expect(screen.getByText("Updating inventory")).toBeInTheDocument();
+    await waitFor(
+      () => {
+        expect(
+          screen.queryByText("Updating inventory"),
+        ).not.toBeInTheDocument();
+      },
+      { timeout: 3000 },
+    );
+    expect(screen.getByTestId("interactive-seatmap")).toBeInTheDocument();
+  });
+
+  it("rebuilds the open map only once the access-code dialog is gone", async () => {
+    const dialogUpWhenRebuilt: boolean[] = [];
+    let releaseInventory = () => {};
+    const onFiltersChange = vi.fn(() => {
+      dialogUpWhenRebuilt.push(
+        Boolean(screen.queryByText(/field club is locked/i)),
+      );
+      return new Promise<void>((resolve) => {
+        releaseInventory = resolve;
+      });
+    });
+    const user = await renderReady(
+      {
+        ...lockedTicketingFixture,
+        seatmapMapping: demoSeatmapMapping(),
+        mapBackground: {
+          url: "https://example.com/bg.svg",
+          width: 1000,
+          height: 800,
+        },
+      },
+      { waitForListing: /sec a · row 12/i, onFiltersChange },
+    );
+    await user.click(screen.getAllByText(/find on map/i)[0]);
+    await finishSeatmapBackgroundLoad();
+
+    await user.click(screen.getByRole("button", { name: /field club/i }));
+    await user.type(screen.getByPlaceholderText(/access code/i), "CLUB26");
+    await user.click(screen.getByRole("button", { name: /unlock seats/i }));
+
+    await waitFor(() => {
+      expect(onFiltersChange).toHaveBeenCalled();
+    });
+    expect(dialogUpWhenRebuilt).toEqual([false]);
+    expect(screen.getByText("Updating inventory")).toBeInTheDocument();
+
+    await act(async () => {
+      releaseInventory();
+    });
+  });
+
   it("unlocks a passcode-locked offer and filters to it", async () => {
     const user = await renderReady(lockedTicketingFixture, {
       waitForListing: /sec a · row 12/i,
@@ -2246,24 +2319,179 @@ describe("Select tickets page (PremiumTicketing)", { timeout: 20_000 }, () => {
     expect(screen.getByText(/sec m · row m3/i)).toBeInTheDocument();
   });
 
-  it("sorts listings by price ascending then descending on the client", async () => {
+  it("shows an accessibility empty state instead of quantity-reset copy", async () => {
+    const user = await renderReady({
+      ...seatedTicketingFixture,
+      listings: seatedTicketingFixture.listings.filter(
+        (listing) => !listing.cartGroup?.accessible,
+      ),
+    });
+
+    await user.click(
+      screen.getByRole("button", { name: /accessible seating only/i }),
+    );
+
+    expect(
+      await screen.findByText(/no accessible listings/i),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(/turn off the accessible seating filter/i),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: /reset quantity/i }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("keeps the accessibility icon on a flagged listing after sorting by best seat", async () => {
+    const [flagged] = groupsToListings([
+      {
+        ...DEMO_SEATED_TICKET_GROUPS[0],
+        accessible: true,
+        accessibleType: undefined,
+        sectionNumber: "102",
+        rowNumber: "K",
+      },
+    ]);
+    await renderReady(
+      {
+        ...seatedTicketingFixture,
+        listings: [flagged, ...seatedTicketingFixture.listings],
+      },
+      { initialFilters: { sort: "bestseat" } },
+    );
+
+    expect(
+      screen.getAllByRole("img", { name: /accessible seating/i }).length,
+    ).toBeGreaterThan(0);
+    expect(screen.getByText(/sec 102 · row k/i)).toBeInTheDocument();
+  });
+
+  it("names the accessible seating type on accessible listings and keeps their locator thumb", async () => {
+    await renderReady();
+
+    expect(
+      screen.getAllByRole("img", {
+        name: /open space for wheelchair/i,
+      }).length,
+    ).toBeGreaterThan(0);
+    const thumbs = screen.queryAllByTestId("section-thumb");
+    expect(thumbs.some((el) => /thumb a/i.test(el.textContent || ""))).toBe(
+      true,
+    );
+    expect(thumbs.some((el) => /thumb m/i.test(el.textContent || ""))).toBe(
+      true,
+    );
+  });
+
+  it("asks the page for selected offer ids when an offer chip is used", async () => {
+    const onFiltersChange = vi.fn();
+    const user = await renderReady(seatedTicketingFixture, { onFiltersChange });
+    const fieldClub = DEMO_SEATED_TICKET_GROUPS.find(
+      (group) => group.offer?.name === "Field Club",
+    );
+
+    await user.click(screen.getByRole("button", { name: /field club/i }));
+
+    await waitFor(() => {
+      expect(onFiltersChange).toHaveBeenCalledWith(
+        expect.objectContaining({
+          offerIds: [fieldClub?.offer?.id],
+        }),
+      );
+    });
+    expect(useFiltersStore.getState().filters.selectedOfferIds).toEqual([
+      fieldClub?.offer?.id,
+    ]);
+
+    await user.click(screen.getByRole("button", { name: /^all$/i }));
+    await waitFor(() => {
+      expect(useFiltersStore.getState().filters.selectedOfferIds).toEqual([]);
+    });
+  });
+
+  it("shows a GA listing as its section name without Row GA", async () => {
+    const user = await renderReady({
+      ...seatedTicketingFixture,
+      listings: [
+        ...groupsToListings([
+          {
+            ...demoTicketGroups().ticketGroups[0],
+            sectionName: "Standing Room Right",
+            sectionNumber: "Standing Room Right",
+            rowNumber: "GA",
+            GA: true,
+          },
+        ]),
+        ...seatedTicketingFixture.listings,
+      ],
+    });
+
+    expect(screen.getAllByText("Standing Room Right").length).toBeGreaterThan(0);
+    expect(screen.queryByText(/row ga/i)).not.toBeInTheDocument();
+    expect(screen.getByText(/sec m · row m3/i)).toBeInTheDocument();
+
+    await user.click(screen.getAllByText("Standing Room Right")[0]);
+    expect(screen.getAllByText("Standing Room Right").length).toBeGreaterThan(1);
+    expect(screen.queryByText(/row ga/i)).not.toBeInTheDocument();
+
+    await user.click(screen.getAllByRole("button", { name: "Next view" })[0]);
+    const seatView = screen.queryByRole("img", { name: /view from section/i });
+    if (seatView) fireEvent.error(seatView);
+    expect(screen.getByRole("img", { name: /seat view placeholder/i })).toBeInTheDocument();
+    expect(screen.queryByText(/no seat view/i)).not.toBeInTheDocument();
+  });
+
+  it("switches between cheapest-first and best-seat order from the sort dropdown", async () => {
     const user = await renderReady();
 
     const prices = () =>
       screen.getAllByText(/\$[\d,]+\.\d{2} each/i).map((el) => el.textContent);
+    const firstPrimary = () => prices().find((text) => !/\$45\.00/.test(text || ""));
+    const pickSort = async (current: RegExp, option: RegExp) => {
+      await user.click(screen.getByRole("button", { name: current }));
+      await user.click(
+        within(screen.getByRole("listbox", { name: /sort listings/i })).getByRole(
+          "option",
+          { name: option },
+        ),
+      );
+    };
 
     expect(prices()[0]).toMatch(/\$45\.00/);
-    expect(prices()).toContain("$11.64 each");
+    expect(firstPrimary()).toMatch(/\$11\.64/);
+    expect(screen.getByRole("button", { name: /^sort by price$/i })).toBeInTheDocument();
+    expect(screen.queryByRole("listbox", { name: /sort listings/i })).not.toBeInTheDocument();
 
-    await user.click(
-      screen.getByRole("button", { name: /sorted by lowest price/i }),
-    );
+    await pickSort(/^sort by price$/i, /^best seat$/i);
+    expect(
+      screen.getByRole("button", { name: /^sort by best seat$/i }),
+    ).toBeInTheDocument();
+    expect(screen.queryByRole("listbox", { name: /sort listings/i })).not.toBeInTheDocument();
     await waitFor(() => {
       expect(prices()[0]).toMatch(/\$45\.00/);
-      expect(prices()).toContain("$33.59 each");
-      const primary = prices().filter((text) => text !== "$45.00 each");
-      expect(primary[0]).toMatch(/\$33\.59/);
+      expect(firstPrimary()).toMatch(/\$33\.59/);
     });
+
+    await pickSort(/^sort by best seat$/i, /^price$/i);
+    expect(screen.getByRole("button", { name: /^sort by price$/i })).toBeInTheDocument();
+    await waitFor(() => {
+      expect(prices()[0]).toMatch(/\$45\.00/);
+      expect(firstPrimary()).toMatch(/\$11\.64/);
+    });
+  });
+
+  it("opens the listings sorted by best seat when the URL asks for it", async () => {
+    await renderReady(seatedTicketingFixture, {
+      initialFilters: { sort: "bestseat" },
+    });
+    expect(
+      screen.getByRole("button", { name: /^sort by best seat$/i }),
+    ).toBeInTheDocument();
+    const prices = screen
+      .getAllByText(/\$[\d,]+\.\d{2} each/i)
+      .map((el) => el.textContent);
+    expect(prices[0]).toMatch(/\$45\.00/);
+    expect(prices.find((text) => !/\$45\.00/.test(text || ""))).toMatch(/\$33\.59/);
   });
 
   it("opens the event information modal", async () => {
@@ -2291,6 +2519,40 @@ describe("Select tickets page (PremiumTicketing)", { timeout: 20_000 }, () => {
     expect(
       screen.queryByRole("dialog", { name: /event information/i }),
     ).not.toBeInTheDocument();
+  });
+
+  it("shows the promotional description in event information", async () => {
+    const promo = "Pink Night. Free bobblehead for the first 1,000 fans.";
+    const user = await renderReady({
+      ...seatedTicketingFixture,
+      promo,
+    });
+    await user.click(screen.getByRole("button", { name: /event information/i }));
+
+    const dialog = screen.getByRole("dialog", { name: /event information/i });
+    const name = within(dialog).getByText(seatedTicketingFixture.eventName);
+    const line = within(dialog).getByText(promo);
+    const doors = within(dialog).getByText(seatedTicketingFixture.doorsLine);
+    expect(
+      name.compareDocumentPosition(doors) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    expect(
+      doors.compareDocumentPosition(line) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    expect(within(dialog).queryByText(/promotional description/i)).not.toBeInTheDocument();
+    expect(within(dialog).getByText(/about this event/i)).toBeInTheDocument();
+  });
+
+  it("hides the promotional description in event information when the event has none", async () => {
+    const user = await renderReady({
+      ...seatedTicketingFixture,
+      promo: "   ",
+    });
+    await user.click(screen.getByRole("button", { name: /event information/i }));
+
+    const dialog = screen.getByRole("dialog", { name: /event information/i });
+    expect(within(dialog).queryByText(/promotional description/i)).not.toBeInTheDocument();
+    expect(within(dialog).getByText(/about this event/i)).toBeInTheDocument();
   });
 
   it("hides About this event when the event has no summary or description", async () => {

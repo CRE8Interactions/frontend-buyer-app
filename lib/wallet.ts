@@ -79,6 +79,8 @@ export type OrderLike = {
   total?: number | string;
   /** Purchase origin; wallet inventory is intentionally not filtered by it. */
   source?: "website" | "box_office" | "ticket_assignment" | string;
+  /** Group that bought the order, printed on the ticket PDF when set. */
+  purchasedByOrganizationName?: string | null;
   box_office?: boolean;
   event?: EventLike | null;
   package?: {
@@ -465,16 +467,40 @@ export function ticketSectionValue(
   ticket?: TicketLike | Record<string, unknown> | null,
 ): string {
   if (!ticket) return "";
-  for (const candidate of [
+  const candidates = [
     ticket.sectionNumber,
     ticket.sectionName,
     ticket.section_number,
     ticket.section_name,
-  ]) {
+  ];
+  for (const candidate of candidates) {
     const text = String(candidate ?? "").trim();
     if (text && !isGenericGeneralAdmissionLabel(text)) return text;
   }
+  // Legacy My Tickets prints sectionNumber even when it is "General Admission".
+  for (const candidate of [ticket.sectionNumber, ticket.section_number]) {
+    const text = String(candidate ?? "").trim();
+    if (text) return text;
+  }
   return "";
+}
+
+/**
+ * Map seat popups keep a name that already says Section.
+ * A bare number still gets a Sec prefix.
+ */
+export function mapSectionHeading(value: unknown): string {
+  const text = String(value ?? "").trim();
+  if (!text) return "";
+  if (/^(?:section|sec)\b/i.test(text)) return text;
+  return `Sec ${text}`;
+}
+
+/** Drop a leading "Sec" or "Section" so a Sec label is not repeated. */
+export function sectionDisplayValue(value: unknown): string {
+  const text = String(value ?? "").trim();
+  const bare = text.replace(/^(?:(?:section|sec)\s+)+/i, "").trim();
+  return bare || text;
 }
 
 export function ticketRowValue(
@@ -491,6 +517,23 @@ export function ticketRowValue(
     if (text && !isGenericGeneralAdmissionLabel(text)) return text;
   }
   return "";
+}
+
+/** Leading digits in a seat label. `13_DA` counts as 13; `DA` has none. */
+export function seatNumberDigits(value: unknown): number | null {
+  const match = String(value ?? "").match(/\d+/);
+  if (!match) return null;
+  const numeric = Number(match[0]);
+  return Number.isFinite(numeric) ? numeric : null;
+}
+
+/** Shopper-facing seat number. `13_DA` and `13_DB` display as 13. */
+export function seatDisplayValue(value: unknown): string {
+  if (value == null) return "";
+  const text = String(value).trim();
+  if (!text || text === "undefined" || text === "null") return "";
+  const numeric = seatNumberDigits(text);
+  return numeric == null ? text : String(numeric);
 }
 
 /** Actual seat number/name only — never invent GA for general admission tickets. */
@@ -517,9 +560,10 @@ export function gaTicketSeatLine(
 ): string {
   const sec = ticketSectionValue(ticket);
   const row = ticketRowValue(ticket);
-  const seat = ticketSeatValue(ticket);
+  const seat = seatDisplayValue(ticketSeatValue(ticket));
   const parts: string[] = [];
-  if (sec) parts.push(`Sec ${sec}`);
+  const sectionLabel = sectionDisplayValue(sec);
+  if (sectionLabel) parts.push(sectionLabel);
   if (row) parts.push(`Row ${row}`);
   if (seat) parts.push(`Seat ${seat}`);
   if (!parts.length) return "GA";
@@ -558,23 +602,24 @@ export function seatLabel(ticket?: TicketLike | null): string {
   if (ticket.generalAdmission || ticket.GA) {
     return gaTicketSeatLine(ticket);
   }
+  const seat = seatDisplayValue(ticket.seatNumber);
   return [
-    ticket.sectionNumber != null ? `Sec ${ticket.sectionNumber}` : null,
+    ticket.sectionNumber != null
+      ? `Sec ${sectionDisplayValue(ticket.sectionNumber)}`
+      : null,
     ticket.rowNumber != null ? `Row ${ticket.rowNumber}` : null,
-    ticket.seatNumber != null ? `Seat ${ticket.seatNumber}` : null,
+    seat ? `Seat ${seat}` : null,
   ]
     .filter(Boolean)
     .join(" · ");
 }
 
-/** Collapse seat numbers: `6-10` consecutive, `6, 10, 11` otherwise. */
+/** Collapse seat numbers: `6-10` consecutive, `6, 10, 11` otherwise. `13_DA` counts as 13. */
 export function formatSeatNumberRanges(
   seats: Array<string | number>,
 ): string {
   const unique = [
-    ...new Set(
-      seats.map((seat) => String(seat).trim()).filter(Boolean),
-    ),
+    ...new Set(seats.map((seat) => seatDisplayValue(seat)).filter(Boolean)),
   ];
   const nums = unique
     .map((seat) => Number(seat))
@@ -638,12 +683,12 @@ function gaGroupLocationLine(
     ),
   ];
   const parts: string[] = [];
-  if (section) parts.push(`Sec ${section}`);
+  if (section) parts.push(sectionDisplayValue(section));
   if (rows.length === 1) parts.push(`Row ${rows[0]}`);
   return parts.join(" · ") || "GA";
 }
 
-/** One line per section; multiple rows on the same line; GA shows Sec only unless row/seat exist. */
+/** One line per section; multiple rows on the same line; GA names the section without Sec. */
 export function groupedWalletSeatLines(
   tickets: Array<TicketLike | Record<string, unknown>>,
 ): string[] {
@@ -698,7 +743,7 @@ export function groupedWalletSeatLines(
     if (group.bareGA && group.rows.size === 0) {
       lines.push(
         group.sectionDisplay && group.sectionDisplay !== "GA"
-          ? `Sec ${group.sectionDisplay}`
+          ? `Sec ${sectionDisplayValue(group.sectionDisplay)}`
           : "GA",
       );
       continue;
@@ -718,12 +763,12 @@ export function groupedWalletSeatLines(
 
     if (rowParts.length) {
       lines.push(
-        `Sec ${group.sectionDisplay} · ${rowParts.join(" · ")}`,
+        `Sec ${sectionDisplayValue(group.sectionDisplay)} · ${rowParts.join(" · ")}`,
       );
     } else if (group.bareGA) {
       lines.push(
         group.sectionDisplay && group.sectionDisplay !== "GA"
-          ? `Sec ${group.sectionDisplay}`
+          ? `Sec ${sectionDisplayValue(group.sectionDisplay)}`
           : "GA",
       );
     }
@@ -807,7 +852,7 @@ function isTransferGroupGeneralAdmission(
   ].some((candidate) => isGenericGeneralAdmissionLabel(candidate));
 }
 
-/** Transfer modal group label: Sec/Row for reserved seats; Sec only for GA. */
+/** Transfer modal group label: Sec/Row for reserved seats; section name only for GA. */
 export function transferGroupLabel(
   ticket?: TicketLike | Record<string, unknown> | null,
 ): string {
@@ -817,11 +862,12 @@ export function transferGroupLabel(
   const isGA = isTransferGroupGeneralAdmission(ticket);
 
   if (isGA) {
-    return section ? `Sec ${section}` : "Sec";
+    return sectionDisplayValue(section) || "GA";
   }
 
   const parts: string[] = [];
-  if (section) parts.push(`Sec ${section}`);
+  const sectionLabel = sectionDisplayValue(section);
+  if (sectionLabel) parts.push(`Sec ${sectionLabel}`);
   if (row) parts.push(`Row ${row}`);
   return parts.join(" · ");
 }
@@ -843,13 +889,14 @@ export function transferSeatChip(
     isGenericGeneralAdmissionLabel(parsed) ||
     (ticket?.seatNumber != null &&
       isGenericGeneralAdmissionLabel(String(ticket.seatNumber).trim()));
+  const displayedSeat = seatDisplayValue(actualSeat);
   const seatNo = isGA
-    ? actualSeat || "GA"
-    : actualSeat || parsed || "—";
+    ? displayedSeat || "GA"
+    : displayedSeat || seatDisplayValue(parsed) || "—";
   return {
     seatNo,
     isGA,
-    ariaLabel: isGA ? (actualSeat || "GA") : `Seat ${seatNo}`,
+    ariaLabel: isGA ? seatNo : `Seat ${seatNo}`,
   };
 }
 
@@ -1073,14 +1120,39 @@ export function isAndroid() {
   return /android/i.test(navigator.userAgent);
 }
 
+/** iPhone Safari "Request Desktop Website" keeps iPhone on `navigator.platform`. */
+function reportsIphone() {
+  return (
+    /iPhone|iPod/i.test(navigator.userAgent) ||
+    /iPhone|iPod/i.test(navigator.platform || "")
+  );
+}
+
+/**
+ * Shorter physical screen side. Desktop-site Safari widens `innerWidth`, so
+ * the layout viewport cannot separate an iPhone from an iPad.
+ */
+function phoneSizedScreen() {
+  if (typeof window === "undefined") return false;
+  const width = window.screen?.width ?? 0;
+  const height = window.screen?.height ?? 0;
+  if (!width || !height) return false;
+  return Math.min(width, height) < 600;
+}
+
 /** iPads and Android tablets lack Apple/Google Wallet on device. */
 export function isTabletDevice() {
   if (typeof navigator === "undefined") return false;
   const ua = navigator.userAgent;
 
   if (/iPad/i.test(ua)) return true;
-  // iPadOS 13+ can report as Mac with touch.
-  if (/Macintosh/i.test(ua) && (navigator.maxTouchPoints ?? 0) > 1) return true;
+  if (reportsIphone()) return false;
+  // iPadOS 13+ can report as Mac with touch. A phone-sized screen is an
+  // iPhone whose platform was rewritten to MacIntel as well.
+  if (/Macintosh/i.test(ua) && (navigator.maxTouchPoints ?? 0) > 1) {
+    if (phoneSizedScreen()) return false;
+    return true;
+  }
 
   if (/Android/i.test(ua) && !/Mobile/i.test(ua)) {
     const hints = (
@@ -1091,7 +1163,6 @@ export function isTabletDevice() {
   }
 
   // DevTools tablet presets can keep a desktop UA while emulating touch.
-  if (/iPhone|iPod/i.test(ua)) return false;
   if (/Android/i.test(ua) && /Mobile/i.test(ua)) return false;
   if (typeof window !== "undefined" && typeof window.matchMedia === "function") {
     const coarse = window.matchMedia("(pointer: coarse)").matches;
@@ -1106,10 +1177,10 @@ export function isTabletDevice() {
 /** Phones that can hold a scannable Apple or Google Wallet pass. */
 export function isPhoneDevice() {
   if (typeof navigator === "undefined") return false;
+  if (reportsIphone()) return true;
   if (isTabletDevice()) return false;
 
   const ua = navigator.userAgent;
-  if (/iPhone|iPod/i.test(ua)) return true;
 
   if (/Android/i.test(ua)) {
     if (/Mobile/i.test(ua)) return true;
@@ -1117,6 +1188,14 @@ export function isPhoneDevice() {
       navigator as Navigator & { userAgentData?: { mobile?: boolean } }
     ).userAgentData;
     if (hints?.mobile) return true;
+  }
+
+  if (
+    /Macintosh/i.test(ua) &&
+    (navigator.maxTouchPoints ?? 0) > 1 &&
+    phoneSizedScreen()
+  ) {
+    return true;
   }
 
   return false;

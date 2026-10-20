@@ -116,6 +116,7 @@ describe("Login page", () => {
   });
 
   afterEach(() => {
+    vi.useRealTimers();
     vi.unstubAllGlobals();
   });
 
@@ -194,7 +195,7 @@ describe("Login page", () => {
     expect(screen.getByLabelText(/six-digit code/i)).toHaveFocus();
     expect(screen.getByText(/check your spam folder/i)).toBeInTheDocument();
     expect(
-      screen.getByText(/codes expire after 5 minutes/i),
+      screen.getByText(/codes expire after 10 minutes/i),
     ).toBeInTheDocument();
     expect(screen.queryByText(/localhost:1080/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/open http/i)).not.toBeInTheDocument();
@@ -417,6 +418,31 @@ describe("Login page", () => {
     expect(
       await screen.findByText(/experiencing technical difficulties/i),
     ).toBeInTheDocument();
+    expect(
+      screen.queryByText(/a new code is on its way/i),
+    ).not.toBeInTheDocument();
+  });
+
+  it("shows resend success briefly, then restores Send a new code", async () => {
+    const user = userEvent.setup();
+    await sendCodeForDemoUser(user);
+
+    await user.click(screen.getByRole("button", { name: /send a new code/i }));
+
+    expect(
+      await screen.findByText(/verification code has been resent/i),
+    ).toBeInTheDocument();
+    expect(screen.getByText(/a new code is on its way/i)).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: /send a new code/i }),
+    ).not.toBeInTheDocument();
+
+    expect(
+      await screen.findByRole("button", { name: /send a new code/i }, { timeout: 4000 }),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByText(/verification code has been resent/i),
+    ).not.toBeInTheDocument();
     expect(
       screen.queryByText(/a new code is on its way/i),
     ).not.toBeInTheDocument();

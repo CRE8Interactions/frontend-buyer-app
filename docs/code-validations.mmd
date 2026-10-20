@@ -1,6 +1,6 @@
 %% Step 1: code (OTP)
 
-%% Source: app/login/page.tsx, lib/fieldValidation.ts
+%% Source: app/login/page.tsx, lib/fieldValidation.ts (codeResponseError, codeSubmitError)
 
 %% API:    blocktickets/tickets/src/api/verify/controllers/verify.js (byPhoneOrEmail → POST /verifies/by-phone-or-email)
 
@@ -13,6 +13,8 @@
 %% Code incorrect: Code is incorrect. Please try again
 
 %% Network: We're experiencing technical difficulties. Please try again later.
+
+%% Auto-submit when the field has 6 digits. No blur format check.
 
 %%
 
@@ -40,54 +42,25 @@
 
 %% | 500 / other | (any other) | We're experiencing technical difficulties. Please try again later. |
 
-
-
 flowchart TD
-
   codeStep[Step 1: 6-digit code] --> typeCode[Enter digits only, max 6]
-
   typeCode --> len6{Length is 6?}
-
   len6 -->|no| waitCode[Wait for 6 digits]
-
   waitCode --> typeCode
-
   len6 -->|yes| verifyCode[POST /verifies/by-phone-or-email verifyCode]
-
-
-
   verifyCode --> catchPath{Request failed?}
-
   catchPath -->|yes| codeSubmitErr[codeSubmitError]
-
-  codeSubmitErr -->|400| badCode["Code is incorrect. Please try again"]
-
-  codeSubmitErr -->|500| codeNetwork["We're experiencing technical difficulties. Please try again later."]
-
+  codeSubmitErr -->|400–499 except 408 and 429| badCode["Code is incorrect. Please try again"]
+  codeSubmitErr -->|408, 429, 500 / other| codeNetwork["We're experiencing technical difficulties. Please try again later."]
   badCode --> codeStep
-
   codeNetwork --> codeStep
-
-
-
   catchPath -->|no| codeStatus{HTTP status}
-
   codeStatus -->|200 existing user| sessionOk[setSession and redirect]
-
   codeStatus -->|203 new user| nextStep[Continue to Step 2: create account]
-
-  codeStatus -->|400| badCode
-
-
-
+  codeStatus -->|400–499 except 408 and 429| badCode
+  codeStatus -->|408, 429, 500 / other| codeNetwork
   codeStep --> resendClick[Send a new code]
-
   resendClick --> resendApi[POST /verifies verifyUser resend]
-
   resendApi --> resendFail{API response?}
-
   resendFail -->|200| resentOk[Verification code has been resent.]
-
-  resendFail -->|500| codeNetwork
-
-
+  resendFail -->|500 / other| codeNetwork

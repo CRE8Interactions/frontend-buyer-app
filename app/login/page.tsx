@@ -1,9 +1,10 @@
 "use client";
 
-import { Suspense, useState } from "react";
+import { Suspense, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import CodeField, { type CodeError } from "@/components/molecules/CodeField";
+import DobField from "@/components/molecules/DobField";
 import EmailField from "@/components/molecules/EmailField";
 import NameField from "@/components/molecules/NameField";
 import PhoneNumberInput, {
@@ -24,16 +25,12 @@ import {
   FIELD_COPY,
   codeResponseError,
   codeSubmitError,
-  dobBlurError,
   dobSubmitError,
-  DOB_INVALID_MESSAGE,
-  DOB_REQUIRED_MESSAGE,
   emailBlurInvalid,
   emailSubmitError,
   emailSubmitInvalid,
   formatDobInput,
   formString,
-  lightFieldClass,
   nameBlurError,
   nameFieldError,
   normalizeEmail,
@@ -45,6 +42,8 @@ import {
 type Choice = "email" | "phone-number";
 
 const NAVY = "#051b35";
+/** How long the resend success banner and "on its way" copy stay visible. */
+const RESEND_FEEDBACK_MS = 3000;
 
 /** Demo login: 28px on phone, 34px from md. Avoid text-[Npx] tokens. */
 const loginTitleCls =
@@ -140,13 +139,28 @@ function LoginForm() {
   const [resent, setResent] = useState(false);
   const [done, setDone] = useState(false);
   const [statusMessage, setStatusMessage] = useState("");
+  const resentFeedbackTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const clearResentFeedbackTimer = () => {
+    if (resentFeedbackTimer.current) {
+      clearTimeout(resentFeedbackTimer.current);
+      resentFeedbackTimer.current = null;
+    }
+  };
+
+  const clearResentFeedback = () => {
+    clearResentFeedbackTimer();
+    setResent(false);
+    setStatusMessage("");
+  };
 
   const clearNetworkFeedback = () => {
     setHasError(false);
-    setStatusMessage("");
-    setResent(false);
+    clearResentFeedback();
     setCodeError(null);
   };
+
+  useEffect(() => () => clearResentFeedbackTimer(), []);
 
   const destinationLabel = choice === "email" ? email : phoneNumber;
 
@@ -207,11 +221,17 @@ function LoginForm() {
     setIsSaving(true);
     setHasError(false);
     setCodeError(null);
-    setResent(false);
+    clearResentFeedback();
     try {
       await sendCode(normalizeEmail(email));
       setResent(true);
       setStatusMessage("Verification code has been resent.");
+      clearResentFeedbackTimer();
+      resentFeedbackTimer.current = setTimeout(() => {
+        resentFeedbackTimer.current = null;
+        setResent(false);
+        setStatusMessage("");
+      }, RESEND_FEEDBACK_MS);
     } catch {
       setHasError(true);
       setCodeError("network");
@@ -426,7 +446,7 @@ function LoginForm() {
               />
               <div className="flex flex-col gap-4 text-center text-[13px] text-[#8a93a3]">
                 <p>
-                  Codes expire after 5 minutes, so be sure to use the right one.
+                  Codes expire after 10 minutes, so be sure to use the right one.
                 </p>
                 <p>
                   {done ? (
@@ -539,48 +559,16 @@ function LoginForm() {
                 }}
                 onBlur={(value) => setLastNameError(nameBlurError(value))}
               />
-              <div>
-                <label
-                  htmlFor="dob"
-                  className="text-[12px] font-semibold text-[#4a5567]"
-                >
-                  Birth date
-                </label>
-                <input
-                  id="dob"
-                  name="dob"
-                  value={dob}
-                  required
-                  autoComplete="bday"
-                  aria-invalid={Boolean(dobError)}
-                  onChange={(e) => {
-                    setDob(formatDobInput(e.target.value));
-                    setDobError(null);
-                    setHasError(false);
-                  }}
-                  onInput={(e) => {
-                    setDob(formatDobInput(e.currentTarget.value));
-                    setDobError(null);
-                  }}
-                  onBlur={(e) => setDobError(dobBlurError(e.currentTarget.value))}
-                  placeholder="MM/DD/YYYY"
-                  inputMode="numeric"
-                  className={`mt-2 ${lightFieldClass(Boolean(dobError))}`}
-                />
-                {dobError === "required" ? (
-                  <p className="mt-2 text-[13px] text-[#c2394a]">
-                    {DOB_REQUIRED_MESSAGE}
-                  </p>
-                ) : dobError === "invalid" ? (
-                  <p className="mt-2 text-[13px] text-[#c2394a]">
-                    {DOB_INVALID_MESSAGE}
-                  </p>
-                ) : (
-                  <p className="mt-1.5 text-[12px] text-[#8a93a3]">
-                    Format: MM/DD/YYYY
-                  </p>
-                )}
-              </div>
+              <DobField
+                value={dob}
+                error={dobError}
+                onChange={(value) => {
+                  setDob(value);
+                  setDobError(null);
+                  setHasError(false);
+                }}
+                onBlur={setDobError}
+              />
               {hasError ? (
                 <p className="text-[13px] text-[#c2394a]">{FIELD_COPY.network}</p>
               ) : null}

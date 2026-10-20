@@ -1,7 +1,7 @@
 "use client";
 
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useParams, useRouter, useSearchParams } from "next/navigation";
+import { useParams, usePathname, useRouter, useSearchParams } from "next/navigation";
 import BrandedNotice from "@/components/molecules/BrandedNotice";
 import RouteLoader from "@/components/molecules/RouteLoader";
 import PremiumTicketing, {
@@ -14,9 +14,11 @@ import {
   getSeatmapByShortCode,
   getTicketGroups,
 } from "@/lib/api";
-import { brandingToTicketingTheme, type OrgBranding } from "@/lib/branding";
+import { brandingToTicketingTheme, resolveBrandLogo, resolvePrimaryAttractionImage, type OrgBranding } from "@/lib/branding";
 import { cacheEventBranding } from "@/lib/orgBrandingCache";
+import { rememberTrackingCode } from "@/lib/trackingLink";
 import { isSportingEvent } from "@/lib/eventCategory";
+import { eventPromotionalCopy } from "@/lib/promotionalDescription";
 import {
   eventAboutText,
   eventDoorsIso,
@@ -51,6 +53,15 @@ import {
   type OfferSummary,
   type RawTicketGroup as RawGroup,
 } from "@/lib/ticketListings";
+import {
+  accessCodesFromTokens,
+  hasListingQueryFilters,
+  listingFiltersFromSearch,
+  offerIdFromAccessToken,
+  parseTicketingSearchParams,
+  ticketingSearchHref,
+} from "@/lib/ticketingQuery";
+import { unlockOfferInTicketGroups } from "@/lib/offerUnlock";
 import useFiltersStore from "@/stores/filtersStore";
 import useSeatmapStore from "@/stores/seatmapStore";
 import useWaitingRoomHeartbeat from "@/hooks/useWaitingRoomHeartbeat";
@@ -70,6 +81,7 @@ type EventData = {
   realDoorsOpen?: string;
   summary?: string;
   description?: string;
+  promotionalDescription?: unknown;
   image?: ApiImage;
   category?: { name?: string | null };
   categoryName?: string | null;
@@ -82,7 +94,8 @@ type EventData = {
   attractions?: Array<{
     name?: string;
     primary?: boolean;
-    artwork?: { url?: string };
+    order?: number;
+    artwork?: ApiImage;
     images?: ApiImage[];
   }>;
   branding?: OrgBranding | null;
@@ -158,6 +171,8 @@ function toTicketingData(
   const listings = groupsToListings(groups, listingOpts);
   const quantityCatalog = groupsToListings(catalogGroups, listingOpts);
   const theme = brandingToTicketingTheme(ev, ev.organization, imageOf(ev.image));
+  const attractionImage = resolvePrimaryAttractionImage(ev);
+  const brandLogo = resolveBrandLogo(ev, ev.organization);
 
   return {
     ...theme,
@@ -174,12 +189,16 @@ function toTicketingData(
     venueCityState,
     mapsQuery: `${venueName} ${city} ${state}`.trim(),
     logoSrc: imageOf(ev.image) || theme.logoSrc,
+    headerLogoSrc: attractionImage?.url || brandLogo || theme.logoSrc,
+    headerLogoAlt: attractionImage?.name || orgLabel || ev.name || "Event",
+    headerLogoIsPhoto: Boolean(attractionImage),
     homeLogoSrc: matchup.homeLogoSrc,
     awayLogoSrc: matchup.awayLogoSrc,
     orgHref: ev.organization?.slug ? `/${ev.organization.slug}/` : undefined,
     orgLabel,
     providerLabel: `Official ticketing marketplace for ${orgLabel}`,
     aboutText: eventAboutText(ev),
+    promo: eventPromotionalCopy(ev),
     homeLabel: matchup.homeLabel,
     awayLabel: matchup.awayLabel,
     awayShort: matchup.awayShort,
@@ -275,6 +294,8 @@ const BASELINE_FILTERS: TicketingFilters = {
   quantity: 0,
   accessible: false,
   sort: "price",
+  offerIds: [],
+  accessCodes: [],
 };
 
 function resaleGroupsFromPayload(payload: unknown): RawGroup[] {
@@ -303,20 +324,35 @@ function fetchInventory(event: EventData, filters: TicketingFilters) {
   return getTicketGroups({
     event,
     quantity: filters.quantity,
-    offerIds: [],
+    offerIds: filters.offerIds ?? [],
     priceRange: [0, 500],
-    accessCodes: [],
+    // The endpoint keys each code by its offer: "<offerId>:<code>".
+    accessCodes: filters.accessCodeTokens ?? [],
     accessible: filters.accessible,
     sort: filters.sort,
     returnLocked: true,
   }).catch(() => null);
 }
 
+function offerNameForId(
+  id: string | number,
+  groups: RawGroup[],
+  offers: OfferSummary[],
+) {
+  const key = String(id);
+  const fromOffer = offers.find((offer) => String(offer.id) === key)?.name;
+  if (fromOffer) return fromOffer;
+  return groups.find((group) => String(group.offer?.id) === key)?.offer?.name;
+}
+
 function SeatedTickets() {
   const params = useParams<{ slug: string; shortcode: string }>();
   const router = useRouter();
+  const pathname = usePathname();
   const searchParams = useSearchParams();
   const code = searchParams.get("code") || "0";
+  const listingQuery = listingFiltersFromSearch(searchParams);
+  const parsedQuery = parseTicketingSearchParams(searchParams);
 
   const [ev, setEv] = useState<EventData | null>(null);
   const [groups, setGroups] = useState<RawGroup[]>([]);
@@ -338,6 +374,7 @@ function SeatedTickets() {
   const refetchId = useRef(0);
   /** Unfiltered inventory — what the seatmap is painted from. */
   const baselineGroups = useRef<RawGroup[]>([]);
+  const initialSearchRef = useRef(searchParams);
 
   useWaitingRoomHeartbeat(
     ev?.uuid,
@@ -357,6 +394,7 @@ function SeatedTickets() {
           return;
         }
         const event = res.data.event as EventData;
+        rememberTrackingCode(event.uuid, searchParams.get("code"));
         cacheEventBranding(event, event.organization);
         if (
           event.uuid &&
@@ -402,9 +440,29 @@ function SeatedTickets() {
         // the broader offers endpoint here leaks future offers into the chips.
         const nextOffers = (groupsRes?.data?.offers || []) as OfferSummary[];
 
-        setGroups(nextGroups);
-        setBaseline(nextGroups);
-        baselineGroups.current = nextGroups;
+        let unlockedGroups = nextGroups;
+        const urlTokens = parseTicketingSearchParams(initialSearchRef.current).accessCodeTokens;
+        urlTokens.forEach((token) => {
+          const offerId = offerIdFromAccessToken(token);
+          const [typed] = accessCodesFromTokens([token]);
+          const group = unlockedGroups.find(
+            (row) => String(row.offer?.id) === String(offerId),
+          );
+          const zone = group?.offer?.name;
+          const expected = group?.offer?.accessCode?.trim();
+          if (
+            zone &&
+            expected &&
+            typed &&
+            expected.toUpperCase() === typed.toUpperCase()
+          ) {
+            unlockedGroups = unlockOfferInTicketGroups(unlockedGroups, zone);
+          }
+        });
+
+        setGroups(unlockedGroups);
+        setBaseline(unlockedGroups);
+        baselineGroups.current = unlockedGroups;
         setSoldOut(Boolean(groupsRes?.data?.soldout));
         setScheduled(Boolean(groupsRes?.data?.isScheduled));
         setScheduledTime(groupsRes?.data?.scheduledTime || null);
@@ -414,7 +472,7 @@ function SeatedTickets() {
           background: normalizeSeatmapBackground(seatmapRaw?.background),
           mapping: (seatmapRaw?.mapping || null) as SeatmapMapping | null,
         });
-        hydrateSeatmapStores(event, nextGroups, seatmapRaw);
+        hydrateSeatmapStores(event, unlockedGroups, seatmapRaw);
       })
       .catch(() => {
         if (!cancelled) setError("Unable to load this event.");
@@ -436,9 +494,22 @@ function SeatedTickets() {
    * the seatmap keeps the unfiltered baseline so its seats never disappear, and
    * an empty filtered response falls back to it rather than blanking the page.
    */
+  const searchParamsRef = useRef(searchParams);
+  searchParamsRef.current = searchParams;
+
   const handleFiltersChange = useCallback(async (filters: TicketingFilters) => {
     const event = eventRef.current;
     if (!event) return;
+    const href = ticketingSearchHref(
+      pathname,
+      filters,
+      filters.accessCodeTokens ?? [],
+    );
+    const currentSearch = searchParamsRef.current;
+    const current = `${pathname}${currentSearch.toString() ? `?${currentSearch.toString()}` : ""}`;
+    if (href !== current) {
+      router.replace(href);
+    }
     const requestId = refetchId.current + 1;
     refetchId.current = requestId;
     setRefreshing(true);
@@ -460,7 +531,24 @@ function SeatedTickets() {
       ).length > 0;
     setGroups(usable ? nextGroups : baselineGroups.current);
     setRefreshing(false);
-  }, []);
+  }, [pathname, router]);
+
+  const listingQueryApplied = useRef(false);
+
+  useEffect(() => {
+    if (loading || !ev || listingQueryApplied.current) return;
+    if (!hasListingQueryFilters(initialSearchRef.current)) return;
+    listingQueryApplied.current = true;
+    const parsed = parseTicketingSearchParams(initialSearchRef.current);
+    void handleFiltersChange({
+      quantity: parsed.quantity ?? 0,
+      accessible: Boolean(parsed.accessible),
+      sort: parsed.sort ?? "price",
+      offerIds: parsed.offerIds,
+      accessCodes: accessCodesFromTokens(parsed.accessCodeTokens),
+      accessCodeTokens: parsed.accessCodeTokens,
+    });
+  }, [loading, ev, handleFiltersChange]);
 
   const data = useMemo(
     () =>
@@ -509,8 +597,7 @@ function SeatedTickets() {
       />
     );
   }
-  // A sold-out event still renders the page: the shopper gets the sold-out
-  // screen and its waitlist instead of a dead end.
+  // A sold-out event still renders the tickets page.
   if (!hasInventory && !soldOut && !scheduled) {
     return (
       <BrandedNotice
@@ -525,6 +612,23 @@ function SeatedTickets() {
       data={data}
       onFiltersChange={handleFiltersChange}
       refreshing={refreshing}
+      initialFilters={{
+        quantity: listingQuery.quantity || undefined,
+        accessible: listingQuery.accessible,
+        sort: listingQuery.sort,
+      }}
+      initialOfferNames={parsedQuery.offerIds
+        .map((id) => offerNameForId(id, baseline.length ? baseline : groups, offers))
+        .filter((name): name is string => Boolean(name))}
+      initialUnlockedZones={parsedQuery.accessCodeTokens
+        .map((token) =>
+          offerNameForId(
+            offerIdFromAccessToken(token),
+            baseline.length ? baseline : groups,
+            offers,
+          ),
+        )
+        .filter((name): name is string => Boolean(name))}
     />
   );
 }

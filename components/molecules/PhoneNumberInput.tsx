@@ -85,8 +85,8 @@ export default function PhoneNumberInput({
       >
         <PhoneInput
           id={id}
-          international
           defaultCountry={defaultCountry}
+          initialValueFormat="national"
           value={value}
           onChange={(next) => onChange(next || undefined)}
           onBlur={() => onBlur?.(value)}

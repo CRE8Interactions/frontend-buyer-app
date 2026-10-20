@@ -6,8 +6,9 @@
  * (or local demo snapshots when NEXT_PUBLIC_DEMO=true).
  */
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type CSSProperties, type ReactNode } from "react";
 import Link from "next/link";
+import EventPromo from "@/components/atoms/EventPromo";
 import Nav from "@/components/organisms/Nav";
 import SiteFooter from "@/components/organisms/SiteFooter";
 import { BrandedLoader } from "@/components/molecules/RouteLoader";
@@ -17,6 +18,7 @@ import {
   getVenueUpcomingEvents,
   getVenues,
 } from "@/lib/api";
+import { isEventSoldOut, isNotYetOnSale, onSaleBadgeLabel, withSoldOutFlags } from "@/lib/eventSoldOut";
 import {
   resolveBrandLogo,
   resolvePrimaryColor,
@@ -39,6 +41,7 @@ import {
   browsePx,
 } from "@/lib/browseType";
 import { venueUpcomingEventCount } from "@/lib/eventFromPrice";
+import { eventPromotionalCopy } from "@/lib/promotionalDescription";
 import {
   categoryLabel,
   eventTypeLabel,
@@ -67,6 +70,12 @@ type BrowseEvent = {
   start?: string;
   image?: ApiImage;
   status?: string;
+  soldout?: boolean | null;
+  soldOut?: boolean | null;
+  generalOnsale?: string | null;
+  hideGeneralOnsale?: boolean | null;
+  scheduled?: boolean | null;
+  scheduledTime?: string | null;
   organization?: {
     name?: string;
     slug?: string;
@@ -92,6 +101,7 @@ type BrowseEvent = {
   seatmap?: { ga_only?: boolean };
   isGeneralAdmissionOnly?: boolean;
   generalAdmissionOnly?: boolean;
+  promotionalDescription?: unknown;
 };
 
 type BrowseOrg = {
@@ -193,6 +203,7 @@ function unwrapEventList(payload: unknown): BrowseEvent[] {
 }
 
 function eventStatus(ev: BrowseEvent) {
+  if (isEventSoldOut(ev)) return "Sold out";
   const raw = (ev.status || "").trim();
   if (!raw || raw === "on_sale") return "On sale";
   return raw.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
@@ -205,7 +216,36 @@ const tagFor = (st: string) =>
       ? { tagBg: "rgba(255,255,255,0.92)", tagInk: "#6e7180" }
       : st === "Presale"
         ? { tagBg: "rgba(255,255,255,0.92)", tagInk: "#4a5567" }
-        : { tagBg: "#e6f4eb", tagInk: "#2f8f4e" };
+        : st === "Sold out"
+          ? { tagBg: "#eef0f6", tagInk: "#6e7180" }
+          : { tagBg: "#e6f4eb", tagInk: "#2f8f4e" };
+
+function BrowseCardFrame({
+  soldOut,
+  href,
+  className,
+  style,
+  children,
+}: {
+  soldOut: boolean;
+  href: string;
+  className: string;
+  style: CSSProperties;
+  children: ReactNode;
+}) {
+  if (soldOut) {
+    return (
+      <div className={className} style={style}>
+        {children}
+      </div>
+    );
+  }
+  return (
+    <Link href={href} className={className} style={style}>
+      {children}
+    </Link>
+  );
+}
 
 function venuesFromOrgs(orgs: BrowseOrg[]): BrowseVenue[] {
   const map = new Map<string, BrowseVenue>();
@@ -318,12 +358,27 @@ function loadBrowseSnapshot(force = false): Promise<BrowseSnapshot> {
       const venueEvents = listedVenues.flatMap((venue) =>
         unwrapEventList(venue.allEvents),
       );
-      const featured = pickFeaturedEvents(
+      const pool = await withSoldOutFlags(
         featuredEventPool(listedEvents, nextOrgs, venueEvents),
+      );
+      const listedIds = new Set(
+        listedEvents.map((ev) =>
+          String(ev.uuid || ev.id || ev.shortCode || ev.shortcode || ev.name || ""),
+        ),
+      );
+      const nextEvents = pool.filter((ev) =>
+        listedIds.has(
+          String(ev.uuid || ev.id || ev.shortCode || ev.shortcode || ev.name || ""),
+        ),
+      );
+      const featured = pickFeaturedEvents(
+        pool.filter(
+          (ev) =>
+            !isEventSoldOut(ev) && !isNotYetOnSale(ev) && !onSaleBadgeLabel(ev),
+        ),
         nextOrgs,
         FEATURED_COUNT,
       );
-      const nextEvents = listedEvents;
       const nextVenues = await withVenueScheduleCounts(
         listedVenues.length ? listedVenues : venuesFromOrgs(nextOrgs),
       );
@@ -402,6 +457,8 @@ export default function BrowseHome() {
   const featIndex = featured.length ? feat % featured.length : 0;
 
   const hero = featured[featIndex];
+  const heroSoldOut = isEventSoldOut(hero);
+  const heroOnSale = heroSoldOut ? "" : onSaleBadgeLabel(hero);
   const cardCols = mobile
     ? "1fr"
     : narrow
@@ -468,7 +525,7 @@ export default function BrowseHome() {
           style={{
             position: "relative",
             width: "100%",
-            height: mobile ? 400 : narrow ? 380 : 440,
+            minHeight: mobile ? 400 : narrow ? 380 : 440,
             borderRadius: mobile ? 20 : 28,
             overflow: "hidden",
             background: NAVY,
@@ -523,15 +580,16 @@ export default function BrowseHome() {
               />
               <div
                 style={{
-                  position: "absolute",
-                  inset: 0,
+                  position: "relative",
                   display: "flex",
                   flexDirection: "column",
                   justifyContent: "flex-end",
                   gap: mobile ? 14 : 18,
+                  minHeight: mobile ? 400 : narrow ? 380 : 440,
                   padding: mobile ? 24 : 44,
                   color: "#f4f7fc",
                   pointerEvents: "none",
+                  boxSizing: "border-box",
                 }}
               >
                 <div
@@ -540,9 +598,9 @@ export default function BrowseHome() {
                     alignItems: "center",
                     gap: 8,
                     alignSelf: "flex-start",
-                    background: "rgba(166,231,115,0.14)",
-                    border: "1px solid rgba(166,231,115,0.4)",
-                    color: GREEN,
+                    background: heroSoldOut || heroOnSale ? "#eef0f6" : "rgba(166,231,115,0.14)",
+                    border: `1px solid ${heroSoldOut || heroOnSale ? "#eef0f6" : "rgba(166,231,115,0.4)"}`,
+                    color: heroSoldOut || heroOnSale ? "#6e7180" : GREEN,
                     borderRadius: 999,
                     padding: "6px 13px",
                     fontSize: 11,
@@ -552,15 +610,23 @@ export default function BrowseHome() {
                     textTransform: "uppercase",
                   }}
                 >
-                  <span
-                    style={{
-                      width: 6,
-                      height: 6,
-                      borderRadius: 999,
-                      background: GREEN,
-                    }}
-                  />
-                  Featured · {categoryLabel(eventTypeLabel(hero, orgs))}
+                  {heroSoldOut ? (
+                    "Sold out"
+                  ) : heroOnSale ? (
+                    heroOnSale
+                  ) : (
+                    <>
+                      <span
+                        style={{
+                          width: 6,
+                          height: 6,
+                          borderRadius: 999,
+                          background: GREEN,
+                        }}
+                      />
+                      Featured · {categoryLabel(eventTypeLabel(hero, orgs))}
+                    </>
+                  )}
                 </div>
                 <div
                   style={{
@@ -585,6 +651,7 @@ export default function BrowseHome() {
                       .filter(Boolean)
                       .join(" · ")}
                   </div>
+                  <EventPromo text={eventPromotionalCopy(hero)} color="#fff" style={{ fontSize: 15 }} />
                 </div>
                 <div
                   style={{
@@ -595,24 +662,60 @@ export default function BrowseHome() {
                     pointerEvents: "auto",
                   }}
                 >
-                  <Link
-                    href={eventPurchasePath(hero)}
-                    style={{
-                      fontFamily: "inherit",
-                      fontSize: 15,
-                      fontWeight: 600,
-                      lineHeight: 1.5,
-                      color: NAVY,
-                      background: GREEN,
-                      border: "none",
-                      borderRadius: 999,
-                      padding: "14px 26px",
-                      cursor: "pointer",
-                      textDecoration: "none",
-                    }}
-                  >
-                    Get tickets
-                  </Link>
+                  {heroSoldOut ? (
+                    <span
+                      style={{
+                        fontFamily: "inherit",
+                        fontSize: 15,
+                        fontWeight: 600,
+                        lineHeight: 1.5,
+                        color: "#cdd9ea",
+                        background: "transparent",
+                        border: "1px solid rgba(255,255,255,0.3)",
+                        borderRadius: 999,
+                        padding: "14px 26px",
+                        cursor: "default",
+                      }}
+                    >
+                      Sold out
+                    </span>
+                  ) : heroOnSale ? (
+                    <span
+                      style={{
+                        fontFamily: "inherit",
+                        fontSize: 15,
+                        fontWeight: 600,
+                        lineHeight: 1.5,
+                        color: NAVY,
+                        background: "#fff",
+                        border: "1px solid rgba(255,255,255,0.3)",
+                        borderRadius: 999,
+                        padding: "14px 26px",
+                        cursor: "default",
+                      }}
+                    >
+                      Remind me
+                    </span>
+                  ) : (
+                    <Link
+                      href={eventPurchasePath(hero)}
+                      style={{
+                        fontFamily: "inherit",
+                        fontSize: 15,
+                        fontWeight: 600,
+                        lineHeight: 1.5,
+                        color: NAVY,
+                        background: GREEN,
+                        border: "none",
+                        borderRadius: 999,
+                        padding: "14px 26px",
+                        cursor: "pointer",
+                        textDecoration: "none",
+                      }}
+                    >
+                      Get tickets
+                    </Link>
+                  )}
                 </div>
               </div>
               {featured.length > 1 && (
@@ -821,16 +924,19 @@ export default function BrowseHome() {
         >
           {events.map((e, i) => {
             const status = eventStatus(e);
-            const soon = status.toLowerCase() === "presale";
-            const tag = tagFor(status);
+            const soldOut = isEventSoldOut(e);
+            const onSaleLabel = soldOut ? "" : onSaleBadgeLabel(e);
+            const soon = isNotYetOnSale(e) || Boolean(onSaleLabel);
+            const tag = onSaleLabel ? tagFor("Sold out") : tagFor(status);
             const img = imageUrl(e.image, "");
             const when = eventWhen(e);
             const loc = cityState(e.venue?.address);
             return (
-              <Link
+              <BrowseCardFrame
                 key={e.uuid || e.id || `${eventTitle(e)}-${i}`}
                 href={eventPurchasePath(e)}
-                className="bh-ev"
+                soldOut={soldOut}
+                className={soldOut ? "" : "bh-ev"}
                 style={{
                   background: "#fff",
                   border: "1px solid rgba(5,27,53,0.10)",
@@ -839,7 +945,7 @@ export default function BrowseHome() {
                   boxShadow: "0 1px 2px rgba(5,27,53,0.05)",
                   display: "flex",
                   flexDirection: "column",
-                  cursor: "pointer",
+                  cursor: soldOut ? "default" : "pointer",
                   color: NAVY,
                   textDecoration: "none",
                 }}
@@ -878,9 +984,10 @@ export default function BrowseHome() {
                       background: tag.tagBg,
                       borderRadius: 999,
                       padding: "5px 10px",
+                      whiteSpace: "nowrap",
                     }}
                   >
-                    {status}
+                    {onSaleLabel || status}
                   </div>
                 </div>
                 <div
@@ -953,19 +1060,19 @@ export default function BrowseHome() {
                         fontSize: 13,
                         fontWeight: 600,
                         lineHeight: 1.5,
-                        color: NAVY,
-                        background: soon ? "#fff" : "#ecf8dd",
-                        border: `1px solid ${soon ? "rgba(5,27,53,0.14)" : "#ecf8dd"}`,
+                        color: soldOut ? "#6e7180" : NAVY,
+                        background: soldOut || soon ? "#fff" : "#ecf8dd",
+                        border: `1px solid ${soldOut || soon ? "rgba(5,27,53,0.14)" : "#ecf8dd"}`,
                         borderRadius: 999,
                         padding: "10px 18px",
                         whiteSpace: "nowrap",
                       }}
                     >
-                      {soon ? "Remind me" : "Get tickets"}
+                      {soldOut ? "Sold out" : soon ? "Remind me" : "Get tickets"}
                     </span>
                   </div>
                 </div>
-              </Link>
+              </BrowseCardFrame>
             );
           })}
         </div>

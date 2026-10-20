@@ -8,11 +8,12 @@ const router = vi.hoisted(() => ({
   push: vi.fn(),
   replace: vi.fn(),
   back: vi.fn(),
+  search: new URLSearchParams(),
 }));
 
 vi.mock("next/navigation", () => ({
   useParams: () => ({ slug: GA_EVENT.seoUrl, shortcode: GA_EVENT.shortcode }),
-  useSearchParams: () => new URLSearchParams(),
+  useSearchParams: () => router.search,
   usePathname: () => `/e/${GA_EVENT.seoUrl}/${GA_EVENT.shortcode}/`,
   useRouter: () => router,
 }));
@@ -27,6 +28,7 @@ vi.mock("@/lib/api", () => ({
 vi.mock("@/components/organisms/PremiumTicketing", () => ({
   default: ({ data }: { data: TicketingData }) => (
     <>
+      {data.promo ? <p>{data.promo}</p> : null}
       {data.soldOut ? <p>event sold out</p> : null}
       {data.scheduled ? <p>{`scheduled · ${data.scheduledAt}`}</p> : null}
       <ul>
@@ -52,6 +54,7 @@ describe("GA event page tiers", () => {
   beforeEach(() => {
     sessionStorage.clear();
     router.replace.mockReset();
+    router.search = new URLSearchParams();
     mockedGetEvent.mockReset();
     mockedGetTicketGroups.mockReset();
     mockedGetEvent.mockResolvedValue({
@@ -93,6 +96,25 @@ describe("GA event page tiers", () => {
     expect(screen.queryByText(/test offer/i)).not.toBeInTheDocument();
   });
 
+  it("keeps selling when the event record is sold out but ticket groups are not", async () => {
+    const detail = demoEventDetail(GA_EVENT.shortcode);
+    const { ticketGroups, offers } = demoTicketGroups();
+    mockedGetEvent.mockResolvedValue({
+      data: {
+        ...detail,
+        event: { ...detail.event, status: "on_sale", soldOut: true },
+      },
+    } as never);
+    inventory({ soldout: false, ticketGroups, offers });
+
+    render(<GAEventRoute />);
+
+    expect(
+      await screen.findByText(/vip club · live/i, undefined, { timeout: 4000 }),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/event sold out/i)).not.toBeInTheDocument();
+  });
+
   it("keeps selling when the event is flagged sold out but inventory came back", async () => {
     const { ticketGroups, offers } = demoTicketGroups();
     inventory({ soldout: true, ticketGroups, offers });
@@ -104,15 +126,33 @@ describe("GA event page tiers", () => {
     ).toBeInTheDocument();
   });
 
-  it("hands a sold-out event to the waitlist instead of the empty notice", async () => {
+  it("shows the same empty notice as a seated event when the event is sold out and groups are empty", async () => {
+    const detail = demoEventDetail(GA_EVENT.shortcode);
+    mockedGetEvent.mockResolvedValue({
+      data: {
+        ...detail,
+        event: { ...detail.event, status: "on_sale", soldOut: true },
+      },
+    } as never);
+    inventory({ soldout: false, ticketGroups: [], offers: [] });
+
+    render(<GAEventRoute />);
+
+    expect(
+      await screen.findByText(/no tickets on sale/i, undefined, { timeout: 4000 }),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/event sold out/i)).not.toBeInTheDocument();
+  });
+
+  it("shows the same empty notice when ticket groups are sold out and empty", async () => {
     inventory({ soldout: true, ticketGroups: [], offers: [] });
 
     render(<GAEventRoute />);
 
     expect(
-      await screen.findByText(/event sold out/i, undefined, { timeout: 4000 }),
+      await screen.findByText(/no tickets on sale/i, undefined, { timeout: 4000 }),
     ).toBeInTheDocument();
-    expect(screen.queryByText(/no tickets on sale/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/event sold out/i)).not.toBeInTheDocument();
   });
 
   it("shows the event schedule without inventing a GA offer card", async () => {
@@ -133,6 +173,33 @@ describe("GA event page tiers", () => {
     ).toBeInTheDocument();
     expect(screen.queryByText(new RegExp(offers[0].name, "i"))).not.toBeInTheDocument();
     expect(screen.queryByText(/no tickets on sale/i)).not.toBeInTheDocument();
+  });
+
+  it("hides the on-sale time when inventory says the GA event is not scheduled", async () => {
+    const detail = demoEventDetail(GA_EVENT.shortcode);
+    mockedGetEvent.mockResolvedValue({
+      data: {
+        ...detail,
+        event: {
+          ...detail.event,
+          status: "on_sale",
+          generalOnsale: "2026-11-01T17:00:00.000Z",
+        },
+      },
+    } as never);
+    inventory({
+      soldout: false,
+      isScheduled: false,
+      scheduledTime: null,
+      ticketGroups: [],
+      offers: [],
+    });
+
+    render(<GAEventRoute />);
+
+    expect(
+      await screen.findByText(/no tickets on sale/i, undefined, { timeout: 4000 }),
+    ).toBeInTheDocument();
   });
 
   it("falls back to the empty notice when nothing is on sale", async () => {
@@ -163,5 +230,70 @@ describe("GA event page tiers", () => {
     });
     expect(mockedGetTicketGroups).not.toHaveBeenCalled();
     expect(screen.queryByText(/no tickets on sale/i)).not.toBeInTheDocument();
+  });
+
+  it("persists a numeric tracking-link code from the event URL", async () => {
+    router.search = new URLSearchParams("code=123456");
+    const { ticketGroups, offers } = demoTicketGroups();
+    inventory({ soldout: false, ticketGroups, offers });
+
+    render(<GAEventRoute />);
+
+    expect(
+      await screen.findByText(/vip club · live/i, undefined, {
+        timeout: 4000,
+      }),
+    ).toBeInTheDocument();
+    expect(sessionStorage.getItem(`trackingLink:${GA_EVENT.uuid}`)).toBe(
+      "123456",
+    );
+  });
+
+  it("does not persist an offer access code as a tracking link", async () => {
+    router.search = new URLSearchParams("code=GO2026");
+    const { ticketGroups, offers } = demoTicketGroups();
+    inventory({ soldout: false, ticketGroups, offers });
+
+    render(<GAEventRoute />);
+
+    expect(
+      await screen.findByText(/vip club · live/i, undefined, {
+        timeout: 4000,
+      }),
+    ).toBeInTheDocument();
+    expect(
+      sessionStorage.getItem(`trackingLink:${GA_EVENT.uuid}`),
+    ).toBeNull();
+  });
+
+  it("passes the promotional description through to the event page", async () => {
+    const promo = "Pink Night. Free bobblehead for the first 1,000 fans.";
+    const detail = demoEventDetail(GA_EVENT.shortcode);
+    mockedGetEvent.mockResolvedValue({
+      data: {
+        ...detail,
+        event: { ...detail.event, promotionalDescription: `  ${promo}  ` },
+      },
+    } as never);
+    inventory({ soldout: false, ...demoTicketGroups() });
+
+    render(<GAEventRoute />);
+
+    expect(await screen.findByText(promo, undefined, { timeout: 4000 })).toBeInTheDocument();
+  });
+
+  it("omits a blank promotional description", async () => {
+    const detail = demoEventDetail(GA_EVENT.shortcode);
+    mockedGetEvent.mockResolvedValue({
+      data: { ...detail, event: { ...detail.event, promotionalDescription: "   " } },
+    } as never);
+    inventory({ soldout: false, ...demoTicketGroups() });
+
+    render(<GAEventRoute />);
+
+    expect(
+      await screen.findByText(/vip club · live/i, undefined, { timeout: 4000 }),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/pink night/i)).not.toBeInTheDocument();
   });
 });

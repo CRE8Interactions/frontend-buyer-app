@@ -6,9 +6,10 @@
  * shows that venue — not hardcoded NM State fixtures.
  */
 
-import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
+import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import EventPromo from "@/components/atoms/EventPromo";
 import InAppBackLink from "@/components/molecules/InAppBackLink";
 import NavAuthActions from "@/components/molecules/NavAuthActions";
 import RouteLoader from "@/components/molecules/RouteLoader";
@@ -33,6 +34,7 @@ import {
   getVenueUpcomingEvents,
   getVenues,
 } from "@/lib/api";
+import { isEventSoldOut, onSaleBadgeLabel, withSoldOutFlags } from "@/lib/eventSoldOut";
 import {
   dateChip,
   eventPurchasePath,
@@ -53,6 +55,7 @@ import {
   venueWebsiteHref,
 } from "@/lib/venueWebsite";
 import { categoryLabel, eventTypeLabel } from "@/lib/eventType";
+import { eventPromotionalCopy } from "@/lib/promotionalDescription";
 import { useClientReady } from "@/lib/useClientReady";
 import {
   stickyOffsetBelowHeader,
@@ -74,6 +77,12 @@ type VenueEvent = {
   title?: string;
   start?: string;
   status?: string;
+  soldout?: boolean | null;
+  soldOut?: boolean | null;
+  generalOnsale?: string | null;
+  hideGeneralOnsale?: boolean | null;
+  scheduled?: boolean | null;
+  scheduledTime?: string | null;
   sport?: string;
   category?: { name?: string } | null;
   slug?: string | null;
@@ -105,6 +114,7 @@ type VenueEvent = {
   seatmap?: { ga_only?: boolean };
   isGeneralAdmissionOnly?: boolean;
   generalAdmissionOnly?: boolean;
+  promotionalDescription?: unknown;
 };
 
 type VenueRecord = {
@@ -132,8 +142,11 @@ type RowEvent = {
   time: string;
   sport: string;
   title: string;
+  promo: string;
   host: string;
   status: string;
+  soldOut: boolean;
+  onSaleLabel: string;
   href: string;
   sort: number;
 };
@@ -191,6 +204,33 @@ function eventStatus(ev: VenueEvent) {
   return raw.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
 }
 
+function EventRowFrame({
+  soldOut,
+  href,
+  className,
+  style,
+  children,
+}: {
+  soldOut: boolean;
+  href: string;
+  className: string;
+  style: CSSProperties;
+  children: ReactNode;
+}) {
+  if (soldOut) {
+    return (
+      <div className={className} style={{ ...style, cursor: "default" }}>
+        {children}
+      </div>
+    );
+  }
+  return (
+    <Link href={href} className={className} style={style}>
+      {children}
+    </Link>
+  );
+}
+
 function unwrapEventList(payload: unknown): VenueEvent[] {
   if (!payload) return [];
   if (Array.isArray(payload)) {
@@ -244,8 +284,11 @@ function toRow(
     time: formatEventWhen(start, tz, "h:mm A") || "",
     sport: categoryLabel(eventTypeLabel(ev, org ? [org] : [])),
     title: ev.name || ev.title || "Event",
+    promo: eventPromotionalCopy(ev),
     host: ev.organization?.name?.trim() || fallbackHost || "",
     status: eventStatus(ev),
+    soldOut: isEventSoldOut(ev),
+    onSaleLabel: onSaleBadgeLabel(ev),
     href,
     sort: new Date(start).getTime() || 0,
   };
@@ -357,7 +400,10 @@ export default function VenueProfile({ slug }: { slug: string }) {
           stubs = [...fromFilter.allEvents];
         }
 
-        const upcoming = stubs.filter((e) => {
+        const flagged = await withSoldOutFlags(stubs);
+        if (cancelled) return;
+
+        const upcoming = flagged.filter((e) => {
           if (!e.start) return false;
           return new Date(e.start).getTime() >= Date.now() - 3 * 60 * 60 * 1000;
         });
@@ -580,7 +626,7 @@ export default function VenueProfile({ slug }: { slug: string }) {
   return (
     <div className="shopper-page" data-bt-scroll-page="" style={{ background: "#f7f8fc", color: NAVY, minHeight: "100vh", fontFamily: "'Geist', system-ui, -apple-system, sans-serif", WebkitFontSmoothing: "antialiased", ["--vp-accent"]: ACC, ...fieldFocusVars(accent) } as CSSProperties}>
       <style>{`${browsePageTypeCss()}
-.vp-row{transition:box-shadow 150ms ease,border-color 150ms ease}.vp-row:hover{box-shadow:0 8px 30px rgba(5,27,53,0.09);border-color:rgba(5,27,53,0.20)}.vp-action{outline:none;border-color:rgba(5,27,53,0.14);transition:border-color 140ms ease}.vp-action:hover,.vp-action:focus-visible{border-color:var(--vp-accent)}`}</style>
+.vp-row{box-shadow:0 1px 2px rgba(5,27,53,0.05);border-color:rgba(5,27,53,0.10);transition:box-shadow 150ms ease,border-color 150ms ease}.vp-row:hover{box-shadow:0 8px 30px rgba(5,27,53,0.09);border-color:rgba(5,27,53,0.20)}.vp-row.vp-row-still,.vp-row.vp-row-still:hover{box-shadow:0 1px 2px rgba(5,27,53,0.05);border-color:rgba(5,27,53,0.10);transition:none}.vp-action{outline:none;border-color:rgba(5,27,53,0.14);transition:border-color 140ms ease}.vp-action:hover,.vp-action:focus-visible{border-color:var(--vp-accent)}`}</style>
 
       <header
         ref={headerRef}
@@ -797,10 +843,11 @@ export default function VenueProfile({ slug }: { slug: string }) {
                   <div style={{ flex: 1, height: 1, background: "rgba(5,27,53,0.10)" }} />
                 </div>
                 {g.rows.map((e) => {
-                  const soon = e.status === "Presale";
+                  const soon = e.status === "Presale" || Boolean(e.onSaleLabel);
+                  const soldOut = e.soldOut;
                   const dateW = stacked ? 64 : 76;
                   return (
-                    <Link key={e.key} href={e.href} className="vp-row" style={{ background: "#fff", border: "1px solid rgba(5,27,53,0.10)", borderRadius: 18, boxShadow: "0 1px 2px rgba(5,27,53,0.05)", padding: mobile ? 14 : "16px 20px", display: "grid", gridTemplateColumns: stacked ? "64px minmax(0, 1fr)" : "76px minmax(0, 1fr) auto", gap: mobile ? 14 : 20, alignItems: "center", cursor: "pointer", color: NAVY, textDecoration: "none" }}>
+                    <EventRowFrame key={e.key} href={e.href} soldOut={soldOut} className={soldOut ? "vp-row vp-row-still" : "vp-row"} style={{ background: "#fff", borderWidth: 1, borderStyle: "solid", borderRadius: 18, padding: mobile ? 14 : "16px 20px", display: "grid", gridTemplateColumns: stacked ? "64px minmax(0, 1fr)" : "76px minmax(0, 1fr) auto", gap: mobile ? 14 : 20, alignItems: "center", cursor: soldOut ? "default" : "pointer", color: NAVY, textDecoration: "none" }}>
                       <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 2, width: dateW, height: dateW, borderRadius: 14, background: "#f1f3f8", border: "1px solid rgba(5,27,53,0.08)", flexShrink: 0 }}>
                         <div style={{ fontSize: 10, fontWeight: 600, lineHeight: 1.5, textTransform: "uppercase", letterSpacing: BROWSE_TRACK.label, color: "#6e7180" }}>{e.mon}</div>
                         <div style={{ fontSize: 22, fontWeight: 600, letterSpacing: BROWSE_TRACK.statement, fontVariantNumeric: "tabular-nums", lineHeight: 1 }}>{e.day}</div>
@@ -809,16 +856,26 @@ export default function VenueProfile({ slug }: { slug: string }) {
                       <div style={{ display: "flex", flexDirection: "column", gap: 5, minWidth: 0 }}>
                         <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
                           <span style={{ fontSize: 12, lineHeight: 1.5, color: "#6e7180" }}>{e.sport}{e.time ? ` · ${e.time}` : ""}</span>
+                          {soldOut ? (
+                            <span style={{ fontSize: 10, fontWeight: 600, lineHeight: 1.5, letterSpacing: "0.08em", textTransform: "uppercase", color: "#6e7180", background: "#eef0f6", borderRadius: 999, padding: "3px 8px" }}>
+                              Sold out
+                            </span>
+                          ) : e.onSaleLabel ? (
+                            <span style={{ fontSize: 10, fontWeight: 600, lineHeight: 1.5, letterSpacing: "0.08em", textTransform: "uppercase", color: "#6e7180", background: "#eef0f6", borderRadius: 999, padding: "3px 8px", whiteSpace: "nowrap" }}>
+                              {e.onSaleLabel}
+                            </span>
+                          ) : null}
                         </div>
                         <div style={{ fontSize: mobile ? 16 : 17, fontWeight: 600, letterSpacing: BROWSE_TRACK.card, lineHeight: 1.25 }}>{e.title}</div>
                         {e.host ? (
                           <div style={{ fontSize: 13, lineHeight: 1.5, color: "#6e7180", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{e.host}</div>
                         ) : null}
+                        <EventPromo text={e.promo} />
                       </div>
                       <div style={{ gridColumn: stacked ? "1 / -1" : "auto", display: "flex", alignItems: "center", gap: 16, justifyContent: "flex-end", paddingTop: stacked ? 12 : 0, borderTop: stacked ? "1px solid rgba(5,27,53,0.08)" : "none" }}>
-                        <span style={{ fontFamily: "inherit", fontSize: 14, fontWeight: 600, lineHeight: 1.5, color: soon ? NAVY : BTN_INK, background: soon ? "#fff" : BTN, border: `1px solid ${soon ? "rgba(5,27,53,0.14)" : BTN}`, borderRadius: 999, padding: "12px 22px", minHeight: 44, display: "inline-flex", alignItems: "center", cursor: "pointer", whiteSpace: "nowrap" }}>{soon ? "Remind me" : "Get tickets"}</span>
+                        <span style={{ fontFamily: "inherit", fontSize: 14, fontWeight: 600, lineHeight: 1.5, color: soldOut ? "#6e7180" : soon ? NAVY : BTN_INK, background: soldOut || soon ? "#fff" : BTN, border: `1px solid ${soldOut || soon ? "rgba(5,27,53,0.14)" : BTN}`, borderRadius: 999, padding: "12px 22px", minHeight: 44, display: "inline-flex", alignItems: "center", cursor: soldOut ? "default" : "pointer", whiteSpace: "nowrap" }}>{soldOut ? "Sold out" : soon ? "Remind me" : "Get tickets"}</span>
                       </div>
-                    </Link>
+                    </EventRowFrame>
                   );
                 })}
               </div>

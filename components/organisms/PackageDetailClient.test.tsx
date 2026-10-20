@@ -55,22 +55,21 @@ vi.mock("next/navigation", () => ({
 
 vi.mock("@/components/organisms/InteractiveSeatmap", async () => {
   const { useEffect } = await import("react");
-  return {
-    InteractiveSeatmap: ({
-      onPaintReady,
-    }: {
-      onPaintReady?: () => void;
-    }) => {
-      useEffect(() => {
-        onPaintReady?.();
-      }, [onPaintReady]);
-      return (
-        <div data-testid="interactive-seatmap">Interactive seat map</div>
-      );
-    },
-    InteractiveSeatmapMemo: () => (
+  const InteractiveSeatmap = ({
+    onPaintReady,
+  }: {
+    onPaintReady?: () => void;
+  }) => {
+    useEffect(() => {
+      onPaintReady?.();
+    }, [onPaintReady]);
+    return (
       <div data-testid="interactive-seatmap">Interactive seat map</div>
-    ),
+    );
+  };
+  return {
+    InteractiveSeatmap,
+    InteractiveSeatmapMemo: InteractiveSeatmap,
   };
 });
 
@@ -213,6 +212,7 @@ describe("Package detail (PackageDetailClient)", () => {
       screen.getByText(pkg.events[pkg.events.length - 1].name),
     ).toBeInTheDocument();
     expect(screen.getByText(formatPackageFromPrice(packageFromPrice(pkg)!))).toBeInTheDocument();
+    expect(screen.getByText("Fees added at checkout")).toBeInTheDocument();
     expect(screen.queryByText(/taxes (&|and) fees included/i)).not.toBeInTheDocument();
     expect(
       screen.queryByText(
@@ -248,7 +248,7 @@ describe("Package detail (PackageDetailClient)", () => {
     expect(screen.queryByText(/select your seats/i)).not.toBeInTheDocument();
   });
 
-  it("shows the mobile footer from-price on one line without a fees note", async () => {
+  it("shows the mobile footer from-price with fees added at checkout", async () => {
     Object.defineProperty(window, "innerWidth", {
       configurable: true,
       writable: true,
@@ -260,6 +260,7 @@ describe("Package detail (PackageDetailClient)", () => {
 
     const amount = packageFromPrice(pkg)!;
     expect(screen.getByText(formatPackageFromPrice(amount))).toBeInTheDocument();
+    expect(screen.getByText("Fees added at checkout")).toBeInTheDocument();
     expect(screen.queryByText(/^From$/)).not.toBeInTheDocument();
     expect(screen.queryByText(/taxes (&|and) fees included/i)).not.toBeInTheDocument();
   });
@@ -386,47 +387,7 @@ describe("Package detail (PackageDetailClient)", () => {
     expect(useSeatmapStore.getState().selectedFromMap).toHaveLength(1);
   });
 
-  it("shows the package ticket limit under Your selection", async () => {
-    const pkg = demoSeasonPackage();
-    const user = await renderPackage(pkg);
-    await screen.findByRole("heading", { name: pkg.name });
-    await user.click(screen.getByRole("button", { name: /choose your seats/i }));
-    await finishSeatmapBackgroundLoad();
-    await screen.findByTestId("interactive-seatmap");
-    seedMapSelection({
-      package: packageQuantitySource(pkg),
-      offer: undefined,
-    });
-    await screen.findByText(/your selection/i);
-
-    expect(
-      screen.getByText(`Ticket limit: 1–${pkg.maxQuantity} per order`),
-    ).toBeInTheDocument();
-  });
-
-  it("shows the full package restriction label when min and incrementsOf are set", async () => {
-    const pkg = demoSeasonPackage({
-      minQuantity: 2,
-      incrementsOf: 2,
-      maxQuantity: 6,
-    });
-    const user = await renderPackage(pkg);
-    await screen.findByRole("heading", { name: pkg.name });
-    await user.click(screen.getByRole("button", { name: /choose your seats/i }));
-    await finishSeatmapBackgroundLoad();
-    await screen.findByTestId("interactive-seatmap");
-    seedMapSelection({
-      package: packageQuantitySource(pkg),
-      offer: undefined,
-    });
-    await screen.findByText(/your selection/i);
-
-    expect(
-      screen.getByText("Ticket limit: 2–6 per order"),
-    ).toBeInTheDocument();
-  });
-
-  it("shows the package ticket limit from limit when maxQuantity is unset", async () => {
+  it("hides the ticket limit when selecting package seats", async () => {
     const pkg = demoSeasonPackage({ maxQuantity: undefined, limit: 3 });
     const user = await renderPackage(pkg);
     await screen.findByRole("heading", { name: pkg.name });
@@ -439,7 +400,7 @@ describe("Package detail (PackageDetailClient)", () => {
     });
     await screen.findByText(/your selection/i);
 
-    expect(screen.getByText("Ticket limit: 3 per order")).toBeInTheDocument();
+    expect(screen.queryByText(/ticket limit/i)).not.toBeInTheDocument();
   });
 
   it("opens the max-ticket popup when a reserved package seat exceeds the package max", async () => {

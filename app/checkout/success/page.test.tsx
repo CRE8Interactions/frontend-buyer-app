@@ -3,6 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ReactNode } from "react";
 import {
+  DEMO_EVENTS,
   DEMO_GA_SECTION_ID,
   DEMO_ORGS,
   DEMO_SEATED_TICKET_GROUPS,
@@ -13,9 +14,10 @@ import {
   demoCompletedTicketOrder,
   demoFlexPack,
   demoSeasonPackage,
+  demoSeatmapMapping,
   demoTicketGroups,
 } from "@/lib/demo/fixtures";
-import { formatCurrency } from "@/lib/helpers";
+import { eventDoorsIso, formatCurrency, formatDoorsTime } from "@/lib/helpers";
 import { resolveCompletedOrderFees } from "@/lib/ticketSummary";
 import { cacheOrgBranding } from "@/lib/orgBrandingCache";
 import { setGuestCheckoutBuyer } from "@/lib/guestCheckout";
@@ -48,6 +50,7 @@ vi.mock("@/lib/api", () => ({
   getEventByUuid: vi.fn(),
   getEventByShortCode: vi.fn(),
   getOrganizationStorefront: vi.fn(),
+  getSeatmapByShortCode: vi.fn(),
   getTicketGroups: vi.fn(),
   downloadApplePass: vi.fn(),
   downloadGooglePass: vi.fn(),
@@ -80,6 +83,7 @@ import {
   downloadGooglePass,
   getOrder,
   getOrderByPaymentIntentId,
+  getSeatmapByShortCode,
   getTicketGroups,
 } from "@/lib/api";
 import { seatLabel } from "@/lib/wallet";
@@ -98,6 +102,7 @@ import {
 const mockedGetOrderByPi = vi.mocked(getOrderByPaymentIntentId);
 const mockedGetOrder = vi.mocked(getOrder);
 const mockedGetTicketGroups = vi.mocked(getTicketGroups);
+const mockedGetSeatmap = vi.mocked(getSeatmapByShortCode);
 
 /** Live GA orders come back with a generic "ga" section, not the tier name. */
 function gaCompletedOrder() {
@@ -178,6 +183,29 @@ describe("Checkout success receipt", () => {
     expect(mockedGetOrder).not.toHaveBeenCalled();
   });
 
+  it("labels the doors time as Doors", async () => {
+    const cart = demoCheckoutCart({ ticketCount: 4 });
+    const doors = formatDoorsTime(
+      eventDoorsIso(cart.event),
+      cart.event.venue?.timezone,
+    );
+    render(<CheckoutSuccessPageRoute />);
+    expect(await screen.findByText(`Doors ${doors}.`)).toBeInTheDocument();
+    expect(screen.queryByText(/Doors open/)).not.toBeInTheDocument();
+  });
+
+  it("says arrive early when the event has a start time and no doors time", async () => {
+    const cart = demoCheckoutCart({ ticketCount: 4 });
+    mockedGetOrderByPi.mockResolvedValue({
+      data: demoCompletedTicketOrder({
+        event: { ...cart.event, doorsOpen: undefined, realDoorsOpen: undefined },
+      }),
+    } as never);
+    render(<CheckoutSuccessPageRoute />);
+    expect(await screen.findByText(/Arrive early\./)).toBeInTheDocument();
+    expect(screen.queryByText(/^Doors /)).not.toBeInTheDocument();
+  });
+
   it("falls back to the seat line when the order has no offer name", async () => {
     const order = demoCompletedTicketOrder();
     mockedGetOrderByPi.mockResolvedValue({
@@ -193,6 +221,27 @@ describe("Checkout success receipt", () => {
       await screen.findByText(
         `Sec ${listing.sectionNumber} · Row ${listing.rowNumber}`,
       ),
+    ).toBeInTheDocument();
+  });
+
+  it("shows the accessible seating label on the confirmation", async () => {
+    const ada = DEMO_SEATED_TICKET_GROUPS.find((group) => group.accessible)!;
+    const order = demoCompletedTicketOrder();
+    mockedGetOrderByPi.mockResolvedValue({
+      data: demoCompletedTicketOrder({
+        tickets: (order.tickets as Array<Record<string, unknown>>).map(
+          (ticket) => ({
+            ...ticket,
+            accessible: true,
+            accessibleType: ada.accessibleType,
+          }),
+        ),
+      }),
+    } as never);
+    render(<CheckoutSuccessPageRoute />);
+
+    expect(
+      await screen.findByText("Open space for wheelchair"),
     ).toBeInTheDocument();
   });
 
@@ -224,6 +273,189 @@ describe("Checkout success receipt", () => {
     expect(
       screen.getByText(demoTicketGroups().ticketGroups[0].offer!.name!),
     ).toBeInTheDocument();
+  });
+
+  it("keeps the section name and counts tickets for a GA section on a seated event", async () => {
+    const section = demoSeatmapMapping().sections?.[DEMO_GA_SECTION_ID];
+    const cart = demoCheckoutCart({ ticketCount: 2 });
+    mockedGetOrderByPi.mockResolvedValue({
+      data: demoCompletedTicketOrder({
+        tickets: cart.tickets.map((ticket) => ({
+          ...ticket,
+          GA: true,
+          generalAdmission: true,
+          sectionId: section?.sectionId,
+          sectionName: section?.sectionNumber,
+          sectionNumber: section?.sectionNumber,
+          rowNumber: undefined,
+          seatNumber: undefined,
+        })),
+      }),
+    } as never);
+    render(<CheckoutSuccessPageRoute />);
+
+    expect(
+      await screen.findByText(String(section?.sectionNumber)),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText("2 tickets • unreserved seating"),
+    ).toBeInTheDocument();
+    expect(screen.queryByText("2 tickets")).not.toBeInTheDocument();
+    expect(screen.queryByText("unreserved seating")).not.toBeInTheDocument();
+    expect(
+      screen.queryByText(`${section?.sectionNumber} · unreserved seating`),
+    ).not.toBeInTheDocument();
+  });
+
+  it("counts GA tickets on a seated event when the order omits the seatmap flag", async () => {
+    const section = demoSeatmapMapping().sections?.[DEMO_GA_SECTION_ID];
+    const cart = demoCheckoutCart({ ticketCount: 2 });
+    const event = { ...cart.event, seatmap: undefined };
+    mockedGetSeatmap.mockResolvedValue({ data: { ga_only: true } } as never);
+    mockedGetOrderByPi.mockResolvedValue({
+      data: demoCompletedTicketOrder({
+        event,
+        tickets: cart.tickets.map((ticket) => ({
+          ...ticket,
+          GA: true,
+          generalAdmission: true,
+          sectionId: section?.sectionId,
+          sectionName: section?.sectionNumber,
+          sectionNumber: section?.sectionNumber,
+          rowNumber: undefined,
+          seatNumber: undefined,
+        })),
+      }),
+    } as never);
+    render(<CheckoutSuccessPageRoute />);
+
+    expect(
+      await screen.findByText("2 tickets • unreserved seating"),
+    ).toBeInTheDocument();
+    expect(screen.getByText(String(section?.sectionNumber))).toBeInTheDocument();
+    expect(
+      screen.queryByText(`${section?.sectionNumber} · unreserved seating`),
+    ).not.toBeInTheDocument();
+  });
+
+  it("keeps the original GA subtitle when a GA-only ticket section is just ga", async () => {
+    const cart = demoCheckoutCart({ ga: true, ticketCount: 1 });
+    const event = {
+      ...cart.event,
+      seatmap: undefined,
+      venue: { ...cart.event.venue, isGeneralAdmissionOnly: false },
+    };
+    mockedGetOrderByPi.mockResolvedValue({
+      data: demoCompletedTicketOrder({
+        event,
+        tickets: cart.tickets.map((ticket) => ({
+          ...ticket,
+          GA: true,
+          generalAdmission: true,
+          sectionName: "ga",
+          sectionNumber: "ga",
+          rowNumber: undefined,
+          seatNumber: undefined,
+        })),
+      }),
+    } as never);
+    render(<CheckoutSuccessPageRoute />);
+
+    expect(await screen.findByText("Ga · unreserved seating")).toBeInTheDocument();
+    expect(screen.queryByText("1 ticket • unreserved seating")).not.toBeInTheDocument();
+  });
+
+  it("uses the GA tier subtitle when a GA-only ticket gets its tier name from ticket groups", async () => {
+    const gaGroup = demoTicketGroups().ticketGroups[0];
+    const order = gaCompletedOrder();
+    mockedGetOrderByPi.mockResolvedValue({
+      data: {
+        ...order,
+        event: { ...order.event, seatmap: undefined },
+        tickets: (order.tickets as Array<Record<string, unknown>>).map(
+          (ticket) => ({ ...ticket, sectionNumber: "ga" }),
+        ),
+      },
+    } as never);
+    render(<CheckoutSuccessPageRoute />);
+
+    expect(
+      await screen.findByText(`${gaGroup.sectionName} · unreserved seating`),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByText(/tickets? • unreserved seating/),
+    ).not.toBeInTheDocument();
+  });
+
+  it("labels listed seat numbers on the confirmation", async () => {
+    const order = demoCompletedTicketOrder();
+    const [first, second] = order.tickets as Array<Record<string, unknown>>;
+    mockedGetOrderByPi.mockResolvedValue({
+      data: demoCompletedTicketOrder({
+        tickets: [
+          { ...first, seatNumber: 5 },
+          { ...second, seatNumber: 7 },
+        ],
+      }),
+    } as never);
+    render(<CheckoutSuccessPageRoute />);
+
+    expect(
+      await screen.findByText("2 tickets · Seats 5, 7"),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        `Sec ${first.sectionNumber} · Row ${first.rowNumber}`,
+      ),
+    ).toBeInTheDocument();
+  });
+
+  it("shows the package image instead of the first event in the package", async () => {
+    const pkg = demoSeasonPackage();
+    const seasonEvent = DEMO_EVENTS.find((event) => event.shortCode === "NMST004")!;
+    const packageArtwork = DEMO_EVENTS.find((event) => event.shortCode === "ICEDOG1")!;
+    mockedGetOrderByPi.mockResolvedValue({
+      data: demoCompletedPackageOrder({
+        package: {
+          ...pkg,
+          image: packageArtwork.image,
+          events: pkg.events.map((event, index) =>
+            index === 0 ? { ...event, image: seasonEvent.image } : event,
+          ),
+        },
+      }),
+    } as never);
+    render(<CheckoutSuccessPageRoute />);
+
+    expect(await screen.findByText(pkg.name)).toBeInTheDocument();
+    expect(
+      document.querySelector(`img[src="${packageArtwork.image.url}"]`),
+    ).toBeTruthy();
+    expect(
+      document.querySelector(`img[src="${seasonEvent.image.url}"]`),
+    ).toBeNull();
+  });
+
+  it("uses the first event image when the package has no image of its own", async () => {
+    const pkg = demoSeasonPackage();
+    const seasonEvent = DEMO_EVENTS.find((event) => event.shortCode === "NMST004")!;
+    const { image: _packageImage, ...packageWithoutImage } = pkg;
+    mockedGetOrderByPi.mockResolvedValue({
+      data: demoCompletedPackageOrder({
+        package: {
+          ...packageWithoutImage,
+          events: pkg.events.map((event, index) =>
+            index === 0 ? { ...event, image: seasonEvent.image } : event,
+          ),
+        },
+      }),
+    } as never);
+    render(<CheckoutSuccessPageRoute />);
+
+    expect(await screen.findByText(pkg.name)).toBeInTheDocument();
+    expect(
+      document.querySelector(`img[src="${seasonEvent.image.url}"]`),
+    ).toBeTruthy();
   });
 
   it("shows the package ticket offer beside the seat thumbnail", async () => {
@@ -275,9 +507,32 @@ describe("Checkout success receipt", () => {
     expect(screen.getByText("$12.38")).toBeInTheDocument();
     expect(screen.getByText("Service Fee")).toBeInTheDocument();
     expect(screen.getByText("$40.00")).toBeInTheDocument();
+    expect(screen.queryByText("Additional Fee")).not.toBeInTheDocument();
   });
 
-  it("lists the promo code and a pre-discount subtotal on a discounted order", async () => {
+  it("names the package custom fee on the order summary", async () => {
+    const order = demoCompletedPackageOrder({
+      total: 507.6,
+      serviceFee: 3,
+      processingFee: 14.6,
+      estimatedProcessingFee: 14.6,
+      salesTax: 0,
+      totalFeeAmount: 20,
+      priceObject: {
+        packageCustomFees: [{ name: "Senior Fee", amount: 20 }],
+      },
+    });
+    mockedGetOrderByPi.mockResolvedValue({ data: order } as never);
+    render(<CheckoutSuccessPageRoute />);
+
+    expect(await screen.findByText("Senior Fee")).toBeInTheDocument();
+    expect(screen.getByText(formatCurrency(20))).toBeInTheDocument();
+    expect(screen.getByText(formatCurrency(470))).toBeInTheDocument();
+    expect(screen.queryByText("Additional Fee")).not.toBeInTheDocument();
+    expect(screen.getByText(formatCurrency(507.6))).toBeInTheDocument();
+  });
+
+  it("lists the promo name and a pre-discount subtotal on a discounted order", async () => {
     const order = demoCompletedTicketOrder({
       total: 5.5,
       serviceFee: 2.5,
@@ -285,12 +540,12 @@ describe("Checkout success receipt", () => {
       estimatedProcessingFee: 0.5,
       salesTax: 0,
       discountApplied: 2,
-      discountBreakdown: { code: "TESTDIS" },
+      discountBreakdown: { name: "Student Night", code: "TESTDIS" },
     });
     mockedGetOrderByPi.mockResolvedValue({ data: order } as never);
     render(<CheckoutSuccessPageRoute />);
 
-    expect(await screen.findByText("Promo (TESTDIS)")).toBeInTheDocument();
+    expect(await screen.findByText("Student Night")).toBeInTheDocument();
     expect(screen.getByText(`-${formatCurrency(2)}`)).toBeInTheDocument();
     expect(screen.getByText("Subtotal")).toBeInTheDocument();
     expect(screen.getByText(formatCurrency(4.5))).toBeInTheDocument();
@@ -427,10 +682,81 @@ describe("Checkout success receipt", () => {
     expect(screen.getByText(formatCurrency(totals.tax))).toBeInTheDocument();
   });
 
+  it("lists flex pack tax on its own row and keeps it out of the subtotal", async () => {
+    const order = demoCompletedFlexPackOrder({
+      total: 55.35,
+      serviceFee: 4,
+      processingFee: 1.85,
+      estimatedProcessingFee: 1.85,
+      salesTax: 0,
+      flex_pack: demoFlexPack({ price: 46, gameTickets: 4 }),
+    });
+    mockedGetOrderByPi.mockResolvedValue({ data: order } as never);
+    render(<CheckoutSuccessPageRoute />);
+
+    expect(await screen.findByText("Tax")).toBeInTheDocument();
+    expect(screen.getByText("Tax").parentElement).toHaveTextContent(
+      formatCurrency(3.5),
+    );
+    expect(screen.getByText("Subtotal").parentElement).toHaveTextContent(
+      formatCurrency(46),
+    );
+    expect(screen.queryByText(formatCurrency(49.5))).not.toBeInTheDocument();
+    expect(screen.getByText(formatCurrency(55.35))).toBeInTheDocument();
+  });
+
+  it("lists package tax on its own row and keeps it out of the subtotal", async () => {
+    const order = demoCompletedPackageOrder({
+      total: 100,
+      serviceFee: 3,
+      processingFee: 2,
+      estimatedProcessingFee: 2,
+      salesTax: 0,
+      priceObject: {
+        estimatedPaymentProcessingFee: 2,
+        packageWebsiteFeeSnapshot: { tax: 7, subtotal: 88 },
+      },
+    });
+    mockedGetOrderByPi.mockResolvedValue({ data: order } as never);
+    render(<CheckoutSuccessPageRoute />);
+
+    expect(await screen.findByText("Tax")).toBeInTheDocument();
+    expect(screen.getByText("Tax").parentElement).toHaveTextContent(
+      formatCurrency(7),
+    );
+    expect(screen.getByText("Subtotal").parentElement).toHaveTextContent(
+      formatCurrency(88),
+    );
+    expect(screen.queryByText(formatCurrency(95))).not.toBeInTheDocument();
+  });
+
+  it("lists single-event tax on its own row and keeps it out of the subtotal", async () => {
+    const order = demoCompletedTicketOrder({
+      salesTax: 2.8,
+      priceObject: { estimatedPaymentProcessingFee: 3.92 },
+    });
+    const buried = Number(order.total) - 3.92 - Number(order.serviceFee);
+    mockedGetOrderByPi.mockResolvedValue({ data: order } as never);
+    render(<CheckoutSuccessPageRoute />);
+
+    expect(await screen.findByText("Tax")).toBeInTheDocument();
+    expect(screen.getByText("Tax").parentElement).toHaveTextContent(
+      formatCurrency(2.8),
+    );
+    expect(screen.getByText("Subtotal").parentElement).toHaveTextContent(
+      formatCurrency(buried - 2.8),
+    );
+    expect(screen.getByText("Subtotal").parentElement).not.toHaveTextContent(
+      formatCurrency(buried),
+    );
+  });
+
   it("shows zero-valued Blocktickets fee lines for a flex pack", async () => {
+    const pack = demoFlexPack();
     const order = demoCompletedFlexPackOrder({
       processingFee: 0,
       estimatedProcessingFee: 0,
+      total: Number(pack.price) + Number(pack.gameTickets),
     });
     mockedGetOrderByPi.mockResolvedValue({ data: order } as never);
     render(<CheckoutSuccessPageRoute />);
