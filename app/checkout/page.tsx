@@ -686,6 +686,7 @@ function CheckoutPage() {
 
   const expiredRef = useRef(false);
   const [restarting, setRestarting] = useState(false);
+  const [restartError, setRestartError] = useState("");
   const [leaving, setLeaving] = useState(false);
 
   const handleHoldExpired = useCallback(() => {
@@ -712,6 +713,7 @@ function CheckoutPage() {
   const startOver = useCallback(async () => {
     if (restarting) return;
     setRestarting(true);
+    setRestartError("");
     const eventData = eventRef.current || cartRef.current?.event;
     const dest =
       checkoutLeavePath(
@@ -728,7 +730,9 @@ function CheckoutPage() {
         dropUserCartPayload(cartRef.current, eventData, getStoredCart()),
       );
     } catch {
-      /* release best-effort — still leave checkout */
+      setRestarting(false);
+      setRestartError("We couldn't release your tickets. Please try again.");
+      return;
     }
     clearStoredCart();
     // Swap to the loader only once the release is done — the dialog keeps its
@@ -1759,6 +1763,11 @@ function CheckoutPage() {
           <p className="mt-4 text-[15px] text-[#6e7180]">
             Your reserved tickets were released. Please select tickets again.
           </p>
+          {restartError ? (
+            <p role="alert" className="mt-3 text-[14px] text-[#b42318]">
+              {restartError}
+            </p>
+          ) : null}
           <BrandedActionButton
             primaryColor={branding.theme.accent}
             textColor={branding.theme.buttonTextColor}

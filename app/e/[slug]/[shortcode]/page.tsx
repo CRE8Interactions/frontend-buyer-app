@@ -239,10 +239,17 @@ function GAEvent() {
             returnLocked: true,
           });
           if (!cancelled) {
-            setGroups((gr.data?.ticketGroups || []) as RawGroup[]);
-            setSoldOut(Boolean(gr.data?.soldout));
-            setScheduled(Boolean(gr.data?.isScheduled));
+            const inventoryScheduled = Boolean(gr.data?.isScheduled);
+            const inventorySoldOut =
+              Boolean(gr.data?.soldout) && !inventoryScheduled;
+            setScheduled(inventoryScheduled);
             setScheduledTime(gr.data?.scheduledTime || null);
+            setSoldOut(inventorySoldOut);
+            setGroups(
+              inventorySoldOut
+                ? []
+                : ((gr.data?.ticketGroups || []) as RawGroup[]),
+            );
           }
         } catch {
           if (!cancelled) setGroups([]);
@@ -301,9 +308,10 @@ function GAEvent() {
       />
     );
   }
-  // A sold-out GA event with nothing left uses the same notice as a seated
-  // event that has no inventory. Scheduled events still show their on-sale time.
-  if (!data.gaTiers?.length && !scheduled) {
+  // Sold-out inventory shows the sold-out panel, even when groups came back
+  // with that response. An empty event that is still on sale uses the seated
+  // empty notice. Scheduled events still show their on-sale time.
+  if (!data.gaTiers?.length && !scheduled && !soldOut) {
     return (
       <BrandedNotice
         title="No tickets on sale"

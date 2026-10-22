@@ -2221,6 +2221,30 @@ describe("Checkout page", { timeout: 20_000 }, () => {
     );
   });
 
+  it("stays on cart expired when releasing tickets fails", async () => {
+    mockedGetCart.mockResolvedValue({
+      data: demoCheckoutCart({ remainingTime: 0 }),
+    } as never);
+    mockedDropUserCart.mockRejectedValueOnce(new Error("network unavailable"));
+    const user = userEvent.setup();
+    render(<CheckoutPageRoute />);
+
+    expect(
+      await screen.findByRole("dialog", { name: /cart expired/i }),
+    ).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: /start over/i }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      /couldn't release your tickets/i,
+    );
+    expect(
+      screen.getByRole("dialog", { name: /cart expired/i }),
+    ).toBeInTheDocument();
+    expect(routerMocks.back).not.toHaveBeenCalled();
+    expect(routerMocks.replace).not.toHaveBeenCalled();
+  });
+
   it("starts over from an expired GA section on the seated tickets page", async () => {
     const cart = demoCheckoutCart({ remainingTime: 0 });
     cart.tickets = cart.tickets.map((ticket) => ({

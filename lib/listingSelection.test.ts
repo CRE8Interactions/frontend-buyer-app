@@ -10,12 +10,30 @@ describe("listing selection", () => {
   });
 
   it("sends every seat when the whole listing is selected", () => {
-    expect(
-      cartTicketGroups([
-        { ...listing, seatId: "a-resale-1" },
-        { ...listing, seatId: "a-resale-2" },
-      ]),
-    ).toEqual([
+    const result = cartTicketGroups([
+      { ...listing, seatId: "a-resale-1", seatNumber: "17" },
+      { ...listing, seatId: "a-resale-2", seatNumber: "18" },
+    ]);
+    expect(result).toEqual([
+      expect.objectContaining({
+        seatIds: ["a-resale-1", "a-resale-2"],
+        quantity: 2,
+      }),
+    ]);
+    expect(result[0]).not.toHaveProperty("seatNumber");
+  });
+
+  it("sends only the clicked seat when part of the listing is selected", () => {
+    const [sent] = cartTicketGroups([{ ...listing, seatId: "a-resale-1" }]);
+    expect(sent).toMatchObject({
+      seatIds: ["a-resale-1"],
+      quantity: 1,
+    });
+    expect(sent).not.toHaveProperty("seatId");
+  });
+
+  it("keeps a quick pick that already chose the whole listing", () => {
+    expect(cartTicketGroups([{ ...listing, quantity: 2 }])).toEqual([
       expect.objectContaining({
         seatIds: ["a-resale-1", "a-resale-2"],
         quantity: 2,
@@ -23,12 +41,12 @@ describe("listing selection", () => {
     ]);
   });
 
-  it("sends the whole listing when one of its seats is selected", () => {
-    const [sent] = cartTicketGroups([{ ...listing, seatId: "a-resale-1" }]);
-    expect(sent).toMatchObject({
-      seatIds: ["a-resale-1", "a-resale-2"],
-      quantity: 2,
-    });
-    expect(sent).not.toHaveProperty("seatId");
+  it("sends a short seat list when a quick pick quantity is not the whole listing", () => {
+    expect(cartTicketGroups([{ ...listing, quantity: 1 }])).toEqual([
+      expect.objectContaining({
+        seatIds: ["a-resale-1"],
+        quantity: 1,
+      }),
+    ]);
   });
 });

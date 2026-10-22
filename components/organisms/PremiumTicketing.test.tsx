@@ -1824,7 +1824,7 @@ describe("Select tickets page (PremiumTicketing)", { timeout: 20_000 }, () => {
     expect(payload.ticketGroups[0]).not.toHaveProperty("quantity");
   });
 
-  it("sends the whole resale listing when one of its seats is selected", async () => {
+  it("sends only the clicked resale seat when part of the listing is selected", async () => {
     const listing = DEMO_SEATED_TICKET_GROUPS.find((group) => group.listing?.id);
     if (!listing) throw new Error("demo fixtures need a resale listing");
     useSeatmapStore.setState({
@@ -1842,8 +1842,8 @@ describe("Select tickets page (PremiumTicketing)", { timeout: 20_000 }, () => {
     ];
     expect(payload.ticketGroups).toEqual([
       expect.objectContaining({
-        seatIds: ["a-resale-1", "a-resale-2"],
-        quantity: 2,
+        seatIds: ["a-resale-1"],
+        quantity: 1,
       }),
     ]);
   });
