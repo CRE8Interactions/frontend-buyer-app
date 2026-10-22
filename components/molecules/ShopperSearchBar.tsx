@@ -146,7 +146,7 @@ function useShopperSearch(placeholder: string): SearchApi {
 
 export function ShopperSearchProvider({
   children,
-  placeholder = "Search for events",
+  placeholder = "Search events, artists, or venues",
 }: {
   children: ReactNode;
   placeholder?: string;

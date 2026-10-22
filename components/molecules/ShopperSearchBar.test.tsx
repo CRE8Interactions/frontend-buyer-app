@@ -76,7 +76,7 @@ describe("ShopperSearchBar", () => {
     const user = userEvent.setup();
     renderSearch();
 
-    const field = screen.getByRole("textbox", { name: /search for events/i });
+    const field = screen.getByRole("textbox", { name: /search events, artists, or venues/i });
     await user.type(field, "vs");
     await new Promise((resolve) => setTimeout(resolve, 350));
     expect(mockedSearch).not.toHaveBeenCalled();
@@ -103,7 +103,7 @@ describe("ShopperSearchBar", () => {
     const user = userEvent.setup();
     renderSearch();
 
-    const field = screen.getByRole("textbox", { name: /search for events/i });
+    const field = screen.getByRole("textbox", { name: /search events, artists, or venues/i });
     await user.click(field.parentElement!);
     await user.keyboard("icedogs");
 
@@ -115,7 +115,7 @@ describe("ShopperSearchBar", () => {
     const user = userEvent.setup();
     renderSearch();
 
-    const field = screen.getByRole("textbox", { name: /search for events/i });
+    const field = screen.getByRole("textbox", { name: /search events, artists, or venues/i });
     await user.type(field, "icedogs{Enter}");
 
     expect(beginRouteTransition).toHaveBeenCalledWith("/search/?query=icedogs");
@@ -130,7 +130,7 @@ describe("ShopperSearchBar", () => {
     renderSearch();
 
     expect(
-      screen.getByRole("textbox", { name: /search for events/i }),
+      screen.getByRole("textbox", { name: /search events, artists, or venues/i }),
     ).toHaveValue("icedogs");
   });
 
@@ -140,7 +140,7 @@ describe("ShopperSearchBar", () => {
     renderSearch();
 
     await user.type(
-      screen.getByRole("textbox", { name: /search for events/i }),
+      screen.getByRole("textbox", { name: /search events, artists, or venues/i }),
       "zzz",
     );
 
@@ -168,7 +168,7 @@ describe("ShopperSearchBar", () => {
     renderSearch();
 
     await user.type(
-      screen.getByRole("textbox", { name: /search for events/i }),
+      screen.getByRole("textbox", { name: /search events, artists, or venues/i }),
       "chu",
     );
 

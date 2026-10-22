@@ -325,7 +325,7 @@ describe("Browse page", () => {
 
     await screen.findByText(DEMO_EVENTS[1].name);
 
-    const search = screen.getByPlaceholderText(/search for events/i);
+    const search = screen.getByPlaceholderText(/search events, artists, or venues/i);
     await user.type(search, "rap");
 
     await waitFor(() => {
@@ -354,7 +354,7 @@ describe("Browse page", () => {
     render(<BrowseHome />);
     await screen.findByRole("heading", { name: /^events$/i });
 
-    await user.type(screen.getByPlaceholderText(/search for events/i), "rap");
+    await user.type(screen.getByPlaceholderText(/search events, artists, or venues/i), "rap");
 
     expect(await screen.findByText(match.name)).toBeInTheDocument();
     expect(screen.queryByText("Kids eat free.")).not.toBeInTheDocument();
@@ -370,7 +370,7 @@ describe("Browse page", () => {
     ).toBeGreaterThan(0);
 
     await user.type(
-      screen.getByPlaceholderText(/search for events/i),
+      screen.getByPlaceholderText(/search events, artists, or venues/i),
       "zzz",
     );
 

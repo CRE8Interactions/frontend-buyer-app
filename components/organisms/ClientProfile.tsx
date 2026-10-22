@@ -8,7 +8,7 @@
 
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import Link from "next/link";
-import { notFound } from "next/navigation";
+import { notFound, useSearchParams } from "next/navigation";
 import EventPromo from "@/components/atoms/EventPromo";
 import InAppBackLink from "@/components/molecules/InAppBackLink";
 import NavAuthActions from "@/components/molecules/NavAuthActions";
@@ -24,7 +24,15 @@ import {
 } from "@/lib/eventFromPrice";
 import { eventPromotionalCopy } from "@/lib/promotionalDescription";
 import { teamStorefrontDescription } from "@/lib/teamCopy";
-import { categoryLabel, eventTypeLabel } from "@/lib/eventType";
+import { categoryLabel } from "@/lib/eventType";
+import {
+  matchesSport,
+  orderedSportLabels,
+  packageSport,
+  resolveSportSelection,
+  sportMatchesQuery,
+  storefrontSportLabel,
+} from "@/lib/eventSport";
 import {
   BLOCKTICKETS_NAVY,
   resolveBrandLogo,
@@ -90,6 +98,7 @@ type StoreEvent = {
   category?: { name?: string } | null;
   image?: ApiImage;
   attractions?: Array<{ name?: string; primary?: boolean; order?: number }>;
+  sub_categories?: Array<{ name?: string }> | null;
   venue?: {
     name?: string;
     timezone?: string;
@@ -127,6 +136,8 @@ type PackageItem = {
   pricingTiers?: { price?: number; name?: string }[];
   venue?: { timezone?: string; name?: string };
   category?: { name?: string } | null;
+  sub_categories?: Array<{ name?: string }> | null;
+  attractions?: Array<{ name?: string }> | null;
 };
 
 type FlexPackItem = {
@@ -253,13 +264,6 @@ function EventRowFrame({
 
 const ALL_FILTER = "All";
 
-function matchesFilter(category: string | null | undefined, selected: string) {
-  if (selected === ALL_FILTER) return true;
-  const label = categoryLabel(category);
-  if (!label) return true;
-  return label === selected;
-}
-
 function toRow(ev: StoreEvent, org?: Org | null): RowEvent | null {
   const start = ev.start;
   if (!start) return null;
@@ -281,7 +285,7 @@ function toRow(ev: StoreEvent, org?: Org | null): RowEvent | null {
     monthKey,
     monthTitle: monthTitleTz,
     time: formatEventWhen(start, tz, "h:mm A") || "",
-    sport: categoryLabel(eventTypeLabel(ev, org ? [org] : [])),
+    sport: storefrontSportLabel(ev, org ? [org] : []),
     title: ev.name || ev.title || "Event",
     promo: eventPromotionalCopy(ev),
     venue: ev.venue?.name || "",
@@ -303,6 +307,16 @@ export default function ClientProfile({
   const clientReady = useClientReady();
   const [tab, setTab] = useState<"events" | "packages" | "flex">("events");
   const [sport, setSport] = useState(ALL_FILTER);
+  const searchParams = useSearchParams();
+  const categoryQuery = (
+    searchParams.get("category") ||
+    searchParams.get("sport") ||
+    searchParams.get("filter") ||
+    ""
+  ).trim();
+  const appliedCategoryRef = useRef<string | null>(null);
+  const categoryQueryRef = useRef(categoryQuery);
+  categoryQueryRef.current = categoryQuery;
   const [vw, setVw] = useState(1440);
 
   const [organization, setOrganization] = useState<Org | null>(
@@ -345,7 +359,10 @@ export default function ClientProfile({
   useEffect(() => {
     let cancelled = false;
     setMissing(false);
-    setSport(ALL_FILTER);
+    if (!categoryQueryRef.current) {
+      appliedCategoryRef.current = null;
+      setSport(ALL_FILTER);
+    }
     setTab("events");
 
     if (initialData?.organization) {
@@ -470,13 +487,14 @@ export default function ClientProfile({
     [events, organization],
   );
 
+  const packageRows = useMemo(
+    () => packages.map((pkg) => ({ pkg, sport: packageSport(pkg) })),
+    [packages],
+  );
+
   const { groups, sportFilters, showFilters, filterHeading, visiblePackages } =
     useMemo(() => {
-      const eventLabels = [ALL_FILTER];
-      rows.forEach((e) => {
-        const label = categoryLabel(e.sport);
-        if (label && !eventLabels.includes(label)) eventLabels.push(label);
-      });
+      const eventLabels = [ALL_FILTER, ...orderedSportLabels(rows)];
       const realSports = eventLabels.filter((s) => !/^events?$/i.test(s));
       const eventFilterLabels =
         realSports.length > 1
@@ -485,19 +503,12 @@ export default function ClientProfile({
             ? eventLabels
             : [ALL_FILTER];
 
-      const packageLabels = [ALL_FILTER];
-      packages.forEach((p) => {
-        const name = categoryLabel(p.category?.name);
-        if (name && !packageLabels.includes(name)) packageLabels.push(name);
-      });
+      const packageLabels = [ALL_FILTER, ...orderedSportLabels(packageRows)];
 
       const filterLabels =
         tab === "packages" ? packageLabels : eventFilterLabels;
       const active = filterLabels.includes(sport) ? sport : ALL_FILTER;
-      const filteredEvents =
-        active === ALL_FILTER
-          ? rows
-          : rows.filter((e) => categoryLabel(e.sport) === active);
+      const filteredEvents = rows.filter((e) => matchesSport(e.sport, active));
 
       const monthKeys: string[] = [];
       filteredEvents.forEach((e) => {
@@ -515,14 +526,9 @@ export default function ClientProfile({
       const sourceCount =
         tab === "packages"
           ? (label: string) =>
-              label === ALL_FILTER
-                ? packages.length
-                : packages.filter((p) => categoryLabel(p.category?.name) === label)
-                    .length
+              packageRows.filter((row) => matchesSport(row.sport, label)).length
           : (label: string) =>
-              label === ALL_FILTER
-                ? rows.length
-                : rows.filter((e) => categoryLabel(e.sport) === label).length;
+              rows.filter((e) => matchesSport(e.sport, label)).length;
 
       const sportFilters = filterLabels.map((label) => ({
         label,
@@ -530,9 +536,9 @@ export default function ClientProfile({
         on: label === active,
       }));
 
-      const visiblePackages = packages.filter((p) =>
-        matchesFilter(p.category?.name, active),
-      );
+      const visiblePackages = packageRows
+        .filter((row) => matchesSport(row.sport, active))
+        .map((row) => row.pkg);
 
       return {
         groups,
@@ -541,7 +547,33 @@ export default function ClientProfile({
         filterHeading: tab === "packages" ? "Category" : "Sport",
         visiblePackages,
       };
-    }, [rows, sport, tab, packages]);
+    }, [rows, sport, tab, packageRows]);
+
+  useEffect(() => {
+    if (!categoryQuery) {
+      if (appliedCategoryRef.current) {
+        appliedCategoryRef.current = null;
+        setSport(ALL_FILTER);
+      }
+      return;
+    }
+    if (appliedCategoryRef.current === categoryQuery) return;
+
+    if (
+      sportMatchesQuery(ALL_FILTER, categoryQuery) ||
+      categoryQuery.toLowerCase() === "all"
+    ) {
+      appliedCategoryRef.current = categoryQuery;
+      setSport(ALL_FILTER);
+      return;
+    }
+
+    const sports = orderedSportLabels([...rows, ...packageRows]);
+    const match = resolveSportSelection(sports, categoryQuery);
+    if (!match) return;
+    appliedCategoryRef.current = categoryQuery;
+    setSport(match);
+  }, [categoryQuery, rows, packageRows]);
 
   const tabs = [
     { key: "events" as const, label: "Upcoming events" },
@@ -1229,7 +1261,7 @@ export default function ClientProfile({
                   >
                     <div style={{ display: "flex", flexDirection: "column", gap: 6, minWidth: 0 }}>
                       <div style={{ fontSize: 10, fontWeight: 600, lineHeight: 1.5, textTransform: "uppercase", letterSpacing: BROWSE_TRACK.label, color: ACC }}>
-                        {categoryLabel(p.category?.name) || "Season"}
+                        {packageSport(p) || "Season"}
                       </div>
                       <div style={{ fontSize: mobile ? 16 : 17, fontWeight: 600, letterSpacing: "-0.015em", lineHeight: 1.5 }}>
                         {p.name || "Season package"}
