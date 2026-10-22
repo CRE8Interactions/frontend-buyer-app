@@ -70,7 +70,7 @@ describe("Search page", () => {
     ).toBeInTheDocument();
     expect(screen.getByText(hits[0].name)).toBeInTheDocument();
     expect(
-      screen.getByRole("textbox", { name: /search for events/i }),
+      screen.getByRole("textbox", { name: /search events, artists, or venues/i }),
     ).toHaveValue("raptors");
     expect(
       screen.getByRole("link", { name: new RegExp(hits[0].name, "i") }),

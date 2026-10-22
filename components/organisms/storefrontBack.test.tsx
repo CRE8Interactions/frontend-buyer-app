@@ -33,6 +33,9 @@ const routerMocks = vi.hoisted(() => ({
   back: vi.fn(),
   push: vi.fn(),
 }));
+const searchMocks = vi.hoisted(() => ({
+  params: new URLSearchParams(),
+}));
 const authMocks = vi.hoisted(() => ({
   isAuthenticated: false,
   logout: vi.fn(),
@@ -58,7 +61,7 @@ vi.mock("next/navigation", () => ({
   useParams: () => ({ slug: "aggie-memorial-stadium" }),
   usePathname: () => "/venue/aggie-memorial-stadium/",
   useRouter: () => routerMocks,
-  useSearchParams: () => new URLSearchParams(),
+  useSearchParams: () => searchMocks.params,
 }));
 
 vi.mock("@/lib/auth", () => ({
@@ -131,6 +134,7 @@ function withoutSellablePrices(event: (typeof DEMO_EVENTS)[number]) {
 beforeEach(() => {
   authMocks.isAuthenticated = false;
   authMocks.logout.mockReset();
+  searchMocks.params = new URLSearchParams();
 });
 
 describe("team and venue back buttons", () => {
@@ -1091,6 +1095,49 @@ describe("storefront categories", () => {
     expect(screen.queryByText(/^Events ·/)).not.toBeInTheDocument();
   });
 
+  it("splits men's and women's basketball on venue event rows", async () => {
+    const venue = raptors.homeVenue;
+    const base = raptorsEvents[0];
+    const mens = {
+      ...base,
+      id: Number(base.id) + 1,
+      uuid: `${base.uuid}-mbb`,
+      name: "NMSU MBB vs University of Denver",
+      category: { name: "basketball" },
+      start: upcomingStart(0),
+    };
+    const womens = {
+      ...base,
+      id: Number(base.id) + 2,
+      uuid: `${base.uuid}-wbb`,
+      name: "NMSU WBB vs San Diego",
+      category: { name: "basketball" },
+      start: upcomingStart(1),
+    };
+    const plain = {
+      ...base,
+      id: Number(base.id) + 3,
+      uuid: `${base.uuid}-hoop`,
+      name: "Exhibition vs Alumni",
+      category: { name: "basketball" },
+      start: upcomingStart(2),
+    };
+    mockedGetVenue.mockResolvedValue({ data: [venue] } as never);
+    mockedGetVenues.mockResolvedValue({ data: [venue] } as never);
+    mockedGetUpcoming.mockResolvedValue({
+      data: { allEvents: [mens, womens, plain] },
+    } as never);
+
+    render(<VenueProfile slug={venue.slug} />);
+
+    expect(await screen.findByText(mens.name)).toBeInTheDocument();
+    expect(screen.getByText(womens.name)).toBeInTheDocument();
+    expect(screen.getByText(plain.name)).toBeInTheDocument();
+    expect(screen.getByText(/Men's Basketball ·/)).toBeInTheDocument();
+    expect(screen.getByText(/Women's Basketball ·/)).toBeInTheDocument();
+    expect(screen.getByText(/^Basketball ·/)).toBeInTheDocument();
+  });
+
   it("capitalizes a lowercase package category in the side panel", async () => {
     const pkg = demoSeasonPackage({
       category: { name: "sports" },
@@ -1163,6 +1210,111 @@ describe("storefront categories", () => {
     expect(screen.getByText(pkg.name)).toBeInTheDocument();
     expect(screen.getByText(/^Season$/)).toBeInTheDocument();
     expect(screen.queryByText(/^Category$/)).not.toBeInTheDocument();
+  });
+
+  it("splits men's and women's basketball into sport filters", async () => {
+    const base = nmStateEvents[0];
+    const mens = {
+      ...base,
+      id: Number(base.id) + 1,
+      uuid: `${base.uuid}-mbb`,
+      shortCode: `${base.shortCode}-m`,
+      name: "NMSU MBB vs University of Denver",
+      category: { name: "basketball" },
+    };
+    const womens = {
+      ...base,
+      id: Number(base.id) + 2,
+      uuid: `${base.uuid}-wbb`,
+      shortCode: `${base.shortCode}-w`,
+      name: "NMSU WBB vs San Diego",
+      category: { name: "basketball" },
+    };
+    const user = userEvent.setup();
+    render(
+      <ClientProfile
+        slug={nmState.slug}
+        initialData={{
+          organization: nmState,
+          events: [mens, womens],
+          venues: nmState.venues,
+        }}
+      />,
+    );
+
+    expect(screen.getByText(/Men's Basketball ·/)).toBeInTheDocument();
+    expect(screen.getByText(/Women's Basketball ·/)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /^basketball/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /^men's basketball/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /^women's basketball/i })).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: /^basketball/i }));
+    expect(screen.getByText(mens.name)).toBeInTheDocument();
+    expect(screen.getByText(womens.name)).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: /^men's basketball/i }));
+    expect(screen.getByText(mens.name)).toBeInTheDocument();
+    expect(screen.queryByText(womens.name)).not.toBeInTheDocument();
+  });
+
+  it("selects men's basketball from the sport query", async () => {
+    const base = nmStateEvents[0];
+    const mens = {
+      ...base,
+      id: Number(base.id) + 1,
+      uuid: `${base.uuid}-mbb`,
+      shortCode: `${base.shortCode}-m`,
+      name: "NMSU MBB vs University of Denver",
+      category: { name: "basketball" },
+    };
+    const womens = {
+      ...base,
+      id: Number(base.id) + 2,
+      uuid: `${base.uuid}-wbb`,
+      shortCode: `${base.shortCode}-w`,
+      name: "NMSU WBB vs San Diego",
+      category: { name: "basketball" },
+    };
+    searchMocks.params = new URLSearchParams("sport=mbb");
+    render(
+      <ClientProfile
+        slug={nmState.slug}
+        initialData={{
+          organization: nmState,
+          events: [mens, womens],
+          venues: nmState.venues,
+        }}
+      />,
+    );
+
+    await waitFor(() => {
+      expect(screen.queryByText(womens.name)).not.toBeInTheDocument();
+    });
+    expect(screen.getByText(mens.name)).toBeInTheDocument();
+  });
+
+  it("labels a men's basketball package from its name", async () => {
+    const pkg = demoSeasonPackage({
+      name: "Men's basketball season",
+      category: { name: "basketball" },
+    });
+    render(
+      <ClientProfile
+        slug={nmState.slug}
+        initialData={{
+          organization: nmState,
+          events: nmStateEvents,
+          venues: nmState.venues,
+          packages: [pkg],
+        }}
+      />,
+    );
+
+    await userEvent.click(screen.getByRole("button", { name: /season tickets/i }));
+
+    const card = screen.getByRole("link", { name: new RegExp(pkg.name, "i") });
+    expect(within(card).getByText("Men's Basketball")).toBeInTheDocument();
+    expect(within(card).queryByText(/^Season$/)).not.toBeInTheDocument();
   });
 });
 

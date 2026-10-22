@@ -54,7 +54,7 @@ import {
   venueWebsiteFromUpcomingEvents,
   venueWebsiteHref,
 } from "@/lib/venueWebsite";
-import { categoryLabel, eventTypeLabel } from "@/lib/eventType";
+import { storefrontSportLabel } from "@/lib/eventSport";
 import { eventPromotionalCopy } from "@/lib/promotionalDescription";
 import { useClientReady } from "@/lib/useClientReady";
 import {
@@ -85,6 +85,8 @@ type VenueEvent = {
   scheduledTime?: string | null;
   sport?: string;
   category?: { name?: string } | null;
+  sub_categories?: Array<{ name?: string | null }> | null;
+  attractions?: Array<{ name?: string | null }> | null;
   slug?: string | null;
   seoUrl?: string;
   shortCode?: string;
@@ -282,7 +284,7 @@ function toRow(
     monthKey,
     monthTitle: monthTitleTz,
     time: formatEventWhen(start, tz, "h:mm A") || "",
-    sport: categoryLabel(eventTypeLabel(ev, org ? [org] : [])),
+    sport: storefrontSportLabel(ev, org ? [org] : []),
     title: ev.name || ev.title || "Event",
     promo: eventPromotionalCopy(ev),
     host: ev.organization?.name?.trim() || fallbackHost || "",
