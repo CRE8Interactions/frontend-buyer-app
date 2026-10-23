@@ -10,6 +10,7 @@ import {
 import {
   formatSeatNumberRanges,
   gaTicketSeatLine,
+  isGenericGeneralAdmissionLabel,
   seatDisplayValue,
   seatNumberDigits,
   ticketRowValue,
@@ -437,10 +438,30 @@ export function packageCartTickets(cart?: {
   tickets?: Array<Record<string, unknown>> | null;
   package_tickets?: Array<Record<string, unknown>> | null;
 } | null): Array<Record<string, unknown>> {
-  return [
-    ...(Array.isArray(cart?.tickets) ? cart.tickets : []),
-    ...(Array.isArray(cart?.package_tickets) ? cart.package_tickets : []),
-  ];
+  const tickets = Array.isArray(cart?.tickets) ? cart.tickets : [];
+  if (tickets.length > 0) return tickets;
+  return Array.isArray(cart?.package_tickets) ? cart.package_tickets : [];
+}
+
+/** Legacy package cards title a GA seat with the first ticket's section number. */
+function legacyPackageGaName(ticket: Record<string, unknown>): string {
+  const number = String(ticket.sectionNumber ?? ticket.section_number ?? "").trim();
+  if (number) return number;
+  return String(ticket.sectionName ?? ticket.section_name ?? "").trim();
+}
+
+function genericPackageGaName(value: string): boolean {
+  return !value || /^ga$/i.test(value) || isGenericGeneralAdmissionLabel(value);
+}
+
+/** Prefer "General Admission" over a blank or "GA" label for the same seats. */
+function preferPackageGaName(current: string, incoming: string): string {
+  const rank = (value: string) => {
+    if (!value || /^ga$/i.test(value)) return 0;
+    if (isGenericGeneralAdmissionLabel(value)) return 1;
+    return 2;
+  };
+  return rank(incoming) > rank(current) ? incoming : current || incoming;
 }
 
 export type PackageCustomFeeLine = {
@@ -1084,17 +1105,25 @@ export function packageSeatLines(
   const seenSeat = new Set<string>();
 
   tickets.forEach((ticket, index) => {
-    const section = ticketSectionValue(ticket) || "GA";
     const ga = Boolean(ticket.GA || ticket.generalAdmission);
+    const gaName = legacyPackageGaName(ticket);
+    const genericGa = ga && genericPackageGaName(gaName);
+    const section = genericGa
+      ? gaName
+      : ticketSectionValue(ticket) || (ga ? gaName || "GA" : "GA");
     const rowValue = ticketRowValue(ticket);
     const row = ga ? rowValue : rowValue || "—";
     const seatNumber =
       (ticket.seatNumber as string | number | null | undefined) ?? "—";
-    const seatKey = ga
-      ? `ga:${section}:${ticket.id ?? ticket.seatId ?? index}`
-      : `${section}:${row}:${seatNumber}`;
+    const seatKey = genericGa
+      ? `ga:${ticket.id ?? ticket.seatId ?? index}`
+      : ga
+        ? `ga:${section}:${ticket.id ?? ticket.seatId ?? index}`
+        : `${section}:${row}:${seatNumber}`;
     if (seenSeat.has(seatKey)) {
-      const existingKey = ga ? seatKey : `${section}:${row}:${selectionOfferName(ticket)} · ${gamesLabel}`;
+      const existingKey = ga
+        ? seatKey
+        : `${section}:${row}:${selectionOfferName(ticket)} · ${gamesLabel}`;
       const existing = groupIndex.get(existingKey);
       if (existing != null) {
         groups[existing].amount = Math.max(
@@ -1110,14 +1139,24 @@ export function packageSeatLines(
     const context = ga
       ? `${offerLabel} · unreserved seating · ${gamesLabel}`
       : `${offerLabel} · ${gamesLabel}`;
-    const groupKey = `${section}:${row}:${context}`;
+    const groupKey = genericGa ? `ga:${context}` : `${section}:${row}:${context}`;
     const existing = groupIndex.get(groupKey);
     const amount = ticketUnitAmount(ticket);
     if (existing != null) {
+      const currentName = groups[existing].section;
+      const incomingBlank = !gaName || /^ga$/i.test(gaName);
+      const currentBlank = !currentName || /^ga$/i.test(currentName);
+      groups[existing].section = preferPackageGaName(currentName, gaName);
       groups[existing].seatNumbers.push(seatNumber);
       groups[existing].accessibleLabels.push(getAccessibleLabel(ticket));
       groups[existing].additionalLabels.push(getSeatAdditionalLabel({ ticket }));
-      groups[existing].amount += amount;
+      if (genericGa && currentBlank && !incomingBlank) {
+        groups[existing].amount = amount;
+      } else if (genericGa && incomingBlank) {
+        groups[existing].amount = Math.max(groups[existing].amount, amount);
+      } else {
+        groups[existing].amount += amount;
+      }
       return;
     }
     groupIndex.set(groupKey, groups.length);
@@ -1141,15 +1180,9 @@ export function packageSeatLines(
     const additionalLabels = [
       ...new Set(group.additionalLabels.filter(Boolean)),
     ];
-    const gaSection = gaTicketSeatLine({
-      sectionNumber: group.section,
-      rowNumber: group.row,
-      generalAdmission: true,
-    });
-    const ticketCountLabel = `${uniqueSeats} ${uniqueSeats === 1 ? "ticket" : "tickets"}`;
     return {
       seatLine: group.ga
-        ? `${gaSection} · ${ticketCountLabel}`
+        ? group.section || "GA"
         : `Sec ${group.section} · Row ${group.row} · ${formatSeatNumbers(group.seatNumbers)}`,
       context: group.context,
       price: group.amount > 0 ? group.amount : unitPrice * uniqueSeats,

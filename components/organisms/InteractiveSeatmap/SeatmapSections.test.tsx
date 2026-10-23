@@ -1782,6 +1782,56 @@ describe("SeatmapTooltip GA stepper", () => {
     );
   }
 
+  it("titles a GA section with the offer section name", () => {
+    useSeatmapStore.setState({
+      data: {
+        sections: {
+          [DEMO_GA_SECTION_ID]: {
+            sectionId: DEMO_GA_SECTION_ID,
+            sectionNumber: "GA",
+          },
+        },
+      },
+      sectionLookupTable: { [DEMO_GA_SECTION_ID]: [ga] },
+    });
+    render(
+      <SeatmapTooltip
+        target={{ kind: "section", sectionId: DEMO_GA_SECTION_ID, x: 20, y: 20 }}
+        onClose={() => {}}
+      />,
+    );
+
+    expect(screen.getByText("Section")).toBeInTheDocument();
+    expect(screen.getByText(String(ga.sectionName))).toBeInTheDocument();
+    expect(screen.queryByText("GA")).not.toBeInTheDocument();
+    expect(screen.queryByText(/^General admission$/)).not.toBeInTheDocument();
+  });
+
+  it("titles a GA section Unknown when the offer has no section name", () => {
+    useSeatmapStore.setState({
+      data: {
+        sections: {
+          [DEMO_GA_SECTION_ID]: {
+            sectionId: DEMO_GA_SECTION_ID,
+            sectionNumber: "GA",
+          },
+        },
+      },
+      sectionLookupTable: {
+        [DEMO_GA_SECTION_ID]: [{ ...ga, sectionName: undefined }],
+      },
+    });
+    render(
+      <SeatmapTooltip
+        target={{ kind: "section", sectionId: DEMO_GA_SECTION_ID, x: 20, y: 20 }}
+        onClose={() => {}}
+      />,
+    );
+
+    expect(screen.getByText("Unknown")).toBeInTheDocument();
+    expect(screen.queryByText("GA")).not.toBeInTheDocument();
+  });
+
   it("steps an offer by min, max, and multipleOf and disables +/- at the bounds", () => {
     renderGaTooltip({ minQuantity: 2, maxQuantity: 6, multipleOf: 2 }, "offer");
     const decrease = screen.getByRole("button", { name: /decrease quantity/i });

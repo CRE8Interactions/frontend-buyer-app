@@ -23,6 +23,7 @@ import {
   checkoutIncludedPriceBreakdown,
   checkoutTaxLine,
   includedTicketPriceBreakdown,
+  packageCartTickets,
   packageOrderSummary,
   packageSeatLines,
   promoSummaryLabel,
@@ -441,7 +442,7 @@ describe("packageSeatLines", () => {
     );
 
     expect(lines).toHaveLength(1);
-    expect(lines[0].seatLine).toBe(`${section?.sectionNumber} · 1 ticket`);
+    expect(lines[0].seatLine).toBe(section?.sectionNumber);
     expect(lines[0].context).toBe(
       `${ticket.offerName} · unreserved seating · all ${cart.package.events.length} games`,
     );
@@ -472,7 +473,7 @@ describe("packageSeatLines", () => {
     );
 
     expect(lines).toHaveLength(1);
-    expect(lines[0].seatLine).toBe(`${section?.sectionNumber} · 2 tickets`);
+    expect(lines[0].seatLine).toBe(section?.sectionNumber);
     expect(lines[0].price).toBe(unit * 2);
   });
 
@@ -499,8 +500,66 @@ describe("packageSeatLines", () => {
     );
 
     expect(lines).toHaveLength(1);
-    expect(lines[0].seatLine).toBe(`${section?.sectionNumber} · 1 ticket`);
+    expect(lines[0].seatLine).toBe(section?.sectionNumber);
     expect(lines[0].price).toBe(unit);
+  });
+
+  it("names a general admission package with the first ticket's section", () => {
+    const cart = demoPackageCheckoutCart();
+    const ticket = cart.tickets[0];
+    const game = {
+      ...ticket,
+      GA: true,
+      generalAdmission: true,
+      sectionNumber: "General Admission",
+      sectionName: "General Admission",
+      rowNumber: undefined,
+      rowName: undefined,
+      seatNumber: undefined,
+    };
+    const lines = packageSeatLines(
+      [
+        ...Array.from({ length: 14 }, (_, index) => ({
+          ...game,
+          id: `game-${index}`,
+          price: index === 0 ? 20 : 0,
+          cost: index === 0 ? 20 : 0,
+        })),
+        {
+          ...game,
+          id: "package-row",
+          sectionNumber: undefined,
+          sectionName: undefined,
+          price: 20,
+          cost: 20,
+        },
+      ],
+      14,
+    );
+
+    expect(lines).toHaveLength(1);
+    expect(lines[0].seatLine).toBe("General Admission");
+    expect(lines[0].price).toBe(20);
+  });
+
+  it("uses season cart tickets and ignores duplicate package ticket rows", () => {
+    const cart = demoPackageCheckoutCart();
+    const extra = {
+      ...cart.tickets[0],
+      id: "package-copy",
+      sectionNumber: undefined,
+      sectionName: undefined,
+    };
+
+    const tickets = packageCartTickets({
+      tickets: cart.tickets,
+      package_tickets: [extra],
+    });
+    expect(tickets).toHaveLength(cart.tickets.length);
+    expect(tickets.some((row) => row.id === "package-copy")).toBe(false);
+    expect(packageCartTickets({ tickets: [], package_tickets: [extra] })).toEqual([
+      extra,
+    ]);
   });
 
   it("lists one season seat with the offer name and game count", () => {

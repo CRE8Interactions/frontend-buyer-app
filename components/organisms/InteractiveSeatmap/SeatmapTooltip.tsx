@@ -624,11 +624,6 @@ export default function SeatmapTooltip({
       eventTicketLimit,
     );
 
-  const sectionMeta = useMemo(() => {
-    if (target?.kind !== "section") return null;
-    return data?.sections?.[target.sectionId] || null;
-  }, [data?.sections, target]);
-
   const visibleSeatOffers = useMemo(
     () => seatOffers.map((offer, index) => ({ offer, index })),
     [seatOffers],
@@ -1014,12 +1009,10 @@ export default function SeatmapTooltip({
             className="text-[12px] font-semibold uppercase tracking-[0.12em]"
             style={{ color: muted }}
           >
-            General admission
+            Section
           </p>
           <p className="mt-1 text-[15px] font-semibold" style={{ color: ink }}>
-            {sectionMeta?.sectionNumber ||
-              primary?.sectionName ||
-              "Section"}
+            {primary?.sectionName ?? "Unknown"}
           </p>
           <PopoverTicketLimit label={gaHeaderLimitLabel} color={muted} />
         </div>
