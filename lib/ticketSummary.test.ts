@@ -442,7 +442,7 @@ describe("packageSeatLines", () => {
     );
 
     expect(lines).toHaveLength(1);
-    expect(lines[0].seatLine).toBe(section?.sectionNumber);
+    expect(lines[0].seatLine).toBe(`${section?.sectionNumber} · 1 ticket`);
     expect(lines[0].context).toBe(
       `${ticket.offerName} · unreserved seating · all ${cart.package.events.length} games`,
     );
@@ -473,7 +473,7 @@ describe("packageSeatLines", () => {
     );
 
     expect(lines).toHaveLength(1);
-    expect(lines[0].seatLine).toBe(section?.sectionNumber);
+    expect(lines[0].seatLine).toBe(`${section?.sectionNumber} · 2 tickets`);
     expect(lines[0].price).toBe(unit * 2);
   });
 
@@ -500,7 +500,7 @@ describe("packageSeatLines", () => {
     );
 
     expect(lines).toHaveLength(1);
-    expect(lines[0].seatLine).toBe(section?.sectionNumber);
+    expect(lines[0].seatLine).toBe(`${section?.sectionNumber} · 1 ticket`);
     expect(lines[0].price).toBe(unit);
   });
 
@@ -538,8 +538,68 @@ describe("packageSeatLines", () => {
     );
 
     expect(lines).toHaveLength(1);
-    expect(lines[0].seatLine).toBe("General Admission");
+    expect(lines[0].seatLine).toBe("General Admission · 1 ticket");
     expect(lines[0].price).toBe(20);
+  });
+
+  it("counts two GA package seats when each game copy shares a seat id", () => {
+    const cart = demoPackageCheckoutCart();
+    const ticket = cart.tickets[0];
+    const game = {
+      ...ticket,
+      GA: true,
+      generalAdmission: true,
+      sectionNumber: "General Admission",
+      sectionName: "General Admission",
+      rowNumber: undefined,
+      rowName: undefined,
+      seatNumber: undefined,
+      price: 0,
+      cost: 0,
+    };
+    const lines = packageSeatLines(
+      [
+        { ...game, id: "a-game-1", seatId: "seat-a", price: 40, cost: 40 },
+        { ...game, id: "a-game-2", seatId: "seat-a" },
+        { ...game, id: "b-game-1", seatId: "seat-b" },
+        { ...game, id: "b-game-2", seatId: "seat-b" },
+      ],
+      14,
+    );
+
+    expect(lines).toHaveLength(1);
+    expect(lines[0].seatLine).toBe("General Admission · 2 tickets");
+    expect(lines[0].price).toBe(40);
+  });
+
+  it("counts the reserved package tickets when game copies have no seat id", () => {
+    const cart = demoPackageCheckoutCart();
+    const ticket = cart.tickets[0];
+    const game = {
+      ...ticket,
+      GA: true,
+      generalAdmission: true,
+      sectionNumber: "General Admission",
+      sectionName: "General Admission",
+      rowNumber: undefined,
+      rowName: undefined,
+      seatNumber: undefined,
+    };
+    const lines = packageSeatLines(
+      Array.from({ length: 14 }, (_, index) => ({
+        ...game,
+        id: `game-${index}`,
+        price: index === 0 ? 80 : 0,
+        cost: index === 0 ? 80 : 0,
+      })),
+      14,
+      0,
+      2,
+    );
+
+    expect(lines).toHaveLength(1);
+    expect(lines[0].seatLine).toBe("General Admission · 2 tickets");
+    expect(lines[0].price).toBe(80);
   });
 
   it("uses season cart tickets and ignores duplicate package ticket rows", () => {

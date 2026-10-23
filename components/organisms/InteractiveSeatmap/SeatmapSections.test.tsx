@@ -5,6 +5,7 @@ import {
   DEMO_SEATED_TICKET_GROUPS,
   DEMO_SECTION_FILL,
   demoSeatmapMapping,
+  demoSeasonPackage,
   demoTicketGroups,
 } from "@/lib/demo/fixtures";
 import {
@@ -1829,6 +1830,31 @@ describe("SeatmapTooltip GA stepper", () => {
     );
 
     expect(screen.getByText("Unknown")).toBeInTheDocument();
+    expect(screen.queryByText("GA")).not.toBeInTheDocument();
+  });
+
+  it("names a package GA row with the package name instead of GA", () => {
+    const pkg = demoSeasonPackage();
+    const { offer: _offer, ...withoutOffer } = ga;
+    useSeatmapStore.setState({
+      sectionLookupTable: {
+        [DEMO_GA_SECTION_ID]: [
+          {
+            ...withoutOffer,
+            sectionNumber: "GA",
+            package: { name: pkg.name },
+          },
+        ],
+      },
+    });
+    render(
+      <SeatmapTooltip
+        target={{ kind: "section", sectionId: DEMO_GA_SECTION_ID, x: 20, y: 20 }}
+        onClose={() => {}}
+      />,
+    );
+
+    expect(screen.getByText(pkg.name)).toBeInTheDocument();
     expect(screen.queryByText("GA")).not.toBeInTheDocument();
   });
 

@@ -454,6 +454,22 @@ function genericPackageGaName(value: string): boolean {
   return !value || /^ga$/i.test(value) || isGenericGeneralAdmissionLabel(value);
 }
 
+/**
+ * One GA package seat is copied once per game. Those copies share a seat id.
+ * A priced row with no seat id is its own seat. Zero-price copies are not.
+ */
+function gaPackageAdmissionKey(
+  ticket: Record<string, unknown>,
+  amount: number,
+  blankCopy: boolean,
+): string | null {
+  const seatId = String(ticket.seatId ?? ticket.seat_id ?? "").trim();
+  if (seatId) return `seat:${seatId}`;
+  if (blankCopy || amount <= 0) return null;
+  const id = String(ticket.id ?? ticket.seatNumber ?? "").trim();
+  return id ? `id:${id}` : "id";
+}
+
 /** Prefer "General Admission" over a blank or "GA" label for the same seats. */
 function preferPackageGaName(current: string, incoming: string): string {
   const rank = (value: string) => {
@@ -1089,6 +1105,7 @@ export function packageSeatLines(
   tickets: Array<Record<string, unknown>>,
   gameCount: number,
   unitPrice = 0,
+  reservedPackageTickets = 0,
 ): PackageSeatLine[] {
   const gamesLabel = gameCount === 1 ? "1 game" : `all ${gameCount} games`;
   const groups: Array<{
@@ -1100,6 +1117,8 @@ export function packageSeatLines(
     accessibleLabels: string[];
     additionalLabels: string[];
     amount: number;
+    /** Distinct GA seats. Per-game copies of the same seat id count once. */
+    admissions: Set<string>;
   }> = [];
   const groupIndex = new Map<string, number>();
   const seenSeat = new Set<string>();
@@ -1150,12 +1169,17 @@ export function packageSeatLines(
       groups[existing].seatNumbers.push(seatNumber);
       groups[existing].accessibleLabels.push(getAccessibleLabel(ticket));
       groups[existing].additionalLabels.push(getSeatAdditionalLabel({ ticket }));
+      const blankCopy = genericGa && (!gaName || /^ga$/i.test(gaName));
       if (genericGa && currentBlank && !incomingBlank) {
         groups[existing].amount = amount;
-      } else if (genericGa && incomingBlank) {
+      } else if (blankCopy) {
         groups[existing].amount = Math.max(groups[existing].amount, amount);
       } else {
         groups[existing].amount += amount;
+      }
+      if (ga) {
+        const admission = gaPackageAdmissionKey(ticket, amount, blankCopy);
+        if (admission) groups[existing].admissions.add(admission);
       }
       return;
     }
@@ -1169,8 +1193,20 @@ export function packageSeatLines(
       accessibleLabels: [getAccessibleLabel(ticket)],
       additionalLabels: [getSeatAdditionalLabel({ ticket })],
       amount,
+      admissions: new Set(
+        ga
+          ? [gaPackageAdmissionKey(ticket, amount, false)].filter(
+              (key): key is string => Boolean(key),
+            )
+          : [],
+      ),
     });
   });
+
+  const reservedGaCount =
+    groups.filter((group) => group.ga).length === 1
+      ? Math.max(0, Math.floor(Number(reservedPackageTickets) || 0))
+      : 0;
 
   return groups.map((group) => {
     const uniqueSeats = group.ga
@@ -1180,9 +1216,13 @@ export function packageSeatLines(
     const additionalLabels = [
       ...new Set(group.additionalLabels.filter(Boolean)),
     ];
+    const ticketCount = group.ga
+      ? Math.max(group.admissions.size, reservedGaCount, 1)
+      : uniqueSeats;
+    const ticketCountLabel = `${ticketCount} ${ticketCount === 1 ? "ticket" : "tickets"}`;
     return {
       seatLine: group.ga
-        ? group.section || "GA"
+        ? `${group.section || "GA"} · ${ticketCountLabel}`
         : `Sec ${group.section} · Row ${group.row} · ${formatSeatNumbers(group.seatNumbers)}`,
       context: group.context,
       price: group.amount > 0 ? group.amount : unitPrice * uniqueSeats,
@@ -1209,9 +1249,15 @@ export function packageOrderSummary(
     venue?: { name?: string; timezone?: string };
   } | null,
   tickets: Array<Record<string, unknown>> = [],
+  reservedPackageTickets = 0,
 ): PackageOrderSummary {
   const gameCount = pkg?.events?.length || 0;
-  const seats = packageSeatLines(tickets, gameCount, packageFromPrice(pkg) ?? 0);
+  const seats = packageSeatLines(
+    tickets,
+    gameCount,
+    packageFromPrice(pkg) ?? 0,
+    reservedPackageTickets,
+  );
   return {
     seasonLine: packageSeasonLine(pkg),
     venueName: String(pkg?.venue?.name || pkg?.events?.[0]?.venue?.name || ""),

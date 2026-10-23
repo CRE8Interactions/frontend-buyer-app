@@ -329,7 +329,11 @@ function CheckoutPaymentForm({
         : cart.package
           ? resolvePackageCheckoutTotals(
               cart,
-              packageOrderSummary(cart.package, packageCartTickets(cart)).subtotal,
+              packageOrderSummary(
+                cart.package,
+                packageCartTickets(cart),
+                cart.package_tickets?.length || 0,
+              ).subtotal,
             ).total + Number(donationChargeTotal || 0)
           : Number(cart.total ?? 0) + Number(donationChargeTotal || 0);
 
@@ -1163,7 +1167,11 @@ function CheckoutPage() {
     ),
   });
   const packageSummary = cart?.package
-    ? packageOrderSummary(cart.package, packageCartTickets(cart))
+    ? packageOrderSummary(
+        cart.package,
+        packageCartTickets(cart),
+        cart.package_tickets?.length || 0,
+      )
     : null;
   const packageTotals = resolvePackageCheckoutTotals(
     cart,

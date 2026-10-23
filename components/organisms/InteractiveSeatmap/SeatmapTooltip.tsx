@@ -100,6 +100,14 @@ function seatedResolvedOfferQuantity(
   return 0;
 }
 
+/** Package rows use the season name. A missing offer must not fall back to "GA". */
+function gaPackageOrOfferName(group?: TicketGroup | null): string {
+  const offerName = selectionOfferName(group, "");
+  if (offerName) return offerName;
+  const packageName = String(group?.package?.name ?? "").trim();
+  return packageName || "Offer";
+}
+
 function isLockedOffer(offer: TicketGroup) {
   return Boolean(offer.offer?.accessCode && !offer.offer?.unlocked);
 }
@@ -966,7 +974,7 @@ export default function SeatmapTooltip({
   const selectedGaQty = gaLimits.valid
     ? Math.min(Math.max(gaQty, 0), gaLimits.max)
     : 0;
-  const packageOrOfferName = selectionOfferName(primary, "GA");
+  const packageOrOfferName = gaPackageOrOfferName(primary);
   const multiGaOffers = sectionOffers.length > 1;
   const gaHeaderLimitLabel = gaPopoverDefaultLimitLabel(
     sectionOffers.map((group) =>
@@ -1048,7 +1056,7 @@ export default function SeatmapTooltip({
                 >
                   <div className="min-w-0">
                     <p className="truncate text-[13px] font-semibold" style={{ color: ink }}>
-                      {group.offer?.name || "Offer"}
+                      {gaPackageOrOfferName(group)}
                     </p>
                     {!offerLocked ? (
                       <p className="text-[12px]" style={{ color: muted }}>
@@ -1137,9 +1145,9 @@ export default function SeatmapTooltip({
         <p className="mt-3 text-[14px]" style={{ color: muted }}>No tickets available.</p>
       ) : (
         <>
-          <div className="mt-4 flex items-center justify-between gap-4">
+          <div className="mt-4 flex items-start justify-between gap-4">
             <div className="min-w-0">
-              <p className="truncate text-[13px] font-semibold" style={{ color: ink }}>
+              <p className="break-words text-[13px] font-semibold" style={{ color: ink }}>
                 {packageOrOfferName}
               </p>
               <p className="mt-1 text-[12px] font-semibold" style={{ color: ink }}>
