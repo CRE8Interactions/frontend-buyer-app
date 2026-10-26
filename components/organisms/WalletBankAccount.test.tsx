@@ -2,11 +2,26 @@ import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import WalletBankAccount from "@/components/organisms/WalletBankAccount";
+import { __resetWalletAccountCacheForTests } from "@/lib/walletAccountCache";
 
 vi.mock("next/link", () => ({
-  default: ({ href, children }: { href: string; children: React.ReactNode }) => (
-    <a href={href}>{children}</a>
+  default: ({
+    href,
+    children,
+    ...rest
+  }: {
+    href: string;
+    children: React.ReactNode;
+    [key: string]: unknown;
+  }) => (
+    <a href={href} {...rest}>
+      {children}
+    </a>
   ),
+}));
+
+vi.mock("next/navigation", () => ({
+  useRouter: () => ({ push: vi.fn(), back: vi.fn(), replace: vi.fn() }),
 }));
 
 vi.mock("@/lib/api", () => ({
@@ -37,6 +52,7 @@ const linkedStripeAccount = {
 
 describe("WalletBankAccount", () => {
   beforeEach(() => {
+    __resetWalletAccountCacheForTests();
     mockedGetBankAccount.mockReset();
     mockedCreateBankAccount.mockReset();
     mockedRemoveBankAccount.mockReset();
@@ -70,6 +86,34 @@ describe("WalletBankAccount", () => {
       await screen.findByText("Verifying account check back in a few minutes"),
     ).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Continue" })).not.toBeInTheDocument();
+  });
+
+  it("shows the saved bank account again without loading it", async () => {
+    mockedGetBankAccount.mockResolvedValue({ data: linkedStripeAccount } as never);
+    const first = render(<WalletBankAccount />);
+    expect(await screen.findByText("XXXXX5556")).toBeInTheDocument();
+    expect(mockedGetBankAccount).toHaveBeenCalledTimes(1);
+    first.unmount();
+
+    mockedGetBankAccount.mockReturnValue(new Promise(() => {}) as never);
+    render(<WalletBankAccount />);
+    expect(screen.getByText("XXXXX5556")).toBeInTheDocument();
+    expect(screen.queryByLabelText("Loading tickets")).not.toBeInTheDocument();
+    expect(mockedGetBankAccount).toHaveBeenCalledTimes(1);
+  });
+
+  it("loads the bank account again when Stripe setup returns", async () => {
+    mockedGetBankAccount.mockResolvedValue({ data: linkedStripeAccount } as never);
+    const first = render(<WalletBankAccount />);
+    expect(await screen.findByText("XXXXX5556")).toBeInTheDocument();
+    first.unmount();
+
+    mockedGetBankAccount.mockResolvedValue({
+      data: { external_accounts: [{}], charges_enabled: false, payouts_enabled: false },
+    } as never);
+    render(<WalletBankAccount processing />);
+    expect(await screen.findByText("Verifying account check back in a few minutes")).toBeInTheDocument();
+    expect(mockedGetBankAccount).toHaveBeenCalledTimes(2);
   });
 
   it("shows the masked Stripe account once payouts are enabled", async () => {

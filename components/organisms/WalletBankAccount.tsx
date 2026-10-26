@@ -1,24 +1,23 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import Link from "next/link";
 import { CenteredBusyLabel } from "@/components/atoms/BrandedActionButton";
+import InAppBackLink from "@/components/molecules/InAppBackLink";
 import { WalletTicketsBlocksLoading } from "@/components/organisms/WalletTicketsLoader";
-import { createBankAccount, getBankAccount, removeBankAccount } from "@/lib/api";
+import { createBankAccount, removeBankAccount } from "@/lib/api";
+import {
+  clearWalletAccountCache,
+  loadCachedBankAccount,
+  readCachedBankAccount,
+  type CachedBankAccount,
+} from "@/lib/walletAccountCache";
 
 type ExternalBankAccount = {
   bank_name?: string;
   last4?: string;
 };
 
-type BankAccountRecord = {
-  id?: string | number;
-  external_accounts?: { data?: ExternalBankAccount[] } | ExternalBankAccount[] | null;
-  charges_enabled?: boolean;
-  payouts_enabled?: boolean;
-  bank_name?: string;
-  last4?: string;
-};
+type BankAccountRecord = CachedBankAccount & { id?: string | number };
 
 /** Stripe stores the payout account on external_accounts.data[0]. */
 function linkedBankAccount(account: BankAccountRecord | null): ExternalBankAccount {
@@ -79,22 +78,25 @@ function BackArrow() {
 }
 
 export default function WalletBankAccount({ processing = false }: { processing?: boolean }) {
-  const [account, setAccount] = useState<BankAccountRecord | null>(null);
-  const [loaded, setLoaded] = useState(false);
+  const cached = processing ? undefined : readCachedBankAccount();
+  const [account, setAccount] = useState<BankAccountRecord | null>(cached ?? null);
+  const [loaded, setLoaded] = useState(cached !== undefined);
   const [busy, setBusy] = useState<"link" | "continue" | "delete" | null>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [error, setError] = useState("");
 
-  const load = () => {
-    getBankAccount()
-      .then((res) => setAccount((res.data as BankAccountRecord) || null))
-      .catch(() => setAccount(null))
-      .finally(() => setLoaded(true));
+  const load = (force = false) => {
+    if (force) setLoaded(false);
+    void loadCachedBankAccount(force).then((next) => {
+      setAccount(next);
+      setLoaded(true);
+    });
   };
 
   useEffect(() => {
-    load();
-  }, []);
+    if (!processing && readCachedBankAccount() !== undefined) return;
+    load(processing);
+  }, [processing]);
 
   useEffect(() => {
     const onPageShow = (event: PageTransitionEvent) => {
@@ -127,6 +129,7 @@ export default function WalletBankAccount({ processing = false }: { processing?:
     setError("");
     try {
       await removeBankAccount();
+      clearWalletAccountCache();
     } catch {
       setBusy(null);
       setError("Unable to open bank account setup. Try again.");
@@ -141,8 +144,7 @@ export default function WalletBankAccount({ processing = false }: { processing?:
     try {
       await removeBankAccount();
       setConfirmDelete(false);
-      setLoaded(false);
-      load();
+      load(true);
     } catch {
       setError("Unable to remove bank account. Try again.");
     } finally {
@@ -159,10 +161,10 @@ export default function WalletBankAccount({ processing = false }: { processing?:
 
   return (
     <div style={{ maxWidth: 720, margin: "0 auto", padding: "28px 20px 48px", display: "flex", flexDirection: "column", gap: 16, color: NAVY }}>
-      <Link href="/wallet/my-profile/" style={backLinkStyle}>
+      <InAppBackLink href="/wallet/my-profile/" aria-label="Back to profile" style={backLinkStyle}>
         <BackArrow />
         Back to profile
-      </Link>
+      </InAppBackLink>
       {!loaded ? <WalletTicketsBlocksLoading /> : null}
       {loaded && !hasExternal ? (
         <section style={{ background: "#fff", borderRadius: 20, padding: 20, display: "flex", flexDirection: "column", gap: 12 }}>

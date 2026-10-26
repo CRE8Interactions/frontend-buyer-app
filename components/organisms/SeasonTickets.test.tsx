@@ -113,6 +113,7 @@ import SeasonTickets, {
   resetWalletApiHydrationForTests,
 } from "@/components/organisms/SeasonTickets";
 import { __resetActivitySnapshotForTests } from "@/components/organisms/WalletAccountActivity";
+import { __resetWalletAccountCacheForTests } from "@/lib/walletAccountCache";
 import {
   clearLocallyResolvedIncomingTransfersForTests,
   formatAccessPassRemainingLine,
@@ -303,6 +304,7 @@ async function confirmAcceptTransferInPopup(
   navigationMocks.search = "";
   resetWalletApiHydrationForTests();
   __resetActivitySnapshotForTests();
+  __resetWalletAccountCacheForTests();
   clearPersistedCancelRestoresForTests();
   clearJerseyPanelFillCacheForTests();
   clearLocallyResolvedIncomingTransfersForTests();
@@ -5445,6 +5447,26 @@ describe("SeasonTickets section routes", () => {
     navigationMocks.pathname = "/wallet/my-profile/activity/";
     rerender(<SeasonTickets />);
     expect(await screen.findByRole("link", { name: "Back to profile" })).toBeInTheDocument();
+
+    navigationMocks.pathname = "/wallet/my-profile/";
+    rerender(<SeasonTickets />);
+    expect(screen.getByText(`Account ••${last4}`)).toBeInTheDocument();
+    expect(mockedGetBankAccount).toHaveBeenCalledTimes(calls);
+  });
+
+  it("does not load the bank account again when returning from the bank page", async () => {
+    navigationMocks.pathname = "/wallet/my-profile/";
+    const last4 = demoLinkedBankAccount().external_accounts.data[0].last4;
+    mockedGetBankAccount.mockResolvedValue({ data: demoLinkedBankAccount() } as never);
+    const { rerender } = render(<SeasonTickets />);
+
+    expect(await screen.findByText(`Account ••${last4}`)).toBeInTheDocument();
+    const calls = mockedGetBankAccount.mock.calls.length;
+
+    navigationMocks.pathname = "/wallet/bank-account/";
+    rerender(<SeasonTickets />);
+    expect(await screen.findByRole("heading", { name: "Bank Information" })).toBeInTheDocument();
+    expect(screen.getByText("XXXXX5556")).toBeInTheDocument();
 
     navigationMocks.pathname = "/wallet/my-profile/";
     rerender(<SeasonTickets />);

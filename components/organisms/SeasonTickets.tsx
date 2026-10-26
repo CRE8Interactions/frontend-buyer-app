@@ -36,6 +36,7 @@ import MobileStickyFooter from "@/components/molecules/MobileStickyFooter";
 import WalletChrome from "@/components/organisms/WalletChrome";
 import WalletBankAccount from "@/components/organisms/WalletBankAccount";
 import WalletPayouts from "@/components/organisms/WalletPayouts";
+import { loadCachedBankAccount, readCachedBankAccount } from "@/lib/walletAccountCache";
 import WalletAccountActivity, { WalletActivityPage } from "@/components/organisms/WalletAccountActivity";
 import {
   WalletTicketsBlocksLoading,
@@ -1779,13 +1780,21 @@ export default function SeasonTickets({
     const from = profileSectionRef.current;
     profileSectionRef.current = displaySection;
     if (displaySection !== "profile") return;
-    if (from === "activity" && profileBankLoadedRef.current) return;
+    const cached = readCachedBankAccount();
+    if (from === "activity" || from === "bank" || from === "payouts") {
+      if (cached !== undefined) {
+        profileBankLoadedRef.current = true;
+        setBankLast4(linkedBankLast4(cached));
+        return;
+      }
+      if (from === "activity" && profileBankLoadedRef.current) return;
+    }
     let cancelled = false;
-    void getBankAccount()
-      .then((res) => {
+    void loadCachedBankAccount()
+      .then((account) => {
         if (cancelled) return;
         profileBankLoadedRef.current = true;
-        setBankLast4(linkedBankLast4((res.data as Parameters<typeof linkedBankLast4>[0]) || null));
+        setBankLast4(linkedBankLast4(account));
       })
       .catch(() => {
         if (!cancelled) setBankLast4("");

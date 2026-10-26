@@ -2,10 +2,16 @@
 
 import { useEffect, useState, type CSSProperties } from "react";
 import Link from "next/link";
+import InAppBackLink from "@/components/molecules/InAppBackLink";
 import { WalletTicketsBlocksLoading } from "@/components/organisms/WalletTicketsLoader";
-import { getAvailableFunds, getBankAccount } from "@/lib/api";
 import { formatCurrency } from "@/lib/helpers";
-import { payoutTotals } from "@/lib/payoutFunds";
+import {
+  loadCachedBankAccount,
+  loadCachedPayoutFunds,
+  readCachedBankAccount,
+  readCachedPayoutFunds,
+  type CachedBankAccount,
+} from "@/lib/walletAccountCache";
 
 const NAVY = "#051b35";
 
@@ -52,17 +58,7 @@ const backLinkStyle = {
   textDecoration: "none",
 };
 
-type ExternalBankAccount = {
-  last4?: string | number;
-};
-
-type BankAccountRecord = {
-  id?: string | number;
-  external_accounts?: { data?: ExternalBankAccount[] } | ExternalBankAccount[] | null;
-  last4?: string | number;
-  charges_enabled?: boolean;
-  payouts_enabled?: boolean;
-};
+type BankAccountRecord = CachedBankAccount;
 
 function accountLast4(account: BankAccountRecord | null) {
   const raw = account?.external_accounts;
@@ -86,11 +82,16 @@ function BackArrow() {
 }
 
 export default function WalletPayouts() {
-  const [ready, setReady] = useState(false);
-  const [hasAccount, setHasAccount] = useState(false);
-  const [depositLast4, setDepositLast4] = useState("");
-  const [available, setAvailable] = useState(0);
-  const [onHold, setOnHold] = useState(0);
+  const cachedAccount = readCachedBankAccount();
+  const cachedFunds = readCachedPayoutFunds();
+  const cachedReady = cachedAccount !== undefined && cachedFunds !== undefined;
+  const [ready, setReady] = useState(cachedReady);
+  const [hasAccount, setHasAccount] = useState(
+    Boolean(cachedAccount?.charges_enabled && cachedAccount?.payouts_enabled),
+  );
+  const [depositLast4, setDepositLast4] = useState(cachedAccount ? accountLast4(cachedAccount) : "");
+  const [available, setAvailable] = useState(cachedFunds?.available ?? 0);
+  const [onHold, setOnHold] = useState(cachedFunds?.onHold ?? 0);
   const [narrow, setNarrow] = useState(false);
 
   useEffect(() => {
@@ -101,18 +102,15 @@ export default function WalletPayouts() {
   }, []);
 
   useEffect(() => {
+    if (readCachedBankAccount() !== undefined && readCachedPayoutFunds() !== undefined) return;
     let cancelled = false;
-    Promise.all([
-      getBankAccount().catch(() => ({ data: null })),
-      getAvailableFunds().catch(() => ({ data: { available: [], onHold: [] } })),
-    ]).then(([account, funds]) => {
+    Promise.all([loadCachedBankAccount(), loadCachedPayoutFunds()]).then(([account, funds]) => {
       if (cancelled) return;
-      const record = (account.data as BankAccountRecord | null) || null;
+      const record = account || null;
       setHasAccount(Boolean(record?.charges_enabled && record?.payouts_enabled));
       setDepositLast4(accountLast4(record));
-      const totals = payoutTotals(funds.data);
-      setAvailable(totals.available);
-      setOnHold(totals.onHold);
+      setAvailable(funds.available);
+      setOnHold(funds.onHold);
       setReady(true);
     });
     return () => {
@@ -123,10 +121,10 @@ export default function WalletPayouts() {
 
   return (
     <div style={{ maxWidth: 1100, margin: "0 auto", padding: "28px 20px 48px", display: "flex", flexDirection: "column", gap: 16, color: NAVY }}>
-      <Link href="/wallet/my-profile/" style={backLinkStyle}>
+      <InAppBackLink href="/wallet/my-profile/" aria-label="Back to profile" style={backLinkStyle}>
         <BackArrow />
         Back to profile
-      </Link>
+      </InAppBackLink>
       <h1 style={{ margin: 0, fontSize: 32, fontWeight: 600, letterSpacing: "-0.03em" }}>Payouts</h1>
       <p style={{ margin: 0, color: "#4a5567" }}>Resale payouts are deposited to your bank after the event.</p>
       {!ready ? <WalletTicketsBlocksLoading /> : null}
