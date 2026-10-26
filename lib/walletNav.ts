@@ -10,7 +10,8 @@ export type WalletSection =
   | "giving"
   | "profile"
   | "bank"
-  | "payouts";
+  | "payouts"
+  | "activity";
 
 export const WALLET_NAV: {
   id: WalletSection;
@@ -58,6 +59,7 @@ export function walletSectionFromPath(pathname = ""): WalletSection {
   const path = pathOnly(pathname);
   if (pathMatchesPrefix(path, "/wallet/bank-account")) return "bank";
   if (pathMatchesPrefix(path, "/wallet/payouts")) return "payouts";
+  if (pathMatchesPrefix(path, "/wallet/my-profile/activity")) return "activity";
   if (WALLET_TICKETS_PREFIXES.some((prefix) => pathMatchesPrefix(path, prefix))) {
     return "events";
   }

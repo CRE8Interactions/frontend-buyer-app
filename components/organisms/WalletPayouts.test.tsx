@@ -1,6 +1,7 @@
 import { render, screen } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import WalletPayouts from "@/components/organisms/WalletPayouts";
+import { demoLinkedBankAccount } from "@/lib/demo/fixtures";
 
 vi.mock("next/link", () => ({
   default: ({ href, children }: { href: string; children: React.ReactNode }) => (
@@ -11,23 +12,19 @@ vi.mock("next/link", () => ({
 vi.mock("@/lib/api", () => ({
   getBankAccount: vi.fn(),
   getAvailableFunds: vi.fn(),
-  getMyUpcomingOrders: vi.fn(),
-  createBankAccount: vi.fn(),
 }));
 
-import { getAvailableFunds, getBankAccount, getMyUpcomingOrders } from "@/lib/api";
+import { getAvailableFunds, getBankAccount } from "@/lib/api";
 
 const mockedGetBankAccount = vi.mocked(getBankAccount);
 const mockedGetAvailableFunds = vi.mocked(getAvailableFunds);
-const mockedGetMyUpcomingOrders = vi.mocked(getMyUpcomingOrders);
 
 describe("WalletPayouts", () => {
   beforeEach(() => {
     mockedGetBankAccount.mockReset();
     mockedGetAvailableFunds.mockReset();
-    mockedGetMyUpcomingOrders.mockReset();
-    mockedGetBankAccount.mockResolvedValue({ data: { id: "acct-1" } } as never);
-    mockedGetMyUpcomingOrders.mockResolvedValue({ data: [] } as never);
+    Object.defineProperty(window, "innerWidth", { configurable: true, value: 1280 });
+    mockedGetBankAccount.mockResolvedValue({ data: demoLinkedBankAccount() } as never);
   });
 
   it("shows deposited and on-hold totals without a withdraw action", async () => {
@@ -39,12 +36,53 @@ describe("WalletPayouts", () => {
     } as never);
     render(<WalletPayouts />);
 
+    const last4 = demoLinkedBankAccount().external_accounts.data[0].last4;
     expect(await screen.findByRole("heading", { name: "Payouts" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: `Depositing to account • ${last4}` })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Manage" })).toHaveAttribute("href", "/wallet/bank-account/");
+    expect(screen.queryByRole("heading", { name: "No bank account linked" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "Link account" })).not.toBeInTheDocument();
     expect(screen.getByText("Resale payouts are deposited to your bank after the event.")).toBeInTheDocument();
     expect(screen.getAllByText("$20.00")).toHaveLength(2);
     expect(screen.getByText("Payouts are deposited after the event. You do not need to withdraw them.")).toBeInTheDocument();
     expect(screen.getByText("Held until the event ends, then deposited to your bank.")).toBeInTheDocument();
-    expect(screen.getAllByText("$20.00")).toHaveLength(2);
     expect(screen.queryByRole("button", { name: /withdraw/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "Invoices" })).not.toBeInTheDocument();
+  });
+
+  it("shows the ticket blocks while payouts are loading", () => {
+    mockedGetAvailableFunds.mockReturnValue(new Promise(() => {}) as never);
+    render(<WalletPayouts />);
+    expect(screen.getByLabelText("Loading tickets")).toBeInTheDocument();
+    expect(screen.queryByText("Depositing to your bank")).not.toBeInTheDocument();
+  });
+
+  it("sends an unfinished bank link to the bank account page", async () => {
+    mockedGetBankAccount.mockResolvedValue({
+      data: demoLinkedBankAccount({ charges_enabled: true, payouts_enabled: false }),
+    } as never);
+    mockedGetAvailableFunds.mockResolvedValue({ data: { available: [], onHold: [] } } as never);
+    render(<WalletPayouts />);
+
+    expect(await screen.findByRole("heading", { name: "No bank account linked" })).toBeInTheDocument();
+    expect(screen.getByText("Link a bank account to receive payouts.")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Link account" })).toHaveAttribute(
+      "href",
+      "/wallet/bank-account/",
+    );
+    expect(screen.queryByRole("link", { name: "Manage" })).not.toBeInTheDocument();
+    expect(screen.queryByText("Payouts are deposited after the event. You do not need to withdraw them.")).not.toBeInTheDocument();
+  });
+
+  it("sends shoppers with no bank to the bank account page", async () => {
+    mockedGetBankAccount.mockResolvedValue({ data: {} } as never);
+    mockedGetAvailableFunds.mockResolvedValue({ data: { available: [], onHold: [] } } as never);
+    render(<WalletPayouts />);
+
+    expect(await screen.findByRole("heading", { name: "No bank account linked" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Link account" })).toHaveAttribute(
+      "href",
+      "/wallet/bank-account/",
+    );
   });
 });

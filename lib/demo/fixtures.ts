@@ -1722,3 +1722,16 @@ export function demoAccessPassCheckoutCart(
     totalTax: 0,
   };
 }
+
+/** Stripe connected account with one external bank, matching payment-information. */
+export function demoLinkedBankAccount(overrides: Record<string, unknown> = {}) {
+  return applyOverrides(
+    {
+      id: "acct-1",
+      external_accounts: { data: [{ bank_name: "Chase", last4: "5556" }] },
+      charges_enabled: true,
+      payouts_enabled: true,
+    },
+    overrides,
+  );
+}

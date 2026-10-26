@@ -3,6 +3,16 @@ import type { NextConfig } from "next";
 const nextConfig: NextConfig = {
   // Dynamic fan-app routes need a Node server (not static export).
   trailingSlash: true,
+  // Stripe Connect still returns sellers to the legacy payment-information URL.
+  async redirects() {
+    return [
+      {
+        source: "/settings/payment-information/",
+        destination: "/wallet/bank-account/",
+        permanent: false,
+      },
+    ];
+  },
   // Hide the Next.js / Stripe-looking corner badge so it does not sit on the
   // mobile Select tickets bar.
   devIndicators: false,

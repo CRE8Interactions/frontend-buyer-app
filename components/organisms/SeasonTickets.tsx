@@ -36,6 +36,7 @@ import MobileStickyFooter from "@/components/molecules/MobileStickyFooter";
 import WalletChrome from "@/components/organisms/WalletChrome";
 import WalletBankAccount from "@/components/organisms/WalletBankAccount";
 import WalletPayouts from "@/components/organisms/WalletPayouts";
+import WalletAccountActivity, { WalletActivityPage } from "@/components/organisms/WalletAccountActivity";
 import {
   WalletTicketsBlocksLoading,
 } from "@/components/organisms/WalletTicketsLoader";
@@ -1481,6 +1482,24 @@ function linkedDetailForRoute(
   );
 }
 
+function linkedBankLast4(account: {
+  external_accounts?: { data?: Array<{ last4?: string | number }> } | Array<{ last4?: string | number }> | null;
+  last4?: string | number;
+  charges_enabled?: boolean;
+  payouts_enabled?: boolean;
+} | null) {
+  if (!account?.charges_enabled || !account?.payouts_enabled) return "";
+  const raw = account?.external_accounts;
+  const first = Array.isArray(raw)
+    ? raw[0]
+    : Array.isArray(raw?.data)
+      ? raw.data[0]
+      : undefined;
+  const value = first?.last4 ?? account?.last4;
+  if (value == null || value === "") return "";
+  return String(value);
+}
+
 let walletApiHydratedInBrowserSession = false;
 
 /** Reset first-load API-only hydration (tests simulate a fresh browser session). */
@@ -1521,7 +1540,7 @@ export default function SeasonTickets({
       ? initialScreen
       : searchParams?.has("login")
         ? "login"
-        : section === "bank" || section === "payouts"
+        : section === "bank" || section === "payouts" || section === "activity"
           ? "profile"
           : section;
   const [vw, setVw] = useState(1440);
@@ -1544,6 +1563,9 @@ export default function SeasonTickets({
   const [field, setField] = useState<{ group: string; heading: string; label: string; help: string; key: string } | null>(null);
   const [fieldValue, setFieldValue] = useState("");
   const [pvals, setPvals] = useState<Record<string, string>>({});
+  const [bankLast4, setBankLast4] = useState("");
+  const profileSectionRef = useRef(displaySection);
+  const profileBankLoadedRef = useRef(false);
   const [toggles, setToggles] = useState<Record<string, boolean>>({});
   const [tf, setTf] = useState<TransferWizard | null>(null);
   const [sell, setSell] = useState<SellWizard | null>(null);
@@ -1754,6 +1776,26 @@ export default function SeasonTickets({
   }, []);
 
   useEffect(() => {
+    const from = profileSectionRef.current;
+    profileSectionRef.current = displaySection;
+    if (displaySection !== "profile") return;
+    if (from === "activity" && profileBankLoadedRef.current) return;
+    let cancelled = false;
+    void getBankAccount()
+      .then((res) => {
+        if (cancelled) return;
+        profileBankLoadedRef.current = true;
+        setBankLast4(linkedBankLast4((res.data as Parameters<typeof linkedBankLast4>[0]) || null));
+      })
+      .catch(() => {
+        if (!cancelled) setBankLast4("");
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [displaySection]);
+
+  useEffect(() => {
     accessPassesRef.current = accessPasses;
   }, [accessPasses]);
 
@@ -1763,7 +1805,7 @@ export default function SeasonTickets({
     if (lastSection.current === section) return;
     lastSection.current = section;
     if (screen === "login" || screen === "code") return;
-    setScreen(section === "bank" || section === "payouts" ? "profile" : section);
+    setScreen(section === "bank" || section === "payouts" || section === "activity" ? "profile" : section);
   }, [screen, section]);
 
   const applyWalletSnapshot = useCallback(
@@ -6373,7 +6415,7 @@ export default function SeasonTickets({
     { title: "Payment", rows: [
       { k: "Card on file", v: isHolder ? "Visa ···4417 · exp 09/29" : "No card saved", action: "Manage", help: "Charged for renewals, add-ons, and Aggie Club gifts." },
       { k: "Billing address", v: isHolder ? "412 Solano Dr, Las Cruces, NM 88001" : "Add an address", action: "Edit", help: "Must match the address on your card statement." },
-      { k: "Bank account", v: "Payout account for resale", action: "Manage", href: "/wallet/bank-account/", help: "Where resale payouts are deposited." },
+      { k: "Bank account", v: bankLast4 ? `Account ••${bankLast4}` : "Payout account for resale", action: "Manage", href: "/wallet/bank-account/", help: "Where resale payouts are deposited." },
       { k: "Payouts", v: "Deposited after the event", action: "View", href: "/wallet/payouts/", help: "Resale payouts waiting to be deposited." },
     ] },
     { title: "Security & preferences", rows: [
@@ -6382,11 +6424,6 @@ export default function SeasonTickets({
       { k: "NM State marketing", v: "Offers, presales, and Aggie Club news", toggle: true, on: true },
     ] },
   ];
-  const activity = isHolder ? [
-    { item: "NMS Season Seats — Level A", when: "Jul 12, 2026", kind: "Purchase", amt: "−$780.00", ink: INK },
-    { item: "Aggie Club — Annual Fund", when: "Jun 12, 2026", kind: "Donation", amt: "−$2,500.00", ink: INK },
-    { item: "Account credit applied", when: "May 28, 2026", kind: "Credit", amt: "+$25.00", ink: GREEN },
-  ] : [];
   const Profile = () => (
     <div style={{ maxWidth: 1100, margin: "0 auto", padding: bodyPad, display: "flex", flexDirection: "column", gap: 18 }}>
       <h1 style={{ margin: 0, fontSize: fluidSize(42), fontWeight: 600, letterSpacing: "-0.03em", lineHeight: browseLeading("h2") }}>Profile</h1>
@@ -6394,30 +6431,16 @@ export default function SeasonTickets({
         <div style={{ width: 56, height: 56, borderRadius: 999, background: ACCENT, color: INK, display: "flex", alignItems: "center", justifyContent: "center", fontSize: fluidSize(19), fontWeight: 600, flexShrink: 0 }}>{isHolder ? "HC" : (email[0] || "?").toUpperCase()}</div>
         <div style={{ minWidth: 0, display: "flex", flexDirection: "column", gap: 3 }}>
           <div style={{ fontSize: fluidSize(18), fontWeight: 600, letterSpacing: "-0.015em" }}>{isHolder ? "Harrison Cogan" : email}</div>
-          <div style={{ fontSize: fluidSize(13), color: SUB }}>{isHolder ? "Account 4407086 · member since 2024" : "No season ticket account linked to this email"}</div>
+          {isHolder ? <div style={{ fontSize: fluidSize(13), color: SUB }}>Account 4407086 · member since 2024</div> : null}
         </div>
         <Link href="/sign-out/" style={{ fontFamily: "inherit", marginLeft: "auto", flexShrink: 0, fontSize: fluidSize(13), fontWeight: 600, color: DANGER, background: "#fff", border: "1px solid rgba(194,57,74,0.28)", borderRadius: 999, padding: "10px 16px", minHeight: 40, whiteSpace: "nowrap", cursor: "pointer", textDecoration: "none", display: "inline-flex", alignItems: "center" }}>Sign out</Link>
       </div>
 
       <div style={{ ...card, borderRadius: 20, overflow: "hidden" }}>
-        <div style={{ padding: `14px ${padX}px`, display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 12, borderBottom: "1px solid rgba(5,27,53,0.06)" }}>
+        <div style={{ padding: `14px ${padX}px`, borderBottom: "1px solid rgba(5,27,53,0.06)" }}>
           <div style={{ ...eyebrow, whiteSpace: "nowrap" }}>Account activity</div>
-          <div style={{ fontSize: fluidSize(13), fontWeight: 600, color: GREEN, background: GREEN_BG, borderRadius: 999, padding: "5px 11px", whiteSpace: "nowrap" }}>{isHolder ? "$25.00 credit" : "No credit"}</div>
         </div>
-        {activity.length === 0 ? (
-          <div style={{ padding: "30px 22px", textAlign: "center", display: "flex", flexDirection: "column", gap: 5 }}>
-            <div style={{ fontSize: fluidSize(15), fontWeight: 600 }}>Nothing here yet</div>
-            <div style={{ fontSize: fluidSize(13), color: SUB }}>Purchases, gifts, and credits will appear here.</div>
-          </div>
-        ) : activity.map((a, i) => (
-          <div key={i} style={{ padding: `14px ${padX}px`, display: "flex", alignItems: "center", gap: 14, borderBottom: "1px solid rgba(5,27,53,0.06)" }}>
-            <div style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", gap: 3 }}>
-              <div style={{ fontSize: fluidSize(14), fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{a.item}</div>
-              <div style={{ fontSize: fluidSize(12), color: SUB }}>{a.when} · {a.kind}</div>
-            </div>
-            <div style={{ fontSize: fluidSize(15), fontWeight: 600, fontVariantNumeric: "tabular-nums", color: a.ink }}>{a.amt}</div>
-          </div>
-        ))}
+        <WalletAccountActivity />
       </div>
 
       {profileDefs.map((g) => (
@@ -7726,9 +7749,10 @@ export default function SeasonTickets({
           {displaySection === "giving" && Giving()}
           {displaySection === "profile" && Profile()}
           {displaySection === "bank" && (
-            <WalletBankAccount processing={searchParams.get("processing") === "1"} />
+            <WalletBankAccount processing={Boolean(searchParams.get("processing"))} />
           )}
           {displaySection === "payouts" && <WalletPayouts />}
+          {displaySection === "activity" && <WalletActivityPage />}
         </>
       )}
 

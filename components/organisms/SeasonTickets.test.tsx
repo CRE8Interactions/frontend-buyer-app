@@ -19,6 +19,7 @@ import {
   demoExpiredListing,
   demoSoldListing,
   demoWalletListings,
+  demoLinkedBankAccount,
 } from "@/lib/demo/fixtures";
 import moment from "moment-timezone";
 import { googleMapsDirectionsUrl } from "@/lib/venueLocation";
@@ -75,6 +76,7 @@ vi.mock("@/lib/api", () => ({
   updateMyListings: vi.fn(),
   removeMyListings: vi.fn(),
   getBankAccount: vi.fn(async () => ({ data: { payouts_enabled: true, id: "acct-1" } })),
+  getMyUpcomingOrders: vi.fn(async () => ({ data: [] })),
   createBankAccount: vi.fn(async () => ({ data: { link: "https://connect.stripe.test/setup" } })),
   getResaleFeeRules: vi.fn(async () => ({ data: { rules: [] } })),
   getOrder: vi.fn(),
@@ -110,6 +112,7 @@ import SeasonTickets, {
   clearJerseyPanelFillCacheForTests,
   resetWalletApiHydrationForTests,
 } from "@/components/organisms/SeasonTickets";
+import { __resetActivitySnapshotForTests } from "@/components/organisms/WalletAccountActivity";
 import {
   clearLocallyResolvedIncomingTransfersForTests,
   formatAccessPassRemainingLine,
@@ -299,6 +302,7 @@ async function confirmAcceptTransferInPopup(
   navigationMocks.pathname = "/wallet/my-tickets/";
   navigationMocks.search = "";
   resetWalletApiHydrationForTests();
+  __resetActivitySnapshotForTests();
   clearPersistedCancelRestoresForTests();
   clearJerseyPanelFillCacheForTests();
   clearLocallyResolvedIncomingTransfersForTests();
@@ -5415,6 +5419,58 @@ describe("SeasonTickets section routes", () => {
       "href",
       expect.stringMatching(/^\/sign-out\/?$/),
     );
+    expect(screen.getByText("Payout account for resale")).toBeInTheDocument();
+  });
+
+  it("shows the linked bank account number on the profile", async () => {
+    navigationMocks.pathname = "/wallet/my-profile/";
+    const last4 = demoLinkedBankAccount().external_accounts.data[0].last4;
+    mockedGetBankAccount.mockResolvedValue({ data: demoLinkedBankAccount() } as never);
+
+    render(<SeasonTickets />);
+
+    expect(await screen.findByText(`Account ••${last4}`)).toBeInTheDocument();
+    expect(screen.queryByText("Payout account for resale")).not.toBeInTheDocument();
+  });
+
+  it("does not load the profile again when returning from activity", async () => {
+    navigationMocks.pathname = "/wallet/my-profile/";
+    const last4 = demoLinkedBankAccount().external_accounts.data[0].last4;
+    mockedGetBankAccount.mockResolvedValue({ data: demoLinkedBankAccount() } as never);
+    const { rerender } = render(<SeasonTickets />);
+
+    expect(await screen.findByText(`Account ••${last4}`)).toBeInTheDocument();
+    const calls = mockedGetBankAccount.mock.calls.length;
+
+    navigationMocks.pathname = "/wallet/my-profile/activity/";
+    rerender(<SeasonTickets />);
+    expect(await screen.findByRole("link", { name: "Back to profile" })).toBeInTheDocument();
+
+    navigationMocks.pathname = "/wallet/my-profile/";
+    rerender(<SeasonTickets />);
+    expect(screen.getByText(`Account ••${last4}`)).toBeInTheDocument();
+    expect(mockedGetBankAccount).toHaveBeenCalledTimes(calls);
+  });
+
+  it("keeps the payout label until the bank link is complete", async () => {
+    navigationMocks.pathname = "/wallet/my-profile/";
+    let resolveAccount: (value: unknown) => void = () => {};
+    mockedGetBankAccount.mockReturnValue(
+      new Promise((resolve) => {
+        resolveAccount = resolve;
+      }) as never,
+    );
+
+    render(<SeasonTickets />);
+
+    expect(await screen.findByText("Payout account for resale")).toBeInTheDocument();
+    await act(async () => {
+      resolveAccount({
+        data: demoLinkedBankAccount({ charges_enabled: true, payouts_enabled: false }),
+      });
+    });
+    expect(screen.getByText("Payout account for resale")).toBeInTheDocument();
+    expect(screen.queryByText(/Account ••/)).not.toBeInTheDocument();
   });
 
   it("follows the URL when the shopper moves to another section", async () => {

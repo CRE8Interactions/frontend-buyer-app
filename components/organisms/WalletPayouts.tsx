@@ -1,38 +1,115 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, type CSSProperties } from "react";
 import Link from "next/link";
-import { createBankAccount, getAvailableFunds, getBankAccount, getMyUpcomingOrders } from "@/lib/api";
+import { WalletTicketsBlocksLoading } from "@/components/organisms/WalletTicketsLoader";
+import { getAvailableFunds, getBankAccount } from "@/lib/api";
 import { formatCurrency } from "@/lib/helpers";
 import { payoutTotals } from "@/lib/payoutFunds";
 
-type Invoice = {
-  id?: string | number;
-  event?: { name?: string };
-  total?: number | string;
+const NAVY = "#051b35";
+
+const payoutCardStyle: CSSProperties = {
+  flex: "1 1 0",
+  minWidth: 0,
+  background: "#fff",
+  color: NAVY,
+  borderRadius: 20,
+  padding: "22px 24px",
+  display: "flex",
+  flexDirection: "column",
+  gap: 10,
+  boxShadow: "0 10px 28px -20px rgba(5,27,53,0.45)",
 };
 
-const NAVY = "#051b35";
+const payoutAmountStyle: CSSProperties = {
+  fontSize: 32,
+  fontWeight: 700,
+  letterSpacing: "-0.03em",
+  lineHeight: 1.1,
+};
+
+const payoutNoteStyle: CSSProperties = {
+  margin: 0,
+  color: "#6e7180",
+  fontSize: 15,
+  lineHeight: 1.4,
+};
+
+const backLinkStyle = {
+  alignSelf: "flex-start" as const,
+  display: "inline-flex",
+  alignItems: "center",
+  justifyContent: "center",
+  gap: 8,
+  fontSize: 14,
+  fontWeight: 600,
+  color: NAVY,
+  background: "#fff",
+  border: "1px solid rgba(5,27,53,0.16)",
+  borderRadius: 999,
+  padding: "9px 16px 9px 12px",
+  textDecoration: "none",
+};
+
+type ExternalBankAccount = {
+  last4?: string | number;
+};
+
+type BankAccountRecord = {
+  id?: string | number;
+  external_accounts?: { data?: ExternalBankAccount[] } | ExternalBankAccount[] | null;
+  last4?: string | number;
+  charges_enabled?: boolean;
+  payouts_enabled?: boolean;
+};
+
+function accountLast4(account: BankAccountRecord | null) {
+  const raw = account?.external_accounts;
+  const first = Array.isArray(raw)
+    ? raw[0]
+    : Array.isArray(raw?.data)
+      ? raw.data[0]
+      : undefined;
+  const value = first?.last4 ?? account?.last4;
+  if (value == null || value === "") return "";
+  return String(value);
+}
+
+function BackArrow() {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" aria-hidden style={{ width: 16, height: 16 }}>
+      <line x1="19" y1="12" x2="5" y2="12" />
+      <polyline points="12 19 5 12 12 5" />
+    </svg>
+  );
+}
 
 export default function WalletPayouts() {
   const [ready, setReady] = useState(false);
   const [hasAccount, setHasAccount] = useState(false);
+  const [depositLast4, setDepositLast4] = useState("");
   const [available, setAvailable] = useState(0);
   const [onHold, setOnHold] = useState(0);
-  const [invoices, setInvoices] = useState<Invoice[]>([]);
+  const [narrow, setNarrow] = useState(false);
+
+  useEffect(() => {
+    const update = () => setNarrow(window.innerWidth < 900);
+    update();
+    window.addEventListener("resize", update);
+    return () => window.removeEventListener("resize", update);
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
     Promise.all([
-      getMyUpcomingOrders().catch(() => ({ data: [] })),
       getBankAccount().catch(() => ({ data: null })),
       getAvailableFunds().catch(() => ({ data: { available: [], onHold: [] } })),
-    ]).then(([orders, account, funds]) => {
+    ]).then(([account, funds]) => {
       if (cancelled) return;
-      const rows = Array.isArray(orders.data) ? orders.data : [];
-      setInvoices(rows as Invoice[]);
-      const record = account.data as { id?: string | number } | null;
-      setHasAccount(record?.id != null);
+      const record = (account.data as BankAccountRecord | null) || null;
+      setHasAccount(Boolean(record?.charges_enabled && record?.payouts_enabled));
+      setDepositLast4(accountLast4(record));
       const totals = payoutTotals(funds.data);
       setAvailable(totals.available);
       setOnHold(totals.onHold);
@@ -43,44 +120,45 @@ export default function WalletPayouts() {
     };
   }, []);
 
-  const linkBank = async () => {
-    const res = await createBankAccount({});
-    const link = (res.data as { link?: string } | undefined)?.link;
-    if (link) window.location.assign(link);
-  };
 
   return (
-    <div style={{ maxWidth: 720, margin: "0 auto", padding: "28px 20px 48px", display: "flex", flexDirection: "column", gap: 16, color: NAVY }}>
-      <Link href="/wallet/my-profile/" style={{ fontSize: 14, fontWeight: 600, color: NAVY }}>Back to profile</Link>
+    <div style={{ maxWidth: 1100, margin: "0 auto", padding: "28px 20px 48px", display: "flex", flexDirection: "column", gap: 16, color: NAVY }}>
+      <Link href="/wallet/my-profile/" style={backLinkStyle}>
+        <BackArrow />
+        Back to profile
+      </Link>
       <h1 style={{ margin: 0, fontSize: 32, fontWeight: 600, letterSpacing: "-0.03em" }}>Payouts</h1>
       <p style={{ margin: 0, color: "#4a5567" }}>Resale payouts are deposited to your bank after the event.</p>
-      {!ready ? <p>Loading…</p> : null}
+      {!ready ? <WalletTicketsBlocksLoading /> : null}
       {ready ? (
         <>
-          <section style={{ background: NAVY, color: "#fff", borderRadius: 20, padding: 20, display: "flex", flexDirection: "column", gap: 8 }}>
-            <h2 style={{ margin: 0, fontSize: 16 }}>Depositing to your bank</h2>
-            <div style={{ fontSize: 28, fontWeight: 600 }}>{formatCurrency(available || 0)}</div>
-            <p style={{ margin: 0 }}>Payouts are deposited after the event. You do not need to withdraw them.</p>
-            {hasAccount ? null : (
-              <button type="button" onClick={() => void linkBank()} style={{ alignSelf: "flex-start", fontWeight: 600, border: "none", borderRadius: 999, padding: "12px 18px", background: "#a6e773", color: NAVY, cursor: "pointer" }}>
-                Link bank account
-              </button>
-            )}
-          </section>
-          <section style={{ background: "#fff", borderRadius: 20, padding: 20 }}>
-            <h2 style={{ margin: 0, fontSize: 16 }}>On hold</h2>
-            <p style={{ margin: "8px 0 0", color: "#4a5567" }}>Held until the event ends, then deposited to your bank.</p>
-            <div style={{ fontSize: 28, fontWeight: 600, marginTop: 8 }}>{formatCurrency(onHold || 0)}</div>
-          </section>
-          <section style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-            <h2 style={{ margin: 0, fontSize: 16 }}>Invoices</h2>
-            {invoices.length === 0 ? <p style={{ margin: 0, color: "#4a5567" }}>No invoices yet.</p> : invoices.map((invoice, index) => (
-              <div key={String(invoice.id ?? index)} style={{ background: "#fff", borderRadius: 16, padding: "14px 16px", display: "flex", justifyContent: "space-between", gap: 12 }}>
-                <span>{invoice.event?.name || "Event"}</span>
-                <span>{invoice.total != null ? formatCurrency(Number(invoice.total) || 0) : ""}</span>
+          <div style={{ display: "flex", flexDirection: narrow ? "column" : "row", gap: 16, alignItems: "stretch" }}>
+            <section style={payoutCardStyle}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12 }}>
+                <h2 style={{ margin: 0, fontSize: 16, fontWeight: 500 }}>
+                  {hasAccount
+                    ? depositLast4
+                      ? `Depositing to account • ${depositLast4}`
+                      : "Depositing to your bank"
+                    : "No bank account linked"}
+                </h2>
+                <Link href="/wallet/bank-account/" style={{ flexShrink: 0, color: NAVY, fontWeight: 600, textDecoration: "underline" }}>
+                  {hasAccount ? "Manage" : "Link account"}
+                </Link>
               </div>
-            ))}
-          </section>
+              <div style={payoutAmountStyle}>{formatCurrency(available || 0)}</div>
+              <p style={payoutNoteStyle}>
+                {hasAccount
+                  ? "Payouts are deposited after the event. You do not need to withdraw them."
+                  : "Link a bank account to receive payouts."}
+              </p>
+            </section>
+            <section style={payoutCardStyle}>
+              <h2 style={{ margin: 0, fontSize: 16, fontWeight: 500 }}>On hold</h2>
+              <div style={payoutAmountStyle}>{formatCurrency(onHold || 0)}</div>
+              <p style={payoutNoteStyle}>Held until the event ends, then deposited to your bank.</p>
+            </section>
+          </div>
         </>
       ) : null}
     </div>

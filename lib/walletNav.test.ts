@@ -39,6 +39,7 @@ describe("wallet nav", () => {
     expect(walletSectionFromPath("/wallet/my-listings/")).toBe("resale");
     expect(walletSectionFromPath("/wallet/giving")).toBe("giving");
     expect(walletSectionFromPath("/wallet/my-profile/?x=1")).toBe("profile");
+    expect(walletSectionFromPath("/wallet/my-profile/activity/")).toBe("activity");
     expect(walletSectionFromPath("/wallet/bank-account/")).toBe("bank");
     expect(walletSectionFromPath("/wallet/payouts/")).toBe("payouts");
   });
@@ -51,6 +52,7 @@ describe("wallet nav", () => {
     expect(isWalletSectionPath("/wallet/my-profile/")).toBe(true);
     expect(isWalletSectionPath("/wallet/bank-account/")).toBe(true);
     expect(isWalletSectionPath("/wallet/payouts/")).toBe(true);
+    expect(isWalletSectionPath("/wallet/my-profile/activity/")).toBe(true);
     expect(isWalletSectionPath("/wallet/my-listings/")).toBe(true);
     expect(
       isWalletSectionPath("/wallet/my-tickets/order/ord-1/package/pkg-1/"),
