@@ -736,6 +736,40 @@ describe("groupsToGaTiers", () => {
       multipleOf: 2,
     });
   });
+
+  it("lists GA offers cheapest first, including locked offers", () => {
+    const tiers = groupsToGaTiers(groups, { includeLocked: true });
+
+    expect(tiers.map((tier) => tier.name)).toEqual([
+      "Student Rush",
+      "Student Rate",
+      "Family Zone (alcohol-free)",
+      "Standard Admission",
+      "STH Presale",
+      "VIP Club",
+    ]);
+    expect(tiers.find((tier) => tier.name === "STH Presale")?.state).toBe("locked");
+  });
+
+  it("keeps arrival order when two GA offers cost the same", () => {
+    const standard = groups[0];
+    const locked = groups.find((group) => group.offer?.accessCode);
+    const tiers = groupsToGaTiers(
+      [
+        { ...locked!, price: standard.price },
+        {
+          ...standard,
+          offer: { ...standard.offer, connected_offers: undefined },
+        },
+      ],
+      { includeLocked: true },
+    );
+
+    expect(tiers.map((tier) => tier.name)).toEqual([
+      "STH Presale",
+      "Standard Admission",
+    ]);
+  });
 });
 
 describe("groupsToListings connected offers", () => {

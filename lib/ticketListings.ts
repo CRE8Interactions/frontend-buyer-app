@@ -1009,6 +1009,8 @@ export function filterGroupsForListings(
 /**
  * Map Strapi GA ticket groups into checkout-ready tier cards.
  * Access-coded offers stay visible as locked tiers until the shopper enters a code.
+ * Order matches legacy GATickets: cheapest first, locked offers included.
+ * Seated listings keep their own sort.
  */
 export function groupsToGaTiers(
   groups: RawTicketGroup[],
@@ -1058,13 +1060,5 @@ export function groupsToGaTiers(
       } satisfies GATier;
     })
     .filter((tier) => tier.state === "soldout" || tier.state === "locked" || tier.min <= tier.max)
-    .sort((a, b) => {
-      const rank: Record<GATier["state"], number> = {
-        live: 0,
-        locked: 1,
-        scheduled: 2,
-        soldout: 3,
-      };
-      return rank[a.state] - rank[b.state];
-    });
+    .sort((a, b) => a.unit - b.unit);
 }
