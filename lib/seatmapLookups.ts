@@ -1,5 +1,6 @@
 import type { TicketGroup } from "@/stores/filtersStore";
 import { expandGroupsWithConnectedOffers } from "@/lib/connectedOffers";
+import { sellableCount, ticketGroupIsResale } from "@/lib/ticketListings";
 
 export type SeatmapBackground = {
   url: string;
@@ -282,11 +283,19 @@ export function createSectionLookupTable(ticketGroups: TicketGroup[]) {
   return lookupTable;
 }
 
+/** A GA group still has tickets a shopper can buy. */
+function gaGroupHasTickets(group: TicketGroup) {
+  const listingQuantity = Number(group.listing?.quantity);
+  if (Number.isFinite(listingQuantity) && listingQuantity > 0) return true;
+  return sellableCount(group) > 0;
+}
+
 /**
  * Which sections still have something to sell. GA sections carry their
  * inventory on the section itself, while seated sections only carry it on the
  * seats inside their rows — so a section can be sold out even though the
- * mapping gives it a designer-authored fill.
+ * mapping gives it a designer-authored fill. An attached GA group with nothing
+ * left to sell does not count.
  */
 export function createSectionInventoryTable(
   mapping: SeatmapMapping | null | undefined,
@@ -300,8 +309,9 @@ export function createSectionInventoryTable(
     const sectionId = String(section.sectionId ?? "");
     if (!sectionId || table[sectionId]) return;
 
-    if ((sectionLookupTable[sectionId] || []).length > 0) {
-      table[sectionId] = true;
+    const gaGroups = sectionLookupTable[sectionId] || [];
+    if (gaGroups.length > 0) {
+      table[sectionId] = gaGroups.some(gaGroupHasTickets);
       return;
     }
 
@@ -317,9 +327,57 @@ export function createSectionInventoryTable(
 
 export const UNAVAILABLE_SECTION_FILL = "#E6E8EC";
 export const UNAVAILABLE_SECTION_LABEL = "#353945";
-const DEFAULT_AVAILABLE_FILL = "#3E8BF7";
+/** Verified resale on the fan map and in the legend. */
+export const RESALE_MAP_COLOR = "#E06C35";
+/** Standard available seat when the offer does not set its own color. */
+export const SEAT_AVAILABLE_COLOR = "#3E8BF7";
+const DEFAULT_AVAILABLE_FILL = SEAT_AVAILABLE_COLOR;
 
-export type SectionAvailability = { total: number; available: number };
+/**
+ * Legend "Available" swatch. A standard seat is filled with its offer color,
+ * so the swatch uses that color when every standard seat shares one.
+ * Resale, exclusive, locked, and accessible seats have their own rows.
+ */
+export function legendAvailableColor(
+  groups: ReadonlyArray<TicketGroup> | null | undefined,
+): string {
+  const colors = new Map<string, string>();
+  for (const group of groups || []) {
+    if (group.GA) continue;
+    if (!Array.isArray(group.seatIds) || group.seatIds.length === 0) continue;
+    if (ticketGroupIsResale(group)) continue;
+    if (group.offer?.inventoryType === "exclusive") continue;
+    if (group.offer?.accessCode) continue;
+    if (
+      group.accessible ||
+      group.accessibleType ||
+      group.accessiblityType ||
+      group.accessibilityType
+    ) {
+      continue;
+    }
+    const color = group.offer?.color?.trim();
+    if (!color) {
+      if (colors.size > 0) return SEAT_AVAILABLE_COLOR;
+      colors.set("", "");
+      continue;
+    }
+    if (colors.has("")) return SEAT_AVAILABLE_COLOR;
+    const key = color.toLowerCase();
+    if (!colors.has(key)) colors.set(key, color);
+    if ([...colors.keys()].filter((entry) => entry !== "").length > 1) {
+      return SEAT_AVAILABLE_COLOR;
+    }
+  }
+  const swatches = [...colors.entries()].filter(([key]) => key !== "");
+  if (swatches.length === 1 && !colors.has("")) return swatches[0][1];
+  return SEAT_AVAILABLE_COLOR;
+}
+
+export type SectionAvailability = {
+  total: number;
+  available: number;
+};
 
 export type SectionOverlayPaint = {
   kind: "solid" | "gradient";
@@ -353,7 +411,9 @@ export function countSectionAvailability(
     const seatIds = seatIdsForRow(rowRef, rows);
     total += seatIds.length;
     for (const seatId of seatIds) {
-      if (lookup[String(seatId)]) available += 1;
+      const group = lookup[String(seatId)];
+      if (!group || typeof group !== "object") continue;
+      available += 1;
     }
   }
 
@@ -378,7 +438,7 @@ export function sectionOverlayPaint(
   section: Pick<SeatmapSection, "coverFill" | "fill"> | null | undefined,
   stats: SectionAvailability | null | undefined,
 ): SectionOverlayPaint {
-  const availableFill =
+  const authoredFill =
     section?.coverFill ?? section?.fill ?? DEFAULT_AVAILABLE_FILL;
   const total = stats?.total ?? 0;
   const available = stats?.available ?? 0;
@@ -397,7 +457,7 @@ export function sectionOverlayPaint(
   if (total <= 0 || available >= total) {
     return {
       kind: "solid",
-      fill: availableFill,
+      fill: authoredFill,
       unavailableFill: UNAVAILABLE_SECTION_FILL,
       soldOut: false,
       labelFill: "#FFFFFF",
@@ -405,10 +465,10 @@ export function sectionOverlayPaint(
     };
   }
 
-  const ratio = available / total;
+  const ratio = total > 0 ? available / total : 1;
   return {
     kind: "gradient",
-    fill: availableFill,
+    fill: authoredFill,
     unavailableFill: UNAVAILABLE_SECTION_FILL,
     soldOut: false,
     labelFill: ratio < 0.5 ? UNAVAILABLE_SECTION_LABEL : "#FFFFFF",

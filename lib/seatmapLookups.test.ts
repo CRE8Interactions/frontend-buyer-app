@@ -57,6 +57,22 @@ describe("createSectionInventoryTable", () => {
     ).toBe(false);
   });
 
+  it("marks a GA section unavailable when none of its groups have tickets", () => {
+    const groups = demoTicketGroups().ticketGroups.map((group) => ({
+      ...group,
+      availableCount: 0,
+      maxContiguous: 0,
+    }));
+
+    expect(
+      createSectionInventoryTable(
+        mapping,
+        createSectionLookupTable(groups),
+        {},
+      )[DEMO_GA_SECTION_ID],
+    ).toBe(false);
+  });
+
   it("returns an empty table when there is no mapping geometry", () => {
     expect(createSectionInventoryTable(null, gaSectionLookupTable, seatLookupTable)).toEqual(
       {},
@@ -162,6 +178,21 @@ describe("sectionOverlayPaint", () => {
     expect(paint.kind).toBe("solid");
     expect(paint.fill).toBe(DEMO_SECTION_FILL);
     expect(paint.labelFill).toBe("#FFFFFF");
+  });
+
+  it("keeps a resale available band on the section fill", () => {
+    const section = mapping.sections?.["sec-m"];
+    const stats = countSectionAvailability(section, mapping.rows, {
+      s1: { resale: true },
+    });
+
+    expect(stats).toEqual({ total: 4, available: 1 });
+    expect(sectionOverlayPaint(section, stats)).toMatchObject({
+      soldOut: false,
+      kind: "gradient",
+      ratio: 0.25,
+      fill: DEMO_SECTION_FILL,
+    });
   });
 
   it("does not call a section sold out when it has no seat geometry", () => {

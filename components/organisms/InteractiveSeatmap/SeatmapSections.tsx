@@ -249,6 +249,7 @@ const SeatmapSections = memo(function SeatmapSections({
         // GA / non-zoomable section. Only GA groups drive the section tooltip;
         // seated inventory here is reachable through its seats instead.
         const gaGroups = sectionLookupTable[sid] || [];
+        const canOpen = hasInventory && gaGroups.length > 0;
         const hideIdentifierArt = isWheelchairCompanionSection(section);
         return (
           <g key={sid} data-section-root="true">
@@ -259,16 +260,14 @@ const SeatmapSections = memo(function SeatmapSections({
               id={sid}
               d={section.path || ""}
               fill={
-                hasInventory
-                  ? section.fill || AVAILABLE_FILL
-                  : UNAVAILABLE_FILL
+                hasInventory ? section.fill || AVAILABLE_FILL : UNAVAILABLE_FILL
               }
               stroke={section.stroke || "rgba(255,255,255,0.4)"}
               strokeWidth={Number(section.strokeWidth ?? 1)}
-              className={gaGroups.length > 0 ? "cursor-pointer" : undefined}
+              className={canOpen ? "cursor-pointer" : undefined}
               opacity={hasInventory ? 1 : 0.45}
               onClick={
-                gaGroups.length > 0
+                canOpen
                   ? (e) => {
                       e.stopPropagation();
                       onTooltip({
@@ -282,7 +281,7 @@ const SeatmapSections = memo(function SeatmapSections({
                   : undefined
               }
               onTouchEnd={
-                gaGroups.length > 0
+                canOpen
                   ? (e) => {
                       e.preventDefault();
                       e.stopPropagation();

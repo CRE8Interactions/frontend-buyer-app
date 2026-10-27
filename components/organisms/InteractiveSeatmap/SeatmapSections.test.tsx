@@ -11,6 +11,7 @@ import {
 import {
   createSeatLookupTables,
   createSectionLookupTable,
+  RESALE_MAP_COLOR,
   UNAVAILABLE_SECTION_FILL,
 } from "@/lib/seatmapLookups";
 import {
@@ -208,6 +209,24 @@ describe("SeatmapSections", () => {
     );
   });
 
+  it("greys out a GA section when its groups have no tickets left", () => {
+    const groups = demoTicketGroups().ticketGroups.map((group) => ({
+      ...group,
+      availableCount: 0,
+      maxContiguous: 0,
+    }));
+    useSeatmapStore.setState({
+      sectionLookupTable: createSectionLookupTable(groups),
+    });
+    const section = renderSections();
+
+    expect(section(DEMO_GA_SECTION_ID)).toHaveAttribute(
+      "fill",
+      UNAVAILABLE_FILL,
+    );
+    expect(section(DEMO_GA_SECTION_ID)).not.toHaveClass("cursor-pointer");
+  });
+
   it("greys out and unlinks a GA section once its groups are gone", () => {
     useSeatmapStore.setState({ sectionLookupTable: {} });
     const section = renderSections();
@@ -219,6 +238,18 @@ describe("SeatmapSections", () => {
     expect(section(DEMO_GA_SECTION_ID)).not.toHaveClass("cursor-pointer");
   });
 
+  it("keeps a resale section cover on the section fill", () => {
+    renderSections();
+    const stops = [
+      ...document.querySelectorAll("#sec-avail-sec-a stop"),
+    ].map((stop) => stop.getAttribute("stop-color"));
+    const path = document.getElementById("sec-a");
+    const colors = stops.length > 0 ? stops : [path?.getAttribute("fill")];
+
+    expect(colors).toContain(DEMO_SECTION_FILL);
+    expect(colors).not.toContain(RESALE_MAP_COLOR);
+  });
+
   it("omits zoomable sections when the venue does not use section covers", () => {
     const section = renderSections({ sectionCoversEnabled: false });
 
@@ -228,6 +259,33 @@ describe("SeatmapSections", () => {
 });
 
 describe("SeatmapSeat", () => {
+  it("paints a resale seat in the same orange as the legend", () => {
+    const group = DEMO_SEATED_TICKET_GROUPS.find((item) => item.resale);
+    const seatId = group?.seatIds?.[0];
+    const seat = seatId ? mapping.seats?.[seatId] : undefined;
+    expect(group?.offer?.color).toBeTruthy();
+    expect(seat).toBeTruthy();
+
+    useSeatmapStore.setState({
+      seatLookupTable: group && seatId ? { [seatId]: group } : {},
+      seatOffersLookupTable: group && seatId ? { [seatId]: [group] } : {},
+    });
+    const { container } = render(
+      <svg>
+        <SeatmapSeat
+          seat={{ ...seat!, accessible: false, accessibleType: undefined }}
+          onTooltip={vi.fn()}
+          isTooltipActive={false}
+        />
+      </svg>,
+    );
+
+    expect(container.querySelector("rect")).toHaveAttribute(
+      "fill",
+      RESALE_MAP_COLOR,
+    );
+  });
+
   it("renders every exclusive seat purple instead of its offer color", () => {
     const group = DEMO_SEATED_TICKET_GROUPS.find((item) =>
       item.seatIds?.includes("s1"),
@@ -1348,7 +1406,11 @@ describe("InteractiveSeatmap canvas", () => {
     await waitFor(() => {
       expect(screen.queryByLabelText(/loading seat map/i)).not.toBeInTheDocument();
     });
-    expect(screen.getByTestId("seatmap-legend-resale")).toHaveTextContent("Verified resale");
+    const legend = screen.getByTestId("seatmap-legend-resale");
+    expect(legend).toHaveTextContent("Verified resale");
+    expect(legend.querySelector("span")).toHaveStyle({
+      backgroundColor: RESALE_MAP_COLOR,
+    });
   });
 
   it("hides the Verified resale legend row when no listing is present", async () => {
@@ -1374,10 +1436,10 @@ describe("InteractiveSeatmap canvas", () => {
     });
     expect(screen.getByText("DA")).toBeInTheDocument();
     expect(screen.getByText("DB")).toBeInTheDocument();
-    expect(screen.queryByText("Accessibility")).not.toBeInTheDocument();
+    expect(screen.queryByText("Accessible")).not.toBeInTheDocument();
   });
 
-  it("lists generic Accessibility when no DA or DB types exist", async () => {
+  it("lists generic Accessible when no DA or DB types exist", async () => {
     const blankSeats = Object.fromEntries(
       Object.entries(mapping.seats || {}).map(([id, seat]) => [
         id,
@@ -1400,7 +1462,7 @@ describe("InteractiveSeatmap canvas", () => {
     await waitFor(() => {
       expect(screen.queryByLabelText(/loading seat map/i)).not.toBeInTheDocument();
     });
-    expect(screen.getByText("Accessibility")).toBeInTheDocument();
+    expect(screen.getByText("Accessible")).toBeInTheDocument();
     expect(screen.queryByText("DA")).not.toBeInTheDocument();
     expect(screen.queryByText("DB")).not.toBeInTheDocument();
   });

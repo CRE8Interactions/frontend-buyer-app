@@ -1,7 +1,8 @@
 "use client";
 
 import { memo, useMemo, useRef } from "react";
-import type { SeatmapSeat } from "@/lib/seatmapLookups";
+import { RESALE_MAP_COLOR, type SeatmapSeat } from "@/lib/seatmapLookups";
+import { ticketGroupIsResale } from "@/lib/ticketListings";
 import { SEATMAP_TAP_THRESHOLD_PX } from "@/lib/seatmapPopup";
 import type { TicketGroup } from "@/stores/filtersStore";
 import useSeatmapStore from "@/stores/seatmapStore";
@@ -166,7 +167,9 @@ const SeatmapSeat = memo(function SeatmapSeat({
     if (!ticketGroup) return "#E6E8EC";
     if (isAccessible) return accessibleSeatColor(accessibleType);
     if (displayTicketGroup && isLockedOffer(displayTicketGroup)) return "#353945";
-    if (displayTicketGroup?.resale) return "#E06C35";
+    if (displayTicketGroup && ticketGroupIsResale(displayTicketGroup)) {
+      return RESALE_MAP_COLOR;
+    }
     if (isExclusiveOffer(displayTicketGroup)) return "#9757D7";
     if (displayTicketGroup?.offer?.accessCode) {
       return "var(--seatmap-accent, #3E8BF7)";
@@ -312,7 +315,9 @@ const SeatmapSeat = memo(function SeatmapSeat({
   const iconId = (() => {
     if (seat.selected) return "icon-selected";
     if (!ticketGroup) return null;
-    if (displayTicketGroup?.resale) return "icon-resale";
+    if (displayTicketGroup && ticketGroupIsResale(displayTicketGroup)) {
+      return "icon-resale";
+    }
     if (isAccessible) return "icon-accessible";
     if (displayTicketGroup && isLockedOffer(displayTicketGroup)) {
       return "icon-locked";
