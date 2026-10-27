@@ -14,6 +14,8 @@ import { htmlToReceiptPdf } from "@/lib/orderReceiptHtmlToPdf";
 import { saveReceiptPdf } from "@/lib/orderReceiptPdf";
 import {
   completedOrderPromoName,
+  orderPrimaryFeeBreakdown,
+  primaryTicketFeeSummaryRows,
   promoSummaryLabel,
   resolveCompletedOrderFees,
 } from "@/lib/ticketSummary";
@@ -426,7 +428,15 @@ function flexPackReceiptLine(
   const voucherWord = qty === 1 ? "Voucher" : "Vouchers";
   const ticketWord = qty === 1 ? "game ticket" : "game tickets";
   const amount = Number(order.flex_pack?.price);
-  const lineAmount = Number.isFinite(amount) && amount > 0 ? amount : subtotal;
+  const fees = resolveCompletedOrderFees(order);
+  // A custom fee is part of what each voucher costs. Price the line at the
+  // amount paid so the unit price matches checkout, not the pack price alone.
+  const lineAmount =
+    fees.customFeeLines.length > 0 && fees.total > 0
+      ? fees.total
+      : Number.isFinite(amount) && amount > 0
+        ? amount
+        : subtotal;
   const unit = lineAmount / qty;
 
   return {
@@ -501,6 +511,7 @@ export function buildOrderReceipt(
     total,
     subtotal,
   } = resolveCompletedOrderFees(order);
+  const feeBreakdown = orderPrimaryFeeBreakdown(order);
   const qty = groups.reduce((sum, group) => sum + group.count, 0);
   const unitFromTickets = groups.every((group) => group.count > 0)
     ? groups[0] && groups.every((group) => group.amount / group.count === groups[0].amount / groups[0].count)
@@ -510,25 +521,38 @@ export function buildOrderReceipt(
         : 0
     : 0;
   // Event ticket `cost` often includes fees; line items must match the
-  // fee-exclusive subtotal shown on checkout success.
-  const unitPrice = qty > 0
-    ? order.package
-      ? unitFromTickets || subtotal / qty
-      : subtotal / qty
-    : 0;
+  // fee-exclusive subtotal shown on checkout success. An itemized order
+  // prices the lines at face value and lists each fee on its own row.
+  const faceUnit =
+    feeBreakdown?.groups.length === 1 ? feeBreakdown.groups[0].unitPrice : null;
+  const unitPrice = faceUnit != null
+    ? faceUnit
+    : qty > 0
+      ? order.package
+        ? unitFromTickets || subtotal / qty
+        : subtotal / qty
+      : 0;
   const title = lineItemTitle(order);
-  const ticketLines = groups.map((group) => {
-    const seats = group.ga ? "GA" : formatSeatRange(group.seats) || "GA";
-    const lineAmount = order.package
-      ? group.amount || unitPrice * group.count
-      : unitPrice * group.count;
-    return {
-      description: `${title} – Sec ${group.section} – Row ${group.row} – Seat ${seats}`,
-      qty: String(group.count),
-      unitPrice: formatCurrency(unitPrice),
-      amount: formatCurrency(lineAmount),
-    };
-  });
+  const ticketLines =
+    feeBreakdown && feeBreakdown.groups.length > 1
+      ? feeBreakdown.groups.map((group) => ({
+          description: `${title} – ${group.label}`,
+          qty: String(group.quantity),
+          unitPrice: formatCurrency(group.unitPrice),
+          amount: formatCurrency(group.subtotal),
+        }))
+      : groups.map((group) => {
+          const seats = group.ga ? "GA" : formatSeatRange(group.seats) || "GA";
+          const lineAmount = order.package
+            ? group.amount || unitPrice * group.count
+            : unitPrice * group.count;
+          return {
+            description: `${title} – Sec ${group.section} – Row ${group.row} – Seat ${seats}`,
+            qty: String(group.count),
+            unitPrice: formatCurrency(unitPrice),
+            amount: formatCurrency(lineAmount),
+          };
+        });
   const flexLine = ticketLines.length ? null : flexPackReceiptLine(order, subtotal);
   const lines = ticketLines.length ? ticketLines : flexLine ? [flexLine] : [];
 
@@ -551,17 +575,24 @@ export function buildOrderReceipt(
       "",
   );
 
-  const totals: OrderReceiptTotal[] = [
-    { label: "Subtotal", amount: formatCurrency(subtotal) },
-    { label: "Tax", amount: formatCurrency(tax) },
-    { label: "Processing Fee", amount: formatCurrency(processingFee) },
-    { label: "Service Fee", amount: formatCurrency(serviceFee) },
-  ];
-  for (const line of customFeeLines) {
-    totals.push({
-      label: line.name,
-      amount: formatCurrency(line.amount),
-    });
+  const totals: OrderReceiptTotal[] = feeBreakdown
+    ? primaryTicketFeeSummaryRows(feeBreakdown).map((row) => ({
+        label: row.label,
+        amount: formatCurrency(row.amount),
+      }))
+    : [
+        { label: "Subtotal", amount: formatCurrency(subtotal) },
+        { label: "Tax", amount: formatCurrency(tax) },
+        { label: "Processing Fee", amount: formatCurrency(processingFee) },
+        { label: "Service Fee", amount: formatCurrency(serviceFee) },
+      ];
+  if (!feeBreakdown) {
+    for (const line of customFeeLines) {
+      totals.push({
+        label: line.name,
+        amount: formatCurrency(line.amount),
+      });
+    }
   }
   if (discount) {
     totals.push({

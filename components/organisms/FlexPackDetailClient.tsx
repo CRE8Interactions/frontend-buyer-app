@@ -19,13 +19,19 @@ import {
   rememberCheckoutReturnPath,
   setStoredCart,
 } from "@/lib/cart";
-import { flexPackSeasonLabel, flexPackVoucherCount } from "@/lib/flexPackDisplay";
+import {
+  flexPackDisplayPrice,
+  flexPackPriceCaption,
+  flexPackSeasonLabel,
+  flexPackVoucherCount,
+} from "@/lib/flexPackDisplay";
 import {
   formatCurrency,
   getSingularOrPluralWord,
 } from "@/lib/helpers";
 import { cacheOrgBranding } from "@/lib/orgBrandingCache";
 import { beginRouteTransition } from "@/lib/routeTransition";
+import { flexPackTabTitle } from "@/lib/seo";
 import { TICKETING_STICKY_GAP_PX } from "@/lib/ticketingSticky";
 
 const NAVY = "#051b35";
@@ -112,6 +118,16 @@ export default function FlexPackDetailClient({
   }, [loading, flexPack, vw]);
 
   useEffect(() => {
+    const title = flexPackTabTitle(flexPack?.name);
+    if (!title) return;
+    const previous = document.title;
+    document.title = title;
+    return () => {
+      if (document.title === title) document.title = previous;
+    };
+  }, [flexPack?.name]);
+
+  useEffect(() => {
     let cancelled = false;
     getFlexPack(uuid)
       .then((res) => {
@@ -163,6 +179,8 @@ export default function FlexPackDetailClient({
   const mobile = vw < 900;
   const theme = brandingToTicketingTheme(null, flexPack?.organization);
   const voucherCount = flexPackVoucherCount(flexPack?.gameTickets);
+  const shownPrice = flexPackDisplayPrice(flexPack);
+  const priceCaption = flexPackPriceCaption(flexPack);
   const season = flexPackSeasonLabel(
     flexPack?.start,
     flexPack?.end,
@@ -517,10 +535,10 @@ export default function FlexPackDetailClient({
                       fontVariantNumeric: "tabular-nums",
                     }}
                   >
-                    {formatCurrency(flexPack.price)}
+                    {formatCurrency(shownPrice)}
                   </span>
                   <span style={{ fontSize: fluidSize(13), lineHeight: 1.5, color: MUTE }}>
-                    Fees added at checkout
+                    {priceCaption}
                   </span>
                 </div>
                 <BrandedActionButton
@@ -577,10 +595,10 @@ export default function FlexPackDetailClient({
                 color: "#000",
               }}
             >
-              {formatCurrency(flexPack.price)}
+              {formatCurrency(shownPrice)}
             </span>
             <span style={{ fontSize: fluidSize(12), lineHeight: 1.5, color: MUTE }}>
-              Fees added at checkout
+              {priceCaption}
             </span>
           </div>
           <BrandedActionButton

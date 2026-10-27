@@ -22,7 +22,7 @@ import {
 } from "@/lib/ticketListings";
 import type { QuantityLimits, RawTicketGroup } from "@/lib/ticketListings";
 import { selectionOfferName } from "@/lib/ticketSummary";
-import { mapSectionHeading, seatDisplayValue } from "@/lib/wallet";
+import { mapSectionHeading, seatDisplayValue, sectionDisplayValue } from "@/lib/wallet";
 import useFiltersStore from "@/stores/filtersStore";
 import useSeatmapStore from "@/stores/seatmapStore";
 import type { TicketGroup } from "@/stores/filtersStore";
@@ -479,10 +479,9 @@ function MobileSingleOfferSeatPopup({
   const offerName = selectionOfferName(primary, "Standard");
   const price = formatOfferListPrice(primary?.price ?? 0, primary?.offer);
   const section =
-    primary?.sectionName ||
-    primary?.sectionNumber ||
-    seat?.sectionNumber ||
-    "—";
+    sectionDisplayValue(
+      primary?.sectionName || primary?.sectionNumber || seat?.sectionNumber,
+    ) || "—";
   const row = primary?.rowName || primary?.rowNumber || "—";
   const seatNumber = seatDisplayValue(seat?.seatNumber) || "—";
 

@@ -6,9 +6,12 @@ import {
   demoCompletedFlexPackOrder,
   demoCompletedPackageOrder,
   demoCompletedTicketOrder,
+  demoItemizedFeeCompletedOrder,
+  demoMixedFacePriceCheckoutCart,
   demoFlexPack,
   demoSeasonPackage,
 } from "@/lib/demo/fixtures";
+import { quoteFlexPackPurchase } from "@/lib/flexPackDisplay";
 import { formatCurrency } from "@/lib/helpers";
 import {
   buildOrderReceipt,
@@ -128,6 +131,52 @@ describe("buildOrderReceipt", () => {
       label: "Subtotal",
       amount: formatCurrency(subtotal),
     });
+  });
+
+  it("labels one ticket price as the subtotal and lists each fee", () => {
+    const order = demoItemizedFeeCompletedOrder();
+    const pricing = order.priceObject as { offerPrice: number };
+    const receipt = buildOrderReceipt(order)!;
+    const face = pricing.offerPrice * order.tickets!.length;
+
+    expect(receipt.lines[0].unitPrice).toBe(formatCurrency(pricing.offerPrice));
+    expect(receipt.lines[0].amount).toBe(formatCurrency(face));
+    expect(receipt.totals.map((row) => row.label)).toEqual([
+      "Subtotal",
+      "Service Fee",
+      "Facility Fee",
+      "Processing Fee",
+      "Tax",
+      "Total",
+      "Amount paid",
+    ]);
+    expect(receipt.totals.find((row) => row.label === "Subtotal")?.amount).toBe(
+      formatCurrency(face),
+    );
+    expect(receipt.totals.find((row) => row.label === "Tax")?.amount).toBe(
+      formatCurrency(0),
+    );
+    expect(receipt.totals.find((row) => row.label === "Total")?.amount).toBe(
+      formatCurrency(order.total),
+    );
+  });
+
+  it("lists each face price on a mixed order receipt", () => {
+    const cart = demoMixedFacePriceCheckoutCart();
+    const order = demoCompletedTicketOrder({
+      tickets: cart.tickets,
+      total: cart.total,
+      salesTax: 0,
+      priceObject: cart.am_pricing_objects,
+    });
+    const receipt = buildOrderReceipt(order)!;
+
+    expect(receipt.lines.map((line) => line.unitPrice)).toEqual([
+      formatCurrency(cart.am_pricing_objects[0].offerPrice),
+      formatCurrency(cart.am_pricing_objects[1].offerPrice),
+    ]);
+    expect(receipt.totals.map((row) => row.label)).toContain("Facility Fee");
+    expect(receipt.totals.map((row) => row.label)).not.toContain("Subtotal");
   });
 
   it("lists the promo name and still foots to the amount paid", () => {
@@ -398,6 +447,43 @@ describe("buildOrderReceipt", () => {
       },
       { label: "Service Fee", amount: formatCurrency(order.serviceFee) },
     ]);
+  });
+
+  it("prices a flex pack receipt at the amount paid when a custom fee is charged", () => {
+    const pack = demoFlexPack({
+      customFees: [{ id: 7, name: "Drink", option: "amount", feeAmount: 8 }],
+    });
+    const quote = quoteFlexPackPurchase(pack);
+    const order = demoCompletedFlexPackOrder({
+      flex_pack: pack,
+      total: quote.buyerTotal,
+      serviceFee: quote.voucherFee,
+      processingFee: quote.processingFee,
+      estimatedProcessingFee: quote.processingFee,
+      priceObject: {
+        packageCustomFees: [
+          { id: 7, name: "Drink", amount: quote.customFeeAmount },
+        ],
+        estimatedPaymentProcessingFee: quote.processingFee,
+      },
+    });
+    const receipt = buildOrderReceipt(order)!;
+    const qty = Number(pack.gameTickets);
+
+    expect(receipt.lines[0].qty).toBe(String(qty));
+    expect(receipt.lines[0].unitPrice).toBe(
+      formatCurrency(quote.buyerTotal / qty),
+    );
+    expect(receipt.lines[0].amount).toBe(formatCurrency(quote.buyerTotal));
+    expect(receipt.totals).toEqual(
+      expect.arrayContaining([
+        { label: "Drink", amount: formatCurrency(quote.customFeeAmount) },
+        { label: "Total", amount: formatCurrency(quote.buyerTotal), strong: true },
+      ]),
+    );
+    expect(receipt.lines[0].unitPrice).not.toBe(
+      formatCurrency(Number(pack.price) / qty),
+    );
   });
 
   it("still lists a flex pack when only vouchers are on the order", () => {

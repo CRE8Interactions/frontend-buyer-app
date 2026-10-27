@@ -10,14 +10,18 @@ import {
   DEMO_USER,
   demoAccessPassCheckoutCart,
   demoCheckoutCart,
+  demoItemizedFeeCheckoutCart,
   demoSeatmapMapping,
+  demoFlexPack,
   demoFlexPackCheckoutCart,
   demoPackageCheckoutCart,
   demoTicketGroups,
 } from "@/lib/demo/fixtures";
 import { rememberTrackingCode } from "@/lib/trackingLink";
+import { quoteFlexPackPurchase } from "@/lib/flexPackDisplay";
 import { packageOrderSummary, gaTierSubtitle, ticketSelectionSummary } from "@/lib/ticketSummary";
 import { formatVenueLocationFromVenue } from "@/lib/venueLocation";
+import { purchaseTabTitle } from "@/lib/seo";
 
 const navState = { cartId: "cart-raptors-1", extra: "" };
 const routerMocks = vi.hoisted(() => ({
@@ -970,12 +974,13 @@ describe("Checkout page", { timeout: 20_000 }, () => {
         `Tickets: ${formatCurrency(summary.unit)} × ${summary.count}`,
       ),
     ).toBeInTheDocument();
-    expect(screen.getByText("No tax applies")).toBeInTheDocument();
-    expect(screen.queryByText("Tax")).not.toBeInTheDocument();
+    expect(screen.getByText("Tax").parentElement).toHaveTextContent("$0.00");
+    expect(screen.queryByText("No tax applies")).not.toBeInTheDocument();
     expect(screen.getByText("Total")).toBeInTheDocument();
     expect(screen.queryByText("Subtotal")).not.toBeInTheDocument();
     expect(screen.queryByText("Processing Fee")).not.toBeInTheDocument();
     expect(screen.queryByText("Service Fee")).not.toBeInTheDocument();
+    expect(document.title).toBe(purchaseTabTitle(cart));
   });
 
   it("shows included tax on a single event without listing fees or changing the total", async () => {
@@ -1127,10 +1132,37 @@ describe("Checkout page", { timeout: 20_000 }, () => {
     expect(
       await screen.findByText(/Tickets:/),
     ).toBeInTheDocument();
-    expect(screen.getByText("No tax applies")).toBeInTheDocument();
-    expect(screen.queryByText("Tax")).not.toBeInTheDocument();
+    expect(screen.getByText("Tax").parentElement).toHaveTextContent("$0.00");
+    expect(screen.queryByText("No tax applies")).not.toBeInTheDocument();
     expect(screen.queryByText("Processing Fee")).not.toBeInTheDocument();
     expect(screen.queryByText("Service Fee")).not.toBeInTheDocument();
+  });
+
+  it("itemizes face price and fees when they add back to the ticket cost", async () => {
+    const cart = demoItemizedFeeCheckoutCart();
+    mockedGetCart.mockResolvedValue({ data: cart } as never);
+    render(<CheckoutPageRoute />);
+
+    expect(
+      await screen.findByText("Tickets: $10.00 × 2"),
+    ).toBeInTheDocument();
+    expect(screen.getByText("Service Fee").parentElement).toHaveTextContent(
+      "$4.00",
+    );
+    expect(screen.getByText("Facility Fee").parentElement).toHaveTextContent(
+      "$2.00",
+    );
+    expect(screen.getByText("Processing Fee").parentElement).toHaveTextContent(
+      "$0.32",
+    );
+    expect(screen.getByText("Tax").parentElement).toHaveTextContent("$0.00");
+    expect(screen.queryByText("Chargeback protection")).not.toBeInTheDocument();
+    expect(screen.queryByText("Tickets: $13.16 × 2")).not.toBeInTheDocument();
+    expect(screen.queryByText("Tax (included)")).not.toBeInTheDocument();
+    expect(screen.queryByText("No tax applies")).not.toBeInTheDocument();
+    expect(screen.getByText("Total").parentElement).toHaveTextContent(
+      formatCurrency(cart.total),
+    );
   });
 
   it("summarizes a package order with season seats", async () => {
@@ -1455,6 +1487,46 @@ describe("Checkout page", { timeout: 20_000 }, () => {
     expect(screen.getByText("Service Fee")).toBeInTheDocument();
     expect(screen.getByText("Processing Fee")).toBeInTheDocument();
     expect(screen.getAllByText(formatCurrency(0)).length).toBeGreaterThan(0);
+  });
+
+  it("prices each flex voucher from the amount due and lists the custom fee", async () => {
+    const pack = demoFlexPack({
+      customFees: [{ id: 7, name: "Drink", option: "amount", feeAmount: 8 }],
+    });
+    const quote = quoteFlexPackPurchase(pack);
+    const cart = {
+      ...demoFlexPackCheckoutCart({
+        flex_pack: pack,
+        serviceFee: quote.voucherFee,
+        processingFee: quote.processingFee,
+        total: quote.total,
+      }),
+      packageWebsiteFeeSnapshot: {
+        customFeeLines: [{ id: 7, name: "Drink", amount: quote.customFeeAmount }],
+      },
+    };
+    mockedGetCart.mockResolvedValue({ data: cart } as never);
+    render(<CheckoutPageRoute />);
+
+    expect(await screen.findByText(pack.name)).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        `${formatCurrency(quote.buyerTotal / pack.gameTickets)} each`,
+      ),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByText(
+        `${formatCurrency(Number(pack.price) / pack.gameTickets)} each`,
+      ),
+    ).not.toBeInTheDocument();
+    expect(screen.getByText("Drink").parentElement).toHaveTextContent(
+      formatCurrency(quote.customFeeAmount),
+    );
+    expect(
+      screen.getByRole("button", {
+        name: `Pay ${formatCurrency(quote.buyerTotal)}`,
+      }),
+    ).toBeInTheDocument();
   });
 
   it("lists the promo discount in the order summary until it is removed", async () => {

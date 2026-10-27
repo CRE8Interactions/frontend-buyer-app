@@ -629,11 +629,12 @@ describe("SeatmapSeat", () => {
       item.seatIds?.includes("s1"),
     );
     expect(group).toBeTruthy();
+    const offer = { ...group!, sectionName: "Section 108" };
     window.innerWidth = 390;
     useSeatmapStore.setState({
       data: mapping,
-      seatLookupTable: { s1: group! },
-      seatOffersLookupTable: { s1: [group!] },
+      seatLookupTable: { s1: offer },
+      seatOffersLookupTable: { s1: [offer] },
       selectedFromMap: [],
     });
     useFiltersStore.setState({ eventTicketLimit: null });
@@ -651,6 +652,8 @@ describe("SeatmapSeat", () => {
     expect(screen.getByText("Field Club")).toBeInTheDocument();
     expect(screen.getByText("$33.59")).toHaveClass("text-[26px]");
     expect(screen.getByText("Section")).toBeInTheDocument();
+    expect(screen.getByText("108")).toBeInTheDocument();
+    expect(screen.queryByText("Section 108")).not.toBeInTheDocument();
     expect(screen.getByText("Row")).toBeInTheDocument();
     expect(screen.getByText("Seat")).toBeInTheDocument();
     expect(screen.getByText("1")).toBeInTheDocument();

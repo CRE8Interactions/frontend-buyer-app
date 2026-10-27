@@ -46,7 +46,11 @@ import {
   getCachedOrgBranding,
 } from "@/lib/orgBrandingCache";
 import { useClientReady } from "@/lib/useClientReady";
-import { flexPackCardTone, flexPackEachPrice } from "@/lib/flexPackDisplay";
+import {
+  flexPackCardTone,
+  flexPackDisplayPrice,
+  flexPackEachPrice,
+} from "@/lib/flexPackDisplay";
 import {
   stickyOffsetBelowHeader,
   TICKETING_HEADER_FALLBACK_PX,
@@ -153,6 +157,21 @@ type FlexPackItem = {
   backgroundColor?: string;
   offerColor?: string;
   venue?: { timezone?: string };
+  organization?: {
+    isTaxable?: unknown;
+    taxRate?: { estimatedCombinedRate?: unknown } | null;
+    tax_rate?: { estimatedCombinedRate?: unknown } | null;
+    fee_structure?: {
+      stripeCharge?: unknown;
+      stripeServicePecentage?: unknown;
+    } | null;
+    feeStructure?: {
+      stripeCharge?: unknown;
+      stripeServicePecentage?: unknown;
+    } | null;
+  } | null;
+  customFees?: unknown;
+  custom_fees?: unknown;
 };
 
 type VenueItem = {
@@ -1321,8 +1340,10 @@ export default function ClientProfile({
               )}
               {flexPacks.map((f) => {
                 const count = f.gameTickets ?? 0;
-                const price = f.price != null ? formatCurrency(f.price) : "—";
-                const each = flexPackEachPrice(f.price, count);
+                const shownPrice = f.price != null ? flexPackDisplayPrice(f) : null;
+                const price = shownPrice != null ? formatCurrency(shownPrice) : "—";
+                const each =
+                  shownPrice != null ? flexPackEachPrice(shownPrice, count) : null;
                 const packImage = f.image ? imageUrl(f.image, "") : "";
                 const tone = flexPackCardTone(
                   f.name,
