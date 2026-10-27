@@ -2,7 +2,11 @@ import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { ReactNode } from "react";
-import { demoFlexPack } from "@/lib/demo/fixtures";
+import {
+  demoFlexPack,
+  demoFlexPackTaxableOrganization,
+} from "@/lib/demo/fixtures";
+import { flexPackDisplayPrice } from "@/lib/flexPackDisplay";
 import { formatCurrency } from "@/lib/helpers";
 import {
   __resetInAppBackForTests,
@@ -110,11 +114,13 @@ describe("Flex pack detail (FlexPackDetailClient)", () => {
     expect(
       await screen.findByRole("heading", { name: pack.name }),
     ).toBeInTheDocument();
+    expect(document.title).toBe(`${pack.name} | Blocktickets`);
     expect(
       screen.getByRole("button", { name: `Get ${pack.gameTickets} vouchers` }),
     ).toBeInTheDocument();
     expect(screen.getByText(formatCurrency(pack.price))).toBeInTheDocument();
     expect(screen.getByText("Fees added at checkout")).toBeInTheDocument();
+    expect(screen.queryByText("Taxes and fees included")).not.toBeInTheDocument();
     expect(screen.getByText("How the flex pack works")).toBeInTheDocument();
     expect(screen.getByText("Redeem when you know")).toBeInTheDocument();
     expect(
@@ -126,7 +132,22 @@ describe("Flex pack detail (FlexPackDetailClient)", () => {
     expect(
       screen.getByText("Can't make a game? Send your ticket to a friend."),
     ).toBeInTheDocument();
-    expect(screen.queryByText(/taxes and fees included/i)).not.toBeInTheDocument();
+  });
+
+  it("shows an all-in price that includes taxes and the voucher fee", async () => {
+    const pack = demoFlexPack({
+      price: 79,
+      gameTickets: 7,
+      organization: demoFlexPackTaxableOrganization(),
+    });
+    await renderFlex(pack);
+
+    expect(
+      await screen.findByText(formatCurrency(flexPackDisplayPrice(pack))),
+    ).toBeInTheDocument();
+    expect(screen.getByText("Taxes and fees included")).toBeInTheDocument();
+    expect(screen.queryByText("Fees added at checkout")).not.toBeInTheDocument();
+    expect(screen.queryByText(formatCurrency(pack.price))).not.toBeInTheDocument();
   });
 
   it("says the flex pack was not found when the API returns nothing", async () => {

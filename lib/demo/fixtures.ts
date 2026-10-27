@@ -1434,6 +1434,122 @@ export function demoFlexPack(overrides: Record<string, unknown> = {}) {
   };
 }
 
+/** Org tax rate and Stripe fees that make a flex pack price all-in. */
+export function demoFlexPackTaxableOrganization() {
+  return {
+    isTaxable: true,
+    taxRate: { estimatedCombinedRate: 0.07 },
+    fee_structure: {
+      stripeCharge: "0.30",
+      stripeServicePecentage: "0.029",
+    },
+  };
+}
+
+/**
+ * Two $13.16 general-admission tickets whose face price and fees add back
+ * to the all-in cost (face $10, service $2, facility $1, processing $0.16).
+ */
+export function demoItemizedFeeCheckoutCart() {
+  const cart = demoCheckoutCart({ ga: true, ticketCount: 2 });
+  const cost = 13.16;
+  return {
+    ...cart,
+    tickets: cart.tickets.map((ticket) => ({
+      ...ticket,
+      name: "General Admission",
+      cost,
+      price: cost,
+    })),
+    total: 26.32,
+    totalTax: 0,
+    am_pricing_objects: [
+      {
+        id: 4,
+        name: "Adult",
+        offerPrice: 10,
+        serviceFee: 2,
+        ticketFacilityFee: 1,
+        taxPerTicket: 0,
+        paymentProcessingFee: 0.16,
+        totalDue: cost,
+      },
+    ],
+  };
+}
+
+/** Completed order whose saved pricing still itemizes like checkout. */
+export function demoItemizedFeeCompletedOrder() {
+  const cart = demoItemizedFeeCheckoutCart();
+  const pricing = cart.am_pricing_objects[0];
+  const ticketCount = cart.tickets.length;
+  const serviceFee = pricing.serviceFee * ticketCount;
+  const processingFee = pricing.paymentProcessingFee * ticketCount;
+  return demoCompletedTicketOrder({
+    tickets: cart.tickets,
+    event: cart.event,
+    total: cart.total,
+    salesTax: pricing.taxPerTicket * ticketCount,
+    serviceFee,
+    processingFee,
+    estimatedProcessingFee: processingFee,
+    priceObject: {
+      ...pricing,
+      estimatedPaymentProcessingFee: processingFee,
+    },
+  });
+}
+
+/** Adult and Student tickets that itemize onto different face prices. */
+export function demoMixedFacePriceCheckoutCart() {
+  const cart = demoCheckoutCart({ ga: true, ticketCount: 2 });
+  return {
+    ...cart,
+    tickets: [
+      {
+        ...cart.tickets[0],
+        cost: 13.16,
+        price: 13.16,
+        pricingLevelName: "Adult",
+        name: "Standard Admission",
+        offerName: "Standard Admission",
+        offer: { name: "Standard Admission" },
+      },
+      {
+        ...cart.tickets[1],
+        cost: 11.16,
+        price: 11.16,
+        pricingLevelName: "Student",
+        name: "Standard Admission",
+        offerName: "Standard Admission",
+        offer: { name: "Standard Admission" },
+      },
+    ],
+    total: 24.32,
+    totalTax: 0,
+    am_pricing_objects: [
+      {
+        id: 1,
+        name: "Adult",
+        offerPrice: 10,
+        serviceFee: 2,
+        ticketFacilityFee: 1,
+        paymentProcessingFee: 0.16,
+        totalDue: 13.16,
+      },
+      {
+        id: 2,
+        name: "Student",
+        offerPrice: 8,
+        serviceFee: 2,
+        ticketFacilityFee: 1,
+        paymentProcessingFee: 0.16,
+        totalDue: 11.16,
+      },
+    ],
+  };
+}
+
 /** Active fan access pass returned by GET /events/myAccessPasses. */
 export function demoAccessPass(overrides: Record<string, unknown> = {}) {
   const org = DEMO_ICEDOGS_ORG;

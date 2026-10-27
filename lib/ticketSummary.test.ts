@@ -1,9 +1,14 @@
 import { describe, expect, it } from "vitest";
+import { quoteFlexPackPurchase } from "@/lib/flexPackDisplay";
+import { formatCurrency } from "@/lib/helpers";
 import {
   DEMO_GA_SECTION_ID,
   DEMO_SEATED_TICKET_GROUPS,
   demoSeatmapMapping,
   demoCheckoutCart,
+  demoItemizedFeeCheckoutCart,
+  demoItemizedFeeCompletedOrder,
+  demoMixedFacePriceCheckoutCart,
   demoCompletedFlexPackOrder,
   demoCompletedPackageOrder,
   demoCompletedTicketOrder,
@@ -22,7 +27,11 @@ import {
   packageCustomFeeLines,
   checkoutIncludedPriceBreakdown,
   checkoutTaxLine,
+  getPrimaryTicketFeeBreakdown,
+  orderPrimaryFeeBreakdown,
+  primaryTicketFeeSummaryRows,
   includedTicketPriceBreakdown,
+  packageCartTickets,
   packageOrderSummary,
   packageSeatLines,
   promoSummaryLabel,
@@ -503,6 +512,124 @@ describe("packageSeatLines", () => {
     expect(lines[0].price).toBe(unit);
   });
 
+  it("names a general admission package with the first ticket's section", () => {
+    const cart = demoPackageCheckoutCart();
+    const ticket = cart.tickets[0];
+    const game = {
+      ...ticket,
+      GA: true,
+      generalAdmission: true,
+      sectionNumber: "General Admission",
+      sectionName: "General Admission",
+      rowNumber: undefined,
+      rowName: undefined,
+      seatNumber: undefined,
+    };
+    const lines = packageSeatLines(
+      [
+        ...Array.from({ length: 14 }, (_, index) => ({
+          ...game,
+          id: `game-${index}`,
+          price: index === 0 ? 20 : 0,
+          cost: index === 0 ? 20 : 0,
+        })),
+        {
+          ...game,
+          id: "package-row",
+          sectionNumber: undefined,
+          sectionName: undefined,
+          price: 20,
+          cost: 20,
+        },
+      ],
+      14,
+    );
+
+    expect(lines).toHaveLength(1);
+    expect(lines[0].seatLine).toBe("General Admission · 1 ticket");
+    expect(lines[0].price).toBe(20);
+  });
+
+  it("counts two GA package seats when each game copy shares a seat id", () => {
+    const cart = demoPackageCheckoutCart();
+    const ticket = cart.tickets[0];
+    const game = {
+      ...ticket,
+      GA: true,
+      generalAdmission: true,
+      sectionNumber: "General Admission",
+      sectionName: "General Admission",
+      rowNumber: undefined,
+      rowName: undefined,
+      seatNumber: undefined,
+      price: 0,
+      cost: 0,
+    };
+    const lines = packageSeatLines(
+      [
+        { ...game, id: "a-game-1", seatId: "seat-a", price: 40, cost: 40 },
+        { ...game, id: "a-game-2", seatId: "seat-a" },
+        { ...game, id: "b-game-1", seatId: "seat-b" },
+        { ...game, id: "b-game-2", seatId: "seat-b" },
+      ],
+      14,
+    );
+
+    expect(lines).toHaveLength(1);
+    expect(lines[0].seatLine).toBe("General Admission · 2 tickets");
+    expect(lines[0].price).toBe(40);
+  });
+
+  it("counts the reserved package tickets when game copies have no seat id", () => {
+    const cart = demoPackageCheckoutCart();
+    const ticket = cart.tickets[0];
+    const game = {
+      ...ticket,
+      GA: true,
+      generalAdmission: true,
+      sectionNumber: "General Admission",
+      sectionName: "General Admission",
+      rowNumber: undefined,
+      rowName: undefined,
+      seatNumber: undefined,
+    };
+    const lines = packageSeatLines(
+      Array.from({ length: 14 }, (_, index) => ({
+        ...game,
+        id: `game-${index}`,
+        price: index === 0 ? 80 : 0,
+        cost: index === 0 ? 80 : 0,
+      })),
+      14,
+      0,
+      2,
+    );
+
+    expect(lines).toHaveLength(1);
+    expect(lines[0].seatLine).toBe("General Admission · 2 tickets");
+    expect(lines[0].price).toBe(80);
+  });
+
+  it("uses season cart tickets and ignores duplicate package ticket rows", () => {
+    const cart = demoPackageCheckoutCart();
+    const extra = {
+      ...cart.tickets[0],
+      id: "package-copy",
+      sectionNumber: undefined,
+      sectionName: undefined,
+    };
+
+    const tickets = packageCartTickets({
+      tickets: cart.tickets,
+      package_tickets: [extra],
+    });
+    expect(tickets).toHaveLength(cart.tickets.length);
+    expect(tickets.some((row) => row.id === "package-copy")).toBe(false);
+    expect(packageCartTickets({ tickets: [], package_tickets: [extra] })).toEqual([
+      extra,
+    ]);
+  });
+
   it("lists one season seat with the offer name and game count", () => {
     const cart = demoPackageCheckoutCart();
     const ticket = cart.tickets[0];
@@ -699,6 +826,104 @@ describe("includedTicketPriceBreakdown", () => {
   });
 });
 
+describe("getPrimaryTicketFeeBreakdown", () => {
+  it("splits an all-in price into face price and fee lines", () => {
+    const cart = demoItemizedFeeCheckoutCart();
+    expect(
+      getPrimaryTicketFeeBreakdown(cart.tickets, cart.am_pricing_objects),
+    ).toEqual({
+      groups: [
+        {
+          label: "Standard Admission",
+          unitPrice: 10,
+          quantity: 2,
+          subtotal: 20,
+        },
+      ],
+      serviceFee: 4,
+      facilityFee: 2,
+      salesTax: 0,
+      processingFee: 0.32,
+      chargeBackProtection: 0,
+    });
+  });
+
+  it("keeps mixed offers on their own face prices", () => {
+    const cart = demoMixedFacePriceCheckoutCart();
+    expect(
+      getPrimaryTicketFeeBreakdown(cart.tickets, cart.am_pricing_objects),
+    ).toEqual({
+      groups: [
+        {
+          label: "Standard Admission",
+          unitPrice: 10,
+          quantity: 1,
+          subtotal: 10,
+        },
+        {
+          label: "Standard Admission",
+          unitPrice: 8,
+          quantity: 1,
+          subtotal: 8,
+        },
+      ],
+      serviceFee: 4,
+      facilityFee: 2,
+      salesTax: 0,
+      processingFee: 0.32,
+      chargeBackProtection: 0,
+    });
+  });
+
+  it("stays hidden when the fees would not add up to the ticket cost", () => {
+    const cart = demoItemizedFeeCheckoutCart();
+    expect(
+      getPrimaryTicketFeeBreakdown(
+        [{ ...cart.tickets[0], cost: 50, name: "General Admission" }],
+        [{ id: 1, offerPrice: 50, taxPerTicket: 4, totalDue: 50 }],
+      ),
+    ).toBeNull();
+    expect(
+      getPrimaryTicketFeeBreakdown(cart.tickets, []),
+    ).toBeNull();
+  });
+});
+
+describe("orderPrimaryFeeBreakdown", () => {
+  it("labels one ticket price as the subtotal and lists each fee", () => {
+    const cart = demoItemizedFeeCheckoutCart();
+    const order = demoItemizedFeeCompletedOrder();
+    const breakdown = orderPrimaryFeeBreakdown(order);
+    const group = breakdown?.groups[0];
+
+    expect(breakdown).toEqual(
+      getPrimaryTicketFeeBreakdown(cart.tickets, cart.am_pricing_objects),
+    );
+    expect(primaryTicketFeeSummaryRows(breakdown!)).toEqual([
+      {
+        label: "Subtotal",
+        amount: group?.subtotal,
+      },
+      { label: "Service Fee", amount: breakdown?.serviceFee },
+      { label: "Facility Fee", amount: breakdown?.facilityFee },
+      { label: "Processing Fee", amount: breakdown?.processingFee },
+      { label: "Tax", amount: breakdown?.salesTax },
+    ]);
+  });
+
+  it("leaves packages, flex packs, and orders without a face price on the subtotal summary", () => {
+    expect(orderPrimaryFeeBreakdown(demoCompletedPackageOrder())).toBeNull();
+    expect(orderPrimaryFeeBreakdown(demoCompletedFlexPackOrder())).toBeNull();
+    expect(
+      orderPrimaryFeeBreakdown(
+        demoCompletedTicketOrder({
+          priceObject: { estimatedPaymentProcessingFee: 3.92 },
+        }),
+      ),
+    ).toBeNull();
+  });
+});
+
 describe("checkoutIncludedPriceBreakdown", () => {
   it("returns nothing when tax is charged on top or the price level has no amounts", () => {
     const cart = demoCheckoutCart({ ticketCount: 2 });
@@ -749,7 +974,7 @@ describe("checkoutTaxLine", () => {
         totalTax: 0,
         salesTax: 3.5,
       }),
-    ).toEqual({ label: "Tax (included)", amount: 1.7 });
+    ).toEqual({ label: "Tax", amount: 1.7 });
   });
 
   it("shows a $0.00 Tax row for a flex pack and ignores cart.salesTax like legacy", () => {
@@ -911,6 +1136,29 @@ describe("resolveFlexPackCheckoutTotals", () => {
     expect(totals.total).toBe(
       Number(base.flex_pack.price) + Number(base.serviceFee) + 1.85 + 3.5,
     );
+  });
+
+  it("adds a custom fee to the flex pack amount due", () => {
+    const pack = demoFlexPack({
+      customFees: [{ id: 7, name: "Drink", option: "amount", feeAmount: 8 }],
+    });
+    const quote = quoteFlexPackPurchase(pack);
+    const totals = resolveFlexPackCheckoutTotals({
+      ...demoFlexPackCheckoutCart({
+        flex_pack: pack,
+        serviceFee: quote.voucherFee,
+        processingFee: quote.processingFee,
+        total: quote.total,
+      }),
+      packageWebsiteFeeSnapshot: {
+        customFeeLines: [{ name: "Drink", amount: quote.customFeeAmount }],
+      },
+    });
+
+    expect(totals.customFeeLines).toEqual([
+      { name: "Drink", amount: quote.customFeeAmount },
+    ]);
+    expect(totals.total).toBe(quote.buyerTotal);
   });
 });
 

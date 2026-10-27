@@ -203,6 +203,7 @@ describe("Package detail (PackageDetailClient)", () => {
     expect(
       await screen.findByRole("heading", { name: pkg.name }),
     ).toBeInTheDocument();
+    expect(document.title).toBe(`${pkg.name} | Season Tickets`);
     expect(screen.getByText(pkg.venue.name)).toBeInTheDocument();
     expect(
       screen.getByText(`Same seat, ${pkg.events.length} games`),

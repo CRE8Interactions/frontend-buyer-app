@@ -38,6 +38,8 @@ import { hideIntercomLauncher } from "@/lib/intercom";
 import { cacheOrgBranding } from "@/lib/orgBrandingCache";
 import {
   completedOrderPromoName,
+  orderPrimaryFeeBreakdown,
+  primaryTicketFeeSummaryRows,
   promoSummaryLabel,
   resolveCompletedOrderFees,
   ticketSelectionSummary,
@@ -48,6 +50,7 @@ import {
   flexPackSeasonLine,
   flexPackVoucherCount,
 } from "@/lib/flexPackDisplay";
+import { holdDocumentTitle, purchaseTabTitle } from "@/lib/seo";
 import { walletSectionHref } from "@/lib/walletNav";
 import {
   formatVenueLocationFromVenue,
@@ -153,6 +156,12 @@ function CheckoutSuccessPage() {
 
   const [loading, setLoading] = useState(true);
   const [order, setOrder] = useState<OrderData | null>(null);
+
+  useEffect(() => {
+    const title = purchaseTabTitle(order);
+    if (!title) return;
+    return holdDocumentTitle(title);
+  }, [order]);
   const [error, setError] = useState("");
   const [receiptMsg, setReceiptMsg] = useState("");
   const [downloadingReceipt, setDownloadingReceipt] = useState(false);
@@ -277,6 +286,10 @@ function CheckoutSuccessPage() {
   const accent = branding.theme.accent || BLOCKTICKETS_NAVY;
 
   const orderFees = resolveCompletedOrderFees(order);
+  const itemizedFeeRows = (() => {
+    const breakdown = orderPrimaryFeeBreakdown(order);
+    return breakdown ? primaryTicketFeeSummaryRows(breakdown) : null;
+  })();
   const flexVoucherCount = flexPackVoucherCount(
     order?.flex_pack?.gameTickets ?? order?.vouchers?.length,
   );
@@ -552,26 +565,38 @@ function CheckoutSuccessPage() {
                 Order summary
               </div>
               <div className="flex flex-col gap-2.5">
-                <SummaryRow
-                  label="Subtotal"
-                  value={formatCurrency(orderFees.subtotal)}
-                />
-                <SummaryRow label="Tax" value={formatCurrency(orderFees.tax)} />
-                <SummaryRow
-                  label="Processing Fee"
-                  value={formatCurrency(orderFees.processingFee)}
-                />
-                <SummaryRow
-                  label="Service Fee"
-                  value={formatCurrency(orderFees.serviceFee)}
-                />
-                {orderFees.customFeeLines.map((line) => (
-                  <SummaryRow
-                    key={`${line.name}-${line.amount}`}
-                    label={line.name}
-                    value={formatCurrency(line.amount)}
-                  />
-                ))}
+                {itemizedFeeRows ? (
+                  itemizedFeeRows.map((row) => (
+                    <SummaryRow
+                      key={row.label}
+                      label={row.label}
+                      value={formatCurrency(row.amount)}
+                    />
+                  ))
+                ) : (
+                  <>
+                    <SummaryRow
+                      label="Subtotal"
+                      value={formatCurrency(orderFees.subtotal)}
+                    />
+                    <SummaryRow label="Tax" value={formatCurrency(orderFees.tax)} />
+                    <SummaryRow
+                      label="Processing Fee"
+                      value={formatCurrency(orderFees.processingFee)}
+                    />
+                    <SummaryRow
+                      label="Service Fee"
+                      value={formatCurrency(orderFees.serviceFee)}
+                    />
+                    {orderFees.customFeeLines.map((line) => (
+                      <SummaryRow
+                        key={`${line.name}-${line.amount}`}
+                        label={line.name}
+                        value={formatCurrency(line.amount)}
+                      />
+                    ))}
+                  </>
+                )}
                 {order.discountApplied ? (
                   <SummaryRow
                     label={promoSummaryLabel(completedOrderPromoName(order))}

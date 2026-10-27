@@ -1,5 +1,7 @@
+import { walletSectionTabTitle } from "@/lib/seo";
+
 export const metadata = {
-  title: "My Tickets — NM State Season Tickets | Blocktickets",
+  title: walletSectionTabTitle("events"),
 };
 
 export default function MyTicketsPage() {

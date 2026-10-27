@@ -7,10 +7,12 @@ import {
   DEMO_ORGS,
   demoBrowseVenues,
   demoFlexPack,
+  demoFlexPackTaxableOrganization,
   demoSeasonPackage,
   demoVenueEvents,
   demoVenueUpcomingEvents,
 } from "@/lib/demo/fixtures";
+import { flexPackDisplayPrice } from "@/lib/flexPackDisplay";
 import { eventPurchasePath, formatCurrency, imageUrl } from "@/lib/helpers";
 import {
   eventFromPriceLabel,
@@ -1391,6 +1393,37 @@ describe("team page flex packs", () => {
       screen.getByRole("link", { name: new RegExp(pack.name, "i") }),
     ).toHaveAttribute("href", `/${icedogs.slug}/flex-pack/${pack.uuid}/`);
     expect(screen.queryByText(/taxes and fees included/i)).not.toBeInTheDocument();
+  });
+
+  it("splits the shown price across the vouchers", async () => {
+    const pack = demoFlexPack({
+      price: 79,
+      gameTickets: 7,
+      organization: demoFlexPackTaxableOrganization(),
+    });
+    render(
+      <ClientProfile
+        slug={icedogs.slug}
+        initialData={{
+          organization: icedogs,
+          events: icedogsEvents,
+          venues: icedogs.venues,
+          flexPacks: [pack],
+        }}
+      />,
+    );
+
+    await userEvent.click(screen.getByRole("button", { name: /flex packages/i }));
+
+    expect(
+      screen.getByText(formatCurrency(flexPackDisplayPrice(pack))),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        `${formatCurrency(flexPackDisplayPrice(pack) / pack.gameTickets)} each`,
+      ),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(formatCurrency(pack.price))).not.toBeInTheDocument();
   });
 
   it("shows an empty flex packages tab when the org has none", async () => {

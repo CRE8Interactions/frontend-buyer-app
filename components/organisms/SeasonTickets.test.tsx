@@ -22,6 +22,7 @@ import {
   demoLinkedBankAccount,
 } from "@/lib/demo/fixtures";
 import moment from "moment-timezone";
+import { walletSectionTabTitle } from "@/lib/seo";
 import { googleMapsDirectionsUrl } from "@/lib/venueLocation";
 import { eventDoorsIso, formatDoorsTime, formatEventWhen } from "@/lib/helpers";
 import { buildAccessPassSummaries, eventWhenLabel, seatLabel } from "@/lib/wallet";
@@ -5255,10 +5256,10 @@ describe("SeasonTickets section routes", () => {
   });
 
   it.each([
-    ["/wallet/my-tickets/", "My tickets", /upcoming/i, /tickets you buy or receive will show up here/i],
-    ["/wallet/my-transfers/", "Transfers", /sent/i, /no transfers sent/i],
-    ["/wallet/my-listings/", "Listings", /^active$/i, /no active listings/i],
-  ])("opens %s immediately and loads the list in place", async (pathname, heading, chrome, readyCopy) => {
+    ["/wallet/my-tickets/", "My tickets", /upcoming/i, /tickets you buy or receive will show up here/i, walletSectionTabTitle("events")],
+    ["/wallet/my-transfers/", "Transfers", /sent/i, /no transfers sent/i, walletSectionTabTitle("listings")],
+    ["/wallet/my-listings/", "Listings", /^active$/i, /no active listings/i, walletSectionTabTitle("resale")],
+  ])("opens %s immediately and loads the list in place", async (pathname, heading, chrome, readyCopy, tabTitle) => {
     navigationMocks.pathname = pathname;
     mockedGetMyEvents.mockReset();
     mockedGetMySentTransfers.mockReset();
@@ -5280,6 +5281,7 @@ describe("SeasonTickets section routes", () => {
     expect(
       await screen.findByRole("heading", { name: heading, level: 1 }),
     ).toBeInTheDocument();
+    expect(document.title).toBe(tabTitle);
     expect(screen.getByText(chrome)).toBeInTheDocument();
     expect(screen.getByLabelText("Loading tickets")).toBeInTheDocument();
     expect(screen.queryByText("Loading your tickets…")).not.toBeInTheDocument();
@@ -6015,6 +6017,7 @@ describe("SeasonTickets routed event screen", { timeout: 20_000 }, () => {
     expect(
       await screen.findByRole("heading", { name: splitHeroEvent.name }),
     ).toBeInTheDocument();
+    expect(document.title).toBe(`${splitHeroEvent.name} | Blocktickets`);
     expect(await screen.findByRole("link", { name: /All tickets/i })).toBeInTheDocument();
     expect(screen.queryByLabelText("Loading tickets")).not.toBeInTheDocument();
   });

@@ -1,5 +1,7 @@
+import { walletSectionTabTitle } from "@/lib/seo";
+
 export const metadata = {
-  title: "Listings — My Wallet | Blocktickets",
+  title: walletSectionTabTitle("resale"),
 };
 
 export default function MyListingsPage() {
