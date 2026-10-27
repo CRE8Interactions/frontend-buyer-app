@@ -667,14 +667,15 @@ export function checkoutIncludedPriceBreakdown(cart?: {
 }
 
 export type CheckoutTaxLine = {
-  label: "Tax" | "Tax (included)";
+  label: "Tax";
   amount: number;
 };
 
 /**
  * Checkout tax row, matching the legacy TicketInformation breakdown: only
  * cart.totalTax is charged on top; cart.salesTax is ignored for display.
- * Included tax is displayed only and is not added to the total.
+ * Tax already inside the ticket price is still listed as Tax and is not
+ * added to the total.
  */
 export function checkoutTaxLine(cart?: {
   totalTax?: number;
@@ -686,8 +687,7 @@ export function checkoutTaxLine(cart?: {
   const additive = positiveTax(cart?.totalTax);
   if (additive > 0) return { label: "Tax", amount: additive };
   const included = sumIncludedSalesTax(cart?.tickets, cart?.am_pricing_objects);
-  if (included > 0) return { label: "Tax (included)", amount: included };
-  return { label: "Tax", amount: 0 };
+  return { label: "Tax", amount: included };
 }
 
 export function resolvePackageCheckoutTotals(

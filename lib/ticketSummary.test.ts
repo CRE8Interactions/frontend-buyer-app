@@ -974,7 +974,7 @@ describe("checkoutTaxLine", () => {
         totalTax: 0,
         salesTax: 3.5,
       }),
-    ).toEqual({ label: "Tax (included)", amount: 1.7 });
+    ).toEqual({ label: "Tax", amount: 1.7 });
   });
 
   it("shows a $0.00 Tax row for a flex pack and ignores cart.salesTax like legacy", () => {
