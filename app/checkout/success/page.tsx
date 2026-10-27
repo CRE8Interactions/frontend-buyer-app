@@ -50,7 +50,7 @@ import {
   flexPackSeasonLine,
   flexPackVoucherCount,
 } from "@/lib/flexPackDisplay";
-import { purchaseTabTitle } from "@/lib/seo";
+import { holdDocumentTitle, purchaseTabTitle } from "@/lib/seo";
 import { walletSectionHref } from "@/lib/walletNav";
 import {
   formatVenueLocationFromVenue,
@@ -160,11 +160,7 @@ function CheckoutSuccessPage() {
   useEffect(() => {
     const title = purchaseTabTitle(order);
     if (!title) return;
-    const previous = document.title;
-    document.title = title;
-    return () => {
-      if (document.title === title) document.title = previous;
-    };
+    return holdDocumentTitle(title);
   }, [order]);
   const [error, setError] = useState("");
   const [receiptMsg, setReceiptMsg] = useState("");

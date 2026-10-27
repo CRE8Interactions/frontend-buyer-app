@@ -126,6 +126,7 @@ describe("AccessPassDetailClient login redirect", () => {
     expect(
       await screen.findByRole("heading", { name: pass.name }),
     ).toBeInTheDocument();
+    expect(document.title).toBe(`${pass.name} | Blocktickets`);
     await user.click(screen.getByRole("button", { name: /log in to buy/i }));
 
     expect(screen.queryByRole("heading", { name: pass.name })).not.toBeInTheDocument();

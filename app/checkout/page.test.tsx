@@ -983,7 +983,7 @@ describe("Checkout page", { timeout: 20_000 }, () => {
     expect(document.title).toBe(purchaseTabTitle(cart));
   });
 
-  it("shows included tax on a single event without listing fees or changing the total", async () => {
+  it("lists included tax as a Tax row without listing fees or changing the total", async () => {
     const base = demoCheckoutCart({ ticketCount: 2 });
     const perTicket = {
       taxPerTicket: 1.4,
@@ -1001,14 +1001,15 @@ describe("Checkout page", { timeout: 20_000 }, () => {
     render(<CheckoutPageRoute />);
 
     expect(
-      await screen.findByText(
-        `Includes ${formatCurrency(perTicket.taxPerTicket * cart.tickets.length)} tax`,
-      ),
-    ).toBeInTheDocument();
+      (await screen.findByText("Tax")).parentElement,
+    ).toHaveTextContent(
+      formatCurrency(perTicket.taxPerTicket * cart.tickets.length),
+    );
     expect(screen.getByText("Total").parentElement).toHaveTextContent(
       formatCurrency(cart.total),
     );
     expect(screen.queryByText("Tax (included)")).not.toBeInTheDocument();
+    expect(screen.queryByText(/includes .* tax/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/processing fee/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/service fee/i)).not.toBeInTheDocument();
   });
@@ -1032,11 +1033,11 @@ describe("Checkout page", { timeout: 20_000 }, () => {
         name: /where should we send your tickets/i,
       }),
     ).toBeInTheDocument();
-    expect(
-      screen.getByText(
-        `Includes ${formatCurrency(taxPerTicket * cart.tickets.length)} tax`,
-      ),
-    ).toBeInTheDocument();
+    expect(screen.getByText("Tax").parentElement).toHaveTextContent(
+      formatCurrency(taxPerTicket * cart.tickets.length),
+    );
+    expect(screen.queryByText("Tax (included)")).not.toBeInTheDocument();
+    expect(screen.queryByText(/includes .* tax/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/processing fee/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/service fee/i)).not.toBeInTheDocument();
   });

@@ -1,5 +1,7 @@
+import { walletSectionTabTitle } from "@/lib/seo";
+
 export const metadata = {
-  title: "Giving — My Wallet | Blocktickets",
+  title: walletSectionTabTitle("giving"),
 };
 
 export default function GivingPage() {

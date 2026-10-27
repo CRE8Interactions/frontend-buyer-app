@@ -221,6 +221,7 @@ import {
   phoneWalletTheme,
   type PhoneWalletKind,
 } from "@/lib/phoneWallet";
+import { walletViewTabTitle } from "@/lib/seo";
 import {
   WALLET_NAV,
   walletSectionFromPath,
@@ -6965,6 +6966,21 @@ export default function SeasonTickets({
       </div>
     );
   };
+
+  const walletTabTitle = walletViewTabTitle({
+    section: displaySection,
+    accessPass: showingAccessPass ? routedAccessPass : null,
+    seasonPackage: showingSeasonPackage ? selectedSeasonPackage : null,
+    flexPack: showingPackage ? { name: selectedFlexPack?.name } : null,
+    event: showingEventDetail ? ev.event : null,
+  });
+  useEffect(() => {
+    const previous = document.title;
+    document.title = walletTabTitle;
+    return () => {
+      if (document.title === walletTabTitle) document.title = previous;
+    };
+  }, [walletTabTitle]);
 
   return (
     <div className="shopper-page" style={{ width: "100%", maxWidth: "100%", minHeight: "100vh", color: INK, background: "#eef1f8", backgroundImage: "radial-gradient(120% 80% at 50% -10%, #ffffff 0%, #f5f7fc 42%, #e9edf6 100%)", fontFamily: "'Geist', system-ui, -apple-system, sans-serif", WebkitFontSmoothing: "antialiased", ...(showingAccessPass ? { display: "flex", flexDirection: "column", height: "100dvh", maxHeight: "100dvh", overflow: "hidden" } : {}) }}>

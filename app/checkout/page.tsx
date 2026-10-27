@@ -22,7 +22,7 @@ import { BrandedLoader } from "@/components/molecules/RouteLoader";
 import SeatViewImage from "@/components/molecules/SeatViewImage";
 import SectionLocatorThumb from "@/components/molecules/SectionLocatorThumb";
 import { BLOCKTICKETS_NAVY, type BrandingOrganization } from "@/lib/branding";
-import { purchaseTabTitle } from "@/lib/seo";
+import { holdDocumentTitle, purchaseTabTitle } from "@/lib/seo";
 import {
   cachedBrandingForCheckout,
   checkoutBrandingFromCart,
@@ -623,11 +623,7 @@ function CheckoutPage() {
   useEffect(() => {
     const title = purchaseTabTitle(cart);
     if (!title) return;
-    const previous = document.title;
-    document.title = title;
-    return () => {
-      if (document.title === title) document.title = previous;
-    };
+    return holdDocumentTitle(title);
   }, [cart]);
   const [event, setEvent] = useState<CartData["event"]>(null);
   const [seatLocation, setSeatLocation] = useState<{
@@ -1283,8 +1279,6 @@ function CheckoutPage() {
         ] as const
       ).filter(([, amount]) => amount > 0)
     : [];
-  const singleEventAllIn =
-    singleEvent && !primaryFeeBreakdown && taxLine.label === "Tax (included)";
 
   const elementsOptions = useMemo(
     () =>
@@ -1766,11 +1760,6 @@ function CheckoutPage() {
                               </span>
                             </div>
                           )}
-                      {singleEventAllIn ? (
-                        <p className="text-[13px] leading-tight text-[#4a5567]">
-                          Includes {formatCurrency(taxLine.amount)} tax
-                        </p>
-                      ) : null}
                     </div>
                     {primaryFeeBreakdown ? (
                       <>
@@ -1792,7 +1781,7 @@ function CheckoutPage() {
                           </span>
                         </div>
                       </>
-                    ) : singleEventAllIn ? null : (
+                    ) : (
                       <div className="flex justify-between gap-3">
                         <span>{taxLine.label}</span>
                         <span className="tabular-nums text-[#051b35]">

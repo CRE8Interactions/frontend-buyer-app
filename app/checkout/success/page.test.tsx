@@ -210,11 +210,12 @@ describe("Checkout success receipt", () => {
     render(<CheckoutSuccessPageRoute />);
     expect(await screen.findByText(/Arrive early\./)).toBeInTheDocument();
     expect(screen.queryByText(/^Doors /)).not.toBeInTheDocument();
-    expect(document.title).toBe(
-      purchaseTabTitle({
-        event: { ...cart.event, doorsOpen: undefined, realDoorsOpen: undefined },
-      }),
-    );
+    const title = purchaseTabTitle({
+      event: { ...cart.event, doorsOpen: undefined, realDoorsOpen: undefined },
+    });
+    expect(document.title).toBe(title);
+    document.title = "Blocktickets — Sports-first ticketing";
+    await waitFor(() => expect(document.title).toBe(title));
   });
 
   it("falls back to the seat line when the order has no offer name", async () => {
