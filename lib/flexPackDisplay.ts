@@ -101,6 +101,7 @@ export type FlexPackQuoteInput = {
   customFees?: unknown;
   custom_fees?: unknown;
   organization?: {
+    name?: string;
     isTaxable?: unknown;
     taxRate?: { estimatedCombinedRate?: unknown } | null;
     tax_rate?: { estimatedCombinedRate?: unknown } | null;

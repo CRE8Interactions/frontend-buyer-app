@@ -158,6 +158,7 @@ type FlexPackItem = {
   offerColor?: string;
   venue?: { timezone?: string };
   organization?: {
+    name?: string;
     isTaxable?: unknown;
     taxRate?: { estimatedCombinedRate?: unknown } | null;
     tax_rate?: { estimatedCombinedRate?: unknown } | null;

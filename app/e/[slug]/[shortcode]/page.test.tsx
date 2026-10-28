@@ -275,7 +275,7 @@ describe("GA event page tiers", () => {
         event: { ...detail.event, promotionalDescription: `  ${promo}  ` },
       },
     } as never);
-    inventory({ soldout: false, ...demoTicketGroups() });
+    inventory({ ...demoTicketGroups(), soldout: false });
 
     render(<GAEventRoute />);
 
@@ -287,7 +287,7 @@ describe("GA event page tiers", () => {
     mockedGetEvent.mockResolvedValue({
       data: { ...detail, event: { ...detail.event, promotionalDescription: "   " } },
     } as never);
-    inventory({ soldout: false, ...demoTicketGroups() });
+    inventory({ ...demoTicketGroups(), soldout: false });
 
     render(<GAEventRoute />);
 
