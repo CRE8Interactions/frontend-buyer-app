@@ -25,7 +25,11 @@ import {
   organizationShareCopy,
   packageOpenGraph,
   packagePageMetadata,
+  packageTabTitle,
+  purchaseTabTitle,
   pageMetadata,
+  walletSectionTabTitle,
+  walletViewTabTitle,
   venueOpenGraph,
   waitingRoomTabTitle,
 } from "@/lib/seo";
@@ -159,6 +163,98 @@ describe("package open graph", () => {
 
     expect(meta.title).toBe(`${pkg.name} | Season Tickets`);
     expect(meta.description).toBe(`Buy season tickets for ${pkg.name}.`);
+  });
+});
+
+describe("purchase tab title", () => {
+  it("uses the event title for a ticket purchase", () => {
+    const event = demoEvent();
+
+    expect(purchaseTabTitle({ event })).toBe(eventOpenGraph(event).title);
+  });
+
+  it("uses Buy and the product name for a package, flex pack, or access pass", () => {
+    const pkg = demoSeasonPackage();
+    const pack = demoFlexPack();
+    const pass = demoAccessPassTemplate();
+
+    expect(purchaseTabTitle({ event: demoEvent(), package: pkg })).toBe(
+      `Buy ${pkg.name} | Season Tickets`,
+    );
+    expect(purchaseTabTitle({ flex_pack: pack })).toBe(
+      `Buy ${pack.name} | Blocktickets`,
+    );
+    expect(purchaseTabTitle({ access_pass_template: pass })).toBe(
+      `Buy ${pass.name} | Blocktickets`,
+    );
+    expect(packageTabTitle("  ")).toBe("");
+  });
+
+  it("leaves the tab alone until the purchase is known", () => {
+    expect(purchaseTabTitle(null)).toBe("");
+    expect(purchaseTabTitle({})).toBe("");
+  });
+
+  it("dates the event title from a venue timezone object", () => {
+    const event = {
+      ...demoEvent(),
+      start: "2026-09-11T04:30:00.000Z",
+      venue: { ...demoEvent().venue, timezone: { iana: "America/Denver" } },
+    };
+
+    expect(purchaseTabTitle({ event })).toContain("on Sep 10");
+  });
+
+  it("dates the event title in Eastern time when the venue timezone cannot be read", () => {
+    const event = {
+      ...demoEvent(),
+      start: "2026-09-11T04:30:00.000Z",
+      venue: { ...demoEvent().venue, timezone: {} },
+    };
+
+    expect(purchaseTabTitle({ event })).toContain("on Sep 11");
+  });
+});
+
+describe("wallet tab titles", () => {
+  it("uses the legacy page names for each wallet section", () => {
+    expect(walletSectionTabTitle("events")).toBe("My tickets | Blocktickets");
+    expect(walletSectionTabTitle("listings")).toBe("My transfers | Blocktickets");
+    expect(walletSectionTabTitle("resale")).toBe("My listings | Blocktickets");
+    expect(walletSectionTabTitle("giving")).toBe("Giving | Blocktickets");
+    expect(walletSectionTabTitle("profile")).toBe("Profile | Blocktickets");
+  });
+
+  it("uses the event, package, flex pack, and access pass titles on a detail page", () => {
+    const event = demoEvent();
+    const pack = demoFlexPack();
+    const pass = demoAccessPassTemplate();
+    const pkg = demoSeasonPackage();
+
+    expect(walletViewTabTitle({ section: "events", event })).toBe(
+      `${event.name} | Blocktickets`,
+    );
+    expect(
+      walletViewTabTitle({ section: "events", seasonPackage: pkg }),
+    ).toBe(`${pkg.name} | Season Tickets`);
+    expect(walletViewTabTitle({ section: "events", flexPack: pack })).toBe(
+      `${pack.name} | Blocktickets`,
+    );
+    expect(walletViewTabTitle({ section: "events", accessPass: pass })).toBe(
+      `${pass.name} | Blocktickets`,
+    );
+  });
+
+  it("keeps the section title until a detail name is known", () => {
+    expect(walletViewTabTitle({ section: "listings" })).toBe(
+      "My transfers | Blocktickets",
+    );
+    expect(
+      walletViewTabTitle({ section: "events", event: { name: "" } }),
+    ).toBe("My tickets | Blocktickets");
+    expect(walletViewTabTitle({ section: "events", accessPass: {} })).toBe(
+      "Access Pass | Blocktickets",
+    );
   });
 });
 

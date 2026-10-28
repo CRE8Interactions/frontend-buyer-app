@@ -13,7 +13,7 @@ import {
   getSeatmapByShortCode,
   getTicketGroups,
 } from "@/lib/api";
-import { brandingToTicketingTheme, type OrgBranding } from "@/lib/branding";
+import { brandingToTicketingTheme, resolveBrandLogo, resolvePrimaryAttractionImage, type OrgBranding } from "@/lib/branding";
 import { cacheEventBranding } from "@/lib/orgBrandingCache";
 import { rememberTrackingCode } from "@/lib/trackingLink";
 import { isSportingEvent } from "@/lib/eventCategory";
@@ -91,7 +91,8 @@ type EventData = {
   attractions?: Array<{
     name?: string;
     primary?: boolean;
-    artwork?: { url?: string };
+    order?: number;
+    artwork?: ApiImage;
     images?: ApiImage[];
   }>;
   branding?: OrgBranding | null;
@@ -167,6 +168,8 @@ function toTicketingData(
   const listings = groupsToListings(groups, listingOpts);
   const quantityCatalog = groupsToListings(catalogGroups, listingOpts);
   const theme = brandingToTicketingTheme(ev, ev.organization, imageOf(ev.image));
+  const attractionImage = resolvePrimaryAttractionImage(ev);
+  const brandLogo = resolveBrandLogo(ev, ev.organization);
 
   return {
     ...theme,
@@ -183,6 +186,9 @@ function toTicketingData(
     venueCityState,
     mapsQuery: `${venueName} ${city} ${state}`.trim(),
     logoSrc: imageOf(ev.image) || theme.logoSrc,
+    headerLogoSrc: attractionImage?.url || brandLogo || theme.logoSrc,
+    headerLogoAlt: attractionImage?.name || orgLabel || ev.name || "Event",
+    headerLogoIsPhoto: Boolean(attractionImage),
     homeLogoSrc: matchup.homeLogoSrc,
     awayLogoSrc: matchup.awayLogoSrc,
     orgHref: ev.organization?.slug ? `/${ev.organization.slug}/` : undefined,

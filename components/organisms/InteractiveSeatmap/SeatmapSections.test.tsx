@@ -5,6 +5,7 @@ import {
   DEMO_SEATED_TICKET_GROUPS,
   DEMO_SECTION_FILL,
   demoSeatmapMapping,
+  demoSeasonPackage,
   demoTicketGroups,
 } from "@/lib/demo/fixtures";
 import {
@@ -628,11 +629,12 @@ describe("SeatmapSeat", () => {
       item.seatIds?.includes("s1"),
     );
     expect(group).toBeTruthy();
+    const offer = { ...group!, sectionName: "Section 108" };
     window.innerWidth = 390;
     useSeatmapStore.setState({
       data: mapping,
-      seatLookupTable: { s1: group! },
-      seatOffersLookupTable: { s1: [group!] },
+      seatLookupTable: { s1: offer },
+      seatOffersLookupTable: { s1: [offer] },
       selectedFromMap: [],
     });
     useFiltersStore.setState({ eventTicketLimit: null });
@@ -650,6 +652,8 @@ describe("SeatmapSeat", () => {
     expect(screen.getByText("Field Club")).toBeInTheDocument();
     expect(screen.getByText("$33.59")).toHaveClass("text-[26px]");
     expect(screen.getByText("Section")).toBeInTheDocument();
+    expect(screen.getByText("108")).toBeInTheDocument();
+    expect(screen.queryByText("Section 108")).not.toBeInTheDocument();
     expect(screen.getByText("Row")).toBeInTheDocument();
     expect(screen.getByText("Seat")).toBeInTheDocument();
     expect(screen.getByText("1")).toBeInTheDocument();
@@ -1781,6 +1785,81 @@ describe("SeatmapTooltip GA stepper", () => {
       />,
     );
   }
+
+  it("titles a GA section with the offer section name", () => {
+    useSeatmapStore.setState({
+      data: {
+        sections: {
+          [DEMO_GA_SECTION_ID]: {
+            sectionId: DEMO_GA_SECTION_ID,
+            sectionNumber: "GA",
+          },
+        },
+      },
+      sectionLookupTable: { [DEMO_GA_SECTION_ID]: [ga] },
+    });
+    render(
+      <SeatmapTooltip
+        target={{ kind: "section", sectionId: DEMO_GA_SECTION_ID, x: 20, y: 20 }}
+        onClose={() => {}}
+      />,
+    );
+
+    expect(screen.getByText("Section")).toBeInTheDocument();
+    expect(screen.getByText(String(ga.sectionName))).toBeInTheDocument();
+    expect(screen.queryByText("GA")).not.toBeInTheDocument();
+    expect(screen.queryByText(/^General admission$/)).not.toBeInTheDocument();
+  });
+
+  it("titles a GA section Unknown when the offer has no section name", () => {
+    useSeatmapStore.setState({
+      data: {
+        sections: {
+          [DEMO_GA_SECTION_ID]: {
+            sectionId: DEMO_GA_SECTION_ID,
+            sectionNumber: "GA",
+          },
+        },
+      },
+      sectionLookupTable: {
+        [DEMO_GA_SECTION_ID]: [{ ...ga, sectionName: undefined }],
+      },
+    });
+    render(
+      <SeatmapTooltip
+        target={{ kind: "section", sectionId: DEMO_GA_SECTION_ID, x: 20, y: 20 }}
+        onClose={() => {}}
+      />,
+    );
+
+    expect(screen.getByText("Unknown")).toBeInTheDocument();
+    expect(screen.queryByText("GA")).not.toBeInTheDocument();
+  });
+
+  it("names a package GA row with the package name instead of GA", () => {
+    const pkg = demoSeasonPackage();
+    const { offer: _offer, ...withoutOffer } = ga;
+    useSeatmapStore.setState({
+      sectionLookupTable: {
+        [DEMO_GA_SECTION_ID]: [
+          {
+            ...withoutOffer,
+            sectionNumber: "GA",
+            package: { name: pkg.name },
+          },
+        ],
+      },
+    });
+    render(
+      <SeatmapTooltip
+        target={{ kind: "section", sectionId: DEMO_GA_SECTION_ID, x: 20, y: 20 }}
+        onClose={() => {}}
+      />,
+    );
+
+    expect(screen.getByText(pkg.name)).toBeInTheDocument();
+    expect(screen.queryByText("GA")).not.toBeInTheDocument();
+  });
 
   it("steps an offer by min, max, and multipleOf and disables +/- at the bounds", () => {
     renderGaTooltip({ minQuantity: 2, maxQuantity: 6, multipleOf: 2 }, "offer");

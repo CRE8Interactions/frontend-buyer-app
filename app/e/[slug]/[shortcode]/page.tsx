@@ -12,7 +12,6 @@ import { rememberTrackingCode } from "@/lib/trackingLink";
 import { brandingToTicketingTheme, type OrgBranding } from "@/lib/branding";
 import { cacheEventBranding } from "@/lib/orgBrandingCache";
 import { isSportingEvent } from "@/lib/eventCategory";
-import { isEventSoldOut } from "@/lib/eventSoldOut";
 import { eventPromotionalCopy } from "@/lib/promotionalDescription";
 import {
   eventAboutText,
@@ -241,7 +240,7 @@ function GAEvent() {
           });
           if (!cancelled) {
             setGroups((gr.data?.ticketGroups || []) as RawGroup[]);
-            setSoldOut(Boolean(gr.data?.soldout) || isEventSoldOut(event));
+            setSoldOut(Boolean(gr.data?.soldout));
             setScheduled(Boolean(gr.data?.isScheduled));
             setScheduledTime(gr.data?.scheduledTime || null);
           }

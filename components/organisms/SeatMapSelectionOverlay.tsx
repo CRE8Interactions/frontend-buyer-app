@@ -36,6 +36,26 @@ import useSeatmapStore from "@/stores/seatmapStore";
 
 const NAVY = "#051b35";
 
+/** A bare "GA" section number is the map id. Shoppers should see the section name. */
+function gaPlaceName(group: {
+  sectionName?: string | number | null;
+  sectionNumber?: string | number | null;
+}): string {
+  const name = String(group.sectionName ?? "").trim();
+  if (name && !/^ga$/i.test(name)) return sectionDisplayValue(name);
+  const number = String(group.sectionNumber ?? "").trim();
+  if (number && !/^ga$/i.test(number)) return sectionDisplayValue(number);
+  return sectionDisplayValue(name || number) || "GA";
+}
+
+function gaDetailHeading(
+  group: NonNullable<Parameters<typeof gaTicketSeatLine>[0]>,
+): string {
+  const line = gaTicketSeatLine(group);
+  if (!/^ga$/i.test(line.trim())) return line;
+  return gaPlaceName(group);
+}
+
 /**
  * A seatmap can legitimately ship without a background image, so stop waiting
  * rather than pinning the loader open forever. Geometry is never waived —
@@ -1017,7 +1037,7 @@ function SeatMapSelectionOverlay({
                           }}
                         >
                           {mapDetailGroup.GA
-                            ? gaTicketSeatLine(mapDetailGroup)
+                            ? gaDetailHeading(mapDetailGroup)
                             : `${mapSectionHeading(mapDetailSection)} · Row ${mapDetailGroup.rowNumber || mapDetailGroup.rowName || "—"} · Seat ${seatDisplayValue(mapDetailGroup.seatNumber) || "—"}`}
                         </div>
                         <AccessibleSeatingBadge source={mapDetailGroup} />
@@ -1230,10 +1250,11 @@ function SeatMapSelectionOverlay({
                       >
                         {selectionCards.map(({ group: g, groupIndex, unitIndex }) => {
                           const isGA = Boolean(g.GA || g.generalAdmission);
-                          const section =
-                            sectionDisplayValue(
-                              g.sectionNumber || g.sectionName,
-                            ) || "GA";
+                          const section = isGA
+                            ? gaPlaceName(g)
+                            : sectionDisplayValue(
+                                g.sectionNumber || g.sectionName,
+                              ) || "GA";
                           const row = g.rowNumber || g.rowName || "—";
                           const seat = seatDisplayValue(g.seatNumber) || "—";
                           const offer = selectionOfferName(g);

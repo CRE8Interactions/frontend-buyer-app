@@ -91,3 +91,228 @@ export function flexPackSeasonLine(
   );
   return label ? `${label} Season · any home game` : "Any home game";
 }
+
+export const FLEX_PACK_FEES_AT_CHECKOUT = "Fees added at checkout";
+export const FLEX_PACK_INCLUDES_TAXES_AND_FEES = "Taxes and fees included";
+
+export type FlexPackQuoteInput = {
+  price?: unknown;
+  gameTickets?: unknown;
+  customFees?: unknown;
+  custom_fees?: unknown;
+  organization?: {
+    name?: string;
+    isTaxable?: unknown;
+    taxRate?: { estimatedCombinedRate?: unknown } | null;
+    tax_rate?: { estimatedCombinedRate?: unknown } | null;
+    fee_structure?: {
+      stripeCharge?: unknown;
+      stripeServicePecentage?: unknown;
+    } | null;
+    feeStructure?: {
+      stripeCharge?: unknown;
+      stripeServicePecentage?: unknown;
+    } | null;
+  } | null;
+} | null | undefined;
+
+export type FlexPackPurchaseQuote = {
+  basePrice: number;
+  voucherFee: number;
+  subtotal: number;
+  salesTax: number;
+  processingFee: number;
+  customFeeAmount: number;
+  total: number;
+  totalTax: number;
+  buyerTotal: number;
+  /** True when org tax rate and card-fee settings were on the pack. */
+  pricedWithTaxesAndFees: boolean;
+};
+
+function roundMoney(value: unknown): number {
+  const n = Number(value);
+  if (!Number.isFinite(n)) return 0;
+  return Math.round(n * 100) / 100;
+}
+
+/** Matches flex-pack checkout, which rounds card math with toFixed. */
+function roundTo2(value: unknown): number {
+  const n = Number(value || 0);
+  if (!Number.isFinite(n)) return 0;
+  return Number(n.toFixed(2));
+}
+
+function normalizeRate(value: unknown): number {
+  const numeric = Number(value || 0);
+  if (!Number.isFinite(numeric)) return 0;
+  return numeric > 1 ? numeric / 100 : numeric;
+}
+
+function recordAttributes(value: unknown): Record<string, unknown> | null {
+  if (!value || typeof value !== "object") return null;
+  const record = value as Record<string, unknown>;
+  const attributes = record.attributes;
+  if (attributes && typeof attributes === "object") {
+    return { ...record, ...(attributes as Record<string, unknown>) };
+  }
+  return record;
+}
+
+function parseFlexPackPrice(flexPack: FlexPackQuoteInput): number {
+  const raw = flexPack?.price;
+  if (raw === null || raw === undefined || raw === "") return 0;
+  const parsed = Number(raw);
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function isCompFlexPack(flexPack: FlexPackQuoteInput): boolean {
+  return parseFlexPackPrice(flexPack) === 0;
+}
+
+function readCustomFees(flexPack: FlexPackQuoteInput): Array<{
+  id: number;
+  name: string;
+  option: string;
+  feeAmount: number;
+}> {
+  const rawSource = flexPack?.customFees ?? flexPack?.custom_fees;
+  const raw = Array.isArray(rawSource) ? rawSource : [];
+  return raw.flatMap((fee) => {
+    const attrs = recordAttributes(fee);
+    if (!attrs) return [];
+    const id = Number(attrs.id);
+    const feeAmount = Number(attrs.feeAmount ?? attrs.fee_amount);
+    if (!Number.isFinite(id) || id <= 0) return [];
+    if (!Number.isFinite(feeAmount) || feeAmount <= 0) return [];
+    const name = String(attrs.name || "Custom fee").trim() || "Custom fee";
+    return [
+      {
+        id,
+        name,
+        option: String(attrs.option || "amount").toLowerCase(),
+        feeAmount,
+      },
+    ];
+  });
+}
+
+function customFeeLineAmount(
+  fee: { option: string; feeAmount: number },
+  percentBase: number,
+): number {
+  if (fee.option === "percent") {
+    return roundMoney((percentBase * fee.feeAmount) / 100);
+  }
+  return roundMoney(fee.feeAmount);
+}
+
+/**
+ * Fan charge for a flex pack: pack price, $1 per voucher, sales tax on that
+ * subtotal, then card processing. Custom fees are added once and processing
+ * is recalculated. `buyerTotal` is what the fan pays.
+ */
+export function quoteFlexPackPurchase(
+  flexPack: FlexPackQuoteInput,
+): FlexPackPurchaseQuote {
+  const comp = isCompFlexPack(flexPack);
+  const basePrice = parseFlexPackPrice(flexPack);
+  const voucherFee = comp ? 0 : flexPackVoucherFee(Number(flexPack?.gameTickets));
+  const subtotal = roundMoney(basePrice + voucherFee);
+  const organization = recordAttributes(flexPack?.organization);
+  const taxRateRecord = recordAttributes(
+    organization?.taxRate ?? organization?.tax_rate,
+  );
+  const feeStructure = recordAttributes(
+    organization?.fee_structure ?? organization?.feeStructure,
+  );
+  const pricedWithTaxesAndFees = Boolean(taxRateRecord && feeStructure);
+  const taxRate = Number(taxRateRecord?.estimatedCombinedRate);
+  const salesTax =
+    organization?.isTaxable && !comp && Number.isFinite(taxRate)
+      ? roundTo2(subtotal * taxRate)
+      : 0;
+  const stripeCharge = Number(feeStructure?.stripeCharge || 0);
+  const stripeRate = normalizeRate(feeStructure?.stripeServicePecentage);
+  const processingFor = (amount: number) => {
+    if (comp) return 0;
+    const charge = Number(amount) || 0;
+    if (charge <= 0) return 0;
+    return roundTo2(stripeCharge + charge * stripeRate);
+  };
+  const processingBeforeCustomFees = processingFor(subtotal + salesTax);
+  const chargedBeforeCustom = roundMoney(
+    subtotal + salesTax + processingBeforeCustomFees,
+  );
+  const fees = comp || chargedBeforeCustom <= 0 ? [] : readCustomFees(flexPack);
+  const customFeeLines = fees.flatMap((fee) => {
+    const amount = customFeeLineAmount(fee, chargedBeforeCustom);
+    if (amount <= 0) return [];
+    return [{ id: fee.id, name: fee.name, amount }];
+  });
+  const customFeeAmount = roundMoney(
+    customFeeLines.reduce((sum, line) => sum + line.amount, 0),
+  );
+
+  let processingFee = processingBeforeCustomFees;
+  if (customFeeAmount > 0) {
+    const baseWithoutProcessing = roundMoney(
+      chargedBeforeCustom - processingBeforeCustomFees,
+    );
+    const chargeBase = roundMoney(baseWithoutProcessing + customFeeAmount);
+    processingFee = processingFor(chargeBase);
+  }
+
+  const total = roundMoney(subtotal + customFeeAmount);
+  const buyerTotal = roundMoney(total + salesTax + processingFee);
+
+  return {
+    basePrice,
+    voucherFee,
+    subtotal,
+    salesTax,
+    processingFee,
+    customFeeAmount,
+    total,
+    totalTax: salesTax,
+    buyerTotal,
+    pricedWithTaxesAndFees,
+  };
+}
+
+/** Pack price plus custom fees, without the per-voucher fee. */
+function flexPackPriceBeforeTaxes(flexPack: FlexPackQuoteInput): number {
+  const base = roundMoney(flexPack?.price);
+  const rawSource = flexPack?.customFees ?? flexPack?.custom_fees;
+  const raw = Array.isArray(rawSource) ? rawSource : [];
+  const extra = raw.reduce((sum, fee) => {
+    const attrs = recordAttributes(fee);
+    if (!attrs) return sum;
+    const amount = Number(attrs.feeAmount ?? attrs.fee_amount);
+    if (!Number.isFinite(amount) || amount <= 0) return sum;
+    const option = String(attrs.option || "amount").toLowerCase();
+    const dollars =
+      option === "percent" ? roundMoney((base * amount) / 100) : amount;
+    return sum + dollars;
+  }, 0);
+  return roundMoney(base + extra);
+}
+
+/** Checkout total when tax and card fees are known; otherwise pack price plus custom fees. */
+export function flexPackDisplayPrice(flexPack: FlexPackQuoteInput): number {
+  const quote = quoteFlexPackPurchase(flexPack);
+  if (quote.pricedWithTaxesAndFees) return quote.buyerTotal;
+  return flexPackPriceBeforeTaxes(flexPack);
+}
+
+export function flexPackPriceIncludesTaxesAndFees(
+  flexPack: FlexPackQuoteInput,
+): boolean {
+  return quoteFlexPackPurchase(flexPack).pricedWithTaxesAndFees;
+}
+
+export function flexPackPriceCaption(flexPack: FlexPackQuoteInput): string {
+  return flexPackPriceIncludesTaxesAndFees(flexPack)
+    ? FLEX_PACK_INCLUDES_TAXES_AND_FEES
+    : FLEX_PACK_FEES_AT_CHECKOUT;
+}

@@ -26,6 +26,7 @@ import {
   imageUrl,
   type ApiImage,
 } from "@/lib/helpers";
+import { accessPassNameTabTitle } from "@/lib/seo";
 
 type AccessPassTemplate = {
   id: number | string;
@@ -56,6 +57,16 @@ export default function AccessPassDetailClient({
   const [buying, setBuying] = useState(false);
   const [leavingForLogin, setLeavingForLogin] = useState(false);
   const leavingForLoginRef = useRef(false);
+
+  useEffect(() => {
+    const title = accessPassNameTabTitle(accessPass?.name);
+    if (!title) return;
+    const previous = document.title;
+    document.title = title;
+    return () => {
+      if (document.title === title) document.title = previous;
+    };
+  }, [accessPass?.name]);
 
   useEffect(() => {
     let cancelled = false;

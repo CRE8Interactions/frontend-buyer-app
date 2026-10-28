@@ -4,12 +4,14 @@ import { packageFromPrice } from "@/lib/eventFromPrice";
 import { flexPackVoucherFee } from "@/lib/flexPackDisplay";
 import {
   descriptionPlainText,
+  formatCurrency,
   formatEventWhen,
   type TimezoneLike,
 } from "@/lib/helpers";
 import {
   formatSeatNumberRanges,
   gaTicketSeatLine,
+  isGenericGeneralAdmissionLabel,
   seatDisplayValue,
   seatNumberDigits,
   ticketRowValue,
@@ -437,10 +439,46 @@ export function packageCartTickets(cart?: {
   tickets?: Array<Record<string, unknown>> | null;
   package_tickets?: Array<Record<string, unknown>> | null;
 } | null): Array<Record<string, unknown>> {
-  return [
-    ...(Array.isArray(cart?.tickets) ? cart.tickets : []),
-    ...(Array.isArray(cart?.package_tickets) ? cart.package_tickets : []),
-  ];
+  const tickets = Array.isArray(cart?.tickets) ? cart.tickets : [];
+  if (tickets.length > 0) return tickets;
+  return Array.isArray(cart?.package_tickets) ? cart.package_tickets : [];
+}
+
+/** Legacy package cards title a GA seat with the first ticket's section number. */
+function legacyPackageGaName(ticket: Record<string, unknown>): string {
+  const number = String(ticket.sectionNumber ?? ticket.section_number ?? "").trim();
+  if (number) return number;
+  return String(ticket.sectionName ?? ticket.section_name ?? "").trim();
+}
+
+function genericPackageGaName(value: string): boolean {
+  return !value || /^ga$/i.test(value) || isGenericGeneralAdmissionLabel(value);
+}
+
+/**
+ * One GA package seat is copied once per game. Those copies share a seat id.
+ * A priced row with no seat id is its own seat. Zero-price copies are not.
+ */
+function gaPackageAdmissionKey(
+  ticket: Record<string, unknown>,
+  amount: number,
+  blankCopy: boolean,
+): string | null {
+  const seatId = String(ticket.seatId ?? ticket.seat_id ?? "").trim();
+  if (seatId) return `seat:${seatId}`;
+  if (blankCopy || amount <= 0) return null;
+  const id = String(ticket.id ?? ticket.seatNumber ?? "").trim();
+  return id ? `id:${id}` : "id";
+}
+
+/** Prefer "General Admission" over a blank or "GA" label for the same seats. */
+function preferPackageGaName(current: string, incoming: string): string {
+  const rank = (value: string) => {
+    if (!value || /^ga$/i.test(value)) return 0;
+    if (isGenericGeneralAdmissionLabel(value)) return 1;
+    return 2;
+  };
+  return rank(incoming) > rank(current) ? incoming : current || incoming;
 }
 
 export type PackageCustomFeeLine = {
@@ -629,14 +667,15 @@ export function checkoutIncludedPriceBreakdown(cart?: {
 }
 
 export type CheckoutTaxLine = {
-  label: "Tax" | "Tax (included)";
+  label: "Tax";
   amount: number;
 };
 
 /**
  * Checkout tax row, matching the legacy TicketInformation breakdown: only
  * cart.totalTax is charged on top; cart.salesTax is ignored for display.
- * Included tax is displayed only and is not added to the total.
+ * Tax already inside the ticket price is still listed as Tax and is not
+ * added to the total.
  */
 export function checkoutTaxLine(cart?: {
   totalTax?: number;
@@ -648,8 +687,7 @@ export function checkoutTaxLine(cart?: {
   const additive = positiveTax(cart?.totalTax);
   if (additive > 0) return { label: "Tax", amount: additive };
   const included = sumIncludedSalesTax(cart?.tickets, cart?.am_pricing_objects);
-  if (included > 0) return { label: "Tax (included)", amount: included };
-  return { label: "Tax", amount: 0 };
+  return { label: "Tax", amount: included };
 }
 
 export function resolvePackageCheckoutTotals(
@@ -716,6 +754,7 @@ export function resolveFlexPackCheckoutTotals(
     totalTax?: number;
     salesTax?: number;
     flex_pack?: { price?: number; gameTickets?: number } | null;
+    packageWebsiteFeeSnapshot?: unknown;
   } | null | undefined,
 ) {
   const voucherFee = flexPackVoucherFee(cart?.flex_pack?.gameTickets);
@@ -724,8 +763,11 @@ export function resolveFlexPackCheckoutTotals(
   const packPrice = Number(cart?.flex_pack?.price || 0);
   const tax = Number(cart?.totalTax) || 0;
   const totals = resolvePackageCheckoutTotals({ ...cart, serviceFee }, packPrice);
+  const customFee = roundToCents(
+    totals.customFeeLines.reduce((sum, line) => sum + line.amount, 0),
+  );
   const total = roundToCents(
-    totals.subtotal + serviceFee + totals.processingFee + tax,
+    totals.subtotal + serviceFee + totals.processingFee + tax + customFee,
   );
   return {
     ...totals,
@@ -759,6 +801,228 @@ export type CompletedOrderFeeSource = {
 function finiteMoney(value: unknown): number | undefined {
   const amount = Number(value);
   return Number.isFinite(amount) ? amount : undefined;
+}
+
+function toCents(value: number): number {
+  return Math.round((value + Number.EPSILON) * 100);
+}
+
+function isComplimentaryTicket(ticket: Record<string, unknown>): boolean {
+  if (ticket.free === true) return true;
+  const offer = ticket.offer;
+  if (!offer || typeof offer !== "object") return false;
+  return (offer as Record<string, unknown>).freeOffer === true;
+}
+
+function primaryTicketOfferLabel(ticket: Record<string, unknown>): string {
+  return (
+    offerNameFromSource(ticket as OfferNameSource) ||
+    (typeof ticket.name === "string" && ticket.name.trim()) ||
+    "Standard Admission"
+  );
+}
+
+export type PrimaryTicketFeeGroup = {
+  label: string;
+  unitPrice: number;
+  quantity: number;
+  subtotal: number;
+};
+
+export type PrimaryTicketFeeBreakdown = {
+  groups: PrimaryTicketFeeGroup[];
+  serviceFee: number;
+  facilityFee: number;
+  salesTax: number;
+  processingFee: number;
+  chargeBackProtection: number;
+};
+
+function pricingObjectFeeParts(pricingObject: Record<string, unknown>) {
+  return {
+    ticketPrice:
+      finiteMoney(pricingObject.offerPrice) ?? finiteMoney(pricingObject.basePrice),
+    serviceFee: finiteMoney(pricingObject.serviceFee) ?? 0,
+    facilityFee:
+      finiteMoney(pricingObject.ticketFacilityFee) ??
+      finiteMoney(pricingObject.facilityFee) ??
+      0,
+    salesTax:
+      finiteMoney(pricingObject.taxPerTicket) ??
+      finiteMoney(pricingObject.salesTax) ??
+      0,
+    processingFee:
+      finiteMoney(pricingObject.paymentProcessingFee) ??
+      finiteMoney(pricingObject.estimatedPaymentProcessingFee) ??
+      0,
+    chargeBackProtection: finiteMoney(pricingObject.chargeBackProtection) ?? 0,
+  };
+}
+
+/**
+ * Split an all-in event ticket into the face price and fee lines.
+ * Returns null unless every paid ticket's parts add back up to its cost,
+ * so checkout never lists fees that would double-count the total.
+ */
+export function getPrimaryTicketFeeBreakdown(
+  tickets: unknown,
+  pricingObjects: unknown,
+): PrimaryTicketFeeBreakdown | null {
+  const rows = Array.isArray(tickets) ? tickets : [];
+  const objects = pricingObjectRecords(pricingObjects);
+  if (!rows.length || !objects.length) return null;
+
+  const groups = new Map<string, PrimaryTicketFeeGroup>();
+  const totals = {
+    serviceFee: 0,
+    facilityFee: 0,
+    salesTax: 0,
+    processingFee: 0,
+    chargeBackProtection: 0,
+  };
+  let paidCount = 0;
+
+  for (const ticket of rows) {
+    if (!ticket || typeof ticket !== "object") return null;
+    const row = ticket as Record<string, unknown>;
+    const label = primaryTicketOfferLabel(row);
+    const cost = finiteMoney(row.cost) ?? 0;
+
+    if (isComplimentaryTicket(row) || cost <= 0) {
+      const key = `${label}:0.00`;
+      const existing = groups.get(key);
+      if (existing) {
+        existing.quantity += 1;
+      } else {
+        groups.set(key, { label, unitPrice: 0, quantity: 1, subtotal: 0 });
+      }
+      continue;
+    }
+
+    const pricingObject = matchPricingObjectForTicket(row, objects);
+    if (!pricingObject) return null;
+
+    const parts = pricingObjectFeeParts(pricingObject);
+    if (parts.ticketPrice === undefined) return null;
+
+    const summed = roundToCents(
+      parts.ticketPrice +
+        parts.serviceFee +
+        parts.facilityFee +
+        parts.salesTax +
+        parts.processingFee +
+        parts.chargeBackProtection,
+    );
+    if (toCents(summed) !== toCents(cost)) return null;
+
+    paidCount += 1;
+    totals.serviceFee += parts.serviceFee;
+    totals.facilityFee += parts.facilityFee;
+    totals.salesTax += parts.salesTax;
+    totals.processingFee += parts.processingFee;
+    totals.chargeBackProtection += parts.chargeBackProtection;
+
+    const unitPrice = roundToCents(parts.ticketPrice);
+    const key = `${label}:${unitPrice.toFixed(2)}`;
+    const existing = groups.get(key);
+    if (existing) {
+      existing.quantity += 1;
+      existing.subtotal = roundToCents(existing.subtotal + unitPrice);
+    } else {
+      groups.set(key, {
+        label,
+        unitPrice,
+        quantity: 1,
+        subtotal: unitPrice,
+      });
+    }
+  }
+
+  const hasItemizedAmount =
+    totals.serviceFee > 0 ||
+    totals.facilityFee > 0 ||
+    totals.salesTax > 0 ||
+    totals.processingFee > 0 ||
+    totals.chargeBackProtection > 0;
+  if (!paidCount || !hasItemizedAmount) return null;
+
+  return {
+    groups: [...groups.values()],
+    serviceFee: roundToCents(totals.serviceFee),
+    facilityFee: roundToCents(totals.facilityFee),
+    salesTax: roundToCents(totals.salesTax),
+    processingFee: roundToCents(totals.processingFee),
+    chargeBackProtection: roundToCents(totals.chargeBackProtection),
+  };
+}
+
+function pricingHasFacePrice(records: Array<Record<string, unknown>>) {
+  return records.some(
+    (entry) =>
+      finiteMoney(entry.offerPrice) != null || finiteMoney(entry.basePrice) != null,
+  );
+}
+
+/**
+ * Itemized single-event breakdown for a completed order.
+ * Packages, flex packs, and access passes keep their own summaries.
+ * Prefers pricing that still has a face price; an order-level processing
+ * estimate stored on the same object does not replace the per-ticket fee.
+ */
+export function orderPrimaryFeeBreakdown(order?: {
+  tickets?: unknown;
+  package?: unknown;
+  flex_pack?: unknown;
+  access_pass_template?: unknown;
+  am_pricing_objects?: unknown;
+  priceObject?: unknown;
+} | null): PrimaryTicketFeeBreakdown | null {
+  if (!order || order.package || order.flex_pack || order.access_pass_template) {
+    return null;
+  }
+  const fromPriceObject = pricingObjectRecords(order.priceObject);
+  const fromPricingObjects = pricingObjectRecords(order.am_pricing_objects);
+  const pricing = pricingHasFacePrice(fromPriceObject)
+    ? fromPriceObject
+    : pricingHasFacePrice(fromPricingObjects)
+      ? fromPricingObjects
+      : null;
+  if (!pricing) return null;
+  return getPrimaryTicketFeeBreakdown(order.tickets, pricing);
+}
+
+/**
+ * Confirmation and the receipt share these rows. One ticket price is a
+ * Subtotal; mixed prices stay on their own lines. Checkout still says Tickets.
+ */
+export function primaryTicketFeeSummaryRows(
+  breakdown: PrimaryTicketFeeBreakdown,
+): Array<{ label: string; amount: number }> {
+  const rows: Array<{ label: string; amount: number }> = [];
+  if (breakdown.groups.length > 1) {
+    for (const group of breakdown.groups) {
+      rows.push({
+        label: `${group.label} x ${group.quantity} (${formatCurrency(group.unitPrice)})`,
+        amount: group.subtotal,
+      });
+    }
+  } else if (breakdown.groups[0]) {
+    rows.push({
+      label: "Subtotal",
+      amount: breakdown.groups[0].subtotal,
+    });
+  }
+  const fees: Array<[string, number]> = [
+    ["Service Fee", breakdown.serviceFee],
+    ["Facility Fee", breakdown.facilityFee],
+    ["Processing Fee", breakdown.processingFee],
+    ["Chargeback protection", breakdown.chargeBackProtection],
+  ];
+  for (const [label, amount] of fees) {
+    if (amount > 0) rows.push({ label, amount });
+  }
+  rows.push({ label: "Tax", amount: breakdown.salesTax });
+  return rows;
 }
 
 type PromoCodeLike = {
@@ -1068,6 +1332,7 @@ export function packageSeatLines(
   tickets: Array<Record<string, unknown>>,
   gameCount: number,
   unitPrice = 0,
+  reservedPackageTickets = 0,
 ): PackageSeatLine[] {
   const gamesLabel = gameCount === 1 ? "1 game" : `all ${gameCount} games`;
   const groups: Array<{
@@ -1079,22 +1344,32 @@ export function packageSeatLines(
     accessibleLabels: string[];
     additionalLabels: string[];
     amount: number;
+    /** Distinct GA seats. Per-game copies of the same seat id count once. */
+    admissions: Set<string>;
   }> = [];
   const groupIndex = new Map<string, number>();
   const seenSeat = new Set<string>();
 
   tickets.forEach((ticket, index) => {
-    const section = ticketSectionValue(ticket) || "GA";
     const ga = Boolean(ticket.GA || ticket.generalAdmission);
+    const gaName = legacyPackageGaName(ticket);
+    const genericGa = ga && genericPackageGaName(gaName);
+    const section = genericGa
+      ? gaName
+      : ticketSectionValue(ticket) || (ga ? gaName || "GA" : "GA");
     const rowValue = ticketRowValue(ticket);
     const row = ga ? rowValue : rowValue || "—";
     const seatNumber =
       (ticket.seatNumber as string | number | null | undefined) ?? "—";
-    const seatKey = ga
-      ? `ga:${section}:${ticket.id ?? ticket.seatId ?? index}`
-      : `${section}:${row}:${seatNumber}`;
+    const seatKey = genericGa
+      ? `ga:${ticket.id ?? ticket.seatId ?? index}`
+      : ga
+        ? `ga:${section}:${ticket.id ?? ticket.seatId ?? index}`
+        : `${section}:${row}:${seatNumber}`;
     if (seenSeat.has(seatKey)) {
-      const existingKey = ga ? seatKey : `${section}:${row}:${selectionOfferName(ticket)} · ${gamesLabel}`;
+      const existingKey = ga
+        ? seatKey
+        : `${section}:${row}:${selectionOfferName(ticket)} · ${gamesLabel}`;
       const existing = groupIndex.get(existingKey);
       if (existing != null) {
         groups[existing].amount = Math.max(
@@ -1110,14 +1385,29 @@ export function packageSeatLines(
     const context = ga
       ? `${offerLabel} · unreserved seating · ${gamesLabel}`
       : `${offerLabel} · ${gamesLabel}`;
-    const groupKey = `${section}:${row}:${context}`;
+    const groupKey = genericGa ? `ga:${context}` : `${section}:${row}:${context}`;
     const existing = groupIndex.get(groupKey);
     const amount = ticketUnitAmount(ticket);
     if (existing != null) {
+      const currentName = groups[existing].section;
+      const incomingBlank = !gaName || /^ga$/i.test(gaName);
+      const currentBlank = !currentName || /^ga$/i.test(currentName);
+      groups[existing].section = preferPackageGaName(currentName, gaName);
       groups[existing].seatNumbers.push(seatNumber);
       groups[existing].accessibleLabels.push(getAccessibleLabel(ticket));
       groups[existing].additionalLabels.push(getSeatAdditionalLabel({ ticket }));
-      groups[existing].amount += amount;
+      const blankCopy = genericGa && (!gaName || /^ga$/i.test(gaName));
+      if (genericGa && currentBlank && !incomingBlank) {
+        groups[existing].amount = amount;
+      } else if (blankCopy) {
+        groups[existing].amount = Math.max(groups[existing].amount, amount);
+      } else {
+        groups[existing].amount += amount;
+      }
+      if (ga) {
+        const admission = gaPackageAdmissionKey(ticket, amount, blankCopy);
+        if (admission) groups[existing].admissions.add(admission);
+      }
       return;
     }
     groupIndex.set(groupKey, groups.length);
@@ -1130,8 +1420,20 @@ export function packageSeatLines(
       accessibleLabels: [getAccessibleLabel(ticket)],
       additionalLabels: [getSeatAdditionalLabel({ ticket })],
       amount,
+      admissions: new Set(
+        ga
+          ? [gaPackageAdmissionKey(ticket, amount, false)].filter(
+              (key): key is string => Boolean(key),
+            )
+          : [],
+      ),
     });
   });
+
+  const reservedGaCount =
+    groups.filter((group) => group.ga).length === 1
+      ? Math.max(0, Math.floor(Number(reservedPackageTickets) || 0))
+      : 0;
 
   return groups.map((group) => {
     const uniqueSeats = group.ga
@@ -1141,15 +1443,13 @@ export function packageSeatLines(
     const additionalLabels = [
       ...new Set(group.additionalLabels.filter(Boolean)),
     ];
-    const gaSection = gaTicketSeatLine({
-      sectionNumber: group.section,
-      rowNumber: group.row,
-      generalAdmission: true,
-    });
-    const ticketCountLabel = `${uniqueSeats} ${uniqueSeats === 1 ? "ticket" : "tickets"}`;
+    const ticketCount = group.ga
+      ? Math.max(group.admissions.size, reservedGaCount, 1)
+      : uniqueSeats;
+    const ticketCountLabel = `${ticketCount} ${ticketCount === 1 ? "ticket" : "tickets"}`;
     return {
       seatLine: group.ga
-        ? `${gaSection} · ${ticketCountLabel}`
+        ? `${group.section || "GA"} · ${ticketCountLabel}`
         : `Sec ${group.section} · Row ${group.row} · ${formatSeatNumbers(group.seatNumbers)}`,
       context: group.context,
       price: group.amount > 0 ? group.amount : unitPrice * uniqueSeats,
@@ -1176,9 +1476,15 @@ export function packageOrderSummary(
     venue?: { name?: string; timezone?: string };
   } | null,
   tickets: Array<Record<string, unknown>> = [],
+  reservedPackageTickets = 0,
 ): PackageOrderSummary {
   const gameCount = pkg?.events?.length || 0;
-  const seats = packageSeatLines(tickets, gameCount, packageFromPrice(pkg) ?? 0);
+  const seats = packageSeatLines(
+    tickets,
+    gameCount,
+    packageFromPrice(pkg) ?? 0,
+    reservedPackageTickets,
+  );
   return {
     seasonLine: packageSeasonLine(pkg),
     venueName: String(pkg?.venue?.name || pkg?.events?.[0]?.venue?.name || ""),

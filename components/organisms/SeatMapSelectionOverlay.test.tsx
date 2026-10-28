@@ -262,7 +262,8 @@ describe("SeatMapSelectionOverlay map readiness", () => {
       2,
     );
     expect(screen.queryByText(/× 2/)).not.toBeInTheDocument();
-    expect(screen.getAllByText("GA")).toHaveLength(2);
+    expect(screen.getAllByText(String(ga.sectionName))).toHaveLength(2);
+    expect(screen.queryByText("GA")).not.toBeInTheDocument();
     expect(screen.queryByText("Sec")).not.toBeInTheDocument();
     expect(screen.queryByText("Row")).not.toBeInTheDocument();
     expect(screen.queryByText("Seat")).not.toBeInTheDocument();
@@ -492,12 +493,18 @@ describe("SeatMapSelectionOverlay map readiness", () => {
     });
     fireEvent.load(backgroundPreload()!);
 
+    expect(screen.getAllByText(String(ga.sectionName))).toHaveLength(6);
+    expect(screen.queryByText("GA")).not.toBeInTheDocument();
+
     fireEvent.click(screen.getAllByRole("button", { name: /details/i })[0]);
 
     expect(screen.getByText("Ticket details")).toBeInTheDocument();
     const ticketCount = screen.getByText("1 Ticket");
     // GA details name the section with no Sec prefix.
-    expect(within(ticketCount.parentElement!).getByText("GA")).toBeInTheDocument();
+    expect(
+      within(ticketCount.parentElement!).getByText(String(ga.sectionName)),
+    ).toBeInTheDocument();
+    expect(within(ticketCount.parentElement!).queryByText("GA")).not.toBeInTheDocument();
     expect(screen.queryByText(/Sec GA/)).not.toBeInTheDocument();
     expect(within(ticketCount.parentElement!).queryByText("6 Tickets")).not.toBeInTheDocument();
     expect(screen.getByText(/incl\. taxes & fees/i)).toBeInTheDocument();

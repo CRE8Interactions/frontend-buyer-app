@@ -22,7 +22,7 @@ import {
 } from "@/lib/ticketListings";
 import type { QuantityLimits, RawTicketGroup } from "@/lib/ticketListings";
 import { selectionOfferName } from "@/lib/ticketSummary";
-import { mapSectionHeading, seatDisplayValue } from "@/lib/wallet";
+import { mapSectionHeading, seatDisplayValue, sectionDisplayValue } from "@/lib/wallet";
 import useFiltersStore from "@/stores/filtersStore";
 import useSeatmapStore from "@/stores/seatmapStore";
 import type { TicketGroup } from "@/stores/filtersStore";
@@ -98,6 +98,14 @@ function seatedResolvedOfferQuantity(
 ) {
   if (offerQtys[key] != null) return offerQtys[key];
   return 0;
+}
+
+/** Package rows use the season name. A missing offer must not fall back to "GA". */
+function gaPackageOrOfferName(group?: TicketGroup | null): string {
+  const offerName = selectionOfferName(group, "");
+  if (offerName) return offerName;
+  const packageName = String(group?.package?.name ?? "").trim();
+  return packageName || "Offer";
 }
 
 function isLockedOffer(offer: TicketGroup) {
@@ -471,10 +479,9 @@ function MobileSingleOfferSeatPopup({
   const offerName = selectionOfferName(primary, "Standard");
   const price = formatOfferListPrice(primary?.price ?? 0, primary?.offer);
   const section =
-    primary?.sectionName ||
-    primary?.sectionNumber ||
-    seat?.sectionNumber ||
-    "—";
+    sectionDisplayValue(
+      primary?.sectionName || primary?.sectionNumber || seat?.sectionNumber,
+    ) || "—";
   const row = primary?.rowName || primary?.rowNumber || "—";
   const seatNumber = seatDisplayValue(seat?.seatNumber) || "—";
 
@@ -623,11 +630,6 @@ export default function SeatmapTooltip({
       },
       eventTicketLimit,
     );
-
-  const sectionMeta = useMemo(() => {
-    if (target?.kind !== "section") return null;
-    return data?.sections?.[target.sectionId] || null;
-  }, [data?.sections, target]);
 
   const visibleSeatOffers = useMemo(
     () => seatOffers.map((offer, index) => ({ offer, index })),
@@ -971,7 +973,7 @@ export default function SeatmapTooltip({
   const selectedGaQty = gaLimits.valid
     ? Math.min(Math.max(gaQty, 0), gaLimits.max)
     : 0;
-  const packageOrOfferName = selectionOfferName(primary, "GA");
+  const packageOrOfferName = gaPackageOrOfferName(primary);
   const multiGaOffers = sectionOffers.length > 1;
   const gaHeaderLimitLabel = gaPopoverDefaultLimitLabel(
     sectionOffers.map((group) =>
@@ -1014,12 +1016,10 @@ export default function SeatmapTooltip({
             className="text-[12px] font-semibold uppercase tracking-[0.12em]"
             style={{ color: muted }}
           >
-            General admission
+            Section
           </p>
           <p className="mt-1 text-[15px] font-semibold" style={{ color: ink }}>
-            {sectionMeta?.sectionNumber ||
-              primary?.sectionName ||
-              "Section"}
+            {primary?.sectionName ?? "Unknown"}
           </p>
           <PopoverTicketLimit label={gaHeaderLimitLabel} color={muted} />
         </div>
@@ -1055,7 +1055,7 @@ export default function SeatmapTooltip({
                 >
                   <div className="min-w-0">
                     <p className="truncate text-[13px] font-semibold" style={{ color: ink }}>
-                      {group.offer?.name || "Offer"}
+                      {gaPackageOrOfferName(group)}
                     </p>
                     {!offerLocked ? (
                       <p className="text-[12px]" style={{ color: muted }}>
@@ -1144,9 +1144,9 @@ export default function SeatmapTooltip({
         <p className="mt-3 text-[14px]" style={{ color: muted }}>No tickets available.</p>
       ) : (
         <>
-          <div className="mt-4 flex items-center justify-between gap-4">
+          <div className="mt-4 flex items-start justify-between gap-4">
             <div className="min-w-0">
-              <p className="truncate text-[13px] font-semibold" style={{ color: ink }}>
+              <p className="break-words text-[13px] font-semibold" style={{ color: ink }}>
                 {packageOrOfferName}
               </p>
               <p className="mt-1 text-[12px] font-semibold" style={{ color: ink }}>

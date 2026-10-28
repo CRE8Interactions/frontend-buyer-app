@@ -12,14 +12,20 @@ import {
   demoCompletedFlexPackOrder,
   demoCompletedPackageOrder,
   demoCompletedTicketOrder,
+  demoItemizedFeeCompletedOrder,
   demoFlexPack,
   demoSeasonPackage,
   demoSeatmapMapping,
   demoTicketGroups,
 } from "@/lib/demo/fixtures";
 import { eventDoorsIso, formatCurrency, formatDoorsTime } from "@/lib/helpers";
-import { resolveCompletedOrderFees } from "@/lib/ticketSummary";
+import {
+  orderPrimaryFeeBreakdown,
+  primaryTicketFeeSummaryRows,
+  resolveCompletedOrderFees,
+} from "@/lib/ticketSummary";
 import { cacheOrgBranding } from "@/lib/orgBrandingCache";
+import { purchaseTabTitle } from "@/lib/seo";
 import { setGuestCheckoutBuyer } from "@/lib/guestCheckout";
 
 vi.mock("next/link", () => ({
@@ -204,6 +210,12 @@ describe("Checkout success receipt", () => {
     render(<CheckoutSuccessPageRoute />);
     expect(await screen.findByText(/Arrive early\./)).toBeInTheDocument();
     expect(screen.queryByText(/^Doors /)).not.toBeInTheDocument();
+    const title = purchaseTabTitle({
+      event: { ...cart.event, doorsOpen: undefined, realDoorsOpen: undefined },
+    });
+    expect(document.title).toBe(title);
+    document.title = "Blocktickets — Sports-first ticketing";
+    await waitFor(() => expect(document.title).toBe(title));
   });
 
   it("falls back to the seat line when the order has no offer name", async () => {
@@ -749,6 +761,25 @@ describe("Checkout success receipt", () => {
     expect(screen.getByText("Subtotal").parentElement).not.toHaveTextContent(
       formatCurrency(buried),
     );
+  });
+
+  it("labels a single ticket price as the subtotal and still lists each fee", async () => {
+    const order = demoItemizedFeeCompletedOrder();
+    const rows = primaryTicketFeeSummaryRows(orderPrimaryFeeBreakdown(order)!);
+    mockedGetOrderByPi.mockResolvedValue({ data: order } as never);
+    render(<CheckoutSuccessPageRoute />);
+
+    expect(await screen.findByText("Order summary")).toBeInTheDocument();
+    for (const row of rows) {
+      expect(screen.getByText(row.label).parentElement).toHaveTextContent(
+        formatCurrency(row.amount),
+      );
+    }
+    expect(screen.getByText("Total paid").parentElement).toHaveTextContent(
+      formatCurrency(order.total),
+    );
+    expect(screen.getByText("Subtotal")).toBeInTheDocument();
+    expect(screen.queryByText(/Tickets:/)).not.toBeInTheDocument();
   });
 
   it("shows zero-valued Blocktickets fee lines for a flex pack", async () => {

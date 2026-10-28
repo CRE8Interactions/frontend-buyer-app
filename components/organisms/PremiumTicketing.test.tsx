@@ -405,6 +405,73 @@ describe("Select tickets page (PremiumTicketing)", { timeout: 20_000 }, () => {
     ).toBeTruthy();
   });
 
+  it("uses attraction artwork in the seated header and the brand logo when it is absent", () => {
+    const artwork = "https://cdn.example/bulls.jpg";
+    const brand = "https://cdn.example/brand.svg";
+    const { unmount } = render(
+      <PremiumTicketing
+        data={{
+          ...seatedTicketingFixture,
+          headerLogoSrc: artwork,
+          headerLogoAlt: "North Iowa Bulls",
+          headerLogoIsPhoto: true,
+        }}
+      />,
+    );
+
+    const photo = screen.getByRole("img", { name: "North Iowa Bulls" });
+    expect(photo).toHaveAttribute("src", artwork);
+
+    unmount();
+    render(
+      <PremiumTicketing
+        data={{
+          ...seatedTicketingFixture,
+          headerLogoSrc: brand,
+          headerLogoAlt: "North Iowa Bulls",
+          headerLogoIsPhoto: false,
+        }}
+      />,
+    );
+
+    const logo = screen.getByRole("img", { name: "North Iowa Bulls" });
+    expect(logo).toHaveAttribute("src", brand);
+  });
+
+  it("shows the event image in event information", () => {
+    render(<PremiumTicketing data={seatedTicketingFixture} />);
+    fireEvent.click(screen.getByRole("button", { name: "Event information" }));
+
+    const dialog = screen.getByRole("dialog", { name: "Event information" });
+    expect(
+      within(dialog).getByRole("img", { name: seatedTicketingFixture.homeLabel }),
+    ).toHaveAttribute("src", seatedTicketingFixture.logoSrc);
+    expect(
+      within(dialog).getAllByRole("img").some(
+        (img) => img.getAttribute("src") === seatedTicketingFixture.homeLogoSrc,
+      ),
+    ).toBe(true);
+  });
+
+  it("shows the home initials in event information when the event has no image", () => {
+    render(
+      <PremiumTicketing
+        data={{ ...seatedTicketingFixture, logoSrc: "" }}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Event information" }));
+
+    const dialog = screen.getByRole("dialog", { name: "Event information" });
+    expect(
+      within(dialog).queryByRole("img", { name: seatedTicketingFixture.homeLabel }),
+    ).toBeNull();
+    expect(
+      within(dialog).getByText(
+        seatedTicketingFixture.homeLabel.slice(0, 3).toUpperCase(),
+      ),
+    ).toBeTruthy();
+  });
+
   it("shows the promotional description under the seated event name", () => {
     const promo = "Pink Night. Free bobblehead for the first 1,000 fans.";
     render(

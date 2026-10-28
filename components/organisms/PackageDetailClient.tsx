@@ -26,7 +26,7 @@ import {
 import { beginRouteTransition } from "@/lib/routeTransition";
 import { hideIntercomLauncher } from "@/lib/intercom";
 import { cacheOrgBranding } from "@/lib/orgBrandingCache";
-import { packageOpenGraph } from "@/lib/seo";
+import { packageTabTitle } from "@/lib/seo";
 import {
   formatPackageFromPrice,
   packageFromPrice,
@@ -194,9 +194,14 @@ export default function PackageDetailClient({
   const mobile = vw < 900;
 
   useEffect(() => {
-    if (!pkg) return;
-    document.title = packageOpenGraph(pkg).title;
-  }, [pkg]);
+    const title = packageTabTitle(pkg?.name);
+    if (!title) return;
+    const previous = document.title;
+    document.title = title;
+    return () => {
+      if (document.title === title) document.title = previous;
+    };
+  }, [pkg?.name]);
 
   useEffect(() => {
     const onR = () => setVw(window.innerWidth);

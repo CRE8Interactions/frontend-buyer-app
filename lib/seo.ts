@@ -1,6 +1,11 @@
 import type { Metadata } from "next";
 import type { ApiImage } from "@/lib/helpers";
-import { formatEventWhen, imageUrl, toIanaTimezone } from "@/lib/helpers";
+import {
+  formatEventWhen,
+  imageUrl,
+  toIanaTimezone,
+  type TimezoneLike,
+} from "@/lib/helpers";
 
 export const SITE_NAME = "Blocktickets";
 export const DEFAULT_TITLE = "Blocktickets — Sports-first ticketing";
@@ -260,10 +265,12 @@ type EventSeo = {
   start_tbd?: boolean | null;
   time_tbd?: boolean | null;
   display_start_time?: boolean | null;
+  doorsOpen?: string | null;
+  realDoorsOpen?: string | null;
   image?: SeoImage;
   venue?: {
     name?: string | null;
-    timezone?: string | null;
+    timezone?: TimezoneLike;
     image?: SeoImage;
     address?: SeoAddress | SeoAddress[] | null;
   } | null;
@@ -376,9 +383,9 @@ function stateLabel(value?: string | null): string {
   return titleCase(raw);
 }
 
-function scheduleZone(timezone?: string | null): string {
-  const raw = String(timezone || "").trim();
-  const iana = toIanaTimezone(raw);
+function scheduleZone(timezone?: TimezoneLike): string {
+  const normalized = typeof timezone === "string" ? timezone.trim() : timezone;
+  const iana = toIanaTimezone(normalized || undefined);
   if (iana?.includes("/")) return iana;
   return "America/New_York";
 }
@@ -389,7 +396,7 @@ function schedulePart(start: string, zone: string, format: string): string {
   return label;
 }
 
-function formatOpenGraphSchedule(event: EventSeo, timezone?: string | null): string {
+function formatOpenGraphSchedule(event: EventSeo, timezone?: TimezoneLike): string {
   if (event.date_tbd || event.start_tbd) return "Date & Time TBD";
   const start = clean(event.start);
   if (!start) return "";
@@ -399,6 +406,12 @@ function formatOpenGraphSchedule(event: EventSeo, timezone?: string | null): str
   if (event.time_tbd || event.display_start_time === false) return dateLabel;
   const timeLabel = schedulePart(start, zone, "h:mm A");
   return timeLabel ? `${dateLabel} · ${timeLabel}` : dateLabel;
+}
+
+/** Wallet ticket tab: `{event} | Blocktickets`. */
+function eventDetailTabTitle(event?: EventSeo | null): string {
+  const name = clean(event?.name);
+  return name ? `${name} | ${SITE_NAME}` : "";
 }
 
 function usableImageUrl(image: unknown): string {
@@ -520,6 +533,124 @@ export function flexPackOpenGraph(flexPack?: FlexPackSeo | null): OpenGraphCopy 
       flexPack?.organization?.image,
     ),
   };
+}
+
+/** Browser tab for a season package: `{name} | Season Tickets`. */
+export function packageTabTitle(name?: string | null): string {
+  const value = clean(name);
+  return value ? `${value} | Season Tickets` : "";
+}
+
+/** Browser tab for a flex pack: `{name} | Blocktickets`. */
+export function flexPackTabTitle(name?: string | null): string {
+  const value = clean(name);
+  return value ? `${value} | ${SITE_NAME}` : "";
+}
+
+/** Browser tab for an access pass: `{name} | Blocktickets`. */
+export function accessPassNameTabTitle(name?: string | null): string {
+  const value = clean(name);
+  return value ? `${value} | ${SITE_NAME}` : "";
+}
+
+/**
+ * Tab title for checkout and confirmation. An event keeps its purchase
+ * title. A package, flex pack, or access pass is "Buy {name} | …".
+ */
+export function purchaseTabTitle(source?: {
+  event?: EventSeo | null;
+  package?: PackageSeo | null;
+  flex_pack?: FlexPackSeo | null;
+  access_pass_template?: {
+    name?: string | null;
+    venue?: { name?: string | null } | null;
+  } | null;
+} | null): string {
+  if (!source) return "";
+  const packageName = clean(source.package?.name);
+  if (packageName) return `Buy ${packageName} | Season Tickets`;
+  const flexName = clean(source.flex_pack?.name);
+  if (flexName) return `Buy ${flexName} | ${SITE_NAME}`;
+  const passName = clean(source.access_pass_template?.name);
+  if (passName) return `Buy ${passName} | ${SITE_NAME}`;
+  if (clean(source.access_pass_template?.venue?.name)) {
+    return accessPassTabTitle(source.access_pass_template);
+  }
+  if (clean(source.event?.name)) return eventOpenGraph(source.event).title;
+  return "";
+}
+
+/**
+ * Keep a purchase tab in place. The site title is applied again after the
+ * confirmation page renders, which would otherwise replace this one.
+ */
+export function holdDocumentTitle(title: string): () => void {
+  if (!title || typeof document === "undefined") return () => undefined;
+  const apply = () => {
+    if (document.title !== title) document.title = title;
+  };
+  apply();
+  const observer = new MutationObserver(apply);
+  observer.observe(document.head, {
+    subtree: true,
+    childList: true,
+    characterData: true,
+  });
+  return () => observer.disconnect();
+}
+
+export type WalletSectionId =
+  | "events"
+  | "listings"
+  | "resale"
+  | "giving"
+  | "profile";
+
+/** Legacy wallet headings. List pages do not set a Helmet title of their own. */
+export function walletSectionTabTitle(section: WalletSectionId = "events"): string {
+  switch (section) {
+    case "listings":
+      return `My transfers | ${SITE_NAME}`;
+    case "resale":
+      return `My listings | ${SITE_NAME}`;
+    case "giving":
+      return `Giving | ${SITE_NAME}`;
+    case "profile":
+      return `Profile | ${SITE_NAME}`;
+    default:
+      return `My tickets | ${SITE_NAME}`;
+  }
+}
+
+/** Wallet detail tab: `{name} | Blocktickets`. */
+function walletProductTabTitle(name?: string | null): string {
+  const value = clean(name);
+  return value ? `${value} | ${SITE_NAME}` : "";
+}
+
+/**
+ * Tab title for the wallet screen that is open. An event, flex pack, or
+ * access pass is its name and Blocktickets. A package is its name and
+ * Season Tickets.
+ */
+export function walletViewTabTitle(view: {
+  section?: WalletSectionId;
+  event?: EventSeo | null;
+  seasonPackage?: { name?: string | null } | null;
+  flexPack?: { name?: string | null } | null;
+  accessPass?: { name?: string | null } | null;
+}): string {
+  if (view.accessPass) {
+    return walletProductTabTitle(view.accessPass.name) || `Access Pass | ${SITE_NAME}`;
+  }
+  if (view.seasonPackage) {
+    return packageTabTitle(view.seasonPackage.name) || walletSectionTabTitle("events");
+  }
+  if (view.flexPack) {
+    return walletProductTabTitle(view.flexPack.name) || walletSectionTabTitle("events");
+  }
+  if (clean(view.event?.name)) return eventDetailTabTitle(view.event);
+  return walletSectionTabTitle(view.section);
 }
 
 type LegacyOpenGraphMeta = {
@@ -740,7 +871,7 @@ export async function accessPassPageMetadata(
       ? data
       : null;
 
-  return { title: accessPassTabTitle(pass) };
+  return { title: accessPassNameTabTitle(pass?.name) || accessPassTabTitle(pass) };
 }
 
 export async function fundraiserPageMetadata(

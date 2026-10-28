@@ -22,6 +22,7 @@ import { BrandedLoader } from "@/components/molecules/RouteLoader";
 import SeatViewImage from "@/components/molecules/SeatViewImage";
 import SectionLocatorThumb from "@/components/molecules/SectionLocatorThumb";
 import { BLOCKTICKETS_NAVY, type BrandingOrganization } from "@/lib/branding";
+import { holdDocumentTitle, purchaseTabTitle } from "@/lib/seo";
 import {
   cachedBrandingForCheckout,
   checkoutBrandingFromCart,
@@ -35,12 +36,14 @@ import { promoCodeRedeemDisplayMessage } from "@/lib/fieldValidation";
 import MarketingOptIn from "@/components/molecules/MarketingOptIn";
 import PromoCodeForm, { type PromoRedeemResult } from "@/components/molecules/PromoCodeForm";
 import {
+  flexPackEachPrice,
   flexPackSeasonLine,
   flexPackVoucherCount,
 } from "@/lib/flexPackDisplay";
 import {
   alignPackageSeatPrices,
   checkoutTaxLine,
+  getPrimaryTicketFeeBreakdown,
   packageCartTickets,
   packageOrderSummary,
   promoSummaryLabel,
@@ -329,7 +332,11 @@ function CheckoutPaymentForm({
         : cart.package
           ? resolvePackageCheckoutTotals(
               cart,
-              packageOrderSummary(cart.package, packageCartTickets(cart)).subtotal,
+              packageOrderSummary(
+                cart.package,
+                packageCartTickets(cart),
+                cart.package_tickets?.length || 0,
+              ).subtotal,
             ).total + Number(donationChargeTotal || 0)
           : Number(cart.total ?? 0) + Number(donationChargeTotal || 0);
 
@@ -612,6 +619,12 @@ function CheckoutPage() {
 
   const [loading, setLoading] = useState(true);
   const [cart, setCart] = useState<CartData | null>(null);
+
+  useEffect(() => {
+    const title = purchaseTabTitle(cart);
+    if (!title) return;
+    return holdDocumentTitle(title);
+  }, [cart]);
   const [event, setEvent] = useState<CartData["event"]>(null);
   const [seatLocation, setSeatLocation] = useState<{
     ga_only?: boolean;
@@ -1163,7 +1176,11 @@ function CheckoutPage() {
     ),
   });
   const packageSummary = cart?.package
-    ? packageOrderSummary(cart.package, packageCartTickets(cart))
+    ? packageOrderSummary(
+        cart.package,
+        packageCartTickets(cart),
+        cart.package_tickets?.length || 0,
+      )
     : null;
   const packageTotals = resolvePackageCheckoutTotals(
     cart,
@@ -1180,6 +1197,13 @@ function CheckoutPage() {
     ? resolveFlexPackCheckoutTotals(cart)
     : null;
   const flexVoucherCount = flexPackVoucherCount(cart?.flex_pack?.gameTickets);
+  const flexHasCustomFee = Boolean(flexTotals?.customFeeLines.length);
+  const flexLineAmount = flexHasCustomFee
+    ? flexTotals?.total || 0
+    : flexTotals?.subtotal || 0;
+  const flexEach = flexHasCustomFee
+    ? flexPackEachPrice(flexTotals?.total, flexVoucherCount)
+    : flexPackEachPrice(cart?.flex_pack?.price, flexVoucherCount);
   const summaryWhen =
     packageSummary?.seasonLine ||
     (cart?.flex_pack ? flexPackSeasonLine(cart.flex_pack) : when);
@@ -1242,8 +1266,19 @@ function CheckoutPage() {
     !cart?.package &&
     !cart?.flex_pack &&
     !cart?.access_pass_template;
-  const singleEventAllIn = singleEvent && taxLine.label === "Tax (included)";
-  const singleEventNoTax = singleEvent && taxLine.amount === 0;
+  const primaryFeeBreakdown = singleEvent
+    ? getPrimaryTicketFeeBreakdown(cart?.tickets, cart?.am_pricing_objects)
+    : null;
+  const primaryFeeRows = primaryFeeBreakdown
+    ? (
+        [
+          ["Service Fee", primaryFeeBreakdown.serviceFee],
+          ["Facility Fee", primaryFeeBreakdown.facilityFee],
+          ["Processing Fee", primaryFeeBreakdown.processingFee],
+          ["Chargeback protection", primaryFeeBreakdown.chargeBackProtection],
+        ] as const
+      ).filter(([, amount]) => amount > 0)
+    : [];
 
   const elementsOptions = useMemo(
     () =>
@@ -1545,17 +1580,14 @@ function CheckoutPage() {
                         {flexVoucherCount} flex{" "}
                         {flexVoucherCount === 1 ? "voucher" : "vouchers"}
                       </div>
-                      {flexVoucherCount > 0 && cart.flex_pack.price != null ? (
+                      {flexVoucherCount > 0 && flexEach != null ? (
                         <div className={`min-w-0 text-[12px] ${muted}`}>
-                          {formatCurrency(
-                            Number(cart.flex_pack.price) / flexVoucherCount,
-                          )}{" "}
-                          each
+                          {formatCurrency(flexEach)} each
                         </div>
                       ) : null}
                     </div>
                     <div className="shrink-0 text-[14px] font-semibold tabular-nums">
-                      {formatCurrency(flexTotals?.subtotal || 0)}
+                      {formatCurrency(flexLineAmount)}
                     </div>
                   </div>
                   <div className="h-px bg-[rgba(5,27,53,0.08)]" />
@@ -1584,6 +1616,17 @@ function CheckoutPage() {
                         {formatCurrency(flexTotals?.serviceFee || 0)}
                       </span>
                     </div>
+                    {flexTotals?.customFeeLines.map((line) => (
+                      <div
+                        key={`${line.name}-${line.amount}`}
+                        className="flex justify-between gap-3"
+                      >
+                        <span>{line.name}</span>
+                        <span className="tabular-nums text-[#051b35]">
+                          {formatCurrency(line.amount)}
+                        </span>
+                      </div>
+                    ))}
                   </div>
                 </>
               ) : cart?.tickets?.length ? (
@@ -1659,8 +1702,40 @@ function CheckoutPage() {
                   <div className="h-px bg-[rgba(5,27,53,0.08)]" />
                   <div className="flex flex-col gap-2.5 text-[14px] text-[#4a5567]">
                     <div className="flex flex-col gap-0.5">
-                      {ticketSummary.offerLines.length > 1
-                        ? ticketSummary.offerLines.map((line) => (
+                      {primaryFeeBreakdown ? (
+                        primaryFeeBreakdown.groups.length > 1 ? (
+                          primaryFeeBreakdown.groups.map((group) => (
+                            <div
+                              key={`${group.label}-${group.unitPrice}`}
+                              className="flex justify-between gap-3"
+                            >
+                              <span>
+                                {group.label} x {group.quantity} (
+                                {formatCurrency(group.unitPrice)})
+                              </span>
+                              <span className="tabular-nums text-[#051b35]">
+                                {formatCurrency(group.subtotal)}
+                              </span>
+                            </div>
+                          ))
+                        ) : (
+                          <div className="flex justify-between gap-3">
+                            <span className="text-[14px] text-[#4a5567]">
+                              Tickets:{" "}
+                              {formatCurrency(
+                                primaryFeeBreakdown.groups[0]?.unitPrice,
+                              )}{" "}
+                              × {primaryFeeBreakdown.groups[0]?.quantity ?? 0}
+                            </span>
+                            <span className="tabular-nums text-[#051b35]">
+                              {formatCurrency(
+                                primaryFeeBreakdown.groups[0]?.subtotal,
+                              )}
+                            </span>
+                          </div>
+                        )
+                      ) : ticketSummary.offerLines.length > 1 ? (
+                        ticketSummary.offerLines.map((line) => (
                             <div
                               key={`${line.offerName}-${line.unit}`}
                               className="flex justify-between gap-3"
@@ -1674,7 +1749,7 @@ function CheckoutPage() {
                               </span>
                             </div>
                           ))
-                        : (
+                        ) : (
                             <div className="flex justify-between gap-3">
                               <span className="text-[14px] text-[#4a5567]">
                                 Tickets: {formatCurrency(ticketSummary.unit)} ×{" "}
@@ -1685,17 +1760,28 @@ function CheckoutPage() {
                               </span>
                             </div>
                           )}
-                      {singleEventAllIn ? (
-                        <p className="text-[13px] leading-tight text-[#4a5567]">
-                          Includes {formatCurrency(taxLine.amount)} tax
-                        </p>
-                      ) : singleEventNoTax ? (
-                        <p className="text-[13px] leading-tight text-[#4a5567]">
-                          No tax applies
-                        </p>
-                      ) : null}
                     </div>
-                    {singleEventAllIn || singleEventNoTax ? null : (
+                    {primaryFeeBreakdown ? (
+                      <>
+                        {primaryFeeRows.map(([label, amount]) => (
+                          <div
+                            key={label}
+                            className="flex justify-between gap-3"
+                          >
+                            <span>{label}</span>
+                            <span className="tabular-nums text-[#051b35]">
+                              {formatCurrency(amount)}
+                            </span>
+                          </div>
+                        ))}
+                        <div className="flex justify-between gap-3">
+                          <span>Tax</span>
+                          <span className="tabular-nums text-[#051b35]">
+                            {formatCurrency(primaryFeeBreakdown.salesTax)}
+                          </span>
+                        </div>
+                      </>
+                    ) : (
                       <div className="flex justify-between gap-3">
                         <span>{taxLine.label}</span>
                         <span className="tabular-nums text-[#051b35]">
