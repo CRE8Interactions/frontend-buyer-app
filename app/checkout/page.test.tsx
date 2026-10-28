@@ -1524,7 +1524,7 @@ describe("Checkout page", { timeout: 20_000 }, () => {
       formatCurrency(quote.customFeeAmount),
     );
     expect(
-      screen.getByRole("button", {
+      await screen.findByRole("button", {
         name: `Pay ${formatCurrency(quote.buyerTotal)}`,
       }),
     ).toBeInTheDocument();
