@@ -219,6 +219,29 @@ describe("SeatmapSections", () => {
     expect(section(DEMO_GA_SECTION_ID)).not.toHaveClass("cursor-pointer");
   });
 
+  it("paints a hidden section into the field and does not zoom it", () => {
+    const source = mapping.sections?.["sec-m"];
+    expect(source).toBeTruthy();
+    const onZoomableSectionClick = vi.fn();
+    const section = renderSections({
+      data: {
+        ...mapping,
+        sections: {
+          ...mapping.sections,
+          "sec-m": { ...source!, hidden: true },
+        },
+      },
+      onZoomableSectionClick,
+    });
+
+    const path = section("sec-m");
+    expect(path).toHaveAttribute("data-section-hidden", "true");
+    expect(path).toHaveAttribute("fill", "#D6D8DB");
+    expect(path).toHaveAttribute("stroke", "#D6D8DB");
+    fireEvent.click(path!);
+    expect(onZoomableSectionClick).not.toHaveBeenCalled();
+  });
+
   it("omits zoomable sections when the venue does not use section covers", () => {
     const section = renderSections({ sectionCoversEnabled: false });
 

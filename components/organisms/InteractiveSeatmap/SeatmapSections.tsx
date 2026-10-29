@@ -16,6 +16,8 @@ import type { SeatmapTooltipTarget } from "./SeatmapTooltip";
 
 const AVAILABLE_FILL = "#3E8BF7";
 const UNAVAILABLE_FILL = "#9DA2B3";
+/** Matches the gray field on the venue background so hidden blocks disappear into it. */
+const HIDDEN_SECTION_FILL = "#D6D8DB";
 const NO_REVEALED_SECTIONS: string[] = [];
 
 function isWheelchairCompanionSection(section: SeatmapSection) {
@@ -110,6 +112,7 @@ const SeatmapSections = memo(function SeatmapSections({
   useLayoutEffect(() => {
     const next: typeof labels = {};
     sectionsList.forEach((section) => {
+      if (section.hidden) return;
       const el = pathRefs.current[String(section.sectionId)];
       if (!el) return;
       const layout = computeLabelLayout(el.getBBox(), section.sectionNumber);
@@ -122,6 +125,22 @@ const SeatmapSections = memo(function SeatmapSections({
     <g className="polygons">
       {sectionsList.map((section) => {
         const sid = String(section.sectionId);
+        if (section.hidden) {
+          const strokeWidth = Math.max(Number(section.strokeWidth) || 0, 2) + 2;
+          return (
+            <path
+              key={sid}
+              d={section.zoomable ? zoomableCoverPathD(section) : section.path || ""}
+              id={sid}
+              data-section-hidden="true"
+              fill={HIDDEN_SECTION_FILL}
+              stroke={HIDDEN_SECTION_FILL}
+              strokeWidth={strokeWidth}
+              strokeLinejoin="miter"
+              pointerEvents="none"
+            />
+          );
+        }
         const isZoomable = Boolean(section.zoomable);
         const hasInventory = sectionInventory[sid] ?? false;
 
@@ -314,6 +333,7 @@ const SeatmapSections = memo(function SeatmapSections({
 
       <g className="section-number-labels" pointerEvents="none">
         {sectionsList.map((section) => {
+          if (section.hidden) return null;
           const sid = String(section.sectionId);
           if (isWheelchairCompanionSection(section)) return null;
           if (section.identifier?.path) return null;

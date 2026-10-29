@@ -39,6 +39,7 @@ export type SeatmapSection = {
   stroke?: string;
   strokeWidth?: number;
   zoomable?: boolean;
+  hidden?: boolean;
   spots?: string[];
   rows?: string[];
   coverPath?: string;

@@ -1,9 +1,11 @@
 import { checkAccessCode } from "@/lib/api";
+import { omitHiddenSectionGroups } from "@/lib/hiddenSections";
 import {
   createSeatLookupTables,
   createSectionLookupTable,
 } from "@/lib/seatmapLookups";
 import type { TicketGroup } from "@/stores/filtersStore";
+import useSeatmapStore from "@/stores/seatmapStore";
 
 /** Explicit yes from POST /tickets/unlock-style responses. */
 function serverAccepted(body: unknown) {
@@ -71,13 +73,17 @@ export function seatmapLookupsFromTicketGroups(
   groups: TicketGroup[],
   selectedOfferIds: Array<string | number> = [],
 ) {
-  const { lookupTable, offersLookupTable } = createSeatLookupTables(
+  const visible = omitHiddenSectionGroups(
     groups,
+    useSeatmapStore.getState().data?.sections,
+  );
+  const { lookupTable, offersLookupTable } = createSeatLookupTables(
+    visible,
     selectedOfferIds,
   );
   return {
     seatLookupTable: lookupTable,
     seatOffersLookupTable: offersLookupTable,
-    sectionLookupTable: createSectionLookupTable(groups),
+    sectionLookupTable: createSectionLookupTable(visible),
   };
 }

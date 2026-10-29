@@ -36,6 +36,7 @@ import SeatmapSeat, {
   TOOLTIP_DISMISS_DELAY_MS,
 } from "./SeatmapSeat";
 import SeatmapSections from "./SeatmapSections";
+import { omitHiddenSectionGroups, isSectionHidden } from "@/lib/hiddenSections";
 import { seatmapAccessibilityLegendRows } from "@/lib/ticketAccessibility";
 import SeatmapTooltip, { type SeatmapTooltipTarget } from "./SeatmapTooltip";
 
@@ -357,10 +358,11 @@ export default function InteractiveSeatmap({
       return;
     }
     if (loadingTicketGroups) return;
-    const sectionTable = createSectionLookupTable(ticketGroups);
+    const visibleGroups = omitHiddenSectionGroups(ticketGroups, data?.sections);
+    const sectionTable = createSectionLookupTable(visibleGroups);
     setSectionLookupTable(sectionTable);
     const { lookupTable, offersLookupTable } = createSeatLookupTables(
-      ticketGroups,
+      visibleGroups,
       selectedOfferIds,
     );
     setSeatLookupTable(lookupTable);
@@ -371,6 +373,7 @@ export default function InteractiveSeatmap({
     ticketGroups,
     loadingTicketGroups,
     selectedOfferIds,
+    data?.sections,
     setSeatLookupTable,
     setSeatOffersLookupTable,
     setSectionLookupTable,
@@ -481,6 +484,7 @@ export default function InteractiveSeatmap({
   const focusSection = useCallback(
     (sectionId: string, bounds: DOMRect) => {
       if (!size.width || !size.height) return;
+      if (isSectionHidden(data?.sections, sectionId)) return;
       const section = data?.sections?.[sectionId];
       if (
         isSectionSoldOut(
@@ -841,6 +845,7 @@ export default function InteractiveSeatmap({
       anchorId ? [anchorId, ...neighbors] : neighbors,
       data?.sections,
     ).filter((id) => {
+      if (isSectionHidden(data?.sections, id)) return false;
       const section = data?.sections?.[id] ?? data?.sections?.[String(id)];
       return (
         Boolean(section) &&
@@ -868,6 +873,8 @@ export default function InteractiveSeatmap({
   ]);
 
   const rowsSource = useMemo(() => {
+    const visibleRow = (row: { rowId?: string; sectionId?: string | number }) =>
+      Boolean(row?.rowId) && !isSectionHidden(data?.sections, row.sectionId);
     if (!data?.rows) return [];
     if (sectionCoversEnabled && !activeRowIds) return [];
     if (sectionCoversEnabled && Array.isArray(activeRowIds)) {
@@ -875,15 +882,15 @@ export default function InteractiveSeatmap({
       return activeRowIds
         .map((id) => data.rows?.[id] ?? data.rows?.[String(id)])
         .filter((row): row is NonNullable<typeof row> => {
-          if (!row?.rowId) return false;
+          if (!row || !visibleRow(row)) return false;
           const rid = String(row.rowId);
           if (seenRows.has(rid)) return false;
           seenRows.add(rid);
           return true;
         });
     }
-    return Object.values(data.rows);
-  }, [activeRowIds, data?.rows, sectionCoversEnabled]);
+    return Object.values(data.rows).filter(visibleRow);
+  }, [activeRowIds, data?.rows, data?.sections, sectionCoversEnabled]);
 
   const fitted = size.width > 0 && size.height > 0;
   const ready = Boolean(data && stage && lookupsReady);
