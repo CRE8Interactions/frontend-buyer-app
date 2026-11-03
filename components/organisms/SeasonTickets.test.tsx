@@ -40,12 +40,7 @@ import {
   listingStatusDotLine,
   mapWalletListing,
 } from "@/lib/walletListings";
-import {
-  sellConfirmTitle,
-  sellRemoveBody,
-  sellRemovalLine,
-  sellSuccessTitle,
-} from "@/lib/sellModalCopy";
+import { sellRemoveBody } from "@/lib/sellModalCopy";
 
 const sessionMocks = vi.hoisted(() => ({
   getSession: vi.fn(),
@@ -9661,13 +9656,13 @@ describe("SeasonTickets listings and sell", { timeout: 30_000 }, () => {
     await user.click(await screen.findByRole("button", { name: "Sell" }));
     const sellTitle = await screen.findByRole("heading", { name: "Sell" });
     const sheet = sellTitle.parentElement?.parentElement as HTMLElement;
-    expect(within(sheet).getByText("Select tickets to list")).toBeInTheDocument();
+    expect(within(sheet).getByText("Select tickets to sell")).toBeInTheDocument();
     const seatChip = within(sheet).getAllByRole("button", { name: /^Seat / })[0];
     await user.click(seatChip);
     expect(seatChip).toHaveAttribute("aria-pressed", "true");
-    await user.click(within(sheet).getByRole("button", { name: "Next" }));
-    expect(await screen.findByText("Set price")).toBeInTheDocument();
-    const price = screen.getByLabelText("Asking price per ticket");
+    await user.click(within(sheet).getByRole("button", { name: "Set price" }));
+    expect(await screen.findByText("Price your ticket")).toBeInTheDocument();
+    const price = within(sheet).getByRole("textbox");
     fireEvent.blur(price);
     expect(screen.queryByText("Enter a price greater than 0.")).not.toBeInTheDocument();
     await user.type(price, "0");
@@ -9676,13 +9671,11 @@ describe("SeasonTickets listings and sell", { timeout: 30_000 }, () => {
     await user.clear(price);
     await user.type(price, "80");
     const eventsCalls = mockedGetMyEvents.mock.calls.length;
-    await user.click(screen.getByRole("button", { name: "Next" }));
-    expect(screen.getByText("Payout summary")).toBeInTheDocument();
-    await user.click(screen.getByRole("button", { name: "Next" }));
-    expect(screen.getByText(sellConfirmTitle(1))).toBeInTheDocument();
-    expect(screen.getByText(sellRemovalLine(1))).toBeInTheDocument();
-    await user.click(screen.getByRole("button", { name: "List tickets" }));
-    expect(await screen.findByText(sellSuccessTitle(1))).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Payout summary" }));
+    expect(screen.getByText("Payment Summary")).toBeInTheDocument();
+    expect(screen.getByText("Your Payout")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Agree and sell" }));
+    expect(await screen.findByText("Your ticket is listed for sale!")).toBeInTheDocument();
     expect(mockedCreateListing).toHaveBeenCalledTimes(1);
     const payload = mockedCreateListing.mock.calls[0][0] as Record<string, unknown>;
     expect(payload).toMatchObject({
@@ -9694,7 +9687,7 @@ describe("SeasonTickets listings and sell", { timeout: 30_000 }, () => {
     expect(Array.isArray(payload.tickets)).toBe(true);
     expect(mockedGetMyEvents.mock.calls.length).toBe(eventsCalls);
     expect(mockedGetMyListings).not.toHaveBeenCalled();
-    expect(screen.getByRole("link", { name: "My listings" })).toHaveAttribute(
+    expect(screen.getByRole("link", { name: "Go to My listings" })).toHaveAttribute(
       "href",
       expect.stringMatching(/^\/wallet\/my-listings\/?$/),
     );
@@ -9737,7 +9730,142 @@ describe("SeasonTickets listings and sell", { timeout: 30_000 }, () => {
 
     await user.click(await screen.findByRole("button", { name: "Sell" }));
     expect(await screen.findByText("Link a bank account")).toBeInTheDocument();
-    expect(screen.queryByText("Select tickets to list")).not.toBeInTheDocument();
+    expect(screen.queryByText("Select tickets to sell")).not.toBeInTheDocument();
+    expect(await screen.findByLabelText("Account type")).toHaveValue("individual");
+    expect(screen.getByRole("button", { name: "Link bank account" })).toBeEnabled();
+
+    mockedGetBankAccount.mockResolvedValueOnce({ data: { payouts_enabled: true } } as never);
+    await user.click(screen.getByRole("button", { name: "I've finished linking" }));
+    expect(await screen.findByText("Select tickets to sell")).toBeInTheDocument();
+  });
+
+  it("does not link a bank account until the existing account type is known", async () => {
+    let resolveAccount: (value: unknown) => void = () => {};
+    mockedGetBankAccount.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          resolveAccount = resolve;
+        }) as never,
+    );
+    const order = demoCompletedTicketOrder({
+      event: { ...icedogs, enableResale: true },
+    });
+    mockedGetMyEvents.mockResolvedValue({ data: [order] } as never);
+    navigationMocks.pathname = `/wallet/my-tickets/order/${order.orderId}/`;
+    const user = userEvent.setup();
+    render(<SeasonTickets />);
+
+    await user.click(await screen.findByRole("button", { name: "Sell" }));
+    expect(screen.getAllByRole("status", { name: "Loading" }).length).toBeGreaterThan(0);
+    expect(screen.queryByRole("button", { name: "Link bank account" })).not.toBeInTheDocument();
+    expect(mockedCreateBankAccount).not.toHaveBeenCalled();
+
+    resolveAccount({
+      data: { payouts_enabled: false, business_type: "company" },
+    });
+
+    const linkButton = await screen.findByRole("button", { name: "Link bank account" });
+    expect(screen.getByLabelText("Account type")).toHaveValue("company");
+    mockedCreateBankAccount.mockReturnValue(new Promise(() => {}) as never);
+    await user.click(linkButton);
+
+    await waitFor(() =>
+      expect(mockedCreateBankAccount).toHaveBeenCalledWith({
+        businessType: "company",
+        currentBusinessType: "company",
+      }),
+    );
+    expect(linkButton).toHaveAttribute("aria-busy", "true");
+    expect(linkButton).toHaveAccessibleName("Link bank account");
+  });
+
+  it("keeps the link button busy until Stripe opens", async () => {
+    const assign = vi.fn();
+    vi.stubGlobal("location", { assign });
+    mockedGetBankAccount.mockResolvedValue({ data: { payouts_enabled: false } } as never);
+    mockedCreateBankAccount.mockResolvedValue({
+      data: { link: "https://connect.stripe.test/setup" },
+    } as never);
+    const order = demoCompletedTicketOrder({
+      event: { ...icedogs, enableResale: true },
+    });
+    mockedGetMyEvents.mockResolvedValue({ data: [order] } as never);
+    navigationMocks.pathname = `/wallet/my-tickets/order/${order.orderId}/`;
+    const user = userEvent.setup();
+    render(<SeasonTickets />);
+
+    await user.click(await screen.findByRole("button", { name: "Sell" }));
+    const linkButton = await screen.findByRole("button", { name: "Link bank account" });
+    await user.click(linkButton);
+
+    await waitFor(() =>
+      expect(assign).toHaveBeenCalledWith("https://connect.stripe.test/setup"),
+    );
+    expect(linkButton).toBeDisabled();
+    expect(linkButton).toHaveAttribute("aria-busy", "true");
+    vi.unstubAllGlobals();
+  });
+
+  it("does not send the individual default when the account lookup fails", async () => {
+    mockedGetBankAccount.mockRejectedValue(new Error("network"));
+    const order = demoCompletedTicketOrder({
+      event: { ...icedogs, enableResale: true },
+    });
+    mockedGetMyEvents.mockResolvedValue({ data: [order] } as never);
+    navigationMocks.pathname = `/wallet/my-tickets/order/${order.orderId}/`;
+    render(<SeasonTickets />);
+
+    await userEvent.click(await screen.findByRole("button", { name: "Sell" }));
+    const linkButton = await screen.findByRole("button", { name: "Link bank account" });
+    expect(linkButton).toBeDisabled();
+    expect(screen.queryByLabelText("Account type")).not.toBeInTheDocument();
+    expect(
+      screen.getByText(/try again before linking a bank account/i),
+    ).toBeInTheDocument();
+    expect(mockedCreateBankAccount).not.toHaveBeenCalled();
+  });
+
+  it("sends the loaded organization type after a failed lookup is retried", async () => {
+    let resolveRetry: (value: unknown) => void = () => {};
+    mockedGetBankAccount.mockRejectedValueOnce(new Error("network"));
+    mockedGetBankAccount.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          resolveRetry = resolve;
+        }) as never,
+    );
+    const order = demoCompletedTicketOrder({
+      event: { ...icedogs, enableResale: true },
+    });
+    mockedGetMyEvents.mockResolvedValue({ data: [order] } as never);
+    navigationMocks.pathname = `/wallet/my-tickets/order/${order.orderId}/`;
+    const user = userEvent.setup();
+    render(<SeasonTickets />);
+
+    await user.click(await screen.findByRole("button", { name: "Sell" }));
+    await user.click(await screen.findByRole("button", { name: "Try again" }));
+
+    expect(screen.getAllByRole("status", { name: "Loading" }).length).toBeGreaterThan(0);
+    expect(screen.queryByRole("button", { name: "Link bank account" })).not.toBeInTheDocument();
+    expect(mockedCreateBankAccount).not.toHaveBeenCalled();
+
+    resolveRetry({
+      data: { payouts_enabled: false, business_type: "non_profit" },
+    });
+
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "Link bank account" })).toBeEnabled(),
+    );
+    expect(screen.getByLabelText("Account type")).toHaveValue("non_profit");
+    mockedCreateBankAccount.mockReturnValue(new Promise(() => {}) as never);
+    await user.click(screen.getByRole("button", { name: "Link bank account" }));
+
+    await waitFor(() =>
+      expect(mockedCreateBankAccount).toHaveBeenCalledWith({
+        businessType: "non_profit",
+        currentBusinessType: "non_profit",
+      }),
+    );
   });
 
   it("removes an active listing without refetching listings", async () => {

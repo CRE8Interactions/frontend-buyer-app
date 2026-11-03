@@ -2,6 +2,7 @@ import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import WalletBankAccount from "@/components/organisms/WalletBankAccount";
+import { demoLinkedBankAccount } from "@/lib/demo/fixtures";
 import { __resetWalletAccountCacheForTests } from "@/lib/walletAccountCache";
 
 vi.mock("next/link", () => ({
@@ -186,9 +187,12 @@ describe("WalletBankAccount", () => {
     const assign = vi.fn();
     vi.stubGlobal("location", { assign });
     mockedGetBankAccount.mockResolvedValue({
-      data: { external_accounts: [{}], charges_enabled: false, payouts_enabled: false },
+      data: demoLinkedBankAccount({
+        external_accounts: [{}],
+        charges_enabled: false,
+        payouts_enabled: false,
+      }),
     } as never);
-    mockedRemoveBankAccount.mockResolvedValue({ data: {} } as never);
     mockedCreateBankAccount.mockResolvedValue({
       data: { link: "https://connect.stripe.com/setup" },
     } as never);
@@ -201,6 +205,8 @@ describe("WalletBankAccount", () => {
     await waitFor(() =>
       expect(assign).toHaveBeenCalledWith("https://connect.stripe.com/setup"),
     );
+    expect(mockedRemoveBankAccount).not.toHaveBeenCalled();
+    expect(mockedCreateBankAccount).toHaveBeenCalledWith({ businessType: "individual" });
     expect(button).toHaveAttribute("aria-busy", "true");
     expect(button).toBeDisabled();
 
@@ -233,7 +239,7 @@ describe("WalletBankAccount", () => {
     mockedGetBankAccount.mockResolvedValue({
       data: { external_accounts: [{}], charges_enabled: false, payouts_enabled: false },
     } as never);
-    mockedRemoveBankAccount.mockReturnValue(new Promise(() => {}) as never);
+    mockedCreateBankAccount.mockReturnValue(new Promise(() => {}) as never);
     const user = userEvent.setup();
     render(<WalletBankAccount />);
 
@@ -254,5 +260,63 @@ describe("WalletBankAccount", () => {
 
     expect(button).toHaveAttribute("aria-busy", "true");
     expect(button).toBeDisabled();
+  });
+
+  it("sends the selected company type when linking a bank account", async () => {
+    mockedGetBankAccount.mockResolvedValue({ data: {} } as never);
+    mockedCreateBankAccount.mockReturnValue(new Promise(() => {}) as never);
+    const user = userEvent.setup();
+    render(<WalletBankAccount />);
+
+    await user.selectOptions(await screen.findByLabelText("Account type"), "company");
+    await user.click(screen.getByRole("button", { name: "Link bank account" }));
+
+    await waitFor(() =>
+      expect(mockedCreateBankAccount).toHaveBeenCalledWith({ businessType: "company" }),
+    );
+  });
+
+  it("confirms the loaded type so an intentional change can replace it", async () => {
+    mockedGetBankAccount.mockResolvedValue({
+      data: demoLinkedBankAccount({
+        external_accounts: [{}],
+        charges_enabled: false,
+        payouts_enabled: false,
+        business_type: "company",
+      }),
+    } as never);
+    mockedCreateBankAccount.mockReturnValue(new Promise(() => {}) as never);
+    const user = userEvent.setup();
+    render(<WalletBankAccount />);
+
+    const type = await screen.findByLabelText("Account type");
+    await waitFor(() => expect(type).toHaveValue("company"));
+    expect(screen.queryByText(/replaces the unfinished Stripe account/i)).not.toBeInTheDocument();
+
+    await user.selectOptions(type, "individual");
+    expect(screen.getByText(/replaces the unfinished Stripe account/i)).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Continue" }));
+
+    expect(mockedRemoveBankAccount).not.toHaveBeenCalled();
+    await waitFor(() =>
+      expect(mockedCreateBankAccount).toHaveBeenCalledWith({
+        businessType: "individual",
+        currentBusinessType: "company",
+      }),
+    );
+  });
+
+  it("reloads the bank account when setup is already complete", async () => {
+    mockedGetBankAccount
+      .mockResolvedValueOnce({ data: {} } as never)
+      .mockResolvedValueOnce({ data: demoLinkedBankAccount() } as never);
+    mockedCreateBankAccount.mockResolvedValue({ data: { ready: true } } as never);
+    const user = userEvent.setup();
+    render(<WalletBankAccount />);
+
+    await user.click(await screen.findByRole("button", { name: "Link bank account" }));
+
+    expect(await screen.findByText("XXXXX5556")).toBeInTheDocument();
+    expect(mockedGetBankAccount).toHaveBeenCalledTimes(2);
   });
 });

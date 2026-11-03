@@ -31,7 +31,9 @@ import {
 import Link from "next/link";
 import { useParams, usePathname, useSearchParams } from "next/navigation";
 import { QRCodeSVG } from "qrcode.react";
+import Spinner from "@/components/atoms/Spinner";
 import EntryQrSheet from "@/components/molecules/EntryQrSheet";
+import PayoutBusinessTypeField from "@/components/molecules/PayoutBusinessTypeField";
 import MobileStickyFooter from "@/components/molecules/MobileStickyFooter";
 import WalletChrome from "@/components/organisms/WalletChrome";
 import WalletBankAccount from "@/components/organisms/WalletBankAccount";
@@ -88,14 +90,8 @@ import {
   type TransferModalKind,
 } from "@/lib/transferModalCopy";
 import {
-  sellConfirmTitle,
-  sellLoadingTitle,
   sellRemoveBody,
   sellRemoveTitle,
-  sellRemovalLine,
-  sellStayOnScreenLine,
-  sellSuccessBody,
-  sellSuccessTitle,
 } from "@/lib/sellModalCopy";
 import {
   LISTING_PRICE_COPY,
@@ -103,7 +99,6 @@ import {
   listingAskingPriceError,
   listingEventName,
   listingFaceValue,
-  listingMinimumAskingPrice,
   listingSchedule,
   listingSeatLines,
   resaleSellerFeeAmount,
@@ -141,6 +136,11 @@ import {
   getResaleFeeRules,
 } from "@/lib/api";
 import { getSession } from "@/lib/auth";
+import {
+  isPayoutBusinessType,
+  payoutAccountPayload,
+  type PayoutBusinessType,
+} from "@/lib/payoutBusinessType";
 import { imageUrl, isRequestCanceled, formatCurrency } from "@/lib/helpers";
 import {
   applyAcceptedIncomingPassTransferToOrders,
@@ -1575,9 +1575,21 @@ export default function SeasonTickets({
   const [sellPriceErr, setSellPriceErr] = useState<string | null>(null);
   const [sellSaving, setSellSaving] = useState(false);
   const [sellPayoutReady, setSellPayoutReady] = useState<boolean | null>(null);
+  const [sellPayoutLookup, setSellPayoutLookup] = useState<"loading" | "ready" | "error" | null>(null);
+  const [sellBusinessType, setSellBusinessType] = useState<PayoutBusinessType>("individual");
+  const [sellExistingBusinessType, setSellExistingBusinessType] = useState<string | null>(null);
+  const sellPayoutLookupRequest = useRef(0);
   const [sellFeeRules, setSellFeeRules] = useState<ResaleFeeRule[] | null>(null);
   const [sellPayoutError, setSellPayoutError] = useState("");
   const [sellLinking, setSellLinking] = useState(false);
+  useEffect(() => {
+    const onPageShow = (event: PageTransitionEvent) => {
+      if (!event.persisted) return;
+      setSellLinking(false);
+    };
+    window.addEventListener("pageshow", onPageShow);
+    return () => window.removeEventListener("pageshow", onPageShow);
+  }, []);
   const [walletListings, setWalletListings] = useState<WalletListing[]>([]);
   const walletListingsRef = useRef<WalletListing[]>([]);
   const [confirmRemoveListing, setConfirmRemoveListing] = useState<WalletListing | null>(null);
@@ -5328,23 +5340,48 @@ export default function SeasonTickets({
     setTf({ step: 1, sel: [], email: "", evId: activeEvId });
     setModal(null);
   };
+  const refreshSellPayout = () => {
+    const requestId = sellPayoutLookupRequest.current + 1;
+    sellPayoutLookupRequest.current = requestId;
+    setSellPayoutLookup("loading");
+    setSellPayoutReady(null);
+    setSellPayoutError("");
+    return getBankAccount()
+      .then((res) => {
+        if (requestId !== sellPayoutLookupRequest.current) return;
+        const data = res.data as { payouts_enabled?: boolean; business_type?: string } | undefined;
+        const linkedType = data?.business_type;
+        if (isPayoutBusinessType(linkedType)) {
+          setSellBusinessType(linkedType);
+          setSellExistingBusinessType(linkedType);
+        } else {
+          setSellExistingBusinessType(null);
+        }
+        setSellPayoutReady(data?.payouts_enabled === true);
+        setSellPayoutLookup("ready");
+      })
+      .catch(() => {
+        if (requestId !== sellPayoutLookupRequest.current) return;
+        setSellPayoutReady(false);
+        setSellPayoutLookup("error");
+        setSellPayoutError(
+          "Unable to check your payout account. Try again before linking a bank account.",
+        );
+      });
+  };
   const openSell = () => {
     setSell({ step: 1, sel: [], evId: activeEvId, price: "" });
     setSellError("");
     setSellPriceErr(null);
     setSellSaving(false);
     setSellPayoutReady(null);
+    setSellBusinessType("individual");
+    setSellExistingBusinessType(null);
     setSellFeeRules(null);
     setSellPayoutError("");
     setModal(null);
     const eventId = ev.event?.id;
-    void getBankAccount()
-      .then((res) => {
-        setSellPayoutReady(
-          (res.data as { payouts_enabled?: boolean } | undefined)?.payouts_enabled === true,
-        );
-      })
-      .catch(() => setSellPayoutReady(false));
+    void refreshSellPayout();
     if (eventId == null) {
       setSellFeeRules([]);
     } else {
@@ -6931,12 +6968,10 @@ export default function SeasonTickets({
   const sellStep = sell?.step || 1;
   const sellSel = sell?.sel || [];
   const sellSelectedTickets = sellTickets.filter(({ key }) => sellSel.includes(key));
-  const sellCount = Math.max(sellSel.length, sellSelectedTickets.length, 1);
   const sellFace = listingFaceValue(
     sellSelectedTickets.map(({ ticket }) => (ticket.raw ?? ticket) as TicketLike),
   );
   const sellMinPercent = eventResaleMinimumPercent(sellEv?.event);
-  const sellMinPrice = listingMinimumAskingPrice(sellFace, sellMinPercent);
   const sellAsking = parseAskingPrice(sell?.price || "") ?? 0;
   const sellFee = resaleSellerFeeAmount(sellAsking, sellFeeRules, sellEv?.event);
   const sellPayout = (sellAsking - sellFee) * (sellSelectedTickets.length || 1);
@@ -6946,33 +6981,38 @@ export default function SeasonTickets({
     setSellError("");
     setSellPriceErr(null);
     setSellSaving(false);
+    sellPayoutLookupRequest.current += 1;
     setSellPayoutReady(null);
+    setSellPayoutLookup(null);
     setSellPayoutError("");
+    setSellExistingBusinessType(null);
   };
   const linkSellBank = async () => {
+    if (sellPayoutLookup !== "ready") return;
     setSellLinking(true);
     setSellPayoutError("");
     try {
-      const res = await createBankAccount({});
-      const link = (res.data as { link?: string } | undefined)?.link;
-      if (link) {
-        window.location.assign(link);
+      const res = await createBankAccount(
+        payoutAccountPayload(sellBusinessType, sellExistingBusinessType),
+      );
+      const body = res.data as { link?: string; ready?: boolean } | undefined;
+      if (body?.link) {
+        window.location.assign(body.link);
         return;
       }
-      setSellPayoutError("Unable to open bank account setup. Try again.");
+      if (body?.ready) {
+        setSellPayoutReady(true);
+      } else {
+        setSellPayoutError("Unable to open bank account setup. Try again.");
+      }
     } catch {
       setSellPayoutError("Unable to open bank account setup. Try again.");
-    } finally {
-      setSellLinking(false);
     }
+    setSellLinking(false);
   };
   const sellCanNext =
     !sellSaving &&
-    (sellStep === 1
-      ? sellSelectedTickets.length > 0
-      : sellStep === 5
-        ? true
-        : true);
+    (sellStep === 1 ? sellSelectedTickets.length > 0 : true);
   const doSellPrimary = async () => {
     if (!sell) return;
     if (sellStep === 1 && sellSelectedTickets.length === 0) return;
@@ -6980,7 +7020,7 @@ export default function SeasonTickets({
       setSell({ ...sell, step: 2 });
       return;
     }
-    if (sellStep === 5) {
+    if (sellStep === 4) {
       closeSellModal();
       return;
     }
@@ -6996,10 +7036,6 @@ export default function SeasonTickets({
       return;
     }
     if (sellStep === 3) {
-      setSell({ ...sell, step: 4 });
-      return;
-    }
-    if (sellStep === 4) {
       const price = parseAskingPrice(sell.price);
       const error = listingAskingPriceError(sell.price, {
         face: sellFace,
@@ -7051,7 +7087,7 @@ export default function SeasonTickets({
           orders: nextOrders,
           removedTicketIds,
         });
-        setSell({ ...sell, step: 5 });
+        setSell({ ...sell, step: 4 });
       } catch (err) {
         setSellError(parseListingApiError(err, "create"));
       } finally {
@@ -7062,36 +7098,86 @@ export default function SeasonTickets({
 
   const SellModal = () => {
     if (!sell) return null;
-    const inFlight = sellSaving && sellStep === 4;
+    const inFlight = sellSaving && sellStep === 3;
+    const sellTicketCount = Math.max(sellSelectedTickets.length, 1);
+    const sellTicketsWord = sellTicketCount === 1 ? "ticket" : "tickets";
+    const sellFeeTotal = sellFee * sellTicketCount;
+    const sellTicketsTotal = sellAsking * sellTicketCount;
     return (
       <div style={{ ...overlay, zIndex: 85, alignItems: mobile ? "flex-end" : "center", padding: mobile ? 0 : 32 }}>
-        <div className={mobile ? "st-sheet-up st-transfer-sheet" : undefined} onClick={(e) => e.stopPropagation()} style={{ ...sheet, maxWidth: mobile ? "100%" : 460, width: "100%", maxHeight: mobile ? "92vh" : "88vh", overflowY: "auto", borderRadius: mobile ? "26px 26px 0 0" : 26, paddingBottom: mobile ? "calc(22px + env(safe-area-inset-bottom))" : 22 }}>
+        <div className={mobile ? "st-sheet-up st-transfer-sheet" : undefined} onClick={(e) => e.stopPropagation()} style={{ ...sheet, position: sellPayoutReady !== true && sellStep === 1 ? "relative" : undefined, maxWidth: mobile ? "100%" : 460, width: "100%", maxHeight: mobile ? "92vh" : "88vh", overflowY: "auto", borderRadius: mobile ? "26px 26px 0 0" : 26, paddingBottom: mobile ? "calc(22px + env(safe-area-inset-bottom))" : 22 }}>
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, paddingBottom: 16, borderBottom: "1px solid rgba(5,27,53,0.08)" }}>
             <h2 style={{ margin: 0, fontSize: transferModalType.title, lineHeight: 1.5, fontWeight: 600, letterSpacing: "-0.02em" }}>Sell</h2>
             {sellSaving ? null : closeX(() => void closeSellModal())}
           </div>
-          {sellPayoutReady !== true ? (
-            <div style={{ display: "flex", flexDirection: "column", gap: 12, paddingTop: 18 }}>
+          {sellPayoutReady !== true && sellStep === 1 ? (
+            <div
+              aria-hidden={sellPayoutLookup === "loading" || sellPayoutLookup === null || undefined}
+              style={{
+                display: "flex",
+                flexDirection: "column",
+                gap: 12,
+                visibility: sellPayoutLookup === "loading" || sellPayoutLookup === null ? "hidden" : "visible",
+              }}
+            >
               <div style={{ fontSize: transferModalType.stepTitle, lineHeight: 1.5, fontWeight: 600, letterSpacing: "-0.015em" }}>Link a bank account</div>
               <p style={{ margin: 0, fontSize: transferModalType.body, lineHeight: browseLeading("body"), color: SUB }}>
                 A payout account is required before you can list tickets. After the event, your payout is sent to that account.
               </p>
+              {sellPayoutLookup === "error" ? null : (
+                <PayoutBusinessTypeField
+                  id="sell-payout-business-type"
+                  value={sellBusinessType}
+                  onChange={setSellBusinessType}
+                  currentBusinessType={sellExistingBusinessType}
+                  disabled={sellLinking}
+                />
+              )}
               {sellPayoutError ? (
                 <div role="alert" style={{ fontSize: transferModalType.error, color: DANGER }}>{sellPayoutError}</div>
               ) : null}
-              <button
-                type="button"
-                onClick={() => void linkSellBank()}
-                disabled={sellPayoutReady === null || sellLinking}
-                style={{ fontFamily: "inherit", alignSelf: "flex-start", fontSize: transferModalType.button, fontWeight: 600, color: INK, background: ACCENT, border: "none", borderRadius: 999, padding: "14px 18px", minHeight: 48, cursor: "pointer" }}
-              >
-                {sellPayoutReady === null ? "Checking…" : "Link bank account"}
-              </button>
+              <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                <button
+                  type="button"
+                  onClick={() => void linkSellBank()}
+                  disabled={sellPayoutLookup !== "ready" || sellLinking}
+                  aria-busy={sellLinking || undefined}
+                  style={{ fontFamily: "inherit", flex: "1 1 0", display: "flex", alignItems: "center", justifyContent: "center", fontSize: transferModalType.button, fontWeight: 600, color: INK, background: ACCENT, border: "none", borderRadius: 999, padding: "14px 12px", minHeight: 48, opacity: sellLinking ? 0.55 : 1, cursor: sellPayoutLookup === "ready" && !sellLinking ? "pointer" : "default" }}
+                >
+                  <span style={{ position: "relative", display: "inline-flex", alignItems: "center", justifyContent: "center", maxWidth: "100%" }}>
+                    <span style={{ opacity: sellLinking ? 0 : 1, display: "inline-flex", alignItems: "center", gap: 8, whiteSpace: "nowrap" }}>
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.4} strokeLinecap="round" aria-hidden style={{ width: 16, height: 16, flexShrink: 0 }}>
+                        <line x1="12" y1="5" x2="12" y2="19" />
+                        <line x1="5" y1="12" x2="19" y2="12" />
+                      </svg>
+                      Link bank account
+                    </span>
+                    {sellLinking ? (
+                      <span aria-hidden style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center" }}>
+                        <Spinner size={18} variant="compact" color={INK} trackColor="rgba(5,27,53,0.2)" label="Opening bank account setup" />
+                      </span>
+                    ) : null}
+                  </span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void refreshSellPayout()}
+                  disabled={sellPayoutLookup === "loading" || sellPayoutLookup === null}
+                  style={{ fontFamily: "inherit", flex: "1 1 0", fontSize: transferModalType.button, fontWeight: 600, color: INK, background: "#fff", border: "1px solid rgba(5,27,53,0.14)", borderRadius: 999, padding: "14px 12px", minHeight: 48, cursor: sellPayoutLookup === "loading" || sellPayoutLookup === null ? "default" : "pointer" }}
+                >
+                  {sellPayoutLookup === "error" ? "Try again" : "I've finished linking"}
+                </button>
+              </div>
+            </div>
+          ) : null}
+          {sellPayoutReady !== true && sellStep === 1 && (sellPayoutLookup === "loading" || sellPayoutLookup === null) ? (
+            <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", pointerEvents: "none" }}>
+              <Spinner size={18} variant="compact" color={ACCENT} trackColor="rgba(166,231,115,0.35)" label="Loading" />
             </div>
           ) : null}
           {sellPayoutReady === true && sellStep === 1 && (
             <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-              <div style={{ fontSize: transferModalType.stepTitle, lineHeight: 1.5, fontWeight: 600, letterSpacing: "-0.015em" }}>Select tickets to list</div>
+              <div style={{ fontSize: transferModalType.stepTitle, lineHeight: 1.5, fontWeight: 600, letterSpacing: "-0.015em" }}>Select tickets to sell</div>
               <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
                 <div style={{ fontSize: transferModalType.meta, lineHeight: 1.5, fontWeight: 600, color: mobile ? SUB : FAINT }}>{sellRowLabel}</div>
                 <div style={{ fontSize: transferModalType.metaMuted, lineHeight: 1.5, fontWeight: 600, color: mobile ? SUB : MUTE }}>{sellTickets.length} {sellTickets.length === 1 ? "ticket" : "tickets"}</div>
@@ -7111,119 +7197,116 @@ export default function SeasonTickets({
               </div>
             </div>
           )}
-          {sellPayoutReady === true && sellStep === 2 && (
+          {sellStep === 2 && (
             <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-              <div style={{ fontSize: transferModalType.stepTitle, lineHeight: 1.5, fontWeight: 600, letterSpacing: "-0.015em" }}>Set price</div>
-              <div style={{ display: "flex", flexDirection: "column", gap: 3, background: FIELD, borderRadius: 14, padding: "14px 16px" }}>
-                <div style={{ fontSize: transferModalType.fieldLabel, fontWeight: 600, color: FAINT }}>Face value</div>
-                <div style={{ fontSize: transferModalType.fieldValue, fontWeight: 600 }}>{formatCurrency(sellFace)}</div>
-              </div>
-              {sellMinPrice != null ? (
-                <div style={{ display: "flex", flexDirection: "column", gap: 3, background: FIELD, borderRadius: 14, padding: "14px 16px" }}>
-                  <div style={{ fontSize: transferModalType.fieldLabel, fontWeight: 600, color: FAINT }}>Minimum asking price</div>
-                  <div style={{ fontSize: transferModalType.fieldValue, fontWeight: 600 }}>{formatCurrency(sellMinPrice)}</div>
+              <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                <div style={{ fontSize: transferModalType.stepTitle, lineHeight: 1.5, fontWeight: 600, letterSpacing: "-0.015em" }}>
+                  Price your {sellSelectedTickets.length === 1 ? "ticket" : "tickets"}
                 </div>
-              ) : null}
-              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                <label htmlFor="sell-asking-price" style={{ fontSize: transferModalType.fieldLabel, fontWeight: 600, color: FAINT }}>Asking price per ticket</label>
-                <input
-                  id="sell-asking-price"
-                  inputMode="decimal"
-                  value={sell.price}
-                  onChange={(e) => {
-                    setSell({ ...sell, price: e.target.value });
-                    if (sellPriceErr) setSellPriceErr(null);
-                  }}
-                  onBlur={() => {
-                    setSellPriceErr(
-                      listingAskingPriceError(sell.price, {
-                        face: sellFace,
-                        resaleMinimumPercent: sellMinPercent,
-                        mode: "blur",
-                      }),
-                    );
-                  }}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter") {
-                      e.preventDefault();
-                      void doSellPrimary();
-                    }
-                  }}
-                  style={{ fontFamily: "inherit", width: "100%", boxSizing: "border-box", fontSize: fluidSize(16), color: INK, background: "#fff", border: `1px solid ${sellPriceErr ? DANGER : "rgba(5,27,53,0.12)"}`, borderRadius: 14, padding: "14px 16px", outline: "none" }}
-                />
-                {sellPriceErr ? (
-                  <div role="alert" style={{ fontSize: transferModalType.error, color: DANGER }}>{sellPriceErr}</div>
-                ) : null}
+                <div style={{ fontSize: transferModalType.body, lineHeight: browseLeading("body"), color: SUB }}>
+                  Ticket face value {formatCurrency(sellFace)}
+                </div>
               </div>
-              <div style={{ display: "flex", flexDirection: "column", gap: 3, background: FIELD, borderRadius: 14, padding: "14px 16px" }}>
-                <div style={{ fontSize: transferModalType.fieldLabel, fontWeight: 600, color: FAINT }}>Seller fee</div>
-                <div style={{ fontSize: transferModalType.fieldValue, fontWeight: 600 }}>{formatCurrency(sellFee)}</div>
-              </div>
+              <label
+                htmlFor="sell-asking-price"
+                style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 2, background: FIELD, borderRadius: 14, padding: "18px 16px", border: `1px solid ${sellPriceErr ? DANGER : "transparent"}` }}
+              >
+                <span style={{ display: "inline-flex", alignItems: "center" }}>
+                  <span style={{ fontSize: fluidSize(28), fontWeight: 700, color: INK, lineHeight: 1 }}>$</span>
+                  <input
+                    id="sell-asking-price"
+                    inputMode="decimal"
+                    value={sell.price}
+                    onChange={(e) => {
+                      setSell({ ...sell, price: e.target.value });
+                      if (sellPriceErr) setSellPriceErr(null);
+                    }}
+                    onBlur={() => {
+                      setSellPriceErr(
+                        listingAskingPriceError(sell.price, {
+                          face: sellFace,
+                          resaleMinimumPercent: sellMinPercent,
+                          mode: "blur",
+                        }),
+                      );
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") {
+                        e.preventDefault();
+                        void doSellPrimary();
+                      }
+                    }}
+                    style={{ fontFamily: "inherit", width: 110, boxSizing: "border-box", fontSize: fluidSize(28), fontWeight: 700, color: INK, lineHeight: 1, background: "transparent", border: "none", outline: "none", padding: 0 }}
+                  />
+                </span>
+                <span role={sellPriceErr ? "alert" : undefined} style={{ fontSize: transferModalType.fieldLabel, fontWeight: 500, color: sellPriceErr ? DANGER : FAINT }}>
+                  {sellPriceErr || "Price per ticket"}
+                </span>
+              </label>
             </div>
           )}
-          {sellPayoutReady === true && sellStep === 3 && (
-            <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-              <div style={{ fontSize: transferModalType.stepTitle, lineHeight: 1.5, fontWeight: 600, letterSpacing: "-0.015em" }}>Payout summary</div>
-              {[
-                { label: "Asking price per ticket", value: formatCurrency(sellAsking) },
-                { label: "Quantity", value: String(sellSelectedTickets.length) },
-                { label: "Seller fee", value: formatCurrency(sellFee) },
-                { label: "Net payout", value: formatCurrency(sellPayout) },
-              ].map((row) => (
-                <div key={row.label} style={{ display: "flex", flexDirection: "column", gap: 3, background: FIELD, borderRadius: 14, padding: "14px 16px" }}>
-                  <div style={{ fontSize: transferModalType.fieldLabel, fontWeight: 600, color: FAINT }}>{row.label}</div>
-                  <div style={{ fontSize: transferModalType.fieldValue, fontWeight: 600 }}>{row.value}</div>
-                </div>
-              ))}
-            </div>
-          )}
-          {sellPayoutReady === true && sellStep === 4 && !inFlight ? (
-            <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-              <div style={{ fontSize: transferModalType.stepTitle, lineHeight: 1.5, fontWeight: 600, letterSpacing: "-0.015em" }}>{sellConfirmTitle(sellSelectedTickets.length)}</div>
-              <div style={{ display: "flex", flexWrap: "wrap", gap: 10 }}>
-                {sellSelectedTickets.map(({ key, seatNo, isGA, ariaLabel }) => (
-                  <div key={key} aria-label={ariaLabel} style={{ ...transferChipStyle, display: "flex", flexDirection: "column", alignItems: "center", gap: isGA ? 0 : 2, background: FIELD, color: INK, border: "1px solid rgba(5,27,53,0.10)", borderRadius: 16 }}>
-                    {!isGA ? (
-                      <span style={{ fontSize: transferChipType.seatLabel, lineHeight: 1.5, fontWeight: 500, color: MUTE }}>Seat</span>
-                    ) : null}
-                    <span style={{ fontSize: transferChipType.seatNo, fontWeight: 600, letterSpacing: "-0.02em", lineHeight: 1.5 }}>{seatNo}</span>
+          {sellStep === 3 && (
+            <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+              <div style={{ display: "flex", flexDirection: "column", gap: 6, paddingBottom: 14, borderBottom: "1px solid rgba(5,27,53,0.08)" }}>
+                <div style={{ fontSize: transferModalType.stepTitle, lineHeight: 1.5, fontWeight: 600, letterSpacing: "-0.015em" }}>Payment Summary</div>
+                <p style={{ margin: 0, fontSize: transferModalType.body, lineHeight: browseLeading("body"), color: SUB }}>
+                  Please go to &apos;Settings&apos; in your &apos;Wallet&apos; and make sure your bank account is linked in order to receive funds from ticket sales.
+                </p>
+              </div>
+              <div style={{ fontSize: transferModalType.fieldLabel, fontWeight: 600, letterSpacing: "0.06em", textTransform: "uppercase", color: FAINT }}>Ticket Breakdown</div>
+              <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+                <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                  <div style={{ fontSize: transferModalType.fieldValue, fontWeight: 600 }}>Tickets</div>
+                  <div style={{ display: "flex", justifyContent: "space-between", gap: 12, fontSize: transferModalType.body, color: SUB }}>
+                    <span>Tickets: {formatCurrency(sellAsking)} x {sellTicketCount}</span>
+                    <span>{formatCurrency(sellTicketsTotal)}</span>
                   </div>
-                ))}
+                </div>
+                <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                  <div style={{ fontSize: transferModalType.fieldValue, fontWeight: 600 }}>Service Fees</div>
+                  <div style={{ display: "flex", justifyContent: "space-between", gap: 12, fontSize: transferModalType.body, color: SUB }}>
+                    <span>Service Fees: {formatCurrency(sellFee)} x {sellTicketCount}</span>
+                    <span>(-{formatCurrency(sellFeeTotal)})</span>
+                  </div>
+                </div>
+                <div style={{ display: "flex", justifyContent: "space-between", gap: 12, fontSize: transferModalType.fieldValue, fontWeight: 600 }}>
+                  <span>Your Payout</span>
+                  <span>{formatCurrency(sellPayout)}</span>
+                </div>
               </div>
-              <div style={{ display: "flex", flexDirection: "column", gap: 3, background: FIELD, borderRadius: 14, padding: "14px 16px" }}>
-                <div style={{ fontSize: transferModalType.fieldLabel, fontWeight: 600, color: FAINT }}>Asking price per ticket</div>
-                <div style={{ fontSize: transferModalType.fieldValue, fontWeight: 600 }}>{formatCurrency(sellAsking)}</div>
-              </div>
-              <p style={{ margin: 0, fontSize: transferModalType.body, lineHeight: browseLeading("body"), color: SUB }}>
-                {sellRemovalLine(sellSelectedTickets.length)}
+              <p style={{ margin: 0, fontSize: transferModalType.fieldLabel, lineHeight: browseLeading("body"), color: SUB }}>
+                By clicking &apos;Agree and sell&apos; you are consenting to Blocktickets{" "}
+                <Link href="/terms-conditions/" target="_blank" style={{ color: INK }}>terms and conditions</Link>.
               </p>
             </div>
-          ) : null}
-          {sellPayoutReady === true && inFlight ? (
-            <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-              <div style={{ fontSize: transferModalType.stepTitle, lineHeight: 1.5, fontWeight: 600, letterSpacing: "-0.015em" }}>{sellLoadingTitle(sellSelectedTickets.length)}</div>
-              <p style={{ margin: 0, fontSize: transferModalType.body, lineHeight: browseLeading("body"), color: SUB }}>{sellStayOnScreenLine()}</p>
-            </div>
-          ) : null}
+          )}
           {sellError && sellStep !== 2 ? (
             <div role="alert" style={{ fontSize: transferModalType.error, color: DANGER }}>{sellError}</div>
           ) : null}
-          {sellPayoutReady === true && sellStep === 5 && !sellSaving ? (
+          {sellStep === 4 && !sellSaving ? (
             <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 14, padding: "6px 0 2px" }}>
               <div style={{ width: 78, height: 78, borderRadius: 999, background: GREEN, display: "flex", alignItems: "center", justifyContent: "center" }}>
                 <svg viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth={2.6} strokeLinecap="round" strokeLinejoin="round" style={{ width: 38, height: 38 }}><polyline points="20 6 9 17 4 12" /></svg>
               </div>
-              <div style={{ fontSize: transferModalType.success, lineHeight: 1.5, fontWeight: 600, letterSpacing: "-0.02em", textAlign: "center" }}>{sellSuccessTitle(sellCount)}</div>
-              <p style={{ margin: 0, fontSize: transferModalType.body, lineHeight: browseLeading("body"), color: SUB, textAlign: "center" }}>{sellSuccessBody(sellCount)}</p>
+              <div style={{ fontSize: transferModalType.success, lineHeight: 1.5, fontWeight: 600, letterSpacing: "-0.02em", textAlign: "center" }}>
+                Your {sellTicketsWord} {sellTicketCount === 1 ? "is" : "are"} listed for sale!
+              </div>
+              <p style={{ margin: 0, fontSize: transferModalType.body, lineHeight: browseLeading("body"), color: SUB, textAlign: "center" }}>
+                We will notify you via sms if a purchase is made. While your {sellTicketsWord} {sellTicketCount === 1 ? "is" : "are"} listed, you can change the price or delist {sellTicketCount === 1 ? "it" : "them"} from the marketplace in &apos;My listings&apos; at anytime.
+              </p>
+              <p style={{ margin: 0, fontSize: transferModalType.fieldLabel, lineHeight: browseLeading("body"), color: SUB, textAlign: "center" }}>
+                If you have any question please reach out to{" "}
+                <a href="mailto:help@blocktickets.xyz" style={{ color: INK }}>help@blocktickets.xyz</a>
+              </p>
             </div>
           ) : null}
-          {sellPayoutReady === true ? (
+          {sellStep > 1 || sellPayoutReady === true ? (
           <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-            {(sellStep === 2 || sellStep === 3 || (sellStep === 4 && !sellSaving)) ? (
+            {(sellStep === 2 || (sellStep === 3 && !inFlight)) ? (
               <button type="button" onClick={() => { setSellError(""); setSellPriceErr(null); setSell({ ...sell, step: sellStep - 1 }); }} style={{ fontFamily: "inherit", flexShrink: 0, display: "flex", alignItems: "center", gap: 8, fontSize: transferModalType.button, lineHeight: 1.5, fontWeight: 600, color: INK, background: "#fff", border: "none", padding: "14px 12px", minHeight: 48, cursor: "pointer" }}><BackArrow />Back</button>
             ) : null}
-            {sellStep === 5 && !sellSaving && (
-              <Link href={walletSectionHref("resale")} onClick={() => { closeSellModal(); }} style={{ fontFamily: "inherit", flex: 1, display: "flex", alignItems: "center", justifyContent: "center", fontSize: transferModalType.button, fontWeight: 600, color: INK, background: "#f1f3f8", borderRadius: 999, padding: 14, minHeight: 48, textDecoration: "none", cursor: "pointer" }}>My listings</Link>
+            {sellStep === 4 && !sellSaving && (
+              <Link href={walletSectionHref("resale")} onClick={() => { closeSellModal(); }} style={{ fontFamily: "inherit", flex: 1, display: "flex", alignItems: "center", justifyContent: "center", fontSize: transferModalType.button, fontWeight: 600, color: INK, background: "#f1f3f8", borderRadius: 999, padding: 14, minHeight: 48, textDecoration: "none", cursor: "pointer" }}>Go to My listings</Link>
             )}
             <button
               type="button"
@@ -7238,7 +7321,14 @@ export default function SeasonTickets({
                 spinnerColor={INK}
                 trackColor="rgba(5,27,53,0.2)"
               >
-                {sellStep === 4 ? "List tickets" : sellStep === 5 ? "Close" : "Next"}
+                <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
+                  {sellStep === 1 ? "Set price" : sellStep === 2 ? "Payout summary" : sellStep === 3 ? "Agree and sell" : "Close"}
+                  {sellStep === 2 ? (
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.75} strokeLinecap="round" strokeLinejoin="round" aria-hidden style={{ width: 16, height: 16, display: "block", transform: "translateY(1px)" }}>
+                      <path d="M5 12h14M13 6l6 6-6 6" />
+                    </svg>
+                  ) : null}
+                </span>
               </ButtonBusyContents>
             </button>
           </div>

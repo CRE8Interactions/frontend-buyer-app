@@ -10,6 +10,7 @@ export type CachedBankAccount = {
   last4?: string | number;
   charges_enabled?: boolean;
   payouts_enabled?: boolean;
+  business_type?: string;
 } | null;
 
 export type CachedPayoutFunds = { available: number; onHold: number };

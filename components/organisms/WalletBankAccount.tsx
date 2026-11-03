@@ -3,10 +3,15 @@
 import { useEffect, useState } from "react";
 import { CenteredBusyLabel } from "@/components/atoms/BrandedActionButton";
 import InAppBackLink from "@/components/molecules/InAppBackLink";
+import PayoutBusinessTypeField from "@/components/molecules/PayoutBusinessTypeField";
 import { WalletTicketsBlocksLoading } from "@/components/organisms/WalletTicketsLoader";
 import { createBankAccount, removeBankAccount } from "@/lib/api";
 import {
-  clearWalletAccountCache,
+  isPayoutBusinessType,
+  payoutAccountPayload,
+  type PayoutBusinessType,
+} from "@/lib/payoutBusinessType";
+import {
   loadCachedBankAccount,
   readCachedBankAccount,
   type CachedBankAccount,
@@ -84,6 +89,7 @@ export default function WalletBankAccount({ processing = false }: { processing?:
   const [busy, setBusy] = useState<"link" | "continue" | "delete" | null>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [error, setError] = useState("");
+  const [businessType, setBusinessType] = useState<PayoutBusinessType>("individual");
 
   const load = (force = false) => {
     if (force) setLoaded(false);
@@ -99,6 +105,12 @@ export default function WalletBankAccount({ processing = false }: { processing?:
   }, [processing]);
 
   useEffect(() => {
+    if (isPayoutBusinessType(account?.business_type)) {
+      setBusinessType(account.business_type);
+    }
+  }, [account]);
+
+  useEffect(() => {
     const onPageShow = (event: PageTransitionEvent) => {
       if (!event.persisted) return;
       setBusy((current) => (current === "delete" ? current : null));
@@ -111,10 +123,17 @@ export default function WalletBankAccount({ processing = false }: { processing?:
     setBusy(source);
     setError("");
     try {
-      const res = await createBankAccount({});
-      const link = (res.data as { link?: string } | undefined)?.link;
-      if (link) {
-        window.location.assign(link);
+      const res = await createBankAccount(
+        payoutAccountPayload(businessType, account?.business_type),
+      );
+      const body = res.data as { link?: string; ready?: boolean } | undefined;
+      if (body?.link) {
+        window.location.assign(body.link);
+        return;
+      }
+      if (body?.ready) {
+        setBusy(null);
+        load(true);
         return;
       }
       setError("Unable to open bank account setup. Try again.");
@@ -122,20 +141,6 @@ export default function WalletBankAccount({ processing = false }: { processing?:
       setError("Unable to open bank account setup. Try again.");
     }
     setBusy(null);
-  };
-
-  const continueSetup = async () => {
-    setBusy("continue");
-    setError("");
-    try {
-      await removeBankAccount();
-      clearWalletAccountCache();
-    } catch {
-      setBusy(null);
-      setError("Unable to open bank account setup. Try again.");
-      return;
-    }
-    await startSetup("continue");
   };
 
   const removeBank = async () => {
@@ -170,6 +175,13 @@ export default function WalletBankAccount({ processing = false }: { processing?:
         <section style={{ background: "#fff", borderRadius: 20, padding: 20, display: "flex", flexDirection: "column", gap: 12 }}>
           <h1 style={{ margin: 0, fontSize: 28, fontWeight: 700, letterSpacing: "-0.03em" }}>Bank Information</h1>
           <p style={{ margin: 0 }}>Link a bank account to receive resale payouts.</p>
+          <PayoutBusinessTypeField
+            id="link-bank-business-type"
+            value={businessType}
+            onChange={setBusinessType}
+            currentBusinessType={account?.business_type}
+            disabled={busy !== null}
+          />
           <button
             type="button"
             onClick={() => void startSetup("link")}
@@ -199,16 +211,32 @@ export default function WalletBankAccount({ processing = false }: { processing?:
               : "You haven't finished setting up your banking info, please continue to finish setting up your bank account"}
           </p>
           {verifying ? null : (
+            <>
+            <PayoutBusinessTypeField
+              id="continue-bank-business-type"
+              value={businessType}
+              onChange={setBusinessType}
+              currentBusinessType={account?.business_type}
+              disabled={busy !== null}
+            />
             <button
               type="button"
-              onClick={() => void continueSetup()}
+              onClick={() => void startSetup("continue")}
               disabled={busy === "continue"}
               aria-label="Continue"
               aria-busy={busy === "continue" || undefined}
               style={{ ...actionButtonStyle, cursor: busy === "continue" ? "default" : "pointer", opacity: busy === "continue" ? 0.55 : 1 }}
             >
-              <CenteredBusyLabel loading={busy === "continue"}>Continue</CenteredBusyLabel>
+              <CenteredBusyLabel loading={busy === "continue"}>
+                <span style={{ display: "inline-flex", alignItems: "center", gap: 8, lineHeight: 1 }}>
+                  Continue
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.75} strokeLinecap="round" strokeLinejoin="round" aria-hidden style={{ width: 16, height: 16, display: "block", transform: "translateY(1px)" }}>
+                    <path d="M5 12h14M13 6l6 6-6 6" />
+                  </svg>
+                </span>
+              </CenteredBusyLabel>
             </button>
+            </>
           )}
         </section>
       ) : null}
