@@ -216,7 +216,7 @@ import AccessibleSeatingBadge from "@/components/atoms/AccessibleSeatingBadge";
 import {
   addAccessPassToPhoneWallet,
   addTicketToPhoneWallet,
-  phoneWalletKind,
+  phoneWalletKinds,
   phoneWalletLabel,
   phoneWalletTheme,
   type PhoneWalletKind,
@@ -1501,8 +1501,8 @@ export default function SeasonTickets({
     pass: AccessPassSummary;
     kind: "season pass" | "access pass";
   } | null>(null);
-  const [passWallet, setPassWallet] = useState<PhoneWalletKind | null>(null);
-  const [passWalletSaving, setPassWalletSaving] = useState(false);
+  const [passWallets, setPassWallets] = useState<PhoneWalletKind[]>([]);
+  const [passWalletSaving, setPassWalletSaving] = useState<PhoneWalletKind | null>(null);
   const [passWalletError, setPassWalletError] = useState("");
   const [ticketWalletSaving, setTicketWalletSaving] = useState<string | null>(null);
   const [ticketWalletError, setTicketWalletError] = useState("");
@@ -1625,7 +1625,6 @@ export default function SeasonTickets({
   const [eventsChecked, setEventsChecked] = useState(false);
   const [resaleListingsChecked, setResaleListingsChecked] = useState(false);
   const [phoneDevice, setPhoneDevice] = useState(false);
-  const passWalletTheme = passWallet ? phoneWalletTheme(passWallet) : null;
   const codeBoxes = useRef<(HTMLInputElement | null)[]>([]);
   const autoFocusField = useAutoFocus<HTMLInputElement>(true);
   const setCodeRef = useMemo(
@@ -1668,10 +1667,13 @@ export default function SeasonTickets({
   };
 
   useLayoutEffect(() => {
-    setVw(window.innerWidth);
-    setPhoneDevice(isPhoneDevice());
-    setPassWallet(phoneWalletKind());
-    const onR = () => setVw(window.innerWidth);
+    const syncPhone = () => {
+      setVw(window.innerWidth);
+      setPhoneDevice(isPhoneDevice());
+      setPassWallets(phoneWalletKinds());
+    };
+    syncPhone();
+    const onR = () => syncPhone();
     window.addEventListener("resize", onR);
     return () => window.removeEventListener("resize", onR);
   }, []);
@@ -5231,9 +5233,12 @@ export default function SeasonTickets({
       setPrinting(null);
     }
   };
-  const addTicketCardToWallet = async (ticket: EventT["tickets"][number]) => {
-    if (!passWallet) return;
-    setTicketWalletSaving(String(ticket.id || ticket.code));
+  const addTicketCardToWallet = async (
+    ticket: EventT["tickets"][number],
+    kind: PhoneWalletKind,
+  ) => {
+    const ticketKey = String(ticket.id || ticket.code);
+    setTicketWalletSaving(`${ticketKey}:${kind}`);
     setTicketWalletError("");
     const error = await addTicketToPhoneWallet(
       {
@@ -5247,7 +5252,7 @@ export default function SeasonTickets({
           (typeof ticket.raw?.eventUUID === "string" && ticket.raw.eventUUID) ||
           ev.eventUUID,
       },
-      passWallet,
+      kind,
     );
     setTicketWalletSaving(null);
     if (error) setTicketWalletError(error);
@@ -5498,25 +5503,31 @@ export default function SeasonTickets({
 
             {/* actions */}
             <div style={{ padding: "16px 18px 18px", display: "flex", flexDirection: "column", gap: 12 }}>
-              {passWallet ? (
-                <button
-                  type="button"
-                  disabled={ticketWalletSaving !== null}
-                  aria-busy={ticketWalletSaving === String(t.id || t.code) || undefined}
-                  onClick={() => void addTicketCardToWallet(t)}
-                  style={{ fontFamily: "inherit", width: "100%", display: "flex", alignItems: "center", justifyContent: "center", gap: 10, minHeight: 50, fontSize: fluidSize(15), fontWeight: 600, lineHeight: 1.5, color: passWalletTheme?.buttonColor, background: passWalletTheme?.buttonBg, border: "none", borderRadius: 12, cursor: ticketWalletSaving ? "default" : "pointer", opacity: ticketWalletSaving ? 0.7 : 1 }}
-                >
-                  <ButtonBusyContents
-                    loading={ticketWalletSaving === String(t.id || t.code)}
-                    loadingLabel="Adding…"
-                    spinnerColor={passWalletTheme?.buttonColor}
-                    trackColor="rgba(255,255,255,0.35)"
+              {passWallets.map((kind) => {
+                const theme = phoneWalletTheme(kind);
+                const savingKey = `${String(t.id || t.code)}:${kind}`;
+                const saving = ticketWalletSaving === savingKey;
+                return (
+                  <button
+                    key={kind}
+                    type="button"
+                    disabled={ticketWalletSaving !== null}
+                    aria-busy={saving || undefined}
+                    onClick={() => void addTicketCardToWallet(t, kind)}
+                    style={{ fontFamily: "inherit", width: "100%", display: "flex", alignItems: "center", justifyContent: "center", gap: 10, minHeight: 50, fontSize: fluidSize(15), fontWeight: 600, lineHeight: 1.5, color: theme.buttonColor, background: theme.buttonBg, border: "none", borderRadius: 12, cursor: ticketWalletSaving ? "default" : "pointer", opacity: ticketWalletSaving ? 0.7 : 1 }}
                   >
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" style={{ width: 18, height: 18 }}><rect x="2" y="6" width="20" height="13" rx="3" /><path d="M2 11h20" /></svg>
-                    {phoneWalletLabel(passWallet)}
-                  </ButtonBusyContents>
-              </button>
-              ) : null}
+                    <ButtonBusyContents
+                      loading={saving}
+                      loadingLabel="Adding…"
+                      spinnerColor={theme.buttonColor}
+                      trackColor="rgba(255,255,255,0.35)"
+                    >
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" style={{ width: 18, height: 18 }}><rect x="2" y="6" width="20" height="13" rx="3" /><path d="M2 11h20" /></svg>
+                      {phoneWalletLabel(kind)}
+                    </ButtonBusyContents>
+                  </button>
+                );
+              })}
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
                 <button onClick={() => { setDetail(t); setModal("qr"); }} style={{ fontFamily: "inherit", minHeight: 48, fontSize: fluidSize(14), fontWeight: 600, lineHeight: 1.5, color: INK, background: "#fff", border: `1px solid ${ACCENT}`, borderRadius: 12, cursor: "pointer" }}>View QR code</button>
                 <button onClick={() => { setDetail(t); setModal("details"); }} style={{ fontFamily: "inherit", minHeight: 48, fontSize: fluidSize(14), fontWeight: 600, lineHeight: 1.5, color: INK, background: "#fff", border: "1px solid rgba(5,27,53,0.14)", borderRadius: 12, cursor: "pointer" }}>Ticket details</button>
@@ -6335,16 +6346,16 @@ export default function SeasonTickets({
     setPassWalletError("");
   };
 
-  const addQrPassToPhoneWallet = async () => {
-    if (!qrPass || !passWallet) return;
-    setPassWalletSaving(true);
+  const addQrPassToPhoneWallet = async (kind: PhoneWalletKind) => {
+    if (!qrPass) return;
+    setPassWalletSaving(kind);
     setPassWalletError("");
     const error = await addAccessPassToPhoneWallet(
       qrPass.pass,
-      passWallet,
+      kind,
       selectedSeasonPackage?.firstEvent,
     );
-    setPassWalletSaving(false);
+    setPassWalletSaving(null);
     if (error) setPassWalletError(error);
     else flashToast("Pass sent to your phone wallet");
   };
@@ -6363,26 +6374,33 @@ export default function SeasonTickets({
         onClose={closeQrPass}
         mobile={mobile}
       >
-        {passWallet ? (
+        {passWallets.length ? (
           <div style={{ width: "100%", display: "flex", flexDirection: "column", alignItems: "center", gap: 10 }}>
             <div style={eyebrow}>Add this pass to your phone wallet</div>
-            <button
-              type="button"
-              onClick={addQrPassToPhoneWallet}
-              disabled={passWalletSaving}
-              aria-busy={passWalletSaving || undefined}
-              style={{ fontFamily: "inherit", width: "100%", display: "flex", alignItems: "center", justifyContent: "center", gap: 10, minHeight: 50, fontSize: fluidSize(15), fontWeight: 600, color: passWalletTheme?.buttonColor, background: passWalletTheme?.buttonBg, border: "none", borderRadius: 999, cursor: passWalletSaving ? "default" : "pointer", opacity: passWalletSaving ? 0.7 : 1 }}
-            >
-              <ButtonBusyContents
-                loading={passWalletSaving}
-                loadingLabel="Adding…"
-                spinnerColor={passWalletTheme?.buttonColor}
-                trackColor="rgba(255,255,255,0.35)"
-              >
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" style={{ width: 18, height: 18 }}><rect x="2" y="6" width="20" height="13" rx="3" /><path d="M2 11h20" /></svg>
-                {phoneWalletLabel(passWallet)}
-              </ButtonBusyContents>
-            </button>
+            {passWallets.map((kind) => {
+              const theme = phoneWalletTheme(kind);
+              const saving = passWalletSaving === kind;
+              return (
+                <button
+                  key={kind}
+                  type="button"
+                  onClick={() => void addQrPassToPhoneWallet(kind)}
+                  disabled={passWalletSaving !== null}
+                  aria-busy={saving || undefined}
+                  style={{ fontFamily: "inherit", width: "100%", display: "flex", alignItems: "center", justifyContent: "center", gap: 10, minHeight: 50, fontSize: fluidSize(15), fontWeight: 600, color: theme.buttonColor, background: theme.buttonBg, border: "none", borderRadius: 999, cursor: passWalletSaving ? "default" : "pointer", opacity: passWalletSaving ? 0.7 : 1 }}
+                >
+                  <ButtonBusyContents
+                    loading={saving}
+                    loadingLabel="Adding…"
+                    spinnerColor={theme.buttonColor}
+                    trackColor="rgba(255,255,255,0.35)"
+                  >
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" style={{ width: 18, height: 18 }}><rect x="2" y="6" width="20" height="13" rx="3" /><path d="M2 11h20" /></svg>
+                    {phoneWalletLabel(kind)}
+                  </ButtonBusyContents>
+                </button>
+              );
+            })}
             {passWalletError ? (
               <div role="alert" style={{ fontSize: fluidSize(13), lineHeight: browseLeading("body"), color: DANGER, textAlign: "center" }}>
                 {passWalletError}

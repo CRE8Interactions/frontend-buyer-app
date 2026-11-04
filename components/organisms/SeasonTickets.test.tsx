@@ -9467,6 +9467,53 @@ describe("SeasonTickets mobile ticket actions", () => {
       screen.queryByRole("button", { name: /Add to (Apple|Google) Wallet/ }),
     ).not.toBeInTheDocument();
   });
+
+  it("offers Apple and Google Wallet when the phone hides its operating system", async () => {
+    stubPhone(
+      "Mozilla/5.0 (X11; Linux aarch64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+      5,
+    );
+    Object.defineProperty(window, "matchMedia", {
+      configurable: true,
+      writable: true,
+      value: (query: string) =>
+        ({
+          matches:
+            query === "(pointer: coarse)" || query === "(max-width: 900px)",
+        }) as MediaQueryList,
+    });
+    render(<SeasonTickets />);
+
+    expect(
+      (await screen.findAllByRole("button", { name: "Add to Apple Wallet" }))
+        .length,
+    ).toBeGreaterThan(0);
+    expect(
+      screen.getAllByRole("button", { name: "Add to Google Wallet" }).length,
+    ).toBe(
+      screen.getAllByRole("button", { name: "Add to Apple Wallet" }).length,
+    );
+  });
+
+  it("hides both wallet buttons when a hidden operating system is on a wide page", async () => {
+    stubPhone(
+      "Mozilla/5.0 (X11; Linux aarch64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+      5,
+    );
+    Object.defineProperty(window, "innerWidth", {
+      configurable: true,
+      writable: true,
+      value: 1440,
+    });
+    render(<SeasonTickets />);
+
+    expect(
+      await screen.findByRole("link", { name: /All tickets/i }),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: /Add to (Apple|Google) Wallet/ }),
+    ).not.toBeInTheDocument();
+  });
 });
 
 describe("SeasonTickets code screen", () => {

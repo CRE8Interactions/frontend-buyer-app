@@ -1186,6 +1186,30 @@ describe("Checkout success guest wallet", () => {
     ).not.toBeInTheDocument();
   });
 
+  it("offers Apple and Google Wallet when the phone hides its operating system", async () => {
+    stubPhone(
+      "Mozilla/5.0 (X11; Linux aarch64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+      5,
+    );
+    Object.defineProperty(window, "matchMedia", {
+      configurable: true,
+      writable: true,
+      value: (query: string) =>
+        ({
+          matches:
+            query === "(pointer: coarse)" || query === "(max-width: 900px)",
+        }) as MediaQueryList,
+    });
+    render(<CheckoutSuccessPageRoute />);
+
+    expect(
+      await screen.findByRole("button", { name: "Add to Apple Wallet" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Add to Google Wallet" }),
+    ).toBeInTheDocument();
+  });
+
   it("opens a one-ticket picker from the wallet bar", async () => {
     const user = userEvent.setup();
     render(<CheckoutSuccessPageRoute />);
