@@ -6,6 +6,7 @@ import InAppBackLink from "@/components/molecules/InAppBackLink";
 import PayoutBusinessTypeField from "@/components/molecules/PayoutBusinessTypeField";
 import { WalletTicketsBlocksLoading } from "@/components/organisms/WalletTicketsLoader";
 import { createBankAccount, removeBankAccount } from "@/lib/api";
+import { bankAccountSetupError } from "@/lib/bankAccountSetupError";
 import {
   isPayoutBusinessType,
   payoutAccountPayload,
@@ -137,8 +138,8 @@ export default function WalletBankAccount({ processing = false }: { processing?:
         return;
       }
       setError("Unable to open bank account setup. Try again.");
-    } catch {
-      setError("Unable to open bank account setup. Try again.");
+    } catch (err) {
+      setError(bankAccountSetupError(err));
     }
     setBusy(null);
   };

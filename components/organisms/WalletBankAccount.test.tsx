@@ -235,6 +235,26 @@ describe("WalletBankAccount", () => {
     expect(button).toBeEnabled();
   });
 
+  it("shows the server message when bank account setup fails", async () => {
+    mockedGetBankAccount.mockResolvedValue({ data: {} } as never);
+    mockedCreateBankAccount.mockRejectedValue({
+      response: {
+        data: { error: { message: "Live and test mode accounts cannot be mixed." } },
+      },
+    });
+    const user = userEvent.setup();
+    render(<WalletBankAccount />);
+
+    const button = await screen.findByRole("button", { name: "Link bank account" });
+    await user.click(button);
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "Live and test mode accounts cannot be mixed.",
+    );
+    expect(button).not.toHaveAttribute("aria-busy");
+    expect(button).toBeEnabled();
+  });
+
   it("shows a spinner in Continue while setup resumes", async () => {
     mockedGetBankAccount.mockResolvedValue({
       data: { external_accounts: [{}], charges_enabled: false, payouts_enabled: false },

@@ -9806,6 +9806,32 @@ describe("SeasonTickets listings and sell", { timeout: 30_000 }, () => {
     vi.unstubAllGlobals();
   });
 
+  it("shows the server message when the sell bank link fails", async () => {
+    mockedGetBankAccount.mockResolvedValue({ data: { payouts_enabled: false } } as never);
+    mockedCreateBankAccount.mockRejectedValue({
+      response: {
+        data: { error: { message: "Live and test mode accounts cannot be mixed." } },
+      },
+    });
+    const order = demoCompletedTicketOrder({
+      event: { ...icedogs, enableResale: true },
+    });
+    mockedGetMyEvents.mockResolvedValue({ data: [order] } as never);
+    navigationMocks.pathname = `/wallet/my-tickets/order/${order.orderId}/`;
+    const user = userEvent.setup();
+    render(<SeasonTickets />);
+
+    await user.click(await screen.findByRole("button", { name: "Sell" }));
+    const linkButton = await screen.findByRole("button", { name: "Link bank account" });
+    await user.click(linkButton);
+
+    expect(
+      await screen.findByText("Live and test mode accounts cannot be mixed."),
+    ).toBeInTheDocument();
+    expect(linkButton).toBeEnabled();
+    expect(linkButton).not.toHaveAttribute("aria-busy");
+  });
+
   it("does not send the individual default when the account lookup fails", async () => {
     mockedGetBankAccount.mockRejectedValue(new Error("network"));
     const order = demoCompletedTicketOrder({

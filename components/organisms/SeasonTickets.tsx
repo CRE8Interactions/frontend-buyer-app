@@ -136,6 +136,7 @@ import {
   getResaleFeeRules,
 } from "@/lib/api";
 import { getSession } from "@/lib/auth";
+import { bankAccountSetupError } from "@/lib/bankAccountSetupError";
 import {
   isPayoutBusinessType,
   payoutAccountPayload,
@@ -7005,8 +7006,8 @@ export default function SeasonTickets({
       } else {
         setSellPayoutError("Unable to open bank account setup. Try again.");
       }
-    } catch {
-      setSellPayoutError("Unable to open bank account setup. Try again.");
+    } catch (err) {
+      setSellPayoutError(bankAccountSetupError(err));
     }
     setSellLinking(false);
   };
