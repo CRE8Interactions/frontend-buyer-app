@@ -501,6 +501,14 @@ describe("printTicketsPdf", () => {
 
     await printTicketsPdf(
       request({
+        event: {
+          ...nmState,
+          organization: {
+            ...nmState.organization,
+            uuid: NM_STATE_ATHLETICS_ORG_UUID,
+          },
+        },
+        purchasedByOrganizationName: nmState.organization.name,
         tickets: [
           {
             id: 1,
@@ -524,7 +532,13 @@ describe("printTicketsPdf", () => {
     expect(text).toContain("Enter through Gate C.");
     expect(text).toContain(offerName);
     expect(text).not.toContain("…");
-    expect(text).toContain(ACCESSIBLE_LABEL_DA);
+    expect(text).toContain("Open space for");
+    expect(text).toContain("wheelchair");
+    expect(text).not.toContain("Accessible:");
+    expect(text.indexOf("OFFER")).toBeLessThan(text.indexOf("TICKET ID"));
+    expect(text.indexOf("TICKET ID")).toBeLessThan(text.indexOf("ACCESSIBILITY"));
+    expect(text.indexOf("ACCESSIBILITY")).toBeLessThan(text.indexOf("ORGANIZATION"));
+    expect(text).toContain(nmState.organization.name);
   });
 
   it("prints the entry lines that fit when a description needs more than three", async () => {

@@ -512,8 +512,7 @@ async function drawBrandedTicket(
 
   const badgeTextWidth = bold.widthOfTextAtSize(theme.badgeLabel, 9);
   const badgeW = Math.max(111, badgeTextWidth + 24);
-  // Lifted so the badge clears the event title below it.
-  const badgeY = headerTop - 34;
+  const badgeY = headerTop - 42;
   drawRoundedRect(page, {
     x: contentLeft,
     y: badgeY,
@@ -605,28 +604,8 @@ async function drawBrandedTicket(
     offerMaxWidth: 230,
   });
 
-  // Offsets below the header bottom. Each label sits 14pt above its value, and
-  // rows are 30pt apart (26pt when a section name sits above the seat box).
-  const stack =
-    plan.sectionPlacement === "above"
-      ? {
-          labelAbove: 14,
-          date: 30,
-          time: 56,
-          venue: 82,
-          entryLabel: 100,
-          entryFirst: 114,
-          entryLeading: 10,
-        }
-      : {
-          labelAbove: 14,
-          date: 50,
-          time: 80,
-          venue: 110,
-          entryLabel: 128,
-          entryFirst: 142,
-          entryLeading: 10,
-        };
+  // Same baselines as the legacy extended card, measured down from the header.
+  const stack = EXTENDED_TICKET_LAYOUT;
 
   const drawExtendedValue = (
     label: string,
@@ -730,38 +709,41 @@ async function drawBrandedTicket(
       color: hexToRgb("#CBCFD8"),
     });
 
-    let rightY = headerBottom - 80;
+    const offerShown = Boolean(offerLayout.secondary && plan.offerText);
+    const offerY = headerBottom - 80;
     if (offerLayout.secondary && plan.offerText) {
       page.drawText(offerLayout.secondary.label, {
         x: holderX,
-        y: rightY + 16,
+        y: offerY + 16,
         size: 8,
         font: bold,
         color: labelColor,
       });
       page.drawText(plan.offerText, {
         x: holderX,
-        y: rightY,
+        y: offerY,
         size: plan.offerSize,
         font: regular,
         color: textBody,
       });
-      rightY -= 40;
     }
-    if (accessibility) {
-      const lines = drawWrappedField(
-        accessibility.label,
-        accessibility.value,
-        holderX,
-        rightY,
-        rightColumnWidth(rightY),
-      );
-      rightY -= 40 + (lines - 1) * 13;
-    }
+    // TICKET ID keeps its legacy slot (-120 under an offer, -80 without one);
+    // ACCESSIBILITY stacks below it so the legacy spacing is unchanged.
+    let rightY = headerBottom - (offerShown ? 120 : 80);
     if (ticketId) {
       drawField(
         ticketId.label,
         ticketId.value,
+        holderX,
+        rightY,
+        rightColumnWidth(rightY),
+      );
+      rightY -= 40;
+    }
+    if (accessibility) {
+      drawWrappedField(
+        accessibility.label,
+        accessibility.value,
         holderX,
         rightY,
         rightColumnWidth(rightY),
@@ -813,6 +795,7 @@ async function drawBrandedTicket(
         ? [{ label: "ORGANIZATION", value: organizationName }]
         : []),
     ];
+    // Legacy spaces right-column values 28pt apart (OFFER at -50, TICKET ID at -78).
     let slotY = headerBottom - stack.venue;
     for (const field of rightHandFields) {
       const lines = drawWrappedField(
@@ -822,7 +805,7 @@ async function drawBrandedTicket(
         slotY,
         rightColumnWidth(slotY),
       );
-      slotY -= 40 + (lines - 1) * 13;
+      slotY -= 28 + (lines - 1) * 13;
     }
 
     if (plan.entryLines.length) {
