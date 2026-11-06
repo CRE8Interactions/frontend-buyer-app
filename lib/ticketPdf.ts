@@ -605,22 +605,28 @@ async function drawBrandedTicket(
     offerMaxWidth: 230,
   });
 
-  // One gap for every extended row: label to value, value to the next label,
-  // and each wrapped line. The same gap is used whether or not the section
-  // sits above the seat box.
-  const gap = 13;
-  const labelAbove = gap;
-  const rowPitch = gap * 2;
-  const date = 30;
-  const stack = {
-    labelAbove,
-    date,
-    time: date + rowPitch,
-    venue: date + rowPitch * 2,
-    entryLabel: date + rowPitch * 3 - labelAbove,
-    entryFirst: date + rowPitch * 3,
-    entryLeading: gap,
-  };
+  // Offsets below the header bottom. Each label sits 14pt above its value, and
+  // rows are 30pt apart (26pt when a section name sits above the seat box).
+  const stack =
+    plan.sectionPlacement === "above"
+      ? {
+          labelAbove: 14,
+          date: 30,
+          time: 56,
+          venue: 82,
+          entryLabel: 100,
+          entryFirst: 114,
+          entryLeading: 10,
+        }
+      : {
+          labelAbove: 14,
+          date: 50,
+          time: 80,
+          venue: 110,
+          entryLabel: 128,
+          entryFirst: 142,
+          entryLeading: 10,
+        };
 
   const drawExtendedValue = (
     label: string,
@@ -680,9 +686,8 @@ async function drawBrandedTicket(
     x: number,
     y: number,
     maxWidth: number,
-    labelAbove = 16,
   ) => {
-    page.drawText(label, { x, y: y + labelAbove, size: 8, font: bold, color: labelColor });
+    page.drawText(label, { x, y: y + 16, size: 8, font: bold, color: labelColor });
     const lines = wrapToWidth(value, 11, maxWidth);
     lines.forEach((line, index) => {
       page.drawText(line, {
@@ -701,7 +706,7 @@ async function drawBrandedTicket(
     drawField("TIME", offerLayout.timeValue, contentLeft, headerBottom - 80);
     drawField("VENUE", venue, contentLeft, headerBottom - 120);
     if (organizationName) {
-      drawField("ORGANIZATION", organizationName, contentLeft, headerBottom - 160);
+      drawField("ORGANIZATION", organizationName, contentLeft, headerBottom - 158);
     }
 
     page.drawText("TICKET HOLDER", {
@@ -808,9 +813,6 @@ async function drawBrandedTicket(
         ? [{ label: "ORGANIZATION", value: organizationName }]
         : []),
     ];
-    // Same pitch as DATE / TIME / VENUE, so a one-line TICKET ID leaves the
-    // same gap as a wrapped ACCESSIBILITY block.
-    const valueLeading = gap;
     let slotY = headerBottom - stack.venue;
     for (const field of rightHandFields) {
       const lines = drawWrappedField(
@@ -819,9 +821,8 @@ async function drawBrandedTicket(
         holderX,
         slotY,
         rightColumnWidth(slotY),
-        stack.labelAbove,
       );
-      slotY -= rowPitch + (lines - 1) * valueLeading;
+      slotY -= 40 + (lines - 1) * 13;
     }
 
     if (plan.entryLines.length) {
@@ -864,27 +865,22 @@ async function drawBrandedTicket(
   });
 
   if (plan.sectionPlacement === "above") {
-    const fieldGap = gap;
-    const anchor =
-      plan.entryLines.length > 0
-        ? stack.entryFirst +
-          (plan.entryLines.length - 1) * stack.entryLeading
-        : stack.venue;
-    const sectionLabelY = headerBottom - (anchor + fieldGap);
+    const sectionTop =
+      seatBoxY +
+      seatBoxH +
+      8 +
+      plan.sectionLines.length * EXTENDED_TICKET_LAYOUT.sectionLeading;
     page.drawText("SECTION", {
       x: contentLeft,
-      y: sectionLabelY,
-      size: 8,
+      y: sectionTop,
+      size: 7,
       font: bold,
       color: labelColor,
     });
     plan.sectionLines.forEach((line, index) => {
       page.drawText(line, {
         x: contentLeft,
-        y:
-          sectionLabelY -
-          stack.labelAbove -
-          index * gap,
+        y: sectionTop - 12 - index * EXTENDED_TICKET_LAYOUT.sectionLeading,
         size: plan.sectionSize,
         font: bold,
         color: textDark,
