@@ -1259,6 +1259,48 @@ describe("storefront categories", () => {
     expect(screen.queryByText(womens.name)).not.toBeInTheDocument();
   });
 
+  it("scrolls to the top of the page whenever a sport filter is chosen", async () => {
+    const base = nmStateEvents[0];
+    const mens = {
+      ...base,
+      id: Number(base.id) + 1,
+      uuid: `${base.uuid}-mbb`,
+      shortCode: `${base.shortCode}-m`,
+      name: "NMSU MBB vs University of Denver",
+      category: { name: "basketball" },
+    };
+    const womens = {
+      ...base,
+      id: Number(base.id) + 2,
+      uuid: `${base.uuid}-wbb`,
+      shortCode: `${base.shortCode}-w`,
+      name: "NMSU WBB vs San Diego",
+      category: { name: "basketball" },
+    };
+    const scrollTo = vi.spyOn(window, "scrollTo").mockImplementation(() => {});
+    const user = userEvent.setup();
+    render(
+      <ClientProfile
+        slug={nmState.slug}
+        initialData={{
+          organization: nmState,
+          events: [mens, womens],
+          venues: nmState.venues,
+        }}
+      />,
+    );
+
+    await user.click(screen.getByRole("button", { name: /^basketball/i }));
+
+    expect(screen.getByText(mens.name)).toBeInTheDocument();
+    expect(scrollTo).toHaveBeenCalledWith({ top: 0, behavior: "auto" });
+
+    scrollTo.mockClear();
+    await user.click(screen.getByRole("button", { name: /^all/i }));
+    expect(scrollTo).toHaveBeenCalledWith({ top: 0, behavior: "auto" });
+    scrollTo.mockRestore();
+  });
+
   it("selects men's basketball from the sport query", async () => {
     const base = nmStateEvents[0];
     const mens = {
@@ -1278,6 +1320,7 @@ describe("storefront categories", () => {
       category: { name: "basketball" },
     };
     searchMocks.params = new URLSearchParams("sport=mbb");
+    const scrollTo = vi.spyOn(window, "scrollTo").mockImplementation(() => {});
     render(
       <ClientProfile
         slug={nmState.slug}
@@ -1293,6 +1336,8 @@ describe("storefront categories", () => {
       expect(screen.queryByText(womens.name)).not.toBeInTheDocument();
     });
     expect(screen.getByText(mens.name)).toBeInTheDocument();
+    expect(scrollTo).not.toHaveBeenCalled();
+    scrollTo.mockRestore();
   });
 
   it("labels a men's basketball package from its name", async () => {
