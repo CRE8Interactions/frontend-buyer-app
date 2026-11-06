@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { DEMO_SEATED_TICKET_GROUPS } from "@/lib/demo/fixtures";
+import { DEMO_SEATED_TICKET_GROUPS, demoTicketGroups } from "@/lib/demo/fixtures";
 import {
   formatPrintedOfferLine,
   printedOfferBadgeName,
@@ -97,6 +97,22 @@ describe("formatPrintedOfferLine", () => {
     expect(formatPrintedOfferLine({ name: "Prelims 9:00 to 4:00" })).toBe(
       "PRELIMS 9:00 TO 4:00",
     );
+  });
+
+  it("keeps a short offer description on the one-line card, not the time window", () => {
+    const vip = demoTicketGroups().ticketGroups.find((group) => group.id === "grp-vip");
+    if (!vip?.offer || !("description" in vip.offer)) {
+      throw new Error("VIP fixture is missing its offer description");
+    }
+
+    expect(resolvePrintedOfferInfo({ offer: vip.offer })?.window).toBe("");
+    expect(formatPrintedOfferLine({ offer: vip.offer })).toBe(
+      `${vip.offer.name} • ${vip.offer.description}`,
+    );
+  });
+
+  it("leaves a long offer description off the one-line card", () => {
+    expect(formatPrintedOfferLine({ offer: fieldClub })).toBe(fieldClub.name);
   });
 });
 

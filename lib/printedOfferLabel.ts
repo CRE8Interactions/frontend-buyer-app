@@ -101,7 +101,7 @@ export function resolvePrintedOfferInfo(
   return {
     label: name,
     shortLabel: name,
-    window: shortDescription(ticket),
+    window: "",
   };
 }
 
@@ -110,8 +110,12 @@ export function formatPrintedOfferLine(
 ) {
   const info = resolvePrintedOfferInfo(ticket);
   if (!info) return "";
-  if (!info.window || /\d/.test(info.label)) return info.label;
-  return `${info.label} • ${info.window}`;
+  if (info.window && !/\d/.test(info.label)) {
+    return `${info.label} • ${info.window}`;
+  }
+  const blurb = shortDescription(ticket);
+  if (blurb && !/\d/.test(info.label)) return `${info.label} • ${blurb}`;
+  return info.label;
 }
 
 /** Lime badge copy on wallet tickets; empty when the offer should stay "Tickets". */
