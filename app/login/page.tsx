@@ -24,6 +24,7 @@ import { validateSubmittedEmail } from "@/lib/submitEmailValidation";
 import {
   FIELD_COPY,
   codeResponseError,
+  fieldErrorTextClass,
   codeSubmitError,
   dobSubmitError,
   emailBlurInvalid,
@@ -570,7 +571,7 @@ function LoginForm() {
                 onBlur={setDobError}
               />
               {hasError ? (
-                <p className="text-[13px] text-[#c2394a]">{FIELD_COPY.network}</p>
+                <p className={fieldErrorTextClass("light")}>{FIELD_COPY.network}</p>
               ) : null}
               <button
                 type="submit"

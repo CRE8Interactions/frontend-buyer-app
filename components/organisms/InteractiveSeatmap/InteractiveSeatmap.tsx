@@ -359,7 +359,7 @@ export default function InteractiveSeatmap({
     }
     if (loadingTicketGroups) return;
     const visibleGroups = omitHiddenSectionGroups(ticketGroups, data?.sections);
-    const sectionTable = createSectionLookupTable(visibleGroups);
+    const sectionTable = createSectionLookupTable(visibleGroups, selectedOfferIds);
     setSectionLookupTable(sectionTable);
     const { lookupTable, offersLookupTable } = createSeatLookupTables(
       visibleGroups,

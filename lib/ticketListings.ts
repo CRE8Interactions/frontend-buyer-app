@@ -72,6 +72,26 @@ function compareSourceOrder(a: number | undefined, b: number | undefined) {
   return compareRanks(a ?? Infinity, b ?? Infinity);
 }
 
+function offerRecord(group: Record<string, unknown> | undefined) {
+  return group?.offer as
+    | {
+        accessCode?: string | null;
+        unlocked?: boolean;
+        isHidden?: boolean;
+      }
+    | undefined;
+}
+
+/** Unlocked access-code offers lead the list; the chosen sort breaks the tie. */
+function unlockedCodedRank(group: Record<string, unknown> | undefined) {
+  const offer = offerRecord(group);
+  const coded =
+    Boolean(String(offer?.accessCode || "").trim()) &&
+    Boolean(offer?.unlocked) &&
+    !offer?.isHidden;
+  return coded ? 0 : 1;
+}
+
 export function sortListings<
   T extends {
     price?: string;
@@ -79,12 +99,15 @@ export function sortListings<
     sourceIndex?: number;
   },
 >(listings: T[], sort: TicketingSort = "price"): T[] {
-  return [...listings].sort((a, b) =>
-    sort === "bestseat"
+  return [...listings].sort((a, b) => {
+    const unlockedDelta =
+      unlockedCodedRank(a.cartGroup) - unlockedCodedRank(b.cartGroup);
+    if (unlockedDelta !== 0) return unlockedDelta;
+    return sort === "bestseat"
       ? compareRanks(bestSeatRank(a.cartGroup), bestSeatRank(b.cartGroup)) ||
-        compareSourceOrder(a.sourceIndex, b.sourceIndex)
-      : compareRanks(listingUnitPrice(a), listingUnitPrice(b)),
-  );
+          compareSourceOrder(a.sourceIndex, b.sourceIndex)
+      : compareRanks(listingUnitPrice(a), listingUnitPrice(b));
+  });
 }
 
 /**
@@ -886,6 +909,7 @@ export type OfferSummary = {
   id?: string | number;
   name?: string;
   isLocked?: boolean;
+  isHidden?: boolean;
   isConnectedOffer?: boolean | null;
 };
 
@@ -900,6 +924,7 @@ const offerZone = (g: RawTicketGroup) => g.offer?.name?.trim() || "";
 export function lockedZonesFromGroups(groups: RawTicketGroup[]) {
   const zones: { zone: string; code: string }[] = [];
   groups.forEach((g) => {
+    if (g.offer?.isHidden) return;
     const code = g.offer?.accessCode?.trim();
     const zone = offerZone(g);
     if (!code || !zone || zones.some((z) => z.zone === zone)) return;
@@ -909,18 +934,32 @@ export function lockedZonesFromGroups(groups: RawTicketGroup[]) {
 }
 
 /**
- * Filter chips for the offer catalog. Locked offers are only listed when their
- * inventory came back too — without a code to check against, the chip would
- * open an unlock prompt that can never be satisfied.
+ * Filter chips for the offer catalog. A coded offer stays off the chips until
+ * its code is applied, then it leads the open offers.
  */
 export function offerChipNames(
   offers: OfferSummary[],
   lockedZones: Array<{ zone: string }> = [],
+  unlockedZones: string[] = [],
 ) {
   const unlockable = new Set(lockedZones.map((z) => z.zone));
+  const unlocked = new Set(unlockedZones);
   return offers
-    .filter((o) => o.name && !o.isConnectedOffer && (!o.isLocked || unlockable.has(o.name)))
-    .map((o) => o.name as string);
+    .map((offer, index) => ({ offer, index }))
+    .filter(({ offer }) => {
+      if (!offer.name || offer.isConnectedOffer || offer.isHidden) return false;
+      const coded = Boolean(offer.isLocked || unlockable.has(offer.name));
+      if (!coded) return true;
+      return unlocked.has(offer.name);
+    })
+    .sort((a, b) => {
+      const coded = (offer: OfferSummary) =>
+        offer.isLocked || unlockable.has(offer.name || "") ? 0 : 1;
+      const delta = coded(a.offer) - coded(b.offer);
+      if (delta !== 0) return delta;
+      return a.index - b.index;
+    })
+    .map(({ offer }) => offer.name as string);
 }
 
 /**
@@ -937,6 +976,7 @@ export function groupsToListings(
 ): TicketingListing[] {
   const seen = new Set<string>();
   const mapped = expandGroupsWithConnectedOffers(groups)
+    .filter((g) => !g.offer?.isHidden)
     .filter((g) => includeLocked || !g.offer?.accessCode)
     .filter((g) => sellableCount(g) > 0)
     .filter((g) => {
@@ -986,6 +1026,7 @@ export function filterGroupsForListings(
 ): RawTicketGroup[] {
   const offerSet = new Set(offerIds.map(String).filter(Boolean));
   let next = groups.filter((group) => {
+    if (group.offer?.isHidden) return false;
     if (accessible && !isAccessibleSource(group)) return false;
     if (offerSet.size && !offerSet.has(String(group.offer?.id ?? ""))) {
       return false;
@@ -1022,6 +1063,7 @@ export function groupsToGaTiers(
   const seen = new Set<string>();
 
   return expandGroupsWithConnectedOffers(groups)
+    .filter((g) => !g.offer?.isHidden)
     .filter((g) => includeLocked || !g.offer?.accessCode)
     .filter((g) => {
       const key = `${g.id ?? g.ticketGroupUUID}-${g.offer?.id ?? "default"}`;

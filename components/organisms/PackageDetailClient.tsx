@@ -16,6 +16,7 @@ import { getPackageFE, placePackageIntoCart } from "@/lib/api";
 import { CHECKOUT_UNAVAILABLE_ERROR } from "@/lib/mapSelection";
 import {
   brandingToTicketingTheme,
+  ERROR_COLOR,
   type BrandingOrganization,
 } from "@/lib/branding";
 import {
@@ -759,7 +760,7 @@ export default function PackageDetailClient({
                 </div>
                 {error ? (
                   <p
-                    style={{ margin: 0, fontSize: fluidSize(14), lineHeight: 1.5, color: "#b91c1c" }}
+                    style={{ margin: 0, fontSize: fluidSize(14), lineHeight: 1.5, color: ERROR_COLOR }}
                     role="alert"
                   >
                     {error}

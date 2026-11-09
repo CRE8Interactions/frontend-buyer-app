@@ -84,6 +84,6 @@ export function seatmapLookupsFromTicketGroups(
   return {
     seatLookupTable: lookupTable,
     seatOffersLookupTable: offersLookupTable,
-    sectionLookupTable: createSectionLookupTable(visible),
+    sectionLookupTable: createSectionLookupTable(visible, selectedOfferIds),
   };
 }

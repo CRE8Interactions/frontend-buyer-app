@@ -1,5 +1,6 @@
 "use client";
 
+import { ERROR_COLOR } from "@/lib/branding";
 import { browseLeading } from "@/lib/browseType";
 import { fluidSize } from "@/lib/shopperFluidType";
 
@@ -697,7 +698,7 @@ function SeatMapSelectionOverlay({
                     style={{
                       marginBottom: 12,
                       fontSize: fluidSize(13),
-                      color: "#b91c1c",
+                      color: ERROR_COLOR,
                       textAlign: "center",
                     }}
                   >
@@ -1478,7 +1479,7 @@ function SeatMapSelectionOverlay({
                     style={{
                       marginTop: 14,
                       fontSize: fluidSize(13),
-                      color: "#b91c1c",
+                      color: ERROR_COLOR,
                       textAlign: "center",
                     }}
                   >

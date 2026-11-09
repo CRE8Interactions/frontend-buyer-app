@@ -5,6 +5,8 @@
  * whatever that country and card BIN need.
  */
 
+import { ERROR_COLOR } from "@/lib/branding";
+
 export const STRIPE_PAYMENT_ELEMENT_FONTS = [
   {
     cssSrc:
@@ -50,7 +52,7 @@ export function stripePaymentElementAppearance(
       colorBackground: "#ffffff",
       colorText: "#051B35",
       colorTextSecondary: "#6e7180",
-      colorDanger: "#dc2626",
+      colorDanger: ERROR_COLOR,
       gridRowSpacing: "20px",
       gridColumnSpacing: "12px",
       labelSpacing: "8px",

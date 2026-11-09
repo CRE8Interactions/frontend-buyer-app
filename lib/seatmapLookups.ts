@@ -199,29 +199,38 @@ export function mappingStageSize(mapping?: SeatmapMapping | null) {
   return { width: Math.ceil(width * 1.02), height: Math.ceil(height * 1.02) };
 }
 
+function sameOfferId(
+  left: string | number | null | undefined,
+  right: string | number | null | undefined,
+) {
+  return left != null && right != null && String(left) === String(right);
+}
+
+/** Groups on the selected offers. An empty selection keeps every group. */
+function groupsForSelectedOffers(
+  groups: TicketGroup[],
+  offerIds?: Array<string | number>,
+) {
+  if (!offerIds?.length) return groups;
+  return groups.filter((group) =>
+    offerIds.some((id) => sameOfferId(id, group.offer?.id)),
+  );
+}
+
 export function pickTicketGroupForSeat(
   groups: TicketGroup[],
   offerIds?: Array<string | number>,
-): TicketGroup {
-  if (groups.length === 1) return groups[0];
+): TicketGroup | undefined {
+  const pool = groupsForSelectedOffers(groups, offerIds);
+  if (!pool.length) return undefined;
+  if (pool.length === 1) return pool[0];
 
-  if (offerIds?.length) {
-    const matching = groups.filter((group) =>
-      offerIds.includes(group.offer?.id as string | number),
-    );
-    if (matching.length > 0) {
-      return [...matching].sort(
-        (a, b) => (a.price ?? Infinity) - (b.price ?? Infinity),
-      )[0];
-    }
-  }
-
-  const defaultGroup = groups.find(
+  const defaultGroup = pool.find(
     (group) => (group.offer as { isDefaultOffer?: boolean } | undefined)?.isDefaultOffer,
   );
   if (defaultGroup) return defaultGroup;
 
-  return [...groups].sort(
+  return [...pool].sort(
     (a, b) => (a.price ?? Infinity) - (b.price ?? Infinity),
   )[0];
 }
@@ -230,13 +239,7 @@ export function getSeatOfferCandidates(
   groups: TicketGroup[],
   offerIds?: Array<string | number>,
 ): TicketGroup[] {
-  if (offerIds?.length) {
-    const matching = groups.filter((group) =>
-      offerIds.includes(group.offer?.id as string | number),
-    );
-    if (matching.length > 0) return matching;
-  }
-  return groups;
+  return groupsForSelectedOffers(groups, offerIds);
 }
 
 export function createSeatLookupTables(
@@ -259,21 +262,31 @@ export function createSeatLookupTables(
   const offersLookupTable: Record<string, TicketGroup[]> = {};
 
   Object.entries(candidatesBySeat).forEach(([seatId, groups]) => {
-    const offers = getSeatOfferCandidates(groups, offerIds).sort(
+    const picked = pickTicketGroupForSeat(groups, offerIds);
+    if (!picked) return;
+    offersLookupTable[seatId] = getSeatOfferCandidates(groups, offerIds).sort(
       (a, b) => (a.price ?? Infinity) - (b.price ?? Infinity),
     );
-    offersLookupTable[seatId] = offers;
-    lookupTable[seatId] = pickTicketGroupForSeat(groups, offerIds);
+    lookupTable[seatId] = picked;
   });
 
   return { lookupTable, offersLookupTable };
 }
 
-export function createSectionLookupTable(ticketGroups: TicketGroup[]) {
+export function createSectionLookupTable(
+  ticketGroups: TicketGroup[],
+  offerIds: Array<string | number> = [],
+) {
   const lookupTable: Record<string, TicketGroup[]> = {};
 
   expandGroupsWithConnectedOffers(ticketGroups).forEach((ticketGroup) => {
     if (!ticketGroup.GA) return;
+    if (
+      offerIds.length &&
+      !offerIds.some((id) => sameOfferId(id, ticketGroup.offer?.id))
+    ) {
+      return;
+    }
     const sectionId = String(ticketGroup.sectionId ?? "");
     if (!sectionId) return;
     if (!lookupTable[sectionId]) lookupTable[sectionId] = [];

@@ -440,6 +440,11 @@ export const confirmCode = (data: unknown) =>
 export const checkAccessCode = (data: unknown) =>
   instance.post("/tickets/checkAccessCode", data);
 
+export const findOffersByAccessCode = (data: {
+  event?: { id?: string | number; uuid?: string } | null;
+  code: string;
+}) => instance.post("/tickets/find-offers-by-access-code", data);
+
 export const getOffers = (eventId: string) =>
   instance.get(`/events/offers?uuid=${eventId}`);
 

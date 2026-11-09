@@ -606,15 +606,18 @@ describe("lockedZonesFromGroups", () => {
 });
 
 describe("offerChipNames", () => {
-  it("lists locked offers that have inventory to unlock", () => {
+  it("hides a coded offer until its code is applied, then lists it first", () => {
     const offers = [
       { name: "Standard Admission", isLocked: false },
       { name: CODED_OFFER.name, isLocked: true },
     ];
+    const lockedZones = lockedZonesFromGroups(DEMO_SEATED_TICKET_GROUPS);
 
-    expect(
-      offerChipNames(offers, lockedZonesFromGroups(DEMO_SEATED_TICKET_GROUPS)),
-    ).toEqual(["Standard Admission", CODED_OFFER.name]);
+    expect(offerChipNames(offers, lockedZones)).toEqual(["Standard Admission"]);
+    expect(offerChipNames(offers, lockedZones, [CODED_OFFER.name])).toEqual([
+      CODED_OFFER.name,
+      "Standard Admission",
+    ]);
   });
 
   it("drops locked offers with no inventory and unnamed offers", () => {
@@ -1136,6 +1139,38 @@ describe("listing location label", () => {
 });
 
 describe("listing filters", () => {
+  it("drops a hidden offer and lists an unlocked coded offer ahead of a cheaper open seat", () => {
+    const open = DEMO_SEATED_TICKET_GROUPS.find(
+      (group) => group.offer?.name === "Section A-B",
+    );
+    if (!open || !CODED_GROUP?.offer) {
+      throw new Error("demo fixtures need an open seat and a coded offer");
+    }
+    const hidden = {
+      ...CODED_GROUP,
+      id: "hidden-coded",
+      offer: {
+        ...CODED_GROUP.offer,
+        id: "off-hidden",
+        name: "Old coded offer",
+        isHidden: true,
+        unlocked: true,
+      },
+    };
+    const unlocked = {
+      ...CODED_GROUP,
+      offer: { ...CODED_GROUP.offer, unlocked: true },
+    };
+
+    const zones = groupsToListings([open, hidden, unlocked], {
+      includeLocked: true,
+    }).map((listing) => listing.zone);
+    const openName = open.offer?.name;
+    expect(zones).not.toContain("Old coded offer");
+    expect(zones[0]).toBe(CODED_OFFER.name);
+    expect(zones.indexOf(openName || "")).toBeGreaterThan(0);
+  });
+
   it("sorts listings cheapest to highest by default", () => {
     const listings = groupsToListings(DEMO_SEATED_TICKET_GROUPS);
     expect(listings.map((listing) => listing.price)).toEqual([

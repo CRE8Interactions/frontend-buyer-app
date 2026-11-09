@@ -176,6 +176,7 @@ function toTicketingData(
   return {
     ...theme,
     eventId: ev.id,
+    eventUuid: ev.uuid,
     eventName: ev.name || "Event",
     whenLong: whenLong || when,
     whenShort: eventWhenShortWithDoors(ev.start, doorsIso, tz),

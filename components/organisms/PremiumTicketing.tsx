@@ -33,11 +33,23 @@ import {
   ShopperSearchProvider,
 } from "@/components/molecules/ShopperSearchBar";
 import SeatMapSelectionOverlay from "@/components/organisms/SeatMapSelectionOverlay";
-import { placeGATicketsIntoCart, placeTicketsIntoCart } from "@/lib/api";
+import { findOffersByAccessCode, placeGATicketsIntoCart, placeTicketsIntoCart } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { isStandaloneCatalogOffer } from "@/lib/connectedOffers";
 import { goBack } from "@/lib/inAppBack";
 import { verifyOfferAccessCode, unlockOfferInTicketGroups, seatmapLookupsFromTicketGroups } from "@/lib/offerUnlock";
+import {
+  OFFER_CODE_FAILED,
+  OFFER_CODE_NOT_FOUND,
+  accessCodeEntry,
+  applicableUnlockedOffers,
+  mergeAccessCodeEntries,
+  removeAccessCodeForOffer,
+  selectedOfferIdsAfterRemove,
+  selectedOfferIdsAfterUnlock,
+  unlockedOfferNotices,
+  type AccessCodedOffer,
+} from "@/lib/offerCodeAccess";
 import {
   CHECKOUT_DEMO_LISTINGS_ERROR,
   CHECKOUT_DEMO_TIERS_ERROR,
@@ -64,7 +76,7 @@ import {
   isAccessibleSource,
 } from "@/lib/ticketAccessibility";
 import { getSeatAdditionalLabel } from "@/lib/seatLabels";
-import { shopperShellVars } from "@/lib/branding";
+import { ERROR_COLOR, shopperShellVars } from "@/lib/branding";
 import { ORG_SCROLLBAR_CLASS, orgScrollbarCss } from "@/lib/orgScrollbar";
 import {
   selectionOfferDescription,
@@ -139,6 +151,8 @@ export type TicketingListing = {
 export type TicketingData = {
   /** Numeric Strapi event id — required to place tickets into a real cart */
   eventId?: string | number;
+  /** Event uuid, sent with an offer-code lookup when the id is not numeric. */
+  eventUuid?: string;
   accent: string;
   accentDark: string;
   accentSoft: string; // pale accent bg for badges
@@ -334,6 +348,13 @@ const Star = ({ s = 14, filled = true }: { s?: number; filled?: boolean }) => (
     <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" />
   </svg>
 );
+function OfferCodeCheckIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden>
+      <path d="M3 8.2L6.2 11.4L13 4.6" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
 const TicketIcon = ({ s = 18, color }: { s?: number; color?: string }) => (
   <Ticket width={s} height={s} stroke={color || "currentColor"} strokeWidth={1.8} aria-hidden />
 );
@@ -465,6 +486,10 @@ export default function PremiumTicketing({
     () => initialUnlockedZones ?? [],
   );
   const [unlockZone, setUnlockZone] = useState<string | null>(null);
+  const [offerCode, setOfferCode] = useState("");
+  const [offerCodeError, setOfferCodeError] = useState("");
+  const [offerCodeLoading, setOfferCodeLoading] = useState(false);
+  const [accessCodeEntries, setAccessCodeEntries] = useState<string[]>([]);
   const [qtyMenu, setQtyMenu] = useState(false);
   const [sortMenu, setSortMenu] = useState(false);
   const [ada, setAda] = useState(() => Boolean(initialFilters?.accessible));
@@ -816,7 +841,144 @@ export default function PremiumTicketing({
     limitsFromListing(l, eventTicketLimit);
   const gaTierQtyLimits = (t: GATier) => limitsFromGaTier(t, eventTicketLimit);
   const isLocked = (zone: string) => !!lockedMap[zone] && !unlocked.includes(zone);
+  const pageOffers = useMemo(() => {
+    const seen = new Set<string>();
+    const offers: AccessCodedOffer[] = [];
+    const push = (offer?: AccessCodedOffer | null, zone?: string) => {
+      if (offer?.id == null || seen.has(String(offer.id))) return;
+      const accessCode =
+        String(offer.accessCode || "").trim() ||
+        (zone ? lockedMap[zone] : "") ||
+        undefined;
+      seen.add(String(offer.id));
+      offers.push({
+        id: offer.id,
+        name: offer.name || zone,
+        accessCode,
+        isHidden: offer.isHidden,
+      });
+    };
+    const fromListing = (listing: TicketingListing) => {
+      const offer = listing.cartGroup?.offer as AccessCodedOffer | undefined;
+      push(offer, listing.zone);
+    };
+    d.listings.forEach(fromListing);
+    (d.quantityCatalog || []).forEach(fromListing);
+    (d.gaTiers || []).forEach((tier) => {
+      const offer = tier.cartGroup?.offer as AccessCodedOffer | undefined;
+      push(offer, tier.name);
+    });
+    useFiltersStore.getState().ticketGroups.forEach((group) => {
+      push(group.offer, group.offer?.name);
+    });
+    return offers;
+  }, [d.gaTiers, d.listings, d.quantityCatalog, lockedMap]);
+  const unlockedNotices = useMemo(
+    () => unlockedOfferNotices(pageOffers, accessCodeEntries),
+    [accessCodeEntries, pageOffers],
+  );
   const busy = loading || refreshing;
+
+  const applyOfferCode = async (submitEvent: { preventDefault: () => void }) => {
+    submitEvent.preventDefault();
+    const trimmed = offerCode.trim();
+    if (!trimmed || offerCodeLoading) return;
+    setOfferCodeLoading(true);
+    setOfferCodeError("");
+    try {
+      const res = await findOffersByAccessCode({
+        event: { id: d.eventId, uuid: d.eventUuid },
+        code: trimmed,
+      });
+      const matches = applicableUnlockedOffers(
+        pageOffers,
+        (res?.data as { offers?: AccessCodedOffer[] } | undefined)?.offers,
+      );
+      if (!matches.length) {
+        setOfferCodeError(OFFER_CODE_NOT_FOUND);
+        return;
+      }
+      const updatedAccessCodes = mergeAccessCodeEntries(
+        accessCodeEntries,
+        matches.map((offer) => accessCodeEntry(offer.id as string | number, trimmed)),
+      );
+      setAccessCodeEntries(updatedAccessCodes);
+      const zones = matches
+        .map((offer) => offer.name?.trim())
+        .filter((name): name is string => Boolean(name));
+      const nextUnlocked = [...new Set([...unlocked, ...zones])];
+      setUnlocked(nextUnlocked);
+      const filtersState = useFiltersStore.getState();
+      let groups = filtersState.ticketGroups;
+      zones.forEach((zone) => {
+        groups = unlockOfferInTicketGroups(groups, zone);
+      });
+      filtersState.setTicketGroups(groups);
+      const nextSelected = selectedOfferIdsAfterUnlock(
+        offerIdsForZones(zoneFilter),
+        matches.map((offer) => offer.id as string | number),
+      );
+      const nextZones = nextSelected
+        ? [...zoneFilter, ...zones.filter((zone) => !zoneFilter.includes(zone))]
+        : zoneFilter;
+      setZoneFilter(nextZones);
+      setSel(null);
+      setOfferCode("");
+      syncSelectedOfferIds(
+        nextSelected ?? [],
+        requestInventory(
+          {
+            offerIds: nextSelected ?? [],
+            accessCodeTokens: updatedAccessCodes,
+          },
+          nextZones,
+          nextUnlocked,
+        ),
+      );
+      shimmerListings();
+    } catch {
+      setOfferCodeError(OFFER_CODE_FAILED);
+    } finally {
+      setOfferCodeLoading(false);
+    }
+  };
+
+  const removeOfferCode = (offerId: string | number) => {
+    const offer = pageOffers.find((row) => String(row.id) === String(offerId));
+    const zone = offer?.name?.trim();
+    const updatedAccessCodes = removeAccessCodeForOffer(accessCodeEntries, offerId);
+    setAccessCodeEntries(updatedAccessCodes);
+    const nextUnlocked = zone ? unlocked.filter((name) => name !== zone) : unlocked;
+    setUnlocked(nextUnlocked);
+    const nextZones = zone ? zoneFilter.filter((name) => name !== zone) : zoneFilter;
+    setZoneFilter(nextZones);
+    const nextSelected = selectedOfferIdsAfterRemove(
+      offerIdsForZones(nextZones),
+      offerId,
+    );
+    const filtersState = useFiltersStore.getState();
+    filtersState.setTicketGroups(
+      filtersState.ticketGroups.map((group) => {
+        if (String(group.offer?.id) !== String(offerId) || !group.offer?.accessCode) {
+          return group;
+        }
+        return { ...group, offer: { ...group.offer, unlocked: false } };
+      }),
+    );
+    setSel(null);
+    syncSelectedOfferIds(
+      nextSelected,
+      requestInventory(
+        {
+          offerIds: nextSelected,
+          accessCodeTokens: updatedAccessCodes,
+        },
+        nextZones,
+        nextUnlocked,
+      ),
+    );
+    shimmerListings();
+  };
 
   useLayoutEffect(() => {
     if (!listingsSheet) {
@@ -831,7 +993,20 @@ export default function PremiumTicketing({
   const mapLocked = Boolean(d.soldOut) || eventScheduled;
   const rows = useMemo(() => {
     const filtered = d.listings.filter((l) => quantityIsAllowed(want, listingQtyLimits(l)) && (!zoneFilter.length || zoneFilter.includes(l.zone)) && !(!!lockedMap[l.zone] && !unlocked.includes(l.zone)) && (!ada || isAccessibleSource(l.cartGroup)));
-    return sortListings(filtered, sortDir).map((l) => ({
+    const prepared = filtered.map((listing) => {
+      if (!unlocked.includes(listing.zone)) return listing;
+      const offer = (listing.cartGroup?.offer || {}) as Record<string, unknown>;
+      const accessCode = String(offer.accessCode || lockedMap[listing.zone] || "").trim();
+      if (!accessCode || offer.isHidden) return listing;
+      return {
+        ...listing,
+        cartGroup: {
+          ...listing.cartGroup,
+          offer: { ...offer, accessCode, unlocked: true },
+        },
+      };
+    });
+    return sortListings(prepared, sortDir).map((l) => ({
       ...l,
       range: `${l.min} – ${l.max} Tickets`,
     }));
@@ -843,13 +1018,21 @@ export default function PremiumTicketing({
   const zoneChips = useMemo(() => {
     const seen: string[] = [...(d.offerNames || [])];
     d.listings.forEach((l) => {
-      const offer = (l.cartGroup as { offer?: { name?: string; isConnectedOffer?: boolean | null } })
+      const offer = (l.cartGroup as { offer?: { name?: string; isConnectedOffer?: boolean | null; isHidden?: boolean } })
         ?.offer;
+      if (offer?.isHidden) return;
       if (offer && !isStandaloneCatalogOffer(offer)) return;
       if (!seen.includes(l.zone)) seen.push(l.zone);
     });
-    return seen;
-  }, [d.listings, d.offerNames]);
+    const visible = seen.filter(
+      (zone) => !lockedMap[zone] || unlocked.includes(zone),
+    );
+    return visible.sort((a, b) => {
+      const coded = (zone: string) =>
+        lockedMap[zone] && unlocked.includes(zone) ? 0 : 1;
+      return coded(a) - coded(b);
+    });
+  }, [d.listings, d.offerNames, lockedMap, unlocked]);
   const quantityCatalogRef = useRef<TicketingListing[]>(
     d.quantityCatalog?.length ? d.quantityCatalog : d.listings,
   );
@@ -997,7 +1180,18 @@ export default function PremiumTicketing({
     const updatedGroups = unlockOfferInTicketGroups(filtersState.ticketGroups, zone);
     filtersState.setTicketGroups(updatedGroups);
     const nextUnlocked = unlocked.includes(zone) ? unlocked : [...unlocked, zone];
-    const nextZones = zoneFilter.includes(zone) ? zoneFilter : [...zoneFilter, zone];
+    const offerId = offerForZone(zone)?.id;
+    if (offerId != null) {
+      setAccessCodeEntries((entries) =>
+        mergeAccessCodeEntries(entries, [accessCodeEntry(offerId, typed)]),
+      );
+    }
+    // Leave an empty offer filter empty so open seats stay on the page.
+    const nextZones = zoneFilter.length
+      ? zoneFilter.includes(zone)
+        ? zoneFilter
+        : [...zoneFilter, zone]
+      : zoneFilter;
     setZoneFilter(nextZones);
     setSel(null);
     // The dialog covers the map, so a rebuild started here would run its whole
@@ -1527,6 +1721,71 @@ export default function PremiumTicketing({
           })}
         </div>
 
+      <div className="offer-code-box">
+        {unlockedNotices.map((offer) => (
+          <div className="offer-code-box__notice" key={offer.id} role="status">
+            <p>
+              <OfferCodeCheckIcon />
+              <span>
+                <strong>{offer.name} offer unlocked.</strong> Code {offer.code} applied. These seats are now shown below.
+              </span>
+            </p>
+            <button type="button" onClick={() => removeOfferCode(offer.id)}>
+              Remove
+            </button>
+          </div>
+        ))}
+        <form
+          onSubmit={(event) => {
+            void applyOfferCode(event);
+          }}
+        >
+          <h2 className="offer-code-box__title">
+            <LockIcon s={18} />
+            {unlockedNotices.length ? "Have another offer code?" : "Have an offer code?"}
+          </h2>
+          <p className="offer-code-box__help">
+            Enter it here to unlock exclusive tickets for this event.
+          </p>
+          <div className={`offer-code-box__row${offerCodeError ? " is-invalid" : ""}`}>
+            <input
+              type="text"
+              name="offer-code"
+              aria-label="Offer code"
+              placeholder="ENTER YOUR CODE"
+              value={offerCode}
+              autoCapitalize="characters"
+              autoCorrect="off"
+              spellCheck={false}
+              autoComplete="off"
+              aria-invalid={Boolean(offerCodeError)}
+              onChange={(event) => {
+                setOfferCode(event.target.value.toUpperCase());
+                if (offerCodeError) setOfferCodeError("");
+              }}
+            />
+            <button type="submit" disabled={!offerCode.trim() || offerCodeLoading} aria-busy={offerCodeLoading}>
+              {offerCodeLoading ? (
+                <Spinner
+                  size={18}
+                  variant="compact"
+                  color={BTN_INK}
+                  trackColor="rgba(255,255,255,0.35)"
+                  label="Checking code"
+                />
+              ) : (
+                "Unlock"
+              )}
+            </button>
+          </div>
+          {offerCodeError ? (
+            <p className="offer-code-box__error" role="alert">
+              {offerCodeError}
+            </p>
+          ) : null}
+        </form>
+      </div>
+
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: compact ? 10 : 16, marginTop: compact ? 10 : 22 }}>
         {busy ? <div style={{ height: 20, width: 96, borderRadius: 999, ...shimmer }} /> : <div style={{ fontSize: 16, fontWeight: 500, fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap" }}>{rows.length} Listings</div>}
         <div style={{ display: "flex", alignItems: "center", gap: compact ? 12 : 20 }}>
@@ -1600,6 +1859,21 @@ export default function PremiumTicketing({
         .nmt-sort-option.active,
         .nmt-sort-option.active:hover { background: ${ACC}; color: #fff; }
         .nmt-filter.active .nmt-star { color: #fff; }
+        .offer-code-box { margin-top: 16px; padding: 16px; border: 1px solid #e6e8ec; border-radius: 16px; background: #f7f8fa; }
+        .offer-code-box__notice { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; margin-bottom: 12px; padding: 12px 14px; border-radius: 10px; background: #e7f6ee; color: #137a45; }
+        .offer-code-box__notice p { display: flex; align-items: flex-start; gap: 8px; margin: 0; font-size: var(--t-14); line-height: 1.45; }
+        .offer-code-box__notice svg { flex: 0 0 auto; margin-top: 2px; }
+        .offer-code-box__notice button { flex: 0 0 auto; margin: 0; padding: 0; border: 0; background: none; color: inherit; font-family: inherit; font-size: var(--t-14); font-weight: 600; text-decoration: underline; cursor: pointer; }
+        .offer-code-box__title { display: flex; align-items: center; gap: 8px; margin: 0 0 4px; color: ${NAVY}; font-size: var(--t-15); font-weight: 650; line-height: 1.3; }
+        .offer-code-box__help { margin: 0 0 12px; color: #6e7180; font-size: var(--t-14); line-height: 1.4; }
+        .offer-code-box__row { display: flex; gap: 10px; }
+        .offer-code-box__row input { flex: 1 1 auto; min-width: 0; height: 48px; border: 1px solid #d0d5dd; border-radius: 10px; padding: 0 14px; background: #fff; color: ${NAVY}; font-family: inherit; font-size: var(--t-14); letter-spacing: 0.04em; text-transform: uppercase; }
+        .offer-code-box__row input::placeholder { color: #98a2b3; letter-spacing: 0.06em; }
+        .offer-code-box__row input:focus { outline: none; border-color: ${BTN}; }
+        .offer-code-box__row button { flex: 0 0 auto; display: inline-flex; align-items: center; justify-content: center; min-width: 112px; height: 48px; border: 0; border-radius: 10px; background: ${BTN}; color: ${BTN_INK}; font-family: inherit; font-size: var(--t-15); font-weight: 600; cursor: pointer; }
+        .offer-code-box__row button:disabled { cursor: default; opacity: 0.55; }
+        .offer-code-box__row.is-invalid input { border-color: var(--bt-error); }
+        .offer-code-box__error { margin: 8px 0 0; color: var(--bt-error); font-size: var(--t-14); line-height: 1.4; }
         ${orgScrollbarCss(ACC)}
         .shopper-page .ga-soldout-notify-sheet h2 {
           font-size: var(--t-24) !important;
@@ -2092,7 +2366,7 @@ export default function PremiumTicketing({
                   gaTierCards
                 )}
                 {holdError ? (
-                  <div style={{ fontSize: fluidSize(13), color: "#b91c1c", lineHeight: 1.4 }}>{holdError}</div>
+                  <div style={{ fontSize: fluidSize(13), color: ERROR_COLOR, lineHeight: 1.4 }}>{holdError}</div>
                 ) : null}
               </div>
             ) : null}
@@ -2205,7 +2479,7 @@ export default function PremiumTicketing({
               <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
                 {gaTierCards}
                 {holdError ? (
-                  <div style={{ fontSize: fluidSize(13), color: "#b91c1c", lineHeight: 1.4 }}>{holdError}</div>
+                  <div style={{ fontSize: fluidSize(13), color: ERROR_COLOR, lineHeight: 1.4 }}>{holdError}</div>
                 ) : null}
               </div>
             </div>
@@ -2451,7 +2725,7 @@ export default function PremiumTicketing({
                 <span style={{ fontSize: 28, fontWeight: 600, fontVariantNumeric: "tabular-nums", letterSpacing: "-0.025em", lineHeight: 1.5 }}>{money(unit * panelQty)}</span>
               </div>
               {holdError ? (
-                <div style={{ fontSize: fluidSize(13), color: "#b91c1c", lineHeight: 1.4 }}>{holdError}</div>
+                <div style={{ fontSize: fluidSize(13), color: ERROR_COLOR, lineHeight: 1.4 }}>{holdError}</div>
               ) : null}
               <BrandedActionButton
                 primaryColor={BTN}

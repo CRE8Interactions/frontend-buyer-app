@@ -986,6 +986,7 @@ export function demoSeatedTicketingData(
 
   return {
     eventId: event.id,
+    eventUuid: event.uuid,
     ...theme,
     eventName: event.name,
     whenLong,

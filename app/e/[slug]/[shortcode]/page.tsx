@@ -138,6 +138,7 @@ function toGaData(
   return {
     ...theme,
     eventId: ev.id,
+    eventUuid: ev.uuid,
     eventType: "ga",
     listings: [],
     gaTiers: gaTiers.length ? gaTiers : undefined,

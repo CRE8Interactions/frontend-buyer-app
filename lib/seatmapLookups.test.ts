@@ -209,4 +209,46 @@ describe("createSeatLookupTables", () => {
     ]);
     expect(filtered.lookupTable.a1?.offer?.id).toBe("off-unlocked");
   });
+
+  it("hides seats and GA sections that are not on the selected offer", () => {
+    const fieldClub = DEMO_SEATED_TICKET_GROUPS.find(
+      (group) => group.offer?.name === "Field Club",
+    );
+    const coded = DEMO_SEATED_TICKET_GROUPS.find(
+      (group) => group.offer?.name === "VIP Coded",
+    );
+    const standard = demoTicketGroups().ticketGroups.find(
+      (group) => group.offer?.name === "Standard Admission",
+    );
+    const vip = demoTicketGroups().ticketGroups.find(
+      (group) => group.offer?.name === "VIP Club",
+    );
+    if (!fieldClub?.offer || !coded?.offer || !standard?.offer || !vip?.offer) {
+      throw new Error("demo fixtures need Field Club, VIP Coded, and GA offers");
+    }
+    const fieldSeat = fieldClub.seatIds?.[0];
+    const codedSeat = coded.seatIds?.[0];
+    if (!fieldSeat || !codedSeat) throw new Error("demo fixtures need seated ids");
+
+    const seats = createSeatLookupTables(
+      [fieldClub, coded],
+      [String(fieldClub.offer.id)],
+    );
+    expect(seats.lookupTable[fieldSeat]?.offer?.id).toBe(fieldClub.offer.id);
+    expect(seats.lookupTable[codedSeat]).toBeUndefined();
+
+    const vipSection = {
+      ...vip!,
+      sectionId: "sec-vip",
+      offer: vip!.offer,
+    };
+    const sections = createSectionLookupTable(
+      [standard!, vipSection],
+      [standard!.offer!.id as string | number],
+    );
+    expect(sections[DEMO_GA_SECTION_ID]?.map((group) => group.offer?.id)).toEqual([
+      standard!.offer!.id,
+    ]);
+    expect(sections["sec-vip"]).toBeUndefined();
+  });
 });

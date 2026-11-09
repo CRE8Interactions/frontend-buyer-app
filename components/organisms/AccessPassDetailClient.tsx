@@ -248,7 +248,7 @@ export default function AccessPassDetailClient({
             </div>
 
             {error && (
-              <p className="mt-4 text-[14px] text-[#f87171]" role="alert">
+              <p className="mt-4 text-[14px] text-[var(--bt-error-on-dark)]" role="alert">
                 {error}
               </p>
             )}

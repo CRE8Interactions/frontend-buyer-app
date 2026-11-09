@@ -647,7 +647,7 @@ function CheckoutSuccessPage() {
                 Download receipt
               </BrandedActionButton>
               {receiptMsg ? (
-                <p className="text-[13px] text-[#b91c1c]">{receiptMsg}</p>
+                <p className="text-[13px] text-[var(--bt-error)]">{receiptMsg}</p>
               ) : null}
             </div>
           </aside>
@@ -1011,7 +1011,7 @@ function CheckoutSuccessPage() {
                 </ButtonBusyContents>
               </button>
               {walletError ? (
-                <p role="alert" className="mt-2 text-center text-[13px] text-[#b91c1c]">
+                <p role="alert" className="mt-2 text-center text-[13px] text-[var(--bt-error)]">
                   {walletError}
                 </p>
               ) : null}

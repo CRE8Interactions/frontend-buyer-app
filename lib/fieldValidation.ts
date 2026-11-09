@@ -367,7 +367,7 @@ export function lightFieldClass(invalid: boolean) {
   return [
     "h-[52px] w-full rounded-[14px] border bg-[#fff] px-4 text-[16px] text-[#051b35] outline-none placeholder:text-[#8a93a3]",
     invalid
-      ? "border-[#c2394a]"
+      ? "border-[var(--bt-error)]"
       : "border-[rgba(5,27,53,0.12)]",
   ].join(" ");
 }
@@ -376,7 +376,7 @@ export function darkFieldClass(invalid: boolean) {
   return [
     "h-12 w-full rounded-xl border bg-[#051B35] px-4 text-[15px] text-white placeholder-[#7c88a3] outline-none transition-colors",
     invalid
-      ? "border-[#c2394a]"
+      ? "border-[var(--bt-error)]"
       : "border-white/15",
   ].join(" ");
 }
@@ -389,8 +389,8 @@ export function fieldClass(variant: FieldVariant, invalid: boolean) {
 
 export function fieldErrorTextClass(variant: FieldVariant) {
   return variant === "dark"
-    ? "mt-2 text-[13px] text-[#ff7a72]"
-    : "mt-2 text-[13px] text-[#c2394a]";
+    ? "mt-2 text-[13px] text-[var(--bt-error-on-dark)]"
+    : "mt-2 text-[13px] text-[var(--bt-error)]";
 }
 
 /** Read a named text field from a submitted form (Safari autofill lives here). */

@@ -37,7 +37,7 @@ import WalletChrome from "@/components/organisms/WalletChrome";
 import {
   WalletTicketsBlocksLoading,
 } from "@/components/organisms/WalletTicketsLoader";
-import { BLOCKTICKETS_GREEN, BLOCKTICKETS_NAVY } from "@/lib/branding";
+import { BLOCKTICKETS_GREEN, BLOCKTICKETS_NAVY, ERROR_COLOR } from "@/lib/branding";
 import { lockPageScroll, unlockPageScroll } from "@/lib/pageScroll";
 import EmailField from "@/components/molecules/EmailField";
 import SeasonTicketsBadge from "@/components/molecules/SeasonTicketsBadge";
@@ -251,7 +251,7 @@ const FIELD = "#f7f8fc";
 const LINE = "rgba(5,27,53,0.10)";
 const GREEN = "#2f8f4e";
 const GREEN_BG = "#e7f5ec";
-const DANGER = "#c2394a";
+const DANGER = ERROR_COLOR;
 const SOFT = "#ecf8dd";
 const LOGO = "/nmstate/nmstate-logo-nowordmark.png";
 const CODE_BOXES = [0, 1, 2, 3, 4, 5];
@@ -5780,7 +5780,7 @@ export default function SeasonTickets({
                 </ButtonBusyContents>
               </button>
             ) : null}
-            {printError ? <p role="alert" style={{ margin: 0, color: "#c2394a", fontSize: fluidSize(13) }}>{printError}</p> : null}
+            {printError ? <p role="alert" style={{ margin: 0, color: DANGER, fontSize: fluidSize(13) }}>{printError}</p> : null}
           </div>
           <div style={{ ...card, borderRadius: 20, padding: cardPad, display: "flex", flexDirection: "column", gap: 8 }}>
             <div style={{ ...eyebrow, lineHeight: 1.5 }}>Getting there</div>

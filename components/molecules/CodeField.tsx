@@ -162,7 +162,7 @@ export default function CodeField({
             onFocus={(e) => e.currentTarget.select()}
             className={`h-[54px] w-full rounded-[14px] border text-center text-[22px] font-semibold tabular-nums text-[#051b35] md:h-[60px] ${
               boxInvalid
-                ? "border-[#c2394a]"
+                ? "border-[var(--bt-error)]"
                 : "border-[rgba(5,27,53,0.12)] focus:border-[#a6e773]"
             } bg-[#fff]`}
           />
@@ -171,15 +171,15 @@ export default function CodeField({
       {/* One box per digit, so the whole code still submits as a single field. */}
       <input type="hidden" name={name} value={value} />
       {error === "code" ? (
-        <p className="mt-2 text-center text-[13px] text-[#c2394a]">
+        <p className={`${fieldErrorTextClass("light")} text-center`}>
           {FIELD_COPY.codeIncorrect}
         </p>
       ) : errorMessage ? (
-        <p className="mt-2 text-center text-[13px] text-[#c2394a]" role="alert">
+        <p className={`${fieldErrorTextClass("light")} text-center`} role="alert">
           {errorMessage}
         </p>
       ) : error === "network" ? (
-        <p className="mt-2 text-center text-[13px] text-[#c2394a]">
+        <p className={`${fieldErrorTextClass("light")} text-center`}>
           {FIELD_COPY.network}
         </p>
       ) : null}
