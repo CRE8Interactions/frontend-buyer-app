@@ -4,9 +4,10 @@ import { useEffect, useRef, useState, type ReactNode } from "react";
 import RouteLoader from "@/components/molecules/RouteLoader";
 import { ShopperFluidTypeStyles } from "@/components/templates/ShopperFluidType";
 import { shopperShellVars } from "@/lib/branding";
-import { CHECKOUT_HOLD_SECONDS, formatHoldClock } from "@/lib/checkoutBranding";
+import { CHECKOUT_HOLD_CAP_SECONDS, formatHoldClock } from "@/lib/checkoutBranding";
 
 const NAVY = "#051b35";
+const HOLD_WARNING_SECONDS = 60;
 
 export default function BrandedCheckoutShell({
   accent,
@@ -69,9 +70,11 @@ export default function BrandedCheckoutShell({
       ? null
       : formatHoldClock(
           remainingSeconds > 0 && left === 0 && !expiredNotified.current
-            ? Math.min(remainingSeconds, CHECKOUT_HOLD_SECONDS)
-            : Math.min(left, CHECKOUT_HOLD_SECONDS),
+            ? Math.min(remainingSeconds, CHECKOUT_HOLD_CAP_SECONDS)
+            : Math.min(left, CHECKOUT_HOLD_CAP_SECONDS),
         );
+  const showHoldWarning =
+    !holdPaused && left > 0 && left <= HOLD_WARNING_SECONDS;
 
   return (
     <div
@@ -140,6 +143,11 @@ export default function BrandedCheckoutShell({
           Secure checkout
         </div>
       </header>
+      {showHoldWarning ? (
+        <p role="status" className="bg-[#fff4d6] px-4 py-3 text-center text-[14px] text-[#051b35]">
+          Your tickets are held for about a minute. Complete checkout to keep them.
+        </p>
+      ) : null}
       {loading ? <RouteLoader branding={loaderBranding} /> : children}
     </div>
   );

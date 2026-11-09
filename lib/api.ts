@@ -7,6 +7,7 @@ import {
   buildCancelTransferRequestBody,
   resolveCancelTransferId,
 } from "@/lib/ticketTransfers";
+import { dropCartRequestBody, withCallerCart } from "@/lib/cart";
 import {
   clearWaitingRoomToken,
   getCurrentWaitingRoomEventUuid,
@@ -154,7 +155,10 @@ export const getAccessPassTemplate = (uuid: string) =>
   instance.get(`/access-pass-templates/get-access-pass?uuid=${uuid}`);
 
 export const placeAccessPassIntoCart = (templateId: string | number) =>
-  instance.post(`/access-pass-templates/add-to-cart?id=${templateId}`);
+  instance.post(
+    `/access-pass-templates/add-to-cart?id=${templateId}`,
+    withCallerCart(undefined),
+  );
 
 export const findMadeOrder = (data: unknown) =>
   instance.post("/orders/findMadeOrder", data);
@@ -443,13 +447,13 @@ export const getTicketsFromOffer = (offerId: string, eventId: string) =>
   instance.get(`/events/offer-tickets?uuid=${eventId}&offerUUID=${offerId}`);
 
 export const placeTicketsIntoCart = (data: unknown) =>
-  instance.post(`/events/place-tickets-into-cart`, data);
+  instance.post(`/events/place-tickets-into-cart`, withCallerCart(data));
 
 export const placeGATicketsIntoCart = (data: unknown) =>
-  instance.post(`/events/place-ga-tickets-into-cart`, data);
+  instance.post(`/events/place-ga-tickets-into-cart`, withCallerCart(data));
 
 export const placePackageIntoCart = (data: unknown) =>
-  instance.post(`/events/place-package-into-cart`, data);
+  instance.post(`/events/place-package-into-cart`, withCallerCart(data));
 
 export const getTicketGroups = (data: unknown) =>
   instance.post(`/ticket-group/get-ticket-groups`, data);
@@ -527,8 +531,8 @@ export function isWaitingRoomRequiredError(error: unknown) {
 export const getCart = (cartId: string) =>
   instance.get(`/cart/myCart?cartId=${cartId}`);
 
-export const dropUserCart = (data: unknown) =>
-  instance.post(`/cart/drop-user-cart`, data);
+export const dropUserCart = (data: unknown = {}) =>
+  instance.post(`/cart/drop-user-cart`, dropCartRequestBody(data));
 
 export const getVenuePackages = (venueUUID: string) =>
   instance.get(`/packages/get-venue-packages?venueUUID=${venueUUID}`);
@@ -593,7 +597,7 @@ export const getFlexPack = (uuid: string) =>
   instance.get(`/flex-pack/get-flex-pack?uuid=${uuid}`);
 
 export const placeFlexPackIntoCart = (flexPackId: string | number) =>
-  instance.post(`/flex-pack/add-to-cart?id=${flexPackId}`);
+  instance.post(`/flex-pack/add-to-cart?id=${flexPackId}`, withCallerCart({}));
 
 export const trackCartSessionEvent = (data: unknown) =>
   instance.post("/cart-sessions/track", data);

@@ -117,8 +117,11 @@ export function checkoutBrandingFromCart(
   };
 }
 
-/** Seat holds are 10 minutes; some carts send remainingTime in milliseconds. */
+/** Seat holds start at 10 minutes. Checkout can extend them, never past 25. */
 export const CHECKOUT_HOLD_SECONDS = 10 * 60;
+
+/** Absolute cap on a checkout hold (CART_HOLD_ABSOLUTE_CAP_MINUTES). */
+export const CHECKOUT_HOLD_CAP_SECONDS = 25 * 60;
 
 /** Values this large are remainingTime in milliseconds, not seconds. */
 const HOLD_MILLISECONDS_THRESHOLD = 1000;
@@ -132,7 +135,7 @@ export function checkoutHoldSeconds(remainingTime?: number | null): number {
     seconds = seconds / 1000;
   }
   return Math.min(
-    CHECKOUT_HOLD_SECONDS,
+    CHECKOUT_HOLD_CAP_SECONDS,
     Math.max(0, Math.floor(seconds)),
   );
 }
@@ -146,7 +149,7 @@ export function formatHoldClock(remainingSeconds?: number | null): string | null
     return null;
   }
   const total = Math.min(
-    CHECKOUT_HOLD_SECONDS,
+    CHECKOUT_HOLD_CAP_SECONDS,
     Math.max(0, Math.floor(Number(remainingSeconds))),
   );
   const minutes = Math.floor(total / 60);
