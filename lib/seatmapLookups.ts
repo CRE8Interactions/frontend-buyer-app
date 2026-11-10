@@ -50,6 +50,7 @@ export type SeatmapSection = {
   identifier?: {
     path?: string;
     fill?: string;
+    soldOutFill?: string;
     opacity?: number;
     evenodd?: boolean;
   };

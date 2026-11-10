@@ -11,6 +11,7 @@ import {
   type SectionOverlayPaint,
   zoomableCoverPathD,
 } from "@/lib/seatmapLookups";
+import { repairLabelSections } from "@/lib/repairLabelSections";
 import useSeatmapStore from "@/stores/seatmapStore";
 import type { SeatmapTooltipTarget } from "./SeatmapTooltip";
 
@@ -79,9 +80,8 @@ const SeatmapSections = memo(function SeatmapSections({
   >({});
 
   const sectionsList = useMemo(() => {
-    if (!data.sections) return [];
     const seen = new Set<string>();
-    return Object.values(data.sections).filter((section) => {
+    return repairLabelSections(data.sections).filter((section) => {
       const sid = String(section.sectionId ?? "");
       if (!sid || seen.has(sid)) return false;
       seen.add(sid);
@@ -320,7 +320,11 @@ const SeatmapSections = memo(function SeatmapSections({
             {!hideIdentifierArt && section.identifier?.path ? (
               <path
                 d={section.identifier.path}
-                fill={section.identifier.fill || "white"}
+                fill={
+                  (!hasInventory ? section.identifier.soldOutFill : undefined) ||
+                  section.identifier.fill ||
+                  "white"
+                }
                 opacity={section.identifier.opacity ?? 1}
                 fillRule={section.identifier.evenodd ? "evenodd" : "nonzero"}
                 clipRule={section.identifier.evenodd ? "evenodd" : "nonzero"}
