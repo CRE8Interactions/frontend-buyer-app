@@ -3,7 +3,14 @@
 import { BROWSE_TRACK } from "@/lib/browseType";
 import { fluidSize } from "@/lib/shopperFluidType";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { useRouter } from "next/navigation";
 import InAppBackLink from "@/components/molecules/InAppBackLink";
 import RouteLoader from "@/components/molecules/RouteLoader";
@@ -71,6 +78,15 @@ type PackageTicket = {
   on_sale_status?: string;
   [key: string]: unknown;
 };
+
+/** A whole number greater than 0 caps the order. Anything else means no cap. */
+function packageTicketLimit(pkg: {
+  limit?: number | null;
+  maxQuantity?: number | null;
+}) {
+  const maxQuantity = Number(pkg.limit ?? pkg.maxQuantity);
+  return Number.isInteger(maxQuantity) && maxQuantity > 0 ? maxQuantity : null;
+}
 
 type EventPackage = {
   id: number | string;
@@ -267,6 +283,21 @@ export default function PackageDetailClient({
     };
   }, [packageId]);
 
+  useEffect(() => {
+    if (!pkg) return;
+    setEventTicketLimit(packageTicketLimit(pkg));
+  }, [pkg, setEventTicketLimit]);
+
+  // Ticket-limit failures live in the shared seatmap store. Drop them, and
+  // the package cap, on unmount so the next page does not reopen this dialog
+  // or inherit this order limit.
+  useLayoutEffect(() => {
+    return () => {
+      setSeatedError(null);
+      setEventTicketLimit(null);
+    };
+  }, [setSeatedError, setEventTicketLimit]);
+
   const events = sortByDate(pkg?.events || []);
   const timezone = pkg?.timezone || pkg?.venue?.timezone;
   const seasonYear = pkg ? packageSeasonYear(pkg, events, timezone) : "";
@@ -313,7 +344,7 @@ export default function PackageDetailClient({
         organization: pkg.organization,
         name: pkg.name,
       });
-      setEventTicketLimit(pkg.limit ?? pkg.maxQuantity ?? null);
+      setEventTicketLimit(packageTicketLimit(pkg));
 
       setData(mapping);
       setBackground(normalizeSeatmapBackground(inventory.seatmap?.background));
