@@ -1023,6 +1023,8 @@ export default function PremiumTicketing({
   const zoneChips = useMemo(() => {
     const seen: string[] = [...(d.offerNames || [])];
     d.listings.forEach((l) => {
+      // A resale listing's zone is its seller's section, not an offer, so it never becomes a chip.
+      if (l.resale) return;
       const offer = (l.cartGroup as { offer?: { name?: string; isConnectedOffer?: boolean | null; isHidden?: boolean } })
         ?.offer;
       if (offer?.isHidden) return;
@@ -1352,7 +1354,10 @@ export default function PremiumTicketing({
   const resaleBadge = pill("#fff1e8", "#f0641e");
   const listingOfferBadges = (listing: TicketingListing, compact = false) => (
     <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap", alignSelf: "flex-start" }}>
-      <span style={{ ...pill(ACC_SOFT, ACC), ...(compact ? { fontSize: 13, padding: "3px 8px" } : {}) }}><Star s={compact ? 12 : 14} /> {listing.zone}</span>
+      {/* A resale listing's zone is its seller's section, not an offer, so it gets no offer pill. */}
+      {!listing.resale ? (
+        <span style={{ ...pill(ACC_SOFT, ACC), ...(compact ? { fontSize: 13, padding: "3px 8px" } : {}) }}><Star s={compact ? 12 : 14} /> {listing.zone}</span>
+      ) : null}
       {listing.resale ? (
         <span data-testid="verified-resale-badge" style={{ ...resaleBadge, ...(compact ? { fontSize: 13, padding: "3px 8px" } : {}) }}>Verified Resale</span>
       ) : null}
@@ -2697,7 +2702,9 @@ export default function PremiumTicketing({
               </div>
               <div style={{ display: "flex", flexDirection: "column", gap: 8, padding: "18px 0 16px" }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
-                  <span style={{ flexShrink: 0, ...pill(ACC_SOFT, ACC), ...(mobile ? { padding: "5px 10px" } : {}) }}><Star s={14} /> {selRow.tier || selRow.zone}</span>
+                  {!selRow.resale ? (
+                    <span style={{ flexShrink: 0, ...pill(ACC_SOFT, ACC), ...(mobile ? { padding: "5px 10px" } : {}) }}><Star s={14} /> {selRow.tier || selRow.zone}</span>
+                  ) : null}
                   {selRow.resale ? (
                     <span data-testid="verified-resale-badge" style={{ flexShrink: 0, ...resaleBadge, ...(mobile ? { padding: "5px 10px" } : {}) }}>Verified Resale</span>
                   ) : null}

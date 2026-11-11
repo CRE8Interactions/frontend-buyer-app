@@ -2368,11 +2368,30 @@ describe("Select tickets page (PremiumTicketing)", { timeout: 20_000 }, () => {
       .getAllByText(/\$[\d,]+\.\d{2} each/i)
       .map((el) => el.textContent);
     expect(prices[0]).toMatch(/\$45\.00/);
-    expect(screen.getAllByTestId("verified-resale-badge")[0]).toHaveTextContent(
-      /verified resale/i,
-    );
+    const resaleBadge = screen.getAllByTestId("verified-resale-badge")[0];
+    expect(resaleBadge).toHaveTextContent(/verified resale/i);
+    expect(resaleBadge.parentElement).not.toHaveTextContent(/section a-b/i);
     expect(screen.getByText(/^sec a · row 1$/i)).toBeInTheDocument();
     expect(screen.getByText(/sec m · row m3/i)).toBeInTheDocument();
+  });
+
+  it("does not list a resale listing's section as an offer chip", async () => {
+    const resale = seatedTicketingFixture.listings.find((l) => l.resale)!;
+    await renderReady({
+      ...seatedTicketingFixture,
+      listings: [
+        ...seatedTicketingFixture.listings,
+        {
+          ...resale,
+          zone: "Section 210",
+          cartGroup: { ...resale.cartGroup, offer: undefined },
+        },
+      ],
+    });
+
+    expect(
+      screen.queryByRole("button", { name: /section 210/i }),
+    ).not.toBeInTheDocument();
   });
 
   it("shows an accessibility empty state instead of quantity-reset copy", async () => {
