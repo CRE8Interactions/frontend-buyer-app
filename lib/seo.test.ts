@@ -194,6 +194,26 @@ describe("purchase tab title", () => {
     expect(purchaseTabTitle(null)).toBe("");
     expect(purchaseTabTitle({})).toBe("");
   });
+
+  it("dates the event title from a venue timezone object", () => {
+    const event = {
+      ...demoEvent(),
+      start: "2026-09-11T04:30:00.000Z",
+      venue: { ...demoEvent().venue, timezone: { iana: "America/Denver" } },
+    };
+
+    expect(purchaseTabTitle({ event })).toContain("on Sep 10");
+  });
+
+  it("dates the event title in Eastern time when the venue timezone cannot be read", () => {
+    const event = {
+      ...demoEvent(),
+      start: "2026-09-11T04:30:00.000Z",
+      venue: { ...demoEvent().venue, timezone: {} },
+    };
+
+    expect(purchaseTabTitle({ event })).toContain("on Sep 11");
+  });
 });
 
 describe("wallet tab titles", () => {

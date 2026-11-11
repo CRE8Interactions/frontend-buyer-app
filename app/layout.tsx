@@ -1,8 +1,10 @@
+import type { CSSProperties } from "react";
 import type { Metadata } from "next";
 import { Inter } from "next/font/google";
 import "./globals.css";
 import AppProviders from "@/components/providers/AppProviders";
 import { LOADER_BOOT_SCRIPT } from "@/lib/loaderBoot";
+import { ERROR_COLOR, ERROR_COLOR_ON_DARK } from "@/lib/branding";
 import {
   DEFAULT_DESCRIPTION,
   DEFAULT_OG_IMAGE,
@@ -40,7 +42,16 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" suppressHydrationWarning>
+    <html
+      lang="en"
+      style={
+        {
+          "--bt-error": ERROR_COLOR,
+          "--bt-error-on-dark": ERROR_COLOR_ON_DARK,
+        } as CSSProperties
+      }
+      suppressHydrationWarning
+    >
       <head>
         <script dangerouslySetInnerHTML={{ __html: LOADER_BOOT_SCRIPT }} />
       </head>

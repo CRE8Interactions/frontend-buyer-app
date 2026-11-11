@@ -1128,9 +1128,17 @@ function reportsIphone() {
   );
 }
 
+type ClientHints = { mobile?: boolean; platform?: string };
+
+function clientHints(): ClientHints | undefined {
+  return (
+    navigator as Navigator & { userAgentData?: ClientHints }
+  ).userAgentData;
+}
+
 /**
- * Shorter physical screen side. Desktop-site Safari widens `innerWidth`, so
- * the layout viewport cannot separate an iPhone from an iPad.
+ * Shorter physical screen side. Desktop site widens `innerWidth`, so the
+ * layout viewport cannot separate a phone from a tablet.
  */
 function phoneSizedScreen() {
   if (typeof window === "undefined") return false;
@@ -1138,6 +1146,31 @@ function phoneSizedScreen() {
   const height = window.screen?.height ?? 0;
   if (!width || !height) return false;
   return Math.min(width, height) < 600;
+}
+
+/** Android stays on the client hint when desktop site rewrites the user agent. */
+export function reportsAndroidDevice() {
+  if (typeof navigator === "undefined") return false;
+  if (/android/i.test(navigator.userAgent)) return true;
+  return /android/i.test(clientHints()?.platform || "");
+}
+
+function reportsAppleOs() {
+  const ua = navigator.userAgent;
+  if (/iPhone|iPad|iPod/i.test(ua)) return true;
+  if (/iPhone|iPad|iPod/i.test(navigator.platform || "")) return true;
+  return /Macintosh/i.test(ua) && (navigator.maxTouchPoints ?? 0) > 1;
+}
+
+/** A touch page at the phone layout width, even when the user agent hides the OS. */
+function phoneSizedTouchPage() {
+  if (typeof window === "undefined" || typeof window.matchMedia !== "function") {
+    return false;
+  }
+  const touch =
+    (navigator.maxTouchPoints ?? 0) > 0 ||
+    window.matchMedia("(pointer: coarse)").matches;
+  return touch && window.matchMedia("(max-width: 900px)").matches;
 }
 
 /** iPads and Android tablets lack Apple/Google Wallet on device. */
@@ -1155,12 +1188,13 @@ export function isTabletDevice() {
   }
 
   if (/Android/i.test(ua) && !/Mobile/i.test(ua)) {
-    const hints = (
-      navigator as Navigator & { userAgentData?: { mobile?: boolean } }
-    ).userAgentData;
-    if (hints?.mobile) return false;
+    // Desktop site drops "Mobile" and reports the mobile hint as false.
+    // A phone-sized screen is still a phone.
+    if (clientHints()?.mobile || phoneSizedScreen()) return false;
     return true;
   }
+
+  if (reportsAndroidDevice() && phoneSizedScreen()) return false;
 
   // DevTools tablet presets can keep a desktop UA while emulating touch.
   if (/Android/i.test(ua) && /Mobile/i.test(ua)) return false;
@@ -1178,17 +1212,20 @@ export function isTabletDevice() {
 export function isPhoneDevice() {
   if (typeof navigator === "undefined") return false;
   if (reportsIphone()) return true;
+  // In-app browsers hide the OS. A phone-sized touch page is still a phone.
+  if (phoneSizedTouchPage() && !reportsAndroidDevice() && !reportsAppleOs()) {
+    return true;
+  }
   if (isTabletDevice()) return false;
 
   const ua = navigator.userAgent;
 
   if (/Android/i.test(ua)) {
     if (/Mobile/i.test(ua)) return true;
-    const hints = (
-      navigator as Navigator & { userAgentData?: { mobile?: boolean } }
-    ).userAgentData;
-    if (hints?.mobile) return true;
+    if (clientHints()?.mobile || phoneSizedScreen()) return true;
   }
+
+  if (reportsAndroidDevice() && phoneSizedScreen()) return true;
 
   if (
     /Macintosh/i.test(ua) &&

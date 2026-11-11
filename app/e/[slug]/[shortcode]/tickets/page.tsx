@@ -39,11 +39,9 @@ import type {
   SeatmapBackground,
   SeatmapMapping,
 } from "@/lib/seatmapLookups";
-import {
-  createSeatLookupTables,
-  createSectionLookupTable,
-  normalizeSeatmapBackground,
-} from "@/lib/seatmapLookups";
+import { normalizeSeatmapBackground } from "@/lib/seatmapLookups";
+import { omitHiddenSectionGroups } from "@/lib/hiddenSections";
+import { seatmapLookupsFromTicketGroups, unlockOfferInTicketGroups } from "@/lib/offerUnlock";
 import {
   groupsToListings,
   lockedZonesFromGroups,
@@ -61,7 +59,6 @@ import {
   parseTicketingSearchParams,
   ticketingSearchHref,
 } from "@/lib/ticketingQuery";
-import { unlockOfferInTicketGroups } from "@/lib/offerUnlock";
 import useFiltersStore from "@/stores/filtersStore";
 import useSeatmapStore from "@/stores/seatmapStore";
 import useWaitingRoomHeartbeat from "@/hooks/useWaitingRoomHeartbeat";
@@ -162,14 +159,19 @@ function toTicketingData(
     orgName: orgLabel,
     sportingEvent: isSportingEvent(ev),
   });
-  const lockedZones = lockedZonesFromGroups(groups);
   const globalMax = normalizeGlobalTicketLimit(ev.globalTicketLimit);
   const listingOpts = {
     includeLocked: true,
     globalMax,
   };
-  const listings = groupsToListings(groups, listingOpts);
-  const quantityCatalog = groupsToListings(catalogGroups, listingOpts);
+  const visibleGroups = omitHiddenSectionGroups(groups, seatmap.mapping?.sections);
+  const visibleCatalog = omitHiddenSectionGroups(
+    catalogGroups,
+    seatmap.mapping?.sections,
+  );
+  const lockedZones = lockedZonesFromGroups(visibleGroups);
+  const listings = groupsToListings(visibleGroups, listingOpts);
+  const quantityCatalog = groupsToListings(visibleCatalog, listingOpts);
   const theme = brandingToTicketingTheme(ev, ev.organization, imageOf(ev.image));
   const attractionImage = resolvePrimaryAttractionImage(ev);
   const brandLogo = resolveBrandLogo(ev, ev.organization);
@@ -177,6 +179,7 @@ function toTicketingData(
   return {
     ...theme,
     eventId: ev.id,
+    eventUuid: ev.uuid,
     eventName: ev.name || "Event",
     whenLong: whenLong || when,
     whenShort: eventWhenShortWithDoors(ev.start, doorsIso, tz),
@@ -279,10 +282,10 @@ function hydrateSeatmapStores(
   }
   if (seatmapRaw?.max_scale != null) setMaxScale(seatmapRaw.max_scale);
 
-  const { lookupTable, offersLookupTable } = createSeatLookupTables(groups);
-  setSeatLookupTable(lookupTable);
-  setSeatOffersLookupTable(offersLookupTable);
-  setSectionLookupTable(createSectionLookupTable(groups));
+  const lookups = seatmapLookupsFromTicketGroups(groups);
+  setSeatLookupTable(lookups.seatLookupTable);
+  setSeatOffersLookupTable(lookups.seatOffersLookupTable);
+  setSectionLookupTable(lookups.sectionLookupTable);
 }
 
 /**
@@ -517,9 +520,12 @@ function SeatedTickets() {
     // A newer filter change already went out — its response wins.
     if (refetchId.current !== requestId) return;
 
-    const nextGroups = await withResaleInventory(
-      event,
-      (res?.data?.ticketGroups || []) as RawGroup[],
+    const nextGroups = omitHiddenSectionGroups(
+      await withResaleInventory(
+        event,
+        (res?.data?.ticketGroups || []) as RawGroup[],
+      ),
+      useSeatmapStore.getState().data?.sections,
     );
     const usable =
       groupsToListings(

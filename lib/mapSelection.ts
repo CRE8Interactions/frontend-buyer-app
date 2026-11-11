@@ -47,7 +47,7 @@ export function maxTicketLimitError(limit: number, offerName?: string | null) {
     title: MAX_TICKET_LIMIT_ERROR.title,
     message: name
       ? `Adding these tickets would exceed the ticket limit of ${limit} for ${name}.`
-      : `Adding these tickets would exceed the ticket limit of ${limit}.`,
+      : `You can only select ${limit} ${limit === 1 ? "ticket" : "tickets"} in this order.`,
     buttonText: MAX_TICKET_LIMIT_ERROR.buttonText,
   };
 }

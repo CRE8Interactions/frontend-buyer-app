@@ -1011,6 +1011,7 @@ export function demoSeatedTicketingData(
 
   return {
     eventId: event.id,
+    eventUuid: event.uuid,
     ...theme,
     eventName: event.name,
     whenLong,
@@ -1485,19 +1486,21 @@ export function demoItemizedFeeCompletedOrder() {
   const ticketCount = cart.tickets.length;
   const serviceFee = pricing.serviceFee * ticketCount;
   const processingFee = pricing.paymentProcessingFee * ticketCount;
-  return demoCompletedTicketOrder({
-    tickets: cart.tickets,
-    event: cart.event,
-    total: cart.total,
-    salesTax: pricing.taxPerTicket * ticketCount,
-    serviceFee,
-    processingFee,
-    estimatedProcessingFee: processingFee,
+  return {
+    ...demoCompletedTicketOrder({
+      tickets: cart.tickets,
+      event: cart.event,
+      total: cart.total,
+      salesTax: pricing.taxPerTicket * ticketCount,
+      serviceFee,
+      processingFee,
+      estimatedProcessingFee: processingFee,
+    }),
     priceObject: {
       ...pricing,
       estimatedPaymentProcessingFee: processingFee,
     },
-  });
+  };
 }
 
 /** Adult and Student tickets that itemize onto different face prices. */

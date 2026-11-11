@@ -18,7 +18,6 @@ import { fluidSize } from "@/lib/shopperFluidType";
 import { getOrganizationStorefront, getVenueUpcomingEvents } from "@/lib/api";
 import { isEventSoldOut, onSaleBadgeLabel, withSoldOutFlags } from "@/lib/eventSoldOut";
 import {
-  monthEventCountLabel,
   packageFromPriceLabel,
   type EventPriceSource,
 } from "@/lib/eventFromPrice";
@@ -74,6 +73,10 @@ import {
   initializeTracking,
   type TrackingOrganization,
 } from "@/lib/tracking";
+import {
+  compareUpcomingEvents,
+  groupUpcomingEvents,
+} from "@/lib/upcomingEventOrder";
 
 const NAVY = "#051b35";
 
@@ -92,6 +95,7 @@ type StoreEvent = {
   shortcode?: string;
   start?: string;
   status?: string;
+  listPriority?: number | string | null;
   soldout?: boolean | null;
   soldOut?: boolean | null;
   generalOnsale?: string | null;
@@ -158,6 +162,7 @@ type FlexPackItem = {
   offerColor?: string;
   venue?: { timezone?: string };
   organization?: {
+    name?: string;
     isTaxable?: unknown;
     taxRate?: { estimatedCombinedRate?: unknown } | null;
     tax_rate?: { estimatedCombinedRate?: unknown } | null;
@@ -215,7 +220,8 @@ type RowEvent = {
   soldOut: boolean;
   onSaleLabel: string;
   href: string;
-  sort: number;
+  listPriority?: number | string | null;
+  sortKey: number;
 };
 
 export type StorefrontInitialData = {
@@ -312,7 +318,8 @@ function toRow(ev: StoreEvent, org?: Org | null): RowEvent | null {
     soldOut: isEventSoldOut(ev),
     onSaleLabel: onSaleBadgeLabel(ev),
     href: eventPurchasePath(ev),
-    sort: new Date(start).getTime() || 0,
+    listPriority: ev.listPriority,
+    sortKey: new Date(start).getTime() || 0,
   };
 }
 
@@ -502,7 +509,7 @@ export default function ClientProfile({
       events
         .map((ev) => toRow(ev, organization))
         .filter((r): r is RowEvent => Boolean(r))
-        .sort((a, b) => a.sort - b.sort),
+        .sort((a, b) => a.sortKey - b.sortKey),
     [events, organization],
   );
 
@@ -527,20 +534,11 @@ export default function ClientProfile({
       const filterLabels =
         tab === "packages" ? packageLabels : eventFilterLabels;
       const active = filterLabels.includes(sport) ? sport : ALL_FILTER;
-      const filteredEvents = rows.filter((e) => matchesSport(e.sport, active));
-
-      const monthKeys: string[] = [];
-      filteredEvents.forEach((e) => {
-        if (!monthKeys.includes(e.monthKey)) monthKeys.push(e.monthKey);
-      });
-      const groups = monthKeys.map((mk) => {
-        const list = filteredEvents.filter((e) => e.monthKey === mk);
-        return {
-          title: list[0]?.monthTitle || mk,
-          meta: monthEventCountLabel(list.length),
-          rows: list,
-        };
-      });
+      const filteredEvents = rows
+        .filter((e) => matchesSport(e.sport, active))
+        .slice()
+        .sort(compareUpcomingEvents);
+      const groups = groupUpcomingEvents(filteredEvents);
 
       const sourceCount =
         tab === "packages"
@@ -593,6 +591,11 @@ export default function ClientProfile({
     appliedCategoryRef.current = categoryQuery;
     setSport(match);
   }, [categoryQuery, rows, packageRows]);
+
+  const selectSport = (label: string) => {
+    setSport(label);
+    window.scrollTo({ top: 0, behavior: "auto" });
+  };
 
   const tabs = [
     { key: "events" as const, label: "Upcoming events" },
@@ -906,7 +909,7 @@ export default function ClientProfile({
                     <button
                       key={f.label}
                       className="cp-a"
-                      onClick={() => setSport(f.label)}
+                      onClick={() => selectSport(f.label)}
                       style={{
                         fontFamily: "inherit",
                         display: "flex",
@@ -1060,7 +1063,7 @@ export default function ClientProfile({
                   {sportFilters.map((f) => (
                     <button
                       key={f.label}
-                      onClick={() => setSport(f.label)}
+                      onClick={() => selectSport(f.label)}
                       style={{
                         fontFamily: "inherit",
                         display: "inline-flex",
@@ -1095,7 +1098,7 @@ export default function ClientProfile({
               )}
 
               {groups.map((g) => (
-                <div key={g.title} style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                <div key={g.key} style={{ display: "flex", flexDirection: "column", gap: 10 }}>
                   <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "10px 2px 8px" }}>
                     <div style={{ fontSize: 13, fontWeight: 600, lineHeight: 1.5, textTransform: "uppercase", letterSpacing: BROWSE_TRACK.eyebrow, color: ACC, whiteSpace: "nowrap" }}>
                       {g.title}
@@ -1223,7 +1226,7 @@ export default function ClientProfile({
                   {sportFilters.map((f) => (
                     <button
                       key={f.label}
-                      onClick={() => setSport(f.label)}
+                      onClick={() => selectSport(f.label)}
                       style={{
                         fontFamily: "inherit",
                         display: "inline-flex",

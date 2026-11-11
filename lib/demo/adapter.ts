@@ -12,6 +12,7 @@ import type { AxiosResponse, InternalAxiosRequestConfig } from "axios";
 import {
   DEMO_SESSION,
   DEMO_EVENTS,
+  DEMO_SEATED_TICKET_GROUPS,
   demoAccessPass,
   demoCart,
   demoCompletedFlexPackOrder,
@@ -22,6 +23,7 @@ import {
   demoPackageAccessPass,
   demoPublicMenu,
   demoSeasonPackage,
+  demoTicketGroups,
   demoWalletListings,
 } from "./fixtures";
 import { filterGroupsForListings, type RawTicketGroup } from "@/lib/ticketListings";
@@ -517,6 +519,30 @@ const routes: Route[] = [
   { methods: ["post"], match: endsWith("/events/place-ga-tickets-into-cart"), handle: () => ({ data: demoCart() }) },
   { methods: ["post"], match: endsWith("/events/place-tickets-into-cart"), handle: () => ({ data: demoCart() }) },
   { methods: ["post"], match: endsWith("/tickets/checkAccessCode"), handle: () => ({ data: true }) },
+  {
+    methods: ["post"],
+    match: endsWith("/tickets/find-offers-by-access-code"),
+    handle: (_path, config) => {
+      const body = parseBody(config) as { code?: string };
+      const typed = String(body.code || "").trim().toLowerCase();
+      const seen = new Set<string>();
+      const offers = [
+        ...DEMO_SEATED_TICKET_GROUPS,
+        ...demoTicketGroups().ticketGroups,
+      ].flatMap((group) => {
+        const offer = group.offer;
+        const accessCode = String(offer?.accessCode || "").trim();
+        const id = offer?.id;
+        if (!offer || id == null || offer.isHidden || !accessCode) return [];
+        if (accessCode.toLowerCase() !== typed) return [];
+        const key = String(id);
+        if (seen.has(key)) return [];
+        seen.add(key);
+        return [{ id, name: offer.name }];
+      });
+      return { data: { offers } };
+    },
+  },
   {
     methods: ["get"],
     match: (path) => path.includes("/ticket-transfers?filters[fromUserEmail]"),

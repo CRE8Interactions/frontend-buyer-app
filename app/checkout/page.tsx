@@ -1880,7 +1880,7 @@ function CheckoutPage() {
             them.
           </p>
           {cancelError ? (
-            <p role="alert" className="mt-3 text-[14px] text-[#b42318]">
+            <p role="alert" className="mt-3 text-[14px] text-[var(--bt-error)]">
               {cancelError}
             </p>
           ) : null}

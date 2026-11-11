@@ -78,7 +78,7 @@ import {
 import { useClientReady } from "@/lib/useClientReady";
 import {
   addTicketToPhoneWallet,
-  phoneWalletKind,
+  phoneWalletKinds,
   phoneWalletLabel,
   phoneWalletTheme,
   type PhoneWalletKind,
@@ -165,7 +165,8 @@ function CheckoutSuccessPage() {
   const [error, setError] = useState("");
   const [receiptMsg, setReceiptMsg] = useState("");
   const [downloadingReceipt, setDownloadingReceipt] = useState(false);
-  const [passWallet, setPassWallet] = useState<PhoneWalletKind | null>(null);
+  const [passWallets, setPassWallets] = useState<PhoneWalletKind[]>([]);
+  const [sheetWallet, setSheetWallet] = useState<PhoneWalletKind | null>(null);
   const [walletSheetOpen, setWalletSheetOpen] = useState(false);
   const [selectedWalletTicket, setSelectedWalletTicket] = useState(0);
   const [walletSaving, setWalletSaving] = useState(false);
@@ -178,7 +179,10 @@ function CheckoutSuccessPage() {
   }, []);
 
   useEffect(() => {
-    setPassWallet(phoneWalletKind());
+    const syncWallets = () => setPassWallets(phoneWalletKinds());
+    syncWallets();
+    window.addEventListener("resize", syncWallets);
+    return () => window.removeEventListener("resize", syncWallets);
   }, []);
 
   useEffect(() => {
@@ -371,7 +375,7 @@ function CheckoutSuccessPage() {
     walletTickets.length > 0 && firstUnaddedWalletIndex < 0;
   const showWalletCta = Boolean(
     !isAuthenticated &&
-      passWallet &&
+      passWallets.length > 0 &&
       event &&
       walletTickets.length &&
       !order?.package &&
@@ -421,10 +425,11 @@ function CheckoutSuccessPage() {
   const walletHref = isAuthenticated ? accessPassHref : ticketsHref;
   const walletLabel =
     isAuthenticated && isAccessPass ? "View access pass" : "Go to my wallet";
-  const walletTheme = passWallet ? phoneWalletTheme(passWallet) : null;
+  const walletTheme = sheetWallet ? phoneWalletTheme(sheetWallet) : null;
 
-  const openWalletSheet = () => {
+  const openWalletSheet = (kind: PhoneWalletKind) => {
     if (allWalletTicketsAdded) return;
+    setSheetWallet(kind);
     setSelectedWalletTicket(
       firstUnaddedWalletIndex >= 0 ? firstUnaddedWalletIndex : 0,
     );
@@ -439,7 +444,7 @@ function CheckoutSuccessPage() {
   };
 
   const addSelectedTicketToWallet = async () => {
-    if (!passWallet || !selectedTicket || !event || selectedTicketAdded) return;
+    if (!sheetWallet || !selectedTicket || !event || selectedTicketAdded) return;
     const addedKey = walletTicketKey(selectedTicket);
     setWalletSaving(true);
     setWalletError("");
@@ -469,7 +474,7 @@ function CheckoutSuccessPage() {
             event.organizationUUID ||
             orderOrganization?.uuid,
         },
-        passWallet,
+        sheetWallet,
       );
       if (error) {
         setWalletError(error);
@@ -642,7 +647,7 @@ function CheckoutSuccessPage() {
                 Download receipt
               </BrandedActionButton>
               {receiptMsg ? (
-                <p className="text-[13px] text-[#b91c1c]">{receiptMsg}</p>
+                <p className="text-[13px] text-[var(--bt-error)]">{receiptMsg}</p>
               ) : null}
             </div>
           </aside>
@@ -835,29 +840,49 @@ function CheckoutSuccessPage() {
         </div>
       )}
 
-      {showWalletCta && passWallet ? (
+      {showWalletCta ? (
         <MobileStickyFooter zIndex={3} innerPadding="0" boxShadow="none">
-          <div className="mx-auto max-w-[1140px] px-3.5 py-3">
-            <button
-              type="button"
-              disabled={allWalletTicketsAdded}
-              onClick={openWalletSheet}
-              className="flex w-full items-center justify-center gap-2.5 rounded-full px-[26px] py-4 text-[16px] font-semibold disabled:opacity-80"
-              style={{
-                background: walletTheme?.buttonBg,
-                color: walletTheme?.buttonColor,
-              }}
-            >
-              {allWalletTicketsAdded ? <WalletAddedCheckIcon /> : <WalletPassIcon />}
-              {allWalletTicketsAdded
-                ? `All tickets added to ${passWallet === "apple" ? "Apple" : "Google"} Wallet`
-                : phoneWalletLabel(passWallet)}
-            </button>
+          <div className="mx-auto flex max-w-[1140px] flex-col gap-2.5 px-3.5 py-3">
+            {allWalletTicketsAdded ? (
+              <button
+                type="button"
+                disabled
+                className="flex w-full items-center justify-center gap-2.5 rounded-full px-[26px] py-4 text-[16px] font-semibold disabled:opacity-80"
+                style={{
+                  background: phoneWalletTheme(passWallets[0]).buttonBg,
+                  color: phoneWalletTheme(passWallets[0]).buttonColor,
+                }}
+              >
+                <WalletAddedCheckIcon />
+                {passWallets.length === 1
+                  ? `All tickets added to ${passWallets[0] === "apple" ? "Apple" : "Google"} Wallet`
+                  : "All tickets added to your wallet"}
+              </button>
+            ) : (
+              passWallets.map((kind) => {
+                const theme = phoneWalletTheme(kind);
+                return (
+                  <button
+                    key={kind}
+                    type="button"
+                    onClick={() => openWalletSheet(kind)}
+                    className="flex w-full items-center justify-center gap-2.5 rounded-full px-[26px] py-4 text-[16px] font-semibold"
+                    style={{
+                      background: theme.buttonBg,
+                      color: theme.buttonColor,
+                    }}
+                  >
+                    <WalletPassIcon />
+                    {phoneWalletLabel(kind)}
+                  </button>
+                );
+              })
+            )}
           </div>
         </MobileStickyFooter>
       ) : null}
 
-      {showWalletCta && passWallet && walletSheetOpen ? (
+      {showWalletCta && sheetWallet && walletSheetOpen ? (
         <div className="fixed inset-0 z-[80] flex items-end justify-center bg-[rgba(5,27,53,0.55)]">
           <div
             role="dialog"
@@ -982,11 +1007,11 @@ function CheckoutSuccessPage() {
                   trackColor="rgba(255,255,255,0.35)"
                 >
                   <WalletPassIcon />
-                  {phoneWalletLabel(passWallet)}
+                  {phoneWalletLabel(sheetWallet)}
                 </ButtonBusyContents>
               </button>
               {walletError ? (
-                <p role="alert" className="mt-2 text-center text-[13px] text-[#b91c1c]">
+                <p role="alert" className="mt-2 text-center text-[13px] text-[var(--bt-error)]">
                   {walletError}
                 </p>
               ) : null}

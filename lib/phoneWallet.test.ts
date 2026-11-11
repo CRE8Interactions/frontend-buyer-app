@@ -12,6 +12,7 @@ import {
   addAccessPassToPhoneWallet,
   addTicketToPhoneWallet,
   phoneWalletKind,
+  phoneWalletKinds,
   phoneWalletTheme,
   walletPassEvent,
 } from "@/lib/phoneWallet";
@@ -35,6 +36,29 @@ function setUserAgent(userAgent: string, maxTouchPoints = 0) {
     configurable: true,
     writable: true,
     value: maxTouchPoints,
+  });
+}
+
+function setScreen(width: number, height: number) {
+  Object.defineProperty(window, "screen", {
+    configurable: true,
+    value: { width, height },
+  });
+}
+
+function setClientHints(hints: { mobile?: boolean; platform?: string }) {
+  Object.defineProperty(navigator, "userAgentData", {
+    configurable: true,
+    value: hints,
+  });
+}
+
+function setMatchMedia(matches: Record<string, boolean>) {
+  Object.defineProperty(window, "matchMedia", {
+    configurable: true,
+    writable: true,
+    value: (query: string) =>
+      ({ matches: Boolean(matches[query]) }) as MediaQueryList,
   });
 }
 
@@ -63,9 +87,17 @@ beforeEach(() => {
   });
 });
 
+const originalScreen = window.screen;
+
 afterEach(() => {
   Reflect.deleteProperty(navigator, "userAgent");
   Reflect.deleteProperty(navigator, "platform");
+  Reflect.deleteProperty(navigator, "userAgentData");
+  Reflect.deleteProperty(window, "matchMedia");
+  Object.defineProperty(window, "screen", {
+    configurable: true,
+    value: originalScreen,
+  });
 });
 
 describe("phoneWalletTheme", () => {
@@ -88,6 +120,7 @@ describe("phoneWalletKind", () => {
   it("offers a wallet only on the phone that gets scanned", () => {
     setUserAgent("Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X)");
     expect(phoneWalletKind()).toBe("apple");
+    expect(phoneWalletKinds()).toEqual(["apple"]);
 
     setUserAgent(
       "Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Mobile Safari/537.36",
@@ -125,6 +158,38 @@ describe("phoneWalletKind", () => {
     });
 
     expect(phoneWalletKind()).toBe("apple");
+  });
+
+  it("offers Google Wallet when Android Chrome requests the desktop site", () => {
+    setClientHints({ mobile: false, platform: "Android" });
+    setScreen(412, 915);
+    setUserAgent(
+      "Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+    );
+    expect(phoneWalletKind()).toBe("google");
+
+    setUserAgent(
+      "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+    );
+    expect(phoneWalletKind()).toBe("google");
+    expect(phoneWalletKinds()).toEqual(["google"]);
+
+    setScreen(800, 1280);
+    expect(phoneWalletKind()).toBeNull();
+    expect(phoneWalletKinds()).toEqual([]);
+  });
+
+  it("offers both wallets when the page is phone-sized and the operating system is hidden", () => {
+    setUserAgent(
+      "Mozilla/5.0 (X11; Linux aarch64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+      5,
+    );
+    setMatchMedia({ "(pointer: coarse)": true, "(max-width: 900px)": true });
+    expect(phoneWalletKinds()).toEqual(["apple", "google"]);
+    expect(phoneWalletKind()).toBeNull();
+
+    setMatchMedia({ "(pointer: coarse)": true, "(max-width: 900px)": false });
+    expect(phoneWalletKinds()).toEqual([]);
   });
 });
 

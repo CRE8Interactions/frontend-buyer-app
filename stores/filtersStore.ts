@@ -72,6 +72,7 @@ export type TicketGroup = {
     color?: string | null;
     accessCode?: string | null;
     unlocked?: boolean;
+    isHidden?: boolean;
     freeOffer?: boolean;
     description?: string;
     inventoryType?: string;

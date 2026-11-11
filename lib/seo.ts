@@ -1,6 +1,11 @@
 import type { Metadata } from "next";
 import type { ApiImage } from "@/lib/helpers";
-import { formatEventWhen, imageUrl, toIanaTimezone } from "@/lib/helpers";
+import {
+  formatEventWhen,
+  imageUrl,
+  toIanaTimezone,
+  type TimezoneLike,
+} from "@/lib/helpers";
 
 export const SITE_NAME = "Blocktickets";
 export const DEFAULT_TITLE = "Blocktickets — Sports-first ticketing";
@@ -260,10 +265,12 @@ type EventSeo = {
   start_tbd?: boolean | null;
   time_tbd?: boolean | null;
   display_start_time?: boolean | null;
+  doorsOpen?: string | null;
+  realDoorsOpen?: string | null;
   image?: SeoImage;
   venue?: {
     name?: string | null;
-    timezone?: string | null;
+    timezone?: TimezoneLike;
     image?: SeoImage;
     address?: SeoAddress | SeoAddress[] | null;
   } | null;
@@ -376,9 +383,9 @@ function stateLabel(value?: string | null): string {
   return titleCase(raw);
 }
 
-function scheduleZone(timezone?: string | null): string {
-  const raw = String(timezone || "").trim();
-  const iana = toIanaTimezone(raw);
+function scheduleZone(timezone?: TimezoneLike): string {
+  const normalized = typeof timezone === "string" ? timezone.trim() : timezone;
+  const iana = toIanaTimezone(normalized || undefined);
   if (iana?.includes("/")) return iana;
   return "America/New_York";
 }
@@ -389,7 +396,7 @@ function schedulePart(start: string, zone: string, format: string): string {
   return label;
 }
 
-function formatOpenGraphSchedule(event: EventSeo, timezone?: string | null): string {
+function formatOpenGraphSchedule(event: EventSeo, timezone?: TimezoneLike): string {
   if (event.date_tbd || event.start_tbd) return "Date & Time TBD";
   const start = clean(event.start);
   if (!start) return "";

@@ -6,6 +6,7 @@ import {
   DOB_REQUIRED_MESSAGE,
   dobBlurError,
   editDobInput,
+  fieldErrorTextClass,
   lightFieldClass,
 } from "@/lib/fieldValidation";
 
@@ -85,11 +86,11 @@ export default function DobField({
         className={`mt-2 ${lightFieldClass(Boolean(error))}`}
       />
       {error === "required" ? (
-        <p className="mt-2 text-[13px] text-[#c2394a]">
+        <p className={fieldErrorTextClass("light")}>
           {DOB_REQUIRED_MESSAGE}
         </p>
       ) : error === "invalid" ? (
-        <p className="mt-2 text-[13px] text-[#c2394a]">
+        <p className={fieldErrorTextClass("light")}>
           {DOB_INVALID_MESSAGE}
         </p>
       ) : (

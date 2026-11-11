@@ -131,8 +131,10 @@ async function renderPackage(
 ) {
   mockedGetPackage.mockResolvedValue(packageResponse(eventPackage));
   const user = userEvent.setup();
-  render(<PackageDetailClient packageId="pkg-nms-level-a" backHref="/nm-state/" />);
-  return user;
+  const view = render(
+    <PackageDetailClient packageId="pkg-nms-level-a" backHref="/nm-state/" />,
+  );
+  return { user, unmount: view.unmount };
 }
 
 describe("Package detail (PackageDetailClient)", () => {
@@ -238,7 +240,7 @@ describe("Package detail (PackageDetailClient)", () => {
 
   it("keeps the shopper on the overview when the package has no seat map", async () => {
     const pkg = demoSeasonPackage({ seatmap: undefined });
-    const user = await renderPackage(pkg);
+    const { user } = await renderPackage(pkg);
     await screen.findByRole("heading", { name: pkg.name });
 
     await user.click(screen.getByRole("button", { name: /choose your seats/i }));
@@ -273,7 +275,7 @@ describe("Package detail (PackageDetailClient)", () => {
       value: 390,
     });
     const pkg = demoSeasonPackage();
-    const user = await renderPackage(pkg);
+    const { user } = await renderPackage(pkg);
     await screen.findByRole("heading", { name: pkg.name });
 
     expect(
@@ -292,7 +294,7 @@ describe("Package detail (PackageDetailClient)", () => {
 
   it("opens the shared seat map overlay with the selection panel", async () => {
     const pkg = demoSeasonPackage();
-    const user = await renderPackage(pkg);
+    const { user } = await renderPackage(pkg);
     await screen.findByRole("heading", { name: pkg.name });
 
     await user.click(screen.getByRole("button", { name: /choose your seats/i }));
@@ -315,7 +317,7 @@ describe("Package detail (PackageDetailClient)", () => {
     const nmState = DEMO_ORGS.find((org) => org.slug === "nm-state")!;
     cacheOrgBranding(nmState);
     const pkg = demoSeasonPackage();
-    const user = await renderPackage(pkg);
+    const { user } = await renderPackage(pkg);
     await screen.findByRole("heading", { name: pkg.name });
 
     fireEvent.click(screen.getByRole("button", { name: /choose your seats/i }));
@@ -335,7 +337,7 @@ describe("Package detail (PackageDetailClient)", () => {
 
   it("shows Standard admission and keeps Details when a package seat has no offer", async () => {
     const pkg = demoSeasonPackage();
-    const user = await renderPackage(pkg);
+    const { user } = await renderPackage(pkg);
     await screen.findByRole("heading", { name: pkg.name });
 
     await user.click(screen.getByRole("button", { name: /choose your seats/i }));
@@ -355,7 +357,7 @@ describe("Package detail (PackageDetailClient)", () => {
   it("shows the seated-error modal when placing the package into a cart fails", async () => {
     mockedPlacePackage.mockRejectedValue(new Error("hold failed"));
     const pkg = demoSeasonPackage();
-    const user = await renderPackage(pkg);
+    const { user } = await renderPackage(pkg);
     await screen.findByRole("heading", { name: pkg.name });
 
     await user.click(screen.getByRole("button", { name: /choose your seats/i }));
@@ -390,7 +392,7 @@ describe("Package detail (PackageDetailClient)", () => {
 
   it("hides the ticket limit when selecting package seats", async () => {
     const pkg = demoSeasonPackage({ maxQuantity: undefined, limit: 3 });
-    const user = await renderPackage(pkg);
+    const { user } = await renderPackage(pkg);
     await screen.findByRole("heading", { name: pkg.name });
     await user.click(screen.getByRole("button", { name: /choose your seats/i }));
     await finishSeatmapBackgroundLoad();
@@ -406,7 +408,7 @@ describe("Package detail (PackageDetailClient)", () => {
 
   it("opens the max-ticket popup when a reserved package seat exceeds the package max", async () => {
     const pkg = demoSeasonPackage({ maxQuantity: 1 });
-    const user = await renderPackage(pkg);
+    const { user, unmount } = await renderPackage(pkg);
     await screen.findByRole("heading", { name: pkg.name });
     await user.click(screen.getByRole("button", { name: /choose your seats/i }));
     await finishSeatmapBackgroundLoad();
@@ -427,6 +429,11 @@ describe("Package detail (PackageDetailClient)", () => {
     ).toBeInTheDocument();
     expect(screen.getByText(maxTicketLimitError(1).message)).toBeInTheDocument();
     expect(useSeatmapStore.getState().selectedFromMap).toHaveLength(1);
+    expect(useFiltersStore.getState().eventTicketLimit).toBe(1);
+
+    unmount();
+    expect(useSeatmapStore.getState().seatedError).toBeNull();
+    expect(useFiltersStore.getState().eventTicketLimit).toBeNull();
   });
 
   it("holds seats then opens checkout for the selected package", async () => {

@@ -13,6 +13,7 @@ import {
   createSectionLookupTable,
   RESALE_MAP_COLOR,
   UNAVAILABLE_SECTION_FILL,
+  type SeatmapSection,
 } from "@/lib/seatmapLookups";
 import {
   seatmapLookupsFromTicketGroups,
@@ -250,11 +251,85 @@ describe("SeatmapSections", () => {
     expect(colors).not.toContain(RESALE_MAP_COLOR);
   });
 
+  it("paints a hidden section into the field and does not zoom it", () => {
+    const source = mapping.sections?.["sec-m"];
+    expect(source).toBeTruthy();
+    const onZoomableSectionClick = vi.fn();
+    const section = renderSections({
+      data: {
+        ...mapping,
+        sections: {
+          ...mapping.sections,
+          "sec-m": { ...source!, hidden: true },
+        },
+      },
+      onZoomableSectionClick,
+    });
+
+    const path = section("sec-m");
+    expect(path).toHaveAttribute("data-section-hidden", "true");
+    expect(path).toHaveAttribute("fill", "#D6D8DB");
+    expect(path).toHaveAttribute("stroke", "#D6D8DB");
+    fireEvent.click(path!);
+    expect(onZoomableSectionClick).not.toHaveBeenCalled();
+  });
+
   it("omits zoomable sections when the venue does not use section covers", () => {
     const section = renderSections({ sectionCoversEnabled: false });
 
     expect(section("sec-m")).toBeNull();
     expect(section(DEMO_GA_SECTION_ID)).not.toBeNull();
+  });
+});
+
+describe("Endline Suite label repair", () => {
+  const ENDLINE_ID = "a8fd0b88-ac38-4110-ad8e-cd674d17f4af";
+  const letterPath = "M355.223 1401.17h20.823v13.54h-3.162z";
+  const endlineSection = {
+    sectionId: ENDLINE_ID,
+    sectionNumber: "ENDLINE_SUITE",
+    path: letterPath,
+    fill: "#fff",
+    identifier: {},
+    rows: [],
+    spots: [],
+  } as SeatmapSection;
+
+  function renderEndline() {
+    const section = renderSections({
+      data: {
+        ...mapping,
+        sections: { ...mapping.sections, endline: endlineSection },
+      },
+    });
+    const group = section(ENDLINE_ID)!.parentElement!;
+    const [field, name] = Array.from(group.querySelectorAll("path"));
+    return { field, name };
+  }
+
+  it("draws the field rectangle as the clickable section and the letters as a grey name while it has inventory", () => {
+    const gaGroup = demoTicketGroups().ticketGroups.find((g) => g.GA)!;
+    useSeatmapStore.setState({
+      sectionLookupTable: {
+        ...useSeatmapStore.getState().sectionLookupTable,
+        [ENDLINE_ID]: [gaGroup],
+      },
+    });
+
+    const { field, name } = renderEndline();
+
+    expect(field.getAttribute("d")?.startsWith("M324.935")).toBe(true);
+    expect(field).toHaveAttribute("fill", "#2563EB");
+    expect(name).toHaveAttribute("d", letterPath);
+    expect(name).toHaveAttribute("fill", "#E6E8EC");
+  });
+
+  it("darkens the letters when Endline Suite has no inventory", () => {
+    const { field, name } = renderEndline();
+
+    expect(field).toHaveAttribute("fill", UNAVAILABLE_FILL);
+    expect(name).toHaveAttribute("d", letterPath);
+    expect(name).toHaveAttribute("fill", "#353945");
   });
 });
 

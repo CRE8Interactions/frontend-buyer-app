@@ -52,6 +52,32 @@ export function getStoredCart(): StoredCart | null {
   }
 }
 
+/** Positive integer cart id, matching the API's parseReplaceCartId. */
+export function readStoredCartId(): number | undefined {
+  const id = Number(getStoredCart()?.cartId);
+  return Number.isInteger(id) && id > 0 ? id : undefined;
+}
+
+/** Overlapping place-in-cart calls all name the cart they replace. */
+export function withCallerCart(data: unknown) {
+  const replaceCartId = readStoredCartId();
+  if (!replaceCartId) return data;
+  const body =
+    data && typeof data === "object" ? (data as Record<string, unknown>) : {};
+  return { ...body, replaceCartId };
+}
+
+/** Drop needs a cart id; use the stored one when the caller only knows the event. */
+export function dropCartRequestBody(data: unknown = {}) {
+  const body =
+    data && typeof data === "object"
+      ? { ...(data as Record<string, unknown>) }
+      : {};
+  const cartId = body.cartId || readStoredCartId();
+  if (cartId) body.cartId = cartId;
+  return body;
+}
+
 function emitCartChange() {
   if (typeof window === "undefined") return;
   window.dispatchEvent(new Event(CART_EVENT));

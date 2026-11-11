@@ -32,7 +32,7 @@ const seated = DEMO_EVENTS.find((e) => e.shortcode === "RAPT006")!;
 
 describe("listedUnitPrice", () => {
   const group = demoTicketGroups().ticketGroups.find(
-    (row) => row.offer && row.price != null && !row.offer.freeOffer,
+    (row) => row.offer && row.price != null && !("freeOffer" in row.offer && row.offer.freeOffer),
   )!;
 
   it("keeps a listed price and falls back to the asking price only when price is missing", () => {

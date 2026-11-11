@@ -70,23 +70,34 @@ vi.mock("@/components/organisms/InteractiveSeatmap", async () => {
   const { default: useFiltersStore } = await import("@/stores/filtersStore");
   const InteractiveSeatmap = ({
     onPaintReady,
+    onUnlockOffer,
   }: {
     onPaintReady?: () => void;
+    onUnlockOffer?: (offerName: string) => void;
   }) => {
     const loading = useFiltersStore.getState().loadingTicketGroups;
     useEffect(() => {
       if (!loading) onPaintReady?.();
     }, [loading, onPaintReady]);
+    const unlockSeat = onUnlockOffer ? (
+      <button type="button" onClick={() => onUnlockOffer("Field Club")}>
+        Unlock locked section
+      </button>
+    ) : null;
     return loading ? (
       <div
         data-testid="interactive-seatmap"
         role="status"
         aria-label="Loading seat map"
       >
+        {unlockSeat}
         Loading seat map
       </div>
     ) : (
-      <div data-testid="interactive-seatmap">Interactive seat map</div>
+      <div data-testid="interactive-seatmap">
+        {unlockSeat}
+        Interactive seat map
+      </div>
     );
   };
   return {
@@ -116,6 +127,7 @@ vi.mock("@/lib/api", () => ({
   placeTicketsIntoCart: vi.fn(),
   placeGATicketsIntoCart: vi.fn(),
   checkAccessCode: vi.fn(),
+  findOffersByAccessCode: vi.fn(),
   validateEmail: vi.fn(async () => ({ data: { verdict: "Valid" } })),
 }));
 
@@ -143,6 +155,7 @@ vi.mock("@/lib/cart", async (importOriginal) => {
 import PremiumTicketing from "@/components/organisms/PremiumTicketing";
 import {
   checkAccessCode,
+  findOffersByAccessCode,
   placeGATicketsIntoCart,
   placeTicketsIntoCart,
   validateEmail,
@@ -151,6 +164,7 @@ import { useAuth } from "@/lib/auth";
 import { checkoutHref } from "@/lib/cart";
 
 const mockedCheckAccessCode = vi.mocked(checkAccessCode);
+const mockedFindOffers = vi.mocked(findOffersByAccessCode);
 const mockedPlaceGaTickets = vi.mocked(placeGATicketsIntoCart);
 const mockedPlaceTickets = vi.mocked(placeTicketsIntoCart);
 const mockedValidateEmail = vi.mocked(validateEmail);
@@ -247,6 +261,8 @@ describe("Select tickets page (PremiumTicketing)", { timeout: 20_000 }, () => {
     routerMocks.push.mockReset();
     mockedCheckAccessCode.mockReset();
     mockedCheckAccessCode.mockResolvedValue({ data: "" } as never);
+    mockedFindOffers.mockReset();
+    mockedFindOffers.mockResolvedValue({ data: { offers: [] } } as never);
     mockedUseAuth.mockReturnValue(authState(false));
     mockedPlaceTickets.mockResolvedValue({
       data: { cartId: "cart-1" },
@@ -2267,8 +2283,15 @@ describe("Select tickets page (PremiumTicketing)", { timeout: 20_000 }, () => {
     );
     await user.click(screen.getAllByText(/find on map/i)[0]);
     await finishSeatmapBackgroundLoad();
+    await waitFor(() => {
+      expect(
+        screen.getByRole("button", { name: /unlock locked section/i }),
+      ).toBeVisible();
+    });
 
-    await user.click(screen.getByRole("button", { name: /field club/i }));
+    await user.click(
+      screen.getByRole("button", { name: /unlock locked section/i }),
+    );
     await user.type(screen.getByPlaceholderText(/access code/i), "CLUB26");
     await user.click(screen.getByRole("button", { name: /unlock seats/i }));
 
@@ -2283,37 +2306,46 @@ describe("Select tickets page (PremiumTicketing)", { timeout: 20_000 }, () => {
     });
   });
 
-  it("unlocks a passcode-locked offer and filters to it", async () => {
+  it("unlocks a matching offer code and keeps the open listings on the page", async () => {
+    const fieldClub = DEMO_SEATED_TICKET_GROUPS.find(
+      (group) => group.offer?.name === "Field Club",
+    );
+    if (!fieldClub?.offer) throw new Error("demo fixtures need Field Club");
+    mockedFindOffers.mockResolvedValue({
+      data: { offers: [{ id: fieldClub.offer.id, name: fieldClub.offer.name }] },
+    } as never);
     const user = await renderReady(lockedTicketingFixture, {
       waitForListing: /sec a · row 12/i,
     });
 
     expect(screen.queryByText(/sec m · row m3/i)).not.toBeInTheDocument();
-    await user.click(screen.getByRole("button", { name: /field club/i }));
-
-    expect(await screen.findByText(/field club is locked/i)).toBeInTheDocument();
     expect(
-      screen.getByText(/enter your access code to unlock these seats/i),
-    ).toBeInTheDocument();
-    await user.type(screen.getByPlaceholderText(/access code/i), "CLUB26");
-    await user.click(screen.getByRole("button", { name: /unlock seats/i }));
+      screen.queryByRole("button", { name: /field club/i }),
+    ).not.toBeInTheDocument();
+    await user.type(screen.getByLabelText(/offer code/i), "CLUB26");
+    await user.click(screen.getByRole("button", { name: /^unlock$/i }));
 
+    expect(
+      await screen.findByText(/field club offer unlocked/i),
+    ).toBeInTheDocument();
+    expect(screen.getByText(/code club26 applied/i)).toBeInTheDocument();
     expect(await screen.findByText(/sec m · row m3/i)).toBeInTheDocument();
+    expect(screen.getAllByText(/sec a · row 12/i).length).toBeGreaterThan(0);
   });
 
-  it("keeps a locked offer hidden when the code is rejected", async () => {
+  it("tells the shopper when an offer code does not match", async () => {
     const user = await renderReady(lockedTicketingFixture, {
       waitForListing: /sec a · row 12/i,
     });
 
-    await user.click(screen.getByRole("button", { name: /field club/i }));
-    await user.type(screen.getByPlaceholderText(/access code/i), "WRONG26");
-    await user.click(screen.getByRole("button", { name: /unlock seats/i }));
+    await user.type(screen.getByLabelText(/offer code/i), "WRONG26");
+    await user.click(screen.getByRole("button", { name: /^unlock$/i }));
 
     expect(
-      await screen.findByText(/that code didn.t match/i),
+      await screen.findByText(/couldn't find an offer for that code/i),
     ).toBeInTheDocument();
     expect(screen.queryByText(/sec m · row m3/i)).not.toBeInTheDocument();
+    expect(screen.getAllByText(/sec a · row 12/i).length).toBeGreaterThan(0);
   });
 
   it("filters to accessible listings when ADA is toggled without a server callback", async () => {

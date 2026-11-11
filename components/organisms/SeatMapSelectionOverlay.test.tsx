@@ -262,7 +262,8 @@ describe("SeatMapSelectionOverlay map readiness", () => {
       2,
     );
     expect(screen.queryByText(/× 2/)).not.toBeInTheDocument();
-    expect(screen.getAllByText("GA")).toHaveLength(2);
+    expect(screen.getAllByText(String(ga.sectionName))).toHaveLength(2);
+    expect(screen.queryByText("GA")).not.toBeInTheDocument();
     expect(screen.queryByText("Sec")).not.toBeInTheDocument();
     expect(screen.queryByText("Row")).not.toBeInTheDocument();
     expect(screen.queryByText("Seat")).not.toBeInTheDocument();

@@ -160,13 +160,19 @@ export const formatCurrency = (num?: number | string | null) =>
     maximumFractionDigits: 2,
   });
 
+function offerIsFree(offer?: object | null): boolean {
+  return Boolean(
+    offer && "freeOffer" in offer && (offer as { freeOffer?: boolean }).freeOffer,
+  );
+}
+
 /** Complimentary offers list at $0 even when the inventory price includes fees. */
 export function listedUnitPrice(
   amount?: number | null,
-  offer?: { freeOffer?: boolean } | null,
+  offer?: object | null,
   listing?: { askingPrice?: number | null } | null,
 ) {
-  if (offer?.freeOffer) return 0;
+  if (offerIsFree(offer)) return 0;
   if (amount != null && Number.isFinite(Number(amount))) return Number(amount);
   const asking = listing?.askingPrice;
   if (asking != null && Number.isFinite(Number(asking))) return Number(asking);
@@ -175,7 +181,7 @@ export function listedUnitPrice(
 
 export const formatOfferListPrice = (
   amount: number,
-  offer?: { freeOffer?: boolean } | null,
+  offer?: object | null,
 ) => formatCurrency(listedUnitPrice(amount, offer));
 
 export const formatNumber = (num?: number | string | null) =>

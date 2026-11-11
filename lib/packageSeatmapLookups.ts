@@ -1,3 +1,4 @@
+import { isSectionHidden } from "@/lib/hiddenSections";
 import type { TicketGroup } from "@/stores/filtersStore";
 import type { SeatmapMapping } from "@/lib/seatmapLookups";
 
@@ -57,6 +58,7 @@ export function createPackageLookupTables(
       seatedTickets,
       eventPackage,
       purchaseLog,
+      mapping,
     ),
     seatOffersLookupTable: {} as Record<string, TicketGroup[]>,
     sectionLookupTable: createPackageSectionLookupTable(
@@ -81,11 +83,13 @@ function createPackageSeatLookupTable(
   seatedTickets: TicketGroup[],
   eventPackage: PackageForSeatmap,
   purchaseLog: PackagePurchaseLog | null | undefined,
+  mapping: SeatmapMapping | null | undefined,
 ) {
   const packageTierPrice = eventPackage.pricingTiers?.[0]?.price;
   const lookupTable: Record<string, TicketGroup> = {};
 
   seatedTickets.forEach((ticket) => {
+    if (isSectionHidden(mapping?.sections, ticket.sectionId)) return;
     const seatIds = packageTicketSeatIds(ticket);
     if (!seatIds.length) return;
     seatIds.forEach((seatId) => {
@@ -119,6 +123,7 @@ function createPackageSectionLookupTable(
   tickets.forEach((ticket) => {
     const isGA = Boolean(ticket.GA || ticket.generalAdmission);
     if (!isGA || ticket.sectionId == null) return;
+    if (isSectionHidden(mapping?.sections, ticket.sectionId)) return;
     const sectionId = String(ticket.sectionId);
 
     if (!lookupTable[sectionId]) {
