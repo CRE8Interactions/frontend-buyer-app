@@ -793,6 +793,45 @@ const routes: Route[] = [
     },
   },
 
+  {
+    methods: ["get"],
+    match: (path) => /\/public\/surveys\/[^/]+$/.test(path.split("?")[0]),
+    handle: () => ({
+      data: {
+        title: "Game day",
+        state: "open",
+        responseMode: "anonymous",
+        completionMessage: "Your response has been recorded.",
+        questions: [
+          {
+            uuid: "q1",
+            type: "short_text",
+            title: "How was the game?",
+            required: false,
+            configuration: {},
+          },
+        ],
+        logic: [],
+      },
+    }),
+  },
+  {
+    methods: ["post"],
+    match: (path) => path.split("?")[0].endsWith("/public/surveys/unsubscribe"),
+    handle: () => ({ data: { ok: true } }),
+  },
+  {
+    methods: ["post"],
+    match: (path) => /\/public\/surveys\/[^/]+\/start$/.test(path.split("?")[0]),
+    handle: () => ({ data: { state: "started" } }),
+  },
+  {
+    methods: ["post"],
+    match: (path) =>
+      /\/public\/surveys\/[^/]+\/responses$/.test(path.split("?")[0]),
+    handle: () => ({ data: { state: "completed" } }),
+  },
+
   // ---- Login (any code works) ----
   { methods: ["post"], match: endsWith("/registration/validate-email"), handle: () => ({ data: { verdict: "Valid" } }) },
   { methods: ["post"], match: endsWith("/verifies/emailValid"), handle: () => ({ data: { verdict: "Valid" } }) },

@@ -700,6 +700,23 @@ export const getPublicOrderStatus = (
   );
 };
 
+export const getPublicSurvey = (token: string, idempotencyKey?: string) =>
+  instance.get(`/public/surveys/${encodeURIComponent(token)}`, {
+    params: idempotencyKey ? { k: idempotencyKey } : undefined,
+  });
+
+export const startPublicSurvey = (token: string, body: unknown) =>
+  instance.post(`/public/surveys/${encodeURIComponent(token)}/start`, body);
+
+export const submitPublicSurvey = (token: string, body: unknown) =>
+  instance.post(
+    `/public/surveys/${encodeURIComponent(token)}/responses`,
+    body,
+  );
+
+export const unsubscribeSurvey = (token: string) =>
+  instance.post("/public/surveys/unsubscribe", { token });
+
 export default instance;
 
 export type { AxiosRequestConfig };
