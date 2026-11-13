@@ -53,6 +53,7 @@ import {
   ticketRowValue,
   ticketSeatValue,
   seatDisplayValue,
+  mapSectionHeading,
   sectionDisplayValue,
   ticketSectionValue,
   type AccessPassLike,
@@ -379,7 +380,7 @@ function ticketSeatLabel(t: Record<string, unknown>) {
   const row = t.rowNumber;
   const seat = seatDisplayValue(t.seatNumber);
   if (sec != null && row != null && seat) {
-    return `Sec ${sec} · Row ${row} · Seat ${seat}`;
+    return `${mapSectionHeading(sec)} · Row ${row} · Seat ${seat}`;
   }
   return String(t.offerName || t.sectionName || "Ticket");
 }

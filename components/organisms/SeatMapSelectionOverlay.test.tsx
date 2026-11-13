@@ -390,6 +390,100 @@ describe("SeatMapSelectionOverlay map readiness", () => {
     expect(screen.queryByText(/incl\. taxes & fees/i)).not.toBeInTheDocument();
   });
 
+  it("shows the verified resale badge for a selected resale seat with no offer", () => {
+    const resale = DEMO_SEATED_TICKET_GROUPS.find((group) => group.resale);
+    if (!resale) throw new Error("demo fixtures need a resale listing");
+    useSeatmapStore.setState({
+      selectedFromMap: [
+        {
+          ...resale,
+          offer: undefined,
+          seatId: "s-resale",
+          sectionNumber: "209",
+          rowNumber: "9",
+          seatNumber: "10",
+          price: 39.42,
+        },
+      ],
+      totalCount: 1,
+      totalPrice: 39.42,
+    });
+    renderOverlay({
+      mapMapping: demoSeatmapMapping(),
+      mapBackground: BACKGROUND,
+    });
+    fireEvent.load(backgroundPreload()!);
+
+    expect(screen.getByTestId("verified-resale-badge")).toHaveTextContent(/verified resale/i);
+    expect(screen.queryByText(/standard admission/i)).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: /details/i }));
+    expect(screen.getByText("Ticket details")).toBeInTheDocument();
+    expect(screen.getByTestId("verified-resale-badge")).toHaveTextContent(/verified resale/i);
+    expect(screen.queryByText(/standard admission/i)).not.toBeInTheDocument();
+  });
+
+  it("shows the verified resale badge beside the offer badge on a resale seat", () => {
+    const resale = DEMO_SEATED_TICKET_GROUPS.find((group) => group.resale);
+    if (!resale) throw new Error("demo fixtures need a resale listing");
+    useSeatmapStore.setState({
+      selectedFromMap: [
+        {
+          ...resale,
+          offer: { name: "Standard Admission" },
+          seatId: "s-resale",
+          sectionNumber: "208",
+          rowNumber: "3",
+          seatNumber: "6",
+          price: 39.42,
+        },
+      ],
+      totalCount: 1,
+      totalPrice: 39.42,
+    });
+    renderOverlay({
+      mapMapping: demoSeatmapMapping(),
+      mapBackground: BACKGROUND,
+    });
+    fireEvent.load(backgroundPreload()!);
+
+    expect(screen.getByText("Standard Admission")).toBeInTheDocument();
+    expect(screen.getByTestId("verified-resale-badge")).toHaveTextContent(/verified resale/i);
+
+    fireEvent.click(screen.getByRole("button", { name: /details/i }));
+    expect(screen.getByText("Ticket details")).toBeInTheDocument();
+    expect(screen.getByText("Standard Admission")).toBeInTheDocument();
+    expect(screen.getByTestId("verified-resale-badge")).toHaveTextContent(/verified resale/i);
+  });
+
+  it("shows the row on an accessible ADA selection card", () => {
+    const accessible = DEMO_SEATED_TICKET_GROUPS.find((group) => group.accessible);
+    if (!accessible) throw new Error("demo fixtures need an accessible seat group");
+    useSeatmapStore.setState({
+      selectedFromMap: [
+        {
+          ...accessible,
+          sectionNumber: "207_ADA",
+          rowNumber: 1,
+          seatId: "a6",
+          seatNumber: "6",
+          quantity: 1,
+        },
+      ],
+      totalCount: 1,
+      totalPrice: Number(accessible.price || 0),
+    });
+    renderOverlay({
+      mapMapping: demoSeatmapMapping(),
+      mapBackground: BACKGROUND,
+    });
+    fireEvent.load(backgroundPreload()!);
+
+    const card = screen.getAllByRole("listitem")[0]!;
+    expect(within(card).getByText("Row").nextElementSibling).toHaveTextContent(/^1$/);
+    expect(within(card).getByText("Seat").nextElementSibling).toHaveTextContent(/^6$/);
+  });
+
   it("shows the seat number without an accessibility suffix", () => {
     const group = DEMO_SEATED_TICKET_GROUPS[0];
     useSeatmapStore.setState({

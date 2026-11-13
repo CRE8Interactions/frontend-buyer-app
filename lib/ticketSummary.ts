@@ -12,6 +12,7 @@ import {
   formatSeatNumberRanges,
   gaTicketSeatLine,
   isGenericGeneralAdmissionLabel,
+  mapSectionHeading,
   seatDisplayValue,
   seatNumberDigits,
   ticketRowValue,
@@ -32,6 +33,8 @@ export type TicketOfferPriceLine = {
 export type TicketSelectionSummary = {
   count: number;
   offerName: string;
+  /** Every ticket in the selection is verified resale. */
+  resale: boolean;
   unit: number;
   subtotal: number;
   seatLine: string;
@@ -98,6 +101,42 @@ export function selectionOfferName(
   fallback = "Standard admission",
 ): string {
   return offerNameFromSource(group) || fallback;
+}
+
+type ResaleOfferSource = OfferNameSource & {
+  resale?: boolean;
+  on_sale_status?: string;
+  listing?: { id?: string | number | null } | null;
+};
+
+function asResaleOffer(group?: unknown): ResaleOfferSource | null {
+  if (!group || typeof group !== "object") return null;
+  return group as ResaleOfferSource;
+}
+
+/** A seat sold as verified resale, whether or not it belongs to an offer. */
+export function selectionIsResale(group?: unknown): boolean {
+  const source = asResaleOffer(group);
+  if (!source) return false;
+  return (
+    source.resale === true ||
+    String(source.on_sale_status || "").trim() === "resaleAvailable" ||
+    (source.listing?.id != null && String(source.listing.id) !== "")
+  );
+}
+
+/** A resale seat whose ticket group has no offer name of its own. */
+export function selectionIsUnnamedResale(group?: unknown): boolean {
+  const source = asResaleOffer(group);
+  return selectionIsResale(source) && !offerNameFromSource(source);
+}
+
+/** Seat tooltip offer line. An unnamed resale seat says Resale instead of Standard. */
+export function selectionTooltipOfferLabel(
+  group?: ResaleOfferSource | null,
+  fallback = "Standard",
+): string {
+  return selectionIsUnnamedResale(group) ? "Resale" : selectionOfferName(group, fallback);
 }
 
 function offerDescriptionFromSource(source?: OfferNameSource | null): string {
@@ -261,10 +300,12 @@ export function ticketOfferPriceLines(
   const indexByKey = new Map<string, number>();
 
   for (const ticket of tickets) {
-    const offerName = options?.defaultOffer
-      ? selectionOfferName(ticket, options.defaultOffer)
-      : offerNameFromSource(ticket) || "Tickets";
-    const unit = Number(ticket.cost || ticket.price || 0);
+    const offerName = selectionIsUnnamedResale(ticket)
+      ? "Resale"
+      : options?.defaultOffer
+        ? selectionOfferName(ticket, options.defaultOffer)
+        : offerNameFromSource(ticket) || "Tickets";
+    const unit = ticketUnitAmount(ticket);
     const key = `${offerName}\0${unit}`;
     const existing = indexByKey.get(key);
     if (existing == null) {
@@ -296,17 +337,20 @@ export function ticketSelectionSummary(
   );
   const offerLines = ticketOfferPriceLines(tickets, options);
   const distinctOffers = new Set(offerLines.map((line) => line.offerName));
+  const resale = tickets.length > 0 && tickets.every((ticket) => selectionIsResale(ticket));
+  const namedOffer = offerNameFromSource(first);
   // Only show the pill when every ticket shares one offer; mixed carts list
-  // each offer on its own price row instead.
+  // each offer on its own price row instead. An unnamed resale has no offer
+  // pill — the verified resale badge stands in for it.
   const offerName =
-    distinctOffers.size === 1
+    distinctOffers.size === 1 && !(resale && !namedOffer)
       ? options?.defaultOffer
         ? selectionOfferName(first, options.defaultOffer)
-        : offerNameFromSource(first)
+        : namedOffer
       : "";
-  const unit = Number(first.cost || first.price || 0);
+  const unit = ticketUnitAmount(first);
   const subtotal = tickets.reduce(
-    (sum, ticket) => sum + Number(ticket.cost || ticket.price || 0),
+    (sum, ticket) => sum + ticketUnitAmount(ticket),
     0,
   );
   const seatNumbers = tickets.map((ticket) => ticketSeatValue(ticket));
@@ -324,7 +368,7 @@ export function ticketSelectionSummary(
       : tickets
           .map(
             (ticket) =>
-              `Sec ${ticket.sectionName || ticket.sectionNumber} · Row ${ticket.rowNumber} · Seat ${seatDisplayValue(ticket.seatNumber) || "—"}`,
+              `${mapSectionHeading(ticket.sectionName || ticket.sectionNumber)} · Row ${ticket.rowNumber} · Seat ${seatDisplayValue(ticket.seatNumber) || "—"}`,
           )
           .join(", ");
   const gameCount = options?.gameCount;
@@ -366,6 +410,7 @@ export function ticketSelectionSummary(
   return {
     count,
     offerName,
+    resale,
     unit,
     subtotal,
     seatLine,
@@ -377,9 +422,38 @@ export function ticketSelectionSummary(
   };
 }
 
+/**
+ * Confirmation badges. Sold resale tickets come back with resale cleared and
+ * no offer; the order keeps type "resale" and the listing snapshot.
+ */
+export function completedOrderResaleSummary(order?: {
+  type?: unknown;
+  resaleListing?: unknown;
+  tickets?: unknown;
+} | null): { resale: boolean; offerName: string } {
+  const tickets = Array.isArray(order?.tickets)
+    ? (order.tickets as Array<Record<string, unknown>>)
+    : [];
+  const fromTickets = tickets.length ? ticketSelectionSummary(tickets) : null;
+  const listing =
+    order?.resaleListing && typeof order.resaleListing === "object"
+      ? (order.resaleListing as { offer?: { name?: unknown } | null })
+      : null;
+  const listingOffer = String(listing?.offer?.name || "").trim();
+  return {
+    resale:
+      Boolean(fromTickets?.resale) ||
+      String(order?.type || "") === "resale" ||
+      listing != null,
+    offerName: fromTickets?.offerName || listingOffer,
+  };
+}
+
 export type PackageSeatLine = {
   seatLine: string;
   context: string;
+  /** Shopper tickets in this line. Per-game copies of one seat count once. */
+  count: number;
   price: number;
   accessibleLabel: string;
   additionalLabel: string;
@@ -420,15 +494,24 @@ function positiveAmount(value: unknown): number {
 /** Season-package carts often send cost/price as 0 on each game ticket. */
 export function ticketUnitAmount(ticket?: Record<string, unknown> | null): number {
   if (!ticket) return 0;
+  const listing = ticket.listing as Record<string, unknown> | undefined;
   const nested =
     (ticket.package_ticket as Record<string, unknown> | undefined)?.price ??
-    (ticket.listing as Record<string, unknown> | undefined)?.price ??
+    listing?.price ??
+    listing?.askingPrice ??
     (ticket.ticket as Record<string, unknown> | undefined)?.price;
+  // A resale hold leaves cost at 0 and stores the buyer's price on the listing.
+  const resaleAsking =
+    ticket.resale === true ||
+    (ticket.listingId != null && String(ticket.listingId) !== "")
+      ? ticket.listingAskingPrice
+      : undefined;
   return (
     positiveAmount(ticket.cost) ||
     positiveAmount(ticket.price) ||
     positiveAmount(ticket.amount) ||
     positiveAmount(ticket.faceValue) ||
+    positiveAmount(resaleAsking) ||
     positiveAmount(ticket.listingPrice) ||
     positiveAmount(ticket.packagePrice) ||
     positiveAmount(nested)
@@ -449,6 +532,11 @@ function legacyPackageGaName(ticket: Record<string, unknown>): string {
   const number = String(ticket.sectionNumber ?? ticket.section_number ?? "").trim();
   if (number) return number;
   return String(ticket.sectionName ?? ticket.section_name ?? "").trim();
+}
+
+/** Game copies of one GA season seat share this place key. */
+function gaPackagePlaceKey(ticket: Record<string, unknown>): string {
+  return String(legacyPackageGaName(ticket) || ticketSectionValue(ticket) || "");
 }
 
 function genericPackageGaName(value: string): boolean {
@@ -721,8 +809,10 @@ export function resolvePackageCheckoutTotals(
     customFeeLines.reduce((sum, line) => sum + line.amount, 0),
   );
   const cartTotal = Number(cart?.total || 0);
+  // Legacy's package subtotal is the amount paid minus the fees listed under it.
+  // A partial game-copy price is not that amount, so the cart total wins.
   let subtotal =
-    seatSubtotal > 0 ? seatSubtotal : Math.max(0, cartTotal - fees);
+    cartTotal > 0 ? Math.max(0, roundMoney(cartTotal - fees)) : seatSubtotal;
   // A missing ticket price is inferred from the cart total, which already
   // includes the custom fee. Pull that fee back out so the summary can list it.
   if (
@@ -762,7 +852,12 @@ export function resolveFlexPackCheckoutTotals(
   const serviceFee = cartService > 0 ? cartService : voucherFee;
   const packPrice = Number(cart?.flex_pack?.price || 0);
   const tax = Number(cart?.totalTax) || 0;
-  const totals = resolvePackageCheckoutTotals({ ...cart, serviceFee }, packPrice);
+  // The flex pack subtotal is the pack price, not cart.total minus fees, so the
+  // cart total is withheld from the package helper.
+  const totals = resolvePackageCheckoutTotals(
+    { ...cart, serviceFee, total: undefined },
+    packPrice,
+  );
   const customFee = roundToCents(
     totals.customFeeLines.reduce((sum, line) => sum + line.amount, 0),
   );
@@ -886,7 +981,9 @@ export function getPrimaryTicketFeeBreakdown(
     if (!ticket || typeof ticket !== "object") return null;
     const row = ticket as Record<string, unknown>;
     const label = primaryTicketOfferLabel(row);
-    const cost = finiteMoney(row.cost) ?? 0;
+    const recordedCost = finiteMoney(row.cost) ?? 0;
+    // Resale holds keep cost at 0 and put the price on listingAskingPrice.
+    const cost = recordedCost > 0 ? recordedCost : ticketUnitAmount(row);
 
     if (isComplimentaryTicket(row) || cost <= 0) {
       const key = `${label}:0.00`;
@@ -1013,9 +1110,9 @@ export function primaryTicketFeeSummaryRows(
     });
   }
   const fees: Array<[string, number]> = [
+    ["Processing Fee", breakdown.processingFee],
     ["Service Fee", breakdown.serviceFee],
     ["Facility Fee", breakdown.facilityFee],
-    ["Processing Fee", breakdown.processingFee],
     ["Chargeback protection", breakdown.chargeBackProtection],
   ];
   for (const [label, amount] of fees) {
@@ -1349,6 +1446,15 @@ export function packageSeatLines(
   }> = [];
   const groupIndex = new Map<string, number>();
   const seenSeat = new Set<string>();
+  // A GA season seat's game copies share one offer. Copies with no offer name
+  // take the named offer from a sibling copy, so they fold into the same line.
+  const namedGaOffer = new Map<string, string>();
+  for (const ticket of tickets) {
+    const named = offerNameFromSource(ticket);
+    if (!named || !(ticket.GA || ticket.generalAdmission)) continue;
+    const place = gaPackagePlaceKey(ticket);
+    if (!namedGaOffer.has(place)) namedGaOffer.set(place, named);
+  }
 
   tickets.forEach((ticket, index) => {
     const ga = Boolean(ticket.GA || ticket.generalAdmission);
@@ -1381,7 +1487,10 @@ export function packageSeatLines(
     }
     seenSeat.add(seatKey);
 
-    const offerLabel = selectionOfferName(ticket);
+    const offerLabel =
+      offerNameFromSource(ticket) ||
+      (ga ? namedGaOffer.get(gaPackagePlaceKey(ticket)) : undefined) ||
+      selectionOfferName(ticket);
     const context = ga
       ? `${offerLabel} · unreserved seating · ${gamesLabel}`
       : `${offerLabel} · ${gamesLabel}`;
@@ -1452,6 +1561,7 @@ export function packageSeatLines(
         ? `${group.section || "GA"} · ${ticketCountLabel}`
         : `Sec ${group.section} · Row ${group.row} · ${formatSeatNumbers(group.seatNumbers)}`,
       context: group.context,
+      count: ticketCount,
       price: group.amount > 0 ? group.amount : unitPrice * uniqueSeats,
       accessibleLabel: !labels.length
         ? ""

@@ -272,6 +272,57 @@ describe("Checkout success receipt", () => {
     ).not.toBeInTheDocument();
   });
 
+  it("lists a resale order as subtotal, processing fee, service fee, then tax", async () => {
+    const cart = demoCheckoutCart({ ticketCount: 2 });
+    const tickets = cart.tickets.map((ticket) => ({
+      ...ticket,
+      resale: true,
+      listingId: 574,
+      cost: 0,
+      price: 0,
+      listingAskingPrice: 350,
+    }));
+    mockedGetOrderByPi.mockResolvedValue({
+      data: demoCompletedTicketOrder({
+        tickets,
+        serviceFee: 70,
+        processingFee: 22.94,
+        estimatedProcessingFee: 22.94,
+        salesTax: 63.52,
+        total: 856.46,
+      }),
+    } as never);
+    render(<CheckoutSuccessPageRoute />);
+
+    const subtotalLine = await screen.findByText("Subtotal");
+    expect(subtotalLine.parentElement?.parentElement).toHaveTextContent(
+      /Subtotal[\s\S]*\$700\.00[\s\S]*Processing Fee[\s\S]*\$22\.94[\s\S]*Service Fee[\s\S]*\$70\.00[\s\S]*Tax[\s\S]*\$63\.52/,
+    );
+  });
+
+  it("shows the verified resale badge and the offer from the listing after the tickets are sold", async () => {
+    const cart = demoCheckoutCart({ ticketCount: 2 });
+    mockedGetOrderByPi.mockResolvedValue({
+      data: demoCompletedTicketOrder({
+        type: "resale",
+        resaleListing: { id: 574, offer: { name: "Standard Admission" } },
+        tickets: cart.tickets.map((ticket) => ({
+          ...ticket,
+          resale: false,
+          listingId: null,
+          offer: null,
+          offerName: "",
+        })),
+      }),
+    } as never);
+    render(<CheckoutSuccessPageRoute />);
+
+    expect(await screen.findByText("Standard Admission")).toBeInTheDocument();
+    expect(screen.getByTestId("verified-resale-badge")).toHaveTextContent(
+      /verified resale/i,
+    );
+  });
+
   it("keeps the order readable when the ticket groups lookup fails", async () => {
     mockedGetOrderByPi.mockResolvedValue({
       data: gaCompletedOrder(),
@@ -713,6 +764,12 @@ describe("Checkout success receipt", () => {
     expect(screen.getByText("Subtotal").parentElement).toHaveTextContent(
       formatCurrency(46),
     );
+    expect(
+      screen
+        .getByText("Service Fee")
+        .compareDocumentPosition(screen.getByText("Tax")) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
     expect(screen.queryByText(formatCurrency(49.5))).not.toBeInTheDocument();
     expect(screen.getByText(formatCurrency(55.35))).toBeInTheDocument();
   });

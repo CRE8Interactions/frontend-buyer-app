@@ -18,7 +18,7 @@ import BrandedActionButton from "@/components/atoms/BrandedActionButton";
 import LockIcon from "@/components/atoms/LockIcon";
 import Spinner from "@/components/atoms/Spinner";
 import { BrandedLoader } from "@/components/molecules/RouteLoader";
-import { Accessibility, Ticket } from "@/components/atoms/icons";
+import { Accessibility, Resale, Ticket } from "@/components/atoms/icons";
 import LoginLink from "@/components/molecules/LoginLink";
 import Modal from "@/components/molecules/Modal";
 import MobileStickyFooter from "@/components/molecules/MobileStickyFooter";
@@ -67,7 +67,6 @@ import {
   listingOfferId,
   quantityIsAllowed,
   sortListings,
-  withResaleFirst,
   ticketQuantityOptions,
   type QuantityRestrictionSource,
   type TicketingSort,
@@ -145,11 +144,6 @@ export type TicketingListing = {
   /** Strapi ticket-group payload used by place-tickets-into-cart */
   cartGroup?: Record<string, unknown>;
   resale?: boolean;
-  /**
-   * Position in the API payload, which arrives ordered by sort_order then id.
-   * Best-seat sort falls back to this when ranks tie or are missing.
-   */
-  sourceIndex?: number;
 };
 
 export type TicketingData = {
@@ -353,6 +347,9 @@ const Star = ({ s = 14, filled = true }: { s?: number; filled?: boolean }) => (
     <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" />
   </svg>
 );
+/** A resale listing shows its offer pill only when the seller's listing belongs to an offer. */
+const listingHasOffer = (listing: { cartGroup?: Record<string, unknown> }) =>
+  Boolean(((listing.cartGroup?.offer as { name?: string } | undefined)?.name ?? "").trim());
 function OfferCodeCheckIcon() {
   return (
     <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden>
@@ -1011,7 +1008,7 @@ export default function PremiumTicketing({
         },
       };
     });
-    return withResaleFirst(sortListings(prepared, sortDir)).map((l) => ({
+    return sortListings(prepared, sortDir).map((l) => ({
       ...l,
       range: `${l.min} – ${l.max} Tickets`,
     }));
@@ -1354,12 +1351,12 @@ export default function PremiumTicketing({
   const resaleBadge = pill("#fff1e8", "#f0641e");
   const listingOfferBadges = (listing: TicketingListing, compact = false) => (
     <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap", alignSelf: "flex-start" }}>
-      {/* A resale listing's zone is its seller's section, not an offer, so it gets no offer pill. */}
-      {!listing.resale ? (
+      {/* A resale listing's zone is its seller's section unless the listing belongs to an offer. */}
+      {!listing.resale || listingHasOffer(listing) ? (
         <span style={{ ...pill(ACC_SOFT, ACC), ...(compact ? { fontSize: 13, padding: "3px 8px" } : {}) }}><Star s={compact ? 12 : 14} /> {listing.zone}</span>
       ) : null}
       {listing.resale ? (
-        <span data-testid="verified-resale-badge" style={{ ...resaleBadge, ...(compact ? { fontSize: 13, padding: "3px 8px" } : {}) }}>Verified Resale</span>
+        <span data-testid="verified-resale-badge" style={{ ...resaleBadge, ...(compact ? { fontSize: 13, padding: "3px 8px" } : {}) }}><Resale width={compact ? 12 : 14} height={compact ? 12 : 14} aria-hidden="true" style={{ flexShrink: 0 }} />Verified Resale</span>
       ) : null}
     </div>
   );
@@ -1613,7 +1610,7 @@ export default function PremiumTicketing({
                 <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
                   <div style={{ fontSize: 18, fontWeight: 600, letterSpacing: "-0.015em", color: soldout ? "#6e7180" : NAVY }}>{t.name}</div>
                   {t.resale ? (
-                    <span data-testid="verified-resale-badge" style={{ display: "inline-flex", alignItems: "center", background: "#fff1e8", color: "#f0641e", fontSize: fluidSize(11), fontWeight: 600, letterSpacing: "0.1em", textTransform: "uppercase", padding: "5px 11px", borderRadius: 999 }}>Verified Resale</span>
+                    <span data-testid="verified-resale-badge" style={{ display: "inline-flex", alignItems: "center", gap: 6, background: "#fff1e8", color: "#f0641e", fontSize: fluidSize(11), fontWeight: 600, letterSpacing: "0.1em", textTransform: "uppercase", padding: "5px 11px", borderRadius: 999 }}><Resale width={12} height={12} aria-hidden="true" style={{ flexShrink: 0 }} />Verified Resale</span>
                   ) : null}
                   <span style={{ display: "inline-flex", alignItems: "center", gap: 7, background: s.pillBg, color: s.pillInk, fontSize: fluidSize(11), fontWeight: 600, letterSpacing: "0.1em", textTransform: "uppercase", padding: "5px 11px", borderRadius: 999 }}>
                     <span style={{ width: 6, height: 6, borderRadius: 999, background: s.dot }} />{s.label}
@@ -2702,11 +2699,11 @@ export default function PremiumTicketing({
               </div>
               <div style={{ display: "flex", flexDirection: "column", gap: 8, padding: "18px 0 16px" }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
-                  {!selRow.resale ? (
+                  {!selRow.resale || listingHasOffer(selRow) ? (
                     <span style={{ flexShrink: 0, ...pill(ACC_SOFT, ACC), ...(mobile ? { padding: "5px 10px" } : {}) }}><Star s={14} /> {selRow.tier || selRow.zone}</span>
                   ) : null}
                   {selRow.resale ? (
-                    <span data-testid="verified-resale-badge" style={{ flexShrink: 0, ...resaleBadge, ...(mobile ? { padding: "5px 10px" } : {}) }}>Verified Resale</span>
+                    <span data-testid="verified-resale-badge" style={{ flexShrink: 0, ...resaleBadge, ...(mobile ? { padding: "5px 10px" } : {}) }}><Resale width={14} height={14} aria-hidden="true" style={{ flexShrink: 0 }} />Verified Resale</span>
                   ) : null}
                 </div>
                 <div style={{ display: "flex", flexDirection: "column", gap: 5, minWidth: 0 }}>
@@ -2722,7 +2719,9 @@ export default function PremiumTicketing({
               </div>
               <div style={{ height: 1, background: "rgba(5,27,53,0.08)" }} />
               <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, padding: "18px 0" }}>
-                <div style={{ display: "flex", alignItems: "baseline", gap: 5, minWidth: 0, flexShrink: 1, whiteSpace: "nowrap" }}>
+                <div style={mobile
+                  ? { display: "flex", flexDirection: "column", alignItems: "flex-start", gap: 2, minWidth: 0, flexShrink: 1, whiteSpace: "nowrap" }
+                  : { display: "flex", alignItems: "baseline", gap: 5, minWidth: 0, flexShrink: 1, whiteSpace: "nowrap" }}>
                   <span style={{ fontSize: 22, fontWeight: 600, fontVariantNumeric: "tabular-nums", letterSpacing: "-0.02em", lineHeight: 1.5 }}>{selRow.price} ea</span>
                   <span style={{ fontSize: 14, lineHeight: 1.5, color: "#6e7180" }}>{listingFeeNote(selRow.price, true)}</span>
                 </div>

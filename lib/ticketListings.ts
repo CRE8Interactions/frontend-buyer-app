@@ -3,6 +3,7 @@ import { expandGroupsWithConnectedOffers } from "@/lib/connectedOffers";
 import { listedUnitPrice } from "@/lib/helpers";
 import { isAccessibleSource } from "@/lib/ticketAccessibility";
 import { gaTierSubtitle, selectionOfferName } from "@/lib/ticketSummary";
+import { mapSectionHeading, seatedSectionName } from "@/lib/wallet";
 import type { TicketGroup } from "@/stores/filtersStore";
 
 export type QuantityRestrictionSource = {
@@ -63,23 +64,28 @@ function compareRanks(a: number, b: number) {
   return a < b ? -1 : 1;
 }
 
-/**
- * Legacy never re-sorts ties: the API already returns groups in
- * `sort_order, id` order, so equal or missing ranks keep that order rather
- * than falling back to price.
- */
-function compareSourceOrder(a: number | undefined, b: number | undefined) {
-  return compareRanks(a ?? Infinity, b ?? Infinity);
-}
-
 function offerRecord(group: Record<string, unknown> | undefined) {
   return group?.offer as
     | {
+        name?: string | null;
+        isDefaultOffer?: boolean;
         accessCode?: string | null;
         unlocked?: boolean;
         isHidden?: boolean;
       }
     | undefined;
+}
+
+/** Legacy `isStandardAdmissionOffer`: the default offer, or one named Standard Admission. */
+function isStandardAdmissionOffer(
+  offer: { isDefaultOffer?: boolean; name?: string | null } | undefined,
+) {
+  if (!offer) return false;
+  return offer.isDefaultOffer === true || offer.name === "Standard Admission";
+}
+
+function standardAdmissionRank(group: Record<string, unknown> | undefined) {
+  return isStandardAdmissionOffer(offerRecord(group)) ? 0 : 1;
 }
 
 /** Unlocked access-code offers lead the list; the chosen sort breaks the tie. */
@@ -92,30 +98,34 @@ function unlockedCodedRank(group: Record<string, unknown> | undefined) {
   return coded ? 0 : 1;
 }
 
+/**
+ * Legacy quickpick order. Resale is not split out: it sorts with primary.
+ * Unlocked access-code offers lead, then Standard Admission, then the chosen
+ * sort. Price breaks best-seat ties, and best-seat rank breaks price ties.
+ */
 export function sortListings<
   T extends {
     price?: string;
     cartGroup?: Record<string, unknown>;
-    sourceIndex?: number;
-    resale?: boolean;
   },
 >(listings: T[], sort: TicketingSort = "price"): T[] {
-  return [...listings].sort((a, b) => {
-    const unlockedDelta =
-      unlockedCodedRank(a.cartGroup) - unlockedCodedRank(b.cartGroup);
-    if (unlockedDelta !== 0) return unlockedDelta;
-    return sort === "bestseat"
-      ? compareRanks(bestSeatRank(a.cartGroup), bestSeatRank(b.cartGroup)) ||
-          compareSourceOrder(a.sourceIndex, b.sourceIndex)
-      : compareRanks(listingUnitPrice(a), listingUnitPrice(b));
-  });
+  return [...listings].sort((a, b) => compareListings(a, b, sort));
 }
 
-/** Verified resale stays ahead of primary inventory; order within each group is kept. */
-export function withResaleFirst<T extends { resale?: boolean }>(listings: T[]): T[] {
-  return [...listings].sort(
-    (a, b) => Number(Boolean(b.resale)) - Number(Boolean(a.resale)),
-  );
+function compareListings(
+  a: { price?: string; cartGroup?: Record<string, unknown> },
+  b: { price?: string; cartGroup?: Record<string, unknown> },
+  sort: TicketingSort,
+) {
+  const unlockedDelta = unlockedCodedRank(a.cartGroup) - unlockedCodedRank(b.cartGroup);
+  if (unlockedDelta !== 0) return unlockedDelta;
+  const standardDelta = standardAdmissionRank(a.cartGroup) - standardAdmissionRank(b.cartGroup);
+  if (standardDelta !== 0) return standardDelta;
+  const priceDelta = compareRanks(listingUnitPrice(a), listingUnitPrice(b));
+  const seatDelta = compareRanks(bestSeatRank(a.cartGroup), bestSeatRank(b.cartGroup));
+  return sort === "bestseat"
+    ? seatDelta || priceDelta
+    : priceDelta || seatDelta;
 }
 
 /**
@@ -138,7 +148,8 @@ export function listingLocationLabel(listing: {
       group?.sectionNumber != null ? String(group.sectionNumber).trim() : "";
     return sectionName || sectionNumber || listing.sec;
   }
-  return `Sec ${listing.sec} · Row ${listing.row}`;
+  const seatedSection = group ? seatedSectionName(group) : listing.sec;
+  return `${mapSectionHeading(seatedSection)} · Row ${listing.row}`;
 }
 
 export function listingOfferId(listing: {
@@ -192,6 +203,8 @@ type QuantityCapSource = QuantityRestrictionSource & {
 type QuantityCapGroup = {
   GA?: boolean;
   generalAdmission?: boolean;
+  resale?: boolean;
+  on_sale_status?: string;
   offer?: QuantityCapSource | null;
   package?: QuantityCapSource | null;
   listing?: { id?: string | number | null; quantity?: number | null } | null;
@@ -460,19 +473,56 @@ function selectionMaxQuantity(selected: QuantityCapGroup[]) {
     : null;
 }
 
+function isResaleCapGroup(group: QuantityCapGroup) {
+  return (
+    ticketGroupIsResale(group) ||
+    (group.listing?.id != null && String(group.listing.id) !== "")
+  );
+}
+
+/** One number for a resale listing. Seats from the same listing count once. */
+function resaleSelectionExactLimit(selected: QuantityCapGroup[]): number | null {
+  if (!selected.length || !selected.every(isResaleCapGroup)) return null;
+  const quantities = new Map<string, number>();
+  selected.forEach((group, index) => {
+    const fromListing = Number(group.listing?.quantity);
+    const quantity =
+      Number.isFinite(fromListing) && fromListing > 0
+        ? fromListing
+        : Array.isArray(group.seatIds)
+          ? group.seatIds.filter((id) => id != null && id !== "").length
+          : 0;
+    if (quantity <= 0) return;
+    const listingId = group.listing?.id;
+    const key =
+      listingId != null && String(listingId) !== ""
+        ? `listing:${listingId}`
+        : Array.isArray(group.seatIds)
+          ? `seats:${group.seatIds.map(String).sort().join(",")}`
+          : `row:${group.seatId ?? index}`;
+    quantities.set(key, quantity);
+  });
+  if (!quantities.size) return null;
+  return [...quantities.values()].reduce((sum, count) => sum + count, 0);
+}
+
 /**
  * Full min/max/step copy for the map Your selection pane — mirrors GA tier notes.
  * Clamps max to `selectionPaneTicketLimit()` when that cap is tighter, and to the
  * seats the selected row holds, since that is all the map can assign. A
  * selection spanning two offers uses the strictest minimum. Two GA offers use
  * the higher of the limits they each show; seated offers use a shared maximum
- * only when every one of them caps quantity.
+ * only when every one of them caps quantity. A resale listing is one quantity,
+ * so the pane states that number instead of the offer's range.
  */
 export function selectionPaneRestrictionLabel(
   eventLimit: unknown,
   selected: QuantityCapGroup[] = [],
   fallbackSource?: QuantityRestrictionSource | null,
 ): string | null {
+  const resaleLimit = resaleSelectionExactLimit(selected);
+  if (resaleLimit != null) return `${resaleLimit} per order`;
+
   const cap = selectionPaneTicketLimit(eventLimit, selected);
   const gaOnly = selected.length > 0 && selected.every(isGaGroup);
   const defaultMax = gaOnly
@@ -1032,7 +1082,7 @@ export function groupsToListings(
       seen.add(key);
       return true;
     })
-    .map((g, sourceIndex) => {
+    .map((g) => {
       const limits = limitsFromTicketGroup(g, globalMax);
       const zone =
         g.offer?.name ||
@@ -1051,11 +1101,10 @@ export function groupsToListings(
         sectionId: g.sectionId != null ? String(g.sectionId) : undefined,
         cartGroup: g as Record<string, unknown>,
         resale: ticketGroupIsResale(g),
-        sourceIndex,
       };
     })
     .filter((listing) => listing.min <= listing.max);
-  return withResaleFirst(sortListings(mapped));
+  return sortListings(mapped);
 }
 
 export function filterGroupsForListings(
@@ -1085,12 +1134,11 @@ export function filterGroupsForListings(
     return true;
   });
   next = [...next].sort((a, b) =>
-    sort === "bestseat"
-      ? compareRanks(
-          bestSeatRank(a as Record<string, unknown>),
-          bestSeatRank(b as Record<string, unknown>),
-        )
-      : compareRanks(Number(a.price || 0), Number(b.price || 0)),
+    compareListings(
+      { cartGroup: a as Record<string, unknown> },
+      { cartGroup: b as Record<string, unknown> },
+      sort,
+    ),
   );
   return next;
 }
@@ -1151,9 +1199,5 @@ export function groupsToGaTiers(
       } satisfies GATier;
     })
     .filter((tier) => tier.state === "soldout" || tier.state === "locked" || tier.min <= tier.max)
-    .sort((a, b) => {
-      const resaleDelta = Number(b.resale) - Number(a.resale);
-      if (resaleDelta) return resaleDelta;
-      return a.unit - b.unit;
-    });
+    .sort((a, b) => a.unit - b.unit);
 }

@@ -203,18 +203,17 @@ describe("groupsToListings", () => {
 
     expect(listings).toHaveLength(5);
     expect(listings[0]).toMatchObject({
-      zone: "Section A-B",
-      sec: "A",
-      row: "1",
-      resale: true,
-      price: "$45.00",
+      zone: "Section M-N & GA",
+      sec: "N",
+      row: "I",
+      price: "$11.64",
     });
-    expect(listings.map((listing) => listing.zone)).toEqual([
-      "Section A-B",
-      "Section M-N & GA",
-      "Companion Seat",
-      "Section A-B",
-      "Field Club",
+    expect(listings.map((listing) => [listing.zone, listing.row, listing.resale])).toEqual([
+      ["Section M-N & GA", "I", false],
+      ["Companion Seat", "12", false],
+      ["Section A-B", "12", false],
+      ["Field Club", "M3", false],
+      ["Section A-B", "1", true],
     ]);
     expect(listings.find((listing) => listing.zone === "Field Club")).toMatchObject({
       zone: "Field Club",
@@ -246,9 +245,10 @@ describe("groupsToListings", () => {
     });
   });
 
-  it("sorts resale inventory first and merges omitted resale groups", () => {
+  it("merges omitted resale groups ahead of the primary payload", () => {
     const listings = groupsToListings(DEMO_SEATED_TICKET_GROUPS);
-    expect(listings[0]?.resale).toBe(true);
+    expect(listings.some((listing) => listing.resale)).toBe(true);
+    expect(listings[0]?.resale).toBe(false);
     const primary = DEMO_SEATED_TICKET_GROUPS.filter((g) => !g.resale);
     const resale = DEMO_SEATED_TICKET_GROUPS.filter((g) => g.resale);
     const merged = mergeResaleTicketGroups(primary, resale);
@@ -450,6 +450,22 @@ describe("selectionPaneRestrictionLabel", () => {
     expect(
       selectionPaneRestrictionLabel(null, [{ offer: { maxQuantity: null } }]),
     ).toBe(`1–${DEFAULT_SEATED_TICKET_LIMIT} per order`);
+  });
+
+  it("states a resale listing's exact quantity instead of the offer range", () => {
+    const offer = { name: "Standard Admission", minQuantity: 1, maxQuantity: 4 };
+    const seatIds = ["s1", "s2", "s3", "s4"];
+    const primary = { offer, seatIds, seatId: "s1" };
+    const resale = {
+      ...primary,
+      resale: true,
+      listing: { id: 8, quantity: 4 },
+    };
+
+    expect(selectionPaneRestrictionLabel(null, [primary])).toBe("1–4 per order");
+    expect(
+      selectionPaneRestrictionLabel(null, [resale, { ...resale, seatId: "s2" }]),
+    ).toBe("4 per order");
   });
 
   it("uses exact limit copy when the offer sets limit", () => {
@@ -777,7 +793,7 @@ describe("groupsToGaTiers", () => {
     expect(tiers.find((tier) => tier.name === "STH Presale")?.state).toBe("locked");
   });
 
-  it("lists resale GA offers first and keeps the rest cheapest first", () => {
+  it("keeps a resale GA offer in price order with the other offers", () => {
     const groups = demoTicketGroups().ticketGroups;
     const vip = groups.find((group) => group.offer?.name === "VIP Club")!;
     const tiers = groupsToGaTiers(
@@ -788,14 +804,14 @@ describe("groupsToGaTiers", () => {
     );
 
     expect(tiers.map((tier) => tier.name)).toEqual([
-      "VIP Club",
       "Student Rush",
       "Student Rate",
       "Family Zone (alcohol-free)",
       "Standard Admission",
       "STH Presale",
+      "VIP Club",
     ]);
-    expect(tiers[0]?.resale).toBe(true);
+    expect(tiers.find((tier) => tier.name === "VIP Club")?.resale).toBe(true);
   });
 
   it("keeps arrival order when two GA offers cost the same", () => {
@@ -1218,12 +1234,13 @@ describe("listing filters", () => {
   it("sorts listings cheapest to highest by default", () => {
     const listings = groupsToListings(DEMO_SEATED_TICKET_GROUPS);
     expect(listings.map((listing) => listing.price)).toEqual([
-      "$45.00",
       "$11.64",
       "$12.00",
       "$21.94",
       "$33.59",
+      "$45.00",
     ]);
+    expect(listings[listings.length - 1]?.resale).toBe(true);
   });
 
   it("sorts listings by the API best-seat rank, unranked rows last", () => {
@@ -1232,7 +1249,13 @@ describe("listing filters", () => {
     expect(bestSeat.map((listing) => listing.cartGroup?.sortOrder)).toEqual([
       1, 2, 2, 3, undefined,
     ]);
-    expect(bestSeat[0]?.zone).toBe("Field Club");
+    expect(bestSeat.map((listing) => [listing.zone, listing.row])).toEqual([
+      ["Field Club", "M3"],
+      ["Companion Seat", "12"],
+      ["Section A-B", "12"],
+      ["Section M-N & GA", "I"],
+      ["Section A-B", "1"],
+    ]);
     expect(bestSeat[bestSeat.length - 1]?.resale).toBe(true);
 
     const unranked = listings.map((listing) =>
@@ -1245,25 +1268,91 @@ describe("listing filters", () => {
     expect(withUnranked[withUnranked.length - 1]?.resale).toBe(true);
   });
 
-  it("keeps the API order for best seat when groups carry no rank, like legacy", () => {
-    // The API returns groups ordered by sort_order then id; legacy shows that
-    // order untouched when sortOrder is missing instead of falling back to price.
+  it("sorts unranked best-seat rows by price, like legacy", () => {
     const unranked = DEMO_SEATED_TICKET_GROUPS.map(
       ({ sortOrder: _rank, ...group }) => group,
     );
     const listings = groupsToListings(unranked);
-    expect(listings[0]?.resale).toBe(true);
-    expect(listings[1]?.price).toBe("$11.64");
+    expect(listings.map((listing) => listing.price)).toEqual([
+      "$11.64",
+      "$12.00",
+      "$21.94",
+      "$33.59",
+      "$45.00",
+    ]);
 
     const bestSeat = sortListings(listings, "bestseat");
-    expect(bestSeat.map((listing) => listing.zone)).toEqual([
-      "Field Club",
-      "Section A-B",
-      "Companion Seat",
-      "Section M-N & GA",
-      "Section A-B",
+    expect(bestSeat.map((listing) => listing.price)).toEqual([
+      "$11.64",
+      "$12.00",
+      "$21.94",
+      "$33.59",
+      "$45.00",
     ]);
     expect(bestSeat[bestSeat.length - 1]?.resale).toBe(true);
+  });
+
+  it("keeps Standard Admission ahead of a cheaper offer, then sorts the rest", () => {
+    const standard = {
+      price: "$20.00",
+      cartGroup: {
+        price: 20,
+        sortOrder: 4,
+        offer: { name: "Standard Admission", isDefaultOffer: true },
+      },
+    };
+    const cheap = {
+      price: "$10.00",
+      cartGroup: {
+        price: 10,
+        sortOrder: 1,
+        offer: { name: "Youth Offer" },
+      },
+    };
+    const resale = {
+      price: "$15.00",
+      resale: true,
+      cartGroup: {
+        price: 15,
+        sortOrder: 2,
+        resale: true,
+        offer: { name: "Youth Offer" },
+      },
+    };
+
+    expect(sortListings([cheap, standard, resale], "price").map((row) => row.price)).toEqual([
+      "$20.00",
+      "$10.00",
+      "$15.00",
+    ]);
+    expect(sortListings([resale, cheap, standard], "bestseat").map((row) => row.price)).toEqual([
+      "$20.00",
+      "$10.00",
+      "$15.00",
+    ]);
+  });
+
+  it("breaks a price tie with best-seat rank and a best-seat tie with price", () => {
+    const front = {
+      price: "$12.00",
+      cartGroup: { price: 12, sortOrder: 1, offer: { name: "Front" } },
+    };
+    const back = {
+      price: "$12.00",
+      cartGroup: { price: 12, sortOrder: 3, offer: { name: "Back" } },
+    };
+    const cheapBack = {
+      price: "$9.00",
+      cartGroup: { price: 9, sortOrder: 3, offer: { name: "Cheap" } },
+    };
+
+    expect(sortListings([back, front], "price").map((row) => row.cartGroup?.sortOrder)).toEqual([
+      1, 3,
+    ]);
+    expect(sortListings([back, cheapBack], "bestseat").map((row) => row.price)).toEqual([
+      "$9.00",
+      "$12.00",
+    ]);
   });
 
   it("orders filtered groups by best seat when asked", () => {

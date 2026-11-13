@@ -7,6 +7,7 @@ import BrandedActionButton, {
   ButtonBusyContents,
 } from "@/components/atoms/BrandedActionButton";
 import AccessibleSeatingBadge from "@/components/atoms/AccessibleSeatingBadge";
+import VerifiedResaleBadge from "@/components/atoms/VerifiedResaleBadge";
 import RouteLoader from "@/components/molecules/RouteLoader";
 import MobileStickyFooter from "@/components/molecules/MobileStickyFooter";
 import { ShopperFluidTypeStyles } from "@/components/templates/ShopperFluidType";
@@ -38,6 +39,7 @@ import { hideIntercomLauncher } from "@/lib/intercom";
 import { cacheOrgBranding } from "@/lib/orgBrandingCache";
 import {
   completedOrderPromoName,
+  completedOrderResaleSummary,
   orderPrimaryFeeBreakdown,
   primaryTicketFeeSummaryRows,
   promoSummaryLabel,
@@ -400,6 +402,14 @@ function CheckoutSuccessPage() {
       : {}),
     seatedGaSection: showsNamedGaSectionTicketCount(tickets, order?.event),
   });
+  const purchase = completedOrderResaleSummary(order);
+  // Package default offer and ticket names win; a sold resale falls back to its listing offer.
+  const offerPillName = ticketSummary.offerName || purchase.offerName;
+  const taxSummaryRow = (
+    <SummaryRow label="Tax" value={formatCurrency(orderFees.tax)} />
+  );
+  const resaleTicketSubtotal =
+    ticketSummary.subtotal > 0 ? ticketSummary.subtotal : orderFees.subtotal;
   const thumbSrc = imageUrl(
     order?.package?.image || order?.flex_pack?.image || event?.image,
     branding.theme.logoSrc,
@@ -570,7 +580,34 @@ function CheckoutSuccessPage() {
                 Order summary
               </div>
               <div className="flex flex-col gap-2.5">
-                {itemizedFeeRows ? (
+                {purchase.resale ? (
+                  <>
+                    <SummaryRow
+                      label="Subtotal"
+                      value={formatCurrency(resaleTicketSubtotal)}
+                    />
+                    {orderFees.processingFee > 0 ? (
+                      <SummaryRow
+                        label="Processing Fee"
+                        value={formatCurrency(orderFees.processingFee)}
+                      />
+                    ) : null}
+                    {orderFees.serviceFee > 0 ? (
+                      <SummaryRow
+                        label="Service Fee"
+                        value={formatCurrency(orderFees.serviceFee)}
+                      />
+                    ) : null}
+                    {orderFees.customFeeLines.map((line) => (
+                      <SummaryRow
+                        key={`${line.name}-${line.amount}`}
+                        label={line.name}
+                        value={formatCurrency(line.amount)}
+                      />
+                    ))}
+                    {taxSummaryRow}
+                  </>
+                ) : itemizedFeeRows ? (
                   itemizedFeeRows.map((row) => (
                     <SummaryRow
                       key={row.label}
@@ -584,7 +621,6 @@ function CheckoutSuccessPage() {
                       label="Subtotal"
                       value={formatCurrency(orderFees.subtotal)}
                     />
-                    <SummaryRow label="Tax" value={formatCurrency(orderFees.tax)} />
                     <SummaryRow
                       label="Processing Fee"
                       value={formatCurrency(orderFees.processingFee)}
@@ -593,6 +629,7 @@ function CheckoutSuccessPage() {
                       label="Service Fee"
                       value={formatCurrency(orderFees.serviceFee)}
                     />
+                    {order?.flex_pack ? taxSummaryRow : null}
                     {orderFees.customFeeLines.map((line) => (
                       <SummaryRow
                         key={`${line.name}-${line.amount}`}
@@ -600,6 +637,7 @@ function CheckoutSuccessPage() {
                         value={formatCurrency(line.amount)}
                       />
                     ))}
+                    {order?.flex_pack ? null : taxSummaryRow}
                   </>
                 )}
                 {order.discountApplied ? (
@@ -664,23 +702,28 @@ function CheckoutSuccessPage() {
                   />
                 </div>
                 <div className="flex min-w-0 flex-1 flex-col gap-1.5">
-                  {ticketSummary.offerName ? (
-                    <span
-                      className="inline-flex w-fit items-center gap-1.5 rounded-full px-3 py-1 text-[13px] font-semibold"
-                      style={{
-                        background: `color-mix(in srgb, ${accent} 16%, white)`,
-                        color: accent,
-                      }}
-                    >
-                      <svg
-                        viewBox="0 0 24 24"
-                        fill="currentColor"
-                        className="h-3 w-3"
-                        aria-hidden
-                      >
-                        <path d="M12 2.5l2.6 6.3 6.9.6-5.2 4.5 1.6 6.7L12 16.9 6.1 20.6l1.6-6.7L2.5 9.4l6.9-.6L12 2.5z" />
-                      </svg>
-                      {ticketSummary.offerName}
+                  {offerPillName || purchase.resale ? (
+                    <span className="flex flex-wrap items-center gap-2">
+                      {offerPillName ? (
+                        <span
+                          className="inline-flex w-fit items-center gap-1.5 rounded-full px-3 py-1 text-[13px] font-semibold"
+                          style={{
+                            background: `color-mix(in srgb, ${accent} 16%, white)`,
+                            color: accent,
+                          }}
+                        >
+                          <svg
+                            viewBox="0 0 24 24"
+                            fill="currentColor"
+                            className="h-3 w-3"
+                            aria-hidden
+                          >
+                            <path d="M12 2.5l2.6 6.3 6.9.6-5.2 4.5 1.6 6.7L12 16.9 6.1 20.6l1.6-6.7L2.5 9.4l6.9-.6L12 2.5z" />
+                          </svg>
+                          {offerPillName}
+                        </span>
+                      ) : null}
+                      {purchase.resale ? <VerifiedResaleBadge /> : null}
                     </span>
                   ) : null}
                   <div className="font-semibold tracking-[-0.025em] [font-size:22px]">

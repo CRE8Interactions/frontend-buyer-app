@@ -2361,18 +2361,39 @@ describe("Select tickets page (PremiumTicketing)", { timeout: 20_000 }, () => {
     });
   });
 
-  it("shows resale inventory first with a Verified Resale badge", async () => {
+  it("shows a resale listing in price order with a Verified Resale badge", async () => {
     await renderReady();
 
     const prices = screen
       .getAllByText(/\$[\d,]+\.\d{2} each/i)
       .map((el) => el.textContent);
-    expect(prices[0]).toMatch(/\$45\.00/);
+    expect(prices[0]).toMatch(/\$11\.64/);
+    expect(prices[prices.length - 1]).toMatch(/\$45\.00/);
     const resaleBadge = screen.getAllByTestId("verified-resale-badge")[0];
     expect(resaleBadge).toHaveTextContent(/verified resale/i);
-    expect(resaleBadge.parentElement).not.toHaveTextContent(/section a-b/i);
+    // The demo resale listing carries an offer named "Section A-B", so its offer pill shows.
+    expect(resaleBadge.parentElement).toHaveTextContent(/section a-b/i);
     expect(screen.getByText(/^sec a · row 1$/i)).toBeInTheDocument();
     expect(screen.getByText(/sec m · row m3/i)).toBeInTheDocument();
+  });
+
+  it("shows a resale listing's offer pill next to its Verified Resale badge when it has an offer", async () => {
+    const resale = seatedTicketingFixture.listings.find((l) => l.resale)!;
+    await renderReady({
+      ...seatedTicketingFixture,
+      listings: [
+        ...seatedTicketingFixture.listings,
+        {
+          ...resale,
+          zone: "Premium Offer",
+          cartGroup: { ...resale.cartGroup, offer: { ...(resale.cartGroup?.offer as object), name: "Premium Offer" } },
+        },
+      ],
+    });
+
+    const pill = screen.getAllByText("Premium Offer")[0];
+    expect(pill).toBeInTheDocument();
+    expect(pill.parentElement).toHaveTextContent(/verified resale/i);
   });
 
   it("does not list a resale listing's section as an offer chip", async () => {
@@ -2392,6 +2413,7 @@ describe("Select tickets page (PremiumTicketing)", { timeout: 20_000 }, () => {
     expect(
       screen.queryByRole("button", { name: /section 210/i }),
     ).not.toBeInTheDocument();
+    expect(screen.queryByText(/section 210/i)).not.toBeInTheDocument();
   });
 
   it("shows an accessibility empty state instead of quantity-reset copy", async () => {
@@ -2521,7 +2543,6 @@ describe("Select tickets page (PremiumTicketing)", { timeout: 20_000 }, () => {
 
     const prices = () =>
       screen.getAllByText(/\$[\d,]+\.\d{2} each/i).map((el) => el.textContent);
-    const firstPrimary = () => prices().find((text) => !/\$45\.00/.test(text || ""));
     const pickSort = async (current: RegExp, option: RegExp) => {
       await user.click(screen.getByRole("button", { name: current }));
       await user.click(
@@ -2532,8 +2553,8 @@ describe("Select tickets page (PremiumTicketing)", { timeout: 20_000 }, () => {
       );
     };
 
-    expect(prices()[0]).toMatch(/\$45\.00/);
-    expect(firstPrimary()).toMatch(/\$11\.64/);
+    expect(prices()[0]).toMatch(/\$11\.64/);
+    expect(prices()[prices().length - 1]).toMatch(/\$45\.00/);
     expect(screen.getByRole("button", { name: /^sort by price$/i })).toBeInTheDocument();
     expect(screen.queryByRole("listbox", { name: /sort listings/i })).not.toBeInTheDocument();
 
@@ -2543,15 +2564,15 @@ describe("Select tickets page (PremiumTicketing)", { timeout: 20_000 }, () => {
     ).toBeInTheDocument();
     expect(screen.queryByRole("listbox", { name: /sort listings/i })).not.toBeInTheDocument();
     await waitFor(() => {
-      expect(prices()[0]).toMatch(/\$45\.00/);
-      expect(firstPrimary()).toMatch(/\$33\.59/);
+      expect(prices()[0]).toMatch(/\$33\.59/);
+      expect(prices()[1]).toMatch(/\$12\.00/);
     });
 
     await pickSort(/^sort by best seat$/i, /^price$/i);
     expect(screen.getByRole("button", { name: /^sort by price$/i })).toBeInTheDocument();
     await waitFor(() => {
-      expect(prices()[0]).toMatch(/\$45\.00/);
-      expect(firstPrimary()).toMatch(/\$11\.64/);
+      expect(prices()[0]).toMatch(/\$11\.64/);
+      expect(prices()[prices().length - 1]).toMatch(/\$45\.00/);
     });
   });
 
@@ -2565,8 +2586,8 @@ describe("Select tickets page (PremiumTicketing)", { timeout: 20_000 }, () => {
     const prices = screen
       .getAllByText(/\$[\d,]+\.\d{2} each/i)
       .map((el) => el.textContent);
-    expect(prices[0]).toMatch(/\$45\.00/);
-    expect(prices.find((text) => !/\$45\.00/.test(text || ""))).toMatch(/\$33\.59/);
+    expect(prices[0]).toMatch(/\$33\.59/);
+    expect(prices[1]).toMatch(/\$12\.00/);
   });
 
   it("opens the event information modal", async () => {

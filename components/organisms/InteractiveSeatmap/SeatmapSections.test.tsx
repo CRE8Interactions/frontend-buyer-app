@@ -727,6 +727,84 @@ describe("SeatmapSeat", () => {
     expect(screen.getByRole("button", { name: /add now/i })).toBeInTheDocument();
   });
 
+  it("labels an unnamed resale seat Verified Resale on the seat tooltip", () => {
+    const resale = DEMO_SEATED_TICKET_GROUPS.find((item) => item.resale);
+    expect(resale).toBeTruthy();
+    window.innerWidth = 1200;
+    const unnamed = { ...resale!, offer: undefined, sectionNumber: "209", rowNumber: "9", price: 39.42 };
+    useSeatmapStore.setState({
+      data: {
+        seats: {
+          "s-resale": {
+            seatId: "s-resale",
+            seatNumber: "9",
+            sectionNumber: "209",
+            cx: 0,
+            cy: 0,
+            w: 10,
+            h: 10,
+          },
+        },
+      },
+      seatLookupTable: { "s-resale": unnamed },
+      seatOffersLookupTable: { "s-resale": [unnamed] },
+      selectedFromMap: [],
+    });
+
+    render(
+      <SeatmapTooltip
+        target={{ kind: "seat", seatId: "s-resale", x: 200, y: 200, pinned: false }}
+        onClose={() => {}}
+      />,
+    );
+
+    expect(screen.getByText("Verified Resale")).toBeInTheDocument();
+    expect(screen.queryByTestId("verified-resale-badge")).not.toBeInTheDocument();
+    expect(screen.queryByText(/standard/i)).not.toBeInTheDocument();
+  });
+
+  it("shows only the offer name on a named resale seat tooltip", () => {
+    const resale = DEMO_SEATED_TICKET_GROUPS.find((item) => item.resale);
+    expect(resale).toBeTruthy();
+    window.innerWidth = 1200;
+    const named = {
+      ...resale!,
+      offer: { name: "Standard Admission" },
+      sectionNumber: "208",
+      rowNumber: "3",
+      price: 39.42,
+    };
+    useSeatmapStore.setState({
+      data: {
+        seats: {
+          "s-resale": {
+            seatId: "s-resale",
+            seatNumber: "6",
+            sectionNumber: "208",
+            cx: 0,
+            cy: 0,
+            w: 10,
+            h: 10,
+          },
+        },
+      },
+      seatLookupTable: { "s-resale": named },
+      seatOffersLookupTable: { "s-resale": [named] },
+      selectedFromMap: [],
+    });
+
+    render(
+      <SeatmapTooltip
+        target={{ kind: "seat", seatId: "s-resale", x: 200, y: 200, pinned: false }}
+        onClose={() => {}}
+      />,
+    );
+
+    expect(screen.getByText("Standard Admission")).toBeInTheDocument();
+    expect(screen.queryByText("Verified Resale")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("verified-resale-badge")).not.toBeInTheDocument();
+  });
+
   it("does not select or open a panel when a mobile tap hits an unavailable seat", () => {
     const seat = mapping.seats?.b1;
     expect(seat).toBeTruthy();

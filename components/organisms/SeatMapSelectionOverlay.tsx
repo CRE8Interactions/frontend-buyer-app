@@ -7,6 +7,7 @@ import { fluidSize } from "@/lib/shopperFluidType";
 import { memo, useCallback, useEffect, useRef, useState } from "react";
 import { lockPageScroll, unlockPageScroll } from "@/lib/pageScroll";
 import AccessibleSeatingBadge from "@/components/atoms/AccessibleSeatingBadge";
+import VerifiedResaleBadge from "@/components/atoms/VerifiedResaleBadge";
 import BrandedActionButton from "@/components/atoms/BrandedActionButton";
 import Spinner from "@/components/atoms/Spinner";
 import BuyerProtectionCard from "@/components/molecules/BuyerProtectionCard";
@@ -25,11 +26,12 @@ import {
 import type { QuantityRestrictionSource } from "@/lib/ticketListings";
 import { listedUnitPrice } from "@/lib/helpers";
 import { getSeatAdditionalLabel } from "@/lib/seatLabels";
-import { selectionOfferDescription, selectionOfferName, selectionTicketCards } from "@/lib/ticketSummary";
+import { selectionOfferDescription, selectionIsResale, selectionIsUnnamedResale, selectionOfferName, selectionTicketCards } from "@/lib/ticketSummary";
 import {
   gaTicketSeatLine,
   mapSectionHeading,
   seatDisplayValue,
+  seatedSectionName,
   sectionDisplayValue,
 } from "@/lib/wallet";
 import useFiltersStore from "@/stores/filtersStore";
@@ -52,7 +54,14 @@ function gaPlaceName(group: {
 function gaDetailHeading(
   group: NonNullable<Parameters<typeof gaTicketSeatLine>[0]>,
 ): string {
-  const line = gaTicketSeatLine(group);
+  // The listing shows sectionName ("Maroon Floor West Standing Room"); the
+  // sectionNumber id ("MAROON_FLOOR_...") would otherwise win here, so prefer the name.
+  const name = String(group.sectionName ?? "").trim();
+  const line = gaTicketSeatLine(
+    name && !/^ga$/i.test(name)
+      ? { ...group, sectionNumber: name }
+      : group,
+  );
   if (!/^ga$/i.test(line.trim())) return line;
   return gaPlaceName(group);
 }
@@ -1009,18 +1018,32 @@ function SeatMapSelectionOverlay({
                         padding: "18px 0 16px",
                       }}
                     >
-                      <span
+                      <div
                         style={{
-                          alignSelf: "flex-start",
-                          minWidth: 0,
-                          maxWidth: "100%",
-                          ...pill(accentSoft, accent, true),
-                          fontSize: "13px",
-                          padding: "5px 10px",
+                          display: "flex",
+                          flexWrap: "wrap",
+                          alignItems: "center",
+                          gap: 8,
                         }}
                       >
-                        <Star s={14} /> {mapDetailOffer}
-                      </span>
+                        {selectionIsUnnamedResale(mapDetailGroup) ? null : (
+                          <span
+                            style={{
+                              alignSelf: "flex-start",
+                              minWidth: 0,
+                              maxWidth: "100%",
+                              ...pill(accentSoft, accent, true),
+                              fontSize: "13px",
+                              padding: "5px 10px",
+                            }}
+                          >
+                            <Star s={14} /> {mapDetailOffer}
+                          </span>
+                        )}
+                        {selectionIsResale(mapDetailGroup) ? (
+                          <VerifiedResaleBadge icon={14} />
+                        ) : null}
+                      </div>
                       <div
                         style={{
                           display: "flex",
@@ -1031,15 +1054,17 @@ function SeatMapSelectionOverlay({
                       >
                         <div
                           style={{
+                            minWidth: 0,
                             fontSize: 22,
                             fontWeight: 600,
                             letterSpacing: "-0.02em",
                             lineHeight: 1.5,
+                            overflowWrap: "anywhere",
                           }}
                         >
                           {mapDetailGroup.GA
                             ? gaDetailHeading(mapDetailGroup)
-                            : `${mapSectionHeading(mapDetailSection)} · Row ${mapDetailGroup.rowNumber || mapDetailGroup.rowName || "—"} · Seat ${seatDisplayValue(mapDetailGroup.seatNumber) || "—"}`}
+                            : `${mapSectionHeading(seatedSectionName(mapDetailGroup))} · Row ${mapDetailGroup.rowNumber || mapDetailGroup.rowName || "—"} · Seat ${seatDisplayValue(mapDetailGroup.seatNumber) || "—"}`}
                         </div>
                         <AccessibleSeatingBadge source={mapDetailGroup} />
                         <div style={{ fontSize: 14, lineHeight: 1.5, color: "#6e7180" }}>
@@ -1053,6 +1078,7 @@ function SeatMapSelectionOverlay({
                     <div
                       style={{
                         display: "flex",
+                        flexWrap: "wrap",
                         alignItems: "baseline",
                         gap: 8,
                         padding: "18px 0",
@@ -1253,9 +1279,7 @@ function SeatMapSelectionOverlay({
                           const isGA = Boolean(g.GA || g.generalAdmission);
                           const section = isGA
                             ? gaPlaceName(g)
-                            : sectionDisplayValue(
-                                g.sectionNumber || g.sectionName,
-                              ) || "GA";
+                            : seatedSectionName(g) || "GA";
                           const row = g.rowNumber || g.rowName || "—";
                           const seat = seatDisplayValue(g.seatNumber) || "—";
                           const offer = selectionOfferName(g);
@@ -1318,7 +1342,7 @@ function SeatMapSelectionOverlay({
                                   display: "grid",
                                   gridTemplateColumns: isGA
                                     ? "minmax(0, 1fr) auto"
-                                    : "58px 58px 58px 1fr",
+                                    : "auto minmax(0, 1fr)",
                                   gap: 10,
                                   alignItems: "start",
                                 }}
@@ -1336,7 +1360,8 @@ function SeatMapSelectionOverlay({
                                     {section}
                                   </div>
                                 ) : (
-                                  [
+                                  <div style={{ display: "flex", gap: 34, alignItems: "start" }}>
+                                  {[
                                     ["Sec", section],
                                     ["Row", row],
                                     ["Seat", seat],
@@ -1363,7 +1388,8 @@ function SeatMapSelectionOverlay({
                                         {value}
                                       </div>
                                     </div>
-                                  ))
+                                  ))}
+                                  </div>
                                 )}
                                 <div style={{ textAlign: "right" }}>
                                   <div style={{ fontSize: "17px", fontWeight: 600 }}>
@@ -1409,23 +1435,37 @@ function SeatMapSelectionOverlay({
                               <div
                                 style={{
                                   display: "flex",
-                                  alignItems: "flex-start",
+                                  alignItems: "center",
                                   justifyContent: "space-between",
                                   gap: 10,
                                   minWidth: 0,
                                 }}
                               >
-                                <span
+                                <div
                                   style={{
-                                    ...pill(accentSoft, accent, true),
-                                    width: "fit-content",
-                                    maxWidth: "100%",
+                                    display: "flex",
+                                    flexWrap: "wrap",
+                                    alignItems: "center",
+                                    gap: 8,
                                     minWidth: 0,
-                                    flex: "0 1 auto",
+                                    flex: "1 1 auto",
                                   }}
                                 >
-                                  <Star s={13} /> {offer}
-                                </span>
+                                  {selectionIsUnnamedResale(g) ? null : (
+                                    <span
+                                      style={{
+                                        ...pill(accentSoft, accent, true),
+                                        width: "fit-content",
+                                        maxWidth: "100%",
+                                        minWidth: 0,
+                                        flex: "0 1 auto",
+                                      }}
+                                    >
+                                      <Star s={13} /> {offer}
+                                    </span>
+                                  )}
+                                  {selectionIsResale(g) ? <VerifiedResaleBadge /> : null}
+                                </div>
                                 <button
                                   type="button"
                                   onClick={() => {

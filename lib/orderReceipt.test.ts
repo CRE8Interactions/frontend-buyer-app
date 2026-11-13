@@ -3,6 +3,7 @@ import {
   DEMO_EVENTS,
   DEMO_SEATED_TICKET_GROUPS,
   DEMO_USER,
+  demoCheckoutCart,
   demoCompletedFlexPackOrder,
   demoCompletedPackageOrder,
   demoCompletedTicketOrder,
@@ -85,12 +86,12 @@ describe("buildOrderReceipt", () => {
     expect(line.amount).toBe(formatCurrency(subtotal));
     expect(receipt.totals).toEqual([
       { label: "Subtotal", amount: formatCurrency(subtotal) },
-      { label: "Tax", amount: formatCurrency(order.salesTax) },
       {
         label: "Processing Fee",
         amount: formatCurrency(order.estimatedProcessingFee),
       },
       { label: "Service Fee", amount: formatCurrency(order.serviceFee) },
+      { label: "Tax", amount: formatCurrency(order.salesTax) },
       { label: "Total", amount: formatCurrency(order.total), strong: true },
       {
         label: "Amount paid",
@@ -143,9 +144,9 @@ describe("buildOrderReceipt", () => {
     expect(receipt.lines[0].amount).toBe(formatCurrency(face));
     expect(receipt.totals.map((row) => row.label)).toEqual([
       "Subtotal",
+      "Processing Fee",
       "Service Fee",
       "Facility Fee",
-      "Processing Fee",
       "Tax",
       "Total",
       "Amount paid",
@@ -159,6 +160,42 @@ describe("buildOrderReceipt", () => {
     expect(receipt.totals.find((row) => row.label === "Total")?.amount).toBe(
       formatCurrency(order.total),
     );
+  });
+
+  it("uses the normal ticket fee rows for a resale purchase", () => {
+    const cart = demoCheckoutCart({ ticketCount: 2 });
+    const order = demoCompletedTicketOrder({
+      type: "resale",
+      resaleListing: { id: 574, offer: null },
+      tickets: cart.tickets.map((ticket) => ({
+        ...ticket,
+        resale: false,
+        offer: null,
+        cost: 0,
+        price: 0,
+        listingAskingPrice: 350,
+      })),
+      serviceFee: 70,
+      processingFee: 22.94,
+      estimatedProcessingFee: 22.94,
+      salesTax: 63.52,
+      total: 856.46,
+    });
+    const receipt = buildOrderReceipt(order)!;
+
+    expect(receipt.totals).toEqual([
+      { label: "Subtotal", amount: formatCurrency(700) },
+      { label: "Processing Fee", amount: formatCurrency(22.94) },
+      { label: "Service Fee", amount: formatCurrency(70) },
+      { label: "Tax", amount: formatCurrency(63.52) },
+      { label: "Total", amount: formatCurrency(856.46), strong: true },
+      {
+        label: "Amount paid",
+        amount: formatCurrency(856.46),
+        strong: true,
+        amountDue: true,
+      },
+    ]);
   });
 
   it("lists each face price on a mixed order receipt", () => {
@@ -206,9 +243,9 @@ describe("buildOrderReceipt", () => {
     expect(receipt.lines[0].unitPrice).toBe(formatCurrency(4.5));
     expect(receipt.totals).toEqual([
       { label: "Subtotal", amount: formatCurrency(4.5) },
-      { label: "Tax", amount: formatCurrency(0) },
       { label: "Processing Fee", amount: formatCurrency(0.5) },
       { label: "Service Fee", amount: formatCurrency(2.5) },
+      { label: "Tax", amount: formatCurrency(0) },
       { label: "Student Night", amount: `-${formatCurrency(2)}` },
       { label: "Total", amount: formatCurrency(5.5), strong: true },
       {
@@ -232,7 +269,6 @@ describe("buildOrderReceipt", () => {
     const pkg = demoSeasonPackage();
     const listing = DEMO_SEATED_TICKET_GROUPS[0];
     const receipt = buildOrderReceipt(order)!;
-    const unit = Number(pkg.pricingTiers[0].price);
 
     expect(receipt.sellerName).toBe(pkg.organization.name);
     expect(receipt.invoiceNumber).toBe(order.orderId);
@@ -240,13 +276,15 @@ describe("buildOrderReceipt", () => {
       `${pkg.name} – Sec ${listing.sectionNumber} – Row ${listing.rowNumber} – Seat 21-22`,
     );
     expect(receipt.lines[0].qty).toBe(String(order.tickets.length));
-    expect(receipt.lines[0].unitPrice).toBe(formatCurrency(unit));
-    expect(receipt.lines[0].amount).toBe(formatCurrency(unit * order.tickets.length));
+    expect(receipt.lines[0].amount).toBe("$399.82");
+    expect(receipt.lines[0].unitPrice).toBe(
+      formatCurrency(399.82 / order.tickets.length),
+    );
     expect(receipt.totals.slice(0, 4)).toEqual([
       { label: "Subtotal", amount: "$399.82" },
-      { label: "Tax", amount: "$0.00" },
       { label: "Processing Fee", amount: "$12.38" },
       { label: "Service Fee", amount: "$40.00" },
+      { label: "Tax", amount: "$0.00" },
     ]);
   });
 
@@ -267,10 +305,10 @@ describe("buildOrderReceipt", () => {
 
     expect(receipt.totals.map((row) => row.label)).toEqual([
       "Subtotal",
-      "Tax",
       "Processing Fee",
       "Service Fee",
       "Senior Fee",
+      "Tax",
       "Total",
       "Amount paid",
     ]);
@@ -309,6 +347,44 @@ describe("buildOrderReceipt", () => {
     )!;
 
     expect(receipt.lines[0].description).toContain("Seat 12-13");
+  });
+
+  it("lists one package line when only one game copy carries the price", () => {
+    const pkg = demoSeasonPackage();
+    const base = demoCompletedPackageOrder();
+    const ticket = (base.tickets as Array<Record<string, unknown>>)[0];
+    const section = "Standing Room Right";
+    const tickets = Array.from({ length: 10 }, (_, index) => ({
+      ...ticket,
+      id: index + 1,
+      sectionNumber: section,
+      sectionName: section,
+      rowNumber: undefined,
+      seatNumber: undefined,
+      generalAdmission: false,
+      GA: false,
+      offerName: index === 0 ? "Standard Admission" : undefined,
+      cost: index === 0 ? 19.02 : 10,
+      price: index === 0 ? 19.02 : 10,
+    }));
+    const receipt = buildOrderReceipt(
+      demoCompletedPackageOrder({
+        tickets,
+        total: 103.2,
+        serviceFee: 0,
+        processingFee: 3.2,
+        estimatedProcessingFee: 3.2,
+        salesTax: 0,
+      }),
+    )!;
+
+    expect(receipt.lines).toHaveLength(1);
+    expect(receipt.lines[0].description).toBe(
+      `${pkg.name} – Sec ${section} – Row N/A – Seat N/A`,
+    );
+    expect(receipt.lines[0].qty).toBe("10");
+    expect(receipt.lines[0].unitPrice).toBe(formatCurrency(10));
+    expect(receipt.lines[0].amount).toBe(formatCurrency(100));
   });
 
   it("does not repeat a package seat once per game", () => {
@@ -440,12 +516,12 @@ describe("buildOrderReceipt", () => {
             order.salesTax,
         ),
       },
-      { label: "Tax", amount: formatCurrency(order.salesTax) },
       {
         label: "Processing Fee",
         amount: formatCurrency(order.estimatedProcessingFee),
       },
       { label: "Service Fee", amount: formatCurrency(order.serviceFee) },
+      { label: "Tax", amount: formatCurrency(order.salesTax) },
     ]);
   });
 
