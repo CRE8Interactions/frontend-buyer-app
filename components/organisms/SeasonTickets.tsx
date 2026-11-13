@@ -268,6 +268,7 @@ import {
 import { walletViewTabTitle } from "@/lib/seo";
 import {
   WALLET_NAV,
+  walletNavSectionFromPath,
   walletSectionFromPath,
   walletSectionHref,
 } from "@/lib/walletNav";
@@ -3390,10 +3391,10 @@ export default function SeasonTickets({
 
 
   /* ---------- header ---------- */
-  const onTickets = displaySection === "events";
+  const navSection = walletNavSectionFromPath(pendingNavPath || pathname);
   const navDefs = WALLET_NAV.map((item) => ({
     ...item,
-    on: item.id === "events" ? onTickets : displaySection === item.id,
+    on: item.id === navSection,
   }));
   const authed = screen !== "login" && screen !== "code";
   const showHeader = !(mobileTicketView && showingEventDetail);
@@ -6474,8 +6475,8 @@ export default function SeasonTickets({
     { title: "Payment", rows: [
       { k: "Card on file", v: isHolder ? "Visa ···4417 · exp 09/29" : "No card saved", action: "Manage", help: "Charged for renewals, add-ons, and Aggie Club gifts." },
       { k: "Billing address", v: isHolder ? "412 Solano Dr, Las Cruces, NM 88001" : "Add an address", action: "Edit", help: "Must match the address on your card statement." },
-      { k: "Bank account", v: bankLast4 ? `Account ••${bankLast4}` : "Payout account for resale", action: "Manage", href: "/wallet/bank-account/", help: "Where resale payouts are deposited." },
-      { k: "Payouts", v: "Deposited after the event", action: "View", href: "/wallet/payouts/", help: "Resale payouts waiting to be deposited." },
+      { k: "Bank account", v: bankLast4 ? `Account ••${bankLast4}` : "Payout account for resale", action: "Manage", href: "/wallet/my-profile/bank-account/", help: "Where resale payouts are deposited." },
+      { k: "Payouts", v: "Deposited after the event", action: "View", href: "/wallet/my-profile/payouts/", help: "Resale payouts waiting to be deposited." },
     ] },
     { title: "Security & preferences", rows: [
       { k: "Sign-in", v: "Passkey + email code", action: "Change", help: "Choose how you verify it is you at sign-in." },
@@ -7856,9 +7857,9 @@ export default function SeasonTickets({
         <div style={showingAccessPass ? { flexShrink: 0 } : undefined}>{Header()}</div>
       ) : null}
 
-      {walletNavPending ? (
+      {walletNavPending && displaySection === "events" ? (
         <WalletTicketsBlocksLoading routeDestination />
-      ) : showRoutedWallet ? (
+      ) : showRoutedWallet && displaySection === "events" ? (
         routedWalletPending
           ? RoutedEventShell(DetailLoader(), { showBack: false })
           : routedWalletMissing

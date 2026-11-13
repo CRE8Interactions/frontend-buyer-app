@@ -140,7 +140,7 @@ export default function WalletPayouts() {
                       : "Depositing to your bank"
                     : "No bank account linked"}
                 </h2>
-                <Link href="/wallet/bank-account/" style={{ flexShrink: 0, color: NAVY, fontWeight: 600, textDecoration: "underline" }}>
+                <Link href="/wallet/my-profile/bank-account/" style={{ flexShrink: 0, color: NAVY, fontWeight: 600, textDecoration: "underline" }}>
                   {hasAccount ? "Manage" : "Link account"}
                 </Link>
               </div>

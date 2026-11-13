@@ -8,7 +8,17 @@ const nextConfig: NextConfig = {
     return [
       {
         source: "/settings/payment-information/",
-        destination: "/wallet/bank-account/",
+        destination: "/wallet/my-profile/bank-account/",
+        permanent: false,
+      },
+      {
+        source: "/wallet/bank-account/",
+        destination: "/wallet/my-profile/bank-account/",
+        permanent: false,
+      },
+      {
+        source: "/wallet/payouts/",
+        destination: "/wallet/my-profile/payouts/",
         permanent: false,
       },
     ];

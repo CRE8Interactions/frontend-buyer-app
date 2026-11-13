@@ -5386,6 +5386,22 @@ describe("SeasonTickets section routes", () => {
     expect(screen.queryByText(icedogs.name)).not.toBeInTheDocument();
   });
 
+  it("shows Profile on the first click while the profile route is still committing", async () => {
+    render(<SeasonTickets />);
+
+    expect(await screen.findByText(icedogs.name)).toBeInTheDocument();
+
+    act(() => {
+      beginWalletNavigation("/wallet/my-profile/");
+    });
+
+    expect(
+      screen.getByRole("heading", { name: "Profile", level: 1 }),
+    ).toBeInTheDocument();
+    expect(screen.queryByLabelText("Loading tickets")).not.toBeInTheDocument();
+    expect(screen.queryByText(icedogs.name)).not.toBeInTheDocument();
+  });
+
   it("filters listings by Active, Sold, and Expired", async () => {
     navigationMocks.pathname = "/wallet/my-listings/";
     const user = userEvent.setup();
@@ -5419,6 +5435,33 @@ describe("SeasonTickets section routes", () => {
       expect.stringMatching(/^\/sign-out\/?$/),
     );
     expect(screen.getByText("Payout account for resale")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Manage" })).toHaveAttribute(
+      "href",
+      expect.stringMatching(/^\/wallet\/my-profile\/bank-account\/?$/),
+    );
+    expect(screen.getByRole("link", { name: "View" })).toHaveAttribute(
+      "href",
+      expect.stringMatching(/^\/wallet\/my-profile\/payouts\/?$/),
+    );
+  });
+
+  it.each([
+    ["/wallet/my-profile/activity/", "Back to profile"],
+    ["/wallet/my-profile/bank-account/", "Bank Information"],
+    ["/wallet/my-profile/payouts/", "Payouts"],
+  ])("keeps Profile selected on %s", async (pathname, landmark) => {
+    navigationMocks.pathname = pathname;
+
+    render(<SeasonTickets />);
+
+    expect(await screen.findByText(landmark)).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Profile" })).toHaveAttribute(
+      "aria-current",
+      "page",
+    );
+    expect(screen.getByRole("link", { name: "Tickets" })).not.toHaveAttribute(
+      "aria-current",
+    );
   });
 
   it("shows the linked bank account number on the profile", async () => {
@@ -5460,7 +5503,7 @@ describe("SeasonTickets section routes", () => {
     expect(await screen.findByText(`Account ••${last4}`)).toBeInTheDocument();
     const calls = mockedGetBankAccount.mock.calls.length;
 
-    navigationMocks.pathname = "/wallet/bank-account/";
+    navigationMocks.pathname = "/wallet/my-profile/bank-account/";
     rerender(<SeasonTickets />);
     expect(await screen.findByRole("heading", { name: "Bank Information" })).toBeInTheDocument();
     expect(screen.getByText("XXXXX5556")).toBeInTheDocument();
@@ -7773,14 +7816,14 @@ describe("SeasonTickets routed event screen", { timeout: 20_000 }, () => {
       const { rerender } = render(<SeasonTickets />);
       expect(await screen.findByRole("heading", { name: "Profile", level: 1 })).toBeInTheDocument();
       expect(mockedGetMyEvents).not.toHaveBeenCalled();
-      expect(mockedGetMyListings).not.toHaveBeenCalled();
       expect(mockedGetMySentTransfers).not.toHaveBeenCalled();
+      // The profile's account activity preview loads sales from getMyListings;
+      // only the My listings route itself is off limits here.
 
       navigationMocks.pathname = "/wallet/giving/";
       rerender(<SeasonTickets />);
       expect(await screen.findByRole("heading", { name: "Giving", level: 1 })).toBeInTheDocument();
       expect(mockedGetMyEvents).not.toHaveBeenCalled();
-      expect(mockedGetMyListings).not.toHaveBeenCalled();
       expect(mockedGetMySentTransfers).not.toHaveBeenCalled();
     });
 

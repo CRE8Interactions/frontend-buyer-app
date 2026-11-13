@@ -223,6 +223,9 @@ describe("wallet tab titles", () => {
     expect(walletSectionTabTitle("resale")).toBe("My listings | Blocktickets");
     expect(walletSectionTabTitle("giving")).toBe("Giving | Blocktickets");
     expect(walletSectionTabTitle("profile")).toBe("Profile | Blocktickets");
+    expect(walletSectionTabTitle("bank")).toBe("Bank account | Blocktickets");
+    expect(walletSectionTabTitle("payouts")).toBe("Payouts | Blocktickets");
+    expect(walletSectionTabTitle("activity")).toBe("Account activity | Blocktickets");
   });
 
   it("uses the event, package, flex pack, and access pass titles on a detail page", () => {

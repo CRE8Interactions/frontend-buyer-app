@@ -604,7 +604,10 @@ export type WalletSectionId =
   | "listings"
   | "resale"
   | "giving"
-  | "profile";
+  | "profile"
+  | "bank"
+  | "payouts"
+  | "activity";
 
 /** Legacy wallet headings. List pages do not set a Helmet title of their own. */
 export function walletSectionTabTitle(section: WalletSectionId = "events"): string {
@@ -617,6 +620,12 @@ export function walletSectionTabTitle(section: WalletSectionId = "events"): stri
       return `Giving | ${SITE_NAME}`;
     case "profile":
       return `Profile | ${SITE_NAME}`;
+    case "bank":
+      return `Bank account | ${SITE_NAME}`;
+    case "payouts":
+      return `Payouts | ${SITE_NAME}`;
+    case "activity":
+      return `Account activity | ${SITE_NAME}`;
     default:
       return `My tickets | ${SITE_NAME}`;
   }

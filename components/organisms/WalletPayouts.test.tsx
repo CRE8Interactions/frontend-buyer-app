@@ -73,7 +73,7 @@ describe("WalletPayouts", () => {
 
     const last4 = demoLinkedBankAccount().external_accounts.data[0].last4;
     expect(await screen.findByRole("heading", { name: `Depositing to account • ${last4}` })).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "Manage" })).toHaveAttribute("href", "/wallet/bank-account/");
+    expect(screen.getByRole("link", { name: "Manage" })).toHaveAttribute("href", "/wallet/my-profile/bank-account/");
     expect(screen.queryByRole("heading", { name: "No bank account linked" })).not.toBeInTheDocument();
     expect(screen.queryByRole("link", { name: "Link account" })).not.toBeInTheDocument();
     expect(screen.getByText("Resale payouts are deposited to your bank after the event.")).toBeInTheDocument();
@@ -102,7 +102,7 @@ describe("WalletPayouts", () => {
     expect(screen.getByText("Link a bank account to receive payouts.")).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Link account" })).toHaveAttribute(
       "href",
-      "/wallet/bank-account/",
+      "/wallet/my-profile/bank-account/",
     );
     expect(screen.queryByRole("link", { name: "Manage" })).not.toBeInTheDocument();
     expect(screen.queryByText("Payouts are deposited after the event. You do not need to withdraw them.")).not.toBeInTheDocument();
@@ -116,7 +116,7 @@ describe("WalletPayouts", () => {
     expect(await screen.findByRole("heading", { name: "No bank account linked" })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Link account" })).toHaveAttribute(
       "href",
-      "/wallet/bank-account/",
+      "/wallet/my-profile/bank-account/",
     );
   });
 });
