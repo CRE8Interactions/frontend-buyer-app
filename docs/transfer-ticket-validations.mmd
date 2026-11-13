@@ -12,6 +12,10 @@
 
 %% Submit: validateSubmittedEmail — trim, empty, blocked/syntax, then POST /registration/validate-email.
 
+%% Next stays disabled until the email is non-empty, so that button does not
+
+%% show required copy for an empty field. Enter in the field still submits.
+
 %% Wallet maps 400 startFailed to the network banner, not invalid-email copy.
 
 %% Transfer errors key off API message first, then HTTP status.
@@ -69,7 +73,11 @@ flowchart TD
   blurField --> blurValidate[emailBlurInvalid]
   blurValidate --> blurHint[Show inline hint if non-empty invalid]
   blurHint --> typeEmail
-  typeEmail --> sendClick[Submit email]
+  typeEmail --> nextGate{Next}
+  nextGate -->|empty email| nextOff[Next stays disabled]
+  nextGate -->|non-empty| sendClick[Submit email]
+  typeEmail --> enterKey[Enter in the field]
+  enterKey --> sendClick
   sendClick --> readDom[Read submitted email]
   readDom --> validate[validateSubmittedEmail]
   validate --> valFail{Result?}

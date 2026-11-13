@@ -10,15 +10,23 @@
 
 %% Empty field → required copy. Non-empty field → format / validation copy for that field.
 
+%% Names only keep letters, spaces, apostrophes, and hyphens while typing, so
+
+%% blur does not show "Letters only — no digits." from typing.
+
 %% Email is disabled on this step (set in Step 0) — blur and submit re-check only on submit.
+
+%% Leaving the phone field re-runs the format check and clears an existing-phone
+
+%% message when the number is valid.
 
 %% --- Blur — client hints (non-empty fields only) ---
 
 %% | Field | Empty blur | Non-empty invalid |
 
-%% | First name | (no error) | Letters only — no digits. |
+%% | First name | (no error) | (illegal characters never enter the field) |
 
-%% | Last name | (no error) | Letters only — no digits. |
+%% | Last name | (no error) | (illegal characters never enter the field) |
 
 %% | Mobile number | (no error) | Phone number is not valid. Please try again |
 
@@ -67,18 +75,17 @@ flowchart TD
   createNet -->|no| apiStatus{HTTP status?}
   apiStatus -->|200| sessionOk[setSession and redirect]
   apiStatus -->|226| phoneExists["An account with this phone number already exists."]
-  apiStatus -->|500| apiNetwork
+  apiStatus -->|500 / other| apiNetwork
+  phoneExists --> blurField
   subgraph blurClientChecks [blur — client checks]
     fnBlur{First name non-empty on blur?}
     fnBlur -->|no| fnBlurQuiet[No error]
-    fnBlur -->|yes| fnBlurPat{Valid name pattern?}
-    fnBlurPat -->|no| fnBlurBad[Letters only — no digits.]
-    fnBlurPat -->|yes| fnBlurQuiet
+    fnBlur -->|yes| fnBlurKept[Illegal characters never entered]
+    fnBlurKept --> fnBlurQuiet
     lnBlur{Last name non-empty on blur?}
     lnBlur -->|no| lnBlurQuiet[No error]
-    lnBlur -->|yes| lnBlurPat{Valid name pattern?}
-    lnBlurPat -->|no| lnBlurBad[Letters only — no digits.]
-    lnBlurPat -->|yes| lnBlurQuiet
+    lnBlur -->|yes| lnBlurKept[Illegal characters never entered]
+    lnBlurKept --> lnBlurQuiet
     phBlur{Phone non-empty on blur?}
     phBlur -->|no| phBlurQuiet[No error]
     phBlur -->|yes| phBlurVal{Valid phone number?}

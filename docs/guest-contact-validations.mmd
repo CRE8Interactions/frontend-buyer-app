@@ -10,9 +10,17 @@
 
 %% Blur: optional hint on a non-empty field only. Empty blur is quiet.
 
-%% Submit: names are checked locally; email uses validateSubmittedEmail.
+%% Submit: names and email are checked together. validateSubmittedEmail runs
+
+%% even when a name fails. Every failing field shows its message. Nothing
+
+%% continues until names and email all pass.
 
 %% Continue stays clickable when a field is empty.
+
+%% Name fields only keep letters, spaces, apostrophes, and hyphens while
+
+%% typing, so blur does not show the pattern message from typing.
 
 %% --- Blur ---
 
@@ -20,9 +28,9 @@
 
 %% | Email | (no error) | Email is invalid. Please try again. |
 
-%% | First name | (no error) | Letters only — no digits. |
+%% | First name | (no error) | (illegal characters never enter the field) |
 
-%% | Last name | (no error) | Letters only — no digits. |
+%% | Last name | (no error) | (illegal characters never enter the field) |
 
 %% --- Submit — client (before / with validateSubmittedEmail) ---
 
@@ -71,22 +79,27 @@ flowchart TD
     bEmailOk -->|no| bQuiet
     bWhich -->|first or last name| bNameEmpty{Non-empty?}
     bNameEmpty -->|no| bQuiet
-    bNameEmpty -->|yes| bNameOk{Letters, spaces, apostrophes, hyphens?}
-    bNameOk -->|no| bNameInvalid["Letters only — no digits."]
-    bNameOk -->|yes| bQuiet
+    bNameEmpty -->|yes| bNameKept[Illegal characters never entered]
+    bNameKept --> bQuiet
   end
   blurField -.-> blurValidations
   typeFields --> continue[Continue to payment]
-  continue --> names{Names valid?}
+  continue --> readDom[Read email and names]
+  readDom --> names{Each name?}
+  readDom --> validateEmail[validateSubmittedEmail]
   names -->|empty| nameRequired["First name is required. / Last name is required."]
   names -->|pattern| nameInvalid["Letters only — no digits."]
-  names -->|ok| validateEmail[validateSubmittedEmail]
+  names -->|ok| emailAlso{Email passed?}
   validateEmail --> emailFail{Result?}
   emailFail -->|required| emailRequired["Email address is required."]
-  emailFail -->|invalid| emailInvalid
+  emailFail -->|invalid| emailInvalid["Email is invalid. Please try again."]
   emailFail -->|400 startFailed| startFailed["We could not start your checkout. Please check your details and try again."]
   emailFail -->|500 / other| network["We're experiencing technical difficulties. Please try again later."]
-  emailFail -->|ok| intent[POST /payment/intent]
+  emailFail -->|ok| namesAlso{Names passed?}
+  emailAlso -->|yes| intent[POST /payment/intent]
+  emailAlso -->|no| stay[Stay on this form]
+  namesAlso -->|yes| intent
+  namesAlso -->|no| stay
   intent --> intentFail{API response?}
   intentFail -->|400| startFailed
   intentFail -->|404 / 410| cartExpired["Cart expired — Your reserved tickets were released. Please select tickets again."]

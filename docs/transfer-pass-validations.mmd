@@ -12,6 +12,10 @@
 
 %% Submit: validateSubmittedEmail — trim, empty, blocked/syntax, then POST /registration/validate-email.
 
+%% Next stays disabled until the email is non-empty, so that button does not
+
+%% show required copy for an empty field. Enter in the field still submits.
+
 %% Wallet maps 400 startFailed to the network banner, not invalid-email copy.
 
 %% Transfer errors key off API message first, then HTTP status. Kind is
@@ -40,7 +44,7 @@
 
 %% | Status | API message / body | Displayed copy |
 
-%% | 200 | SendGrid verdict Valid | (continue — submit email / transfer) |
+%% | 200 | SendGrid verdict Valid | (continue to Step 3: confirm) |
 
 %% | 200 | SendGrid verdict Invalid (or Risky with suggestion) | Email is invalid. Please try again. |
 
@@ -79,14 +83,20 @@ flowchart TD
   blurField --> blurValidate[emailBlurInvalid]
   blurValidate --> blurHint[Show inline hint if non-empty invalid]
   blurHint --> typeEmail
-  typeEmail --> sendClick[Submit email]
+  typeEmail --> nextGate{Next}
+  nextGate -->|empty email| nextOff[Next stays disabled]
+  nextGate -->|non-empty| sendClick[Submit email]
+  typeEmail --> enterKey[Enter in the field]
+  enterKey --> sendClick
   sendClick --> readDom[Read submitted email]
   readDom --> validate[validateSubmittedEmail]
   validate --> valFail{Result?}
   valFail -->|ok| selfCheck{Same as signed-in email?}
   valFail -->|400 / 500 / other| network["We're experiencing technical difficulties. Please try again later."]
   selfCheck -->|yes| assignedError["This pass is already assigned to this email address."]
-  selfCheck -->|no| transferApi[POST /ticket-transfers accessPassId]
+  selfCheck -->|no| step3[Step 3: confirm]
+  step3 --> transferClick[Transfer]
+  transferClick --> transferApi[POST /ticket-transfers accessPassId]
   transferApi --> apiFail{API response?}
   apiFail -->|200| step4[Step 4: success]
   apiFail -->|message: recipient required| emailRequiredError["Email address is required."]

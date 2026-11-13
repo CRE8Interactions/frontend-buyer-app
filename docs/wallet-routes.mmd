@@ -13,3 +13,4 @@ flowchart TD
   pkg --> pkgEvent["/wallet/my-tickets/order/:orderId/package/:packageUUID/event/:eventUUID → SeasonTickets"]
   myTickets --> flex["/wallet/my-tickets/order/:orderId/flex-pack/:flexPackUUID → SeasonTickets"]
   myTickets --> pass["/wallet/my-tickets/order/:orderId/access-pass/:accessPassUUID → SeasonTickets"]
+  myTickets --> passOnly["/wallet/my-tickets/access-pass/:accessPassUUID → SeasonTickets"]
