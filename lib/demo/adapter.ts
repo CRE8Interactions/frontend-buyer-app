@@ -23,6 +23,7 @@ import {
   demoPackageAccessPass,
   demoPublicMenu,
   demoSeasonPackage,
+  demoSmsTickets,
   demoTicketGroups,
 } from "./fixtures";
 import { filterGroupsForListings, type RawTicketGroup } from "@/lib/ticketListings";
@@ -790,6 +791,34 @@ const routes: Route[] = [
           ...body,
         },
       };
+    },
+  },
+
+  {
+    methods: ["get"],
+    match: (path) =>
+      /\/orders\/sms-tickets\/[^/]+\/apple-passes$/.test(path.split("?")[0]),
+    handle: () => ({
+      data: new Blob(["demo-passes"], {
+        type: "application/vnd.apple.pkpasses",
+      }),
+    }),
+  },
+  {
+    methods: ["get"],
+    match: (path) =>
+      /\/orders\/sms-tickets\/[^/]+\/google-passes$/.test(path.split("?")[0]),
+    handle: () => ({
+      data: { url: "https://pay.google.com/gp/v/save/demo-sms" },
+    }),
+  },
+  {
+    methods: ["get"],
+    match: (path) => /\/orders\/sms-tickets\/[^/]+$/.test(path.split("?")[0]),
+    handle: (path) => {
+      const token = decodeURIComponent(lastSeg(path));
+      if (token === "expired") return { data: null, status: 410 };
+      return { data: demoSmsTickets() };
     },
   },
 

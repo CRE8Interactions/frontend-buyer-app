@@ -592,6 +592,22 @@ export const downloadApplePass = (data: unknown) =>
 export const downloadGooglePass = (data: unknown) =>
   instance.post("/create_download_google_pass", data);
 
+/** Public ticket link from a text message. 410 when the link has expired. */
+export const getSmsTickets = (token: string) =>
+  instance.get(`/orders/sms-tickets/${encodeURIComponent(token)}`);
+
+export const downloadSmsApplePasses = (token: string) =>
+  instance.get(
+    `/orders/sms-tickets/${encodeURIComponent(token)}/apple-passes`,
+    { responseType: "blob", timeout: 90000 },
+  );
+
+export const downloadSmsGooglePasses = (token: string) =>
+  instance.get(
+    `/orders/sms-tickets/${encodeURIComponent(token)}/google-passes`,
+    { timeout: 90000 },
+  );
+
 export const validateEmail = (data: unknown) =>
   instance.post("/registration/validate-email", data);
 

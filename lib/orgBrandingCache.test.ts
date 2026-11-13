@@ -112,6 +112,12 @@ describe("org switch loader branding", () => {
     ).toBeNull();
   });
 
+  it("does not treat the SMS ticket paths as an organization storefront", () => {
+    expect(orgSlugFromPathname("/t/")).toBeNull();
+    expect(orgSlugFromPathname("/tickets/")).toBeNull();
+    expect(orgSlugFromPathname(`/${raptors.slug}/`)).toBe(raptors.slug);
+  });
+
   it("does not reuse last-used branding on home, browse, Our Story, or legal pages", () => {
     cacheOrgBranding(raptors);
 

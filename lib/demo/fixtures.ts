@@ -435,6 +435,68 @@ export const DEMO_EVENTS = [
   },
 ];
 
+export type DemoSmsTicket = {
+  id: number;
+  uuid: string;
+  checkInCode: string;
+  sectionNumber: string;
+  rowNumber?: string;
+  seatNumber?: string;
+  generalAdmission: boolean;
+  name?: string;
+  accessible?: boolean;
+  accessibleType?: string;
+};
+
+/** One ticket on a public SMS link. Defaults to general admission. */
+export function demoSmsTicket(
+  overrides: Partial<DemoSmsTicket> = {},
+): DemoSmsTicket {
+  return {
+    id: 1,
+    uuid: "sms-ticket-ga",
+    checkInCode: "GA-ICE-1",
+    sectionNumber: "GA",
+    generalAdmission: true,
+    name: "General admission",
+    ...overrides,
+  };
+}
+
+/**
+ * Public payload for GET /orders/sms-tickets/:token.
+ * Two tickets so the page can offer an add-all wallet download.
+ */
+export function demoSmsTickets(overrides?: {
+  tickets?: DemoSmsTicket[];
+  displayStartTime?: boolean;
+}) {
+  const event = DEMO_EVENTS[0];
+  return {
+    event: {
+      name: event.name,
+      start: event.start,
+      display_start_time: overrides?.displayStartTime ?? true,
+      image: event.image,
+      venue: event.venue,
+    },
+    tickets: overrides?.tickets ?? [
+      demoSmsTicket(),
+      demoSmsTicket({
+        id: 2,
+        uuid: "sms-ticket-seat",
+        checkInCode: "SEAT-ICE-2",
+        generalAdmission: false,
+        sectionNumber: "101",
+        rowNumber: "A",
+        seatNumber: "4",
+        name: "Reserved",
+      }),
+    ],
+    expiresAt: null,
+  };
+}
+
 /** Full event-detail payload for GET /events/{slug}/{shortcode} (getEventByShortCode). */
 export function demoEventDetail(shortcode: string) {
   const base = DEMO_EVENTS.find(

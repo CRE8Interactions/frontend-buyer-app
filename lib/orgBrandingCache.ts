@@ -686,6 +686,8 @@ export function orgSlugFromPathname(pathname = ""): string | null {
       "e",
       "venue",
       "group",
+      "t",
+      "tickets",
     ]);
     if (!reserved.has(segment.toLowerCase())) return segment;
   }
