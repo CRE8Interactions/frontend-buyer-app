@@ -117,6 +117,9 @@ export const phoneUnique = (data: unknown) =>
 export const createNewUser = (data: unknown) =>
   instance.post("/verifies/newUser", data);
 
+export const updateSmsOptIn = (data: unknown) =>
+  instance.post("/verifies/sms-opt-in", data);
+
 export const createOrder = (data: unknown) => instance.post("/orders", data);
 
 export const processOrder = (data: unknown) =>

@@ -40,6 +40,7 @@ import {
 import { BLOCKTICKETS_GREEN, BLOCKTICKETS_NAVY, ERROR_COLOR } from "@/lib/branding";
 import { lockPageScroll, unlockPageScroll } from "@/lib/pageScroll";
 import EmailField from "@/components/molecules/EmailField";
+import ProfileSmsPreference from "@/components/molecules/ProfileSmsPreference";
 import SeasonTicketsBadge from "@/components/molecules/SeasonTicketsBadge";
 import useAutoFocus from "@/hooks/useAutoFocus";
 import {
@@ -6247,6 +6248,7 @@ export default function SeasonTickets({
   const Profile = () => (
     <div style={{ maxWidth: 1100, margin: "0 auto", padding: bodyPad, display: "flex", flexDirection: "column", gap: 18 }}>
       <h1 style={{ margin: 0, fontSize: fluidSize(42), fontWeight: 600, letterSpacing: "-0.03em", lineHeight: browseLeading("h2") }}>Profile</h1>
+      <ProfileSmsPreference />
       <div style={{ ...card, borderRadius: 24, boxShadow: "0 1px 2px rgba(5,27,53,0.05), 0 20px 46px -22px rgba(5,27,53,0.45)", padding: cardPad, display: "flex", alignItems: "center", gap: 16 }}>
         <div style={{ width: 56, height: 56, borderRadius: 999, background: ACCENT, color: INK, display: "flex", alignItems: "center", justifyContent: "center", fontSize: fluidSize(19), fontWeight: 600, flexShrink: 0 }}>{isHolder ? "HC" : (email[0] || "?").toUpperCase()}</div>
         <div style={{ minWidth: 0, display: "flex", flexDirection: "column", gap: 3 }}>

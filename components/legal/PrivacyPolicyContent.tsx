@@ -614,6 +614,12 @@ export default function PrivacyPolicyContent() {
             </dl>
           </li>
         </ul>
+        <p>
+          No mobile information will be shared with third parties/affiliates for
+          marketing/promotional purposes. All the above categories exclude text
+          messaging originator opt-in data and consent; this information will
+          not be shared with any third parties.
+        </p>
         <h3 className="legal-h3">Retention of Your Personal Data</h3>
         <p>
           The Company will retain Your Personal Data only for as long as is
@@ -1951,6 +1957,32 @@ export default function PrivacyPolicyContent() {
           You are advised to review this Privacy Policy periodically for any
           changes. Changes to this Privacy Policy are effective when they are
           posted on this page.
+        </p>
+      </section>
+      <section>
+        <h2 className="legal-h2">SMS Text Messaging</h2>
+        <p>
+          If You choose to opt in, Blocktickets may send You recurring automated
+          text messages about Your account, tickets, events, and offers. You opt
+          in by checking the SMS consent box when you set up your profile and
+          providing a mobile number. You can turn text messages on or off later
+          from Profile in your wallet. Checking that box is optional. Consent is
+          not a condition of creating an account or buying tickets. We save
+          whether You opted in and the time You did.
+        </p>
+        <p>
+          Message frequency varies. Message and data rates may apply. Reply STOP
+          to cancel and HELP for help. You can also email{" "}
+          <a href="mailto:help@blocktickets.xyz">help@blocktickets.xyz</a>.
+        </p>
+        <p>
+          We use a messaging provider to deliver those text messages. No mobile
+          information will be shared with third parties/affiliates for
+          marketing/promotional purposes. Information sharing to subcontractors
+          in support services, such as customer service and text message
+          delivery, is permitted. All other categories exclude text messaging
+          originator opt-in data and consent; this information will not be
+          shared with any third parties.
         </p>
       </section>
       <section>

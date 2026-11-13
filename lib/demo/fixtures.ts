@@ -50,6 +50,7 @@ export const DEMO_USER = {
   lastName: "Fan",
   phoneNumber: "+14155552671",
   dob: "01/01/1995",
+  smsOptIn: false,
   role: { name: "Authenticated" },
 };
 

@@ -838,6 +838,23 @@ const routes: Route[] = [
   { methods: ["post"], match: endsWith("/verifies/phone-unique"), handle: () => ({ data: { unique: true } }) },
   { methods: ["post"], match: endsWith("/verifies/by-phone-or-email"), handle: () => ({ data: DEMO_SESSION }) },
   { methods: ["post"], match: endsWith("/verifies/newUser"), handle: () => ({ data: DEMO_SESSION }) },
+  {
+    methods: ["post"],
+    match: endsWith("/verifies/sms-opt-in"),
+    handle: (_path, config) => {
+      const body = parseBody(config);
+      const data =
+        body.data && typeof body.data === "object"
+          ? (body.data as { smsOptIn?: unknown })
+          : {};
+      return {
+        data: {
+          ...DEMO_SESSION,
+          user: { ...DEMO_SESSION.user, smsOptIn: data.smsOptIn === true },
+        },
+      };
+    },
+  },
   { methods: ["post"], match: endsWith("/verifies"), handle: () => ({ data: { status: "sent" } }) },
 ];
 
