@@ -1,7 +1,7 @@
 /** Seat, tier, and price summary shared by checkout and the order confirmation. */
 
 import { packageFromPrice } from "@/lib/eventFromPrice";
-import { flexPackVoucherFee } from "@/lib/flexPackDisplay";
+import { flexPackVoucherCount, flexPackVoucherFee } from "@/lib/flexPackDisplay";
 import {
   descriptionPlainText,
   formatCurrency,
@@ -886,7 +886,10 @@ export type CompletedOrderFeeSource = {
     | null;
   tickets?: unknown;
   am_pricing_objects?: unknown;
-  flex_pack?: { price?: number } | null;
+  flex_pack?: { price?: number; gameTickets?: number } | null;
+  vouchers?: Array<unknown> | null;
+  event?: unknown;
+  package?: unknown;
   priceObject?:
     | Record<string, unknown>
     | Array<Record<string, unknown> | null | undefined>
@@ -1053,6 +1056,21 @@ export function getPrimaryTicketFeeBreakdown(
   };
 }
 
+/** Face prices saved on each ticket when the order itself has no pricing list. */
+function ticketPricingRecords(tickets: unknown): Array<Record<string, unknown>> {
+  if (!Array.isArray(tickets)) return [];
+  const records: Array<Record<string, unknown>> = [];
+  for (const ticket of tickets) {
+    if (!ticket || typeof ticket !== "object") continue;
+    const row = ticket as Record<string, unknown>;
+    for (const key of ["am_pricing_object", "priceObject", "pricingObject"]) {
+      const nested = pricingObjectRecords(row[key]);
+      records.push(...nested);
+    }
+  }
+  return records;
+}
+
 function pricingHasFacePrice(records: Array<Record<string, unknown>>) {
   return records.some(
     (entry) =>
@@ -1079,11 +1097,14 @@ export function orderPrimaryFeeBreakdown(order?: {
   }
   const fromPriceObject = pricingObjectRecords(order.priceObject);
   const fromPricingObjects = pricingObjectRecords(order.am_pricing_objects);
+  const fromTickets = ticketPricingRecords(order.tickets);
   const pricing = pricingHasFacePrice(fromPriceObject)
     ? fromPriceObject
     : pricingHasFacePrice(fromPricingObjects)
       ? fromPricingObjects
-      : null;
+      : pricingHasFacePrice(fromTickets)
+        ? fromTickets
+        : null;
   if (!pricing) return null;
   return getPrimaryTicketFeeBreakdown(order.tickets, pricing);
 }
@@ -1249,6 +1270,40 @@ function completedOrderTax(
   return 0;
 }
 
+/** Checkout charges $1 per voucher when the saved flex pack order left serviceFee at 0. */
+function flexPackServiceFee(
+  order: CompletedOrderFeeSource | null | undefined,
+  stored: number,
+): number {
+  if (stored > 0 || !order?.flex_pack) return stored;
+  const count =
+    flexPackVoucherCount(order.flex_pack.gameTickets) ||
+    (Array.isArray(order.vouchers) ? order.vouchers.length : 0);
+  const inferred = flexPackVoucherFee(count);
+  const price = positiveTax(order.flex_pack.price);
+  const total = finiteMoney(order.total) ?? 0;
+  if (inferred <= 0 || price <= 0 || inferred > total - price + 0.001) return stored;
+  return inferred;
+}
+
+/** True when salesTax is just total minus the pack price, with no fee split saved. */
+function flexPackRemainderIsLump(
+  order: CompletedOrderFeeSource | null | undefined,
+  processingFee: number,
+  storedServiceFee: number,
+): boolean {
+  const price = positiveTax(order?.flex_pack?.price);
+  const recorded = positiveTax(order?.salesTax) || positiveTax(order?.totalTax);
+  const total = finiteMoney(order?.total) ?? 0;
+  return (
+    price > 0 &&
+    processingFee === 0 &&
+    storedServiceFee === 0 &&
+    recorded > 0 &&
+    Math.abs(recorded - (total - price)) < 0.02
+  );
+}
+
 /**
  * Match Blocktickets' completed-order breakdown. The customer-facing
  * processing estimate stored on the price object wins over order fallbacks,
@@ -1276,14 +1331,21 @@ export function resolveCompletedOrderFees(
     finiteMoney(order?.estimatedProcessingFee) ??
     finiteMoney(order?.processingFee) ??
     0;
-  const serviceFee = finiteMoney(order?.serviceFee) ?? 0;
+  const storedServiceFee = finiteMoney(order?.serviceFee) ?? 0;
+  const serviceFee = flexPackServiceFee(order, storedServiceFee);
   const customFeeLines = completedOrderCustomFeeLines(order, priceObjects);
   const additionalFee =
     finiteMoney(order?.totalFeeAmount) ??
     roundMoney(customFeeLines.reduce((sum, line) => sum + line.amount, 0));
   const discount = finiteMoney(order?.discountApplied) ?? 0;
   const total = finiteMoney(order?.total) ?? 0;
-  const tax = completedOrderTax(order, priceObjects, {
+  // The saved flex pack often files every dollar above the pack price as tax.
+  // Checkout still charges $1 per voucher, so that lump is split again.
+  const taxOrder =
+    flexPackRemainderIsLump(order, processingFee, storedServiceFee)
+      ? { ...order, salesTax: 0, totalTax: 0 }
+      : order;
+  const tax = completedOrderTax(taxOrder, priceObjects, {
     processingFee,
     serviceFee,
     additionalFee,

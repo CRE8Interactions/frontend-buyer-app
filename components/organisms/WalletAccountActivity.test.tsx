@@ -5,12 +5,15 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import WalletAccountActivity, { WalletActivityPage, __resetActivitySnapshotForTests } from "@/components/organisms/WalletAccountActivity";
 import {
   DEMO_USER,
+  demoAccessPassTemplate,
+  demoCompletedFlexPackOrder,
   demoCompletedPackageOrder,
+  demoFlexPack,
   demoCompletedTicketOrder,
   demoLinkedBankAccount,
+  demoSeasonPackage,
   demoSoldListing,
 } from "@/lib/demo/fixtures";
-import { resolveBrandLogo } from "@/lib/branding";
 import { formatCurrency } from "@/lib/helpers";
 
 vi.mock("next/link", () => ({
@@ -35,21 +38,43 @@ vi.mock("next/navigation", () => ({
 
 vi.mock("@/lib/api", () => ({
   getMyUpcomingOrders: vi.fn(),
+  getOrder: vi.fn(),
+  getFlexPack: vi.fn(),
   getMyListings: vi.fn(async () => ({ data: [] })),
   getBankAccount: vi.fn(async () => ({ data: null })),
 }));
 
+vi.mock("@/lib/completedOrder", async () => {
+  const actual = await vi.importActual<typeof import("@/lib/completedOrder")>(
+    "@/lib/completedOrder",
+  );
+  return { ...actual, fetchCompletedOrder: vi.fn() };
+});
+
 vi.mock("@/lib/orderReceipt", () => ({
   downloadOrderReceipt: vi.fn(),
+  shopperReceiptDownload: vi.fn(
+    async (input: { order: unknown; user?: unknown }) => ({
+      order: input.order,
+      purchaser: input.user,
+      sellerLogoUrl: "shared-receipt-logo",
+      sellerName: "Shared seller",
+    }),
+  ),
 }));
 
-import { getBankAccount, getMyListings, getMyUpcomingOrders } from "@/lib/api";
-import { downloadOrderReceipt } from "@/lib/orderReceipt";
+import { getBankAccount, getFlexPack, getMyListings, getMyUpcomingOrders, getOrder } from "@/lib/api";
+import { fetchCompletedOrder } from "@/lib/completedOrder";
+import { downloadOrderReceipt, shopperReceiptDownload } from "@/lib/orderReceipt";
 
 const mockedGetMyUpcomingOrders = vi.mocked(getMyUpcomingOrders);
+const mockedGetOrder = vi.mocked(getOrder);
+const mockedGetFlexPack = vi.mocked(getFlexPack);
+const mockedFetchCompletedOrder = vi.mocked(fetchCompletedOrder);
 const mockedGetMyListings = vi.mocked(getMyListings);
 const mockedGetBankAccount = vi.mocked(getBankAccount);
 const mockedDownloadOrderReceipt = vi.mocked(downloadOrderReceipt);
+const mockedShopperReceiptDownload = vi.mocked(shopperReceiptDownload);
 
 function invoiceOrders() {
   const base = demoCompletedTicketOrder();
@@ -83,10 +108,22 @@ describe("WalletAccountActivity", () => {
   beforeEach(() => {
     __resetActivitySnapshotForTests();
     mockedGetMyUpcomingOrders.mockReset();
+    mockedGetOrder.mockReset();
+    mockedGetFlexPack.mockReset();
+    mockedFetchCompletedOrder.mockReset();
     mockedGetMyListings.mockReset();
     mockedGetBankAccount.mockReset();
     mockedDownloadOrderReceipt.mockReset();
     mockedDownloadOrderReceipt.mockResolvedValue(undefined);
+    mockedShopperReceiptDownload.mockReset();
+    mockedShopperReceiptDownload.mockImplementation(
+      async (input: { order?: unknown; user?: unknown }) => ({
+        order: input.order,
+        purchaser: input.user,
+        sellerLogoUrl: "shared-receipt-logo",
+        sellerName: "Shared seller",
+      }),
+    );
     mockedGetMyUpcomingOrders.mockResolvedValue({ data: [] } as never);
     mockedGetMyListings.mockResolvedValue({ data: [] } as never);
     mockedGetBankAccount.mockResolvedValue({ data: null } as never);
@@ -153,12 +190,39 @@ describe("WalletAccountActivity", () => {
     const downloads = screen.getAllByRole("button", { name: "Receipt" });
     await user.click(downloads[0]);
 
+    expect(mockedShopperReceiptDownload).toHaveBeenCalledWith(
+      expect.objectContaining({
+        hydratePricing: true,
+        order: expect.objectContaining({ orderId: ticket.orderId }),
+        user: expect.objectContaining({ email: DEMO_USER.email }),
+      }),
+    );
+    expect(mockedDownloadOrderReceipt).toHaveBeenCalledWith({
+      order: expect.objectContaining({ orderId: ticket.orderId }),
+      purchaser: expect.objectContaining({ email: DEMO_USER.email }),
+      sellerLogoUrl: "shared-receipt-logo",
+      sellerName: "Shared seller",
+    });
+  });
+
+  it("downloads an activity-page receipt through the same checkout receipt", async () => {
+    const user = userEvent.setup();
+    const { ticket } = invoiceOrders();
+    mockedGetMyUpcomingOrders.mockResolvedValue({ data: [ticket] } as never);
+    render(<WalletActivityPage />);
+
+    await user.click(await screen.findByRole("button", { name: "Receipt" }));
+
+    expect(mockedShopperReceiptDownload).toHaveBeenCalledWith(
+      expect.objectContaining({
+        hydratePricing: true,
+        order: expect.objectContaining({ orderId: ticket.orderId }),
+      }),
+    );
     expect(mockedDownloadOrderReceipt).toHaveBeenCalledWith(
       expect.objectContaining({
-        order: expect.objectContaining({ orderId: ticket.orderId }),
-        purchaser: expect.objectContaining({ email: DEMO_USER.email }),
-        sellerLogoUrl: resolveBrandLogo(ticket.event, ticketEvent.organization),
-        sellerName: ticketEvent.organization?.name,
+        sellerLogoUrl: "shared-receipt-logo",
+        sellerName: "Shared seller",
       }),
     );
   });
@@ -348,6 +412,256 @@ describe("WalletAccountActivity", () => {
     expect(await screen.findByText(`Purchase · ${orderedDate(String(listed.createdAt), timezone)} · ${(listed.tickets as unknown[]).length} tickets`)).toBeInTheDocument();
     expect(screen.queryByText("Resold")).not.toBeInTheDocument();
     expect(screen.queryByText("Transferred")).not.toBeInTheDocument();
+  });
+
+  it("shows the package name when a package order also has an event", async () => {
+    const pkg = demoSeasonPackage();
+    const season = demoCompletedPackageOrder({
+      createdAt: "2026-11-12T23:52:00.000Z",
+      status: "complete",
+      event: {
+        name: "First game of the season",
+        venue: pkg.venue,
+      },
+    });
+    mockedGetMyUpcomingOrders.mockResolvedValue({ data: [season] } as never);
+    render(<WalletAccountActivity />);
+
+    const timezone = pkg.venue?.timezone;
+    expect(await screen.findByText(pkg.name)).toBeInTheDocument();
+    expect(screen.queryByText("First game of the season")).not.toBeInTheDocument();
+    expect(
+      screen.getByText(
+        `Purchase · ${orderedDate("2026-11-12T23:52:00.000Z", timezone)} · ${(season.tickets as unknown[]).length} tickets`,
+      ),
+    ).toBeInTheDocument();
+  });
+
+  it("shows a flex pack by its name and voucher count", async () => {
+    const flex = demoCompletedFlexPackOrder({
+      createdAt: "2026-11-13T01:19:00.000Z",
+    });
+    const pack = flex.flex_pack as { name: string; gameTickets: number; venue?: { timezone?: string } };
+    mockedGetMyUpcomingOrders.mockResolvedValue({ data: [flex] } as never);
+    render(<WalletAccountActivity />);
+
+    expect(await screen.findByText(pack.name)).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        `Purchase · ${orderedDate("2026-11-13T01:19:00.000Z", pack.venue?.timezone)} · ${pack.gameTickets} vouchers`,
+      ),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/0 tickets/)).not.toBeInTheDocument();
+  });
+
+  it("names a flex pack from the saved order when the activity list omits it", async () => {
+    const flex = demoCompletedFlexPackOrder({
+      createdAt: "2026-11-13T01:19:00.000Z",
+    });
+    const pack = flex.flex_pack as { name: string; gameTickets: number; venue?: { timezone?: string } };
+    mockedGetMyUpcomingOrders.mockResolvedValue({
+      data: [
+        {
+          id: flex.id,
+          orderId: flex.orderId,
+          status: "complete",
+          createdAt: flex.createdAt,
+          total: 35.53,
+          event: null,
+          package: null,
+          tickets: [],
+        },
+      ],
+    } as never);
+    mockedGetOrder.mockResolvedValue({ data: flex } as never);
+    render(<WalletAccountActivity />);
+
+    expect(await screen.findByText(pack.name)).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        `Purchase · ${orderedDate("2026-11-13T01:19:00.000Z", pack.venue?.timezone)} · ${flex.vouchers.length} vouchers`,
+      ),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/0 tickets/)).not.toBeInTheDocument();
+    expect(mockedGetOrder).toHaveBeenCalledWith(flex.orderId);
+    expect(mockedFetchCompletedOrder).not.toHaveBeenCalled();
+  });
+
+  it("loads the flex pack name when the order only has the pack id", async () => {
+    const pack = demoFlexPack();
+    const listed = {
+      id: 12,
+      orderId: "1458-320253-8602",
+      status: "complete",
+      createdAt: "2026-11-13T01:19:00.000Z",
+      total: 35.53,
+      event: null,
+      tickets: [],
+      flex_pack: { uuid: pack.uuid, gameTickets: pack.gameTickets },
+    };
+    mockedGetMyUpcomingOrders.mockResolvedValue({ data: [listed] } as never);
+    mockedGetOrder.mockResolvedValue({ data: listed } as never);
+    mockedGetFlexPack.mockResolvedValue({ data: pack } as never);
+    render(<WalletAccountActivity />);
+
+    expect(await screen.findByText(pack.name)).toBeInTheDocument();
+    expect(mockedGetFlexPack).toHaveBeenCalledWith(pack.uuid);
+    expect(screen.getByText(new RegExp(`${pack.gameTickets} vouchers`))).toBeInTheDocument();
+    expect(mockedFetchCompletedOrder).not.toHaveBeenCalled();
+  });
+
+  it("names a flex pack from the checkout order when the wallet list has no vouchers", async () => {
+    const flex = demoCompletedFlexPackOrder({
+      createdAt: "2026-11-13T01:13:00.000Z",
+    });
+    const pack = flex.flex_pack as { name: string; venue?: { timezone?: string } };
+    const listed = {
+      id: flex.id,
+      orderId: flex.orderId,
+      status: "complete",
+      createdAt: flex.createdAt,
+      total: 35.53,
+      event: null,
+      tickets: [],
+      intentDetails: { id: "pi_flexpack123" },
+    };
+    mockedGetMyUpcomingOrders.mockResolvedValue({ data: [listed] } as never);
+    mockedGetOrder.mockResolvedValue({ data: listed } as never);
+    mockedFetchCompletedOrder.mockResolvedValue(flex as never);
+    render(<WalletAccountActivity />);
+
+    expect(await screen.findByText(pack.name)).toBeInTheDocument();
+    expect(mockedFetchCompletedOrder).toHaveBeenCalledWith("pi_flexpack123");
+    expect(screen.getByText(/6 vouchers/)).toBeInTheDocument();
+    expect(screen.queryByText(/0 tickets/)).not.toBeInTheDocument();
+  });
+
+  it("leaves a nameless purchase blank when no flex pack can be found", async () => {
+    mockedGetMyUpcomingOrders.mockResolvedValue({
+      data: [
+        {
+          id: 42,
+          orderId: "order-blank",
+          status: "complete",
+          createdAt: "2026-11-13T01:13:00.000Z",
+          total: 35.53,
+          event: null,
+          tickets: [],
+        },
+      ],
+    } as never);
+    mockedGetOrder.mockRejectedValue(new Error("missing"));
+    render(<WalletAccountActivity />);
+
+    expect(await screen.findByText(/0 tickets/)).toBeInTheDocument();
+    expect(screen.queryByText("Flex pack")).not.toBeInTheDocument();
+  });
+
+  it("reads a flex pack when the activity list wraps it as a relation", async () => {
+    const flex = demoCompletedFlexPackOrder();
+    const pack = flex.flex_pack as { name: string; gameTickets: number; venue?: { timezone?: string } };
+    mockedGetMyUpcomingOrders.mockResolvedValue({
+      data: [
+        {
+          id: flex.id,
+          orderId: flex.orderId,
+          status: "complete",
+          createdAt: "2026-11-13T01:19:00.000Z",
+          total: 35.53,
+          event: null,
+          tickets: [],
+          flex_pack: {
+            data: {
+              id: 4,
+              attributes: {
+                name: pack.name,
+                gameTickets: pack.gameTickets,
+                venue: pack.venue,
+              },
+            },
+          },
+        },
+      ],
+    } as never);
+    render(<WalletAccountActivity />);
+
+    expect(await screen.findByText(pack.name)).toBeInTheDocument();
+    expect(screen.getByText(new RegExp(`${pack.gameTickets} vouchers`))).toBeInTheDocument();
+    expect(mockedGetOrder).not.toHaveBeenCalled();
+  });
+
+  it("names a flex pack with no title and ignores a linked event", async () => {
+    const flex = demoCompletedFlexPackOrder({
+      createdAt: "2026-11-13T01:13:00.000Z",
+      flex_pack: { name: " " },
+      event: { name: "Home opener" },
+    });
+    mockedGetMyUpcomingOrders.mockResolvedValue({ data: [flex] } as never);
+    render(<WalletAccountActivity />);
+
+    expect(await screen.findByText("Flex pack")).toBeInTheDocument();
+    expect(screen.queryByText("Home opener")).not.toBeInTheDocument();
+    expect(screen.getByText(/6 vouchers/)).toBeInTheDocument();
+    expect(screen.queryByText(/0 tickets/)).not.toBeInTheDocument();
+  });
+
+  it("shows an access pass by its name instead of an empty ticket count", async () => {
+    const template = demoAccessPassTemplate();
+    mockedGetMyUpcomingOrders.mockResolvedValue({
+      data: [
+        {
+          id: 99,
+          orderId: "pass-1",
+          status: "complete",
+          createdAt: "2026-11-13T01:13:00.000Z",
+          total: template.price,
+          event: null,
+          tickets: [],
+          access_pass_template: template,
+        },
+      ],
+    } as never);
+    render(<WalletAccountActivity />);
+
+    expect(await screen.findByText(template.name)).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        `Purchase · ${orderedDate("2026-11-13T01:13:00.000Z", template.venue?.timezone)} · 1 access pass`,
+      ),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/0 tickets/)).not.toBeInTheDocument();
+  });
+
+  it("leaves ticket assignments and transferred-in tickets out of activity", async () => {
+    const base = demoCompletedTicketOrder();
+    const withName = (name: string) => ({ ...(base.event as object), name });
+    const purchase = demoCompletedTicketOrder({
+      id: 3001,
+      orderId: "purchase-only",
+      source: "website",
+      event: withName("Purchased game"),
+    });
+    const assigned = demoCompletedTicketOrder({
+      id: 3002,
+      orderId: "assigned-only",
+      source: "ticket_assignment",
+      event: withName("Assigned game"),
+    });
+    const transferred = demoCompletedTicketOrder({
+      id: 3003,
+      orderId: "transferred-only",
+      source: "transfer",
+      event: withName("Transferred game"),
+    });
+    mockedGetMyUpcomingOrders.mockResolvedValue({
+      data: [purchase, assigned, transferred],
+    } as never);
+    render(<WalletAccountActivity />);
+
+    expect(await screen.findByText("Purchased game")).toBeInTheDocument();
+    expect(screen.queryByText("Assigned game")).not.toBeInTheDocument();
+    expect(screen.queryByText("Transferred game")).not.toBeInTheDocument();
+    expect(screen.getAllByRole("button", { name: "Receipt" })).toHaveLength(1);
   });
 
   it("shows an error when the receipt cannot be downloaded", async () => {

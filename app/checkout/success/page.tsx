@@ -17,10 +17,8 @@ import {
   checkoutBrandingFromCart,
   type CheckoutCartBrandingSource,
 } from "@/lib/checkoutBranding";
-import { getOrder } from "@/lib/api";
 import {
   fetchCompletedOrder,
-  normalizeOrderPayload,
   type OrderData,
   type OrderEvent,
 } from "@/lib/completedOrder";
@@ -38,11 +36,7 @@ import { getGuestCheckoutBuyer } from "@/lib/guestCheckout";
 import { hideIntercomLauncher } from "@/lib/intercom";
 import { cacheOrgBranding } from "@/lib/orgBrandingCache";
 import {
-  completedOrderPromoName,
   completedOrderResaleSummary,
-  orderPrimaryFeeBreakdown,
-  primaryTicketFeeSummaryRows,
-  promoSummaryLabel,
   resolveCompletedOrderFees,
   ticketSelectionSummary,
 } from "@/lib/ticketSummary";
@@ -65,8 +59,9 @@ import {
   waitUntilOrderPaymentDetailsReady,
 } from "@/lib/orderPayment";
 import {
+  buildOrderReceipt,
   downloadOrderReceipt,
-  receiptPurchaserFromSources,
+  shopperReceiptDownload,
 } from "@/lib/orderReceipt";
 import {
   clearStripePaymentSyncMark,
@@ -292,10 +287,7 @@ function CheckoutSuccessPage() {
   const accent = branding.theme.accent || BLOCKTICKETS_NAVY;
 
   const orderFees = resolveCompletedOrderFees(order);
-  const itemizedFeeRows = (() => {
-    const breakdown = orderPrimaryFeeBreakdown(order);
-    return breakdown ? primaryTicketFeeSummaryRows(breakdown) : null;
-  })();
+  const receiptSummary = buildOrderReceipt(order);
   const flexVoucherCount = flexPackVoucherCount(
     order?.flex_pack?.gameTickets ?? order?.vouchers?.length,
   );
@@ -308,26 +300,15 @@ function CheckoutSuccessPage() {
     setReceiptMsg("");
     setDownloadingReceipt(true);
     try {
-      const guest = getGuestCheckoutBuyer();
-      let purchaser = receiptPurchaserFromSources({ user, guest, order });
-      if (!purchaser.firstName && !purchaser.lastName && order.orderId) {
-        try {
-          const res = await getOrder(String(order.orderId));
-          purchaser = receiptPurchaserFromSources({
-            user,
-            guest,
-            order: normalizeOrderPayload(res.data),
-          });
-        } catch {
-          /* keep the page / guest / slim-order name */
-        }
-      }
-      await downloadOrderReceipt({
-        order,
-        purchaser,
-        sellerLogoUrl: branding.theme.brandLogoSrc,
-        sellerName: branding.orgLabel,
-      });
+      await downloadOrderReceipt(
+        await shopperReceiptDownload({
+          order,
+          user,
+          guest: getGuestCheckoutBuyer(),
+          sellerLogoUrl: branding.theme.brandLogoSrc,
+          sellerName: branding.orgLabel,
+        }),
+      );
     } catch {
       setReceiptMsg("Could not download receipt.");
     } finally {
@@ -405,11 +386,9 @@ function CheckoutSuccessPage() {
   const purchase = completedOrderResaleSummary(order);
   // Package default offer and ticket names win; a sold resale falls back to its listing offer.
   const offerPillName = ticketSummary.offerName || purchase.offerName;
-  const taxSummaryRow = (
-    <SummaryRow label="Tax" value={formatCurrency(orderFees.tax)} />
+  const receiptFeeRows = (receiptSummary?.totals || []).filter(
+    (row) => !row.strong && !row.amountDue,
   );
-  const resaleTicketSubtotal =
-    ticketSummary.subtotal > 0 ? ticketSummary.subtotal : orderFees.subtotal;
   const thumbSrc = imageUrl(
     order?.package?.image || order?.flex_pack?.image || event?.image,
     branding.theme.logoSrc,
@@ -580,72 +559,13 @@ function CheckoutSuccessPage() {
                 Order summary
               </div>
               <div className="flex flex-col gap-2.5">
-                {purchase.resale ? (
-                  <>
-                    <SummaryRow
-                      label="Subtotal"
-                      value={formatCurrency(resaleTicketSubtotal)}
-                    />
-                    {orderFees.processingFee > 0 ? (
-                      <SummaryRow
-                        label="Processing Fee"
-                        value={formatCurrency(orderFees.processingFee)}
-                      />
-                    ) : null}
-                    {orderFees.serviceFee > 0 ? (
-                      <SummaryRow
-                        label="Service Fee"
-                        value={formatCurrency(orderFees.serviceFee)}
-                      />
-                    ) : null}
-                    {orderFees.customFeeLines.map((line) => (
-                      <SummaryRow
-                        key={`${line.name}-${line.amount}`}
-                        label={line.name}
-                        value={formatCurrency(line.amount)}
-                      />
-                    ))}
-                    {taxSummaryRow}
-                  </>
-                ) : itemizedFeeRows ? (
-                  itemizedFeeRows.map((row) => (
-                    <SummaryRow
-                      key={row.label}
-                      label={row.label}
-                      value={formatCurrency(row.amount)}
-                    />
-                  ))
-                ) : (
-                  <>
-                    <SummaryRow
-                      label="Subtotal"
-                      value={formatCurrency(orderFees.subtotal)}
-                    />
-                    <SummaryRow
-                      label="Processing Fee"
-                      value={formatCurrency(orderFees.processingFee)}
-                    />
-                    <SummaryRow
-                      label="Service Fee"
-                      value={formatCurrency(orderFees.serviceFee)}
-                    />
-                    {order?.flex_pack ? taxSummaryRow : null}
-                    {orderFees.customFeeLines.map((line) => (
-                      <SummaryRow
-                        key={`${line.name}-${line.amount}`}
-                        label={line.name}
-                        value={formatCurrency(line.amount)}
-                      />
-                    ))}
-                    {order?.flex_pack ? null : taxSummaryRow}
-                  </>
-                )}
-                {order.discountApplied ? (
+                {receiptFeeRows.map((row) => (
                   <SummaryRow
-                    label={promoSummaryLabel(completedOrderPromoName(order))}
-                    value={`-${formatCurrency(order.discountApplied)}`}
+                    key={`${row.label}-${row.amount}`}
+                    label={row.label}
+                    value={row.amount}
                   />
-                ) : null}
+                ))}
               </div>
               <div className="h-px bg-[rgba(5,27,53,0.08)]" />
               <div className="flex items-baseline justify-between gap-3">

@@ -25,6 +25,7 @@ import {
   resolveCompletedOrderFees,
 } from "@/lib/ticketSummary";
 import { cacheOrgBranding } from "@/lib/orgBrandingCache";
+import { buildOrderReceipt } from "@/lib/orderReceipt";
 import { purchaseTabTitle } from "@/lib/seo";
 import { setGuestCheckoutBuyer } from "@/lib/guestCheckout";
 
@@ -613,6 +614,21 @@ describe("Checkout success receipt", () => {
     expect(screen.getByText("Subtotal")).toBeInTheDocument();
     expect(screen.getByText(formatCurrency(4.5))).toBeInTheDocument();
     expect(screen.getAllByText(formatCurrency(5.5)).length).toBeGreaterThan(0);
+  });
+
+  it("shows the same fee rows the receipt downloads", async () => {
+    const order = demoItemizedFeeCompletedOrder();
+    mockedGetOrderByPi.mockResolvedValue({ data: order } as never);
+    render(<CheckoutSuccessPageRoute />);
+
+    const feeRows = buildOrderReceipt(order)!.totals.filter(
+      (row) => !row.strong && !row.amountDue,
+    );
+    expect(await screen.findByText(feeRows[0]!.label)).toBeInTheDocument();
+    for (const row of feeRows) {
+      expect(screen.getByText(row.label)).toBeInTheDocument();
+      expect(screen.getAllByText(row.amount).length).toBeGreaterThan(0);
+    }
   });
 
   it("downloads a receipt PDF from the completed order", async () => {

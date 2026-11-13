@@ -6,11 +6,16 @@ import InAppBackLink from "@/components/molecules/InAppBackLink";
 import moment from "moment-timezone";
 import Spinner from "@/components/atoms/Spinner";
 import { WalletTicketsBlocksLoading } from "@/components/organisms/WalletTicketsLoader";
-import { getBankAccount, getMyListings, getMyUpcomingOrders } from "@/lib/api";
+import { getBankAccount, getFlexPack, getMyListings, getMyUpcomingOrders, getOrder } from "@/lib/api";
+import { fetchCompletedOrder, normalizeOrderPayload } from "@/lib/completedOrder";
+import { strapiAttr } from "@/lib/wallet";
 import { formatCurrency, toIanaTimezone, type TimezoneLike } from "@/lib/helpers";
 import { fluidSize } from "@/lib/shopperFluidType";
-import { resolveBrandLogo, type BrandingOrganization } from "@/lib/branding";
-import { downloadOrderReceipt } from "@/lib/orderReceipt";
+import { type BrandingOrganization } from "@/lib/branding";
+import {
+  downloadOrderReceipt,
+  shopperReceiptDownload,
+} from "@/lib/orderReceipt";
 
 type InvoiceBuyer = {
   firstName?: string;
@@ -22,6 +27,8 @@ type Invoice = {
   id?: string | number;
   orderId?: string;
   status?: string;
+  /** Purchase origin: website, box_office, ticket_assignment, or transfer. */
+  source?: string;
   createdAt?: string;
   processedAt?: string;
   total?: number | string;
@@ -44,6 +51,16 @@ type Invoice = {
     organization?: BrandingOrganization | null;
     events?: Array<{ start?: string }>;
   } | null;
+  flex_pack?: {
+    name?: string;
+    gameTickets?: number;
+    venue?: { timezone?: TimezoneLike };
+  } | null;
+  vouchers?: Array<{ code?: string }>;
+  access_pass_template?: {
+    name?: string;
+    venue?: { timezone?: TimezoneLike };
+  } | null;
   tickets?: InvoiceTicket[];
   originalTickets?: InvoiceTicket[];
   package_tickets?: Array<{ id?: string | number }>;
@@ -60,7 +77,9 @@ function invoiceTimezone(invoice: Invoice) {
   return (
     invoice.timezone ||
     invoice.event?.venue?.timezone ||
-    invoice.package?.venue?.timezone
+    invoice.package?.venue?.timezone ||
+    invoice.flex_pack?.venue?.timezone ||
+    invoice.access_pass_template?.venue?.timezone
   );
 }
 
@@ -71,8 +90,189 @@ function zonedMoment(value: string | undefined, timezone?: TimezoneLike) {
   return parsed.isValid() ? parsed : null;
 }
 
+function relationRecord<T>(value: unknown): T | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const record = value as { data?: unknown; attributes?: unknown };
+  if ("data" in record) {
+    if (record.data == null || Array.isArray(record.data)) return null;
+    return strapiAttr(record.data) as T;
+  }
+  if (record.attributes && typeof record.attributes === "object") {
+    return strapiAttr(value) as T;
+  }
+  return value as T;
+}
+
+function relationList<T>(value: unknown): T[] | null {
+  if (Array.isArray(value)) return value.map((item) => strapiAttr<Record<string, unknown>>(item) as T);
+  if (!value || typeof value !== "object") return null;
+  const data = (value as { data?: unknown }).data;
+  if (!Array.isArray(data)) return null;
+  return data.map((item) => strapiAttr<Record<string, unknown>>(item) as T);
+}
+
+/** The activity list often leaves relations wrapped, or omits the flex pack entirely. */
+function presentInvoice(invoice: Invoice): Invoice {
+  const record = invoice as Invoice & Record<string, unknown>;
+  const vouchers =
+    relationList<{ code?: string; flex_pack?: unknown }>(record.vouchers) ??
+    invoice.vouchers ??
+    null;
+  const voucherPack = (vouchers || [])
+    .map((voucher) => relationRecord<NonNullable<Invoice["flex_pack"]>>(voucher.flex_pack))
+    .find((pack) => pack?.name?.trim());
+  const flex =
+    relationRecord<NonNullable<Invoice["flex_pack"]>>(record.flex_pack ?? record.flexPack) ||
+    null;
+  return {
+    ...invoice,
+    event: relationRecord(invoice.event),
+    package: relationRecord(record.package ?? record.seasonPackage),
+    flex_pack: (flex?.name?.trim() ? flex : null) || voucherPack || flex,
+    vouchers: vouchers?.map((voucher) => ({ code: voucher.code })) ?? invoice.vouchers,
+    access_pass_template: relationRecord(
+      record.access_pass_template ?? record.accessPassTemplate,
+    ),
+  };
+}
+
+const STRIPE_INTENT_ID = /^pi_[A-Za-z0-9]+$/;
+
+function paymentIntentIdFromInvoice(order: unknown, depth = 0): string {
+  if (typeof order === "string") {
+    return STRIPE_INTENT_ID.test(order.trim()) ? order.trim() : "";
+  }
+  if (!order || typeof order !== "object" || depth > 4) return "";
+  const values = Array.isArray(order)
+    ? order
+    : Object.values(order as Record<string, unknown>);
+  for (const value of values) {
+    const found = paymentIntentIdFromInvoice(value, depth + 1);
+    if (found) return found;
+  }
+  return "";
+}
+
+function mergeActivityInvoice(base: Invoice, extra: Invoice): Invoice {
+  const merged: Invoice = { ...base };
+  const record = merged as Record<string, unknown>;
+  for (const key of [
+    "event",
+    "package",
+    "flex_pack",
+    "vouchers",
+    "access_pass_template",
+    "tickets",
+    "originalTickets",
+    "package_tickets",
+  ] as const) {
+    const value = extra[key];
+    if (value == null) continue;
+    if (Array.isArray(value) && value.length === 0) continue;
+    record[key] = value;
+  }
+  return merged;
+}
+
+function productName(invoice: Invoice) {
+  return (
+    invoice.package?.name?.trim() ||
+    invoice.flex_pack?.name?.trim() ||
+    invoice.access_pass_template?.name?.trim() ||
+    invoice.event?.name?.trim() ||
+    ""
+  );
+}
+
+function flexPackUuid(invoice: Invoice) {
+  const record = invoice as Invoice & Record<string, unknown>;
+  for (const key of ["flexPackUUID", "flex_pack_uuid", "flexPackUuid"]) {
+    const value = record[key];
+    if (typeof value === "string" && value.trim()) return value.trim();
+  }
+  const raw = record.flex_pack ?? record.flexPack;
+  if (typeof raw === "string" && raw.trim()) return raw.trim();
+  const pack = relationRecord<{ uuid?: string }>(raw);
+  return String(pack?.uuid || "").trim();
+}
+
+function unwrapFlexPack(data: unknown): NonNullable<Invoice["flex_pack"]> | null {
+  const listed = relationList<NonNullable<Invoice["flex_pack"]>>(data);
+  if (listed?.[0]?.name) return listed[0];
+  const record = relationRecord<NonNullable<Invoice["flex_pack"]> & { flexPack?: unknown; data?: unknown }>(data);
+  if (record?.name) return record;
+  const nested = data as { flexPack?: unknown; data?: unknown } | null;
+  return (
+    relationRecord<NonNullable<Invoice["flex_pack"]>>(nested?.flexPack) ||
+    relationRecord<NonNullable<Invoice["flex_pack"]>>(nested?.data)
+  );
+}
+
+async function hydrateUntitledInvoice(invoice: Invoice): Promise<Invoice> {
+  if (productName(invoice)) return invoice;
+  let next = invoice;
+  const orderId = String(invoice.orderId || "");
+  if (orderId) {
+    try {
+      const res = await getOrder(orderId);
+      next = mergeActivityInvoice(
+        invoice,
+        presentInvoice(normalizeOrderPayload(res.data) as Invoice),
+      );
+    } catch {
+      /* the list row stands until the flex pack or checkout order loads */
+    }
+  }
+  if (!next.flex_pack?.name?.trim()) {
+    const uuid = flexPackUuid(next) || flexPackUuid(invoice);
+    if (uuid) {
+      try {
+        const res = await getFlexPack(uuid);
+        const pack = unwrapFlexPack(res.data);
+        if (pack?.name?.trim()) {
+          next = mergeActivityInvoice(next, {
+            flex_pack: { ...next.flex_pack, ...pack },
+          });
+        }
+      } catch {
+        /* a missing pack record still leaves the purchase row */
+      }
+    }
+  }
+  if (productName(next)) return next;
+  const intentId = paymentIntentIdFromInvoice(next) || paymentIntentIdFromInvoice(invoice);
+  if (!intentId) return next;
+  try {
+    const fetched = presentInvoice((await fetchCompletedOrder(intentId)) as Invoice);
+    return mergeActivityInvoice(next, fetched);
+  } catch {
+    return next;
+  }
+}
+
+async function labelUntitledInvoices(invoices: Invoice[]): Promise<Invoice[]> {
+  if (!invoices.some((invoice) => !productName(invoice))) return invoices;
+  return Promise.all(invoices.map((invoice) => hydrateUntitledInvoice(invoice)));
+}
+
+function flexPackPurchase(invoice: Invoice) {
+  return Boolean(invoice.flex_pack) || Boolean(invoice.vouchers?.length && !invoice.package);
+}
+
+function flexVoucherCount(invoice: Invoice) {
+  const fromPack = Number(invoice.flex_pack?.gameTickets);
+  const packCount = Number.isFinite(fromPack) && fromPack > 0 ? fromPack : 0;
+  return Math.max(packCount, invoice.vouchers?.length ?? 0);
+}
+
 function invoiceTitle(invoice: Invoice) {
-  return invoice.event?.name?.trim() || invoice.package?.name?.trim() || "";
+  const packageName = invoice.package?.name?.trim();
+  if (packageName) return packageName;
+  if (flexPackPurchase(invoice)) return invoice.flex_pack?.name?.trim() || "Flex pack";
+  if (invoice.access_pass_template) {
+    return invoice.access_pass_template.name?.trim() || "Access pass";
+  }
+  return invoice.event?.name?.trim() || "";
 }
 
 function orderedDate(invoice: Invoice) {
@@ -81,6 +281,16 @@ function orderedDate(invoice: Invoice) {
 
 function ticketLabel(count: number) {
   return `${count} ${count === 1 ? "ticket" : "tickets"}`;
+}
+
+function activityQuantity(invoice: Invoice) {
+  if (flexPackPurchase(invoice)) {
+    const count = flexVoucherCount(invoice);
+    if (!count) return "";
+    return `${count} ${count === 1 ? "voucher" : "vouchers"}`;
+  }
+  if (invoice.access_pass_template && ticketCount(invoice) === 0) return "1 access pass";
+  return ticketLabel(ticketCount(invoice));
 }
 
 function activityTickets(invoice: Invoice) {
@@ -186,6 +396,15 @@ export function __resetActivitySnapshotForTests() {
   activityRequest = null;
 }
 
+/** Assigned and transferred-in tickets were not bought by this shopper, so they stay out of activity. */
+function isPurchaseActivity(invoice: Invoice) {
+  const source = String(invoice.source || "")
+    .trim()
+    .toLowerCase()
+    .replace(/[\s-]+/g, "_");
+  return source !== "ticket_assignment" && source !== "transfer";
+}
+
 function loadActivitySnapshot() {
   if (activitySnapshot) return Promise.resolve(activitySnapshot);
   if (!activityRequest) {
@@ -193,9 +412,12 @@ function loadActivitySnapshot() {
       Promise.resolve().then(() => getMyUpcomingOrders()).catch(() => ({ data: [] })),
       Promise.resolve().then(() => getMyListings()).catch(() => ({ data: [] })),
       Promise.resolve().then(() => getBankAccount()).catch(() => ({ data: null })),
-    ]).then(([orders, listings, account]) => {
+    ]).then(async ([orders, listings, account]) => {
+      const listed = (Array.isArray(orders.data) ? orders.data : [])
+        .filter((row) => isPurchaseActivity(row as Invoice))
+        .map((row) => presentInvoice(row as Invoice));
       const snapshot: ActivitySnapshot = {
-        invoices: Array.isArray(orders.data) ? (orders.data as Invoice[]) : [],
+        invoices: await labelUntitledInvoices(listed),
         sales: soldListings(listings),
         last4: accountLast4(account),
       };
@@ -232,7 +454,7 @@ function useActivityData() {
 }
 
 function activityLine(invoice: Invoice) {
-  return ["Purchase", orderedDate(invoice), ticketLabel(ticketCount(invoice))].filter(Boolean).join(" · ");
+  return ["Purchase", orderedDate(invoice), activityQuantity(invoice)].filter(Boolean).join(" · ");
 }
 
 function monthLabel(invoice: Invoice) {
@@ -362,35 +584,38 @@ function newestInvoices(invoices: Invoice[]) {
   );
 }
 
+async function downloadActivityReceipt(invoice: Invoice) {
+  const buyer = invoice.users_permissions_user;
+  await downloadOrderReceipt(
+    await shopperReceiptDownload({
+      order: {
+        ...invoice,
+        processedAt: invoice.processedAt || invoice.createdAt,
+        ...(buyer
+          ? {
+              firstName: buyer.firstName,
+              lastName: buyer.lastName,
+              email: buyer.email || invoice.email,
+              user: buyer,
+            }
+          : {}),
+      },
+      user: buyer || undefined,
+      hydratePricing: true,
+    }),
+  );
+}
+
 export default function WalletAccountActivity() {
   const { ready, invoices, sales, last4 } = useActivityData();
   const [downloadingId, setDownloadingId] = useState<string | null>(null);
   const [receiptError, setReceiptError] = useState("");
 
   const downloadInvoice = async (invoice: Invoice, rowId: string) => {
-    const buyer = invoice.users_permissions_user;
-    const organization =
-      invoice.event?.organization || invoice.package?.organization || null;
     setDownloadingId(rowId);
     setReceiptError("");
     try {
-      await downloadOrderReceipt({
-        order: {
-          ...invoice,
-          processedAt: invoice.processedAt || invoice.createdAt,
-          ...(buyer
-            ? {
-                firstName: buyer.firstName,
-                lastName: buyer.lastName,
-                email: buyer.email || invoice.email,
-                user: buyer,
-              }
-            : {}),
-        },
-        purchaser: buyer || undefined,
-        sellerLogoUrl: resolveBrandLogo(invoice.event, organization),
-        sellerName: organization?.name,
-      });
+      await downloadActivityReceipt(invoice);
     } catch {
       setReceiptError("Could not download receipt.");
     } finally {
@@ -525,28 +750,10 @@ export function WalletActivityPage() {
   const [receiptError, setReceiptError] = useState("");
 
   const downloadInvoice = async (invoice: Invoice, rowId: string) => {
-    const buyer = invoice.users_permissions_user;
-    const organization = invoice.event?.organization || invoice.package?.organization || null;
     setDownloadingId(rowId);
     setReceiptError("");
     try {
-      await downloadOrderReceipt({
-        order: {
-          ...invoice,
-          processedAt: invoice.processedAt || invoice.createdAt,
-          ...(buyer
-            ? {
-                firstName: buyer.firstName,
-                lastName: buyer.lastName,
-                email: buyer.email || invoice.email,
-                user: buyer,
-              }
-            : {}),
-        },
-        purchaser: buyer || undefined,
-        sellerLogoUrl: resolveBrandLogo(invoice.event, organization),
-        sellerName: organization?.name,
-      });
+      await downloadActivityReceipt(invoice);
     } catch {
       setReceiptError("Could not download receipt.");
     } finally {

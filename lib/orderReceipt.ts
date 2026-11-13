@@ -1,8 +1,17 @@
+import { getOrder } from "@/lib/api";
 import {
   resolveBrandLogo,
   resolvePrimaryColor,
   type BrandingOrganization,
 } from "@/lib/branding";
+import {
+  checkoutBrandingFromCart,
+  type CheckoutCartBrandingSource,
+} from "@/lib/checkoutBranding";
+import {
+  fetchCompletedOrder,
+  normalizeOrderPayload,
+} from "@/lib/completedOrder";
 import { formatCurrency, toIanaTimezone, type TimezoneLike } from "@/lib/helpers";
 import { flexPackVoucherCount } from "@/lib/flexPackDisplay";
 import { formatOrderPaymentMethodSummary, resolveCardLast4 } from "@/lib/orderPayment";
@@ -859,6 +868,132 @@ export function printOrderReceiptHtml(html: string) {
       cleanup();
     }
   }
+}
+
+const STRIPE_INTENT_ID = /^pi_[A-Za-z0-9]+$/;
+
+/**
+ * The saved order does not always name its payment intent the same way, so
+ * look for a Stripe intent id anywhere on it (intentDetails, invoices, ...).
+ */
+function paymentIntentIdFromOrder(order: unknown, depth = 0): string {
+  if (typeof order === "string") {
+    return STRIPE_INTENT_ID.test(order.trim()) ? order.trim() : "";
+  }
+  if (!order || typeof order !== "object" || depth > 4) return "";
+  const values = Array.isArray(order)
+    ? order
+    : Object.values(order as Record<string, unknown>);
+  for (const value of values) {
+    const found = paymentIntentIdFromOrder(value, depth + 1);
+    if (found) return found;
+  }
+  return "";
+}
+
+/**
+ * Higher when the order can show the same fee split as checkout.
+ * A flex pack that only has a tax lump scores below one that lists the
+ * service fee and the processing fee.
+ */
+function receiptPricingScore(order: OrderReceiptSource): number {
+  if (orderPrimaryFeeBreakdown(order)) return 5;
+  const fees = resolveCompletedOrderFees(order);
+  let score = 0;
+  if (fees.serviceFee > 0) score += 2;
+  if (fees.processingFee > 0) score += 2;
+  if (score === 0 && fees.tax > 0) score = 1;
+  return score;
+}
+
+function mergeReceiptOrder(
+  base: OrderReceiptSource,
+  full: OrderReceiptSource,
+): OrderReceiptSource {
+  const merged: Record<string, unknown> = { ...base };
+  for (const [key, value] of Object.entries(full)) {
+    if (value == null || value === "") continue;
+    if (Array.isArray(value) && value.length === 0) continue;
+    merged[key] = value;
+  }
+  return merged as OrderReceiptSource;
+}
+
+/**
+ * Arguments for the checkout-success receipt download.
+ * Profile activity passes `hydratePricing` so a short invoice is filled
+ * from the same order record before that download runs.
+ */
+export async function shopperReceiptDownload({
+  order,
+  user,
+  guest,
+  sellerLogoUrl,
+  sellerName,
+  hydratePricing = false,
+}: {
+  order?: OrderReceiptSource | null;
+  user?: OrderReceiptPerson | null;
+  guest?: OrderReceiptPerson | null;
+  sellerLogoUrl?: string | null;
+  sellerName?: string | null;
+  hydratePricing?: boolean;
+}): Promise<{
+  order: OrderReceiptSource;
+  purchaser: OrderReceiptPurchaser;
+  sellerLogoUrl?: string | null;
+  sellerName?: string | null;
+}> {
+  if (!order) throw new Error("Receipt unavailable");
+  let source = order;
+  let purchaser = receiptPurchaserFromSources({ user, guest, order });
+  const needsName = !purchaser.firstName && !purchaser.lastName;
+  const orderId = String(order.orderId || "");
+  if (orderId && (hydratePricing || needsName)) {
+    try {
+      const res = await getOrder(orderId);
+      const fetched = normalizeOrderPayload(res.data) as OrderReceiptSource;
+      if (hydratePricing) {
+        const merged = mergeReceiptOrder(order, fetched);
+        if (receiptPricingScore(merged) >= receiptPricingScore(source)) {
+          source = merged;
+        }
+      }
+      purchaser = receiptPurchaserFromSources({
+        user,
+        guest,
+        order: hydratePricing ? source : fetched,
+      });
+    } catch {
+      /* keep the order already on the page */
+    }
+  }
+  if (hydratePricing && receiptPricingScore(source) < 4) {
+    const intentId =
+      paymentIntentIdFromOrder(source) || paymentIntentIdFromOrder(order);
+    if (intentId) {
+      try {
+        const fetched = (await fetchCompletedOrder(intentId)) as OrderReceiptSource;
+        const merged = mergeReceiptOrder(source, fetched);
+        if (receiptPricingScore(merged) > receiptPricingScore(source)) {
+          source = merged;
+          purchaser = receiptPurchaserFromSources({ user, guest, order: source });
+        }
+      } catch {
+        /* the list invoice is still enough to download */
+      }
+    }
+  }
+  const branding = checkoutBrandingFromCart(
+    source as CheckoutCartBrandingSource,
+  );
+  return {
+    order: source,
+    purchaser,
+    sellerLogoUrl:
+      sellerLogoUrl !== undefined ? sellerLogoUrl : branding.theme.brandLogoSrc,
+    sellerName: sellerName !== undefined ? sellerName : branding.orgLabel,
+  };
 }
 
 /** Builds a PDF from the invoice HTML and downloads it. */
