@@ -480,7 +480,7 @@ describe("Login page create account", { timeout: 20_000 }, () => {
     user: ReturnType<typeof userEvent.setup>,
     number: string,
   ) {
-    const input = screen.getByLabelText(/mobile number/i);
+    const input = screen.getByRole("textbox", { name: /mobile number/i });
     await user.click(input);
     fireEvent.change(input, { target: { value: number } });
   }
@@ -502,7 +502,7 @@ describe("Login page create account", { timeout: 20_000 }, () => {
     const emailField = screen.getByLabelText(/email address/i);
     expect(emailField).toBeDisabled();
     expect(emailField).toHaveValue(DEMO_USER.email);
-    expect(screen.getByLabelText(/mobile number/i)).toHaveFocus();
+    expect(screen.getByRole("textbox", { name: /mobile number/i })).toHaveFocus();
   });
 
   it("requires first name, last name, phone, and date of birth", async () => {
@@ -522,7 +522,7 @@ describe("Login page create account", { timeout: 20_000 }, () => {
     const user = userEvent.setup();
     await openCreateAccount(user);
 
-    await user.click(screen.getByLabelText(/mobile number/i));
+    await user.click(screen.getByRole("textbox", { name: /mobile number/i }));
     await user.tab();
     expect(screen.queryByText(PHONE_ERROR.required)).not.toBeInTheDocument();
 
@@ -704,6 +704,7 @@ describe("Login page create account", { timeout: 20_000 }, () => {
           lastName: DEMO_USER.lastName,
           phoneNumber: DEMO_USER.phoneNumber,
           dob: DEMO_USER.dob,
+          smsOptIn: false,
         },
       });
     });
@@ -718,6 +719,31 @@ describe("Login page create account", { timeout: 20_000 }, () => {
       },
       { timeout: 1500 },
     );
+  });
+
+  it("sends SMS opt-in when the signup checkbox is checked", async () => {
+    const user = userEvent.setup();
+    await openCreateAccount(user);
+
+    await user.type(screen.getByLabelText(/first name/i), DEMO_USER.firstName);
+    await user.type(screen.getByLabelText(/last name/i), DEMO_USER.lastName);
+    await fillMobile(user, DEMO_USER.phoneNumber);
+    await user.type(screen.getByLabelText(/birth date/i), DEMO_USER.dob);
+    await user.click(screen.getByRole("checkbox"));
+    await user.click(screen.getByRole("button", { name: /sign up/i }));
+
+    await waitFor(() => {
+      expect(mockedCreateNewUser).toHaveBeenCalledWith({
+        data: {
+          email: DEMO_USER.email,
+          firstName: DEMO_USER.firstName,
+          lastName: DEMO_USER.lastName,
+          phoneNumber: DEMO_USER.phoneNumber,
+          dob: DEMO_USER.dob,
+          smsOptIn: true,
+        },
+      });
+    });
   });
 
   it("returns to the last page after signup when login has no from param", async () => {

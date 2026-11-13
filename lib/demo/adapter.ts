@@ -23,6 +23,7 @@ import {
   demoPackageAccessPass,
   demoPublicMenu,
   demoSeasonPackage,
+  demoSmsTickets,
   demoTicketGroups,
   demoWalletListings,
 } from "./fixtures";
@@ -872,12 +873,96 @@ const routes: Route[] = [
     },
   },
 
+  {
+    methods: ["get"],
+    match: (path) =>
+      /\/orders\/sms-tickets\/[^/]+\/apple-passes$/.test(path.split("?")[0]),
+    handle: () => ({
+      data: new Blob(["demo-passes"], {
+        type: "application/vnd.apple.pkpasses",
+      }),
+    }),
+  },
+  {
+    methods: ["get"],
+    match: (path) =>
+      /\/orders\/sms-tickets\/[^/]+\/google-passes$/.test(path.split("?")[0]),
+    handle: () => ({
+      data: { url: "https://pay.google.com/gp/v/save/demo-sms" },
+    }),
+  },
+  {
+    methods: ["get"],
+    match: (path) => /\/orders\/sms-tickets\/[^/]+$/.test(path.split("?")[0]),
+    handle: (path) => {
+      const token = decodeURIComponent(lastSeg(path));
+      if (token === "expired") return { data: null, status: 410 };
+      return { data: demoSmsTickets() };
+    },
+  },
+
+  {
+    methods: ["get"],
+    match: (path) => /\/public\/surveys\/[^/]+$/.test(path.split("?")[0]),
+    handle: () => ({
+      data: {
+        title: "Game day",
+        state: "open",
+        responseMode: "anonymous",
+        completionMessage: "Your response has been recorded.",
+        questions: [
+          {
+            uuid: "q1",
+            type: "short_text",
+            title: "How was the game?",
+            required: false,
+            configuration: {},
+          },
+        ],
+        logic: [],
+      },
+    }),
+  },
+  {
+    methods: ["post"],
+    match: (path) => path.split("?")[0].endsWith("/public/surveys/unsubscribe"),
+    handle: () => ({ data: { ok: true } }),
+  },
+  {
+    methods: ["post"],
+    match: (path) => /\/public\/surveys\/[^/]+\/start$/.test(path.split("?")[0]),
+    handle: () => ({ data: { state: "started" } }),
+  },
+  {
+    methods: ["post"],
+    match: (path) =>
+      /\/public\/surveys\/[^/]+\/responses$/.test(path.split("?")[0]),
+    handle: () => ({ data: { state: "completed" } }),
+  },
+
   // ---- Login (any code works) ----
   { methods: ["post"], match: endsWith("/registration/validate-email"), handle: () => ({ data: { verdict: "Valid" } }) },
   { methods: ["post"], match: endsWith("/verifies/emailValid"), handle: () => ({ data: { verdict: "Valid" } }) },
   { methods: ["post"], match: endsWith("/verifies/phone-unique"), handle: () => ({ data: { unique: true } }) },
   { methods: ["post"], match: endsWith("/verifies/by-phone-or-email"), handle: () => ({ data: DEMO_SESSION }) },
   { methods: ["post"], match: endsWith("/verifies/newUser"), handle: () => ({ data: DEMO_SESSION }) },
+  {
+    methods: ["post"],
+    match: endsWith("/verifies/sms-opt-in"),
+    handle: (_path, config) => {
+      const body = parseBody(config);
+      const data =
+        body.data && typeof body.data === "object"
+          ? (body.data as { smsOptIn?: unknown })
+          : {};
+      return {
+        data: {
+          ...DEMO_SESSION,
+          user: { ...DEMO_SESSION.user, smsOptIn: data.smsOptIn === true },
+        },
+      };
+    },
+  },
   { methods: ["post"], match: endsWith("/verifies"), handle: () => ({ data: { status: "sent" } }) },
 ];
 

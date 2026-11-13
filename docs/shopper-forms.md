@@ -2,20 +2,20 @@
 
 This is how shopper-facing forms behave across the site.
 
-In every form below, **the primary button stays clickable when a field is empty or mistyped**, except checkout **Apply**, which stays disabled until a promo code is entered. Pressing the button or Enter always checks the values that are actually in the fields right then. A request is sent only after those local checks pass.
+In every validated form below, **the primary button stays clickable when a field is empty or mistyped**, except checkout **Apply**, which stays disabled until a promo code is entered, and transfer **Next**, which stays disabled until the recipient email is non-empty. Pressing an enabled button, or Enter in a form, checks the values that are actually in the fields right then. A request is sent only after those local checks pass.
 
-### Blur and submit (all text fields)
+### Blur and submit
 
-Every shopper text field — email, phone, names, date of birth, access code, promo code, and the rest — follows the same contract:
+Every validated shopper text field — email, phone, names, date of birth, access code, promo code, and the rest — follows the same contract. Profile edits do not. The donation amount is checked only on submit:
 
 - **Idle blur (empty field):** no error. The shopper can tab away without seeing required copy.
 - **Idle blur (filled field):** if what they typed is wrong, show the field’s invalid copy immediately. Whitespace-only counts as empty on blur.
 - **Submit or Enter:** re-check every field from the form, whether or not blur already ran. Empty required fields show required copy. Typed-but-wrong fields show invalid copy.
-- **API rejections** (wrong access code, rejected promo, existing phone): the server message stays visible on blur until the shopper edits the field. Connection problems behave the same way.
+- **API rejections** (wrong access code, rejected promo): the server message stays visible on blur until the shopper edits the field. Connection problems behave the same way. An existing-phone rejection does not: leaving the phone field re-runs the format check and clears that message when the number is valid.
 
 Shared rules and copy live in `lib/fieldValidation.ts`. Login flowcharts are in `docs/login-validations.mmd`, `docs/code-validations.mmd`, and `docs/create-account-validations.mmd`. Guest checkout contact is in `docs/guest-contact-validations.mmd`. Checkout payment is in `docs/payment-validations.mmd`. Promo code is in `docs/promo-code-validations.mmd`.
 
-Buttons still grey out when something operational is in the way: a request already in progress, an action that already succeeded, payment not ready, sold out, no tickets selected, personal details that have not changed, or Apply with no promo code.
+Buttons still grey out when something operational is in the way: a request already in progress, an action that already succeeded, payment not ready, sold out, or no tickets selected. Apply also stays disabled with no promo code, and transfer Next stays disabled with no recipient email.
 
 A field with an error is outlined in red only while it does not have the cursor. The moment it is focused, the outline is the brand colour (Blocktickets lime, or the org colour on an org-branded page). The error copy under the field stays.
 
@@ -60,48 +60,36 @@ Shoppers type email, first name, and last name, then **Continue to payment** or 
 - A 400 from email check or payment start stays on this form: “We could not start your checkout. Please check your details and try again.”
 - Success continues into payment.
 
-## Waitlist and Remind me
+## Remind me
 
-Shoppers type an email in the ticket modal (or the sold-out event box) and press **Join waitlist**, **Set reminder**, or **Get Notified**, or Enter.
+A sold-out offer shows **Sold out** and does not collect an email. On a scheduled offer, shoppers press **Remind me**, type an email, and press **Set reminder** or Enter.
 
 - The button is never greyed out just because the email is empty.
 - Empty blur is quiet. A filled invalid email shows invalid-email copy on blur.
-- Empty submit shows “Email address is required.” and does not join.
-- Typed invalid submit shows the same invalid-email copy and does not join.
-- Success confirms they will be emailed if tickets return or when sales open.
+- Empty submit shows “Email address is required.” and does not set a reminder.
+- Typed invalid submit shows the same invalid-email copy and does not set a reminder.
+- Success says the reminder is set and they will be emailed before that event goes on sale.
 
 ## Transfer email
 
-Shoppers pick tickets first (that step stays blocked until at least one ticket is selected). Then they type a recipient email and press **Continue** / **Next** or Enter.
+Shoppers pick tickets first (that step stays blocked until at least one ticket is selected). A pass transfer opens on the email step. They type a recipient email and press **Next** or Enter.
 
 - Empty blur is quiet. A filled invalid email shows invalid-email copy on blur.
-- Empty submit shows required copy. Typed invalid submit shows invalid-email copy. The transfer is not sent in either case.
-- They cannot send tickets to their own address.
+- **Next** stays disabled until the email is non-empty, so that button does not show required copy for an empty field. Enter in the field still does: empty shows required copy, and a typed invalid email shows invalid-email copy. The transfer is not sent in either case.
+- They cannot send tickets or a pass to their own address.
 - After a valid email they confirm, then the transfer is sent.
 
 ## Donate
 
 Shoppers pick or type an amount, optionally a name and email, then **Continue to payment** or Enter.
 
-- Amount must be greater than zero.
+- The amount has no blur check. Zero or less shows “Select or enter a donation amount.” only after **Continue to payment** or Enter, and checkout does not start.
 - Unless they donate anonymously, email follows the same blur and submit rules as sign-in. Name may be blank but cannot include digits while typing.
-- Success opens the payment step. Pay stays blocked until Stripe is ready.
+- Success opens the payment step. **Complete donation** stays blocked until Stripe is ready.
 
-## Personal details
+## Profile details
 
-Shoppers change email, first name, and last name.
-
-- **Update** stays greyed out until something actually changed.
-- Once dirty, it stays clickable even if the email looks wrong. Email uses the same empty-quiet / invalid-on-blur / full re-check on submit pattern as sign-in.
-- Success shows that details were saved.
-
-## Phone update
-
-Shoppers enter a new phone and press **Update phone number** or Enter. Uniqueness is checked on submit, not when they leave the field.
-
-- Empty blur is quiet. Format and required checks run on submit.
-- If the number is already in use they see the existing-phone copy.
-- Otherwise a six-digit code is sent. Entering all six digits finishes the update.
+Name, email, phone, and address each open a **Save** box. This is not a validated form: Save stays clickable even when nothing changed, and email and phone are not checked. Save updates that row on the page and shows “{field} updated”. It does not check whether the phone is already in use, and it does not send a code.
 
 ## Promo code
 
@@ -128,7 +116,8 @@ Shoppers type row and seat, then **Continue** or Enter.
 
 ## Listing price
 
-Shoppers type an asking price and press **Save** or Enter.
+In the sell flow, shoppers type an asking price and press **Payout summary** or Enter. Editing an existing listing uses **Save**, and Enter in that field does not submit.
 
-- Save stays clickable while a request is not already running.
-- A price of zero or less shows “Enter a price greater than 0.” and is not saved.
+- Both buttons stay clickable while a request is not already running. Empty blur is quiet.
+- Empty, zero, or less on submit — and zero or less on blur — shows “Enter a price greater than 0.” and does not continue.
+- When the event has a resale minimum, a price below that floor shows “Asking price must be at least {amount}.” on blur and on submit, and does not continue.

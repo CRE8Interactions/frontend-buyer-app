@@ -584,6 +584,19 @@ export function purchaseTabTitle(source?: {
  * Keep a purchase tab in place. The site title is applied again after the
  * confirmation page renders, which would otherwise replace this one.
  */
+/** Public survey tab title. Empty until the org name is known. */
+export function surveyTabTitle(orgName?: string | null): string {
+  const name = clean(orgName);
+  if (!name) return "";
+  return `Survey - ${name}`;
+}
+
+/** Survey unsubscribe tab title. Falls back to the bare page name without an org. */
+export function unsubscribeTabTitle(orgName?: string | null): string {
+  const name = clean(orgName);
+  return name ? `Unsubscribe - ${name}` : "Unsubscribe";
+}
+
 export function holdDocumentTitle(title: string): () => void {
   if (!title || typeof document === "undefined") return () => undefined;
   const apply = () => {

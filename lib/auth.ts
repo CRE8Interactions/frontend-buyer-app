@@ -9,6 +9,7 @@ export type AuthUser = {
   lastName?: string;
   phoneNumber?: string;
   dob?: string;
+  smsOptIn?: boolean;
   role?: { name?: string };
   [key: string]: unknown;
 };

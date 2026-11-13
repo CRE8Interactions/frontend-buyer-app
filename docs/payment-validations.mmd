@@ -8,21 +8,15 @@
 
 %%         Stripe Payment Element (confirmPayment)
 
-%%
-
 %% Guest contact is documented in docs/guest-contact-validations.mmd.
 
 %% Promo code is documented in docs/promo-code-validations.mmd.
-
-%%
 
 %% Intent is created for a signed-in shopper on checkout load, or after guest
 
 %% contact succeeds. Pay stays disabled until Stripe reports complete.
 
 %% Checkout does not call elements.submit() — that rejects confirmPayment.
-
-%%
 
 %% --- Checkout load (before intent) ---
 
@@ -31,8 +25,6 @@
 %% | (no cart) | Missing cart id / empty cart | No cart found. Please select tickets again. |
 
 %% | Missing event on a ticket cart | Intent cannot be created | Unable to load checkout. Please try again. |
-
-%%
 
 %% --- POST /payment/intent ---
 
@@ -43,8 +35,6 @@
 %% | 404 / 410 | Cart missing or abandoned | (leave checkout — cart gone) |
 
 %% | 500 / other | (any other) | Unable to load checkout. Please try again. |
-
-%%
 
 %% --- Pay — POST /orders/process then stripe.confirmPayment ---
 
@@ -59,8 +49,6 @@
 %% 410 opens the Cart expired popup — the same one as the hold countdown.
 
 %% A Stripe throw has no response body; copy is the Stripe message or Card declined.
-
-%%
 
 %% | Step | Source | Displayed copy |
 

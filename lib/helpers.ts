@@ -271,6 +271,8 @@ export const RESERVED_ORG_SLUGS = new Set([
   "design-system",
   "e",
   "venue",
+  "t",
+  "tickets",
 ]);
 
 export const isOrganizationLandingPage = (url: string) => {

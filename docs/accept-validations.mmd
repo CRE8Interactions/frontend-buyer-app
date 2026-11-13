@@ -1,11 +1,11 @@
 %% Accept incoming transfer — Blocktickets API errors
 %% Source: components/organisms/SeasonTickets.tsx, lib/acceptTransferErrors.ts, lib/fieldValidation.ts
 %% API:    blocktickets/tickets/src/api/ticket-transfer/controllers/ticket-transfer.js (acceptTransfer)
-%%
+
 %% Request body: { transferId }
 %% Response shape: 226 → { error: { message } } | 200 → success body
 %% 226 is HTTP IM Used (2xx), so axios resolves it; treat it as already claimed, not success.
-%%
+
 %% --- Blocktickets POST /ticket-transfers/accept API responses ---
 %% | Status | API message | Displayed copy |
 %% | 200 | (success) | Close popup + "Transfer accepted" toast |

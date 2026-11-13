@@ -1,31 +1,31 @@
 %% Sell tickets — wallet resale listing
 %% Source: components/organisms/SeasonTickets.tsx, lib/walletListings.ts, lib/sellModalCopy.ts, lib/fieldValidation.ts
 %% API:    POST /listings, PUT /listings/:id, DELETE /listings/:id
-%%
+
 %% --- Blur — asking price (empty quiet) ---
 %% | Field | Empty blur | Non-empty invalid |
 %% | Asking price | (no error) | Enter a price greater than 0. / Asking price must be at least {face × (1 + resaleMinimumPercent / 100)}. |
-%%
+
 %% --- Submit — Set price (step 2) ---
 %% | Step | Empty | Not > 0 | Below resale minimum (when set) |
 %% | Client | Enter a price greater than 0. | Enter a price greater than 0. | Asking price must be at least {floor}. |
-%%
+
 %% Seller fee = secondaryServiceFeeSeller × asking price (not face). Payout summary is after a valid price and does not POST.
-%%
+
 %% --- POST /listings ---
 %% | Status | API message | Displayed copy |
 %% | 200 | Listing created | Success step; tickets leave inventory in memory (no GET refetch) |
 %% | 4xx | (any) | We couldn't list those tickets. Please try again. |
 %% | network | (no response) | We're experiencing technical difficulties. Please try again later. |
 %% | 500 / other | (any other) | We're experiencing technical difficulties. Please try again later. |
-%%
+
 %% --- PUT /listings/:id ---
 %% | Status | API message | Displayed copy |
 %% | 200 | askingPrice patched | Asking price updated in memory (no GET) |
 %% | 4xx | (any) | We couldn't update that listing. Please try again. |
 %% | network | (no response) | We're experiencing technical difficulties. Please try again later. |
 %% | 500 / other | (any other) | We're experiencing technical difficulties. Please try again later. |
-%%
+
 %% --- DELETE /listings/:id ---
 %% | Status | API message | Displayed copy |
 %% | 200 | Listing deleted | Close popup + "Listing removed" toast; restore tickets in memory (no GET) |
