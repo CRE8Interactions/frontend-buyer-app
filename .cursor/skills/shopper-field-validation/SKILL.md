@@ -29,8 +29,11 @@ code should import from `lib/fieldValidation.ts`.
 
 1. Wrap shopper text actions in `<form noValidate onSubmit>`. Primary CTA is
    `type="submit"`. Cancel / Back are `type="button"`.
-2. Field completeness never disables submit. Disable only for busy, succeeded,
-   missing Stripe, sold out, no tickets selected, or unchanged settings.
+2. Field completeness never disables submit, except checkout Apply (disabled
+   until a promo code is entered) and transfer Next (disabled until the
+   recipient email is non-empty). Otherwise disable only for busy, succeeded,
+   missing Stripe, sold out, or no tickets selected. Profile Save stays
+   clickable when nothing changed and does not validate.
 3. Enter and click must run the **same** submit handler. Do not add per-input
    `onKeyDown` Enter handlers.
 4. On submit, read `FormData` with `formString` / `submittedEmail` (Safari

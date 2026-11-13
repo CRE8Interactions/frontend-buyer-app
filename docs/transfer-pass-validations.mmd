@@ -8,8 +8,6 @@
 
 %%         blocktickets/tickets/src/api/ticket-transfer/controllers/ticket-transfer.js (create, accessPassId)
 
-%%
-
 %% Blur: optional hint on a non-empty email only. Empty blur is quiet. SendGrid is not called.
 
 %% Submit: validateSubmittedEmail — trim, empty, blocked/syntax, then POST /registration/validate-email.
@@ -20,15 +18,11 @@
 
 %% "access pass" or "season pass".
 
-%%
-
 %% --- Blur — client hint (non-empty only) ---
 
 %% | Field | Empty blur | Non-empty invalid |
 
 %% | Email | (no error) | Email is invalid. Please try again. |
-
-%%
 
 %% --- Submit — validateSubmittedEmail (before self-transfer check) ---
 
@@ -38,13 +32,9 @@
 
 %% | POST /registration/validate-email | — | 402 Bad email → Email is invalid. Please try again. | 200 Valid → ok |
 
-%%
-
 %% --- Client-only (after validateSubmittedEmail ok) ---
 
 %% Self-transfer (both pass types): This pass is already assigned to this email address.
-
-%%
 
 %% --- POST /registration/validate-email ---
 
@@ -59,8 +49,6 @@
 %% | 402 | Bad email | Email is invalid. Please try again. |
 
 %% | 500 / other | (any other) | We're experiencing technical difficulties. Please try again later. |
-
-%%
 
 %% --- POST /ticket-transfers (accessPassId) ---
 

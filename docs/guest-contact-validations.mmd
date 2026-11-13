@@ -8,15 +8,11 @@
 
 %%         blocktickets POST /payment/intent (after this form ok)
 
-%%
-
 %% Blur: optional hint on a non-empty field only. Empty blur is quiet.
 
 %% Submit: names are checked locally; email uses validateSubmittedEmail.
 
 %% Continue stays clickable when a field is empty.
-
-%%
 
 %% --- Blur ---
 
@@ -28,8 +24,6 @@
 
 %% | Last name | (no error) | Letters only — no digits. |
 
-%%
-
 %% --- Submit — client (before / with validateSubmittedEmail) ---
 
 %% | Field | Empty | Non-empty invalid |
@@ -39,8 +33,6 @@
 %% | First name | First name is required. | Letters only — no digits. |
 
 %% | Last name | Last name is required. | Letters only — no digits. |
-
-%%
 
 %% --- POST /registration/validate-email ---
 
@@ -54,15 +46,11 @@
 
 %% | 500 / other | (any other) | We're experiencing technical difficulties. Please try again later. |
 
-%%
-
 %% --- POST /payment/intent ---
 
 %% GuestContact maps 400 to start-failed copy. Other intent errors are rethrown
 
 %% and handled by checkout (same as signed-in intent).
-
-%%
 
 %% | Status | API meaning | Displayed copy |
 

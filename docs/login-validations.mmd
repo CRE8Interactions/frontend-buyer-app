@@ -6,23 +6,17 @@
 
 %%         blocktickets/tickets/src/api/verify/controllers/verify.js (create → POST /verifies)
 
-%%
-
 %% Blur: optional hint on a non-empty field only. Empty blur is quiet (no required copy). SendGrid is not called.
 
 %% Submit: validateSubmittedEmail — trim, empty, blocked/syntax, then POST /registration/validate-email.
 
 %% Login maps 400 startFailed to the network banner, not invalid-email copy.
 
-%%
-
 %% --- Blur — client hint (non-empty only) ---
 
 %% | Field | Empty blur | Non-empty invalid |
 
 %% | Email | (no error) | Email is invalid. Please try again. |
-
-%%
 
 %% --- Submit — validateSubmittedEmail (before POST /verifies) ---
 
@@ -31,8 +25,6 @@
 %% | Client | Email address is required. | Email is invalid. Please try again. | — |
 
 %% | POST /registration/validate-email | — | 402 Bad email → Email is invalid. Please try again. | 200 Valid → ok |
-
-%%
 
 %% --- POST /registration/validate-email ---
 
@@ -47,8 +39,6 @@
 %% | 402 | Bad email | Email is invalid. Please try again. |
 
 %% | 500 / other | (any other) | We're experiencing technical difficulties. Please try again later. |
-
-%%
 
 %% --- POST /verifies (verifyUser — send OTP) ---
 

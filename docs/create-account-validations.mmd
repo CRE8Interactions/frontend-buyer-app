@@ -4,8 +4,6 @@
 
 %% API:    blocktickets/tickets/src/api/verify/controllers/verify.js (newUser → POST /verifies/newUser)
 
-%%
-
 %% Blur: optional hint on a non-empty field only. Empty blur is quiet (no required copy).
 
 %% Submit: every field is checked. All failing fields show their message at once (no stop at first error).
@@ -13,8 +11,6 @@
 %% Empty field → required copy. Non-empty field → format / validation copy for that field.
 
 %% Email is disabled on this step (set in Step 0) — blur and submit re-check only on submit.
-
-%%
 
 %% --- Blur — client hints (non-empty fields only) ---
 
@@ -30,8 +26,6 @@
 
 %% | Email | (disabled — no blur) | — |
 
-%%
-
 %% --- Submit — client checks (before API) ---
 
 %% | Field | Empty (required) | Non-empty invalid |
@@ -45,8 +39,6 @@
 %% | Date of birth | Date of birth is required. | Date of birth is incorrect. Make sure it is in the correct format: MM/DD/YYYY |
 
 %% | Email (from Step 0, re-checked on submit) | Email address is required. | Email is invalid. Please try again. |
-
-%%
 
 %% --- POST /verifies/newUser (createNewUser) ---
 
