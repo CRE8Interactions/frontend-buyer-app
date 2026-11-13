@@ -58,7 +58,10 @@ export type TicketGroup = {
   accessiblityType?: string;
   accessibilityType?: string;
   resale?: boolean;
+  on_sale_status?: string;
   listing?: {
+    id?: string | number | null;
+    quantity?: number | null;
     askingPrice?: number | null;
     offer?: { freeOffer?: boolean } | null;
   } | null;

@@ -29,6 +29,9 @@ export type EventLike = {
   venue?: VenueLike;
   enableTransfers?: boolean;
   enableResale?: boolean;
+  resaleMinimum?: number;
+  resaleMinimumPercent?: number;
+  secondaryServiceFeeSeller?: number;
   organization?:
     | (BrandingOrganization & {
         email_logo?: ApiImage;
@@ -484,13 +487,27 @@ export function ticketSectionValue(
 
 /**
  * Map seat popups keep a name that already says Section.
- * A bare number still gets a Sec prefix.
+ * A bare number or a number-led name ("208 Rail") gets a Sec prefix.
+ * A multi-word name that starts with a word ("Suite 303") reads on its own.
  */
 export function mapSectionHeading(value: unknown): string {
   const text = String(value ?? "").trim();
   if (!text) return "";
   if (/^(?:section|sec)\b/i.test(text)) return text;
+  if (/\s/.test(text) && !/^\d/.test(text)) return text;
   return `Sec ${text}`;
+}
+
+/**
+ * Seated section label: the seatmap name ("Suite 303", "208 Rail") first, and
+ * the sectionNumber id ("SUITE_303", "208_R") only when the name is empty.
+ */
+export function seatedSectionName(
+  source?: { sectionName?: unknown; sectionNumber?: unknown } | null,
+): string {
+  const name = String(source?.sectionName ?? "").trim();
+  const number = String(source?.sectionNumber ?? "").trim();
+  return sectionDisplayValue(name || number);
 }
 
 /** Drop a leading "Sec" or "Section" so a Sec label is not repeated. */

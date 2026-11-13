@@ -7,6 +7,7 @@ import BrandedActionButton, {
   ButtonBusyContents,
 } from "@/components/atoms/BrandedActionButton";
 import AccessibleSeatingBadge from "@/components/atoms/AccessibleSeatingBadge";
+import VerifiedResaleBadge from "@/components/atoms/VerifiedResaleBadge";
 import RouteLoader from "@/components/molecules/RouteLoader";
 import MobileStickyFooter from "@/components/molecules/MobileStickyFooter";
 import { ShopperFluidTypeStyles } from "@/components/templates/ShopperFluidType";
@@ -16,10 +17,8 @@ import {
   checkoutBrandingFromCart,
   type CheckoutCartBrandingSource,
 } from "@/lib/checkoutBranding";
-import { getOrder } from "@/lib/api";
 import {
   fetchCompletedOrder,
-  normalizeOrderPayload,
   type OrderData,
   type OrderEvent,
 } from "@/lib/completedOrder";
@@ -37,10 +36,7 @@ import { getGuestCheckoutBuyer } from "@/lib/guestCheckout";
 import { hideIntercomLauncher } from "@/lib/intercom";
 import { cacheOrgBranding } from "@/lib/orgBrandingCache";
 import {
-  completedOrderPromoName,
-  orderPrimaryFeeBreakdown,
-  primaryTicketFeeSummaryRows,
-  promoSummaryLabel,
+  completedOrderResaleSummary,
   resolveCompletedOrderFees,
   ticketSelectionSummary,
 } from "@/lib/ticketSummary";
@@ -63,8 +59,9 @@ import {
   waitUntilOrderPaymentDetailsReady,
 } from "@/lib/orderPayment";
 import {
+  buildOrderReceipt,
   downloadOrderReceipt,
-  receiptPurchaserFromSources,
+  shopperReceiptDownload,
 } from "@/lib/orderReceipt";
 import {
   clearStripePaymentSyncMark,
@@ -290,10 +287,7 @@ function CheckoutSuccessPage() {
   const accent = branding.theme.accent || BLOCKTICKETS_NAVY;
 
   const orderFees = resolveCompletedOrderFees(order);
-  const itemizedFeeRows = (() => {
-    const breakdown = orderPrimaryFeeBreakdown(order);
-    return breakdown ? primaryTicketFeeSummaryRows(breakdown) : null;
-  })();
+  const receiptSummary = buildOrderReceipt(order);
   const flexVoucherCount = flexPackVoucherCount(
     order?.flex_pack?.gameTickets ?? order?.vouchers?.length,
   );
@@ -306,26 +300,15 @@ function CheckoutSuccessPage() {
     setReceiptMsg("");
     setDownloadingReceipt(true);
     try {
-      const guest = getGuestCheckoutBuyer();
-      let purchaser = receiptPurchaserFromSources({ user, guest, order });
-      if (!purchaser.firstName && !purchaser.lastName && order.orderId) {
-        try {
-          const res = await getOrder(String(order.orderId));
-          purchaser = receiptPurchaserFromSources({
-            user,
-            guest,
-            order: normalizeOrderPayload(res.data),
-          });
-        } catch {
-          /* keep the page / guest / slim-order name */
-        }
-      }
-      await downloadOrderReceipt({
-        order,
-        purchaser,
-        sellerLogoUrl: branding.theme.brandLogoSrc,
-        sellerName: branding.orgLabel,
-      });
+      await downloadOrderReceipt(
+        await shopperReceiptDownload({
+          order,
+          user,
+          guest: getGuestCheckoutBuyer(),
+          sellerLogoUrl: branding.theme.brandLogoSrc,
+          sellerName: branding.orgLabel,
+        }),
+      );
     } catch {
       setReceiptMsg("Could not download receipt.");
     } finally {
@@ -400,6 +383,12 @@ function CheckoutSuccessPage() {
       : {}),
     seatedGaSection: showsNamedGaSectionTicketCount(tickets, order?.event),
   });
+  const purchase = completedOrderResaleSummary(order);
+  // Package default offer and ticket names win; a sold resale falls back to its listing offer.
+  const offerPillName = ticketSummary.offerName || purchase.offerName;
+  const receiptFeeRows = (receiptSummary?.totals || []).filter(
+    (row) => !row.strong && !row.amountDue,
+  );
   const thumbSrc = imageUrl(
     order?.package?.image || order?.flex_pack?.image || event?.image,
     branding.theme.logoSrc,
@@ -570,44 +559,13 @@ function CheckoutSuccessPage() {
                 Order summary
               </div>
               <div className="flex flex-col gap-2.5">
-                {itemizedFeeRows ? (
-                  itemizedFeeRows.map((row) => (
-                    <SummaryRow
-                      key={row.label}
-                      label={row.label}
-                      value={formatCurrency(row.amount)}
-                    />
-                  ))
-                ) : (
-                  <>
-                    <SummaryRow
-                      label="Subtotal"
-                      value={formatCurrency(orderFees.subtotal)}
-                    />
-                    <SummaryRow label="Tax" value={formatCurrency(orderFees.tax)} />
-                    <SummaryRow
-                      label="Processing Fee"
-                      value={formatCurrency(orderFees.processingFee)}
-                    />
-                    <SummaryRow
-                      label="Service Fee"
-                      value={formatCurrency(orderFees.serviceFee)}
-                    />
-                    {orderFees.customFeeLines.map((line) => (
-                      <SummaryRow
-                        key={`${line.name}-${line.amount}`}
-                        label={line.name}
-                        value={formatCurrency(line.amount)}
-                      />
-                    ))}
-                  </>
-                )}
-                {order.discountApplied ? (
+                {receiptFeeRows.map((row) => (
                   <SummaryRow
-                    label={promoSummaryLabel(completedOrderPromoName(order))}
-                    value={`-${formatCurrency(order.discountApplied)}`}
+                    key={`${row.label}-${row.amount}`}
+                    label={row.label}
+                    value={row.amount}
                   />
-                ) : null}
+                ))}
               </div>
               <div className="h-px bg-[rgba(5,27,53,0.08)]" />
               <div className="flex items-baseline justify-between gap-3">
@@ -664,23 +622,28 @@ function CheckoutSuccessPage() {
                   />
                 </div>
                 <div className="flex min-w-0 flex-1 flex-col gap-1.5">
-                  {ticketSummary.offerName ? (
-                    <span
-                      className="inline-flex w-fit items-center gap-1.5 rounded-full px-3 py-1 text-[13px] font-semibold"
-                      style={{
-                        background: `color-mix(in srgb, ${accent} 16%, white)`,
-                        color: accent,
-                      }}
-                    >
-                      <svg
-                        viewBox="0 0 24 24"
-                        fill="currentColor"
-                        className="h-3 w-3"
-                        aria-hidden
-                      >
-                        <path d="M12 2.5l2.6 6.3 6.9.6-5.2 4.5 1.6 6.7L12 16.9 6.1 20.6l1.6-6.7L2.5 9.4l6.9-.6L12 2.5z" />
-                      </svg>
-                      {ticketSummary.offerName}
+                  {offerPillName || purchase.resale ? (
+                    <span className="flex flex-wrap items-center gap-2">
+                      {offerPillName ? (
+                        <span
+                          className="inline-flex w-fit items-center gap-1.5 rounded-full px-3 py-1 text-[13px] font-semibold"
+                          style={{
+                            background: `color-mix(in srgb, ${accent} 16%, white)`,
+                            color: accent,
+                          }}
+                        >
+                          <svg
+                            viewBox="0 0 24 24"
+                            fill="currentColor"
+                            className="h-3 w-3"
+                            aria-hidden
+                          >
+                            <path d="M12 2.5l2.6 6.3 6.9.6-5.2 4.5 1.6 6.7L12 16.9 6.1 20.6l1.6-6.7L2.5 9.4l6.9-.6L12 2.5z" />
+                          </svg>
+                          {offerPillName}
+                        </span>
+                      ) : null}
+                      {purchase.resale ? <VerifiedResaleBadge /> : null}
                     </span>
                   ) : null}
                   <div className="font-semibold tracking-[-0.025em] [font-size:22px]">

@@ -282,5 +282,18 @@ describe("wallet loader paths", () => {
     ).toBeNull();
     expect(isPlatformLoaderPath("/wallet/my-tickets/order/ord-1/")).toBe(true);
     expect(getLoaderBranding("/wallet/my-tickets/order/ord-1/")).toBeNull();
+    expect(isPlatformLoaderPath("/wallet/my-profile/")).toBe(true);
+    expect(isPlatformLoaderPath("/wallet/bank-account/")).toBe(true);
+    expect(isPlatformLoaderPath("/wallet/payouts/")).toBe(true);
+    expect(isPlatformLoaderPath("/wallet/my-profile/activity/")).toBe(true);
+    expect(isPlatformLoaderPath("/wallet/my-profile/bank-account/")).toBe(true);
+    expect(isPlatformLoaderPath("/wallet/my-profile/payouts/")).toBe(true);
+    expect(getLoaderBranding("/wallet/bank-account/")).toBeNull();
+    expect(getLoaderBranding("/wallet/payouts/")).toBeNull();
+    expect(isWalletAccountPath("/wallet/bank-account/")).toBe(true);
+    expect(isWalletAccountPath("/wallet/payouts/")).toBe(true);
+    expect(isWalletAccountPath("/wallet/my-profile/activity/")).toBe(true);
+    expect(isWalletAccountPath("/wallet/my-profile/bank-account/")).toBe(true);
+    expect(isWalletAccountPath("/wallet/my-profile/payouts/")).toBe(true);
   });
 });

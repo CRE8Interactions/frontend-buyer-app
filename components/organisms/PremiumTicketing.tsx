@@ -18,7 +18,7 @@ import BrandedActionButton from "@/components/atoms/BrandedActionButton";
 import LockIcon from "@/components/atoms/LockIcon";
 import Spinner from "@/components/atoms/Spinner";
 import { BrandedLoader } from "@/components/molecules/RouteLoader";
-import { Accessibility, Ticket } from "@/components/atoms/icons";
+import { Accessibility, Resale, Ticket } from "@/components/atoms/icons";
 import LoginLink from "@/components/molecules/LoginLink";
 import Modal from "@/components/molecules/Modal";
 import MobileStickyFooter from "@/components/molecules/MobileStickyFooter";
@@ -28,6 +28,7 @@ import ShopperBodyPortal from "@/components/templates/ShopperBodyPortal";
 import UnlockCodeDialog from "@/components/molecules/UnlockCodeDialog";
 import WaitlistEmailForm from "@/components/molecules/WaitlistEmailForm";
 import SectionLocatorThumb from "@/components/molecules/SectionLocatorThumb";
+import OfferChipScroller from "@/components/molecules/OfferChipScroller";
 import {
   ShopperSearchField,
   ShopperSearchProvider,
@@ -70,6 +71,7 @@ import {
   type QuantityRestrictionSource,
   type TicketingSort,
 } from "@/lib/ticketListings";
+import { cartTicketGroups } from "@/lib/listingSelection";
 import {
   accessibleLabelFromSeats,
   getAccessibleLabel,
@@ -77,7 +79,7 @@ import {
 } from "@/lib/ticketAccessibility";
 import { getSeatAdditionalLabel } from "@/lib/seatLabels";
 import { ERROR_COLOR, shopperShellVars } from "@/lib/branding";
-import { ORG_SCROLLBAR_CLASS, orgScrollbarCss } from "@/lib/orgScrollbar";
+import { orgScrollbarCss } from "@/lib/orgScrollbar";
 import {
   selectionOfferDescription,
 } from "@/lib/ticketSummary";
@@ -141,11 +143,7 @@ export type TicketingListing = {
   sectionId?: string;
   /** Strapi ticket-group payload used by place-tickets-into-cart */
   cartGroup?: Record<string, unknown>;
-  /**
-   * Position in the API payload, which arrives ordered by sort_order then id.
-   * Best-seat sort falls back to this when ranks tie or are missing.
-   */
-  sourceIndex?: number;
+  resale?: boolean;
 };
 
 export type TicketingData = {
@@ -245,6 +243,7 @@ export type GATier = {
   multipleOf?: number;
   onSaleAt?: string;
   cartGroup?: Record<string, unknown>;
+  resale?: boolean;
 };
 
 /**
@@ -348,6 +347,9 @@ const Star = ({ s = 14, filled = true }: { s?: number; filled?: boolean }) => (
     <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" />
   </svg>
 );
+/** A resale listing shows its offer pill only when the seller's listing belongs to an offer. */
+const listingHasOffer = (listing: { cartGroup?: Record<string, unknown> }) =>
+  Boolean(((listing.cartGroup?.offer as { name?: string } | undefined)?.name ?? "").trim());
 function OfferCodeCheckIcon() {
   return (
     <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden>
@@ -1018,6 +1020,8 @@ export default function PremiumTicketing({
   const zoneChips = useMemo(() => {
     const seen: string[] = [...(d.offerNames || [])];
     d.listings.forEach((l) => {
+      // A resale listing's zone is its seller's section, not an offer, so it never becomes a chip.
+      if (l.resale) return;
       const offer = (l.cartGroup as { offer?: { name?: string; isConnectedOffer?: boolean | null; isHidden?: boolean } })
         ?.offer;
       if (offer?.isHidden) return;
@@ -1235,6 +1239,7 @@ export default function PremiumTicketing({
     if (!groups.length) {
       throw new Error("Select tickets before checkout.");
     }
+    const ticketGroups = isGa ? groups : cartTicketGroups(groups);
     const res = isGa
       ? await placeGATicketsIntoCart({
           eventId: d.eventId,
@@ -1242,7 +1247,7 @@ export default function PremiumTicketing({
         })
       : await placeTicketsIntoCart({
           eventId: d.eventId,
-          ticketGroups: groups,
+          ticketGroups,
         });
     const cartId =
       (res.data as { cartId?: string | number; id?: string | number })?.cartId ??
@@ -1250,7 +1255,7 @@ export default function PremiumTicketing({
     if (cartId == null) {
       throw new Error("Cart could not be created. Please try again.");
     }
-    const qty = groups.reduce((sum, g) => sum + Number(g.quantity || 1), 0);
+    const qty = ticketGroups.reduce((sum, g) => sum + Number(g.quantity || 1), 0);
     setStoredCart(cartId, qty || 1);
     return String(cartId);
   }, [d.eventId, isGa]);
@@ -1343,6 +1348,18 @@ export default function PremiumTicketing({
 
   const card: React.CSSProperties = { background: "#fff", border: "1px solid rgba(5,27,53,0.10)", boxShadow: "0 1px 2px rgba(5,27,53,0.05)" };
   const pill = (bg: string, color: string): React.CSSProperties => ({ display: "inline-flex", alignItems: "center", gap: 7, background: bg, color, fontSize: fluidSize(13), fontWeight: 600, padding: "4px 12px", borderRadius: 999, whiteSpace: "nowrap" });
+  const resaleBadge = pill("#fff1e8", "#f0641e");
+  const listingOfferBadges = (listing: TicketingListing, compact = false) => (
+    <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap", alignSelf: "flex-start" }}>
+      {/* A resale listing's zone is its seller's section unless the listing belongs to an offer. */}
+      {!listing.resale || listingHasOffer(listing) ? (
+        <span style={{ ...pill(ACC_SOFT, ACC), ...(compact ? { fontSize: 13, padding: "3px 8px" } : {}) }}><Star s={compact ? 12 : 14} /> {listing.zone}</span>
+      ) : null}
+      {listing.resale ? (
+        <span data-testid="verified-resale-badge" style={{ ...resaleBadge, ...(compact ? { fontSize: 13, padding: "3px 8px" } : {}) }}><Resale width={compact ? 12 : 14} height={compact ? 12 : 14} aria-hidden="true" style={{ flexShrink: 0 }} />Verified Resale</span>
+      ) : null}
+    </div>
+  );
   const primaryBtn: React.CSSProperties = { fontFamily: "inherit", fontWeight: 600, color: BTN_INK, background: BTN, border: "none", borderRadius: 999, cursor: "pointer" };
   const shimmer: React.CSSProperties = { background: "linear-gradient(90deg,#eef0f6 0%,#f7f8fc 50%,#eef0f6 100%)", backgroundSize: "420px 100%", animation: "nmt-shimmer 1.4s linear infinite" };
   const thumbSize = 96;
@@ -1592,6 +1609,9 @@ export default function PremiumTicketing({
               <div style={{ display: "flex", flexDirection: "column", gap: 6, minWidth: 0 }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
                   <div style={{ fontSize: 18, fontWeight: 600, letterSpacing: "-0.015em", color: soldout ? "#6e7180" : NAVY }}>{t.name}</div>
+                  {t.resale ? (
+                    <span data-testid="verified-resale-badge" style={{ display: "inline-flex", alignItems: "center", gap: 6, background: "#fff1e8", color: "#f0641e", fontSize: fluidSize(11), fontWeight: 600, letterSpacing: "0.1em", textTransform: "uppercase", padding: "5px 11px", borderRadius: 999 }}><Resale width={12} height={12} aria-hidden="true" style={{ flexShrink: 0 }} />Verified Resale</span>
+                  ) : null}
                   <span style={{ display: "inline-flex", alignItems: "center", gap: 7, background: s.pillBg, color: s.pillInk, fontSize: fluidSize(11), fontWeight: 600, letterSpacing: "0.1em", textTransform: "uppercase", padding: "5px 11px", borderRadius: 999 }}>
                     <span style={{ width: 6, height: 6, borderRadius: 999, background: s.dot }} />{s.label}
                   </span>
@@ -1673,7 +1693,7 @@ export default function PremiumTicketing({
     const icon = compact ? 14 : 17;
     return (
     <>
-      <div className={`nmt-filter-scroll ${ORG_SCROLLBAR_CLASS}`} style={{ display: "flex", alignItems: "center", gap: compact ? 8 : 10, minWidth: 0, overflowX: "auto", flexWrap: "nowrap", padding: compact ? "0 0 6px" : "2px 0 10px 2px" }}>
+      <OfferChipScroller accent={ACC} accentSoft={ACC_SOFT} selectedId={zoneFilter[zoneFilter.length - 1]}>
         <button ref={qtyBtn} onClick={() => setQtyMenu((v) => !v)} style={{ fontFamily: "inherit", display: "inline-flex", alignItems: "center", justifyContent: "space-between", gap: compact ? 6 : 8, minWidth: compact ? 108 : 132, minHeight: compact ? 40 : undefined, boxSizing: "border-box", fontSize: type, fontWeight: 600, color: "#fff", background: ACC, border: `1px solid ${ACC}`, borderRadius: 999, padding: chipPad, whiteSpace: "nowrap", cursor: "pointer", flexShrink: 0 }}>
           {want === 1 ? "1 ticket" : `${want} tickets`}
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" style={{ width: icon, height: icon, opacity: 0.8, transform: qtyMenu ? "rotate(180deg)" : "rotate(0deg)", transition: "transform 180ms ease" }}><polyline points="6 9 12 15 18 9" /></svg>
@@ -1698,6 +1718,7 @@ export default function PremiumTicketing({
             return (
               <button
                 key={z ?? "all"}
+                data-offer-id={z ?? "all"}
                 onClick={() => {
                   if (locked) {
                     setUnlockZone(z);
@@ -1719,7 +1740,7 @@ export default function PremiumTicketing({
               </button>
             );
           })}
-        </div>
+      </OfferChipScroller>
 
       <div className="offer-code-box">
         {unlockedNotices.map((offer) => (
@@ -1875,6 +1896,8 @@ export default function PremiumTicketing({
         .offer-code-box__row.is-invalid input { border-color: var(--bt-error); }
         .offer-code-box__error { margin: 8px 0 0; color: var(--bt-error); font-size: var(--t-14); line-height: 1.4; }
         ${orgScrollbarCss(ACC)}
+        .nmt-noscroll { scrollbar-width: none; -ms-overflow-style: none; }
+        .nmt-noscroll::-webkit-scrollbar { display: none; width: 0; height: 0; }
         .shopper-page .ga-soldout-notify-sheet h2 {
           font-size: var(--t-24) !important;
           letter-spacing: -0.01em;
@@ -2149,7 +2172,7 @@ export default function PremiumTicketing({
           <div
             ref={listingsScroll}
             data-testid="ticketing-listings"
-            className={ORG_SCROLLBAR_CLASS}
+            className="nmt-noscroll"
             style={{
               display: "flex",
               flexDirection: "column",
@@ -2164,6 +2187,7 @@ export default function PremiumTicketing({
               position: "relative",
               zIndex: 0,
               overflowY: wide || listingsSheet ? "auto" : "visible",
+              scrollbarWidth: wide || listingsSheet ? "none" : undefined,
               overscrollBehavior: wide || listingsSheet ? "contain" : undefined,
             }}
           >
@@ -2227,7 +2251,7 @@ export default function PremiumTicketing({
                         {listingThumb(l)}
                       </div>
                       <div style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", gap: 6 }}>
-                        <span style={{ alignSelf: "flex-start", maxWidth: "100%", ...pill(ACC_SOFT, ACC), gap: 5, fontSize: 13, lineHeight: 1.5, padding: "4px 10px", whiteSpace: "normal", overflowWrap: "anywhere" }}><Star s={13} /> {l.zone}</span>
+                        {listingOfferBadges(l, true)}
                         <div style={{ display: "flex", alignItems: "center", gap: 6, minWidth: 0, fontSize: 18, lineHeight: 1.5, fontWeight: 600, letterSpacing: "-0.015em" }}>
                           {listingSeatIcon(l, 18)}
                           <span style={{ minWidth: 0, overflowWrap: "anywhere" }}>{listingLocationLabel(l)}</span>
@@ -2245,7 +2269,7 @@ export default function PremiumTicketing({
                         {listingThumb(l)}
                       </div>
                       <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 6, minWidth: 0 }}>
-                        <span style={{ alignSelf: "flex-start", ...pill(ACC_SOFT, ACC) }}><Star s={14} /> {l.zone}</span>
+                        {listingOfferBadges(l)}
                         <div style={{ display: "flex", alignItems: "center", gap: 9, minWidth: 0, fontSize: 18, fontWeight: 600, letterSpacing: "-0.015em" }}>
                           {listingSeatIcon(l, 18)}
                           <span style={{ minWidth: 0, overflowWrap: "anywhere" }}>{listingLocationLabel(l)}</span>
@@ -2674,7 +2698,14 @@ export default function PremiumTicketing({
                 ) : null}
               </div>
               <div style={{ display: "flex", flexDirection: "column", gap: 8, padding: "18px 0 16px" }}>
-                <span style={{ alignSelf: "flex-start", flexShrink: 0, ...pill(ACC_SOFT, ACC), ...(mobile ? { padding: "5px 10px" } : {}) }}><Star s={14} /> {selRow.tier || selRow.zone}</span>
+                <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+                  {!selRow.resale || listingHasOffer(selRow) ? (
+                    <span style={{ flexShrink: 0, ...pill(ACC_SOFT, ACC), ...(mobile ? { padding: "5px 10px" } : {}) }}><Star s={14} /> {selRow.tier || selRow.zone}</span>
+                  ) : null}
+                  {selRow.resale ? (
+                    <span data-testid="verified-resale-badge" style={{ flexShrink: 0, ...resaleBadge, ...(mobile ? { padding: "5px 10px" } : {}) }}><Resale width={14} height={14} aria-hidden="true" style={{ flexShrink: 0 }} />Verified Resale</span>
+                  ) : null}
+                </div>
                 <div style={{ display: "flex", flexDirection: "column", gap: 5, minWidth: 0 }}>
                   <div style={{ fontSize: 22, fontWeight: 600, letterSpacing: "-0.02em", lineHeight: 1.5 }}>{listingLocationLabel(selRow)}</div>
                   <AccessibleSeatingBadge source={selRow.cartGroup} />
@@ -2688,7 +2719,9 @@ export default function PremiumTicketing({
               </div>
               <div style={{ height: 1, background: "rgba(5,27,53,0.08)" }} />
               <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, padding: "18px 0" }}>
-                <div style={{ display: "flex", alignItems: "baseline", gap: 5, minWidth: 0, flexShrink: 1, whiteSpace: "nowrap" }}>
+                <div style={mobile
+                  ? { display: "flex", flexDirection: "column", alignItems: "flex-start", gap: 2, minWidth: 0, flexShrink: 1, whiteSpace: "nowrap" }
+                  : { display: "flex", alignItems: "baseline", gap: 5, minWidth: 0, flexShrink: 1, whiteSpace: "nowrap" }}>
                   <span style={{ fontSize: 22, fontWeight: 600, fontVariantNumeric: "tabular-nums", letterSpacing: "-0.02em", lineHeight: 1.5 }}>{selRow.price} ea</span>
                   <span style={{ fontSize: 14, lineHeight: 1.5, color: "#6e7180" }}>{listingFeeNote(selRow.price, true)}</span>
                 </div>

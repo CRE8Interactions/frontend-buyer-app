@@ -3,7 +3,15 @@
  * SeasonTickets' screen names so the nav, the rendered screen, and the address
  * bar cannot drift apart.
  */
-export type WalletSection = "events" | "listings" | "resale" | "giving" | "profile";
+export type WalletSection =
+  | "events"
+  | "listings"
+  | "resale"
+  | "giving"
+  | "profile"
+  | "bank"
+  | "payouts"
+  | "activity";
 
 export const WALLET_NAV: {
   id: WalletSection;
@@ -29,6 +37,17 @@ export const WALLET_SECTION_PREFIXES = WALLET_NAV.map((section) =>
   section.href.replace(/\/+$/, ""),
 );
 
+/** Profile pages that are not their own navbar tab. The legacy paths redirect. */
+const PROFILE_BANK_PREFIXES = [
+  "/wallet/my-profile/bank-account",
+  "/wallet/bank-account",
+];
+const PROFILE_PAYOUT_PREFIXES = [
+  "/wallet/my-profile/payouts",
+  "/wallet/payouts",
+];
+const PROFILE_ACTIVITY_PREFIX = "/wallet/my-profile/activity";
+
 /** Ticket list and its event / flex-pack / package detail routes. */
 export const WALLET_TICKETS_PREFIXES = [
   "/wallet/my-tickets",
@@ -49,6 +68,13 @@ function pathMatchesPrefix(path: string, prefix: string) {
  */
 export function walletSectionFromPath(pathname = ""): WalletSection {
   const path = pathOnly(pathname);
+  if (PROFILE_BANK_PREFIXES.some((prefix) => pathMatchesPrefix(path, prefix))) {
+    return "bank";
+  }
+  if (PROFILE_PAYOUT_PREFIXES.some((prefix) => pathMatchesPrefix(path, prefix))) {
+    return "payouts";
+  }
+  if (pathMatchesPrefix(path, PROFILE_ACTIVITY_PREFIX)) return "activity";
   if (WALLET_TICKETS_PREFIXES.some((prefix) => pathMatchesPrefix(path, prefix))) {
     return "events";
   }
@@ -59,9 +85,24 @@ export function walletSectionFromPath(pathname = ""): WalletSection {
   return match?.id || "events";
 }
 
+/** Navbar tab for a wallet URL. Profile stays selected on its inner pages. */
+export function walletNavSectionFromPath(pathname = ""): WalletSection {
+  const section = walletSectionFromPath(pathname);
+  if (section === "bank" || section === "payouts" || section === "activity") {
+    return "profile";
+  }
+  return section;
+}
+
 /** Any wallet section route, including ticket and package detail pages. */
 export function isWalletSectionPath(pathname = "") {
   const path = pathOnly(pathname);
+  if (
+    PROFILE_BANK_PREFIXES.some((prefix) => pathMatchesPrefix(path, prefix)) ||
+    PROFILE_PAYOUT_PREFIXES.some((prefix) => pathMatchesPrefix(path, prefix))
+  ) {
+    return true;
+  }
   if (WALLET_TICKETS_PREFIXES.some((prefix) => pathMatchesPrefix(path, prefix))) {
     return true;
   }

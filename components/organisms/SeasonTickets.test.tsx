@@ -14,6 +14,12 @@ import {
   demoFlexPack,
   demoPackageAccessPass,
   demoSeasonPackage,
+  demoActiveListing,
+  demoActiveListingLater,
+  demoExpiredListing,
+  demoSoldListing,
+  demoWalletListings,
+  demoLinkedBankAccount,
 } from "@/lib/demo/fixtures";
 import moment from "moment-timezone";
 import { walletSectionTabTitle } from "@/lib/seo";
@@ -30,6 +36,11 @@ import {
   transferSuccessTitle,
   transferWalletRemovalCopy,
 } from "@/lib/transferModalCopy";
+import {
+  listingStatusDotLine,
+  mapWalletListing,
+} from "@/lib/walletListings";
+import { sellRemoveBody } from "@/lib/sellModalCopy";
 
 const sessionMocks = vi.hoisted(() => ({
   getSession: vi.fn(),
@@ -57,6 +68,13 @@ vi.mock("@/lib/api", () => ({
   getIncomingTransfers: vi.fn(),
   getMyReceivedTransfers: vi.fn(),
   getMyListings: vi.fn(),
+  createListing: vi.fn(),
+  updateMyListings: vi.fn(),
+  removeMyListings: vi.fn(),
+  getBankAccount: vi.fn(async () => ({ data: { payouts_enabled: true, id: "acct-1" } })),
+  getMyUpcomingOrders: vi.fn(async () => ({ data: [] })),
+  createBankAccount: vi.fn(async () => ({ data: { link: "https://connect.stripe.test/setup" } })),
+  getResaleFeeRules: vi.fn(async () => ({ data: { rules: [] } })),
   getOrder: vi.fn(),
   searchEvents: vi.fn(async () => ({ data: [] })),
   validateEmail: vi.fn(async () => ({ data: { verdict: "Valid" } })),
@@ -90,6 +108,8 @@ import SeasonTickets, {
   clearJerseyPanelFillCacheForTests,
   resetWalletApiHydrationForTests,
 } from "@/components/organisms/SeasonTickets";
+import { __resetActivitySnapshotForTests } from "@/components/organisms/WalletAccountActivity";
+import { __resetWalletAccountCacheForTests } from "@/lib/walletAccountCache";
 import {
   clearLocallyResolvedIncomingTransfersForTests,
   formatAccessPassRemainingLine,
@@ -120,6 +140,12 @@ import {
   getIncomingTransfers,
   getMyReceivedTransfers,
   getMyListings,
+  createListing,
+  updateMyListings,
+  removeMyListings,
+  getBankAccount,
+  createBankAccount,
+  getResaleFeeRules,
   getOrder,
   validateEmail,
 } from "@/lib/api";
@@ -146,6 +172,12 @@ const mockedGetMySentTransfers = looseApiMock(vi.mocked(getMySentTransfers));
 const mockedGetIncomingTransfers = looseApiMock(vi.mocked(getIncomingTransfers));
 const mockedGetMyReceivedTransfers = looseApiMock(vi.mocked(getMyReceivedTransfers));
 const mockedGetMyListings = vi.mocked(getMyListings);
+const mockedGetBankAccount = vi.mocked(getBankAccount);
+const mockedCreateBankAccount = vi.mocked(createBankAccount);
+const mockedGetResaleFeeRules = vi.mocked(getResaleFeeRules);
+const mockedCreateListing = vi.mocked(createListing);
+const mockedUpdateMyListings = vi.mocked(updateMyListings);
+const mockedRemoveMyListings = vi.mocked(removeMyListings);
 const mockedGetOrder = vi.mocked(getOrder);
 const mockedValidateEmail = vi.mocked(validateEmail);
 
@@ -267,6 +299,8 @@ async function confirmAcceptTransferInPopup(
   navigationMocks.pathname = "/wallet/my-tickets/";
   navigationMocks.search = "";
   resetWalletApiHydrationForTests();
+  __resetActivitySnapshotForTests();
+  __resetWalletAccountCacheForTests();
   clearPersistedCancelRestoresForTests();
   clearJerseyPanelFillCacheForTests();
   clearLocallyResolvedIncomingTransfersForTests();
@@ -298,6 +332,20 @@ async function confirmAcceptTransferInPopup(
   mockedGetMyReceivedTransfers.mockResolvedValue({ data: [] } as never);
   mockedGetMyListings.mockReset();
   mockedGetMyListings.mockResolvedValue({ data: [] } as never);
+  mockedGetBankAccount.mockReset();
+  mockedGetBankAccount.mockResolvedValue({ data: { payouts_enabled: true, id: "acct-1" } } as never);
+  mockedCreateBankAccount.mockReset();
+  mockedCreateBankAccount.mockResolvedValue({ data: { link: "https://connect.stripe.test/setup" } } as never);
+  mockedGetResaleFeeRules.mockReset();
+  mockedGetResaleFeeRules.mockResolvedValue({ data: { rules: [] } } as never);
+  mockedCreateListing.mockReset();
+  mockedCreateListing.mockResolvedValue({
+    data: { id: "listing-created-1", status: "new", askingPrice: 55 },
+  } as never);
+  mockedUpdateMyListings.mockReset();
+  mockedUpdateMyListings.mockResolvedValue({ data: { askingPrice: 70 } } as never);
+  mockedRemoveMyListings.mockReset();
+  mockedRemoveMyListings.mockResolvedValue({ data: { id: "listing-active-1" } } as never);
   mockedGetMyEvents.mockReset();
   mockedGetMyEvents.mockResolvedValue({ data: [] } as never);
   mockedGetOrder.mockReset();
@@ -5338,6 +5386,22 @@ describe("SeasonTickets section routes", () => {
     expect(screen.queryByText(icedogs.name)).not.toBeInTheDocument();
   });
 
+  it("shows Profile on the first click while the profile route is still committing", async () => {
+    render(<SeasonTickets />);
+
+    expect(await screen.findByText(icedogs.name)).toBeInTheDocument();
+
+    act(() => {
+      beginWalletNavigation("/wallet/my-profile/");
+    });
+
+    expect(
+      screen.getByRole("heading", { name: "Profile", level: 1 }),
+    ).toBeInTheDocument();
+    expect(screen.queryByLabelText("Loading tickets")).not.toBeInTheDocument();
+    expect(screen.queryByText(icedogs.name)).not.toBeInTheDocument();
+  });
+
   it("filters listings by Active, Sold, and Expired", async () => {
     navigationMocks.pathname = "/wallet/my-listings/";
     const user = userEvent.setup();
@@ -5370,6 +5434,105 @@ describe("SeasonTickets section routes", () => {
       "href",
       expect.stringMatching(/^\/sign-out\/?$/),
     );
+    expect(screen.getByText("Payout account for resale")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Manage" })).toHaveAttribute(
+      "href",
+      expect.stringMatching(/^\/wallet\/my-profile\/bank-account\/?$/),
+    );
+    expect(screen.getByRole("link", { name: "View" })).toHaveAttribute(
+      "href",
+      expect.stringMatching(/^\/wallet\/my-profile\/payouts\/?$/),
+    );
+  });
+
+  it.each([
+    ["/wallet/my-profile/activity/", "Back to profile"],
+    ["/wallet/my-profile/bank-account/", "Bank Information"],
+    ["/wallet/my-profile/payouts/", "Payouts"],
+  ])("keeps Profile selected on %s", async (pathname, landmark) => {
+    navigationMocks.pathname = pathname;
+
+    render(<SeasonTickets />);
+
+    expect(await screen.findByText(landmark)).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Profile" })).toHaveAttribute(
+      "aria-current",
+      "page",
+    );
+    expect(screen.getByRole("link", { name: "Tickets" })).not.toHaveAttribute(
+      "aria-current",
+    );
+  });
+
+  it("shows the linked bank account number on the profile", async () => {
+    navigationMocks.pathname = "/wallet/my-profile/";
+    const last4 = demoLinkedBankAccount().external_accounts.data[0].last4;
+    mockedGetBankAccount.mockResolvedValue({ data: demoLinkedBankAccount() } as never);
+
+    render(<SeasonTickets />);
+
+    expect(await screen.findByText(`Account ••${last4}`)).toBeInTheDocument();
+    expect(screen.queryByText("Payout account for resale")).not.toBeInTheDocument();
+  });
+
+  it("does not load the profile again when returning from activity", async () => {
+    navigationMocks.pathname = "/wallet/my-profile/";
+    const last4 = demoLinkedBankAccount().external_accounts.data[0].last4;
+    mockedGetBankAccount.mockResolvedValue({ data: demoLinkedBankAccount() } as never);
+    const { rerender } = render(<SeasonTickets />);
+
+    expect(await screen.findByText(`Account ••${last4}`)).toBeInTheDocument();
+    const calls = mockedGetBankAccount.mock.calls.length;
+
+    navigationMocks.pathname = "/wallet/my-profile/activity/";
+    rerender(<SeasonTickets />);
+    expect(await screen.findByRole("link", { name: "Back to profile" })).toBeInTheDocument();
+
+    navigationMocks.pathname = "/wallet/my-profile/";
+    rerender(<SeasonTickets />);
+    expect(screen.getByText(`Account ••${last4}`)).toBeInTheDocument();
+    expect(mockedGetBankAccount).toHaveBeenCalledTimes(calls);
+  });
+
+  it("does not load the bank account again when returning from the bank page", async () => {
+    navigationMocks.pathname = "/wallet/my-profile/";
+    const last4 = demoLinkedBankAccount().external_accounts.data[0].last4;
+    mockedGetBankAccount.mockResolvedValue({ data: demoLinkedBankAccount() } as never);
+    const { rerender } = render(<SeasonTickets />);
+
+    expect(await screen.findByText(`Account ••${last4}`)).toBeInTheDocument();
+    const calls = mockedGetBankAccount.mock.calls.length;
+
+    navigationMocks.pathname = "/wallet/my-profile/bank-account/";
+    rerender(<SeasonTickets />);
+    expect(await screen.findByRole("heading", { name: "Bank Information" })).toBeInTheDocument();
+    expect(screen.getByText("XXXXX5556")).toBeInTheDocument();
+
+    navigationMocks.pathname = "/wallet/my-profile/";
+    rerender(<SeasonTickets />);
+    expect(screen.getByText(`Account ••${last4}`)).toBeInTheDocument();
+    expect(mockedGetBankAccount).toHaveBeenCalledTimes(calls);
+  });
+
+  it("keeps the payout label until the bank link is complete", async () => {
+    navigationMocks.pathname = "/wallet/my-profile/";
+    let resolveAccount: (value: unknown) => void = () => {};
+    mockedGetBankAccount.mockReturnValue(
+      new Promise((resolve) => {
+        resolveAccount = resolve;
+      }) as never,
+    );
+
+    render(<SeasonTickets />);
+
+    expect(await screen.findByText("Payout account for resale")).toBeInTheDocument();
+    await act(async () => {
+      resolveAccount({
+        data: demoLinkedBankAccount({ charges_enabled: true, payouts_enabled: false }),
+      });
+    });
+    expect(screen.getByText("Payout account for resale")).toBeInTheDocument();
+    expect(screen.queryByText(/Account ••/)).not.toBeInTheDocument();
   });
 
   it("follows the URL when the shopper moves to another section", async () => {
@@ -7653,14 +7816,14 @@ describe("SeasonTickets routed event screen", { timeout: 20_000 }, () => {
       const { rerender } = render(<SeasonTickets />);
       expect(await screen.findByRole("heading", { name: "Profile", level: 1 })).toBeInTheDocument();
       expect(mockedGetMyEvents).not.toHaveBeenCalled();
-      expect(mockedGetMyListings).not.toHaveBeenCalled();
       expect(mockedGetMySentTransfers).not.toHaveBeenCalled();
+      // The profile's account activity preview loads sales from getMyListings;
+      // only the My listings route itself is off limits here.
 
       navigationMocks.pathname = "/wallet/giving/";
       rerender(<SeasonTickets />);
       expect(await screen.findByRole("heading", { name: "Giving", level: 1 })).toBeInTheDocument();
       expect(mockedGetMyEvents).not.toHaveBeenCalled();
-      expect(mockedGetMyListings).not.toHaveBeenCalled();
       expect(mockedGetMySentTransfers).not.toHaveBeenCalled();
     });
 
@@ -9031,8 +9194,8 @@ describe("SeasonTickets ticket screen responsive layout", () => {
       within(footer).queryByRole("button", { name: "Transfer" }),
     ).not.toBeInTheDocument();
     expect(
-      within(footer).getByRole("link", { name: "Sell" }),
-    ).toHaveAttribute("href", expect.stringMatching(/^\/wallet\/my-listings\/?$/));
+      within(footer).getByRole("button", { name: "Sell" }),
+    ).toBeInTheDocument();
 
     Reflect.deleteProperty(navigator, "userAgent");
   });
@@ -9528,5 +9691,335 @@ describe("SeasonTickets code screen", () => {
     expect(
       screen.getByText(/codes expire after 5 minutes/i),
     ).toBeInTheDocument();
+  });
+});
+
+describe("SeasonTickets listings and sell", { timeout: 30_000 }, () => {
+  beforeEach(() => {
+    sessionMocks.getSession.mockReturnValue(DEMO_SESSION);
+  });
+
+  it("buckets listings by status only and sorts Active by event start", async () => {
+    mockedGetMyListings.mockResolvedValue({
+      data: demoWalletListings(),
+    } as never);
+    navigationMocks.pathname = "/wallet/my-listings/";
+    const user = userEvent.setup();
+    render(<SeasonTickets />);
+
+    expect(await screen.findByRole("heading", { name: "Listings", level: 1 })).toBeInTheDocument();
+    expect(mockedGetMyListings).toHaveBeenCalled();
+    expect((await screen.findAllByText(/^active on /i)).length).toBe(2);
+    const active = mapWalletListing(demoActiveListing())!;
+    const later = mapWalletListing(demoActiveListingLater())!;
+    expect(screen.getByText(later.event!.name!)).toBeInTheDocument();
+    await user.click(screen.getByRole("tab", { name: /Sold/i }));
+    const sold = mapWalletListing(demoSoldListing())!;
+    expect(screen.getByText(listingStatusDotLine(sold))).toBeInTheDocument();
+    expect(screen.getByText(sold.event!.name!)).toBeInTheDocument();
+    await user.click(screen.getByRole("tab", { name: /Expired/i }));
+    const expired = mapWalletListing(demoExpiredListing())!;
+    expect(screen.getByText(listingStatusDotLine(expired))).toBeInTheDocument();
+  });
+
+  it("refetches listings every time My listings is opened", async () => {
+    mockedGetMyListings.mockResolvedValue({ data: [] } as never);
+    navigationMocks.pathname = "/wallet/my-listings/";
+    const { rerender } = render(<SeasonTickets />);
+    await waitFor(() => expect(mockedGetMyListings).toHaveBeenCalledTimes(1));
+    navigationMocks.pathname = "/wallet/my-tickets/";
+    rerender(<SeasonTickets />);
+    navigationMocks.pathname = "/wallet/my-listings/";
+    rerender(<SeasonTickets />);
+    await waitFor(() => expect(mockedGetMyListings).toHaveBeenCalledTimes(2));
+  });
+
+  it("opens sell from the event page, lists tickets, and does not refetch events", async () => {
+    const order = demoCompletedTicketOrder({
+      event: { ...icedogs, enableResale: true, resaleMinimumPercent: 10, secondaryServiceFeeSeller: 0.1 },
+    });
+    mockedGetMyEvents.mockResolvedValue({ data: [order] } as never);
+    navigationMocks.pathname = `/wallet/my-tickets/order/${order.orderId}/`;
+    const user = userEvent.setup();
+    render(<SeasonTickets />);
+
+    await user.click(await screen.findByRole("button", { name: "Sell" }));
+    const sellTitle = await screen.findByRole("heading", { name: "Sell" });
+    const sheet = sellTitle.parentElement?.parentElement as HTMLElement;
+    expect(within(sheet).getByText("Select tickets to sell")).toBeInTheDocument();
+    const seatChip = within(sheet).getAllByRole("button", { name: /^Seat / })[0];
+    await user.click(seatChip);
+    expect(seatChip).toHaveAttribute("aria-pressed", "true");
+    await user.click(within(sheet).getByRole("button", { name: "Set price" }));
+    expect(await screen.findByText("Price your ticket")).toBeInTheDocument();
+    const price = within(sheet).getByRole("textbox");
+    fireEvent.blur(price);
+    expect(screen.queryByText("Enter a price greater than 0.")).not.toBeInTheDocument();
+    await user.type(price, "0");
+    fireEvent.blur(price);
+    expect(screen.getByText("Enter a price greater than 0.")).toBeInTheDocument();
+    await user.clear(price);
+    await user.type(price, "80");
+    const eventsCalls = mockedGetMyEvents.mock.calls.length;
+    await user.click(screen.getByRole("button", { name: "Payout summary" }));
+    expect(screen.getByText("Payment Summary")).toBeInTheDocument();
+    expect(screen.getByText("Your Payout")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Agree and sell" }));
+    expect(await screen.findByText("Your ticket is listed for sale!")).toBeInTheDocument();
+    expect(mockedCreateListing).toHaveBeenCalledTimes(1);
+    const payload = mockedCreateListing.mock.calls[0][0] as Record<string, unknown>;
+    expect(payload).toMatchObject({
+      quantity: 1,
+      askingPrice: 80,
+      fromOrder: order.id,
+      type: expect.stringMatching(/GA|SEATED/),
+    });
+    expect(Array.isArray(payload.tickets)).toBe(true);
+    expect(mockedGetMyEvents.mock.calls.length).toBe(eventsCalls);
+    expect(mockedGetMyListings).not.toHaveBeenCalled();
+    expect(screen.getByRole("link", { name: "Go to My listings" })).toHaveAttribute(
+      "href",
+      expect.stringMatching(/^\/wallet\/my-listings\/?$/),
+    );
+    expect(
+      screen.getByRole("button", {
+        name: (_accessible, el) => el?.textContent?.trim() === "Close",
+      }),
+    ).toBeInTheDocument();
+  });
+
+  it("hides Sell when the organization does not allow resales", async () => {
+    const order = demoCompletedTicketOrder({
+      event: {
+        ...icedogs,
+        enableResale: true,
+        organization: {
+          ...icedogs.organization,
+          setting: { printTickets: true, allowResales: false },
+        },
+      },
+    });
+    mockedGetMyEvents.mockResolvedValue({ data: [order] } as never);
+    navigationMocks.pathname = `/wallet/my-tickets/order/${order.orderId}/`;
+    render(<SeasonTickets />);
+
+    expect(await screen.findByText("Manage")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Print all" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Sell" })).not.toBeInTheDocument();
+  });
+
+  it("asks for a payout account before listing tickets", async () => {
+    mockedGetBankAccount.mockResolvedValue({ data: { payouts_enabled: false } } as never);
+    const order = demoCompletedTicketOrder({
+      event: { ...icedogs, enableResale: true },
+    });
+    mockedGetMyEvents.mockResolvedValue({ data: [order] } as never);
+    navigationMocks.pathname = `/wallet/my-tickets/order/${order.orderId}/`;
+    const user = userEvent.setup();
+    render(<SeasonTickets />);
+
+    await user.click(await screen.findByRole("button", { name: "Sell" }));
+    expect(await screen.findByText("Link a bank account")).toBeInTheDocument();
+    expect(screen.queryByText("Select tickets to sell")).not.toBeInTheDocument();
+    expect(await screen.findByLabelText("Account type")).toHaveValue("individual");
+    expect(screen.getByRole("button", { name: "Link bank account" })).toBeEnabled();
+
+    mockedGetBankAccount.mockResolvedValueOnce({ data: { payouts_enabled: true } } as never);
+    await user.click(screen.getByRole("button", { name: "I've finished linking" }));
+    expect(await screen.findByText("Select tickets to sell")).toBeInTheDocument();
+  });
+
+  it("does not link a bank account until the existing account type is known", async () => {
+    let resolveAccount: (value: unknown) => void = () => {};
+    mockedGetBankAccount.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          resolveAccount = resolve;
+        }) as never,
+    );
+    const order = demoCompletedTicketOrder({
+      event: { ...icedogs, enableResale: true },
+    });
+    mockedGetMyEvents.mockResolvedValue({ data: [order] } as never);
+    navigationMocks.pathname = `/wallet/my-tickets/order/${order.orderId}/`;
+    const user = userEvent.setup();
+    render(<SeasonTickets />);
+
+    await user.click(await screen.findByRole("button", { name: "Sell" }));
+    expect(screen.getAllByRole("status", { name: "Loading" }).length).toBeGreaterThan(0);
+    expect(screen.queryByRole("button", { name: "Link bank account" })).not.toBeInTheDocument();
+    expect(mockedCreateBankAccount).not.toHaveBeenCalled();
+
+    resolveAccount({
+      data: { payouts_enabled: false, business_type: "company" },
+    });
+
+    const linkButton = await screen.findByRole("button", { name: "Link bank account" });
+    expect(screen.getByLabelText("Account type")).toHaveValue("company");
+    mockedCreateBankAccount.mockReturnValue(new Promise(() => {}) as never);
+    await user.click(linkButton);
+
+    await waitFor(() =>
+      expect(mockedCreateBankAccount).toHaveBeenCalledWith({
+        businessType: "company",
+        currentBusinessType: "company",
+      }),
+    );
+    expect(linkButton).toHaveAttribute("aria-busy", "true");
+    expect(linkButton).toHaveAccessibleName("Link bank account");
+  });
+
+  it("keeps the link button busy until Stripe opens", async () => {
+    const assign = vi.fn();
+    vi.stubGlobal("location", { assign });
+    mockedGetBankAccount.mockResolvedValue({ data: { payouts_enabled: false } } as never);
+    mockedCreateBankAccount.mockResolvedValue({
+      data: { link: "https://connect.stripe.test/setup" },
+    } as never);
+    const order = demoCompletedTicketOrder({
+      event: { ...icedogs, enableResale: true },
+    });
+    mockedGetMyEvents.mockResolvedValue({ data: [order] } as never);
+    navigationMocks.pathname = `/wallet/my-tickets/order/${order.orderId}/`;
+    const user = userEvent.setup();
+    render(<SeasonTickets />);
+
+    await user.click(await screen.findByRole("button", { name: "Sell" }));
+    const linkButton = await screen.findByRole("button", { name: "Link bank account" });
+    await user.click(linkButton);
+
+    await waitFor(() =>
+      expect(assign).toHaveBeenCalledWith("https://connect.stripe.test/setup"),
+    );
+    expect(linkButton).toBeDisabled();
+    expect(linkButton).toHaveAttribute("aria-busy", "true");
+    vi.unstubAllGlobals();
+  });
+
+  it("shows the server message when the sell bank link fails", async () => {
+    mockedGetBankAccount.mockResolvedValue({ data: { payouts_enabled: false } } as never);
+    mockedCreateBankAccount.mockRejectedValue({
+      response: {
+        data: { error: { message: "Live and test mode accounts cannot be mixed." } },
+      },
+    });
+    const order = demoCompletedTicketOrder({
+      event: { ...icedogs, enableResale: true },
+    });
+    mockedGetMyEvents.mockResolvedValue({ data: [order] } as never);
+    navigationMocks.pathname = `/wallet/my-tickets/order/${order.orderId}/`;
+    const user = userEvent.setup();
+    render(<SeasonTickets />);
+
+    await user.click(await screen.findByRole("button", { name: "Sell" }));
+    const linkButton = await screen.findByRole("button", { name: "Link bank account" });
+    await user.click(linkButton);
+
+    expect(
+      await screen.findByText("Live and test mode accounts cannot be mixed."),
+    ).toBeInTheDocument();
+    expect(linkButton).toBeEnabled();
+    expect(linkButton).not.toHaveAttribute("aria-busy");
+  });
+
+  it("does not send the individual default when the account lookup fails", async () => {
+    mockedGetBankAccount.mockRejectedValue(new Error("network"));
+    const order = demoCompletedTicketOrder({
+      event: { ...icedogs, enableResale: true },
+    });
+    mockedGetMyEvents.mockResolvedValue({ data: [order] } as never);
+    navigationMocks.pathname = `/wallet/my-tickets/order/${order.orderId}/`;
+    render(<SeasonTickets />);
+
+    await userEvent.click(await screen.findByRole("button", { name: "Sell" }));
+    const linkButton = await screen.findByRole("button", { name: "Link bank account" });
+    expect(linkButton).toBeDisabled();
+    expect(screen.queryByLabelText("Account type")).not.toBeInTheDocument();
+    expect(
+      screen.getByText(/try again before linking a bank account/i),
+    ).toBeInTheDocument();
+    expect(mockedCreateBankAccount).not.toHaveBeenCalled();
+  });
+
+  it("sends the loaded organization type after a failed lookup is retried", async () => {
+    let resolveRetry: (value: unknown) => void = () => {};
+    mockedGetBankAccount.mockRejectedValueOnce(new Error("network"));
+    mockedGetBankAccount.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          resolveRetry = resolve;
+        }) as never,
+    );
+    const order = demoCompletedTicketOrder({
+      event: { ...icedogs, enableResale: true },
+    });
+    mockedGetMyEvents.mockResolvedValue({ data: [order] } as never);
+    navigationMocks.pathname = `/wallet/my-tickets/order/${order.orderId}/`;
+    const user = userEvent.setup();
+    render(<SeasonTickets />);
+
+    await user.click(await screen.findByRole("button", { name: "Sell" }));
+    await user.click(await screen.findByRole("button", { name: "Try again" }));
+
+    expect(screen.getAllByRole("status", { name: "Loading" }).length).toBeGreaterThan(0);
+    expect(screen.queryByRole("button", { name: "Link bank account" })).not.toBeInTheDocument();
+    expect(mockedCreateBankAccount).not.toHaveBeenCalled();
+
+    resolveRetry({
+      data: { payouts_enabled: false, business_type: "non_profit" },
+    });
+
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "Link bank account" })).toBeEnabled(),
+    );
+    expect(screen.getByLabelText("Account type")).toHaveValue("non_profit");
+    mockedCreateBankAccount.mockReturnValue(new Promise(() => {}) as never);
+    await user.click(screen.getByRole("button", { name: "Link bank account" }));
+
+    await waitFor(() =>
+      expect(mockedCreateBankAccount).toHaveBeenCalledWith({
+        businessType: "non_profit",
+        currentBusinessType: "non_profit",
+      }),
+    );
+  });
+
+  it("removes an active listing without refetching listings", async () => {
+    const listing = demoActiveListing();
+    mockedGetMyListings.mockResolvedValue({ data: [listing] } as never);
+    mockedGetMyEvents.mockResolvedValue({
+      data: [demoCompletedTicketOrder({ event: icedogs, tickets: [] })],
+    } as never);
+    navigationMocks.pathname = "/wallet/my-listings/";
+    const user = userEvent.setup();
+    render(<SeasonTickets />);
+
+    await user.click(await screen.findByRole("button", { name: "Remove" }));
+    expect(screen.getByRole("heading", { name: "Remove this listing?" })).toBeInTheDocument();
+    expect(screen.getByText(sellRemoveBody(1))).toBeInTheDocument();
+    const listingCalls = mockedGetMyListings.mock.calls.length;
+    await user.click(screen.getByRole("button", { name: "Remove listing" }));
+    await waitFor(() => expect(mockedRemoveMyListings).toHaveBeenCalledWith(listing.id));
+    expect(mockedGetMyListings.mock.calls.length).toBe(listingCalls);
+    expect(await screen.findByText("Listing removed")).toBeInTheDocument();
+  });
+
+  it("patches asking price without refetching listings", async () => {
+    const listing = demoActiveListing();
+    mockedGetMyListings.mockResolvedValue({ data: [listing] } as never);
+    navigationMocks.pathname = "/wallet/my-listings/";
+    const user = userEvent.setup();
+    render(<SeasonTickets />);
+
+    await user.click(await screen.findByRole("button", { name: "Edit" }));
+    const field = screen.getByLabelText("Asking price per ticket");
+    await user.clear(field);
+    await user.type(field, "70");
+    const listingCalls = mockedGetMyListings.mock.calls.length;
+    await user.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() =>
+      expect(mockedUpdateMyListings).toHaveBeenCalledWith(listing.id, { askingPrice: 70 }),
+    );
+    expect(mockedGetMyListings.mock.calls.length).toBe(listingCalls);
   });
 });

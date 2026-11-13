@@ -21,7 +21,12 @@ import {
   seatedOfferRowRestrictionLabel,
 } from "@/lib/ticketListings";
 import type { QuantityLimits, RawTicketGroup } from "@/lib/ticketListings";
-import { selectionOfferName } from "@/lib/ticketSummary";
+import {
+  selectionIsResale,
+  selectionIsUnnamedResale,
+  selectionOfferName,
+  selectionTooltipOfferLabel,
+} from "@/lib/ticketSummary";
 import { mapSectionHeading, seatDisplayValue, sectionDisplayValue } from "@/lib/wallet";
 import useFiltersStore from "@/stores/filtersStore";
 import useSeatmapStore from "@/stores/seatmapStore";
@@ -98,6 +103,23 @@ function seatedResolvedOfferQuantity(
 ) {
   if (offerQtys[key] != null) return offerQtys[key];
   return 0;
+}
+
+/** Offer name as text. A resale seat with no offer says Verified Resale, with no badge. */
+function OfferResaleLabel({
+  group,
+  fallback = "",
+  color,
+}: {
+  group?: TicketGroup | null;
+  fallback?: string;
+  color?: string;
+}) {
+  const name = selectionIsUnnamedResale(group)
+    ? "Verified Resale"
+    : selectionTooltipOfferLabel(group, fallback);
+  if (!name) return null;
+  return <span style={color ? { color } : undefined}>{name}</span>;
 }
 
 /** Package rows use the season name. A missing offer must not fall back to "GA". */
@@ -476,7 +498,7 @@ function MobileSingleOfferSeatPopup({
   const [cardHeight, setCardHeight] = useState(260);
   const { left, top, caretLeft, desiredLeft, desiredTop } =
     mobileSeatCardPosition(target, cardHeight);
-  const offerName = selectionOfferName(primary, "Standard");
+  const offerName = selectionTooltipOfferLabel(primary, "Standard");
   const price = formatOfferListPrice(primary?.price ?? 0, primary?.offer);
   const section =
     sectionDisplayValue(
@@ -522,8 +544,8 @@ function MobileSingleOfferSeatPopup({
           className="overflow-hidden rounded-2xl shadow-2xl shadow-black/50"
           style={{ background: accent }}
         >
-          <div className="px-4 py-3 text-center text-[15px] font-semibold text-white">
-            {offerName}
+          <div className="flex flex-wrap items-center justify-center gap-2 px-4 py-3 text-center text-[15px] font-semibold text-white">
+            <OfferResaleLabel group={primary} fallback="Standard" color="#ffffff" />
           </div>
           <div className="px-5 pb-5 pt-4 text-white">
             <p className="text-center text-[26px] font-bold leading-none tracking-tight">
@@ -819,8 +841,12 @@ export default function SeatmapTooltip({
                     }}
                   >
                     <div className="min-w-0">
-                      <p className="truncate text-[13px] font-semibold" style={{ color: ink }}>
-                        {offer.offer?.name || "Offer"}
+                      <p className="text-[13px] font-semibold" style={{ color: ink }}>
+                        <OfferResaleLabel
+                          group={offer}
+                          fallback={offer.offer?.name || "Offer"}
+                          color={ink}
+                        />
                       </p>
                       {!offerLocked ? (
                         <p className="text-[12px]" style={{ color: muted }}>
@@ -928,9 +954,11 @@ export default function SeatmapTooltip({
           </>
         ) : (
           <>
-            <p className="mt-3 text-[14px]" style={{ color: muted }}>
-              {selectionOfferName(primary, "Standard")} ·{" "}
-              {formatOfferListPrice(primary?.price ?? 0, primary?.offer)}
+            <p className="mt-3 flex flex-wrap items-center gap-2 text-[14px]" style={{ color: muted }}>
+              <OfferResaleLabel group={primary} fallback="Standard" color={muted} />
+              <span>
+                · {formatOfferListPrice(primary?.price ?? 0, primary?.offer)}
+              </span>
             </p>
             {!alreadySelected && showSeatActions && primary ? (
               <Button
@@ -1147,7 +1175,15 @@ export default function SeatmapTooltip({
           <div className="mt-4 flex items-start justify-between gap-4">
             <div className="min-w-0">
               <p className="break-words text-[13px] font-semibold" style={{ color: ink }}>
-                {packageOrOfferName}
+                {selectionIsResale(primary) ? (
+                  <OfferResaleLabel
+                    group={primary}
+                    fallback={packageOrOfferName}
+                    color={ink}
+                  />
+                ) : (
+                  packageOrOfferName
+                )}
               </p>
               <p className="mt-1 text-[12px] font-semibold" style={{ color: ink }}>
                 {formatOfferListPrice(primary?.price ?? 0, primary?.offer)} ea

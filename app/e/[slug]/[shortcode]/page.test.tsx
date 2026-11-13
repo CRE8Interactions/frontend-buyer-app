@@ -115,15 +115,16 @@ describe("GA event page tiers", () => {
     expect(screen.queryByText(/event sold out/i)).not.toBeInTheDocument();
   });
 
-  it("keeps selling when the event is flagged sold out but inventory came back", async () => {
+  it("shows sold out when inventory is sold out even if offers came back", async () => {
     const { ticketGroups, offers } = demoTicketGroups();
     inventory({ soldout: true, ticketGroups, offers });
 
     render(<GAEventRoute />);
 
     expect(
-      await screen.findByText(/vip club · live/i, undefined, { timeout: 4000 }),
+      await screen.findByText(/event sold out/i, undefined, { timeout: 4000 }),
     ).toBeInTheDocument();
+    expect(screen.queryByText(/vip club · live/i)).not.toBeInTheDocument();
   });
 
   it("shows the same empty notice as a seated event when the event is sold out and groups are empty", async () => {
@@ -144,22 +145,22 @@ describe("GA event page tiers", () => {
     expect(screen.queryByText(/event sold out/i)).not.toBeInTheDocument();
   });
 
-  it("shows the same empty notice when ticket groups are sold out and empty", async () => {
+  it("shows sold out when ticket groups are sold out and empty", async () => {
     inventory({ soldout: true, ticketGroups: [], offers: [] });
 
     render(<GAEventRoute />);
 
     expect(
-      await screen.findByText(/no tickets on sale/i, undefined, { timeout: 4000 }),
+      await screen.findByText(/event sold out/i, undefined, { timeout: 4000 }),
     ).toBeInTheDocument();
-    expect(screen.queryByText(/event sold out/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/no tickets on sale/i)).not.toBeInTheDocument();
   });
 
   it("shows the event schedule without inventing a GA offer card", async () => {
     const { offers } = demoTicketGroups();
     const scheduledTime = "2026-08-28T16:00:00.000Z";
     inventory({
-      soldout: false,
+      soldout: true,
       isScheduled: true,
       scheduledTime,
       ticketGroups: [],
@@ -171,6 +172,7 @@ describe("GA event page tiers", () => {
     expect(
       await screen.findByText(/scheduled ·/i, undefined, { timeout: 4000 }),
     ).toBeInTheDocument();
+    expect(screen.queryByText(/event sold out/i)).not.toBeInTheDocument();
     expect(screen.queryByText(new RegExp(offers[0].name, "i"))).not.toBeInTheDocument();
     expect(screen.queryByText(/no tickets on sale/i)).not.toBeInTheDocument();
   });

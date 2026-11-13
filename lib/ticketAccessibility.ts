@@ -103,7 +103,7 @@ export type SeatmapLegendRow = { label: string; color: string };
 
 /**
  * Legend accessibility rows: DA / DB when those types exist on seats or
- * groups; otherwise a single generic Accessibility row.
+ * groups; otherwise a single generic Accessible row.
  */
 export function seatmapAccessibilityLegendRows(
   sources: unknown[] = [],
@@ -125,5 +125,5 @@ export function seatmapAccessibilityLegendRows(
     }
     return rows;
   }
-  return [{ label: "Accessibility", color: ACCESSIBLE_SEAT_COLOR_GENERIC }];
+  return [{ label: "Accessible", color: ACCESSIBLE_SEAT_COLOR_GENERIC }];
 }

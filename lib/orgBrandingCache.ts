@@ -464,7 +464,12 @@ export function getCachedBrandingForPath(
 }
 
 const WALLET_ACCOUNT_PREFIXES = Array.from(
-  new Set([...WALLET_SECTION_PREFIXES, ...WALLET_TICKETS_PREFIXES]),
+  new Set([
+    ...WALLET_SECTION_PREFIXES,
+    ...WALLET_TICKETS_PREFIXES,
+    "/wallet/bank-account",
+    "/wallet/payouts",
+  ]),
 );
 
 /** Wallet / account routes that use Blocktickets chrome after entry. */

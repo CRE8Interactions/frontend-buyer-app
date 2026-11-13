@@ -60,7 +60,7 @@ export default function BillingPostalFields({
             autoComplete="country"
             aria-label="Billing country"
             onChange={(e) => onCountryChange(e.target.value)}
-            className={`${stripeLikeFieldClass(false)} mt-0 appearance-none pr-10`}
+            className="h-[46px] w-full appearance-none rounded-[10px] border-0 bg-white pl-[15px] pr-10 text-[15px] text-[#051B35] shadow-[0_0_0_2px_#E6E8EC] outline-none focus:shadow-[0_0_0_2px_var(--bt-field-focus,var(--acc,var(--accent)))]"
             style={{ backgroundColor: "#ffffff" }}
           >
             {knownCountry ? null : (

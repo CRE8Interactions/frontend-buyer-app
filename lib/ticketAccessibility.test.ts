@@ -58,7 +58,7 @@ describe("ticket accessibility", () => {
     ).toBe("");
   });
 
-  it("shows DA and DB legend rows when those types exist, otherwise Accessibility", () => {
+  it("shows DA and DB legend rows when those types exist, otherwise Accessible", () => {
     expect(seatmapAccessibilityLegendRows([{ accessibleType: "DA" }])).toEqual([
       { label: "DA", color: "#2DEDB4" },
     ]);
@@ -72,7 +72,7 @@ describe("ticket accessibility", () => {
       { label: "DB", color: "#F4BC16" },
     ]);
     expect(seatmapAccessibilityLegendRows([{ accessible: true }])).toEqual([
-      { label: "Accessibility", color: "#F4BC16" },
+      { label: "Accessible", color: "#F4BC16" },
     ]);
   });
 });

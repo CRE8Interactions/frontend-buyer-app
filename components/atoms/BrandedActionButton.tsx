@@ -14,6 +14,44 @@ export type ButtonBusyContentsProps = {
   trackColor?: string;
 };
 
+/**
+ * Keeps the label's width and paints the spinner in the middle of it.
+ * The spinner is hidden from the accessible name; set `aria-busy` on the button.
+ */
+export function CenteredBusyLabel({
+  loading = false,
+  children,
+  spinnerColor = "#051b35",
+  trackColor = "rgba(5,27,53,0.2)",
+}: ButtonBusyContentsProps) {
+  return (
+    <span
+      style={{
+        position: "relative",
+        display: "inline-flex",
+        alignItems: "center",
+        justifyContent: "center",
+      }}
+    >
+      <span style={{ visibility: loading ? "hidden" : "visible" }}>{children}</span>
+      {loading ? (
+        <span
+          aria-hidden
+          style={{
+            position: "absolute",
+            inset: 0,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+          }}
+        >
+          <Ring size={18} color={spinnerColor} trackColor={trackColor} strokeWidth={2.5} />
+        </span>
+      ) : null}
+    </span>
+  );
+}
+
 /** In-flight chrome: spinner always; label only when `loadingLabel` is set. */
 export function ButtonBusyContents({
   loading = false,

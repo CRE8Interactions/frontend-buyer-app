@@ -417,19 +417,35 @@ export function FundraisingCampaignClient({
                   >
                     Support
                   </label>
-                  <select
-                    id="participant"
-                    className={`mt-2 ${fieldClass("light", false)}`}
-                    value={participantUuid}
-                    onChange={(e) => setParticipantUuid(e.target.value)}
-                  >
-                    <option value="">General campaign fund</option>
-                    {campaign.participants.map((p) => (
-                      <option key={p.uuid} value={p.uuid}>
-                        {p.name}
-                      </option>
-                    ))}
-                  </select>
+                  <div className="relative mt-2">
+                    <select
+                      id="participant"
+                      className={`${fieldClass("light", false)} appearance-none !pr-10`}
+                      value={participantUuid}
+                      onChange={(e) => setParticipantUuid(e.target.value)}
+                    >
+                      <option value="">General campaign fund</option>
+                      {campaign.participants.map((p) => (
+                        <option key={p.uuid} value={p.uuid}>
+                          {p.name}
+                        </option>
+                      ))}
+                    </select>
+                    <svg
+                      viewBox="0 0 12 12"
+                      aria-hidden
+                      className="pointer-events-none absolute right-4 top-1/2 h-3 w-3 -translate-y-1/2"
+                    >
+                      <path
+                        d="M2.25 4.35 6 8.1l3.75-3.75"
+                        fill="none"
+                        stroke="#6e7180"
+                        strokeWidth="1.5"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      />
+                    </svg>
+                  </div>
                 </div>
               ) : null}
 

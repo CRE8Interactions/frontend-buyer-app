@@ -8,6 +8,7 @@ import {
   useMemo,
   useRef,
   useState,
+  type ReactNode,
 } from "react";
 import Spinner from "@/components/atoms/Spinner";
 import {
@@ -17,6 +18,8 @@ import {
   expandWcSeamPairSectionIds,
   isSectionCoverVenue,
   isSectionSoldOut,
+  legendAvailableColor,
+  RESALE_MAP_COLOR,
   mappingStageSize,
   neighborSectionIds,
   sectionIdInViewport,
@@ -41,6 +44,60 @@ import { seatmapAccessibilityLegendRows } from "@/lib/ticketAccessibility";
 import SeatmapTooltip, { type SeatmapTooltipTarget } from "./SeatmapTooltip";
 
 const PAN_THRESHOLD_PX = SEATMAP_TAP_THRESHOLD_PX;
+
+type LegendIcon = "selected" | "locked" | "accessible" | "resale";
+
+type LegendRow = {
+  label: string;
+  color: string;
+  icon?: LegendIcon;
+  testId?: string;
+};
+
+function LegendSwatch({ color, icon }: { color: string; icon?: LegendIcon }) {
+  const size = icon === "selected" ? 24 : 20;
+  return (
+    <span
+      className="flex h-[18px] w-[18px] shrink-0 items-center justify-center rounded-[4px]"
+      style={{ background: color }}
+      aria-hidden
+    >
+      {icon ? (
+        <svg viewBox={`0 0 ${size} ${size}`} className="h-3 w-3">
+          <use href={`#icon-${icon}`} width={size} height={size} />
+        </svg>
+      ) : null}
+    </span>
+  );
+}
+
+function LegendRows({ rows }: { rows: LegendRow[] }) {
+  return (
+    <div className="flex flex-col gap-2.5">
+      {rows.map((row) => (
+        <div
+          key={row.label}
+          data-testid={row.testId}
+          className="flex min-h-8 items-center gap-2 text-[15px] font-medium leading-5 text-[#051B35]"
+        >
+          <LegendSwatch color={row.color} icon={row.icon} />
+          {row.label}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function LegendGroup({ title, children }: { title: string; children: ReactNode }) {
+  return (
+    <div>
+      <p className="mb-2.5 text-[11px] font-medium uppercase tracking-[0.08em] text-[#98A2B3]">
+        {title}
+      </p>
+      {children}
+    </div>
+  );
+}
 /** Softens pinch scale changes so zoom feels less jumpy on iOS. */
 const PINCH_ZOOM_DAMPING = 0.7;
 
@@ -145,6 +202,9 @@ export default function InteractiveSeatmap({
   const background = useSeatmapStore((s) => s.background);
   const setScale = useSeatmapStore((s) => s.setScale);
   const maxScale = useSeatmapStore((s) => s.maxScale);
+  const hasVerifiedResale = useFiltersStore((s) =>
+    (s.ticketGroups || []).some((group) => Boolean(group.listing)),
+  );
   const ticketGroups = useFiltersStore((s) => s.ticketGroups);
   const loadingTicketGroups = useFiltersStore((s) => s.loadingTicketGroups);
   const selectedOfferIds = useFiltersStore((s) => s.filters.selectedOfferIds);
@@ -340,6 +400,10 @@ export default function InteractiveSeatmap({
         ...ticketGroups,
       ]),
     [data?.seats, ticketGroups],
+  );
+  const availableLegendColor = useMemo(
+    () => legendAvailableColor(ticketGroups),
+    [ticketGroups],
   );
   const [legendOpen, setLegendOpen] = useState(!compactChrome);
   const [fitScale, setFitScale] = useState(1);
@@ -1104,7 +1168,7 @@ export default function InteractiveSeatmap({
 
         {hideChrome ? null : (
         <div
-          className={`absolute left-4 z-10 overflow-hidden rounded-xl border border-[#dfe3eb] bg-white text-[#051B35] shadow-lg ${compactChrome ? "bottom-4 w-auto min-w-[108px]" : "bottom-16 w-[154px]"}`}
+          className={`absolute left-4 z-10 w-[210px] overflow-hidden rounded-xl border border-[#dfe3eb] bg-white px-4 py-3.5 text-[#051B35] shadow-lg ${compactChrome ? "bottom-4" : "bottom-16"}`}
           onPointerDown={(event) => event.stopPropagation()}
           onClick={(event) => event.stopPropagation()}
         >
@@ -1115,7 +1179,7 @@ export default function InteractiveSeatmap({
               setLegendOpen((open) => !open);
             }}
             aria-expanded={legendOpen}
-            className="flex w-full items-center justify-between border-0 bg-white px-4 py-3 text-left text-[14px] font-semibold text-[#051B35]"
+            className="flex w-full items-center justify-between border-0 bg-transparent p-0 text-left text-[16px] font-semibold leading-6 text-[#051B35]"
           >
             Legend
             <svg
@@ -1132,35 +1196,42 @@ export default function InteractiveSeatmap({
             </svg>
           </button>
           {legendOpen ? (
-            <div className="space-y-3 px-4 pb-4">
-              {(
-                mapLegend === "package"
-                  ? [
-                      { label: "Unavailable", color: "#E6E8EC" },
-                      { label: "Available", color: "#3E8BF7" },
-                      { label: "Selected", color: accent },
-                      ...accessibilityLegend,
-                    ]
-                  : [
-                      { label: "Unavailable", color: "#E6E8EC" },
-                      { label: "Available", color: "#3E8BF7" },
-                      { label: "Selected", color: accent },
-                      { label: "Locked", color: "#353945" },
-                      { label: "Exclusive", color: "#9757D7" },
-                      ...accessibilityLegend,
-                    ]
-              ).map((item) => (
-                <div
-                  key={item.label}
-                  className="flex items-center gap-2 text-[13px]"
-                >
-                  <span
-                    className="h-3 w-3 shrink-0 rounded-[4px]"
-                    style={{ background: item.color }}
-                  />
-                  {item.label}
-                </div>
-              ))}
+            <div className="mt-3.5 flex flex-col gap-4">
+              <LegendGroup title="Seat status">
+                <LegendRows
+                  rows={[
+                    { label: "Available", color: availableLegendColor },
+                    { label: "Selected", color: accent, icon: "selected" },
+                    { label: "Unavailable", color: "#E6E8EC" },
+                    ...(mapLegend === "event"
+                      ? [{ label: "Locked", color: "#353945", icon: "locked" as const }]
+                      : []),
+                  ]}
+                />
+              </LegendGroup>
+              <LegendGroup title="Seat type">
+                <LegendRows
+                  rows={[
+                    ...(mapLegend === "event"
+                      ? [{ label: "Exclusive", color: "#9757D7" }]
+                      : []),
+                    ...accessibilityLegend.map((row) => ({
+                      ...row,
+                      icon: "accessible" as const,
+                    })),
+                    ...(mapLegend === "event" && hasVerifiedResale
+                      ? [
+                          {
+                            label: "Verified resale",
+                            color: RESALE_MAP_COLOR,
+                            icon: "resale" as const,
+                            testId: "seatmap-legend-resale",
+                          },
+                        ]
+                      : []),
+                  ]}
+                />
+              </LegendGroup>
             </div>
           ) : null}
         </div>

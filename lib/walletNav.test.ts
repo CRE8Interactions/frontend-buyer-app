@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   WALLET_NAV,
   isWalletSectionPath,
+  walletNavSectionFromPath,
   walletSectionFromPath,
   walletSectionHref,
 } from "@/lib/walletNav";
@@ -39,6 +40,16 @@ describe("wallet nav", () => {
     expect(walletSectionFromPath("/wallet/my-listings/")).toBe("resale");
     expect(walletSectionFromPath("/wallet/giving")).toBe("giving");
     expect(walletSectionFromPath("/wallet/my-profile/?x=1")).toBe("profile");
+    expect(walletSectionFromPath("/wallet/my-profile/activity/")).toBe("activity");
+    expect(walletSectionFromPath("/wallet/my-profile/bank-account/")).toBe("bank");
+    expect(walletSectionFromPath("/wallet/my-profile/payouts/")).toBe("payouts");
+    expect(walletSectionFromPath("/wallet/bank-account/")).toBe("bank");
+    expect(walletSectionFromPath("/wallet/payouts/")).toBe("payouts");
+    expect(walletNavSectionFromPath("/wallet/my-profile/")).toBe("profile");
+    expect(walletNavSectionFromPath("/wallet/my-profile/activity/")).toBe("profile");
+    expect(walletNavSectionFromPath("/wallet/my-profile/bank-account/")).toBe("profile");
+    expect(walletNavSectionFromPath("/wallet/my-profile/payouts/")).toBe("profile");
+    expect(walletNavSectionFromPath("/wallet/my-tickets/order/ord-1/")).toBe("events");
   });
 
   it("falls back to tickets outside the wallet", () => {
@@ -47,6 +58,11 @@ describe("wallet nav", () => {
     expect(isWalletSectionPath("/wallet/my-transfers-archive/")).toBe(false);
     expect(isWalletSectionPath("/my-tickets/")).toBe(false);
     expect(isWalletSectionPath("/wallet/my-profile/")).toBe(true);
+    expect(isWalletSectionPath("/wallet/my-profile/bank-account/")).toBe(true);
+    expect(isWalletSectionPath("/wallet/my-profile/payouts/")).toBe(true);
+    expect(isWalletSectionPath("/wallet/bank-account/")).toBe(true);
+    expect(isWalletSectionPath("/wallet/payouts/")).toBe(true);
+    expect(isWalletSectionPath("/wallet/my-profile/activity/")).toBe(true);
     expect(isWalletSectionPath("/wallet/my-listings/")).toBe(true);
     expect(
       isWalletSectionPath("/wallet/my-tickets/order/ord-1/package/pkg-1/"),
