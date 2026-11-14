@@ -31,7 +31,9 @@ describe("walletListings", () => {
   });
 
   it("buckets by status only and keeps sold listings with past events on Sold", () => {
-    const listings = demoWalletListings().map(mapWalletListing).filter(Boolean);
+    const listings = demoWalletListings()
+      .map(mapWalletListing)
+      .filter((row): row is NonNullable<typeof row> => row !== null);
     expect(listingsForTab(listings, "active").every((row) => listingTab(row.status) === "active")).toBe(true);
     expect(listingsForTab(listings, "sold").map((row) => row.id)).toEqual([
       mapWalletListing(demoSoldListing())!.id,

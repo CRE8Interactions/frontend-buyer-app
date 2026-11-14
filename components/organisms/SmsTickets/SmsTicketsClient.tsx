@@ -39,7 +39,7 @@ type SmsEvent = {
   venue?: {
     name?: string;
     timezone?: string;
-    address?: unknown;
+    address?: Parameters<typeof formatVenueCityState>[0];
   };
 };
 

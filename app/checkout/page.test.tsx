@@ -1136,7 +1136,7 @@ describe("Checkout page", { timeout: 20_000 }, () => {
       listingAskingPrice: 400,
     }));
     cart.total = 978.72;
-    cart.totalTax = 72.6;
+    Object.assign(cart, { totalTax: 72.6 });
     cart.serviceFee = 80;
     cart.processingFee = 26.12;
     cart.estimatedProcessingFee = 0;
@@ -1373,7 +1373,7 @@ describe("Checkout page", { timeout: 20_000 }, () => {
     const cart = demoPackageCheckoutCart({
       tickets: Array.from({ length: 10 }, (_, index) => ({
         ...game,
-        id: `game-${index + 1}`,
+        id: index + 1,
         offerName: index === 0 ? "Standard Admission" : undefined,
         cost: index === 0 ? 19.02 : 0,
         price: index === 0 ? 19.02 : 0,

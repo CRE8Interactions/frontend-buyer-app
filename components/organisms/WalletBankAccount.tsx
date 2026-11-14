@@ -33,9 +33,10 @@ function linkedBankAccount(account: BankAccountRecord | null): ExternalBankAccou
     : Array.isArray(raw?.data)
       ? raw.data[0]
       : undefined;
+  const last4 = first?.last4 || account?.last4;
   return {
     bank_name: first?.bank_name || account?.bank_name,
-    last4: first?.last4 || account?.last4,
+    last4: last4 == null || last4 === "" ? undefined : String(last4),
   };
 }
 

@@ -58,7 +58,7 @@ describe("Public survey page", () => {
   beforeEach(() => {
     window.sessionStorage.clear();
     if (!window.crypto.randomUUID) {
-      window.crypto.randomUUID = () => "test-idempotency-key";
+      window.crypto.randomUUID = (() => "test-idempotency-key") as typeof window.crypto.randomUUID;
     }
     nav.token = "public-token";
     nav.search = "r=recipient";
