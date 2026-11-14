@@ -33,8 +33,11 @@ describe("mixed and checkout map errors", () => {
     expect(
       checkoutHoldError(new Error("This event is not ready for checkout yet.")).message,
     ).toBe("This event is not ready for checkout yet.");
+    expect(maxTicketLimitError(1).message).toBe(
+      "You can only select 1 ticket in this order.",
+    );
     expect(maxTicketLimitError(4).message).toBe(
-      "Adding these tickets would exceed the ticket limit of 4.",
+      "You can only select 4 tickets in this order.",
     );
   });
 

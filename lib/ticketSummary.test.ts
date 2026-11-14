@@ -21,6 +21,7 @@ import {
 import {
   completedOrderPromoCode,
   completedOrderPromoName,
+  completedOrderResaleSummary,
   gaTierSubtitle,
   gaTicketsNeedGroupSection,
   alignPackageSeatPrices,
@@ -39,9 +40,12 @@ import {
   sumIncludedSalesTax,
   resolveFlexPackCheckoutTotals,
   resolvePackageCheckoutTotals,
+  selectionIsResale,
+  selectionIsUnnamedResale,
   selectionOfferDescription,
   selectionOfferName,
   selectionTicketCards,
+  selectionTooltipOfferLabel,
   ticketSelectionSummary,
   withGaTicketGroupSections,
   withPackageCheckoutSeatPrices,
@@ -69,6 +73,127 @@ describe("selectionOfferName", () => {
         offer: { data: { attributes: { name: listing.offer?.name } } },
       }),
     ).toBe(listing.offer?.name);
+  });
+
+  it("labels an unnamed resale seat Resale and keeps a named offer", () => {
+    const unnamed = {
+      resale: true,
+      listing: { id: 8, quantity: 4 },
+      sectionNumber: "209",
+    };
+    const named = {
+      ...unnamed,
+      offer: { name: "Standard Admission" },
+    };
+
+    expect(selectionIsUnnamedResale(unnamed)).toBe(true);
+    expect(selectionTooltipOfferLabel(unnamed)).toBe("Resale");
+    expect(selectionIsUnnamedResale(named)).toBe(false);
+    expect(selectionIsResale(named)).toBe(true);
+    expect(selectionTooltipOfferLabel(named)).toBe("Standard Admission");
+  });
+});
+
+describe("ticketSelectionSummary resale badges", () => {
+  it("keeps a named resale offer and marks the selection resale", () => {
+    const summary = ticketSelectionSummary([
+      {
+        resale: true,
+        offer: { name: "Standard Admission" },
+        sectionNumber: "208",
+        rowNumber: "3",
+        seatNumber: "6",
+        price: 39.42,
+      },
+    ]);
+    expect(summary.resale).toBe(true);
+    expect(summary.offerName).toBe("Standard Admission");
+  });
+
+  it("drops the Standard admission fallback when a resale has no offer", () => {
+    const summary = ticketSelectionSummary(
+      [
+        {
+          resale: true,
+          listing: { id: 8, quantity: 2 },
+          sectionNumber: "201",
+          rowNumber: "10",
+          seatNumber: "4",
+          price: 183.7,
+        },
+      ],
+      { defaultOffer: "Standard admission" },
+    );
+    expect(summary.resale).toBe(true);
+    expect(summary.offerName).toBe("");
+    expect(summary.offerLines[0]?.offerName).toBe("Resale");
+  });
+
+  it("prices a resale hold from the listing asking price when cost is 0", () => {
+    const ticket = {
+      resale: true,
+      listingId: 574,
+      cost: 0,
+      listingAskingPrice: 400,
+      sectionNumber: "208",
+      rowNumber: "3",
+      seatNumber: "6",
+    };
+    const summary = ticketSelectionSummary([
+      ticket,
+      { ...ticket, seatNumber: "7" },
+    ]);
+
+    expect(summary.unit).toBe(400);
+    expect(summary.subtotal).toBe(800);
+    expect(summary.offerLines[0]).toMatchObject({
+      count: 2,
+      unit: 400,
+      subtotal: 800,
+    });
+    expect(
+      ticketSelectionSummary([{ ...ticket, cost: 50, price: 50 }]).unit,
+    ).toBe(50);
+  });
+});
+
+describe("completedOrderResaleSummary", () => {
+  const soldTicket = {
+    resale: false,
+    listingId: null,
+    offer: null,
+    sectionNumber: "205",
+    rowNumber: "1",
+    seatNumber: "1",
+  };
+
+  it("keeps the offer name from the listing after the tickets are marked sold", () => {
+    expect(
+      completedOrderResaleSummary({
+        type: "resale",
+        resaleListing: { id: 574, offer: { name: "Standard Admission" } },
+        tickets: [soldTicket, { ...soldTicket, seatNumber: "2" }],
+      }),
+    ).toEqual({ resale: true, offerName: "Standard Admission" });
+  });
+
+  it("marks an unnamed resale without inventing an offer", () => {
+    expect(
+      completedOrderResaleSummary({
+        type: "resale",
+        resaleListing: { id: 574, offer: null },
+        tickets: [soldTicket],
+      }),
+    ).toEqual({ resale: true, offerName: "" });
+  });
+
+  it("leaves a primary order without a resale badge", () => {
+    expect(
+      completedOrderResaleSummary({
+        type: "primary",
+        tickets: [{ ...soldTicket, offer: { name: "Standard Admission" } }],
+      }),
+    ).toEqual({ resale: false, offerName: "Standard Admission" });
   });
 });
 
@@ -580,6 +705,50 @@ describe("packageSeatLines", () => {
     expect(lines[0].price).toBe(40);
   });
 
+  it("shows one GA package line when only one game copy carries the offer name", () => {
+    const cart = demoPackageCheckoutCart();
+    const ticket = cart.tickets[0];
+    const game = {
+      ...ticket,
+      GA: true,
+      generalAdmission: true,
+      sectionNumber: "Standing Room Right",
+      sectionName: "Standing Room Right",
+      rowNumber: undefined,
+      rowName: undefined,
+      seatNumber: undefined,
+      seatId: undefined,
+    };
+    const lines = packageSeatLines(
+      [
+        {
+          ...game,
+          id: "game-1",
+          offerName: "Standard Admission",
+          offer: undefined,
+          price: 19.02,
+          cost: 19.02,
+        },
+        ...Array.from({ length: 9 }, (_, index) => ({
+          ...game,
+          id: `game-${index + 2}`,
+          offerName: undefined,
+          offer: undefined,
+          price: 0,
+          cost: 0,
+        })),
+      ],
+      10,
+    );
+
+    expect(lines).toHaveLength(1);
+    expect(lines[0].seatLine).toBe("Standing Room Right · 1 ticket");
+    expect(lines[0].context).toBe(
+      "Standard Admission · unreserved seating · all 10 games",
+    );
+    expect(lines[0].price).toBe(19.02);
+  });
+
   it("counts the reserved package tickets when game copies have no seat id", () => {
     const cart = demoPackageCheckoutCart();
     const ticket = cart.tickets[0];
@@ -904,9 +1073,9 @@ describe("orderPrimaryFeeBreakdown", () => {
         label: "Subtotal",
         amount: group?.subtotal,
       },
+      { label: "Processing Fee", amount: breakdown?.processingFee },
       { label: "Service Fee", amount: breakdown?.serviceFee },
       { label: "Facility Fee", amount: breakdown?.facilityFee },
-      { label: "Processing Fee", amount: breakdown?.processingFee },
       { label: "Tax", amount: breakdown?.salesTax },
     ]);
   });
@@ -999,6 +1168,21 @@ describe("resolvePackageCheckoutTotals", () => {
     expect(totals.total).toBe(
       summary.subtotal + Number(cart.serviceFee) + Number(cart.processingFee),
     );
+  });
+
+  it("uses the cart total minus fees when a game copy underprices the package", () => {
+    const totals = resolvePackageCheckoutTotals(
+      {
+        total: 103.2,
+        serviceFee: 0,
+        processingFee: 3.2,
+        totalTax: 0,
+      },
+      19.02,
+    );
+
+    expect(totals.subtotal).toBe(100);
+    expect(totals.total).toBe(103.2);
   });
 
   it("does not add cart.salesTax or included tax onto a package total", () => {

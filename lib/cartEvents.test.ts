@@ -2998,11 +2998,19 @@ describe("eventWalletCommerceFlags", () => {
         enableTransfers: true,
         enableResale: true,
       }),
+    ).toEqual({ transfersEnabled: true, resaleEnabled: false });
+    expect(
+      eventWalletCommerceFlags({
+        enableTransfers: true,
+        enableResale: true,
+        organization: { setting: { allowResales: true } },
+      }),
     ).toEqual({ transfersEnabled: true, resaleEnabled: true });
     expect(
       eventWalletCommerceFlags({
         enableTransfers: false,
         enableResale: true,
+        organization: { setting: { allowResales: true } },
       }),
     ).toEqual({ transfersEnabled: false, resaleEnabled: true });
     expect(eventWalletCommerceFlags({})).toEqual({

@@ -584,6 +584,19 @@ export function purchaseTabTitle(source?: {
  * Keep a purchase tab in place. The site title is applied again after the
  * confirmation page renders, which would otherwise replace this one.
  */
+/** Public survey tab title. Empty until the org name is known. */
+export function surveyTabTitle(orgName?: string | null): string {
+  const name = clean(orgName);
+  if (!name) return "";
+  return `Survey - ${name}`;
+}
+
+/** Survey unsubscribe tab title. Falls back to the bare page name without an org. */
+export function unsubscribeTabTitle(orgName?: string | null): string {
+  const name = clean(orgName);
+  return name ? `Unsubscribe - ${name}` : "Unsubscribe";
+}
+
 export function holdDocumentTitle(title: string): () => void {
   if (!title || typeof document === "undefined") return () => undefined;
   const apply = () => {
@@ -604,7 +617,10 @@ export type WalletSectionId =
   | "listings"
   | "resale"
   | "giving"
-  | "profile";
+  | "profile"
+  | "bank"
+  | "payouts"
+  | "activity";
 
 /** Legacy wallet headings. List pages do not set a Helmet title of their own. */
 export function walletSectionTabTitle(section: WalletSectionId = "events"): string {
@@ -617,6 +633,12 @@ export function walletSectionTabTitle(section: WalletSectionId = "events"): stri
       return `Giving | ${SITE_NAME}`;
     case "profile":
       return `Profile | ${SITE_NAME}`;
+    case "bank":
+      return `Bank account | ${SITE_NAME}`;
+    case "payouts":
+      return `Payouts | ${SITE_NAME}`;
+    case "activity":
+      return `Account activity | ${SITE_NAME}`;
     default:
       return `My tickets | ${SITE_NAME}`;
   }

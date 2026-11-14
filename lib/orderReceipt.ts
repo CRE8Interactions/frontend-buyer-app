@@ -1,8 +1,17 @@
+import { getOrder } from "@/lib/api";
 import {
   resolveBrandLogo,
   resolvePrimaryColor,
   type BrandingOrganization,
 } from "@/lib/branding";
+import {
+  checkoutBrandingFromCart,
+  type CheckoutCartBrandingSource,
+} from "@/lib/checkoutBranding";
+import {
+  fetchCompletedOrder,
+  normalizeOrderPayload,
+} from "@/lib/completedOrder";
 import { formatCurrency, toIanaTimezone, type TimezoneLike } from "@/lib/helpers";
 import { flexPackVoucherCount } from "@/lib/flexPackDisplay";
 import { formatOrderPaymentMethodSummary, resolveCardLast4 } from "@/lib/orderPayment";
@@ -14,10 +23,13 @@ import { htmlToReceiptPdf } from "@/lib/orderReceiptHtmlToPdf";
 import { saveReceiptPdf } from "@/lib/orderReceiptPdf";
 import {
   completedOrderPromoName,
+  completedOrderResaleSummary,
   orderPrimaryFeeBreakdown,
   primaryTicketFeeSummaryRows,
+  type PrimaryTicketFeeBreakdown,
   promoSummaryLabel,
   resolveCompletedOrderFees,
+  ticketUnitAmount,
 } from "@/lib/ticketSummary";
 import {
   formatSeatNumberRanges,
@@ -62,6 +74,7 @@ export type OrderReceiptSource = {
   paymentType?: string | null;
   paymentStatus?: string | null;
   intentDetails?: {
+    id?: string;
     charges?: {
       data?: Array<{
         payment_method_details?: {
@@ -181,11 +194,6 @@ type ReceiptSellerOrg = BrandingOrganization & {
   tincode?: string;
   display_tin?: boolean;
 };
-
-function money(value: unknown, fallback = 0) {
-  const n = Number(value);
-  return Number.isFinite(n) ? n : fallback;
-}
 
 function namePart(...values: unknown[]) {
   for (const value of values) {
@@ -363,6 +371,83 @@ function formatSeatRange(seatNumbers: Array<string | number>) {
   );
 }
 
+function allocateCents(totalCents: number, weights: number[]): number[] {
+  const total = Math.round(totalCents);
+  const safe = weights.map((weight) => Math.max(0, Math.round(weight)));
+  const weightSum = safe.reduce((sum, weight) => sum + weight, 0);
+  if (total === 0 || weightSum <= 0) return safe.map(() => 0);
+  let allocated = 0;
+  return safe.map((weight, index) => {
+    if (index === safe.length - 1) return total - allocated;
+    const share = Math.floor((total * weight) / weightSum);
+    allocated += share;
+    return share;
+  });
+}
+
+/**
+ * One receipt line per season seat. Game copies of that seat stay together
+ * even when only one copy carries the offer name or the package price.
+ * The line is priced from the package subtotal, matching the legacy invoice.
+ */
+function packageReceiptLines(
+  tickets: Array<Record<string, unknown>>,
+  title: string,
+  subtotal: number,
+): OrderReceiptLine[] {
+  const groups = new Map<
+    string,
+    {
+      ga: boolean;
+      section: string;
+      row: string;
+      seats: Array<string | number>;
+      count: number;
+    }
+  >();
+
+  for (const ticket of tickets) {
+    const ga = Boolean(
+      ticket.generalAdmission || ticket.GA || ticket.general_admission,
+    );
+    const section = ticketSectionValue(ticket);
+    const row = ticketRowValue(ticket);
+    const key = ga ? `ga:${section}` : `seat:${section}:${row}`;
+    const seat = ticketSeatValue(ticket);
+    const existing = groups.get(key);
+    if (existing) {
+      existing.count += 1;
+      if (seat) existing.seats.push(seat);
+      continue;
+    }
+    groups.set(key, {
+      ga,
+      section,
+      row,
+      seats: seat ? [seat] : [],
+      count: 1,
+    });
+  }
+
+  const grouped = [...groups.values()];
+  const amounts = allocateCents(
+    Math.max(0, Math.round(subtotal * 100)),
+    grouped.map((group) => group.count),
+  );
+
+  return grouped.map((group, index) => {
+    const amount = amounts[index] / 100;
+    const fallback = group.ga ? "GA" : "N/A";
+    const seats = formatSeatRange(group.seats);
+    return {
+      description: `${title} – Sec ${group.section || fallback} – Row ${group.row || fallback} – Seat ${seats || fallback}`,
+      qty: String(group.count),
+      unitPrice: formatCurrency(group.count > 0 ? amount / group.count : amount),
+      amount: formatCurrency(amount),
+    };
+  });
+}
+
 function groupReceiptTickets(tickets: Array<Record<string, unknown>>) {
   const groups = new Map<
     string,
@@ -387,7 +472,7 @@ function groupReceiptTickets(tickets: Array<Record<string, unknown>>) {
     );
     const key = ga ? `ga:${section}:${offer}` : `${section}:${row}:${offer}`;
     const existing = groups.get(key);
-    const price = money(ticket.cost ?? ticket.price);
+    const price = ticketUnitAmount(ticket);
     const seat = ticketSeatValue(ticket);
     if (existing) {
       existing.count += 1;
@@ -533,8 +618,9 @@ export function buildOrderReceipt(
         : subtotal / qty
       : 0;
   const title = lineItemTitle(order);
-  const ticketLines =
-    feeBreakdown && feeBreakdown.groups.length > 1
+  const ticketLines = order.package
+    ? packageReceiptLines(tickets, title, subtotal)
+    : feeBreakdown && feeBreakdown.groups.length > 1
       ? feeBreakdown.groups.map((group) => ({
           description: `${title} – ${group.label}`,
           qty: String(group.quantity),
@@ -543,14 +629,11 @@ export function buildOrderReceipt(
         }))
       : groups.map((group) => {
           const seats = group.ga ? "GA" : formatSeatRange(group.seats) || "GA";
-          const lineAmount = order.package
-            ? group.amount || unitPrice * group.count
-            : unitPrice * group.count;
           return {
             description: `${title} – Sec ${group.section} – Row ${group.row} – Seat ${seats}`,
             qty: String(group.count),
             unitPrice: formatCurrency(unitPrice),
-            amount: formatCurrency(lineAmount),
+            amount: formatCurrency(unitPrice * group.count),
           };
         });
   const flexLine = ticketLines.length ? null : flexPackReceiptLine(order, subtotal);
@@ -575,25 +658,54 @@ export function buildOrderReceipt(
       "",
   );
 
-  const totals: OrderReceiptTotal[] = feeBreakdown
-    ? primaryTicketFeeSummaryRows(feeBreakdown).map((row) => ({
+  // A resale order's fees sit on top of the asking price, so the pricing
+  // object does not itemize. Reuse the normal ticket rows anyway.
+  const receiptBreakdown: PrimaryTicketFeeBreakdown | null =
+    feeBreakdown ??
+    (completedOrderResaleSummary(order).resale
+      ? {
+          groups: [
+            {
+              label: "Tickets",
+              unitPrice: subtotal,
+              quantity: 1,
+              subtotal,
+            },
+          ],
+          serviceFee,
+          facilityFee: 0,
+          salesTax: tax,
+          processingFee,
+          chargeBackProtection: 0,
+        }
+      : null);
+  // Packages and single-event tickets list tax last. Flex packs list it
+  // directly under the service fee.
+  const taxRow: OrderReceiptTotal = { label: "Tax", amount: formatCurrency(tax) };
+  const deferTax = !receiptBreakdown && !order.flex_pack;
+  const totals: OrderReceiptTotal[] = receiptBreakdown
+    ? primaryTicketFeeSummaryRows(receiptBreakdown).map((row) => ({
         label: row.label,
         amount: formatCurrency(row.amount),
       }))
     : [
         { label: "Subtotal", amount: formatCurrency(subtotal) },
-        { label: "Tax", amount: formatCurrency(tax) },
         { label: "Processing Fee", amount: formatCurrency(processingFee) },
         { label: "Service Fee", amount: formatCurrency(serviceFee) },
+        ...(deferTax ? [] : [taxRow]),
       ];
   if (!feeBreakdown) {
-    for (const line of customFeeLines) {
-      totals.push({
-        label: line.name,
-        amount: formatCurrency(line.amount),
-      });
-    }
+    const customRows = customFeeLines.map((line) => ({
+      label: line.name,
+      amount: formatCurrency(line.amount),
+    }));
+    const taxIndex = totals.findIndex((row) => row.label === "Tax");
+    // Flex packs list custom fees after the tax row; other orders list them before it.
+    if (taxIndex >= 0) {
+      totals.splice(order.flex_pack ? taxIndex + 1 : taxIndex, 0, ...customRows);
+    } else totals.push(...customRows);
   }
+  if (deferTax) totals.push(taxRow);
   if (discount) {
     totals.push({
       label: promoSummaryLabel(completedOrderPromoName(order)),
@@ -757,6 +869,132 @@ export function printOrderReceiptHtml(html: string) {
       cleanup();
     }
   }
+}
+
+const STRIPE_INTENT_ID = /^pi_[A-Za-z0-9]+$/;
+
+/**
+ * The saved order does not always name its payment intent the same way, so
+ * look for a Stripe intent id anywhere on it (intentDetails, invoices, ...).
+ */
+function paymentIntentIdFromOrder(order: unknown, depth = 0): string {
+  if (typeof order === "string") {
+    return STRIPE_INTENT_ID.test(order.trim()) ? order.trim() : "";
+  }
+  if (!order || typeof order !== "object" || depth > 4) return "";
+  const values = Array.isArray(order)
+    ? order
+    : Object.values(order as Record<string, unknown>);
+  for (const value of values) {
+    const found = paymentIntentIdFromOrder(value, depth + 1);
+    if (found) return found;
+  }
+  return "";
+}
+
+/**
+ * Higher when the order can show the same fee split as checkout.
+ * A flex pack that only has a tax lump scores below one that lists the
+ * service fee and the processing fee.
+ */
+function receiptPricingScore(order: OrderReceiptSource): number {
+  if (orderPrimaryFeeBreakdown(order)) return 5;
+  const fees = resolveCompletedOrderFees(order);
+  let score = 0;
+  if (fees.serviceFee > 0) score += 2;
+  if (fees.processingFee > 0) score += 2;
+  if (score === 0 && fees.tax > 0) score = 1;
+  return score;
+}
+
+function mergeReceiptOrder(
+  base: OrderReceiptSource,
+  full: OrderReceiptSource,
+): OrderReceiptSource {
+  const merged: Record<string, unknown> = { ...base };
+  for (const [key, value] of Object.entries(full)) {
+    if (value == null || value === "") continue;
+    if (Array.isArray(value) && value.length === 0) continue;
+    merged[key] = value;
+  }
+  return merged as OrderReceiptSource;
+}
+
+/**
+ * Arguments for the checkout-success receipt download.
+ * Profile activity passes `hydratePricing` so a short invoice is filled
+ * from the same order record before that download runs.
+ */
+export async function shopperReceiptDownload({
+  order,
+  user,
+  guest,
+  sellerLogoUrl,
+  sellerName,
+  hydratePricing = false,
+}: {
+  order?: OrderReceiptSource | null;
+  user?: OrderReceiptPerson | null;
+  guest?: OrderReceiptPerson | null;
+  sellerLogoUrl?: string | null;
+  sellerName?: string | null;
+  hydratePricing?: boolean;
+}): Promise<{
+  order: OrderReceiptSource;
+  purchaser: OrderReceiptPurchaser;
+  sellerLogoUrl?: string | null;
+  sellerName?: string | null;
+}> {
+  if (!order) throw new Error("Receipt unavailable");
+  let source = order;
+  let purchaser = receiptPurchaserFromSources({ user, guest, order });
+  const needsName = !purchaser.firstName && !purchaser.lastName;
+  const orderId = String(order.orderId || "");
+  if (orderId && (hydratePricing || needsName)) {
+    try {
+      const res = await getOrder(orderId);
+      const fetched = normalizeOrderPayload(res.data) as OrderReceiptSource;
+      if (hydratePricing) {
+        const merged = mergeReceiptOrder(order, fetched);
+        if (receiptPricingScore(merged) >= receiptPricingScore(source)) {
+          source = merged;
+        }
+      }
+      purchaser = receiptPurchaserFromSources({
+        user,
+        guest,
+        order: hydratePricing ? source : fetched,
+      });
+    } catch {
+      /* keep the order already on the page */
+    }
+  }
+  if (hydratePricing && receiptPricingScore(source) < 4) {
+    const intentId =
+      paymentIntentIdFromOrder(source) || paymentIntentIdFromOrder(order);
+    if (intentId) {
+      try {
+        const fetched = (await fetchCompletedOrder(intentId)) as OrderReceiptSource;
+        const merged = mergeReceiptOrder(source, fetched);
+        if (receiptPricingScore(merged) > receiptPricingScore(source)) {
+          source = merged;
+          purchaser = receiptPurchaserFromSources({ user, guest, order: source });
+        }
+      } catch {
+        /* the list invoice is still enough to download */
+      }
+    }
+  }
+  const branding = checkoutBrandingFromCart(
+    source as CheckoutCartBrandingSource,
+  );
+  return {
+    order: source,
+    purchaser,
+    sellerLogoUrl:
+      sellerLogoUrl !== undefined ? sellerLogoUrl : branding.theme.brandLogoSrc,
+    sellerName: sellerName !== undefined ? sellerName : branding.orgLabel,
+  };
 }
 
 /** Builds a PDF from the invoice HTML and downloads it. */

@@ -70,23 +70,34 @@ vi.mock("@/components/organisms/InteractiveSeatmap", async () => {
   const { default: useFiltersStore } = await import("@/stores/filtersStore");
   const InteractiveSeatmap = ({
     onPaintReady,
+    onUnlockOffer,
   }: {
     onPaintReady?: () => void;
+    onUnlockOffer?: (offerName: string) => void;
   }) => {
     const loading = useFiltersStore.getState().loadingTicketGroups;
     useEffect(() => {
       if (!loading) onPaintReady?.();
     }, [loading, onPaintReady]);
+    const unlockSeat = onUnlockOffer ? (
+      <button type="button" onClick={() => onUnlockOffer("Field Club")}>
+        Unlock locked section
+      </button>
+    ) : null;
     return loading ? (
       <div
         data-testid="interactive-seatmap"
         role="status"
         aria-label="Loading seat map"
       >
+        {unlockSeat}
         Loading seat map
       </div>
     ) : (
-      <div data-testid="interactive-seatmap">Interactive seat map</div>
+      <div data-testid="interactive-seatmap">
+        {unlockSeat}
+        Interactive seat map
+      </div>
     );
   };
   return {
@@ -116,6 +127,7 @@ vi.mock("@/lib/api", () => ({
   placeTicketsIntoCart: vi.fn(),
   placeGATicketsIntoCart: vi.fn(),
   checkAccessCode: vi.fn(),
+  findOffersByAccessCode: vi.fn(),
   validateEmail: vi.fn(async () => ({ data: { verdict: "Valid" } })),
 }));
 
@@ -143,6 +155,7 @@ vi.mock("@/lib/cart", async (importOriginal) => {
 import PremiumTicketing from "@/components/organisms/PremiumTicketing";
 import {
   checkAccessCode,
+  findOffersByAccessCode,
   placeGATicketsIntoCart,
   placeTicketsIntoCart,
   validateEmail,
@@ -151,6 +164,7 @@ import { useAuth } from "@/lib/auth";
 import { checkoutHref } from "@/lib/cart";
 
 const mockedCheckAccessCode = vi.mocked(checkAccessCode);
+const mockedFindOffers = vi.mocked(findOffersByAccessCode);
 const mockedPlaceGaTickets = vi.mocked(placeGATicketsIntoCart);
 const mockedPlaceTickets = vi.mocked(placeTicketsIntoCart);
 const mockedValidateEmail = vi.mocked(validateEmail);
@@ -247,6 +261,8 @@ describe("Select tickets page (PremiumTicketing)", { timeout: 20_000 }, () => {
     routerMocks.push.mockReset();
     mockedCheckAccessCode.mockReset();
     mockedCheckAccessCode.mockResolvedValue({ data: "" } as never);
+    mockedFindOffers.mockReset();
+    mockedFindOffers.mockResolvedValue({ data: { offers: [] } } as never);
     mockedUseAuth.mockReturnValue(authState(false));
     mockedPlaceTickets.mockResolvedValue({
       data: { cartId: "cart-1" },
@@ -1064,13 +1080,15 @@ describe("Select tickets page (PremiumTicketing)", { timeout: 20_000 }, () => {
   });
 
   it("steps seated quantities by the offer multiple within min and max", async () => {
+    const fieldClub = seatedTicketingFixture.listings.find(
+      (listing) => listing.sec === "M" && listing.row === "M3",
+    );
+    if (!fieldClub) throw new Error("demo fixtures need a Field Club seated listing");
     const restricted = {
       ...seatedTicketingFixture,
       listings: [
         {
-          ...seatedTicketingFixture.listings.find(
-            (listing) => listing.zone === "Field Club",
-          )!,
+          ...fieldClub,
           min: 2,
           max: 6,
           multipleOf: 2,
@@ -1822,6 +1840,30 @@ describe("Select tickets page (PremiumTicketing)", { timeout: 20_000 }, () => {
     expect(payload.ticketGroups[0]).not.toHaveProperty("quantity");
   });
 
+  it("sends only the clicked resale seat when part of the listing is selected", async () => {
+    const listing = DEMO_SEATED_TICKET_GROUPS.find((group) => group.listing?.id);
+    if (!listing) throw new Error("demo fixtures need a resale listing");
+    useSeatmapStore.setState({
+      selectedFromMap: [{ ...listing, seatId: "a-resale-1" }],
+      totalCount: 1,
+      totalPrice: Number(listing.price || 0),
+    });
+    const user = await openLiveMap();
+
+    await user.click(screen.getByRole("button", { name: /^checkout$/i }));
+
+    await waitFor(() => expect(mockedPlaceTickets).toHaveBeenCalled());
+    const [payload] = mockedPlaceTickets.mock.calls[0] as [
+      { ticketGroups: Array<Record<string, unknown>> },
+    ];
+    expect(payload.ticketGroups).toEqual([
+      expect.objectContaining({
+        seatIds: ["a-resale-1"],
+        quantity: 1,
+      }),
+    ]);
+  });
+
   it("opens the seat map popup right away and shows the org loader until the map is ready", async () => {
     await renderReady();
     fireEvent.click(screen.getAllByRole("button", { name: /find on map/i })[0]);
@@ -2241,8 +2283,15 @@ describe("Select tickets page (PremiumTicketing)", { timeout: 20_000 }, () => {
     );
     await user.click(screen.getAllByText(/find on map/i)[0]);
     await finishSeatmapBackgroundLoad();
+    await waitFor(() => {
+      expect(
+        screen.getByRole("button", { name: /unlock locked section/i }),
+      ).toBeVisible();
+    });
 
-    await user.click(screen.getByRole("button", { name: /field club/i }));
+    await user.click(
+      screen.getByRole("button", { name: /unlock locked section/i }),
+    );
     await user.type(screen.getByPlaceholderText(/access code/i), "CLUB26");
     await user.click(screen.getByRole("button", { name: /unlock seats/i }));
 
@@ -2257,37 +2306,46 @@ describe("Select tickets page (PremiumTicketing)", { timeout: 20_000 }, () => {
     });
   });
 
-  it("unlocks a passcode-locked offer and filters to it", async () => {
+  it("unlocks a matching offer code and keeps the open listings on the page", async () => {
+    const fieldClub = DEMO_SEATED_TICKET_GROUPS.find(
+      (group) => group.offer?.name === "Field Club",
+    );
+    if (!fieldClub?.offer) throw new Error("demo fixtures need Field Club");
+    mockedFindOffers.mockResolvedValue({
+      data: { offers: [{ id: fieldClub.offer.id, name: fieldClub.offer.name }] },
+    } as never);
     const user = await renderReady(lockedTicketingFixture, {
       waitForListing: /sec a · row 12/i,
     });
 
     expect(screen.queryByText(/sec m · row m3/i)).not.toBeInTheDocument();
-    await user.click(screen.getByRole("button", { name: /field club/i }));
-
-    expect(await screen.findByText(/field club is locked/i)).toBeInTheDocument();
     expect(
-      screen.getByText(/enter your access code to unlock these seats/i),
-    ).toBeInTheDocument();
-    await user.type(screen.getByPlaceholderText(/access code/i), "CLUB26");
-    await user.click(screen.getByRole("button", { name: /unlock seats/i }));
+      screen.queryByRole("button", { name: /field club/i }),
+    ).not.toBeInTheDocument();
+    await user.type(screen.getByLabelText(/offer code/i), "CLUB26");
+    await user.click(screen.getByRole("button", { name: /^unlock$/i }));
 
+    expect(
+      await screen.findByText(/field club offer unlocked/i),
+    ).toBeInTheDocument();
+    expect(screen.getByText(/code club26 applied/i)).toBeInTheDocument();
     expect(await screen.findByText(/sec m · row m3/i)).toBeInTheDocument();
+    expect(screen.getAllByText(/sec a · row 12/i).length).toBeGreaterThan(0);
   });
 
-  it("keeps a locked offer hidden when the code is rejected", async () => {
+  it("tells the shopper when an offer code does not match", async () => {
     const user = await renderReady(lockedTicketingFixture, {
       waitForListing: /sec a · row 12/i,
     });
 
-    await user.click(screen.getByRole("button", { name: /field club/i }));
-    await user.type(screen.getByPlaceholderText(/access code/i), "WRONG26");
-    await user.click(screen.getByRole("button", { name: /unlock seats/i }));
+    await user.type(screen.getByLabelText(/offer code/i), "WRONG26");
+    await user.click(screen.getByRole("button", { name: /^unlock$/i }));
 
     expect(
-      await screen.findByText(/that code didn.t match/i),
+      await screen.findByText(/couldn't find an offer for that code/i),
     ).toBeInTheDocument();
     expect(screen.queryByText(/sec m · row m3/i)).not.toBeInTheDocument();
+    expect(screen.getAllByText(/sec a · row 12/i).length).toBeGreaterThan(0);
   });
 
   it("filters to accessible listings when ADA is toggled without a server callback", async () => {
@@ -2301,6 +2359,61 @@ describe("Select tickets page (PremiumTicketing)", { timeout: 20_000 }, () => {
       expect(screen.getAllByText(/sec a · row 12/i).length).toBeGreaterThan(0);
       expect(screen.queryByText(/sec m · row m3/i)).not.toBeInTheDocument();
     });
+  });
+
+  it("shows a resale listing in price order with a Verified Resale badge", async () => {
+    await renderReady();
+
+    const prices = screen
+      .getAllByText(/\$[\d,]+\.\d{2} each/i)
+      .map((el) => el.textContent);
+    expect(prices[0]).toMatch(/\$11\.64/);
+    expect(prices[prices.length - 1]).toMatch(/\$45\.00/);
+    const resaleBadge = screen.getAllByTestId("verified-resale-badge")[0];
+    expect(resaleBadge).toHaveTextContent(/verified resale/i);
+    // The demo resale listing carries an offer named "Section A-B", so its offer pill shows.
+    expect(resaleBadge.parentElement).toHaveTextContent(/section a-b/i);
+    expect(screen.getByText(/^sec a · row 1$/i)).toBeInTheDocument();
+    expect(screen.getByText(/sec m · row m3/i)).toBeInTheDocument();
+  });
+
+  it("shows a resale listing's offer pill next to its Verified Resale badge when it has an offer", async () => {
+    const resale = seatedTicketingFixture.listings.find((l) => l.resale)!;
+    await renderReady({
+      ...seatedTicketingFixture,
+      listings: [
+        ...seatedTicketingFixture.listings,
+        {
+          ...resale,
+          zone: "Premium Offer",
+          cartGroup: { ...resale.cartGroup, offer: { ...(resale.cartGroup?.offer as object), name: "Premium Offer" } },
+        },
+      ],
+    });
+
+    const pill = screen.getAllByText("Premium Offer")[0];
+    expect(pill).toBeInTheDocument();
+    expect(pill.parentElement).toHaveTextContent(/verified resale/i);
+  });
+
+  it("does not list a resale listing's section as an offer chip", async () => {
+    const resale = seatedTicketingFixture.listings.find((l) => l.resale)!;
+    await renderReady({
+      ...seatedTicketingFixture,
+      listings: [
+        ...seatedTicketingFixture.listings,
+        {
+          ...resale,
+          zone: "Section 210",
+          cartGroup: { ...resale.cartGroup, offer: undefined },
+        },
+      ],
+    });
+
+    expect(
+      screen.queryByRole("button", { name: /section 210/i }),
+    ).not.toBeInTheDocument();
+    expect(screen.queryByText(/section 210/i)).not.toBeInTheDocument();
   });
 
   it("shows an accessibility empty state instead of quantity-reset copy", async () => {
@@ -2428,8 +2541,8 @@ describe("Select tickets page (PremiumTicketing)", { timeout: 20_000 }, () => {
   it("switches between cheapest-first and best-seat order from the sort dropdown", async () => {
     const user = await renderReady();
 
-    const firstPrice = () =>
-      screen.getAllByText(/\$[\d,]+\.\d{2} each/i)[0].textContent;
+    const prices = () =>
+      screen.getAllByText(/\$[\d,]+\.\d{2} each/i).map((el) => el.textContent);
     const pickSort = async (current: RegExp, option: RegExp) => {
       await user.click(screen.getByRole("button", { name: current }));
       await user.click(
@@ -2440,26 +2553,26 @@ describe("Select tickets page (PremiumTicketing)", { timeout: 20_000 }, () => {
       );
     };
 
-    // Default: cheapest first, and the default label.
-    expect(firstPrice()).toMatch(/\$11\.64/);
+    expect(prices()[0]).toMatch(/\$11\.64/);
+    expect(prices()[prices().length - 1]).toMatch(/\$45\.00/);
     expect(screen.getByRole("button", { name: /^sort by price$/i })).toBeInTheDocument();
     expect(screen.queryByRole("listbox", { name: /sort listings/i })).not.toBeInTheDocument();
 
-    // Best seat: the API's sortOrder puts Field Club ($33.59) first.
     await pickSort(/^sort by price$/i, /^best seat$/i);
     expect(
       screen.getByRole("button", { name: /^sort by best seat$/i }),
     ).toBeInTheDocument();
     expect(screen.queryByRole("listbox", { name: /sort listings/i })).not.toBeInTheDocument();
     await waitFor(() => {
-      expect(firstPrice()).toMatch(/\$33\.59/);
+      expect(prices()[0]).toMatch(/\$33\.59/);
+      expect(prices()[1]).toMatch(/\$12\.00/);
     });
 
-    // Back to price restores cheapest first and the default label.
     await pickSort(/^sort by best seat$/i, /^price$/i);
     expect(screen.getByRole("button", { name: /^sort by price$/i })).toBeInTheDocument();
     await waitFor(() => {
-      expect(firstPrice()).toMatch(/\$11\.64/);
+      expect(prices()[0]).toMatch(/\$11\.64/);
+      expect(prices()[prices().length - 1]).toMatch(/\$45\.00/);
     });
   });
 
@@ -2470,9 +2583,11 @@ describe("Select tickets page (PremiumTicketing)", { timeout: 20_000 }, () => {
     expect(
       screen.getByRole("button", { name: /^sort by best seat$/i }),
     ).toBeInTheDocument();
-    expect(
-      screen.getAllByText(/\$[\d,]+\.\d{2} each/i)[0].textContent,
-    ).toMatch(/\$33\.59/);
+    const prices = screen
+      .getAllByText(/\$[\d,]+\.\d{2} each/i)
+      .map((el) => el.textContent);
+    expect(prices[0]).toMatch(/\$33\.59/);
+    expect(prices[1]).toMatch(/\$12\.00/);
   });
 
   it("opens the event information modal", async () => {

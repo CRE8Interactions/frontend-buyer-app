@@ -6,25 +6,17 @@
 
 %% API:    blocktickets POST /promo-code/redeem
 
-%%
-
 %% --- Blur ---
 
 %% | Field | Empty blur | Non-empty invalid |
 
 %% | Promo code | (no error) | (no format check) |
 
-%%
-
 %% API rejections stay on blur until the shopper edits the field.
-
-%%
 
 %% --- Apply ---
 
 %% Apply is disabled when the field is empty or whitespace-only. Empty blur is quiet.
-
-%%
 
 %% --- POST /promo-code/redeem ---
 
@@ -33,8 +25,6 @@
 %% A failed redeem wraps the API message with "Please try again." (adds a period
 
 %% if the API message has none).
-
-%%
 
 %% | Status | API message | Displayed copy |
 

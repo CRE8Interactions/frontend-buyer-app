@@ -57,6 +57,22 @@ describe("createSectionInventoryTable", () => {
     ).toBe(false);
   });
 
+  it("marks a GA section unavailable when none of its groups have tickets", () => {
+    const groups = demoTicketGroups().ticketGroups.map((group) => ({
+      ...group,
+      availableCount: 0,
+      maxContiguous: 0,
+    }));
+
+    expect(
+      createSectionInventoryTable(
+        mapping,
+        createSectionLookupTable(groups),
+        {},
+      )[DEMO_GA_SECTION_ID],
+    ).toBe(false);
+  });
+
   it("returns an empty table when there is no mapping geometry", () => {
     expect(createSectionInventoryTable(null, gaSectionLookupTable, seatLookupTable)).toEqual(
       {},
@@ -164,6 +180,21 @@ describe("sectionOverlayPaint", () => {
     expect(paint.labelFill).toBe("#FFFFFF");
   });
 
+  it("keeps a resale available band on the section fill", () => {
+    const section = mapping.sections?.["sec-m"];
+    const stats = countSectionAvailability(section, mapping.rows, {
+      s1: { resale: true },
+    });
+
+    expect(stats).toEqual({ total: 4, available: 1 });
+    expect(sectionOverlayPaint(section, stats)).toMatchObject({
+      soldOut: false,
+      kind: "gradient",
+      ratio: 0.25,
+      fill: DEMO_SECTION_FILL,
+    });
+  });
+
   it("does not call a section sold out when it has no seat geometry", () => {
     const stats = countSectionAvailability({ rows: [] }, mapping.rows, {});
 
@@ -179,6 +210,11 @@ describe("createSeatLookupTables", () => {
     expect(Object.keys(seatLookupTable).sort()).toEqual(
       [...expected].sort(),
     );
+  });
+
+  it("keeps resale seats in the lookup so the map can paint them", () => {
+    expect(seatLookupTable["a-resale-1"]?.resale).toBe(true);
+    expect(seatLookupTable["a-resale-2"]?.resale).toBe(true);
   });
 
   it("narrows a seat to the selected offer and restores every offer when none are selected", () => {
@@ -208,5 +244,47 @@ describe("createSeatLookupTables", () => {
       "off-unlocked",
     ]);
     expect(filtered.lookupTable.a1?.offer?.id).toBe("off-unlocked");
+  });
+
+  it("hides seats and GA sections that are not on the selected offer", () => {
+    const fieldClub = DEMO_SEATED_TICKET_GROUPS.find(
+      (group) => group.offer?.name === "Field Club",
+    );
+    const coded = DEMO_SEATED_TICKET_GROUPS.find(
+      (group) => group.offer?.name === "VIP Coded",
+    );
+    const standard = demoTicketGroups().ticketGroups.find(
+      (group) => group.offer?.name === "Standard Admission",
+    );
+    const vip = demoTicketGroups().ticketGroups.find(
+      (group) => group.offer?.name === "VIP Club",
+    );
+    if (!fieldClub?.offer || !coded?.offer || !standard?.offer || !vip?.offer) {
+      throw new Error("demo fixtures need Field Club, VIP Coded, and GA offers");
+    }
+    const fieldSeat = fieldClub.seatIds?.[0];
+    const codedSeat = coded.seatIds?.[0];
+    if (!fieldSeat || !codedSeat) throw new Error("demo fixtures need seated ids");
+
+    const seats = createSeatLookupTables(
+      [fieldClub, coded],
+      [String(fieldClub.offer.id)],
+    );
+    expect(seats.lookupTable[fieldSeat]?.offer?.id).toBe(fieldClub.offer.id);
+    expect(seats.lookupTable[codedSeat]).toBeUndefined();
+
+    const vipSection = {
+      ...vip!,
+      sectionId: "sec-vip",
+      offer: vip!.offer,
+    };
+    const sections = createSectionLookupTable(
+      [standard!, vipSection],
+      [standard!.offer!.id as string | number],
+    );
+    expect(sections[DEMO_GA_SECTION_ID]?.map((group) => group.offer?.id)).toEqual([
+      standard!.offer!.id,
+    ]);
+    expect(sections["sec-vip"]).toBeUndefined();
   });
 });

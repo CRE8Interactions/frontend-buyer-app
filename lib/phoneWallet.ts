@@ -8,6 +8,7 @@ import { downloadApplePass, downloadGooglePass } from "@/lib/api";
 import {
   downloadBlobPass,
   isPhoneDevice,
+  reportsAndroidDevice,
   seatDisplayValue,
   type AccessPassSummary,
   type EventLike,
@@ -153,19 +154,29 @@ export function walletPassEvent(
   };
 }
 
-/** The wallet this phone can hold a pass in; tablets and desktops get none. */
-export function phoneWalletKind(): PhoneWalletKind | null {
-  if (!isPhoneDevice()) return null;
+/**
+ * Wallets to offer on this phone. Both buttons appear only when the page is
+ * phone-sized and the operating system is hidden. A recognized iPhone or
+ * Android phone still gets its own wallet.
+ */
+export function phoneWalletKinds(): PhoneWalletKind[] {
+  if (!isPhoneDevice()) return [];
   const ua = navigator.userAgent;
   if (
     /iPhone|iPod/i.test(ua) ||
     /iPhone|iPod/i.test(navigator.platform || "") ||
     /Macintosh/i.test(ua)
   ) {
-    return "apple";
+    return ["apple"];
   }
-  if (/Android/i.test(ua)) return "google";
-  return null;
+  if (reportsAndroidDevice()) return ["google"];
+  return ["apple", "google"];
+}
+
+/** The one wallet this phone can hold, when the operating system is known. */
+export function phoneWalletKind(): PhoneWalletKind | null {
+  const kinds = phoneWalletKinds();
+  return kinds.length === 1 ? kinds[0] : null;
 }
 
 export function phoneWalletLabel(kind: PhoneWalletKind): string {

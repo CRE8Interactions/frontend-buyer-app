@@ -6,7 +6,9 @@ import {
   PDFRawStream,
   PDFRef,
 } from "pdf-lib";
-import { DEMO_EVENTS, DEMO_SEATED_TICKET_GROUPS, DEMO_USER } from "@/lib/demo/fixtures";
+import { DEMO_EVENTS, DEMO_SEATED_TICKET_GROUPS, DEMO_USER, demoTicketGroups } from "@/lib/demo/fixtures";
+import { formatEventWhen } from "@/lib/helpers";
+import { PRINTED_ENTRY_MAX_CHARS, PRINTED_SECTION_MAX_CHARS } from "@/lib/printedTicketDetails";
 import { ACCESSIBLE_LABEL_DA } from "@/lib/ticketAccessibility";
 import {
   NM_STATE_ATHLETICS_ORG_UUID,
@@ -457,5 +459,233 @@ describe("printTicketsPdf", () => {
 
     expect(click).toHaveBeenCalledOnce();
     expect(blobs[0]?.size).toBeGreaterThan(0);
+  });
+
+  const eventTime = formatEventWhen(nmState.start, nmState.venue.timezone, "h:mm A");
+
+  function entryLabels(text: string) {
+    return text.split("ENTRY").length - 1;
+  }
+
+  it("keeps a short ticket on the event time without an entry block", async () => {
+    vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => {});
+
+    await printTicketsPdf(
+      request({
+        tickets: [
+          {
+            id: 1,
+            checkInCode: "NMS-1",
+            holder: "Jaime Convery",
+            sectionNumber: "G",
+            rowNumber: 20,
+            seatNumber: 20,
+          },
+        ],
+      }),
+    );
+
+    const text = await pdfPageText(blobs[0]);
+    expect(eventTime.length).toBeGreaterThan(0);
+    expect(text).toContain(eventTime);
+    expect(text).toContain(nmState.name);
+    expect(entryLabels(text)).toBe(1);
+  });
+
+  it("prints a long section name and entry instructions without replacing the time", async () => {
+    vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => {});
+    const entry =
+      "Enter through Gate C. Club lounge opens 90 minutes before puck drop. Wristbands are required on the party deck. No re-entry after the first period. Show ticket at the club door.";
+    const offerName = "Premium All-Inclusive Champions Club Access Pass";
+    const sectionNumber = "Champions Club Party Deck — West Suite Entrance";
+
+    await printTicketsPdf(
+      request({
+        event: {
+          ...nmState,
+          organization: {
+            ...nmState.organization,
+            uuid: NM_STATE_ATHLETICS_ORG_UUID,
+          },
+        },
+        purchasedByOrganizationName: nmState.organization.name,
+        tickets: [
+          {
+            id: 1,
+            checkInCode: "NMS-1",
+            holder: "Jaime Convery",
+            sectionNumber,
+            rowNumber: "A",
+            seatNumber: 14,
+            accessible: true,
+            accessibleType: "DA",
+            offer: { name: offerName, description: entry },
+          },
+        ],
+      }),
+    );
+
+    const text = await pdfPageText(blobs[0]);
+    expect(text).toContain(eventTime);
+    expect(text).toContain("Champions Club Party Deck");
+    expect(text).toContain("West Suite");
+    expect(text).toContain("Enter through Gate C.");
+    expect(text).toContain(offerName);
+    expect(text).not.toContain("…");
+    expect(text).toContain("Open space for");
+    expect(text).toContain("wheelchair");
+    expect(text).not.toContain("Accessible:");
+    expect(text.indexOf("OFFER")).toBeLessThan(text.indexOf("TICKET ID"));
+    expect(text.indexOf("TICKET ID")).toBeLessThan(text.indexOf("ACCESSIBILITY"));
+    expect(text.indexOf("ACCESSIBILITY")).toBeLessThan(text.indexOf("ORGANIZATION"));
+    expect(text).toContain(nmState.organization.name);
+  });
+
+  it("prints the entry lines that fit when a description needs more than three", async () => {
+    vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => {});
+    const description = [
+      "Enter Gate C.",
+      "Show your wristband.",
+      "No re-entry after the first period.",
+      "Club door only.",
+    ].join("\n");
+    expect(description.length).toBeLessThanOrEqual(PRINTED_ENTRY_MAX_CHARS);
+
+    await printTicketsPdf(
+      request({
+        purchasedByOrganizationName: nmState.organization.name,
+        tickets: [
+          {
+            id: 1,
+            checkInCode: "NMS-1",
+            sectionNumber: "101",
+            rowNumber: "A",
+            seatNumber: 4,
+            offer: { name: "Club", description },
+          },
+        ],
+      }),
+    );
+
+    const text = await pdfPageText(blobs[0]);
+    expect(text).toContain("Enter Gate C.");
+    expect(text).toContain("Show your wristband.");
+    expect(text).toContain("No re-entry after the first period.");
+    expect(text).not.toContain("Club door only.");
+    expect(text).toContain(eventTime);
+    expect(text).toContain(nmState.organization.name);
+  });
+
+  it("drops a third section line and still prints the ticket", async () => {
+    vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => {});
+    const sectionNumber = [
+      "Lower Level Champions Club",
+      "Party Deck West Suite",
+      "Entrance Gate C",
+    ].join("\n");
+    expect(sectionNumber.length).toBeLessThanOrEqual(PRINTED_SECTION_MAX_CHARS);
+
+    await printTicketsPdf(
+      request({
+        tickets: [
+          {
+            id: 1,
+            checkInCode: "NMS-1",
+            generalAdmission: false,
+            sectionNumber,
+            rowNumber: "A",
+            seatNumber: 14,
+          },
+        ],
+      }),
+    );
+
+    const text = await pdfPageText(blobs[0]);
+    expect(text).toContain("Lower Level Champions Club");
+    expect(text).toContain("Party Deck West Suite");
+    expect(text).not.toContain("Entrance Gate C");
+    expect(text).toContain(eventTime);
+  });
+
+  it("still prints when a description is longer than the card", async () => {
+    vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => {});
+
+    await printTicketsPdf(
+      request({
+        tickets: [
+          {
+            id: 1,
+            checkInCode: "NMS-1",
+            sectionNumber: "101",
+            rowNumber: "A",
+            seatNumber: 4,
+            offer: { name: "Club", description: "A".repeat(PRINTED_ENTRY_MAX_CHARS + 1) },
+          },
+        ],
+      }),
+    );
+
+    const text = await pdfPageText(blobs[0]);
+    expect(text).toContain(nmState.name);
+    expect(text).toContain(eventTime);
+    expect(entryLabels(text)).toBe(1);
+  });
+
+  it("strips markup from entry instructions", async () => {
+    vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => {});
+    const vip = demoTicketGroups().ticketGroups.find((group) => group.id === "grp-vip");
+    if (!vip?.offer || !("description" in vip.offer) || !vip.offer.description) {
+      throw new Error("VIP fixture is missing its offer description");
+    }
+
+    await printTicketsPdf(
+      request({
+        tickets: [
+          {
+            id: 1,
+            checkInCode: "NMS-1",
+            sectionNumber: "101",
+            rowNumber: "B",
+            seatNumber: 2,
+            offer: [
+              {
+                name: vip.offer.name,
+                description: `<script>alert(1)</script>${vip.offer.description}`,
+              },
+            ],
+          },
+        ],
+      }),
+    );
+
+    const text = await pdfPageText(blobs[0]);
+    expect(text).toContain(vip.offer.description);
+    expect(text).not.toContain("script");
+    expect(text).not.toContain("alert");
+  });
+
+  it("wraps the accessibility label onto more lines instead of cutting it off", async () => {
+    vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => {});
+
+    await printTicketsPdf(
+      request({
+        tickets: [
+          {
+            id: 1,
+            checkInCode: "NMS-1",
+            sectionNumber: "101",
+            rowNumber: "A",
+            seatNumber: 4,
+            accessible: true,
+            accessibleType: "DA",
+          },
+        ],
+      }),
+    );
+
+    const text = await pdfPageText(blobs[0]);
+    expect(text).toContain(ACCESSIBLE_LABEL_DA.split(" ").slice(0, 2).join(" "));
+    expect(text).toContain("wheelchair");
+    expect(text).not.toContain("…");
   });
 });

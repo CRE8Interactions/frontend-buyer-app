@@ -1,0 +1,342 @@
+.public-survey-page {
+  background: #f4f6f8;
+  color: #141416;
+  min-height: 100dvh;
+  padding: 2.25rem 1rem 3.5rem;
+}
+
+.public-survey {
+  max-width: 42rem;
+  margin: 0 auto;
+  color: #141416;
+  --bt-field-focus: var(--survey-color);
+}
+
+.public-survey__intro {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  margin-bottom: 1.75rem;
+}
+
+.public-survey__logo {
+  display: block;
+  width: auto;
+  height: 8.5rem;
+  max-width: min(100%, 22rem);
+  margin: 0 0 1rem;
+  object-fit: contain;
+  object-position: center;
+}
+
+.public-survey__org {
+  margin: 0;
+  color: #5b616e;
+  font-size: 0.95rem;
+  font-weight: 650;
+  letter-spacing: 0.01em;
+}
+
+.public-survey h1 {
+  margin: 0.3rem 0 0.45rem;
+  font-size: 2rem;
+  font-weight: 700;
+  line-height: 1.15;
+  letter-spacing: -0.02em;
+}
+
+/* Thank-you, already-completed, and unavailable states use the legacy global h1 size and weight. */
+.survey-screen h1 {
+  margin: 0.3rem 0 0.45rem;
+  font-size: 4rem;
+  font-weight: 700;
+  line-height: 1.1;
+}
+
+.public-survey__description {
+  max-width: 36rem;
+  margin: 0;
+  color: #3d424d;
+  line-height: 1.5;
+  text-wrap: balance;
+  white-space: pre-wrap;
+}
+
+.public-survey__section {
+  margin: 1.75rem 0 0.35rem;
+  font-size: 1.15rem;
+}
+
+.public-survey__heading {
+  margin: 1.15rem 0 0;
+  font-size: 1rem;
+}
+
+.public-survey fieldset {
+  border: 1px solid #e4e7ec;
+  border-radius: 14px;
+  background: #fff;
+  box-shadow: 0 1px 2px rgba(16, 24, 40, 0.04);
+  padding: 1rem 1rem 1.1rem;
+  margin: 0 0 0.85rem;
+  min-inline-size: 0;
+}
+
+.public-survey fieldset.has-error {
+  border-color: #b42318;
+}
+
+.public-survey legend {
+  float: left;
+  width: 100%;
+  margin: 0 0 0.85rem;
+  padding: 0;
+  font-size: 1rem;
+  font-weight: 650;
+  line-height: 1.35;
+}
+
+.public-survey legend + * {
+  clear: left;
+}
+
+.public-survey fieldset::after {
+  content: '';
+  display: block;
+  clear: both;
+}
+
+.survey-help,
+.survey-error {
+  margin: 0 0 0.75rem;
+}
+
+.survey-help {
+  color: #667085;
+  font-size: 0.9rem;
+}
+
+.survey-error {
+  color: #b42318;
+  margin-top: 0.65rem;
+  margin-bottom: 0;
+}
+
+.survey-choices,
+.survey-scale,
+.survey-stars {
+  display: grid;
+  gap: 0.5rem;
+}
+
+.survey-choices--pair {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.survey-stars,
+.survey-scale--satisfaction {
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+}
+
+.survey-scale--nps {
+  grid-template-columns: repeat(11, minmax(0, 1fr));
+  gap: 0.35rem;
+}
+
+.survey-scale__ends {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-top: 0.4rem;
+  color: #667085;
+  font-size: 0.85rem;
+}
+
+.survey-choices label,
+.survey-scale label,
+.survey-stars label {
+  position: relative;
+  display: flex;
+  gap: 0.55rem;
+  align-items: center;
+  min-height: 2.75rem;
+  margin: 0;
+  padding: 0.45rem 0.7rem;
+  border: 1px solid #d9dde5;
+  border-radius: 10px;
+  background: #fff;
+  cursor: pointer;
+  line-height: 1.25;
+}
+
+.survey-scale label,
+.survey-stars label,
+.survey-choices--pair label {
+  justify-content: center;
+  text-align: center;
+}
+
+.survey-stars label {
+  font-weight: 650;
+  font-size: 1.05rem;
+}
+
+.survey-scale--nps label {
+  min-height: 2.6rem;
+  padding: 0.4rem 0.1rem;
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
+}
+
+.survey-scale--satisfaction label {
+  flex-direction: column;
+  gap: 0.3rem;
+  min-height: 5.25rem;
+  padding: 0.6rem 0.25rem;
+}
+
+.survey-scale--satisfaction span {
+  font-size: 1.45rem;
+  line-height: 1;
+}
+
+.survey-scale--satisfaction small,
+.survey-stars small {
+  font-size: 0.72rem;
+  line-height: 1.2;
+  color: #3d424d;
+}
+
+.survey-stars__na {
+  grid-column: 1 / -1;
+  font-size: 0.95rem;
+  font-weight: 600;
+}
+
+.survey-choices label:hover,
+.survey-scale label:hover,
+.survey-stars label:hover {
+  border-color: #c5cad3;
+  background: #fafbfc;
+}
+
+.survey-choices label.is-selected,
+.survey-scale label.is-selected,
+.survey-stars label.is-selected {
+  border-color: var(--survey-color);
+  background: color-mix(in srgb, var(--survey-color) 12%, white);
+  box-shadow: inset 0 0 0 1px var(--survey-color);
+}
+
+.survey-choices label:focus-within,
+.survey-scale label:focus-within,
+.survey-stars label:focus-within {
+  outline: 2px solid var(--survey-color);
+  outline-offset: 2px;
+}
+
+.survey-choices input[type='radio'],
+.survey-choices input[type='checkbox'],
+.survey-scale input,
+.survey-stars input {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.public-survey input[type='text'],
+.public-survey input:not([type='radio']):not([type='checkbox']),
+.public-survey textarea,
+.public-survey select,
+.survey-other {
+  width: 100%;
+  min-height: 2.75rem;
+  border: 1px solid #d9dde5;
+  border-radius: 10px;
+  background: #fff;
+  padding: 0.5rem 0.75rem;
+}
+
+.public-survey textarea {
+  min-height: 7rem;
+  resize: vertical;
+}
+
+.public-survey__submit {
+  width: 100%;
+  min-height: 3rem;
+  margin-top: 0.65rem;
+  border: 0;
+  border-radius: 999px;
+  padding: 0.7rem 1.25rem;
+  background: var(--survey-color);
+  color: white;
+  font-size: 1rem;
+  font-weight: 650;
+  cursor: pointer;
+}
+
+.public-survey__submit:hover:not(:disabled) {
+  filter: brightness(0.96);
+}
+
+.public-survey__submit:disabled {
+  opacity: 0.65;
+  cursor: progress;
+}
+
+.survey-screen {
+  max-width: 36rem;
+  margin: 4rem auto;
+  padding: 0 1rem;
+  text-align: center;
+}
+
+.survey-screen__action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: auto;
+  min-width: 9rem;
+  margin-top: 0.75rem;
+  text-decoration: none;
+}
+
+@media (max-width: 640px) {
+  .public-survey-page {
+    padding: 1.5rem 0.85rem 2.5rem;
+  }
+
+  .public-survey__logo {
+    height: 6.5rem;
+  }
+
+  .public-survey h1 {
+    font-size: 1.7rem;
+  }
+
+  .survey-scale-field:has(.survey-scale--nps) {
+    overflow-x: auto;
+    padding-bottom: 0.2rem;
+  }
+
+  .survey-scale--nps {
+    grid-template-columns: repeat(11, 2.25rem);
+    gap: 0.4rem;
+    width: max-content;
+    min-width: 100%;
+  }
+
+  .survey-scale--nps label {
+    font-size: 0.9rem;
+  }
+
+  .survey-scale--satisfaction small {
+    font-size: 0.65rem;
+  }
+}

@@ -45,10 +45,11 @@ import {
   type ApiImage,
 } from "@/lib/helpers";
 import { copyPageUrl } from "@/lib/copy";
+import type { EventPriceSource } from "@/lib/eventFromPrice";
 import {
-  monthEventCountLabel,
-  type EventPriceSource,
-} from "@/lib/eventFromPrice";
+  compareUpcomingEvents,
+  groupUpcomingEvents,
+} from "@/lib/upcomingEventOrder";
 import { googleMapsDirectionsUrl } from "@/lib/venueLocation";
 import {
   venueWebsiteFromUpcomingEvents,
@@ -77,6 +78,7 @@ type VenueEvent = {
   title?: string;
   start?: string;
   status?: string;
+  listPriority?: number | string | null;
   soldout?: boolean | null;
   soldOut?: boolean | null;
   generalOnsale?: string | null;
@@ -150,7 +152,8 @@ type RowEvent = {
   soldOut: boolean;
   onSaleLabel: string;
   href: string;
-  sort: number;
+  listPriority?: number | string | null;
+  sortKey: number;
 };
 
 function firstAddress(address?: VenueAddress) {
@@ -292,7 +295,8 @@ function toRow(
     soldOut: isEventSoldOut(ev),
     onSaleLabel: onSaleBadgeLabel(ev),
     href,
-    sort: new Date(start).getTime() || 0,
+    listPriority: ev.listPriority,
+    sortKey: new Date(start).getTime() || 0,
   };
 }
 
@@ -512,19 +516,7 @@ export default function VenueProfile({ slug }: { slug: string }) {
     const rows = events
       .map((e) => toRow(e, venue?.timezone, venueName, organization))
       .filter(Boolean) as RowEvent[];
-    rows.sort((a, b) => a.sort - b.sort);
-    const keys: string[] = [];
-    rows.forEach((e) => {
-      if (!keys.includes(e.monthKey)) keys.push(e.monthKey);
-    });
-    return keys.map((k) => {
-      const monthRows = rows.filter((e) => e.monthKey === k);
-      return {
-        title: monthRows[0]?.monthTitle || k,
-        meta: monthEventCountLabel(monthRows.length),
-        rows: monthRows,
-      };
-    });
+    return groupUpcomingEvents(rows.sort(compareUpcomingEvents));
   }, [events, venue?.timezone, venueName, organization]);
 
   if (missing) notFound();
@@ -838,7 +830,7 @@ export default function VenueProfile({ slug }: { slug: string }) {
             </div>
           ) : (
             groups.map((g) => (
-              <div key={g.title} style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+              <div key={g.key} style={{ display: "flex", flexDirection: "column", gap: 10 }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "10px 2px 8px" }}>
                   <div style={{ fontSize: 13, fontWeight: 600, lineHeight: 1.5, textTransform: "uppercase", letterSpacing: BROWSE_TRACK.eyebrow, color: accent || "#7fbe4d", whiteSpace: "nowrap" }}>{g.title}</div>
                   <div style={{ fontSize: 12, lineHeight: 1.5, color: "#8a93a3", whiteSpace: "nowrap" }}>{g.meta}</div>

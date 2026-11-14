@@ -1125,6 +1125,30 @@ describe("Checkout page", { timeout: 20_000 }, () => {
     ).not.toBeInTheDocument();
   });
 
+  it("prices a resale hold from the listing asking price when ticket cost is 0", async () => {
+    const cart = demoCheckoutCart({ ticketCount: 2 });
+    cart.tickets = cart.tickets.map((ticket) => ({
+      ...ticket,
+      resale: true,
+      listingId: 574,
+      cost: 0,
+      price: 0,
+      listingAskingPrice: 400,
+    }));
+    cart.total = 978.72;
+    Object.assign(cart, { totalTax: 72.6 });
+    cart.serviceFee = 80;
+    cart.processingFee = 26.12;
+    cart.estimatedProcessingFee = 0;
+    mockedGetCart.mockResolvedValue({ data: cart } as never);
+    render(<CheckoutPageRoute />);
+
+    const ticketsLine = await screen.findByText("Tickets: $400.00 x 2");
+    expect(ticketsLine.parentElement?.parentElement).toHaveTextContent(
+      /Tickets: \$400\.00 x 2[\s\S]*\$800\.00[\s\S]*Processing Fee[\s\S]*\$26\.12[\s\S]*Service Fee[\s\S]*\$80\.00[\s\S]*Tax[\s\S]*\$72\.60/,
+    );
+  });
+
   it("does not list event processing or service fees even when the cart has them", async () => {
     const cart = demoCheckoutCart({ serviceFee: 2.5, processingFee: 0.5 });
     mockedGetCart.mockResolvedValue({ data: cart } as never);
@@ -1179,6 +1203,7 @@ describe("Checkout page", { timeout: 20_000 }, () => {
     expect(screen.getByText(summary.seats[0].context)).toBeInTheDocument();
     expect(screen.queryByText("Accessible seating")).not.toBeInTheDocument();
     expect(screen.getByText("Subtotal")).toBeInTheDocument();
+    expect(screen.queryByText(/Tickets:/)).not.toBeInTheDocument();
     expect(
       screen.getAllByText(formatCurrency(summary.subtotal)).length,
     ).toBeGreaterThan(0);
@@ -1287,9 +1312,8 @@ describe("Checkout page", { timeout: 20_000 }, () => {
       ),
     ).toBeInTheDocument();
     expect(screen.getByText("Subtotal")).toBeInTheDocument();
-    expect(screen.getAllByText(formatCurrency(subtotal)).length).toBeGreaterThan(
-      1,
-    );
+    expect(screen.queryByText(/Tickets:/)).not.toBeInTheDocument();
+    expect(screen.getAllByText(formatCurrency(subtotal)).length).toBeGreaterThan(1);
     expect(screen.getByText("Tax")).toBeInTheDocument();
     expect(screen.getByText(formatCurrency(0))).toBeInTheDocument();
   });
@@ -1306,9 +1330,8 @@ describe("Checkout page", { timeout: 20_000 }, () => {
 
     expect(await screen.findByText(summary.seats[0].seatLine)).toBeInTheDocument();
     expect(screen.getByText("Subtotal")).toBeInTheDocument();
-    expect(
-      screen.getAllByText(formatCurrency(summary.subtotal)).length,
-    ).toBeGreaterThan(0);
+    expect(screen.queryByText(/Tickets:/)).not.toBeInTheDocument();
+    expect(screen.getAllByText(formatCurrency(summary.subtotal)).length).toBeGreaterThan(0);
     expect(screen.getByText("Tax")).toBeInTheDocument();
     expect(screen.getByText(formatCurrency(0))).toBeInTheDocument();
     expect(
@@ -1330,6 +1353,41 @@ describe("Checkout page", { timeout: 20_000 }, () => {
     ).toBeGreaterThan(0);
     expect(screen.getByText("Tax")).toBeInTheDocument();
     expect(screen.queryByText(/Sec /)).not.toBeInTheDocument();
+  });
+
+  it("prices the season seat line at the package subtotal when a game copy underprices it", async () => {
+    const base = demoPackageCheckoutCart();
+    const ticket = base.tickets[0];
+    const game = {
+      ...ticket,
+      GA: true,
+      generalAdmission: true,
+      sectionNumber: "Standing Room Right",
+      sectionName: "Standing Room Right",
+      rowNumber: undefined,
+      rowName: undefined,
+      seatNumber: undefined,
+      seatId: undefined,
+      offer: undefined,
+    };
+    const cart = demoPackageCheckoutCart({
+      tickets: Array.from({ length: 10 }, (_, index) => ({
+        ...game,
+        id: index + 1,
+        offerName: index === 0 ? "Standard Admission" : undefined,
+        cost: index === 0 ? 19.02 : 0,
+        price: index === 0 ? 19.02 : 0,
+      })),
+      serviceFee: 0,
+      processingFee: 3.2,
+      total: 103.2,
+    });
+    mockedGetCart.mockResolvedValue({ data: cart } as never);
+    render(<CheckoutPageRoute />);
+
+    expect(await screen.findByText("Subtotal")).toBeInTheDocument();
+    expect(screen.queryByText(formatCurrency(19.02))).not.toBeInTheDocument();
+    expect(screen.getAllByText(formatCurrency(100)).length).toBeGreaterThanOrEqual(2);
   });
 
   it("still lists package processing and service fees when they are zero", async () => {
@@ -1471,6 +1529,12 @@ describe("Checkout page", { timeout: 20_000 }, () => {
     expect(screen.getByText("Tax").parentElement).toHaveTextContent(
       formatCurrency(3.5),
     );
+    expect(
+      screen
+        .getByText("Service Fee")
+        .compareDocumentPosition(screen.getByText("Tax")) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
     expect(
       await screen.findByRole("button", {
         name: `Pay ${formatCurrency(expectedTotal)}`,
@@ -2292,6 +2356,30 @@ describe("Checkout page", { timeout: 20_000 }, () => {
     expect(routerMocks.replace).not.toHaveBeenCalledWith(
       `/${raptorsOrg.slug}/`,
     );
+  });
+
+  it("stays on cart expired when releasing tickets fails", async () => {
+    mockedGetCart.mockResolvedValue({
+      data: demoCheckoutCart({ remainingTime: 0 }),
+    } as never);
+    mockedDropUserCart.mockRejectedValueOnce(new Error("network unavailable"));
+    const user = userEvent.setup();
+    render(<CheckoutPageRoute />);
+
+    expect(
+      await screen.findByRole("dialog", { name: /cart expired/i }),
+    ).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: /start over/i }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      /couldn't release your tickets/i,
+    );
+    expect(
+      screen.getByRole("dialog", { name: /cart expired/i }),
+    ).toBeInTheDocument();
+    expect(routerMocks.back).not.toHaveBeenCalled();
+    expect(routerMocks.replace).not.toHaveBeenCalled();
   });
 
   it("starts over from an expired GA section on the seated tickets page", async () => {

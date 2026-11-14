@@ -150,4 +150,54 @@ describe("BrandedCheckoutShell", () => {
     expect(onExpire).not.toHaveBeenCalled();
     expect(screen.getByText(held)).toBeInTheDocument();
   });
+
+  it("warns during the last minute and hides that warning before and after", () => {
+    vi.useFakeTimers();
+    const warning = /your tickets are held for about a minute/i;
+    render(
+      <BrandedCheckoutShell
+        accent={raptors.branding.primaryColor}
+        remainingSeconds={61}
+        onBack={() => undefined}
+        onExpire={() => undefined}
+      >
+        <p>Payment form</p>
+      </BrandedCheckoutShell>,
+    );
+
+    expect(screen.queryByText(warning)).not.toBeInTheDocument();
+    expect(screen.getByText("Seats held 1:01")).toBeInTheDocument();
+
+    act(() => {
+      vi.advanceTimersByTime(1000);
+    });
+
+    expect(screen.getByText(warning)).toBeInTheDocument();
+    expect(screen.getByText("Seats held 1:00")).toBeInTheDocument();
+
+    act(() => {
+      vi.advanceTimersByTime(60_000);
+    });
+
+    expect(screen.queryByText(warning)).not.toBeInTheDocument();
+    expect(screen.getByText("Seats held 0:00")).toBeInTheDocument();
+  });
+
+  it("hides the last-minute hold warning while the hold is paused", () => {
+    render(
+      <BrandedCheckoutShell
+        accent={raptors.branding.primaryColor}
+        remainingSeconds={30}
+        holdPaused
+        onBack={() => undefined}
+      >
+        <p>Payment form</p>
+      </BrandedCheckoutShell>,
+    );
+
+    expect(
+      screen.queryByText(/your tickets are held for about a minute/i),
+    ).not.toBeInTheDocument();
+    expect(screen.getByText("Seats held 0:30")).toBeInTheDocument();
+  });
 });

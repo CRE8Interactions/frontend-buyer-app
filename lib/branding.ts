@@ -25,7 +25,7 @@ export type BrandingOrganization = {
   branding?: OrgBranding | null;
   enableTransfer?: boolean;
   enableResale?: boolean;
-  setting?: { printTickets?: boolean | null } | null;
+  setting?: { printTickets?: boolean | null; allowResales?: boolean | null } | null;
 };
 
 export type BrandingEvent = {
@@ -46,6 +46,10 @@ export type TicketingTheme = {
 
 export const BLOCKTICKETS_NAVY = "#051b35";
 export const BLOCKTICKETS_GREEN = "#a6e773";
+/** Error text on light surfaces. Exposed as `--bt-error`. */
+export const ERROR_COLOR = "#c2394a";
+/** Error text on dark surfaces. Exposed as `--bt-error-on-dark`. */
+export const ERROR_COLOR_ON_DARK = "#ff7a72";
 export const BLOCKTICKETS_LOGO = "/blocktickets-emblem-navy.svg";
 export const BLOCKTICKETS_LOCKUP = "/blocktickets-logo.svg";
 

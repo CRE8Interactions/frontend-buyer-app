@@ -20,6 +20,7 @@ import {
   listedUnitPrice,
   imageUrl,
   isBlockedEmail,
+  isOrganizationLandingPage,
   isRequestCanceled,
   normalizeApiImage,
   normalizeEmail,
@@ -141,6 +142,17 @@ describe("isRequestCanceled", () => {
     expect(isRequestCanceled({ code: "ERR_CANCELED" })).toBe(true);
     expect(isRequestCanceled({ name: "AbortError" })).toBe(true);
     expect(isRequestCanceled(new Error("network"))).toBe(false);
+  });
+});
+
+describe("isOrganizationLandingPage", () => {
+  it("keeps the SMS ticket paths from being read as an organization", () => {
+    const org = DEMO_EVENTS[0].organization.slug;
+    expect(isOrganizationLandingPage("/t")).toBe(false);
+    expect(isOrganizationLandingPage("/t/")).toBe(false);
+    expect(isOrganizationLandingPage("/tickets")).toBe(false);
+    expect(isOrganizationLandingPage("/tickets/")).toBe(false);
+    expect(isOrganizationLandingPage(`/${org}`)).toBe(true);
   });
 });
 

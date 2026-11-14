@@ -53,6 +53,7 @@ import {
   ticketRowValue,
   ticketSeatValue,
   seatDisplayValue,
+  mapSectionHeading,
   sectionDisplayValue,
   ticketSectionValue,
   type AccessPassLike,
@@ -97,6 +98,9 @@ export type EventLike = {
   entry_gate?: string;
   enableTransfers?: boolean;
   enableResale?: boolean;
+  resaleMinimum?: number;
+  resaleMinimumPercent?: number;
+  secondaryServiceFeeSeller?: number;
   subCategory?: { name?: string };
   attractions?: { name?: string; primary?: boolean; artwork?: ApiImage }[];
   scanned?: boolean;
@@ -295,7 +299,9 @@ export type CartEventDetail = {
 export function eventWalletCommerceFlags(event?: EventLike | null) {
   return {
     transfersEnabled: event?.enableTransfers === true,
-    resaleEnabled: event?.enableResale === true,
+    resaleEnabled:
+      event?.enableResale === true &&
+      event?.organization?.setting?.allowResales === true,
   };
 }
 
@@ -374,7 +380,7 @@ function ticketSeatLabel(t: Record<string, unknown>) {
   const row = t.rowNumber;
   const seat = seatDisplayValue(t.seatNumber);
   if (sec != null && row != null && seat) {
-    return `Sec ${sec} · Row ${row} · Seat ${seat}`;
+    return `${mapSectionHeading(sec)} · Row ${row} · Seat ${seat}`;
   }
   return String(t.offerName || t.sectionName || "Ticket");
 }
@@ -880,6 +886,25 @@ export function restoreCancelledTransferTicketsToOrders(
       String(order.id ?? "") === orderKey;
     if (!matches) return order;
 
+    return mergeTicketsIntoWalletOrder(order, tickets);
+  });
+}
+
+/** Restore listed tickets to wallet inventory after a listing is removed. */
+export function restoreTicketsToWalletOrders(
+  orders: OrderLike[],
+  tickets: TicketLike[],
+  orderId?: string | number,
+): OrderLike[] {
+  if (!tickets.length) return orders;
+  const orderKey = String(orderId ?? "").trim();
+  if (!orderKey) return orders;
+
+  return orders.map((order) => {
+    const matches =
+      String(order.orderId ?? "") === orderKey ||
+      String(order.id ?? "") === orderKey;
+    if (!matches) return order;
     return mergeTicketsIntoWalletOrder(order, tickets);
   });
 }

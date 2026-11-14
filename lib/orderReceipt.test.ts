@@ -1,8 +1,9 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   DEMO_EVENTS,
   DEMO_SEATED_TICKET_GROUPS,
   DEMO_USER,
+  demoCheckoutCart,
   demoCompletedFlexPackOrder,
   demoCompletedPackageOrder,
   demoCompletedTicketOrder,
@@ -13,6 +14,8 @@ import {
 } from "@/lib/demo/fixtures";
 import { quoteFlexPackPurchase } from "@/lib/flexPackDisplay";
 import { formatCurrency } from "@/lib/helpers";
+import * as orderApi from "@/lib/api";
+import * as completedOrderApi from "@/lib/completedOrder";
 import {
   buildOrderReceipt,
   downloadOrderReceipt,
@@ -22,6 +25,7 @@ import {
   receiptDownloadFilename,
   receiptPurchaserFromSources,
   resolveOrderReceiptPdfUrl,
+  shopperReceiptDownload,
 } from "./orderReceipt";
 import { renderOrderReceiptHtml } from "./orderReceiptHtml";
 import { buildOrderReceiptPdf } from "./orderReceiptPdf";
@@ -85,12 +89,12 @@ describe("buildOrderReceipt", () => {
     expect(line.amount).toBe(formatCurrency(subtotal));
     expect(receipt.totals).toEqual([
       { label: "Subtotal", amount: formatCurrency(subtotal) },
-      { label: "Tax", amount: formatCurrency(order.salesTax) },
       {
         label: "Processing Fee",
         amount: formatCurrency(order.estimatedProcessingFee),
       },
       { label: "Service Fee", amount: formatCurrency(order.serviceFee) },
+      { label: "Tax", amount: formatCurrency(order.salesTax) },
       { label: "Total", amount: formatCurrency(order.total), strong: true },
       {
         label: "Amount paid",
@@ -133,6 +137,28 @@ describe("buildOrderReceipt", () => {
     });
   });
 
+  it("itemizes a profile order from the pricing saved on each ticket", () => {
+    const full = demoItemizedFeeCompletedOrder();
+    const pricing = full.priceObject;
+    const listed = {
+      ...full,
+      priceObject: undefined,
+      am_pricing_objects: undefined,
+      tickets: (full.tickets || []).map((ticket) => ({
+        ...ticket,
+        am_pricing_object: pricing,
+      })),
+    };
+
+    const fromProfile = buildOrderReceipt(listed)!;
+    const fromCheckout = buildOrderReceipt(full)!;
+
+    expect(fromProfile.lines.map((line) => line.unitPrice)).toEqual(
+      fromCheckout.lines.map((line) => line.unitPrice),
+    );
+    expect(fromProfile.totals).toEqual(fromCheckout.totals);
+  });
+
   it("labels one ticket price as the subtotal and lists each fee", () => {
     const order = demoItemizedFeeCompletedOrder();
     const pricing = order.priceObject as { offerPrice: number };
@@ -143,9 +169,9 @@ describe("buildOrderReceipt", () => {
     expect(receipt.lines[0].amount).toBe(formatCurrency(face));
     expect(receipt.totals.map((row) => row.label)).toEqual([
       "Subtotal",
+      "Processing Fee",
       "Service Fee",
       "Facility Fee",
-      "Processing Fee",
       "Tax",
       "Total",
       "Amount paid",
@@ -159,6 +185,42 @@ describe("buildOrderReceipt", () => {
     expect(receipt.totals.find((row) => row.label === "Total")?.amount).toBe(
       formatCurrency(order.total),
     );
+  });
+
+  it("uses the normal ticket fee rows for a resale purchase", () => {
+    const cart = demoCheckoutCart({ ticketCount: 2 });
+    const order = demoCompletedTicketOrder({
+      type: "resale",
+      resaleListing: { id: 574, offer: null },
+      tickets: cart.tickets.map((ticket) => ({
+        ...ticket,
+        resale: false,
+        offer: null,
+        cost: 0,
+        price: 0,
+        listingAskingPrice: 350,
+      })),
+      serviceFee: 70,
+      processingFee: 22.94,
+      estimatedProcessingFee: 22.94,
+      salesTax: 63.52,
+      total: 856.46,
+    });
+    const receipt = buildOrderReceipt(order)!;
+
+    expect(receipt.totals).toEqual([
+      { label: "Subtotal", amount: formatCurrency(700) },
+      { label: "Processing Fee", amount: formatCurrency(22.94) },
+      { label: "Service Fee", amount: formatCurrency(70) },
+      { label: "Tax", amount: formatCurrency(63.52) },
+      { label: "Total", amount: formatCurrency(856.46), strong: true },
+      {
+        label: "Amount paid",
+        amount: formatCurrency(856.46),
+        strong: true,
+        amountDue: true,
+      },
+    ]);
   });
 
   it("lists each face price on a mixed order receipt", () => {
@@ -206,9 +268,9 @@ describe("buildOrderReceipt", () => {
     expect(receipt.lines[0].unitPrice).toBe(formatCurrency(4.5));
     expect(receipt.totals).toEqual([
       { label: "Subtotal", amount: formatCurrency(4.5) },
-      { label: "Tax", amount: formatCurrency(0) },
       { label: "Processing Fee", amount: formatCurrency(0.5) },
       { label: "Service Fee", amount: formatCurrency(2.5) },
+      { label: "Tax", amount: formatCurrency(0) },
       { label: "Student Night", amount: `-${formatCurrency(2)}` },
       { label: "Total", amount: formatCurrency(5.5), strong: true },
       {
@@ -232,7 +294,6 @@ describe("buildOrderReceipt", () => {
     const pkg = demoSeasonPackage();
     const listing = DEMO_SEATED_TICKET_GROUPS[0];
     const receipt = buildOrderReceipt(order)!;
-    const unit = Number(pkg.pricingTiers[0].price);
 
     expect(receipt.sellerName).toBe(pkg.organization.name);
     expect(receipt.invoiceNumber).toBe(order.orderId);
@@ -240,13 +301,15 @@ describe("buildOrderReceipt", () => {
       `${pkg.name} – Sec ${listing.sectionNumber} – Row ${listing.rowNumber} – Seat 21-22`,
     );
     expect(receipt.lines[0].qty).toBe(String(order.tickets.length));
-    expect(receipt.lines[0].unitPrice).toBe(formatCurrency(unit));
-    expect(receipt.lines[0].amount).toBe(formatCurrency(unit * order.tickets.length));
+    expect(receipt.lines[0].amount).toBe("$399.82");
+    expect(receipt.lines[0].unitPrice).toBe(
+      formatCurrency(399.82 / order.tickets.length),
+    );
     expect(receipt.totals.slice(0, 4)).toEqual([
       { label: "Subtotal", amount: "$399.82" },
-      { label: "Tax", amount: "$0.00" },
       { label: "Processing Fee", amount: "$12.38" },
       { label: "Service Fee", amount: "$40.00" },
+      { label: "Tax", amount: "$0.00" },
     ]);
   });
 
@@ -267,10 +330,10 @@ describe("buildOrderReceipt", () => {
 
     expect(receipt.totals.map((row) => row.label)).toEqual([
       "Subtotal",
-      "Tax",
       "Processing Fee",
       "Service Fee",
       "Senior Fee",
+      "Tax",
       "Total",
       "Amount paid",
     ]);
@@ -309,6 +372,44 @@ describe("buildOrderReceipt", () => {
     )!;
 
     expect(receipt.lines[0].description).toContain("Seat 12-13");
+  });
+
+  it("lists one package line when only one game copy carries the price", () => {
+    const pkg = demoSeasonPackage();
+    const base = demoCompletedPackageOrder();
+    const ticket = (base.tickets as Array<Record<string, unknown>>)[0];
+    const section = "Standing Room Right";
+    const tickets = Array.from({ length: 10 }, (_, index) => ({
+      ...ticket,
+      id: index + 1,
+      sectionNumber: section,
+      sectionName: section,
+      rowNumber: undefined,
+      seatNumber: undefined,
+      generalAdmission: false,
+      GA: false,
+      offerName: index === 0 ? "Standard Admission" : undefined,
+      cost: index === 0 ? 19.02 : 10,
+      price: index === 0 ? 19.02 : 10,
+    }));
+    const receipt = buildOrderReceipt(
+      demoCompletedPackageOrder({
+        tickets,
+        total: 103.2,
+        serviceFee: 0,
+        processingFee: 3.2,
+        estimatedProcessingFee: 3.2,
+        salesTax: 0,
+      }),
+    )!;
+
+    expect(receipt.lines).toHaveLength(1);
+    expect(receipt.lines[0].description).toBe(
+      `${pkg.name} – Sec ${section} – Row N/A – Seat N/A`,
+    );
+    expect(receipt.lines[0].qty).toBe("10");
+    expect(receipt.lines[0].unitPrice).toBe(formatCurrency(10));
+    expect(receipt.lines[0].amount).toBe(formatCurrency(100));
   });
 
   it("does not repeat a package seat once per game", () => {
@@ -440,12 +541,12 @@ describe("buildOrderReceipt", () => {
             order.salesTax,
         ),
       },
-      { label: "Tax", amount: formatCurrency(order.salesTax) },
       {
         label: "Processing Fee",
         amount: formatCurrency(order.estimatedProcessingFee),
       },
       { label: "Service Fee", amount: formatCurrency(order.serviceFee) },
+      { label: "Tax", amount: formatCurrency(order.salesTax) },
     ]);
   });
 
@@ -483,6 +584,29 @@ describe("buildOrderReceipt", () => {
     );
     expect(receipt.lines[0].unitPrice).not.toBe(
       formatCurrency(Number(pack.price) / qty),
+    );
+  });
+
+  it("lists the voucher service fee when a flex pack order stored the whole remainder as tax", () => {
+    const order = demoCompletedFlexPackOrder({
+      total: 35.53,
+      serviceFee: 0,
+      processingFee: 0,
+      estimatedProcessingFee: 0,
+      salesTax: 5.53,
+      flex_pack: demoFlexPack({ name: "Silver Package", price: 30, gameTickets: 2 }),
+      vouchers: [{ code: "111111" }, { code: "222222" }],
+    });
+    const receipt = buildOrderReceipt(order)!;
+
+    expect(receipt.totals).toEqual(
+      expect.arrayContaining([
+        { label: "Subtotal", amount: formatCurrency(30) },
+        { label: "Processing Fee", amount: formatCurrency(0) },
+        { label: "Service Fee", amount: formatCurrency(2) },
+        { label: "Tax", amount: formatCurrency(3.53) },
+        { label: "Total", amount: formatCurrency(35.53), strong: true },
+      ]),
     );
   });
 
@@ -605,6 +729,206 @@ describe("downloadOrderReceipt", () => {
     ).rejects.toThrow(/receipt unavailable/i);
     expect(toPdf).not.toHaveBeenCalled();
     expect(saveFile).not.toHaveBeenCalled();
+  });
+});
+
+describe("shopperReceiptDownload", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("fills an activity invoice from the full order so the receipt matches checkout", async () => {
+    const full = demoItemizedFeeCompletedOrder();
+    const listed = {
+      ...full,
+      priceObject: undefined,
+      am_pricing_objects: undefined,
+    };
+    const getOrder = vi
+      .spyOn(orderApi, "getOrder")
+      .mockResolvedValue({ data: full } as never);
+
+    const prepared = await shopperReceiptDownload({
+      order: listed,
+      user: DEMO_USER,
+      hydratePricing: true,
+    });
+
+    expect(getOrder).toHaveBeenCalledWith(full.orderId);
+    const fromActivity = buildOrderReceipt(prepared.order, prepared.purchaser, {
+      sellerLogoUrl: prepared.sellerLogoUrl,
+      sellerName: prepared.sellerName,
+    });
+    const fromCheckout = buildOrderReceipt(full, prepared.purchaser, {
+      sellerLogoUrl: prepared.sellerLogoUrl,
+      sellerName: prepared.sellerName,
+    });
+    expect(fromActivity!.lines).toEqual(fromCheckout!.lines);
+    expect(fromActivity!.totals).toEqual(fromCheckout!.totals);
+  });
+
+  it("uses the checkout order when the saved order has no fee split", async () => {
+    const full = demoItemizedFeeCompletedOrder();
+    const listed = {
+      ...full,
+      priceObject: undefined,
+      am_pricing_objects: undefined,
+      paymentIntentId: "pi_checkout",
+      serviceFee: 0,
+      processingFee: 0,
+      estimatedProcessingFee: 0,
+      salesTax: 0,
+    };
+    vi.spyOn(orderApi, "getOrder").mockResolvedValue({ data: listed } as never);
+    const fetchOrder = vi
+      .spyOn(completedOrderApi, "fetchCompletedOrder")
+      .mockResolvedValue(full as never);
+
+    const prepared = await shopperReceiptDownload({
+      order: listed,
+      hydratePricing: true,
+    });
+
+    expect(fetchOrder).toHaveBeenCalledWith("pi_checkout");
+    const fromProfile = buildOrderReceipt(prepared.order)!;
+    const fromCheckout = buildOrderReceipt(full)!;
+    expect(fromProfile.lines.map((line) => line.unitPrice)).toEqual(
+      fromCheckout.lines.map((line) => line.unitPrice),
+    );
+    expect(fromProfile.totals).toEqual(fromCheckout.totals);
+  });
+
+  it("uses the checkout flex pack fees when activity stored them as tax", async () => {
+    const pack = demoFlexPack({ name: "Silver Package", price: 30, gameTickets: 2 });
+    const full = demoCompletedFlexPackOrder({
+      total: 35.53,
+      serviceFee: 2,
+      processingFee: 1.2,
+      estimatedProcessingFee: 1.2,
+      salesTax: 2.33,
+      flex_pack: pack,
+      vouchers: [{ code: "111111" }, { code: "222222" }],
+    });
+    const listed = {
+      ...full,
+      serviceFee: 0,
+      processingFee: 0,
+      estimatedProcessingFee: 0,
+      salesTax: 5.53,
+      intentDetails: { id: "pi_flexfees" },
+    };
+    vi.spyOn(orderApi, "getOrder").mockResolvedValue({ data: listed } as never);
+    const fetchOrder = vi
+      .spyOn(completedOrderApi, "fetchCompletedOrder")
+      .mockResolvedValue(full as never);
+
+    const prepared = await shopperReceiptDownload({
+      order: listed,
+      hydratePricing: true,
+    });
+
+    expect(fetchOrder).toHaveBeenCalledWith("pi_flexfees");
+    expect(buildOrderReceipt(prepared.order)!.totals).toEqual(
+      buildOrderReceipt(full)!.totals,
+    );
+  });
+
+  it("finds the payment intent on the saved order wherever it is stored", async () => {
+    const full = demoItemizedFeeCompletedOrder();
+    const listed = {
+      ...full,
+      priceObject: undefined,
+      am_pricing_objects: undefined,
+      serviceFee: 0,
+      processingFee: 0,
+      estimatedProcessingFee: 0,
+      salesTax: 0,
+      intentDetails: { id: "pi_3Nested123", charges: { data: [] } },
+    };
+    vi.spyOn(orderApi, "getOrder").mockResolvedValue({ data: listed } as never);
+    const fetchOrder = vi
+      .spyOn(completedOrderApi, "fetchCompletedOrder")
+      .mockResolvedValue(full as never);
+
+    const prepared = await shopperReceiptDownload({
+      order: listed,
+      hydratePricing: true,
+    });
+
+    expect(fetchOrder).toHaveBeenCalledWith("pi_3Nested123");
+    expect(buildOrderReceipt(prepared.order)!.totals).toEqual(
+      buildOrderReceipt(full)!.totals,
+    );
+  });
+
+  it("keeps the activity invoice when the full order cannot be loaded", async () => {
+    const full = demoItemizedFeeCompletedOrder();
+    const listed = {
+      ...full,
+      priceObject: undefined,
+      am_pricing_objects: undefined,
+    };
+    vi.spyOn(orderApi, "getOrder").mockRejectedValue(new Error("offline"));
+
+    const prepared = await shopperReceiptDownload({
+      order: listed,
+      hydratePricing: true,
+    });
+
+    expect(prepared.order.priceObject).toBeUndefined();
+    const fromActivity = buildOrderReceipt(prepared.order)!;
+    const fromCheckout = buildOrderReceipt(full)!;
+    expect(fromActivity.lines[0]?.unitPrice).not.toBe(
+      fromCheckout.lines[0]?.unitPrice,
+    );
+  });
+
+  it("loads a missing buyer name without replacing the checkout order", async () => {
+    const checkoutOrder = {
+      ...demoItemizedFeeCompletedOrder(),
+      firstName: undefined,
+      lastName: undefined,
+    };
+    vi.spyOn(orderApi, "getOrder").mockResolvedValue({
+      data: demoCompletedTicketOrder({
+        firstName: DEMO_USER.firstName,
+        lastName: DEMO_USER.lastName,
+        priceObject: undefined,
+      }),
+    } as never);
+
+    const prepared = await shopperReceiptDownload({
+      order: checkoutOrder,
+      user: { email: DEMO_USER.email },
+      sellerName: "Ogden Raptors",
+      sellerLogoUrl: "/logo.png",
+    });
+
+    expect(prepared.order.priceObject).toEqual(checkoutOrder.priceObject);
+    expect(prepared.purchaser).toEqual({
+      firstName: DEMO_USER.firstName,
+      lastName: DEMO_USER.lastName,
+      email: DEMO_USER.email,
+    });
+    expect(prepared.sellerName).toBe("Ogden Raptors");
+    expect(prepared.sellerLogoUrl).toBe("/logo.png");
+  });
+
+  it("does not load the order again when checkout already has the buyer name", async () => {
+    const getOrder = vi.spyOn(orderApi, "getOrder");
+    const prepared = await shopperReceiptDownload({
+      order: demoCompletedTicketOrder(),
+      user: DEMO_USER,
+      sellerName: "Ogden Raptors",
+    });
+
+    expect(getOrder).not.toHaveBeenCalled();
+    expect(prepared.purchaser).toEqual({
+      firstName: DEMO_USER.firstName,
+      lastName: DEMO_USER.lastName,
+      email: DEMO_USER.email,
+    });
+    expect(prepared.sellerName).toBe("Ogden Raptors");
   });
 });
 

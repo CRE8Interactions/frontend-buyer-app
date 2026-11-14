@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { BLOCKTICKETS_NAVY } from "@/lib/branding";
 import {
+  CHECKOUT_HOLD_CAP_SECONDS,
   CHECKOUT_HOLD_SECONDS,
   checkoutBrandingFromCart,
   checkoutHoldSeconds,
@@ -21,26 +22,20 @@ describe("checkoutHoldSeconds", () => {
     expect(checkoutHoldSeconds(0)).toBe(0);
   });
 
-  it("converts millisecond remainingTime and caps at 10 minutes", () => {
+  it("keeps a 20-minute checkout hold and caps anything past 25 minutes", () => {
     expect(checkoutHoldSeconds(CHECKOUT_HOLD_SECONDS * 1000)).toBe(
       CHECKOUT_HOLD_SECONDS,
     );
-    expect(checkoutHoldSeconds(CHECKOUT_HOLD_SECONDS * 1000 + 50_000)).toBe(
-      CHECKOUT_HOLD_SECONDS,
-    );
-    expect(checkoutHoldSeconds(CHECKOUT_HOLD_SECONDS + 90)).toBe(
-      CHECKOUT_HOLD_SECONDS,
-    );
+    expect(checkoutHoldSeconds(20 * 60 * 1000)).toBe(20 * 60);
+    expect(formatHoldClock(checkoutHoldSeconds(20 * 60 * 1000))).toBe("20:00");
+    expect(checkoutHoldSeconds(26 * 60 * 1000)).toBe(CHECKOUT_HOLD_CAP_SECONDS);
+    expect(formatHoldClock(9929 * 60 + 12)).toBe("25:00");
   });
 });
 
 describe("formatHoldClock", () => {
   it("renders a 10-minute hold as m:ss", () => {
     expect(formatHoldClock(CHECKOUT_HOLD_SECONDS)).toBe("10:00");
-  });
-
-  it("does not render a four-digit minute count from a huge remainingTime", () => {
-    expect(formatHoldClock(9929 * 60 + 12)).toBe("10:00");
   });
 });
 

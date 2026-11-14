@@ -12,6 +12,7 @@ import RouteLoader from "@/components/molecules/RouteLoader";
 import { getFlexPack, placeFlexPackIntoCart } from "@/lib/api";
 import {
   brandingToTicketingTheme,
+  ERROR_COLOR,
   type BrandingOrganization,
 } from "@/lib/branding";
 import {
@@ -497,7 +498,7 @@ export default function FlexPackDetailClient({
               </div>
             ) : null}
             {error ? (
-              <p style={{ margin: 0, fontSize: fluidSize(14), color: "#b91c1c" }} role="alert">
+              <p style={{ margin: 0, fontSize: fluidSize(14), color: ERROR_COLOR }} role="alert">
                 {error}
               </p>
             ) : null}

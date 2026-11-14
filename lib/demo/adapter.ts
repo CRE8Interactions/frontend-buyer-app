@@ -12,6 +12,7 @@ import type { AxiosResponse, InternalAxiosRequestConfig } from "axios";
 import {
   DEMO_SESSION,
   DEMO_EVENTS,
+  DEMO_SEATED_TICKET_GROUPS,
   demoAccessPass,
   demoCart,
   demoCompletedFlexPackOrder,
@@ -22,6 +23,9 @@ import {
   demoPackageAccessPass,
   demoPublicMenu,
   demoSeasonPackage,
+  demoSmsTickets,
+  demoTicketGroups,
+  demoWalletListings,
 } from "./fixtures";
 import { filterGroupsForListings, type RawTicketGroup } from "@/lib/ticketListings";
 
@@ -204,6 +208,7 @@ function initialWalletOrders(): DemoWalletOrder[] {
 let demoWalletOrdersState: DemoWalletOrder[] | null = null;
 const demoSentTransfers: DemoSentTransfer[] = [];
 const demoReceivedTransfers: DemoSentTransfer[] = [];
+let demoListingsState: Array<Record<string, unknown>> | null = null;
 let demoOrganizerAccessPasses = [demoAccessPass()];
 type DemoPackageAccessPass = ReturnType<typeof demoPackageAccessPass> & {
   order?: { orderId?: string };
@@ -224,6 +229,18 @@ function findDemoWalletOrder(orderId: unknown) {
   return walletOrders().find(
     (row) => String(row.id) === target || String(row.orderId) === target,
   );
+}
+
+function demoListings() {
+  if (!demoListingsState) {
+    demoListingsState = demoWalletListings() as Array<Record<string, unknown>>;
+  }
+  return demoListingsState;
+}
+
+function listingIdFromPath(path: string) {
+  const segs = path.split("?")[0].split("/").filter(Boolean);
+  return String(segs[segs.length - 1] || "");
 }
 
 const routes: Route[] = [
@@ -250,6 +267,71 @@ const routes: Route[] = [
     methods: ["get"],
     match: endsWith("/events/myUpcomingEvents"),
     handle: () => ({ data: walletOrders() }),
+  },
+  {
+    methods: ["get"],
+    match: endsWith("/listings/mylisting"),
+    handle: () => ({ data: demoListings() }),
+  },
+  {
+    methods: ["post"],
+    match: (path) => path.split("?")[0].endsWith("/listings"),
+    handle: (_path, config) => {
+      const body = parseBody(config);
+      const tickets = Array.isArray(body.tickets) ? body.tickets : [];
+      const listing = {
+        id: `listing-created-${demoListings().length + 1}`,
+        status: "new",
+        askingPrice: body.askingPrice,
+        quantity: body.quantity ?? tickets.length,
+        tickets,
+        event: body.event,
+        fromOrder: body.fromOrder,
+        type: body.type,
+        rowId: body.rowId,
+        sectionId: body.sectionId,
+        sectionNumber: body.sectionNumber,
+        rowNumber: body.rowNumber,
+        createdAt: new Date().toISOString(),
+      };
+      const existing = demoListings().findIndex(
+        (row) => String(row.id) === String(listing.id),
+      );
+      if (existing >= 0) demoListings()[existing] = listing;
+      else demoListings().unshift(listing);
+      return { data: listing };
+    },
+  },
+  {
+    methods: ["put"],
+    match: (path) => {
+      const clean = path.split("?")[0];
+      return /\/listings\/[^/]+$/.test(clean) && !clean.endsWith("/mylisting");
+    },
+    handle: (path, config) => {
+      const id = listingIdFromPath(path);
+      const body = parseBody(config);
+      const listings = demoListings();
+      const index = listings.findIndex((row) => String(row.id) === id);
+      if (index < 0) return { data: { id, ...body }, status: 404 };
+      listings[index] = {
+        ...listings[index]!,
+        askingPrice: body.askingPrice ?? listings[index]!.askingPrice,
+      };
+      return { data: listings[index] };
+    },
+  },
+  {
+    methods: ["delete"],
+    match: (path) => {
+      const clean = path.split("?")[0];
+      return /\/listings\/[^/]+$/.test(clean) && !clean.endsWith("/mylisting");
+    },
+    handle: (path) => {
+      const id = listingIdFromPath(path);
+      demoListingsState = demoListings().filter((row) => String(row.id) !== id);
+      return { data: { id } };
+    },
   },
   {
     methods: ["get"],
@@ -438,6 +520,30 @@ const routes: Route[] = [
   { methods: ["post"], match: endsWith("/events/place-ga-tickets-into-cart"), handle: () => ({ data: demoCart() }) },
   { methods: ["post"], match: endsWith("/events/place-tickets-into-cart"), handle: () => ({ data: demoCart() }) },
   { methods: ["post"], match: endsWith("/tickets/checkAccessCode"), handle: () => ({ data: true }) },
+  {
+    methods: ["post"],
+    match: endsWith("/tickets/find-offers-by-access-code"),
+    handle: (_path, config) => {
+      const body = parseBody(config) as { code?: string };
+      const typed = String(body.code || "").trim().toLowerCase();
+      const seen = new Set<string>();
+      const offers = [
+        ...DEMO_SEATED_TICKET_GROUPS,
+        ...demoTicketGroups().ticketGroups,
+      ].flatMap((group) => {
+        const offer = group.offer;
+        const accessCode = String(offer?.accessCode || "").trim();
+        const id = offer?.id;
+        if (!offer || id == null || (offer as { isHidden?: boolean }).isHidden || !accessCode) return [];
+        if (accessCode.toLowerCase() !== typed) return [];
+        const key = String(id);
+        if (seen.has(key)) return [];
+        seen.add(key);
+        return [{ id, name: offer.name }];
+      });
+      return { data: { offers } };
+    },
+  },
   {
     methods: ["get"],
     match: (path) => path.includes("/ticket-transfers?filters[fromUserEmail]"),
@@ -767,12 +873,96 @@ const routes: Route[] = [
     },
   },
 
+  {
+    methods: ["get"],
+    match: (path) =>
+      /\/orders\/sms-tickets\/[^/]+\/apple-passes$/.test(path.split("?")[0]),
+    handle: () => ({
+      data: new Blob(["demo-passes"], {
+        type: "application/vnd.apple.pkpasses",
+      }),
+    }),
+  },
+  {
+    methods: ["get"],
+    match: (path) =>
+      /\/orders\/sms-tickets\/[^/]+\/google-passes$/.test(path.split("?")[0]),
+    handle: () => ({
+      data: { url: "https://pay.google.com/gp/v/save/demo-sms" },
+    }),
+  },
+  {
+    methods: ["get"],
+    match: (path) => /\/orders\/sms-tickets\/[^/]+$/.test(path.split("?")[0]),
+    handle: (path) => {
+      const token = decodeURIComponent(lastSeg(path));
+      if (token === "expired") return { data: null, status: 410 };
+      return { data: demoSmsTickets() };
+    },
+  },
+
+  {
+    methods: ["get"],
+    match: (path) => /\/public\/surveys\/[^/]+$/.test(path.split("?")[0]),
+    handle: () => ({
+      data: {
+        title: "Game day",
+        state: "open",
+        responseMode: "anonymous",
+        completionMessage: "Your response has been recorded.",
+        questions: [
+          {
+            uuid: "q1",
+            type: "short_text",
+            title: "How was the game?",
+            required: false,
+            configuration: {},
+          },
+        ],
+        logic: [],
+      },
+    }),
+  },
+  {
+    methods: ["post"],
+    match: (path) => path.split("?")[0].endsWith("/public/surveys/unsubscribe"),
+    handle: () => ({ data: { ok: true } }),
+  },
+  {
+    methods: ["post"],
+    match: (path) => /\/public\/surveys\/[^/]+\/start$/.test(path.split("?")[0]),
+    handle: () => ({ data: { state: "started" } }),
+  },
+  {
+    methods: ["post"],
+    match: (path) =>
+      /\/public\/surveys\/[^/]+\/responses$/.test(path.split("?")[0]),
+    handle: () => ({ data: { state: "completed" } }),
+  },
+
   // ---- Login (any code works) ----
   { methods: ["post"], match: endsWith("/registration/validate-email"), handle: () => ({ data: { verdict: "Valid" } }) },
   { methods: ["post"], match: endsWith("/verifies/emailValid"), handle: () => ({ data: { verdict: "Valid" } }) },
   { methods: ["post"], match: endsWith("/verifies/phone-unique"), handle: () => ({ data: { unique: true } }) },
   { methods: ["post"], match: endsWith("/verifies/by-phone-or-email"), handle: () => ({ data: DEMO_SESSION }) },
   { methods: ["post"], match: endsWith("/verifies/newUser"), handle: () => ({ data: DEMO_SESSION }) },
+  {
+    methods: ["post"],
+    match: endsWith("/verifies/sms-opt-in"),
+    handle: (_path, config) => {
+      const body = parseBody(config);
+      const data =
+        body.data && typeof body.data === "object"
+          ? (body.data as { smsOptIn?: unknown })
+          : {};
+      return {
+        data: {
+          ...DEMO_SESSION,
+          user: { ...DEMO_SESSION.user, smsOptIn: data.smsOptIn === true },
+        },
+      };
+    },
+  },
   { methods: ["post"], match: endsWith("/verifies"), handle: () => ({ data: { status: "sent" } }) },
 ];
 

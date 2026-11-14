@@ -7,6 +7,7 @@ import { focusFirstField } from "@/lib/autoFocus";
 import {
   FIELD_COPY,
   PHONE_ERROR,
+  fieldErrorTextClass,
   phoneBlurError,
   phoneNumberError,
   phoneSubmitError,
@@ -105,11 +106,7 @@ export default function PhoneNumberInput({
       </div>
       {error ? (
         <p
-          className={
-            dark
-              ? "mt-2 text-[13px] text-[#ff7a72]"
-              : "mt-2 text-[13px] text-[#c2394a]"
-          }
+          className={fieldErrorTextClass(dark ? "dark" : "light")}
         >
           {PHONE_ERROR[error] || FIELD_COPY.phoneInvalid}
         </p>

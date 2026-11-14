@@ -7,6 +7,7 @@ import {
   buildCancelTransferRequestBody,
   resolveCancelTransferId,
 } from "@/lib/ticketTransfers";
+import { dropCartRequestBody, withCallerCart } from "@/lib/cart";
 import {
   clearWaitingRoomToken,
   getCurrentWaitingRoomEventUuid,
@@ -116,6 +117,9 @@ export const phoneUnique = (data: unknown) =>
 export const createNewUser = (data: unknown) =>
   instance.post("/verifies/newUser", data);
 
+export const updateSmsOptIn = (data: unknown) =>
+  instance.post("/verifies/sms-opt-in", data);
+
 export const createOrder = (data: unknown) => instance.post("/orders", data);
 
 export const processOrder = (data: unknown) =>
@@ -154,7 +158,10 @@ export const getAccessPassTemplate = (uuid: string) =>
   instance.get(`/access-pass-templates/get-access-pass?uuid=${uuid}`);
 
 export const placeAccessPassIntoCart = (templateId: string | number) =>
-  instance.post(`/access-pass-templates/add-to-cart?id=${templateId}`);
+  instance.post(
+    `/access-pass-templates/add-to-cart?id=${templateId}`,
+    withCallerCart(undefined),
+  );
 
 export const findMadeOrder = (data: unknown) =>
   instance.post("/orders/findMadeOrder", data);
@@ -410,6 +417,11 @@ export const getMyListings = (options?: { signal?: AbortSignal }) =>
 export const getAvailableFunds = () =>
   instance.get("/listings/available-funds");
 
+export const getResaleFeeRules = (eventId: string | number) =>
+  instance.get(`/listings/resale-fee-rules?eventId=${eventId}`);
+
+export const claimResaleFunds = () => instance.post("/listings/claim-funds");
+
 export const removeMyListings = (id: string | number) =>
   instance.delete(`/listings/${id}`);
 
@@ -436,6 +448,11 @@ export const confirmCode = (data: unknown) =>
 export const checkAccessCode = (data: unknown) =>
   instance.post("/tickets/checkAccessCode", data);
 
+export const findOffersByAccessCode = (data: {
+  event?: { id?: string | number; uuid?: string } | null;
+  code: string;
+}) => instance.post("/tickets/find-offers-by-access-code", data);
+
 export const getOffers = (eventId: string) =>
   instance.get(`/events/offers?uuid=${eventId}`);
 
@@ -443,13 +460,13 @@ export const getTicketsFromOffer = (offerId: string, eventId: string) =>
   instance.get(`/events/offer-tickets?uuid=${eventId}&offerUUID=${offerId}`);
 
 export const placeTicketsIntoCart = (data: unknown) =>
-  instance.post(`/events/place-tickets-into-cart`, data);
+  instance.post(`/events/place-tickets-into-cart`, withCallerCart(data));
 
 export const placeGATicketsIntoCart = (data: unknown) =>
-  instance.post(`/events/place-ga-tickets-into-cart`, data);
+  instance.post(`/events/place-ga-tickets-into-cart`, withCallerCart(data));
 
 export const placePackageIntoCart = (data: unknown) =>
-  instance.post(`/events/place-package-into-cart`, data);
+  instance.post(`/events/place-package-into-cart`, withCallerCart(data));
 
 export const getTicketGroups = (data: unknown) =>
   instance.post(`/ticket-group/get-ticket-groups`, data);
@@ -527,8 +544,8 @@ export function isWaitingRoomRequiredError(error: unknown) {
 export const getCart = (cartId: string) =>
   instance.get(`/cart/myCart?cartId=${cartId}`);
 
-export const dropUserCart = (data: unknown) =>
-  instance.post(`/cart/drop-user-cart`, data);
+export const dropUserCart = (data: unknown = {}) =>
+  instance.post(`/cart/drop-user-cart`, dropCartRequestBody(data));
 
 export const getVenuePackages = (venueUUID: string) =>
   instance.get(`/packages/get-venue-packages?venueUUID=${venueUUID}`);
@@ -580,6 +597,22 @@ export const downloadApplePass = (data: unknown) =>
 export const downloadGooglePass = (data: unknown) =>
   instance.post("/create_download_google_pass", data);
 
+/** Public ticket link from a text message. 410 when the link has expired. */
+export const getSmsTickets = (token: string) =>
+  instance.get(`/orders/sms-tickets/${encodeURIComponent(token)}`);
+
+export const downloadSmsApplePasses = (token: string) =>
+  instance.get(
+    `/orders/sms-tickets/${encodeURIComponent(token)}/apple-passes`,
+    { responseType: "blob", timeout: 90000 },
+  );
+
+export const downloadSmsGooglePasses = (token: string) =>
+  instance.get(
+    `/orders/sms-tickets/${encodeURIComponent(token)}/google-passes`,
+    { timeout: 90000 },
+  );
+
 export const validateEmail = (data: unknown) =>
   instance.post("/registration/validate-email", data);
 
@@ -593,7 +626,7 @@ export const getFlexPack = (uuid: string) =>
   instance.get(`/flex-pack/get-flex-pack?uuid=${uuid}`);
 
 export const placeFlexPackIntoCart = (flexPackId: string | number) =>
-  instance.post(`/flex-pack/add-to-cart?id=${flexPackId}`);
+  instance.post(`/flex-pack/add-to-cart?id=${flexPackId}`, withCallerCart({}));
 
 export const trackCartSessionEvent = (data: unknown) =>
   instance.post("/cart-sessions/track", data);
@@ -690,6 +723,23 @@ export const getPublicOrderStatus = (
     { params },
   );
 };
+
+export const getPublicSurvey = (token: string, idempotencyKey?: string) =>
+  instance.get(`/public/surveys/${encodeURIComponent(token)}`, {
+    params: idempotencyKey ? { k: idempotencyKey } : undefined,
+  });
+
+export const startPublicSurvey = (token: string, body: unknown) =>
+  instance.post(`/public/surveys/${encodeURIComponent(token)}/start`, body);
+
+export const submitPublicSurvey = (token: string, body: unknown) =>
+  instance.post(
+    `/public/surveys/${encodeURIComponent(token)}/responses`,
+    body,
+  );
+
+export const unsubscribeSurvey = (token: string) =>
+  instance.post("/public/surveys/unsubscribe", { token });
 
 export default instance;
 

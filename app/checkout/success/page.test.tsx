@@ -25,6 +25,7 @@ import {
   resolveCompletedOrderFees,
 } from "@/lib/ticketSummary";
 import { cacheOrgBranding } from "@/lib/orgBrandingCache";
+import { buildOrderReceipt } from "@/lib/orderReceipt";
 import { purchaseTabTitle } from "@/lib/seo";
 import { setGuestCheckoutBuyer } from "@/lib/guestCheckout";
 
@@ -270,6 +271,57 @@ describe("Checkout success receipt", () => {
     expect(
       screen.queryByText(/^Ga · unreserved seating$/i),
     ).not.toBeInTheDocument();
+  });
+
+  it("lists a resale order as subtotal, processing fee, service fee, then tax", async () => {
+    const cart = demoCheckoutCart({ ticketCount: 2 });
+    const tickets = cart.tickets.map((ticket) => ({
+      ...ticket,
+      resale: true,
+      listingId: 574,
+      cost: 0,
+      price: 0,
+      listingAskingPrice: 350,
+    }));
+    mockedGetOrderByPi.mockResolvedValue({
+      data: demoCompletedTicketOrder({
+        tickets,
+        serviceFee: 70,
+        processingFee: 22.94,
+        estimatedProcessingFee: 22.94,
+        salesTax: 63.52,
+        total: 856.46,
+      }),
+    } as never);
+    render(<CheckoutSuccessPageRoute />);
+
+    const subtotalLine = await screen.findByText("Subtotal");
+    expect(subtotalLine.parentElement?.parentElement).toHaveTextContent(
+      /Subtotal[\s\S]*\$700\.00[\s\S]*Processing Fee[\s\S]*\$22\.94[\s\S]*Service Fee[\s\S]*\$70\.00[\s\S]*Tax[\s\S]*\$63\.52/,
+    );
+  });
+
+  it("shows the verified resale badge and the offer from the listing after the tickets are sold", async () => {
+    const cart = demoCheckoutCart({ ticketCount: 2 });
+    mockedGetOrderByPi.mockResolvedValue({
+      data: demoCompletedTicketOrder({
+        type: "resale",
+        resaleListing: { id: 574, offer: { name: "Standard Admission" } },
+        tickets: cart.tickets.map((ticket) => ({
+          ...ticket,
+          resale: false,
+          listingId: null,
+          offer: null,
+          offerName: "",
+        })),
+      }),
+    } as never);
+    render(<CheckoutSuccessPageRoute />);
+
+    expect(await screen.findByText("Standard Admission")).toBeInTheDocument();
+    expect(screen.getByTestId("verified-resale-badge")).toHaveTextContent(
+      /verified resale/i,
+    );
   });
 
   it("keeps the order readable when the ticket groups lookup fails", async () => {
@@ -564,6 +616,21 @@ describe("Checkout success receipt", () => {
     expect(screen.getAllByText(formatCurrency(5.5)).length).toBeGreaterThan(0);
   });
 
+  it("shows the same fee rows the receipt downloads", async () => {
+    const order = demoItemizedFeeCompletedOrder();
+    mockedGetOrderByPi.mockResolvedValue({ data: order } as never);
+    render(<CheckoutSuccessPageRoute />);
+
+    const feeRows = buildOrderReceipt(order)!.totals.filter(
+      (row) => !row.strong && !row.amountDue,
+    );
+    expect(await screen.findByText(feeRows[0]!.label)).toBeInTheDocument();
+    for (const row of feeRows) {
+      expect(screen.getByText(row.label)).toBeInTheDocument();
+      expect(screen.getAllByText(row.amount).length).toBeGreaterThan(0);
+    }
+  });
+
   it("downloads a receipt PDF from the completed order", async () => {
     const order = demoCompletedTicketOrder();
     render(<CheckoutSuccessPageRoute />);
@@ -713,6 +780,12 @@ describe("Checkout success receipt", () => {
     expect(screen.getByText("Subtotal").parentElement).toHaveTextContent(
       formatCurrency(46),
     );
+    expect(
+      screen
+        .getByText("Service Fee")
+        .compareDocumentPosition(screen.getByText("Tax")) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
     expect(screen.queryByText(formatCurrency(49.5))).not.toBeInTheDocument();
     expect(screen.getByText(formatCurrency(55.35))).toBeInTheDocument();
   });
@@ -1184,6 +1257,30 @@ describe("Checkout success guest wallet", () => {
     expect(
       screen.queryByRole("button", { name: /Add to (Apple|Google) Wallet/ }),
     ).not.toBeInTheDocument();
+  });
+
+  it("offers Apple and Google Wallet when the phone hides its operating system", async () => {
+    stubPhone(
+      "Mozilla/5.0 (X11; Linux aarch64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+      5,
+    );
+    Object.defineProperty(window, "matchMedia", {
+      configurable: true,
+      writable: true,
+      value: (query: string) =>
+        ({
+          matches:
+            query === "(pointer: coarse)" || query === "(max-width: 900px)",
+        }) as MediaQueryList,
+    });
+    render(<CheckoutSuccessPageRoute />);
+
+    expect(
+      await screen.findByRole("button", { name: "Add to Apple Wallet" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Add to Google Wallet" }),
+    ).toBeInTheDocument();
   });
 
   it("opens a one-ticket picker from the wallet bar", async () => {

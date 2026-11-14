@@ -6,6 +6,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import CodeField, { type CodeError } from "@/components/molecules/CodeField";
 import DobField from "@/components/molecules/DobField";
 import EmailField from "@/components/molecules/EmailField";
+import SmsOptIn from "@/components/molecules/SmsOptIn";
 import NameField from "@/components/molecules/NameField";
 import PhoneNumberInput, {
   phoneBlurError,
@@ -24,6 +25,7 @@ import { validateSubmittedEmail } from "@/lib/submitEmailValidation";
 import {
   FIELD_COPY,
   codeResponseError,
+  fieldErrorTextClass,
   codeSubmitError,
   dobSubmitError,
   emailBlurInvalid,
@@ -128,6 +130,7 @@ function LoginForm() {
   const [firstName, setFirstName] = useState("");
   const [lastName, setLastName] = useState("");
   const [dob, setDob] = useState("");
+  const [smsOptIn, setSmsOptIn] = useState(false);
   const [hasError, setHasError] = useState(false);
   const [emailError, setEmailError] = useState<EmailFieldError>(null);
   const [phoneError, setPhoneError] = useState<PhoneErrorType | null>(null);
@@ -284,6 +287,7 @@ function LoginForm() {
           lastName: last.trim(),
           phoneNumber: nextPhone,
           dob: dobValue,
+          smsOptIn,
         },
       });
       if (res.status === 200) {
@@ -569,8 +573,9 @@ function LoginForm() {
                 }}
                 onBlur={setDobError}
               />
+              <SmsOptIn checked={smsOptIn} onChange={setSmsOptIn} />
               {hasError ? (
-                <p className="text-[13px] text-[#c2394a]">{FIELD_COPY.network}</p>
+                <p className={fieldErrorTextClass("light")}>{FIELD_COPY.network}</p>
               ) : null}
               <button
                 type="submit"

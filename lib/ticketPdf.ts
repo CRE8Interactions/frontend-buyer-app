@@ -27,6 +27,11 @@ import {
 } from "@/lib/wallet";
 import { formatVenueCityState } from "@/lib/venueLocation";
 import { resolvePrintedOfferInfo } from "@/lib/printedOfferLabel";
+import {
+  EXTENDED_TICKET_LAYOUT,
+  planPrintedTicketDetails,
+  ticketEntrySource,
+} from "@/lib/printedTicketDetails";
 import { getAccessibleLabel } from "@/lib/ticketAccessibility";
 
 type PrintableTicket = {
@@ -43,7 +48,10 @@ type PrintableTicket = {
   lastName?: unknown;
   email?: unknown;
   offerName?: unknown;
-  offer?: { name?: unknown; description?: unknown };
+  offer?:
+    | { name?: unknown; description?: unknown }
+    | Array<{ name?: unknown; description?: unknown }>;
+  offerDescription?: unknown;
   accessible?: unknown;
   accessibleType?: unknown;
   package?: { name?: unknown } | Array<{ name?: unknown }>;
@@ -569,50 +577,60 @@ async function drawBrandedTicket(
     });
   };
 
+  const holderX = TICKET_X + 270;
   const timezone = event.venue?.timezone;
   const eventTimeLabel = formatEventWhen(event.start, timezone, "h:mm A");
+  const dateLabel = formatEventWhen(event.start, timezone, "ddd, MMM D, YYYY");
+  const venue = printedVenueLabel(event);
+  const holderName = printedTicketHolderName(ticket, buyer);
   const offerLayout = printedTicketOfferLayout(
     ticket,
     eventTimeLabel,
     packageName,
     event,
   );
-  drawField(
-    "DATE",
-    formatEventWhen(event.start, timezone, "ddd, MMM D, YYYY"),
-    contentLeft,
-    headerBottom - 40,
-  );
-  drawField("TIME", offerLayout.timeValue, contentLeft, headerBottom - 80);
-  drawField("VENUE", printedVenueLabel(event), contentLeft, headerBottom - 120);
   const organizationName = String(purchasedByOrganizationName || "").trim();
-  if (organizationName) {
-    drawField("ORGANIZATION", organizationName, contentLeft, headerBottom - 158);
-  }
+  const seatValues = ticketPdfSeatColumnValues(ticket);
+  const accessibility = printedTicketAccessibilityLayout(ticket);
+  const ticketId = printedTicketIdLayout(ticket, event);
+  const plan = planPrintedTicketDetails({
+    sectionValue: seatValues.section,
+    entrySource: ticketEntrySource(ticket),
+    offerLabel: offerLayout.secondary?.value ?? "",
+    measure: (text, size, weight) =>
+      (weight === "bold" ? bold : regular).widthOfTextAtSize(text, size),
+    entryWidth: holderX - 18 - contentLeft,
+    sectionWidth: holderX - 18 - contentLeft,
+    offerMaxWidth: 230,
+  });
 
-  const holderX = TICKET_X + 270;
-  page.drawText("TICKET HOLDER", {
-    x: holderX,
-    y: headerBottom - 24,
-    size: 8,
-    font: bold,
-    color: labelColor,
-  });
-  page.drawText(
-    fitText(printedTicketHolderName(ticket, buyer), regular, 12, 140) || "Guest",
-    {
-    x: holderX,
-    y: headerBottom - 40,
-    size: 12,
-    font: regular,
-    color: textBody,
-  });
-  page.drawLine({
-    start: { x: holderX, y: headerBottom - 48 },
-    end: { x: holderX + 140, y: headerBottom - 48 },
-    thickness: 0.75,
-    color: hexToRgb("#CBCFD8"),
-  });
+  // Same baselines as the legacy extended card, measured down from the header.
+  const stack = EXTENDED_TICKET_LAYOUT;
+
+  const drawExtendedValue = (
+    label: string,
+    value: string,
+    x: number,
+    y: number,
+    valueSize: number,
+    labelAbove = stack.labelAbove,
+  ) => {
+    page.drawText(label, {
+      x,
+      y: y + labelAbove,
+      size: 8,
+      font: bold,
+      color: labelColor,
+    });
+    if (!value) return;
+    page.drawText(value, {
+      x,
+      y,
+      size: valueSize,
+      font: regular,
+      color: textBody,
+    });
+  };
 
   const qrSize = 118;
   const besideQrWidth = Math.max(
@@ -622,60 +640,248 @@ async function drawBrandedTicket(
   const rightColumnWidth = (y: number) =>
     y < ticketY + 40 + qrSize ? besideQrWidth : 200;
 
-  let rightY = headerBottom - 80;
-  if (offerLayout.secondary) {
-    drawField(
-      offerLayout.secondary.label,
-      offerLayout.secondary.value,
-      holderX,
-      rightY,
-      rightColumnWidth(rightY),
-    );
-    rightY -= 40;
-  }
+  // Right-column values wrap onto extra lines instead of being cut off with an
+  // ellipsis. Returns how many lines were drawn so the caller can stack below.
+  const wrapToWidth = (value: string, size: number, maxWidth: number) => {
+    const words = sanitizeText(value).split(" ").filter(Boolean);
+    const lines: string[] = [];
+    let current = "";
+    for (const word of words) {
+      const next = current ? `${current} ${word}` : word;
+      if (regular.widthOfTextAtSize(next, size) <= maxWidth) {
+        current = next;
+        continue;
+      }
+      if (current) lines.push(current);
+      current = fitText(word, regular, size, maxWidth);
+    }
+    if (current) lines.push(current);
+    return lines;
+  };
 
-  const accessibility = printedTicketAccessibilityLayout(ticket);
-  if (accessibility) {
-    drawField(
-      accessibility.label,
-      accessibility.value,
-      holderX,
-      rightY,
-      rightColumnWidth(rightY),
-    );
-    rightY -= 40;
-  }
+  const drawWrappedField = (
+    label: string,
+    value: string,
+    x: number,
+    y: number,
+    maxWidth: number,
+  ) => {
+    page.drawText(label, { x, y: y + 16, size: 8, font: bold, color: labelColor });
+    const lines = wrapToWidth(value, 11, maxWidth);
+    lines.forEach((line, index) => {
+      page.drawText(line, {
+        x,
+        y: y - index * 13,
+        size: 11,
+        font: regular,
+        color: textBody,
+      });
+    });
+    return Math.max(1, lines.length);
+  };
 
-  const ticketId = printedTicketIdLayout(ticket, event);
-  if (ticketId) {
-    drawField(
-      ticketId.label,
-      ticketId.value,
-      holderX,
-      rightY,
-      rightColumnWidth(rightY),
+  if (!plan.extended) {
+    drawField("DATE", dateLabel, contentLeft, headerBottom - 40);
+    drawField("TIME", offerLayout.timeValue, contentLeft, headerBottom - 80);
+    drawField("VENUE", venue, contentLeft, headerBottom - 120);
+    if (organizationName) {
+      drawField("ORGANIZATION", organizationName, contentLeft, headerBottom - 158);
+    }
+
+    page.drawText("TICKET HOLDER", {
+      x: holderX,
+      y: headerBottom - 24,
+      size: 8,
+      font: bold,
+      color: labelColor,
+    });
+    page.drawText(fitText(holderName, regular, 12, 140) || "Guest", {
+      x: holderX,
+      y: headerBottom - 40,
+      size: 12,
+      font: regular,
+      color: textBody,
+    });
+    page.drawLine({
+      start: { x: holderX, y: headerBottom - 48 },
+      end: { x: holderX + 140, y: headerBottom - 48 },
+      thickness: 0.75,
+      color: hexToRgb("#CBCFD8"),
+    });
+
+    const offerShown = Boolean(offerLayout.secondary && plan.offerText);
+    const offerY = headerBottom - 80;
+    if (offerLayout.secondary && plan.offerText) {
+      page.drawText(offerLayout.secondary.label, {
+        x: holderX,
+        y: offerY + 16,
+        size: 8,
+        font: bold,
+        color: labelColor,
+      });
+      page.drawText(plan.offerText, {
+        x: holderX,
+        y: offerY,
+        size: plan.offerSize,
+        font: regular,
+        color: textBody,
+      });
+    }
+    // TICKET ID keeps its legacy slot (-120 under an offer, -80 without one);
+    // ACCESSIBILITY stacks below it so the legacy spacing is unchanged.
+    let rightY = headerBottom - (offerShown ? 120 : 80);
+    if (ticketId) {
+      drawField(
+        ticketId.label,
+        ticketId.value,
+        holderX,
+        rightY,
+        rightColumnWidth(rightY),
+      );
+      rightY -= 40;
+    }
+    if (accessibility) {
+      drawWrappedField(
+        accessibility.label,
+        accessibility.value,
+        holderX,
+        rightY,
+        rightColumnWidth(rightY),
+      );
+    }
+  } else {
+    drawExtendedValue(
+      "DATE",
+      fitText(dateLabel, regular, 11, 200) || "—",
+      contentLeft,
+      headerBottom - stack.date,
+      11,
     );
+    drawExtendedValue(
+      "TIME",
+      fitText(offerLayout.timeValue, regular, 11, 200) || "—",
+      contentLeft,
+      headerBottom - stack.time,
+      11,
+    );
+    drawExtendedValue(
+      "VENUE",
+      fitText(venue, regular, 11, 200) || "—",
+      contentLeft,
+      headerBottom - stack.venue,
+      11,
+    );
+    drawExtendedValue(
+      "TICKET HOLDER",
+      fitText(holderName, regular, 11, 220) || "Guest",
+      holderX,
+      headerBottom - stack.date,
+      11,
+    );
+    if (offerLayout.secondary && plan.offerText) {
+      drawExtendedValue(
+        offerLayout.secondary.label,
+        plan.offerText,
+        holderX,
+        headerBottom - stack.time,
+        plan.offerSize,
+      );
+    }
+
+    const rightHandFields = [
+      ...(ticketId ? [ticketId] : []),
+      ...(accessibility ? [accessibility] : []),
+      ...(organizationName
+        ? [{ label: "ORGANIZATION", value: organizationName }]
+        : []),
+    ];
+    // Legacy spaces right-column values 28pt apart (OFFER at -50, TICKET ID at -78).
+    let slotY = headerBottom - stack.venue;
+    for (const field of rightHandFields) {
+      const lines = drawWrappedField(
+        field.label,
+        field.value,
+        holderX,
+        slotY,
+        rightColumnWidth(slotY),
+      );
+      slotY -= 28 + (lines - 1) * 13;
+    }
+
+    if (plan.entryLines.length) {
+      page.drawText("ENTRY", {
+        x: contentLeft,
+        y: headerBottom - stack.entryLabel,
+        size: 8,
+        font: bold,
+        color: labelColor,
+      });
+      plan.entryLines.forEach((line, index) => {
+        page.drawText(line, {
+          x: contentLeft,
+          y:
+            headerBottom - stack.entryFirst - index * stack.entryLeading,
+          size: EXTENDED_TICKET_LAYOUT.entrySize,
+          font: regular,
+          color: textBody,
+        });
+      });
+    }
   }
 
   const seatBoxX = contentLeft;
-  const seatBoxY = ticketY + 28;
+  const seatBoxY =
+    ticketY +
+    (plan.sectionPlacement === "above"
+      ? EXTENDED_TICKET_LAYOUT.seatBoxYOffset
+      : EXTENDED_TICKET_LAYOUT.standardSeatBoxYOffset);
+  const seatBoxH = EXTENDED_TICKET_LAYOUT.seatBoxHeight;
   drawRoundedRect(page, {
     x: seatBoxX,
     y: seatBoxY,
     width: 223,
-    height: 52,
+    height: seatBoxH,
     radius: 8,
     color: rgb(1, 1, 1),
     borderColor: seatBoxBorder,
     borderWidth: 1,
   });
 
-  const seatValues = ticketPdfSeatColumnValues(ticket);
-  const seatCols = [
-    { label: "SECTION", value: seatValues.section, x: seatBoxX + 22 },
-    { label: "ROW", value: seatValues.row, x: seatBoxX + 100 },
-    { label: "SEAT", value: seatValues.seat, x: seatBoxX + 170 },
-  ];
+  if (plan.sectionPlacement === "above") {
+    const sectionTop =
+      seatBoxY +
+      seatBoxH +
+      8 +
+      plan.sectionLines.length * EXTENDED_TICKET_LAYOUT.sectionLeading;
+    page.drawText("SECTION", {
+      x: contentLeft,
+      y: sectionTop,
+      size: 7,
+      font: bold,
+      color: labelColor,
+    });
+    plan.sectionLines.forEach((line, index) => {
+      page.drawText(line, {
+        x: contentLeft,
+        y: sectionTop - 12 - index * EXTENDED_TICKET_LAYOUT.sectionLeading,
+        size: plan.sectionSize,
+        font: bold,
+        color: textDark,
+      });
+    });
+  }
+
+  const seatCols =
+    plan.sectionPlacement === "above"
+      ? [
+          { label: "ROW", value: seatValues.row, x: seatBoxX + 28 },
+          { label: "SEAT", value: seatValues.seat, x: seatBoxX + 120 },
+        ]
+      : [
+          { label: "SECTION", value: seatValues.section, x: seatBoxX + 22 },
+          { label: "ROW", value: seatValues.row, x: seatBoxX + 100 },
+          { label: "SEAT", value: seatValues.seat, x: seatBoxX + 170 },
+        ];
   seatCols.forEach((col) => {
     const labelW = bold.widthOfTextAtSize(col.label, 7);
     page.drawText(col.label, {

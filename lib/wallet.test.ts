@@ -698,6 +698,13 @@ describe("isPhoneDevice", () => {
     });
   }
 
+  function setClientHints(hints: { mobile?: boolean; platform?: string }) {
+    Object.defineProperty(navigator, "userAgentData", {
+      configurable: true,
+      value: hints,
+    });
+  }
+
   function stubPointer(matches: Record<string, boolean>, width: number, height: number) {
     Object.defineProperty(window, "matchMedia", {
       configurable: true,
@@ -721,6 +728,7 @@ describe("isPhoneDevice", () => {
     Reflect.deleteProperty(navigator, "userAgent");
     Reflect.deleteProperty(navigator, "maxTouchPoints");
     Reflect.deleteProperty(navigator, "platform");
+    Reflect.deleteProperty(navigator, "userAgentData");
     Reflect.deleteProperty(window, "matchMedia");
     Reflect.deleteProperty(window, "innerWidth");
     Reflect.deleteProperty(window, "innerHeight");
@@ -779,6 +787,29 @@ describe("isPhoneDevice", () => {
     setScreen(768, 1024);
     expect(isPhoneDevice()).toBe(false);
     expect(isTabletDevice()).toBe(true);
+  });
+
+  it("reads Android Chrome requesting the desktop site as a phone", () => {
+    setClientHints({ mobile: false, platform: "Android" });
+    stubPointer({ "(pointer: coarse)": true, "(hover: hover)": false }, 980, 1200);
+
+    setUserAgent(
+      "Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+    );
+    setScreen(412, 915);
+    expect(isPhoneDevice()).toBe(true);
+    expect(isTabletDevice()).toBe(false);
+
+    setScreen(800, 1280);
+    expect(isPhoneDevice()).toBe(false);
+    expect(isTabletDevice()).toBe(true);
+
+    setUserAgent(
+      "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+    );
+    setScreen(412, 915);
+    expect(isPhoneDevice()).toBe(true);
+    expect(isTabletDevice()).toBe(false);
   });
 });
 

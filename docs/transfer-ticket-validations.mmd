@@ -8,25 +8,23 @@
 
 %%         blocktickets/tickets/src/api/ticket-transfer/controllers/ticket-transfer.js (create, ticketIds)
 
-%%
-
 %% Blur: optional hint on a non-empty email only. Empty blur is quiet. SendGrid is not called.
 
 %% Submit: validateSubmittedEmail — trim, empty, blocked/syntax, then POST /registration/validate-email.
 
+%% Next stays disabled until the email is non-empty, so that button does not
+
+%% show required copy for an empty field. Enter in the field still submits.
+
 %% Wallet maps 400 startFailed to the network banner, not invalid-email copy.
 
 %% Transfer errors key off API message first, then HTTP status.
-
-%%
 
 %% --- Blur — client hint (non-empty only) ---
 
 %% | Field | Empty blur | Non-empty invalid |
 
 %% | Email | (no error) | Email is invalid. Please try again. |
-
-%%
 
 %% --- Submit — validateSubmittedEmail (before self-transfer check) ---
 
@@ -36,13 +34,9 @@
 
 %% | POST /registration/validate-email | — | 402 Bad email → Email is invalid. Please try again. | 200 Valid → ok |
 
-%%
-
 %% --- Client-only (after validateSubmittedEmail ok) ---
 
 %% Self-transfer (tickets): This ticket is already assigned to this email address. (1) / These tickets are already assigned to this email address. (2+)
-
-%%
 
 %% --- POST /registration/validate-email ---
 
@@ -57,8 +51,6 @@
 %% | 402 | Bad email | Email is invalid. Please try again. |
 
 %% | 500 / other | (any other) | We're experiencing technical difficulties. Please try again later. |
-
-%%
 
 %% --- POST /ticket-transfers (ticketIds, no accessPassId) ---
 
@@ -81,7 +73,11 @@ flowchart TD
   blurField --> blurValidate[emailBlurInvalid]
   blurValidate --> blurHint[Show inline hint if non-empty invalid]
   blurHint --> typeEmail
-  typeEmail --> sendClick[Submit email]
+  typeEmail --> nextGate{Next}
+  nextGate -->|empty email| nextOff[Next stays disabled]
+  nextGate -->|non-empty| sendClick[Submit email]
+  typeEmail --> enterKey[Enter in the field]
+  enterKey --> sendClick
   sendClick --> readDom[Read submitted email]
   readDom --> validate[validateSubmittedEmail]
   validate --> valFail{Result?}
