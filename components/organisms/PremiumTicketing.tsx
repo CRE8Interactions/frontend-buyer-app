@@ -65,6 +65,7 @@ import {
   listingDetailAvailabilityLabel,
   listingLocationLabel,
   listingOfferId,
+  listingStillNeedsAccessCode,
   quantityIsAllowed,
   sortListings,
   ticketQuantityOptions,
@@ -994,7 +995,7 @@ export default function PremiumTicketing({
 
   const mapLocked = Boolean(d.soldOut) || eventScheduled;
   const rows = useMemo(() => {
-    const filtered = d.listings.filter((l) => quantityIsAllowed(want, listingQtyLimits(l)) && (!zoneFilter.length || zoneFilter.includes(l.zone)) && !(!!lockedMap[l.zone] && !unlocked.includes(l.zone)) && (!ada || isAccessibleSource(l.cartGroup)));
+    const filtered = d.listings.filter((l) => quantityIsAllowed(want, listingQtyLimits(l)) && (!zoneFilter.length || zoneFilter.includes(l.zone)) && !listingStillNeedsAccessCode(l, unlocked) && !(!!lockedMap[l.zone] && !unlocked.includes(l.zone)) && (!ada || isAccessibleSource(l.cartGroup) || Boolean(accessibleLabelFromSeats(l.cartGroup, mapMapping))));
     const prepared = filtered.map((listing) => {
       if (!unlocked.includes(listing.zone)) return listing;
       const offer = (listing.cartGroup?.offer || {}) as Record<string, unknown>;
@@ -1012,7 +1013,7 @@ export default function PremiumTicketing({
       ...l,
       range: `${l.min} – ${l.max} Tickets`,
     }));
-  }, [want, d.listings, zoneFilter, lockedMap, unlocked, ada, sortDir, eventTicketLimit]);
+  }, [want, d.listings, zoneFilter, lockedMap, unlocked, ada, sortDir, eventTicketLimit, mapMapping]);
   // Placeholder rows roughly match the list being replaced, so the column keeps
   // its height while new inventory settles.
   const skeletonRows = Math.min(Math.max(rows.length || 3, 3), 5);
@@ -1022,6 +1023,8 @@ export default function PremiumTicketing({
     d.listings.forEach((l) => {
       // A resale listing's zone is its seller's section, not an offer, so it never becomes a chip.
       if (l.resale) return;
+      if (listingStillNeedsAccessCode(l, unlocked)) return;
+      if (lockedMap[l.zone] && !unlocked.includes(l.zone)) return;
       const offer = (l.cartGroup as { offer?: { name?: string; isConnectedOffer?: boolean | null; isHidden?: boolean } })
         ?.offer;
       if (offer?.isHidden) return;

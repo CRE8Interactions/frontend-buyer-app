@@ -23,6 +23,7 @@ import {
   groupsToGaTiers,
   groupsToListings,
   lockedZonesFromGroups,
+  lockedZonesFromOffers,
 } from "@/lib/ticketListings";
 import {
   finishSeatmapBackgroundLoad,
@@ -572,6 +573,31 @@ describe("Select tickets page (PremiumTicketing)", { timeout: 20_000 }, () => {
     expect(
       screen.queryByRole("button", { name: /reset quantity/i }),
     ).not.toBeInTheDocument();
+  });
+
+  it("hides a coded offer and its listings until the code is entered", async () => {
+    const coded = DEMO_SEATED_TICKET_GROUPS.find((group) => group.offer?.accessCode);
+    if (!coded?.offer?.name || !coded.offer.accessCode) {
+      throw new Error("demo fixtures need an access-coded offer");
+    }
+    const [codedListing] = groupsToListings(
+      [{ ...coded, offer: { ...coded.offer, accessCode: undefined } }],
+      { includeLocked: true },
+    );
+
+    await renderReady({
+      ...seatedTicketingFixture,
+      listings: [...seatedTicketingFixture.listings, codedListing],
+      offerNames: [...(seatedTicketingFixture.offerNames || []), coded.offer.name],
+      lockedZones: lockedZonesFromOffers([
+        { name: coded.offer.name, accessCode: coded.offer.accessCode },
+      ]),
+    });
+
+    expect(
+      screen.queryByRole("button", { name: new RegExp(`^${coded.offer.name}$`, "i") }),
+    ).not.toBeInTheDocument();
+    expect(screen.queryByText(coded.offer.name)).not.toBeInTheDocument();
   });
 
   it("supports multi-select offer chips and All clears them", async () => {

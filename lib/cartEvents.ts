@@ -605,6 +605,13 @@ function printedTicketPayload(ticket: Record<string, unknown>) {
   };
 }
 
+function orderTicketCost(ticket: Record<string, unknown>): number | undefined {
+  const raw = ticket.cost ?? ticket.price;
+  if (raw == null || raw === "") return undefined;
+  const parsed = Number(raw);
+  return Number.isFinite(parsed) ? parsed : undefined;
+}
+
 function mergeWalletTicketsFromFullOrder(
   tickets: CartTicketDetail[],
   orderTickets?: Array<Record<string, unknown>> | null,
@@ -623,10 +630,15 @@ function mergeWalletTicketsFromFullOrder(
     const match = byKey.get(walletTicketKey(ticket));
     if (!match) return ticket;
     const fields = printedTicketPayload(match);
-    if (!Object.keys(fields).length) return ticket;
+    const cost = orderTicketCost(match);
+    if (!Object.keys(fields).length && cost == null) return ticket;
     return {
       ...ticket,
-      raw: { ...ticket.raw, ...fields },
+      raw: {
+        ...ticket.raw,
+        ...fields,
+        ...(cost != null ? { cost } : {}),
+      },
     };
   });
 }
