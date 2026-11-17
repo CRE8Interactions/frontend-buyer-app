@@ -95,24 +95,6 @@ export function accessibleLabelForTicket(group: unknown, seat?: unknown): string
   return type || flagged ? ACCESSIBLE_LABEL_GENERIC : "";
 }
 
-/**
- * A listing whose ticket group isn't flagged can still be accessible seat by
- * seat. The first mapped seat that is accessible names the icon.
- */
-export function accessibleLabelFromSeats(
-  group: { seatIds?: unknown } | null | undefined,
-  mapping: { seats?: Record<string, unknown> } | null | undefined,
-) {
-  const ids = Array.isArray(group?.seatIds) ? group.seatIds : [];
-  const seats = mapping?.seats;
-  if (!seats) return "";
-  for (const id of ids) {
-    const label = getAccessibleLabel(seats[String(id)]);
-    if (label) return label;
-  }
-  return "";
-}
-
 export function accessibleSeatColor(accessibleType?: string | null) {
   if (accessibleType === "DA") return ACCESSIBLE_SEAT_COLOR_DA;
   if (accessibleType === "DB") return ACCESSIBLE_SEAT_COLOR_DB;

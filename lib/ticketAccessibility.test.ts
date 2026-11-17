@@ -4,7 +4,6 @@ import {
   ACCESSIBLE_LABEL_DA,
   ACCESSIBLE_LABEL_DB,
   ACCESSIBLE_LABEL_GENERIC,
-  accessibleLabelFromSeats,
   accessibleTypeOf,
   getAccessibleLabel,
   isAccessibleSource,
@@ -41,21 +40,6 @@ describe("ticket accessibility", () => {
     expect(getAccessibleLabel({ accessible: "false" })).toBe("");
     expect(getAccessibleLabel({})).toBe("");
     expect(isAccessibleSource(DEMO_SEATED_TICKET_GROUPS[0])).toBe(false);
-  });
-
-  it("reads accessibility off a mapped seat when the group itself is not flagged", () => {
-    expect(
-      accessibleLabelFromSeats(
-        { seatIds: ["k1"] },
-        { seats: { k1: { accessible: true } } },
-      ),
-    ).toBe(ACCESSIBLE_LABEL_GENERIC);
-    expect(
-      accessibleLabelFromSeats(
-        { seatIds: ["j1"] },
-        { seats: { j1: { accessible: false } } },
-      ),
-    ).toBe("");
   });
 
   it("shows DA, DB, or generic legend rows only when that seating exists", () => {
