@@ -2328,6 +2328,7 @@ describe("SeatmapTooltip GA stepper", () => {
       <SeatmapTooltip
         target={{ kind: "section", sectionId: DEMO_GA_SECTION_ID, x: 20, y: 20 }}
         onClose={() => {}}
+        pricesIncludeFees={kind !== "package"}
       />,
     );
   }
@@ -2447,6 +2448,32 @@ describe("SeatmapTooltip GA stepper", () => {
     expect(increase).toBeDisabled();
     expect(screen.getByText("Ticket limit: 2–6 per order · Increments of 2")).toBeInTheDocument();
     expect(screen.queryByText(/Incl\. Taxes/i)).not.toBeInTheDocument();
+  });
+
+  it("shows incl. taxes and fees on a package tooltip when the price already includes them", () => {
+    const ga = demoTicketGroups().ticketGroups.find((group) => group.GA);
+    if (!ga) throw new Error("demo fixtures need a GA ticket group");
+    useSeatmapStore.setState({
+      sectionLookupTable: {
+        [DEMO_GA_SECTION_ID]: [
+          {
+            ...ga,
+            availableCount: 20,
+            offer: undefined,
+            package: { name: "Season", maxQuantity: 4 },
+          },
+        ],
+      },
+    });
+    render(
+      <SeatmapTooltip
+        target={{ kind: "section", sectionId: DEMO_GA_SECTION_ID, x: 20, y: 20 }}
+        onClose={() => {}}
+        pricesIncludeFees
+      />,
+    );
+
+    expect(screen.getByText(/Incl\. Taxes/i)).toBeInTheDocument();
   });
 
   it("locks the GA stepper to the exact offer limit", () => {

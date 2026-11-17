@@ -215,7 +215,7 @@ describe("Package detail (PackageDetailClient)", () => {
       screen.getByText(pkg.events[pkg.events.length - 1].name),
     ).toBeInTheDocument();
     expect(screen.getByText(formatPackageFromPrice(packageFromPrice(pkg)!))).toBeInTheDocument();
-    expect(screen.getByText("Fees added at checkout")).toBeInTheDocument();
+    expect(screen.getByText("Taxes and fees added at checkout")).toBeInTheDocument();
     expect(screen.queryByText(/taxes (&|and) fees included/i)).not.toBeInTheDocument();
     expect(
       screen.queryByText(
@@ -227,6 +227,66 @@ describe("Package detail (PackageDetailClient)", () => {
     expect(
       screen.getByRole("button", { name: /choose your seats/i }),
     ).toBeInTheDocument();
+  });
+
+  it("says fees are included when the org adds no service, tax, or card processing", async () => {
+    const pkg = demoSeasonPackage({
+      websiteSeatFees: {
+        serviceFeeMode: "per-seat",
+        serviceFeePerSeat: 0,
+        flatServiceFee: null,
+        taxPerSeat: 0,
+        facilityFeePerSeat: 0,
+        chargebackProtectionFeePerSeat: 0,
+        processingFeeWaived: true,
+      },
+    });
+    await renderPackage(pkg);
+    await screen.findByRole("heading", { name: pkg.name });
+
+    expect(screen.getByText("Taxes and fees included")).toBeInTheDocument();
+    expect(screen.queryByText("Taxes and fees added at checkout")).not.toBeInTheDocument();
+  });
+
+  it("keeps fees added at checkout when the org still charges tax on a waived package", async () => {
+    const pkg = demoSeasonPackage({
+      websiteSeatFees: {
+        serviceFeePerSeat: 0,
+        flatServiceFee: null,
+        taxPerSeat: 4.31,
+        facilityFeePerSeat: 0,
+        chargebackProtectionFeePerSeat: 0,
+        processingFeeWaived: true,
+      },
+    });
+    await renderPackage(pkg);
+    await screen.findByRole("heading", { name: pkg.name });
+
+    expect(screen.getByText("Taxes and fees added at checkout")).toBeInTheDocument();
+    expect(screen.queryByText("Taxes and fees included")).not.toBeInTheDocument();
+  });
+
+  it("shows fees included in the mobile footer when the org adds no fees", async () => {
+    Object.defineProperty(window, "innerWidth", {
+      configurable: true,
+      writable: true,
+      value: 390,
+    });
+    const pkg = demoSeasonPackage({
+      websiteSeatFees: {
+        serviceFeePerSeat: 0,
+        flatServiceFee: null,
+        taxPerSeat: 0,
+        facilityFeePerSeat: 0,
+        chargebackProtectionFeePerSeat: 0,
+        processingFeeWaived: true,
+      },
+    });
+    await renderPackage(pkg);
+    await screen.findByRole("heading", { name: pkg.name });
+
+    expect(screen.getByText("Taxes and fees included")).toBeInTheDocument();
+    expect(screen.queryByText("Taxes and fees added at checkout")).not.toBeInTheDocument();
   });
 
   it("shows package not found when the API returns no package", async () => {
@@ -263,7 +323,7 @@ describe("Package detail (PackageDetailClient)", () => {
 
     const amount = packageFromPrice(pkg)!;
     expect(screen.getByText(formatPackageFromPrice(amount))).toBeInTheDocument();
-    expect(screen.getByText("Fees added at checkout")).toBeInTheDocument();
+    expect(screen.getByText("Taxes and fees added at checkout")).toBeInTheDocument();
     expect(screen.queryByText(/^From$/)).not.toBeInTheDocument();
     expect(screen.queryByText(/taxes (&|and) fees included/i)).not.toBeInTheDocument();
   });
@@ -335,7 +395,7 @@ describe("Package detail (PackageDetailClient)", () => {
     expect(screen.getByTestId("interactive-seatmap")).toBeVisible();
   });
 
-  it("shows Standard admission and keeps Details when a package seat has no offer", async () => {
+  it("shows Season package on the card and in details when a package seat has no offer", async () => {
     const pkg = demoSeasonPackage();
     const { user } = await renderPackage(pkg);
     await screen.findByRole("heading", { name: pkg.name });
@@ -350,8 +410,10 @@ describe("Package detail (PackageDetailClient)", () => {
       offer: undefined,
     });
 
-    expect(await screen.findByText("Standard admission")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /details/i })).toBeInTheDocument();
+    expect(await screen.findByText("Season package")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: /details/i }));
+    expect(screen.getByText("Season package")).toBeInTheDocument();
+    expect(screen.queryByText("Standard admission")).not.toBeInTheDocument();
   });
 
   it("shows the seated-error modal when placing the package into a cart fails", async () => {
@@ -390,7 +452,7 @@ describe("Package detail (PackageDetailClient)", () => {
     expect(useSeatmapStore.getState().selectedFromMap).toHaveLength(1);
   });
 
-  it("hides the ticket limit when selecting package seats", async () => {
+  it("shows the package ticket limit in Your selection", async () => {
     const pkg = demoSeasonPackage({ maxQuantity: undefined, limit: 3 });
     const { user } = await renderPackage(pkg);
     await screen.findByRole("heading", { name: pkg.name });
@@ -403,7 +465,37 @@ describe("Package detail (PackageDetailClient)", () => {
     });
     await screen.findByText(/your selection/i);
 
-    expect(screen.queryByText(/ticket limit/i)).not.toBeInTheDocument();
+    expect(screen.getByText("Ticket limit: 3 per order")).toBeInTheDocument();
+    expect(screen.queryByText(/incl\. taxes & fees/i)).not.toBeInTheDocument();
+  });
+
+  it("shows taxes and fees on the package selection when the price already includes them", async () => {
+    const pkg = demoSeasonPackage({
+      websiteSeatFees: {
+        serviceFeePerSeat: 0,
+        flatServiceFee: null,
+        taxPerSeat: 0,
+        facilityFeePerSeat: 0,
+        chargebackProtectionFeePerSeat: 0,
+        processingFeeWaived: true,
+      },
+    });
+    const { user } = await renderPackage(pkg);
+    await screen.findByRole("heading", { name: pkg.name });
+    await user.click(screen.getByRole("button", { name: /choose your seats/i }));
+    await finishSeatmapBackgroundLoad();
+    await screen.findByTestId("interactive-seatmap");
+    seedMapSelection({
+      package: packageQuantitySource(pkg),
+      offer: undefined,
+    });
+
+    expect(
+      await screen.findByText("Incl. taxes & fees"),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(`All ${pkg.events.length} games`),
+    ).toBeInTheDocument();
   });
 
   it("opens the max-ticket popup when a reserved package seat exceeds the package max", async () => {

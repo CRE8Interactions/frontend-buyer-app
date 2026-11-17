@@ -1408,6 +1408,7 @@ export default function ClientProfile({
                     </div>
                     <div
                       style={{
+                        flex: 1,
                         padding: 20,
                         display: "flex",
                         flexDirection: "column",
@@ -1422,7 +1423,7 @@ export default function ClientProfile({
                           {count} {count === 1 ? "voucher" : "vouchers"}
                         </div>
                       ) : null}
-                      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
+                      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, marginTop: "auto" }}>
                         <span style={{ fontSize: 20, fontWeight: 600, lineHeight: 1.5, fontVariantNumeric: "tabular-nums" }}>
                           {price}
                         </span>

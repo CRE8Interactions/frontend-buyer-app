@@ -206,6 +206,7 @@ function SeatMapSelectionOverlay({
   onUnlockOffer,
   keepTooltipOpen = false,
   mapLegend = "event",
+  pricesIncludeFees = mapLegend !== "package",
 }: {
   title: string;
   accent: string;
@@ -230,6 +231,8 @@ function SeatMapSelectionOverlay({
   onUnlockOffer?: (offerName: string) => void;
   keepTooltipOpen?: boolean;
   mapLegend?: "event" | "package";
+  /** Event prices include taxes and fees. A package sets this when its price already does. */
+  pricesIncludeFees?: boolean;
 }) {
   const selectedFromMap = useSeatmapStore((s) => s.selectedFromMap);
   const totalCount = useSeatmapStore((s) => s.totalCount);
@@ -254,14 +257,11 @@ function SeatMapSelectionOverlay({
     if (target.closest("[data-seatmap-canvas]")) return;
     dismissMapTooltip();
   };
-  const paneRestrictionLabel =
-    mapLegend === "package"
-      ? null
-      : selectionPaneRestrictionLabel(
-          seatmapTicketLimit ?? eventTicketLimit,
-          selectedFromMap,
-          orderQuantitySource,
-        );
+  const paneRestrictionLabel = selectionPaneRestrictionLabel(
+    seatmapTicketLimit ?? eventTicketLimit,
+    selectedFromMap,
+    orderQuantitySource,
+  );
 
   const mapping = mapMapping || storeMapping;
   const background = mapBackground || storeBackground;
@@ -305,7 +305,9 @@ function SeatMapSelectionOverlay({
   const mapDetailSection = String(
     mapDetailGroup?.sectionNumber || mapDetailGroup?.sectionName || "GA",
   );
-  const mapDetailOffer = selectionOfferName(mapDetailGroup);
+  const offerFallback =
+    mapLegend === "package" ? "Season package" : "Standard admission";
+  const mapDetailOffer = selectionOfferName(mapDetailGroup, offerFallback);
   const mapDetailAccessibleLabel = accessibleLabelForTicket(
     mapDetailGroup,
     mapDetailGroup?.seatId == null || mapDetailGroup.seatId === ""
@@ -463,13 +465,15 @@ function SeatMapSelectionOverlay({
       }}
     />
   );
-  const pricesIncludeFees = mapLegend !== "package";
-  const selectionPriceNote = pricesIncludeFees
-    ? itemPriceNote
-    : itemPriceNote
-        .replace(/\s*[·•]\s*incl\.?\s*(taxes\s*(and|&)\s*)?fees/i, "")
-        .replace(/^incl\.?\s*(taxes\s*(and|&)\s*)?fees$/i, "")
-        .trim();
+  // Taxes-and-fees copy sits on its own line under the price; the rest of the
+  // note (for example "All 10 games") goes below it.
+  const selectionPriceNoteLines = [
+    pricesIncludeFees ? "Incl. taxes & fees" : null,
+    itemPriceNote
+      .replace(/\s*[·•]\s*incl\.?\s*(taxes\s*(and|&)\s*)?fees/i, "")
+      .replace(/^incl\.?\s*(taxes\s*(and|&)\s*)?fees$/i, "")
+      .trim() || null,
+  ].filter((line): line is string => Boolean(line));
   const trustRows = (
     <BuyerProtectionCard
       accent={accent}
@@ -669,6 +673,7 @@ function SeatMapSelectionOverlay({
                 compactChrome={mobile}
                 hideChrome={mobile && showMapSelectionPanel}
                 mapLegend={mapLegend}
+                pricesIncludeFees={pricesIncludeFees}
                 hideLoadingSpinner
                 dismissTooltipKey={dismissTooltipKey}
                 onUnlockOffer={onUnlockOffer}
@@ -1289,7 +1294,7 @@ function SeatMapSelectionOverlay({
                             : seatedSectionName(g) || "GA";
                           const row = g.rowNumber || g.rowName || "—";
                           const seat = seatDisplayValue(g.seatNumber) || "—";
-                          const offer = selectionOfferName(g);
+                          const offer = selectionOfferName(g, offerFallback);
                           const mapSeat =
                             g.seatId == null || g.seatId === ""
                               ? undefined
@@ -1402,18 +1407,33 @@ function SeatMapSelectionOverlay({
                                   <div style={{ fontSize: "17px", fontWeight: 600 }}>
                                     {money(itemPrice)}
                                   </div>
-                                  {itemPrice === 0 || selectionPriceNote ? (
-                                  <div
-                                    style={{
-                                      marginTop: 1,
-                                      fontSize: fluidSize(12),
-                                      color: "#6e7180",
-                                      whiteSpace: "nowrap",
-                                    }}
-                                  >
-                                    {itemPrice === 0 ? "Complimentary" : selectionPriceNote}
-                                  </div>
-                                  ) : null}
+                                  {itemPrice === 0
+                                    ? [
+                                        <div
+                                          key="complimentary"
+                                          style={{
+                                            marginTop: 1,
+                                            fontSize: fluidSize(12),
+                                            color: "#6e7180",
+                                            whiteSpace: "nowrap",
+                                          }}
+                                        >
+                                          Complimentary
+                                        </div>,
+                                      ]
+                                    : selectionPriceNoteLines.map((line) => (
+                                        <div
+                                          key={line}
+                                          style={{
+                                            marginTop: 1,
+                                            fontSize: fluidSize(12),
+                                            color: "#6e7180",
+                                            whiteSpace: "nowrap",
+                                          }}
+                                        >
+                                          {line}
+                                        </div>
+                                      ))}
                                 </div>
                               </div>
                               <AccessibleSeatingBadge
