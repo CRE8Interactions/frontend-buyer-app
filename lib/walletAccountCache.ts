@@ -24,6 +24,10 @@ export function readCachedBankAccount() {
   return bankAccount;
 }
 
+export function rememberCachedBankAccount(account: CachedBankAccount) {
+  bankAccount = account;
+}
+
 export function readCachedPayoutFunds() {
   return payoutFunds;
 }

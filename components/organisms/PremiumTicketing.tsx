@@ -65,6 +65,7 @@ import {
   listingDetailAvailabilityLabel,
   listingLocationLabel,
   listingOfferId,
+  listingStillNeedsAccessCode,
   quantityIsAllowed,
   sortListings,
   ticketQuantityOptions,
@@ -73,9 +74,9 @@ import {
 } from "@/lib/ticketListings";
 import { cartTicketGroups } from "@/lib/listingSelection";
 import {
-  accessibleLabelFromSeats,
+  accessibleLabelForTicket,
   getAccessibleLabel,
-  isAccessibleSource,
+  hasAccessibleFlag,
 } from "@/lib/ticketAccessibility";
 import { getSeatAdditionalLabel } from "@/lib/seatLabels";
 import { ERROR_COLOR, shopperShellVars } from "@/lib/branding";
@@ -994,7 +995,7 @@ export default function PremiumTicketing({
 
   const mapLocked = Boolean(d.soldOut) || eventScheduled;
   const rows = useMemo(() => {
-    const filtered = d.listings.filter((l) => quantityIsAllowed(want, listingQtyLimits(l)) && (!zoneFilter.length || zoneFilter.includes(l.zone)) && !(!!lockedMap[l.zone] && !unlocked.includes(l.zone)) && (!ada || isAccessibleSource(l.cartGroup)));
+    const filtered = d.listings.filter((l) => quantityIsAllowed(want, listingQtyLimits(l)) && (!zoneFilter.length || zoneFilter.includes(l.zone)) && !listingStillNeedsAccessCode(l, unlocked) && !(!!lockedMap[l.zone] && !unlocked.includes(l.zone)) && (!ada || hasAccessibleFlag(l.cartGroup)));
     const prepared = filtered.map((listing) => {
       if (!unlocked.includes(listing.zone)) return listing;
       const offer = (listing.cartGroup?.offer || {}) as Record<string, unknown>;
@@ -1022,6 +1023,8 @@ export default function PremiumTicketing({
     d.listings.forEach((l) => {
       // A resale listing's zone is its seller's section, not an offer, so it never becomes a chip.
       if (l.resale) return;
+      if (listingStillNeedsAccessCode(l, unlocked)) return;
+      if (lockedMap[l.zone] && !unlocked.includes(l.zone)) return;
       const offer = (l.cartGroup as { offer?: { name?: string; isConnectedOffer?: boolean | null; isHidden?: boolean } })
         ?.offer;
       if (offer?.isHidden) return;
@@ -1077,14 +1080,16 @@ export default function PremiumTicketing({
   const unit = selRow ? parseFloat(selRow.price.replace(/[^0-9.]/g, "")) : 0;
   const panelOfferDescription = selectionOfferDescription(selRow?.cartGroup);
   const panelSeatId = selRow?.cartGroup?.seatId;
+  const panelMapSeat =
+    panelSeatId == null || panelSeatId === ""
+      ? undefined
+      : mapMapping?.seats?.[String(panelSeatId)];
   const panelAdditionalLabel = getSeatAdditionalLabel({
     ticketGroup: selRow?.cartGroup,
-    mapSeat:
-      panelSeatId == null || panelSeatId === ""
-        ? undefined
-        : mapMapping?.seats?.[String(panelSeatId)],
+    mapSeat: panelMapSeat,
     seatLabels: mapMapping?.seatLabels,
   });
+  const panelAccessibleLabel = accessibleLabelForTicket(selRow?.cartGroup, panelMapSeat);
   const unlockOfferDescription = selectionOfferDescription(
     GA_TIERS.find((tier) => tier.name === unlockZone)?.cartGroup ??
       d.listings.find((listing) => listing.zone === unlockZone)?.cartGroup ??
@@ -1440,11 +1445,11 @@ export default function PremiumTicketing({
     />
   );
 
-  /** Accessible listings name their seating type where the ticket icon sits. */
+  /** Legacy listing rows use the group's own accessible flag, not the seat map. */
   const listingSeatIcon = (l: TicketingListing, s: number) => {
-    const accessibleLabel =
-      getAccessibleLabel(l.cartGroup) ||
-      accessibleLabelFromSeats(l.cartGroup, mapMapping);
+    const accessibleLabel = hasAccessibleFlag(l.cartGroup)
+      ? getAccessibleLabel(l.cartGroup)
+      : "";
     const box = { flexShrink: 0, display: "flex", alignItems: "center" };
     if (!accessibleLabel) {
       return (
@@ -2708,7 +2713,7 @@ export default function PremiumTicketing({
                 </div>
                 <div style={{ display: "flex", flexDirection: "column", gap: 5, minWidth: 0 }}>
                   <div style={{ fontSize: 22, fontWeight: 600, letterSpacing: "-0.02em", lineHeight: 1.5 }}>{listingLocationLabel(selRow)}</div>
-                  <AccessibleSeatingBadge source={selRow.cartGroup} />
+                  <AccessibleSeatingBadge label={panelAccessibleLabel} />
                   {panelAdditionalLabel ? (
                     <div style={{ fontSize: 14, lineHeight: 1.5, color: "#6e7180" }}>
                       {panelAdditionalLabel}

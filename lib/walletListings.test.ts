@@ -11,7 +11,10 @@ import {
   LISTING_DISPLAY_COPY,
   LISTING_PRICE_COPY,
   buildCreateListingPayload,
+  eventResaleMinimumPercent,
+  askingPriceInput,
   listingAskingPriceError,
+  listingFaceValue,
   listingStatusDotLine,
   listingTab,
   listingsForTab,
@@ -31,7 +34,9 @@ describe("walletListings", () => {
   });
 
   it("buckets by status only and keeps sold listings with past events on Sold", () => {
-    const listings = demoWalletListings().map(mapWalletListing).filter(Boolean);
+    const listings = demoWalletListings()
+      .map(mapWalletListing)
+      .filter((row): row is NonNullable<typeof row> => row !== null);
     expect(listingsForTab(listings, "active").every((row) => listingTab(row.status) === "active")).toBe(true);
     expect(listingsForTab(listings, "sold").map((row) => row.id)).toEqual([
       mapWalletListing(demoSoldListing())!.id,
@@ -68,6 +73,34 @@ describe("walletListings", () => {
     const first = mapWalletListing(demoActiveListing())!;
     const updated = { ...first, askingPrice: 99 };
     expect(mergeListingsById([first], [updated])).toEqual([updated]);
+  });
+
+  it("reads the legacy resale minimum percentage", () => {
+    expect(
+      eventResaleMinimumPercent({
+        resaleEnableMinimum: true,
+        resaleMinimumPercentage: 30,
+      }),
+    ).toBe(30);
+    expect(
+      eventResaleMinimumPercent({
+        resaleEnableMinimum: false,
+        resaleMinimumPercentage: 30,
+      }),
+    ).toBeNull();
+    expect(eventResaleMinimumPercent({ resaleMinimumPercent: 10 })).toBe(10);
+  });
+
+  it("averages ticket cost for the sell face value", () => {
+    expect(listingFaceValue([{ cost: 10 }, { cost: 30 }])).toBe(20);
+    expect(listingFaceValue([{ price: 32.04 }])).toBe(32.04);
+    expect(listingFaceValue([])).toBe(0);
+  });
+
+  it("keeps digits and one decimal in an asking price", () => {
+    expect(askingPriceInput("42.50")).toBe("42.50");
+    expect(askingPriceInput("12.3.4a$")).toBe("12.34");
+    expect(askingPriceInput("abc")).toBe("");
   });
 
   it("validates asking price on blur vs submit", () => {
@@ -119,5 +152,20 @@ describe("walletListings", () => {
     expect(
       resaleSellerFeeAmount(80, [{ sellerFeePercent: 25 }], event),
     ).toBe(20);
+    expect(
+      resaleSellerFeeAmount(42, [], {
+        fee_structure: { secondaryServiceFeeSeller: 20 },
+      }),
+    ).toBe(8.4);
+    expect(
+      resaleSellerFeeAmount(
+        42,
+        [
+          { category: "resale_organizer", method: "percentage", value: 10 },
+          { category: "resale_platform", method: "percentage", value: 10 },
+        ],
+        { fee_structure: { secondaryServiceFeeSeller: 20 } },
+      ),
+    ).toBe(8.4);
   });
 });

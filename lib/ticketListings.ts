@@ -974,6 +974,7 @@ export type OfferSummary = {
   isLocked?: boolean;
   isHidden?: boolean;
   isConnectedOffer?: boolean | null;
+  accessCode?: string | null;
 };
 
 /** Zone label the listings use for a group, before section fallbacks. */
@@ -981,19 +982,63 @@ const offerZone = (g: RawTicketGroup) => g.offer?.name?.trim() || "";
 
 /**
  * Access-coded offers in the payload, paired with the code that opens them.
- * `returnLocked` inventory carries its own `accessCode`, so the zone can be
- * shown as a lock chip instead of being dropped from the page.
+ * The chip stays hidden until that code is applied.
  */
 export function lockedZonesFromGroups(groups: RawTicketGroup[]) {
+  return lockedZonesFromOffers(
+    groups.map((group) => ({
+      name: offerZone(group),
+      accessCode: group.offer?.accessCode,
+      isHidden: group.offer?.isHidden,
+    })),
+  );
+}
+
+/** Catalog offers carry `accessCode` even when a ticket group omits it. */
+export function lockedZonesFromOffers(
+  offers: Array<Pick<OfferSummary, "name" | "accessCode" | "isHidden" | "isConnectedOffer">>,
+) {
   const zones: { zone: string; code: string }[] = [];
-  groups.forEach((g) => {
-    if (g.offer?.isHidden) return;
-    const code = g.offer?.accessCode?.trim();
-    const zone = offerZone(g);
-    if (!code || !zone || zones.some((z) => z.zone === zone)) return;
+  for (const offer of offers || []) {
+    if (offer.isHidden || offer.isConnectedOffer) continue;
+    const code = String(offer.accessCode || "").trim();
+    const zone = offer.name?.trim();
+    if (!code || !zone || zones.some((entry) => entry.zone === zone)) continue;
     zones.push({ zone, code });
-  });
+  }
   return zones;
+}
+
+export function mergeLockedZones(
+  ...lists: Array<Array<{ zone: string; code: string }>>
+) {
+  const zones: { zone: string; code: string }[] = [];
+  for (const list of lists) {
+    for (const zone of list || []) {
+      if (!zone.zone || zones.some((entry) => entry.zone === zone.zone)) continue;
+      zones.push(zone);
+    }
+  }
+  return zones;
+}
+
+/** A listing whose offer still needs a code stays out of the list and the chips. */
+export function listingStillNeedsAccessCode(
+  listing: {
+    zone?: string;
+    cartGroup?: Record<string, unknown> | null;
+  },
+  unlockedZones: string[] = [],
+) {
+  const zone = listing.zone?.trim() || "";
+  if (zone && unlockedZones.includes(zone)) return false;
+  const offer = listing.cartGroup?.offer as
+    | { accessCode?: string | null; unlocked?: boolean; name?: string }
+    | undefined;
+  if (offer?.unlocked) return false;
+  const name = offer?.name?.trim();
+  if (name && unlockedZones.includes(name)) return false;
+  return Boolean(String(offer?.accessCode || "").trim());
 }
 
 /**
@@ -1011,13 +1056,21 @@ export function offerChipNames(
     .map((offer, index) => ({ offer, index }))
     .filter(({ offer }) => {
       if (!offer.name || offer.isConnectedOffer || offer.isHidden) return false;
-      const coded = Boolean(offer.isLocked || unlockable.has(offer.name));
+      const coded = Boolean(
+        offer.isLocked ||
+          unlockable.has(offer.name) ||
+          String(offer.accessCode || "").trim(),
+      );
       if (!coded) return true;
       return unlocked.has(offer.name);
     })
     .sort((a, b) => {
       const coded = (offer: OfferSummary) =>
-        offer.isLocked || unlockable.has(offer.name || "") ? 0 : 1;
+        offer.isLocked ||
+        unlockable.has(offer.name || "") ||
+        String(offer.accessCode || "").trim()
+          ? 0
+          : 1;
       const delta = coded(a.offer) - coded(b.offer);
       if (delta !== 0) return delta;
       return a.index - b.index;

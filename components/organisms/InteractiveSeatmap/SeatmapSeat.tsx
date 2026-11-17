@@ -87,19 +87,6 @@ export function activateSellableSeat(args: {
   onTooltip(null);
 }
 
-function offerColor(color?: string | null) {
-  const value = color?.trim();
-  if (!value) return null;
-  if (
-    typeof CSS === "undefined" ||
-    typeof CSS.supports !== "function" ||
-    CSS.supports("color", value)
-  ) {
-    return value;
-  }
-  return null;
-}
-
 type Props = {
   seat: SeatmapSeat;
   onTooltip: (target: SeatmapTooltipTarget | null) => void;
@@ -171,11 +158,6 @@ const SeatmapSeat = memo(function SeatmapSeat({
       return RESALE_MAP_COLOR;
     }
     if (isExclusiveOffer(displayTicketGroup)) return "#9757D7";
-    if (displayTicketGroup?.offer?.accessCode) {
-      return "var(--seatmap-accent, #3E8BF7)";
-    }
-    const inventoryColor = offerColor(displayTicketGroup?.offer?.color);
-    if (inventoryColor) return inventoryColor;
     return "var(--seatmap-accent, #3E8BF7)";
   }, [
     accessibleType,
@@ -315,6 +297,8 @@ const SeatmapSeat = memo(function SeatmapSeat({
   const iconId = (() => {
     if (seat.selected) return "icon-selected";
     if (!ticketGroup) return null;
+    // Legacy badges resale before accessibility, so an accessible resale seat
+    // keeps the accessible color and shows the resale symbol.
     if (displayTicketGroup && ticketGroupIsResale(displayTicketGroup)) {
       return "icon-resale";
     }

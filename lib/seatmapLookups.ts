@@ -344,48 +344,17 @@ export const UNAVAILABLE_SECTION_FILL = "#E6E8EC";
 export const UNAVAILABLE_SECTION_LABEL = "#353945";
 /** Verified resale on the fan map and in the legend. */
 export const RESALE_MAP_COLOR = "#E06C35";
-/** Standard available seat when the offer does not set its own color. */
+/** Standard available seat. Legacy ignores the offer's own color. */
 export const SEAT_AVAILABLE_COLOR = "#3E8BF7";
 const DEFAULT_AVAILABLE_FILL = SEAT_AVAILABLE_COLOR;
 
 /**
- * Legend "Available" swatch. A standard seat is filled with its offer color,
- * so the swatch uses that color when every standard seat shares one.
+ * Legend "Available" swatch. Standard seats are always the default blue.
  * Resale, exclusive, locked, and accessible seats have their own rows.
  */
 export function legendAvailableColor(
-  groups: ReadonlyArray<TicketGroup> | null | undefined,
+  _groups?: ReadonlyArray<TicketGroup> | null,
 ): string {
-  const colors = new Map<string, string>();
-  for (const group of groups || []) {
-    if (group.GA) continue;
-    if (!Array.isArray(group.seatIds) || group.seatIds.length === 0) continue;
-    if (ticketGroupIsResale(group)) continue;
-    if (group.offer?.inventoryType === "exclusive") continue;
-    if (group.offer?.accessCode) continue;
-    if (
-      group.accessible ||
-      group.accessibleType ||
-      group.accessiblityType ||
-      group.accessibilityType
-    ) {
-      continue;
-    }
-    const color = group.offer?.color?.trim();
-    if (!color) {
-      if (colors.size > 0) return SEAT_AVAILABLE_COLOR;
-      colors.set("", "");
-      continue;
-    }
-    if (colors.has("")) return SEAT_AVAILABLE_COLOR;
-    const key = color.toLowerCase();
-    if (!colors.has(key)) colors.set(key, color);
-    if ([...colors.keys()].filter((entry) => entry !== "").length > 1) {
-      return SEAT_AVAILABLE_COLOR;
-    }
-  }
-  const swatches = [...colors.entries()].filter(([key]) => key !== "");
-  if (swatches.length === 1 && !colors.has("")) return swatches[0][1];
   return SEAT_AVAILABLE_COLOR;
 }
 

@@ -24,7 +24,7 @@ import {
 import moment from "moment-timezone";
 import { walletSectionTabTitle } from "@/lib/seo";
 import { googleMapsDirectionsUrl } from "@/lib/venueLocation";
-import { eventDoorsIso, formatDoorsTime, formatEventWhen } from "@/lib/helpers";
+import { eventDoorsIso, formatCurrency, formatDoorsTime, formatEventWhen } from "@/lib/helpers";
 import { buildAccessPassSummaries, eventWhenLabel, seatLabel } from "@/lib/wallet";
 import { ACCEPT_TRANSFER_API_ERROR_MESSAGES } from "@/lib/acceptTransferErrors";
 import {
@@ -9736,7 +9736,13 @@ describe("SeasonTickets listings and sell", { timeout: 30_000 }, () => {
 
   it("opens sell from the event page, lists tickets, and does not refetch events", async () => {
     const order = demoCompletedTicketOrder({
-      event: { ...icedogs, enableResale: true, resaleMinimumPercent: 10, secondaryServiceFeeSeller: 0.1 },
+      event: {
+        ...icedogs,
+        enableResale: true,
+        resaleEnableMinimum: true,
+        resaleMinimumPercentage: 10,
+        secondaryServiceFeeSeller: 0.1,
+      },
     });
     mockedGetMyEvents.mockResolvedValue({ data: [order] } as never);
     navigationMocks.pathname = `/wallet/my-tickets/order/${order.orderId}/`;
@@ -9746,23 +9752,47 @@ describe("SeasonTickets listings and sell", { timeout: 30_000 }, () => {
     await user.click(await screen.findByRole("button", { name: "Sell" }));
     const sellTitle = await screen.findByRole("heading", { name: "Sell" });
     const sheet = sellTitle.parentElement?.parentElement as HTMLElement;
-    expect(within(sheet).getByText("Select tickets to sell")).toBeInTheDocument();
-    const seatChip = within(sheet).getAllByRole("button", { name: /^Seat / })[0];
+    expect(await within(sheet).findByText("Select tickets to sell")).toBeInTheDocument();
+    const seatChip = (await within(sheet).findAllByRole("button", { name: /^Seat / }))[0];
     await user.click(seatChip);
     expect(seatChip).toHaveAttribute("aria-pressed", "true");
     await user.click(within(sheet).getByRole("button", { name: "Set price" }));
     expect(await screen.findByText("Price your ticket")).toBeInTheDocument();
-    const price = within(sheet).getByRole("textbox");
-    fireEvent.blur(price);
-    expect(screen.queryByText("Enter a price greater than 0.")).not.toBeInTheDocument();
-    await user.type(price, "0");
+    const face = Number(
+      (order.tickets as Array<{ cost?: number }>)[0]?.cost,
+    );
+    expect(
+      within(sheet).getByText(`Ticket face value ${formatCurrency(face)}`),
+    ).toBeInTheDocument();
+    const price = within(sheet).getByRole("textbox") as HTMLInputElement;
+    expect(price).toHaveValue("0");
+    expect(price).toHaveFocus();
+    expect(price.selectionStart).toBe(price.value.length);
+    expect(price.selectionEnd).toBe(price.value.length);
+    fireEvent.mouseDown(price.parentElement as HTMLElement);
+    expect(price.selectionStart).toBe(price.value.length);
+    expect(price.selectionEnd).toBe(price.value.length);
+    fireEvent.mouseDown(price);
+    expect(price.selectionStart).toBe(price.value.length);
+    expect(price.selectionEnd).toBe(price.value.length);
+    const payout = within(sheet).getByRole("button", { name: "Payout summary" });
+    expect(payout).toBeDisabled();
     fireEvent.blur(price);
     expect(screen.getByText("Enter a price greater than 0.")).toBeInTheDocument();
+    expect(payout).toBeDisabled();
+    await user.clear(price);
+    await user.type(price, "12.5a.9");
+    expect(price).toHaveValue("12.59");
+    expect(screen.getByText(/Asking price must be at least/)).toBeInTheDocument();
+    expect(payout).toBeDisabled();
     await user.clear(price);
     await user.type(price, "80");
+    expect(payout).toBeEnabled();
     const eventsCalls = mockedGetMyEvents.mock.calls.length;
     await user.click(screen.getByRole("button", { name: "Payout summary" }));
     expect(screen.getByText("Payment Summary")).toBeInTheDocument();
+    expect(screen.getByText("Service Fees: $8.00 x 1")).toBeInTheDocument();
+    expect(screen.getByText("(-$8.00)")).toBeInTheDocument();
     expect(screen.getByText("Your Payout")).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Agree and sell" }));
     expect(await screen.findByText("Your ticket is listed for sale!")).toBeInTheDocument();
@@ -9786,6 +9816,31 @@ describe("SeasonTickets listings and sell", { timeout: 30_000 }, () => {
         name: (_accessible, el) => el?.textContent?.trim() === "Close",
       }),
     ).toBeInTheDocument();
+  });
+
+  it("only lets digits into the sell price, including pasted text", async () => {
+    const order = demoCompletedTicketOrder({
+      event: { ...icedogs, enableResale: true },
+    });
+    mockedGetMyEvents.mockResolvedValue({ data: [order] } as never);
+    navigationMocks.pathname = `/wallet/my-tickets/order/${order.orderId}/`;
+    const user = userEvent.setup();
+    render(<SeasonTickets />);
+
+    await user.click(await screen.findByRole("button", { name: "Sell" }));
+    const sheet = (await screen.findByRole("heading", { name: "Sell" })).parentElement
+      ?.parentElement as HTMLElement;
+    await user.click(within(sheet).getAllByRole("button", { name: /^Seat / })[0]);
+    await user.click(within(sheet).getByRole("button", { name: "Set price" }));
+    const price = (await within(sheet).findByRole("textbox")) as HTMLInputElement;
+
+    await user.clear(price);
+    await user.type(price, "1.5a2");
+    expect(price).toHaveValue("152");
+    await user.clear(price);
+    await user.click(price);
+    await user.paste("$12.00");
+    expect(price).toHaveValue("1200");
   });
 
   it("hides Sell when the organization does not allow resales", async () => {
@@ -9943,6 +9998,7 @@ describe("SeasonTickets listings and sell", { timeout: 30_000 }, () => {
 
   it("sends the loaded organization type after a failed lookup is retried", async () => {
     let resolveRetry: (value: unknown) => void = () => {};
+    mockedGetBankAccount.mockRejectedValueOnce(new Error("network"));
     mockedGetBankAccount.mockRejectedValueOnce(new Error("network"));
     mockedGetBankAccount.mockImplementationOnce(
       () =>

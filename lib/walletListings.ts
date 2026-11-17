@@ -186,6 +186,14 @@ export function listingSchedule(listing: WalletListing): string {
   return eventWhenLabel(listing.event);
 }
 
+/** Digits and a single decimal point. Letters, symbols, and extra dots are dropped. */
+export function askingPriceInput(raw: string): string {
+  const cleaned = String(raw ?? "").replace(/[^\d.]/g, "");
+  const dot = cleaned.indexOf(".");
+  if (dot === -1) return cleaned;
+  return `${cleaned.slice(0, dot + 1)}${cleaned.slice(dot + 1).replace(/\./g, "")}`;
+}
+
 export function parseAskingPrice(raw: string): number | null {
   const trimmed = String(raw ?? "").trim();
   if (!trimmed) return null;
@@ -196,12 +204,26 @@ export function parseAskingPrice(raw: string): number | null {
 export function eventResaleMinimumPercent(event?: EventLike | null): number | null {
   if (!event) return null;
   const record = event as EventLike & {
+    resaleEnableMinimum?: unknown;
     resaleMinimum?: unknown;
     resaleMinimumPercent?: unknown;
+    resaleMinimumPercentage?: unknown;
     minResalePercent?: unknown;
   };
+  // Legacy only applies the floor when the event turns it on. A missing flag
+  // still honors an explicit percent used by older payloads.
+  if (
+    record.resaleEnableMinimum === false ||
+    record.resaleEnableMinimum === 0 ||
+    record.resaleEnableMinimum === "false"
+  ) {
+    return null;
+  }
   const value = numberValue(
-    record.resaleMinimumPercent ?? record.resaleMinimum ?? record.minResalePercent,
+    record.resaleMinimumPercentage ??
+      record.resaleMinimumPercent ??
+      record.resaleMinimum ??
+      record.minResalePercent,
   );
   if (!value) return null;
   return value;
@@ -209,15 +231,34 @@ export function eventResaleMinimumPercent(event?: EventLike | null): number | nu
 
 export function eventSellerFeeRate(event?: EventLike | null): number {
   if (!event) return 0;
-  const record = event as EventLike & { secondaryServiceFeeSeller?: unknown };
+  const record = event as EventLike & {
+    secondaryServiceFeeSeller?: unknown;
+    fee_structure?: { secondaryServiceFeeSeller?: unknown } | null;
+    organization?: {
+      fee_structure?: { secondaryServiceFeeSeller?: unknown } | null;
+    } | null;
+  };
+  // Legacy divides the fee-structure percent by 100. 20 is a 20% seller fee.
+  const structure =
+    record.fee_structure?.secondaryServiceFeeSeller ??
+    record.organization?.fee_structure?.secondaryServiceFeeSeller;
+  if (structure != null && structure !== "") {
+    const percent = numberValue(structure);
+    return percent ? percent / 100 : 0;
+  }
   const value = numberValue(record.secondaryServiceFeeSeller);
   if (!value) return 0;
   return value > 1 ? value / 100 : value;
 }
 
+/** Per-ticket face value. Legacy averages `cost` across the selected tickets. */
 export function listingFaceValue(tickets: TicketLike[]): number {
-  const first = tickets[0];
-  return numberValue(first?.cost ?? first?.price);
+  if (!tickets.length) return 0;
+  const total = tickets.reduce(
+    (sum, ticket) => sum + numberValue(ticket?.cost ?? ticket?.price),
+    0,
+  );
+  return total / tickets.length;
 }
 
 export function listingMinimumAskingPrice(
@@ -264,6 +305,12 @@ export function listingSellerFeeAmount(askingPrice: number, event?: EventLike | 
 }
 
 export type ResaleFeeRule = {
+  name?: string | null;
+  category?: string | null;
+  method?: string | null;
+  value?: number | null;
+  maxPrice?: number | null;
+  exclusive?: boolean | null;
   paidBy?: string | null;
   chargeTo?: string | null;
   sellerFeePercent?: number | null;
@@ -274,25 +321,73 @@ export type ResaleFeeRule = {
   amount?: number | null;
 };
 
-/** Seller fee from resale fee rules, or the event's flat rate when there are none. */
+function roundMoney(value: number) {
+  return Math.round(value * 100) / 100;
+}
+
+function resaleSplitCategory(rule: ResaleFeeRule) {
+  const category = String(rule.category || "").trim().toLowerCase();
+  const name = String(rule.name || "")
+    .trim()
+    .toLowerCase()
+    .replace(/[\s-]+/g, "_");
+  if (category === "resale_organizer" || name === "resale_organizer") {
+    return "resale_organizer";
+  }
+  if (category === "resale_platform" || name === "resale_platform") {
+    return "resale_platform";
+  }
+  return "";
+}
+
+/** Organizer and platform shares of the asking price, matching legacy fee rules. */
+function resaleSplitFee(askingPrice: number, rules: ResaleFeeRule[]) {
+  const price = Number.isFinite(askingPrice) && askingPrice > 0 ? askingPrice : 0;
+  const share = (category: string) => {
+    let total = 0;
+    for (const rule of rules) {
+      if (resaleSplitCategory(rule) !== category) continue;
+      const cap = rule.maxPrice == null ? null : Number(rule.maxPrice);
+      if (cap != null && Number.isFinite(cap) && price > cap) continue;
+      const raw = Number(rule.value);
+      const amount = Number.isFinite(raw) ? raw : 0;
+      const method = String(rule.method || "fixed").toLowerCase();
+      total = roundMoney(
+        total +
+          (method === "percentage" ? roundMoney((price * amount) / 100) : amount),
+      );
+      if (rule.exclusive !== false) break;
+    }
+    return total;
+  };
+  return roundMoney(share("resale_organizer") + share("resale_platform"));
+}
+
+/** Seller fee from resale fee rules, or the event fee structure when there are none. */
 export function resaleSellerFeeAmount(
   askingPrice: number,
   rules: ResaleFeeRule[] | null | undefined,
   event?: EventLike | null,
 ): number {
-  if (!rules?.length) return listingSellerFeeAmount(askingPrice, event);
-  const fee = rules.reduce((sum, rule) => {
-    const who = String(rule.paidBy || rule.chargeTo || "seller").toLowerCase();
-    if (who !== "seller" && who !== "both") return sum;
-    const percent = Number(rule.sellerFeePercent ?? rule.percentage ?? rule.percent ?? 0);
-    const flat = Number(rule.sellerFeeFlat ?? rule.flat ?? rule.amount ?? 0);
-    return (
-      sum +
-      (Number.isFinite(percent) ? askingPrice * (percent / 100) : 0) +
-      (Number.isFinite(flat) ? flat : 0)
-    );
-  }, 0);
-  return Math.round(fee * 100) / 100;
+  const list = rules || [];
+  if (list.some((rule) => resaleSplitCategory(rule))) {
+    return resaleSplitFee(askingPrice, list);
+  }
+  if (list.length) {
+    const fee = list.reduce((sum, rule) => {
+      const who = String(rule.paidBy || rule.chargeTo || "seller").toLowerCase();
+      if (who !== "seller" && who !== "both") return sum;
+      const percent = Number(rule.sellerFeePercent ?? rule.percentage ?? rule.percent ?? 0);
+      const flat = Number(rule.sellerFeeFlat ?? rule.flat ?? rule.amount ?? 0);
+      return (
+        sum +
+        (Number.isFinite(percent) ? askingPrice * (percent / 100) : 0) +
+        (Number.isFinite(flat) ? flat : 0)
+      );
+    }, 0);
+    return roundMoney(fee);
+  }
+  return roundMoney(listingSellerFeeAmount(askingPrice, event));
 }
 
 export function listingNetPayout(
