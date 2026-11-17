@@ -9818,7 +9818,7 @@ describe("SeasonTickets listings and sell", { timeout: 30_000 }, () => {
     ).toBeInTheDocument();
   });
 
-  it("only lets digits into the sell price, including pasted text", async () => {
+  it("only lets digits and one decimal point into the sell price, including pasted text", async () => {
     const order = demoCompletedTicketOrder({
       event: { ...icedogs, enableResale: true },
     });
@@ -9836,11 +9836,11 @@ describe("SeasonTickets listings and sell", { timeout: 30_000 }, () => {
 
     await user.clear(price);
     await user.type(price, "1.5a2");
-    expect(price).toHaveValue("152");
+    expect(price).toHaveValue("1.52");
     await user.clear(price);
     await user.click(price);
     await user.paste("$12.00");
-    expect(price).toHaveValue("1200");
+    expect(price).toHaveValue("12.00");
   });
 
   it("hides Sell when the organization does not allow resales", async () => {
