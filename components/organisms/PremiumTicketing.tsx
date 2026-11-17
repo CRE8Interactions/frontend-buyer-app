@@ -74,8 +74,9 @@ import {
 } from "@/lib/ticketListings";
 import { cartTicketGroups } from "@/lib/listingSelection";
 import {
-  accessibleLabelFromSeats,
+  accessibleLabelForTicket,
   getAccessibleLabel,
+  hasAccessibleFlag,
   isAccessibleSource,
 } from "@/lib/ticketAccessibility";
 import { getSeatAdditionalLabel } from "@/lib/seatLabels";
@@ -995,7 +996,7 @@ export default function PremiumTicketing({
 
   const mapLocked = Boolean(d.soldOut) || eventScheduled;
   const rows = useMemo(() => {
-    const filtered = d.listings.filter((l) => quantityIsAllowed(want, listingQtyLimits(l)) && (!zoneFilter.length || zoneFilter.includes(l.zone)) && !listingStillNeedsAccessCode(l, unlocked) && !(!!lockedMap[l.zone] && !unlocked.includes(l.zone)) && (!ada || isAccessibleSource(l.cartGroup) || Boolean(accessibleLabelFromSeats(l.cartGroup, mapMapping))));
+    const filtered = d.listings.filter((l) => quantityIsAllowed(want, listingQtyLimits(l)) && (!zoneFilter.length || zoneFilter.includes(l.zone)) && !listingStillNeedsAccessCode(l, unlocked) && !(!!lockedMap[l.zone] && !unlocked.includes(l.zone)) && (!ada || hasAccessibleFlag(l.cartGroup) || isAccessibleSource(l.cartGroup)));
     const prepared = filtered.map((listing) => {
       if (!unlocked.includes(listing.zone)) return listing;
       const offer = (listing.cartGroup?.offer || {}) as Record<string, unknown>;
@@ -1013,7 +1014,7 @@ export default function PremiumTicketing({
       ...l,
       range: `${l.min} – ${l.max} Tickets`,
     }));
-  }, [want, d.listings, zoneFilter, lockedMap, unlocked, ada, sortDir, eventTicketLimit, mapMapping]);
+  }, [want, d.listings, zoneFilter, lockedMap, unlocked, ada, sortDir, eventTicketLimit]);
   // Placeholder rows roughly match the list being replaced, so the column keeps
   // its height while new inventory settles.
   const skeletonRows = Math.min(Math.max(rows.length || 3, 3), 5);
@@ -1080,14 +1081,16 @@ export default function PremiumTicketing({
   const unit = selRow ? parseFloat(selRow.price.replace(/[^0-9.]/g, "")) : 0;
   const panelOfferDescription = selectionOfferDescription(selRow?.cartGroup);
   const panelSeatId = selRow?.cartGroup?.seatId;
+  const panelMapSeat =
+    panelSeatId == null || panelSeatId === ""
+      ? undefined
+      : mapMapping?.seats?.[String(panelSeatId)];
   const panelAdditionalLabel = getSeatAdditionalLabel({
     ticketGroup: selRow?.cartGroup,
-    mapSeat:
-      panelSeatId == null || panelSeatId === ""
-        ? undefined
-        : mapMapping?.seats?.[String(panelSeatId)],
+    mapSeat: panelMapSeat,
     seatLabels: mapMapping?.seatLabels,
   });
+  const panelAccessibleLabel = accessibleLabelForTicket(selRow?.cartGroup, panelMapSeat);
   const unlockOfferDescription = selectionOfferDescription(
     GA_TIERS.find((tier) => tier.name === unlockZone)?.cartGroup ??
       d.listings.find((listing) => listing.zone === unlockZone)?.cartGroup ??
@@ -1443,11 +1446,9 @@ export default function PremiumTicketing({
     />
   );
 
-  /** Accessible listings name their seating type where the ticket icon sits. */
+  /** Listing icon reads the group's own accessibility, not the seat map. */
   const listingSeatIcon = (l: TicketingListing, s: number) => {
-    const accessibleLabel =
-      getAccessibleLabel(l.cartGroup) ||
-      accessibleLabelFromSeats(l.cartGroup, mapMapping);
+    const accessibleLabel = getAccessibleLabel(l.cartGroup);
     const box = { flexShrink: 0, display: "flex", alignItems: "center" };
     if (!accessibleLabel) {
       return (
@@ -2711,7 +2712,7 @@ export default function PremiumTicketing({
                 </div>
                 <div style={{ display: "flex", flexDirection: "column", gap: 5, minWidth: 0 }}>
                   <div style={{ fontSize: 22, fontWeight: 600, letterSpacing: "-0.02em", lineHeight: 1.5 }}>{listingLocationLabel(selRow)}</div>
-                  <AccessibleSeatingBadge source={selRow.cartGroup} />
+                  <AccessibleSeatingBadge label={panelAccessibleLabel} source={selRow.cartGroup} />
                   {panelAdditionalLabel ? (
                     <div style={{ fontSize: 14, lineHeight: 1.5, color: "#6e7180" }}>
                       {panelAdditionalLabel}

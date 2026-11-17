@@ -76,21 +76,23 @@ export function getAccessibleLabel(source: unknown): string {
 }
 
 /**
- * A listing whose ticket group isn't flagged can still be accessible seat by
- * seat. The first mapped seat that is accessible names the icon.
+ * Listing filter and listing-row icon. Legacy filters on the group's own
+ * `accessible` flag only, so a type without the flag does not count.
  */
-export function accessibleLabelFromSeats(
-  group: { seatIds?: unknown } | null | undefined,
-  mapping: { seats?: Record<string, unknown> } | null | undefined,
-) {
-  const ids = Array.isArray(group?.seatIds) ? group.seatIds : [];
-  const seats = mapping?.seats;
-  if (!seats) return "";
-  for (const id of ids) {
-    const label = getAccessibleLabel(seats[String(id)]);
-    if (label) return label;
-  }
-  return "";
+export function hasAccessibleFlag(source: unknown): boolean {
+  return fieldRecords(source).some((record) => accessibleFlag(record.accessible));
+}
+
+/**
+ * Ticket details and selection copy. Legacy reads the selected seat first,
+ * then the group, and shows the label when either one has a type or flag.
+ */
+export function accessibleLabelForTicket(group: unknown, seat?: unknown): string {
+  const type = accessibleTypeOf(seat) || accessibleTypeOf(group);
+  if (type === "DA") return ACCESSIBLE_LABEL_DA;
+  if (type === "DB") return ACCESSIBLE_LABEL_DB;
+  const flagged = hasAccessibleFlag(seat) || hasAccessibleFlag(group);
+  return type || flagged ? ACCESSIBLE_LABEL_GENERIC : "";
 }
 
 export function accessibleSeatColor(accessibleType?: string | null) {
@@ -101,29 +103,67 @@ export function accessibleSeatColor(accessibleType?: string | null) {
 
 export type SeatmapLegendRow = { label: string; color: string };
 
+/** Seats, groups, and the listing or offer nested on a group. */
+function legendCandidates(source: unknown): unknown[] {
+  const root = asRecord(source);
+  if (!root) return [source];
+  const nested = ["listing", "offer"]
+    .map((key) => (root as Record<string, unknown>)[key])
+    .filter((value) => value && typeof value === "object");
+  return [source, ...nested];
+}
+
+function legendAccessibleType(source: unknown): string {
+  for (const candidate of legendCandidates(source)) {
+    const type = accessibleTypeOf(candidate).toUpperCase();
+    if (type) return type;
+  }
+  return "";
+}
+
 /**
- * Legend accessibility rows: DA / DB when those types exist on seats or
- * groups; otherwise a single generic Accessible row.
+ * Legend accessibility rows, matching the legacy map legend.
+ * DA and DB each get a row when that type is on a seat, group, listing, or
+ * offer. A generic "Accessible" row appears only when something is flagged
+ * accessible with no DA/DB type, and only when neither typed row is present.
  */
 export function seatmapAccessibilityLegendRows(
   sources: unknown[] = [],
 ): SeatmapLegendRow[] {
   let hasDa = false;
   let hasDb = false;
+  let hasGeneric = false;
   for (const source of sources) {
-    const type = accessibleTypeOf(source);
+    const type = legendAccessibleType(source);
     if (type === "DA") hasDa = true;
     else if (type === "DB") hasDb = true;
-  }
-  if (hasDa || hasDb) {
-    const rows: SeatmapLegendRow[] = [];
-    if (hasDa) {
-      rows.push({ label: "DA", color: ACCESSIBLE_SEAT_COLOR_DA });
+    else if (
+      legendCandidates(source).some(
+        (candidate) =>
+          !accessibleTypeOf(candidate) && isAccessibleSource(candidate),
+      )
+    ) {
+      hasGeneric = true;
     }
-    if (hasDb) {
-      rows.push({ label: "DB", color: ACCESSIBLE_SEAT_COLOR_DB });
-    }
-    return rows;
   }
-  return [{ label: "Accessible", color: ACCESSIBLE_SEAT_COLOR_GENERIC }];
+  const rows: SeatmapLegendRow[] = [];
+  if (hasDa) {
+    rows.push({
+      label: "Accessible - Open space",
+      color: ACCESSIBLE_SEAT_COLOR_DA,
+    });
+  }
+  if (hasDb) {
+    rows.push({
+      label: "Accessible - Chairback",
+      color: ACCESSIBLE_SEAT_COLOR_DB,
+    });
+  }
+  if (!hasDa && !hasDb && hasGeneric) {
+    rows.push({
+      label: "Accessible",
+      color: ACCESSIBLE_SEAT_COLOR_GENERIC,
+    });
+  }
+  return rows;
 }

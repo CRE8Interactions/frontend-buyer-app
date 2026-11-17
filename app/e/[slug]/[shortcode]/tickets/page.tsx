@@ -45,6 +45,8 @@ import { seatmapLookupsFromTicketGroups, unlockOfferInTicketGroups } from "@/lib
 import {
   groupsToListings,
   lockedZonesFromGroups,
+  lockedZonesFromOffers,
+  mergeLockedZones,
   mergeResaleTicketGroups,
   normalizeGlobalTicketLimit,
   offerChipNames,
@@ -169,7 +171,10 @@ function toTicketingData(
     catalogGroups,
     seatmap.mapping?.sections,
   );
-  const lockedZones = lockedZonesFromGroups(visibleGroups);
+  const lockedZones = mergeLockedZones(
+    lockedZonesFromGroups(visibleGroups),
+    lockedZonesFromOffers(offers),
+  );
   const listings = groupsToListings(visibleGroups, listingOpts);
   const quantityCatalog = groupsToListings(visibleCatalog, listingOpts);
   const theme = brandingToTicketingTheme(ev, ev.organization, imageOf(ev.image));
@@ -463,9 +468,10 @@ function SeatedTickets() {
           }
         });
 
-        setGroups(unlockedGroups);
-        setBaseline(unlockedGroups);
-        baselineGroups.current = unlockedGroups;
+        const listedGroups = unlockedGroups;
+        setGroups(listedGroups);
+        setBaseline(listedGroups);
+        baselineGroups.current = listedGroups;
         setSoldOut(Boolean(groupsRes?.data?.soldout));
         setScheduled(Boolean(groupsRes?.data?.isScheduled));
         setScheduledTime(groupsRes?.data?.scheduledTime || null);
@@ -475,7 +481,7 @@ function SeatedTickets() {
           background: normalizeSeatmapBackground(seatmapRaw?.background),
           mapping: (seatmapRaw?.mapping || null) as SeatmapMapping | null,
         });
-        hydrateSeatmapStores(event, unlockedGroups, seatmapRaw);
+        hydrateSeatmapStores(event, listedGroups, seatmapRaw);
       })
       .catch(() => {
         if (!cancelled) setError("Unable to load this event.");
@@ -520,12 +526,13 @@ function SeatedTickets() {
     // A newer filter change already went out — its response wins.
     if (refetchId.current !== requestId) return;
 
+    const seatmapState = useSeatmapStore.getState();
     const nextGroups = omitHiddenSectionGroups(
       await withResaleInventory(
         event,
         (res?.data?.ticketGroups || []) as RawGroup[],
       ),
-      useSeatmapStore.getState().data?.sections,
+      seatmapState.data?.sections,
     );
     const usable =
       groupsToListings(

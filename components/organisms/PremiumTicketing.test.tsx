@@ -183,6 +183,19 @@ function authState(isAuthenticated: boolean) {
   };
 }
 
+/** Seat map where a resale seat is accessible but its listing is not flagged. */
+function unflaggedResaleMapping() {
+  const base = demoSeatmapMapping();
+  const seat = base.seats?.a1;
+  return {
+    ...base,
+    seats: {
+      ...base.seats,
+      "a-resale-1": { ...seat!, seatId: "a-resale-1", accessible: true, accessibleType: "DA" },
+    },
+  };
+}
+
 async function renderReady(
   data: TicketingData = seatedTicketingFixture,
   props: {
@@ -2372,6 +2385,54 @@ describe("Select tickets page (PremiumTicketing)", { timeout: 20_000 }, () => {
     ).toBeInTheDocument();
     expect(screen.queryByText(/sec m · row m3/i)).not.toBeInTheDocument();
     expect(screen.getAllByText(/sec a · row 12/i).length).toBeGreaterThan(0);
+  });
+
+  it("does not treat an unflagged resale listing as accessible from the seat map", async () => {
+    const resale = DEMO_SEATED_TICKET_GROUPS.find((group) => group.resale)!;
+    const [listing] = groupsToListings([
+      { ...resale, accessible: false, accessibleType: undefined },
+    ]);
+    const user = await renderReady(
+      {
+        ...seatedTicketingFixture,
+        listings: [listing],
+        seatmapMapping: unflaggedResaleMapping(),
+      },
+      { waitForListing: /sec a · row 1/i },
+    );
+
+    expect(
+      screen.queryByRole("img", { name: /wheelchair|accessible seating/i }),
+    ).not.toBeInTheDocument();
+    await user.click(
+      screen.getByRole("button", { name: /accessible seating only/i }),
+    );
+    expect(await screen.findByText(/no accessible listings/i)).toBeInTheDocument();
+  });
+
+  it("labels an unflagged resale listing in ticket details from its accessible seat", async () => {
+    const resale = DEMO_SEATED_TICKET_GROUPS.find((group) => group.resale)!;
+    const [listing] = groupsToListings([
+      {
+        ...resale,
+        seatId: "a-resale-1",
+        accessible: false,
+        accessibleType: undefined,
+      },
+    ]);
+    const user = await renderReady(
+      {
+        ...seatedTicketingFixture,
+        listings: [listing],
+        seatmapMapping: unflaggedResaleMapping(),
+      },
+      { waitForListing: /sec a · row 1/i },
+    );
+
+    await user.click(screen.getAllByText(/sec a · row 1/i)[0]);
+
+    expect(await screen.findByText("Ticket details")).toBeInTheDocument();
+    expect(screen.getByText(/open space for wheelchair/i)).toBeInTheDocument();
   });
 
   it("filters to accessible listings when ADA is toggled without a server callback", async () => {

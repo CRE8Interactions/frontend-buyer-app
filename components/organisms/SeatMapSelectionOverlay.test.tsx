@@ -456,6 +456,41 @@ describe("SeatMapSelectionOverlay map readiness", () => {
     expect(screen.getByTestId("verified-resale-badge")).toHaveTextContent(/verified resale/i);
   });
 
+  it("labels an unflagged resale seat as accessible from its seat on the selection card", () => {
+    const resale = DEMO_SEATED_TICKET_GROUPS.find((group) => group.resale);
+    if (!resale) throw new Error("demo fixtures need a resale ticket group");
+    const base = demoSeatmapMapping();
+    const seat = base.seats?.a1;
+    if (!seat) throw new Error("demo mapping needs seat a1");
+    useSeatmapStore.setState({
+      selectedFromMap: [
+        {
+          ...resale,
+          accessible: false,
+          accessibleType: undefined,
+          seatId: "a-resale-1",
+          seatNumber: 1,
+          quantity: 1,
+        },
+      ],
+      totalCount: 1,
+      totalPrice: Number(resale.price || 0),
+    });
+    renderOverlay({
+      mapMapping: {
+        ...base,
+        seats: {
+          ...base.seats,
+          "a-resale-1": { ...seat, seatId: "a-resale-1", accessible: true, accessibleType: "DA" },
+        },
+      },
+      mapBackground: BACKGROUND,
+    });
+    fireEvent.load(backgroundPreload()!);
+
+    expect(screen.getAllByText("Open space for wheelchair")).toHaveLength(1);
+  });
+
   it("shows the row on an accessible ADA selection card", () => {
     const accessible = DEMO_SEATED_TICKET_GROUPS.find((group) => group.accessible);
     if (!accessible) throw new Error("demo fixtures need an accessible seat group");
