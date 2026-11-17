@@ -75,7 +75,6 @@ import {
 import { cartTicketGroups } from "@/lib/listingSelection";
 import {
   accessibleLabelForTicket,
-  accessibleLabelFromSeats,
   getAccessibleLabel,
   hasAccessibleFlag,
   isAccessibleSource,
@@ -997,7 +996,7 @@ export default function PremiumTicketing({
 
   const mapLocked = Boolean(d.soldOut) || eventScheduled;
   const rows = useMemo(() => {
-    const filtered = d.listings.filter((l) => quantityIsAllowed(want, listingQtyLimits(l)) && (!zoneFilter.length || zoneFilter.includes(l.zone)) && !listingStillNeedsAccessCode(l, unlocked) && !(!!lockedMap[l.zone] && !unlocked.includes(l.zone)) && (!ada || hasAccessibleFlag(l.cartGroup) || isAccessibleSource(l.cartGroup) || (!l.resale && Boolean(accessibleLabelFromSeats(l.cartGroup, mapMapping)))));
+    const filtered = d.listings.filter((l) => quantityIsAllowed(want, listingQtyLimits(l)) && (!zoneFilter.length || zoneFilter.includes(l.zone)) && !listingStillNeedsAccessCode(l, unlocked) && !(!!lockedMap[l.zone] && !unlocked.includes(l.zone)) && (!ada || hasAccessibleFlag(l.cartGroup) || isAccessibleSource(l.cartGroup)));
     const prepared = filtered.map((listing) => {
       if (!unlocked.includes(listing.zone)) return listing;
       const offer = (listing.cartGroup?.offer || {}) as Record<string, unknown>;
@@ -1015,7 +1014,7 @@ export default function PremiumTicketing({
       ...l,
       range: `${l.min} – ${l.max} Tickets`,
     }));
-  }, [want, d.listings, zoneFilter, lockedMap, unlocked, ada, sortDir, eventTicketLimit, mapMapping]);
+  }, [want, d.listings, zoneFilter, lockedMap, unlocked, ada, sortDir, eventTicketLimit]);
   // Placeholder rows roughly match the list being replaced, so the column keeps
   // its height while new inventory settles.
   const skeletonRows = Math.min(Math.max(rows.length || 3, 3), 5);
@@ -1447,12 +1446,9 @@ export default function PremiumTicketing({
     />
   );
 
-  /** Group flag or type names the icon. Mapped seats do too, except on resale rows. */
+  /** Listing icon reads the group's own accessibility, not the seat map. */
   const listingSeatIcon = (l: TicketingListing, s: number) => {
-    const accessibleLabel =
-      (hasAccessibleFlag(l.cartGroup) ? getAccessibleLabel(l.cartGroup) : "") ||
-      getAccessibleLabel(l.cartGroup) ||
-      (l.resale ? "" : accessibleLabelFromSeats(l.cartGroup, mapMapping));
+    const accessibleLabel = getAccessibleLabel(l.cartGroup);
     const box = { flexShrink: 0, display: "flex", alignItems: "center" };
     if (!accessibleLabel) {
       return (
