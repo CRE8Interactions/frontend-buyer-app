@@ -18,6 +18,7 @@ import {
   expandWcSeamPairSectionIds,
   isSectionCoverVenue,
   isSectionSoldOut,
+  type SeatmapSeat as MappedSeat,
   legendAvailableColor,
   RESALE_MAP_COLOR,
   mappingStageSize,
@@ -40,7 +41,12 @@ import SeatmapSeat, {
 } from "./SeatmapSeat";
 import SeatmapSections from "./SeatmapSections";
 import { omitHiddenSectionGroups, isSectionHidden } from "@/lib/hiddenSections";
-import { seatmapAccessibilityLegendRows } from "@/lib/ticketAccessibility";
+import {
+  ACCESSIBLE_SEAT_COLOR_GENERIC,
+  isAccessibleSource,
+  seatmapAccessibilityLegendRows,
+} from "@/lib/ticketAccessibility";
+import { ticketGroupIsResale } from "@/lib/ticketListings";
 import SeatmapTooltip, { type SeatmapTooltipTarget } from "./SeatmapTooltip";
 
 const PAN_THRESHOLD_PX = SEATMAP_TAP_THRESHOLD_PX;
@@ -86,6 +92,38 @@ function LegendRows({ rows }: { rows: LegendRow[] }) {
       ))}
     </div>
   );
+}
+
+/** True when every seat in the group paints as accessible, so exclusive and locked colors never show. */
+function seatsKeepAccessiblePaint(
+  group: {
+    seatIds?: string[] | null;
+    accessible?: unknown;
+    accessibleType?: unknown;
+    accessiblityType?: unknown;
+    accessibilityType?: unknown;
+  },
+  seats: Record<string, MappedSeat> | undefined,
+) {
+  if (isAccessibleSource(group)) return true;
+  const ids = Array.isArray(group.seatIds) ? group.seatIds.filter(Boolean) : [];
+  if (ids.length === 0) return false;
+  return ids.every((id) => isAccessibleSource(seats?.[id]));
+}
+
+/** Seated rows with seat ids, or any row that still has a count, are for sale. */
+function groupHasAvailableInventory(group: {
+  GA?: boolean;
+  availableCount?: number | null;
+  seatIds?: string[] | null;
+  listing?: { quantity?: number | null } | null;
+}) {
+  const seatCount = Array.isArray(group.seatIds)
+    ? group.seatIds.filter(Boolean).length
+    : 0;
+  if (seatCount > 0) return true;
+  if (Number(group.availableCount || 0) > 0) return true;
+  return Number(group.listing?.quantity || 0) > 0;
 }
 
 function LegendGroup({ title, children }: { title: string; children: ReactNode }) {
@@ -168,7 +206,7 @@ type Props = {
   compactChrome?: boolean;
   /** Hide zoom / legend chrome (mobile Your selection covers the map). */
   hideChrome?: boolean;
-  /** Package seatmaps omit locked/exclusive legend rows; events show the full set. */
+  /** Package maps use the same legend rules; resale pricing copy differs. */
   mapLegend?: "event" | "package";
   /** Parent (seat-map modal) already shows the org loader. */
   hideLoadingSpinner?: boolean;
@@ -202,10 +240,48 @@ export default function InteractiveSeatmap({
   const background = useSeatmapStore((s) => s.background);
   const setScale = useSeatmapStore((s) => s.setScale);
   const maxScale = useSeatmapStore((s) => s.maxScale);
-  const hasVerifiedResale = useFiltersStore((s) =>
-    (s.ticketGroups || []).some((group) => Boolean(group.listing)),
-  );
   const ticketGroups = useFiltersStore((s) => s.ticketGroups);
+  const availableGroups = useMemo(
+    () => (ticketGroups || []).filter(groupHasAvailableInventory),
+    [ticketGroups],
+  );
+  const hasVerifiedResale = useMemo(
+    () => availableGroups.some((group) => Boolean(group.listing)),
+    [availableGroups],
+  );
+  const hasLockedOffer = useMemo(
+    () =>
+      availableGroups.some(
+        (group) =>
+          group.offer?.inventoryType === "exclusive" &&
+          Boolean(group.offer?.accessCode) &&
+          !group.offer?.unlocked &&
+          !seatsKeepAccessiblePaint(group, data?.seats),
+      ),
+    [availableGroups, data?.seats],
+  );
+  const hasExclusiveOffer = useMemo(
+    () =>
+      availableGroups.some(
+        (group) =>
+          group.offer?.inventoryType === "exclusive" &&
+          !ticketGroupIsResale(group) &&
+          !(group.offer?.accessCode && !group.offer?.unlocked) &&
+          !seatsKeepAccessiblePaint(group, data?.seats),
+      ),
+    [availableGroups, data?.seats],
+  );
+  const hasAccessibleResale = useMemo(
+    () =>
+      availableGroups.some((group) => {
+        if (!ticketGroupIsResale(group)) return false;
+        if (isAccessibleSource(group)) return true;
+        return (group.seatIds || []).some((seatId) =>
+          isAccessibleSource(data?.seats?.[seatId]),
+        );
+      }),
+    [availableGroups, data?.seats],
+  );
   const loadingTicketGroups = useFiltersStore((s) => s.loadingTicketGroups);
   const selectedOfferIds = useFiltersStore((s) => s.filters.selectedOfferIds);
   const venueSlug = useFiltersStore(
@@ -393,18 +469,48 @@ export default function InteractiveSeatmap({
   revealedSectionIdsRef.current = revealedSectionIds;
   sectionCoversEnabledRef.current = sectionCoversEnabled;
   const [lookupsReady, setLookupsReady] = useState(lookupsMode === "external");
-  const accessibilityLegend = useMemo(
-    () =>
-      seatmapAccessibilityLegendRows([
-        ...Object.values(data?.seats || {}),
-        ...ticketGroups,
-      ]),
-    [data?.seats, ticketGroups],
-  );
+  const accessibilityLegend = useMemo(() => {
+    const inventorySeatIds = new Set(
+      availableGroups.flatMap((group) => group.seatIds || []).filter(Boolean),
+    );
+    const inventorySeats = Object.values(data?.seats || {}).filter((seat) =>
+      inventorySeatIds.has(seat.seatId),
+    );
+    return seatmapAccessibilityLegendRows([...inventorySeats, ...availableGroups]);
+  }, [availableGroups, data?.seats]);
   const availableLegendColor = useMemo(
     () => legendAvailableColor(ticketGroups),
     [ticketGroups],
   );
+  const seatTypeRows = useMemo((): LegendRow[] => {
+    const rows: LegendRow[] = [];
+    if (hasExclusiveOffer) rows.push({ label: "Exclusive", color: "#9757D7" });
+    for (const row of accessibilityLegend) {
+      rows.push({ ...row, icon: "accessible" });
+    }
+    if (hasVerifiedResale) {
+      rows.push({
+        label: "Verified resale",
+        color: RESALE_MAP_COLOR,
+        icon: "resale",
+        testId: "seatmap-legend-resale",
+      });
+    }
+    if (hasAccessibleResale) {
+      rows.push({
+        label: "Accessible resale",
+        color: ACCESSIBLE_SEAT_COLOR_GENERIC,
+        icon: "resale",
+        testId: "seatmap-legend-accessible-resale",
+      });
+    }
+    return rows;
+  }, [
+    accessibilityLegend,
+    hasAccessibleResale,
+    hasExclusiveOffer,
+    hasVerifiedResale,
+  ]);
   const [legendOpen, setLegendOpen] = useState(!compactChrome);
   const [fitScale, setFitScale] = useState(1);
   // Venue artwork can arrive after geometry — keep the Find-on-map spinner up
@@ -1168,7 +1274,7 @@ export default function InteractiveSeatmap({
 
         {hideChrome ? null : (
         <div
-          className={`absolute left-4 z-10 w-[210px] overflow-hidden rounded-xl border border-[#dfe3eb] bg-white px-4 py-3.5 text-[#051B35] shadow-lg ${compactChrome ? "bottom-4" : "bottom-16"}`}
+          className={`absolute left-4 z-10 w-[252px] overflow-hidden rounded-xl border border-[#dfe3eb] bg-white px-4 py-3.5 text-[#051B35] shadow-lg ${compactChrome ? "bottom-4" : "bottom-16"}`}
           onPointerDown={(event) => event.stopPropagation()}
           onClick={(event) => event.stopPropagation()}
         >
@@ -1200,38 +1306,20 @@ export default function InteractiveSeatmap({
               <LegendGroup title="Seat status">
                 <LegendRows
                   rows={[
-                    { label: "Available", color: availableLegendColor },
-                    { label: "Selected", color: accent, icon: "selected" },
                     { label: "Unavailable", color: "#E6E8EC" },
-                    ...(mapLegend === "event"
+                    { label: "Available", color: availableLegendColor },
+                    { label: "Selected", color: accent, icon: "selected" as const },
+                    ...(hasLockedOffer
                       ? [{ label: "Locked", color: "#353945", icon: "locked" as const }]
                       : []),
                   ]}
                 />
               </LegendGroup>
-              <LegendGroup title="Seat type">
-                <LegendRows
-                  rows={[
-                    ...(mapLegend === "event"
-                      ? [{ label: "Exclusive", color: "#9757D7" }]
-                      : []),
-                    ...accessibilityLegend.map((row) => ({
-                      ...row,
-                      icon: "accessible" as const,
-                    })),
-                    ...(mapLegend === "event" && hasVerifiedResale
-                      ? [
-                          {
-                            label: "Verified resale",
-                            color: RESALE_MAP_COLOR,
-                            icon: "resale" as const,
-                            testId: "seatmap-legend-resale",
-                          },
-                        ]
-                      : []),
-                  ]}
-                />
-              </LegendGroup>
+              {seatTypeRows.length > 0 ? (
+                <LegendGroup title="Seat type">
+                  <LegendRows rows={seatTypeRows} />
+                </LegendGroup>
+              ) : null}
             </div>
           ) : null}
         </div>

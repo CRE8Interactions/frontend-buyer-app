@@ -19,6 +19,7 @@ import {
   seatmapLookupsFromTicketGroups,
   unlockOfferInTicketGroups,
 } from "@/lib/offerUnlock";
+import { ACCESSIBLE_SEAT_COLOR_GENERIC } from "@/lib/ticketAccessibility";
 import { selectionOfferName, selectionTicketCards } from "@/lib/ticketSummary";
 import useFiltersStore from "@/stores/filtersStore";
 import useSeatmapStore from "@/stores/seatmapStore";
@@ -361,6 +362,57 @@ describe("SeatmapSeat", () => {
     );
   });
 
+  it("shows the resale symbol on an accessible resale seat", () => {
+    const group = DEMO_SEATED_TICKET_GROUPS.find((item) => item.resale);
+    const seatId = group?.seatIds?.[0];
+    const seat = seatId ? mapping.seats?.[seatId] : undefined;
+    expect(seat?.accessible).toBe(true);
+    expect(group).toBeTruthy();
+
+    useSeatmapStore.setState({
+      seatLookupTable: group && seatId ? { [seatId]: group } : {},
+      seatOffersLookupTable: group && seatId ? { [seatId]: [group] } : {},
+    });
+    const { container } = render(
+      <svg>
+        <SeatmapSeat
+          seat={seat!}
+          onTooltip={vi.fn()}
+          isTooltipActive={false}
+        />
+      </svg>,
+    );
+
+    expect(container.querySelector('use[href="#icon-resale"]')).toBeTruthy();
+    expect(container.querySelector('use[href="#icon-accessible"]')).toBeNull();
+  });
+
+  it("shows the accessible symbol on an accessible seat that is not resale", () => {
+    const group = DEMO_SEATED_TICKET_GROUPS.find((item) =>
+      item.seatIds?.includes("a1"),
+    );
+    const seat = mapping.seats?.a1;
+    expect(group?.resale).toBeFalsy();
+    expect(seat?.accessible).toBe(true);
+
+    useSeatmapStore.setState({
+      seatLookupTable: group ? { a1: group } : {},
+      seatOffersLookupTable: group ? { a1: [group] } : {},
+    });
+    const { container } = render(
+      <svg>
+        <SeatmapSeat
+          seat={seat!}
+          onTooltip={vi.fn()}
+          isTooltipActive={false}
+        />
+      </svg>,
+    );
+
+    expect(container.querySelector('use[href="#icon-accessible"]')).toBeTruthy();
+    expect(container.querySelector('use[href="#icon-resale"]')).toBeNull();
+  });
+
   it("renders every exclusive seat purple instead of its offer color", () => {
     const group = DEMO_SEATED_TICKET_GROUPS.find((item) =>
       item.seatIds?.includes("s1"),
@@ -394,7 +446,7 @@ describe("SeatmapSeat", () => {
     );
   });
 
-  it("does not mark a non-exclusive offer purple", () => {
+  it("paints a standard seat the default blue instead of its offer color", () => {
     const fixtureGroup = DEMO_SEATED_TICKET_GROUPS.find((item) =>
       item.seatIds?.includes("s1"),
     );
@@ -421,6 +473,10 @@ describe("SeatmapSeat", () => {
     );
 
     expect(container.querySelector("rect")).toHaveAttribute(
+      "fill",
+      AVAILABLE_FILL,
+    );
+    expect(container.querySelector("rect")).not.toHaveAttribute(
       "fill",
       fixtureGroup?.offer?.color,
     );
@@ -1539,14 +1595,131 @@ describe("SeatmapSeat", () => {
 });
 
 describe("InteractiveSeatmap canvas", () => {
-  it("lists locked seats in the legend", async () => {
+  it("always lists unavailable, selected, and available, plus locked and exclusive when that inventory exists", async () => {
     useFiltersStore.setState({ loadingTicketGroups: false });
     render(<InteractiveSeatmap lookupsMode="external" />);
 
     await waitFor(() => {
       expect(screen.queryByLabelText(/loading seat map/i)).not.toBeInTheDocument();
     });
+    expect(screen.getByText("Unavailable")).toBeInTheDocument();
+    expect(screen.getByText("Selected")).toBeInTheDocument();
+    expect(screen.getByText("Available")).toBeInTheDocument();
+    expect(screen.getByText("Exclusive")).toBeInTheDocument();
     expect(screen.getByText("Locked")).toBeInTheDocument();
+  });
+
+  it("hides Locked when no exclusive offer still needs an access code", async () => {
+    useFiltersStore.setState({
+      loadingTicketGroups: false,
+      ticketGroups: DEMO_SEATED_TICKET_GROUPS.map((group) => ({
+        ...group,
+        offer: group.offer
+          ? { ...group.offer, accessCode: undefined, unlocked: true }
+          : group.offer,
+      })),
+    });
+    render(<InteractiveSeatmap lookupsMode="external" />);
+
+    await waitFor(() => {
+      expect(screen.queryByLabelText(/loading seat map/i)).not.toBeInTheDocument();
+    });
+    expect(screen.queryByText("Locked")).not.toBeInTheDocument();
+    expect(screen.getByText("Selected")).toBeInTheDocument();
+    expect(screen.getByText("Exclusive")).toBeInTheDocument();
+  });
+
+  it("hides Exclusive and Locked when inventory is open, even if an offer needs a code", async () => {
+    useFiltersStore.setState({
+      loadingTicketGroups: false,
+      ticketGroups: DEMO_SEATED_TICKET_GROUPS.map((group) => ({
+        ...group,
+        offer: group.offer
+          ? { ...group.offer, inventoryType: "open" }
+          : group.offer,
+      })),
+    });
+    render(<InteractiveSeatmap lookupsMode="external" />);
+
+    await waitFor(() => {
+      expect(screen.queryByLabelText(/loading seat map/i)).not.toBeInTheDocument();
+    });
+    expect(screen.queryByText("Exclusive")).not.toBeInTheDocument();
+    expect(screen.queryByText("Locked")).not.toBeInTheDocument();
+    expect(screen.getByText("Unavailable")).toBeInTheDocument();
+    expect(screen.getByText("Selected")).toBeInTheDocument();
+    expect(screen.getByText("Available")).toBeInTheDocument();
+  });
+
+  it("hides Exclusive when every exclusive offer still needs a code", async () => {
+    useFiltersStore.setState({
+      loadingTicketGroups: false,
+      ticketGroups: DEMO_SEATED_TICKET_GROUPS.map((group) =>
+        group.offer?.inventoryType === "exclusive" && !group.resale
+          ? {
+              ...group,
+              offer: {
+                ...group.offer,
+                accessCode: group.offer.accessCode || "CODE",
+                unlocked: false,
+              },
+            }
+          : group,
+      ),
+    });
+    render(<InteractiveSeatmap lookupsMode="external" />);
+
+    await waitFor(() => {
+      expect(screen.queryByLabelText(/loading seat map/i)).not.toBeInTheDocument();
+    });
+    expect(screen.queryByText("Exclusive")).not.toBeInTheDocument();
+    expect(screen.getByText("Locked")).toBeInTheDocument();
+  });
+
+  it("hides Exclusive when the only exclusive seats are resale", async () => {
+    useFiltersStore.setState({
+      loadingTicketGroups: false,
+      ticketGroups: DEMO_SEATED_TICKET_GROUPS.map((group) =>
+        group.offer?.inventoryType === "exclusive" && !group.resale
+          ? { ...group, offer: { ...group.offer, inventoryType: "open" } }
+          : group,
+      ),
+    });
+    render(<InteractiveSeatmap lookupsMode="external" />);
+
+    await waitFor(() => {
+      expect(screen.queryByLabelText(/loading seat map/i)).not.toBeInTheDocument();
+    });
+    expect(screen.queryByText("Exclusive")).not.toBeInTheDocument();
+    expect(screen.getByText("Verified resale")).toBeInTheDocument();
+  });
+
+  it("hides Locked and Exclusive when exclusive inventory is accessible seating", async () => {
+    const seats = { ...(mapping.seats || {}) };
+    const ticketGroups = DEMO_SEATED_TICKET_GROUPS.map((group) => {
+      if (group.offer?.inventoryType !== "exclusive") return group;
+      const coded = Boolean(group.offer?.accessCode);
+      for (const seatId of group.seatIds || []) {
+        seats[seatId] = {
+          ...(seats[seatId] || { seatId }),
+          accessible: coded,
+          accessibleType: coded ? "DA" : undefined,
+        };
+      }
+      return coded
+        ? { ...group, accessible: false, accessibleType: undefined }
+        : { ...group, accessible: true, accessibleType: "DA" };
+    });
+    useSeatmapStore.setState({ data: { ...mapping, seats } });
+    useFiltersStore.setState({ loadingTicketGroups: false, ticketGroups });
+    render(<InteractiveSeatmap lookupsMode="external" />);
+
+    await waitFor(() => {
+      expect(screen.queryByLabelText(/loading seat map/i)).not.toBeInTheDocument();
+    });
+    expect(screen.queryByText("Locked")).not.toBeInTheDocument();
+    expect(screen.queryByText("Exclusive")).not.toBeInTheDocument();
+    expect(screen.getByText("Accessible - Open space")).toBeInTheDocument();
   });
 
   it("adds a Verified resale legend row when a listing is in the ticket groups", async () => {
@@ -1566,11 +1739,13 @@ describe("InteractiveSeatmap canvas", () => {
     });
   });
 
-  it("hides the Verified resale legend row when no listing is present", async () => {
+  it("hides the Verified resale legend row when a resale group has no listing", async () => {
+    const resale = DEMO_SEATED_TICKET_GROUPS.find((group) => group.resale);
+    expect(resale?.listing).toBeTruthy();
     useFiltersStore.setState({
       loadingTicketGroups: false,
       event: { enableResale: true },
-      ticketGroups: [{ id: "primary" }],
+      ticketGroups: [{ ...resale!, listing: undefined }],
     });
     render(<InteractiveSeatmap lookupsMode="external" />);
 
@@ -1580,6 +1755,64 @@ describe("InteractiveSeatmap canvas", () => {
     expect(screen.queryByTestId("seatmap-legend-resale")).not.toBeInTheDocument();
   });
 
+  it("lists Accessible resale under Verified resale when a resale listing is accessible seating", async () => {
+    const resale = DEMO_SEATED_TICKET_GROUPS.find((group) => group.resale);
+    expect(resale?.listing).toBeTruthy();
+    expect(resale?.seatIds?.length).toBeGreaterThan(0);
+    useFiltersStore.setState({
+      loadingTicketGroups: false,
+      ticketGroups: [resale!],
+    });
+    render(<InteractiveSeatmap lookupsMode="external" />);
+
+    await waitFor(() => {
+      expect(screen.queryByLabelText(/loading seat map/i)).not.toBeInTheDocument();
+    });
+    const verified = screen.getByTestId("seatmap-legend-resale");
+    const accessible = screen.getByTestId("seatmap-legend-accessible-resale");
+    expect(verified).toHaveTextContent("Verified resale");
+    expect(accessible).toHaveTextContent("Accessible resale");
+    expect(
+      verified.compareDocumentPosition(accessible) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    expect(accessible.querySelector("span")).toHaveStyle({
+      backgroundColor: ACCESSIBLE_SEAT_COLOR_GENERIC,
+    });
+    expect(accessible.querySelector("use")).toHaveAttribute("href", "#icon-resale");
+  });
+
+  it("hides Accessible resale when the resale listing is not accessible seating", async () => {
+    const resale = DEMO_SEATED_TICKET_GROUPS.find((group) => group.resale);
+    expect(resale).toBeTruthy();
+    const seats = Object.fromEntries(
+      Object.entries(mapping.seats || {}).map(([id, seat]) => [
+        id,
+        { ...seat, accessible: false, accessibleType: undefined },
+      ]),
+    );
+    useSeatmapStore.setState({ data: { ...mapping, seats } });
+    useFiltersStore.setState({
+      loadingTicketGroups: false,
+      ticketGroups: [
+        {
+          ...resale!,
+          accessible: false,
+          accessibleType: undefined,
+          seatIds: ["s1"],
+        },
+      ],
+    });
+    render(<InteractiveSeatmap lookupsMode="external" />);
+
+    await waitFor(() => {
+      expect(screen.queryByLabelText(/loading seat map/i)).not.toBeInTheDocument();
+    });
+    expect(screen.getByTestId("seatmap-legend-resale")).toHaveTextContent(
+      "Verified resale",
+    );
+    expect(screen.queryByTestId("seatmap-legend-accessible-resale")).not.toBeInTheDocument();
+  });
+
   it("lists DA and DB in the legend when those seat types exist", async () => {
     useFiltersStore.setState({ loadingTicketGroups: false });
     render(<InteractiveSeatmap lookupsMode="external" />);
@@ -1587,12 +1820,12 @@ describe("InteractiveSeatmap canvas", () => {
     await waitFor(() => {
       expect(screen.queryByLabelText(/loading seat map/i)).not.toBeInTheDocument();
     });
-    expect(screen.getByText("DA")).toBeInTheDocument();
-    expect(screen.getByText("DB")).toBeInTheDocument();
+    expect(screen.getByText("Accessible - Open space")).toBeInTheDocument();
+    expect(screen.getByText("Accessible - Chairback")).toBeInTheDocument();
     expect(screen.queryByText("Accessible")).not.toBeInTheDocument();
   });
 
-  it("lists generic Accessible when no DA or DB types exist", async () => {
+  it("hides accessibility rows when the event has no accessible seats", async () => {
     const blankSeats = Object.fromEntries(
       Object.entries(mapping.seats || {}).map(([id, seat]) => [
         id,
@@ -1615,9 +1848,80 @@ describe("InteractiveSeatmap canvas", () => {
     await waitFor(() => {
       expect(screen.queryByLabelText(/loading seat map/i)).not.toBeInTheDocument();
     });
+    expect(screen.queryByText("Accessible")).not.toBeInTheDocument();
+    expect(screen.queryByText("Accessible - Open space")).not.toBeInTheDocument();
+    expect(screen.queryByText("Accessible - Chairback")).not.toBeInTheDocument();
+  });
+
+  it("lists Accessible when a seat is accessible with no DA or DB type", async () => {
+    const blankSeats = Object.fromEntries(
+      Object.entries(mapping.seats || {}).map(([id, seat]) => [
+        id,
+        { ...seat, accessible: false, accessibleType: undefined },
+      ]),
+    );
+    const [first, ...rest] = DEMO_SEATED_TICKET_GROUPS;
+    useSeatmapStore.setState({
+      data: { ...mapping, seats: blankSeats },
+    });
+    useFiltersStore.setState({
+      loadingTicketGroups: false,
+      ticketGroups: [
+        { ...first, accessible: true, accessibleType: undefined },
+        ...rest.map((group) => ({
+          ...group,
+          accessible: false,
+          accessibleType: undefined,
+        })),
+      ],
+    });
+    render(<InteractiveSeatmap lookupsMode="external" />);
+
+    await waitFor(() => {
+      expect(screen.queryByLabelText(/loading seat map/i)).not.toBeInTheDocument();
+    });
     expect(screen.getByText("Accessible")).toBeInTheDocument();
-    expect(screen.queryByText("DA")).not.toBeInTheDocument();
-    expect(screen.queryByText("DB")).not.toBeInTheDocument();
+    expect(screen.queryByText("Accessible - Open space")).not.toBeInTheDocument();
+    expect(screen.queryByText("Accessible - Chairback")).not.toBeInTheDocument();
+  });
+
+  it("ignores map seats and sold-out groups that are not available inventory", async () => {
+    const coded = DEMO_SEATED_TICKET_GROUPS.find((group) => group.offer?.accessCode);
+    const standard = DEMO_SEATED_TICKET_GROUPS.find((group) =>
+      group.seatIds?.includes("s1"),
+    );
+    expect(coded).toBeTruthy();
+    expect(standard).toBeTruthy();
+    useFiltersStore.setState({
+      loadingTicketGroups: false,
+      ticketGroups: [
+        {
+          ...standard!,
+          accessible: false,
+          accessibleType: undefined,
+          seatIds: ["s1"],
+          offer: { ...standard!.offer!, inventoryType: "open", accessCode: undefined },
+        },
+        {
+          ...coded!,
+          availableCount: 0,
+          maxContiguous: 0,
+          seatIds: [],
+          accessible: true,
+        },
+      ],
+    });
+    render(<InteractiveSeatmap lookupsMode="external" />);
+
+    await waitFor(() => {
+      expect(screen.queryByLabelText(/loading seat map/i)).not.toBeInTheDocument();
+    });
+    expect(screen.queryByText("Accessible")).not.toBeInTheDocument();
+    expect(screen.queryByText("Accessible - Open space")).not.toBeInTheDocument();
+    expect(screen.queryByText("Accessible - Chairback")).not.toBeInTheDocument();
+    expect(screen.queryByText("Locked")).not.toBeInTheDocument();
+    expect(screen.queryByText("Exclusive")).not.toBeInTheDocument();
+    expect(screen.getByText("Available")).toBeInTheDocument();
   });
 
   it("hides zoom and legend when hideChrome is set", async () => {

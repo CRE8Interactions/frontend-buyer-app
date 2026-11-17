@@ -4,7 +4,6 @@ import {
   ACCESSIBLE_LABEL_DA,
   ACCESSIBLE_LABEL_DB,
   ACCESSIBLE_LABEL_GENERIC,
-  accessibleLabelFromSeats,
   accessibleTypeOf,
   getAccessibleLabel,
   isAccessibleSource,
@@ -43,36 +42,27 @@ describe("ticket accessibility", () => {
     expect(isAccessibleSource(DEMO_SEATED_TICKET_GROUPS[0])).toBe(false);
   });
 
-  it("reads accessibility off a mapped seat when the group itself is not flagged", () => {
-    expect(
-      accessibleLabelFromSeats(
-        { seatIds: ["k1"] },
-        { seats: { k1: { accessible: true } } },
-      ),
-    ).toBe(ACCESSIBLE_LABEL_GENERIC);
-    expect(
-      accessibleLabelFromSeats(
-        { seatIds: ["j1"] },
-        { seats: { j1: { accessible: false } } },
-      ),
-    ).toBe("");
-  });
-
-  it("shows DA and DB legend rows when those types exist, otherwise Accessible", () => {
+  it("shows DA, DB, or generic legend rows only when that seating exists", () => {
     expect(seatmapAccessibilityLegendRows([{ accessibleType: "DA" }])).toEqual([
-      { label: "DA", color: "#2DEDB4" },
+      { label: "Accessible - Open space", color: "#2DEDB4" },
     ]);
     expect(
       seatmapAccessibilityLegendRows([
         { accessibleType: "DA" },
         { accessibleType: "DB" },
+        { accessible: true },
       ]),
     ).toEqual([
-      { label: "DA", color: "#2DEDB4" },
-      { label: "DB", color: "#F4BC16" },
+      { label: "Accessible - Open space", color: "#2DEDB4" },
+      { label: "Accessible - Chairback", color: "#F4BC16" },
     ]);
     expect(seatmapAccessibilityLegendRows([{ accessible: true }])).toEqual([
       { label: "Accessible", color: "#F4BC16" },
     ]);
+    expect(
+      seatmapAccessibilityLegendRows([{ listing: { accessibleType: "DB" } }]),
+    ).toEqual([{ label: "Accessible - Chairback", color: "#F4BC16" }]);
+    expect(seatmapAccessibilityLegendRows([{}])).toEqual([]);
+    expect(seatmapAccessibilityLegendRows([{ accessible: false }])).toEqual([]);
   });
 });

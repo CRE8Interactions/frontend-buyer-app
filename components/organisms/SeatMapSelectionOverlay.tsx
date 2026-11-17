@@ -26,6 +26,7 @@ import {
 import type { QuantityRestrictionSource } from "@/lib/ticketListings";
 import { listedUnitPrice } from "@/lib/helpers";
 import { getSeatAdditionalLabel } from "@/lib/seatLabels";
+import { accessibleLabelForTicket } from "@/lib/ticketAccessibility";
 import { selectionOfferDescription, selectionIsResale, selectionIsUnnamedResale, selectionOfferName, selectionTicketCards } from "@/lib/ticketSummary";
 import {
   gaTicketSeatLine,
@@ -305,6 +306,12 @@ function SeatMapSelectionOverlay({
     mapDetailGroup?.sectionNumber || mapDetailGroup?.sectionName || "GA",
   );
   const mapDetailOffer = selectionOfferName(mapDetailGroup);
+  const mapDetailAccessibleLabel = accessibleLabelForTicket(
+    mapDetailGroup,
+    mapDetailGroup?.seatId == null || mapDetailGroup.seatId === ""
+      ? undefined
+      : mapping?.seats?.[String(mapDetailGroup.seatId)],
+  );
   // Remember which slides finished loading for this seat. Flipping away and
   // back keeps the image element mounted, so a loaded slide stays on screen.
   const [loadedSlides, setLoadedSlides] = useState<{
@@ -1066,7 +1073,7 @@ function SeatMapSelectionOverlay({
                             ? gaDetailHeading(mapDetailGroup)
                             : `${mapSectionHeading(seatedSectionName(mapDetailGroup))} · Row ${mapDetailGroup.rowNumber || mapDetailGroup.rowName || "—"} · Seat ${seatDisplayValue(mapDetailGroup.seatNumber) || "—"}`}
                         </div>
-                        <AccessibleSeatingBadge source={mapDetailGroup} />
+                        <AccessibleSeatingBadge label={mapDetailAccessibleLabel} />
                         <div style={{ fontSize: 14, lineHeight: 1.5, color: "#6e7180" }}>
                           1 Ticket
                         </div>
@@ -1410,7 +1417,7 @@ function SeatMapSelectionOverlay({
                                 </div>
                               </div>
                               <AccessibleSeatingBadge
-                                source={g}
+                                label={accessibleLabelForTicket(g, mapSeat)}
                                 style={{ marginTop: 10 }}
                               />
                               {additionalLabel ? (

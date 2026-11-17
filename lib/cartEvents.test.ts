@@ -262,6 +262,26 @@ describe("wallet order totals", () => {
     });
   });
 
+  it("copies ticket cost from the fetched order onto listed tickets", () => {
+    const listed = orderDetail("129.50");
+    const thin = {
+      ...listed,
+      tickets: listed.tickets.map((ticket) => ({
+        ...ticket,
+        raw: { id: ticket.id, checkInCode: ticket.code },
+      })),
+    };
+    const detail = withFullOrder(thin, {
+      tickets: thin.tickets.map((ticket, index) => ({
+        id: ticket.id,
+        cost: index === 0 ? "32.04" : 10,
+      })),
+    });
+
+    expect(detail.tickets[0]?.raw.cost).toBe(32.04);
+    expect(detail.tickets[1]?.raw.cost).toBe(10);
+  });
+
   it("keeps listed tickets when the fetched order has no matching tickets", () => {
     const listed = orderDetail("129.50");
     const raw = listed.tickets[0]?.raw;
