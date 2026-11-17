@@ -49,14 +49,14 @@ type Invoice = {
     start?: string;
     venue?: { timezone?: TimezoneLike };
     organization?: BrandingOrganization | null;
-    events?: Array<{ start?: string }>;
+    events?: Array<{ start?: string; venue?: { timezone?: TimezoneLike } }>;
   } | null;
   flex_pack?: {
     name?: string;
     gameTickets?: number;
     venue?: { timezone?: TimezoneLike };
   } | null;
-  vouchers?: Array<{ code?: string }>;
+  vouchers?: Array<{ code?: string; flex_pack?: unknown }>;
   access_pass_template?: {
     name?: string;
     venue?: { timezone?: TimezoneLike };
@@ -591,6 +591,7 @@ async function downloadActivityReceipt(invoice: Invoice) {
       order: {
         ...invoice,
         processedAt: invoice.processedAt || invoice.createdAt,
+        total: invoice.total == null ? undefined : Number(invoice.total),
         ...(buyer
           ? {
               firstName: buyer.firstName,

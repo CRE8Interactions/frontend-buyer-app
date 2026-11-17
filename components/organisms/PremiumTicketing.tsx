@@ -75,8 +75,10 @@ import {
 import { cartTicketGroups } from "@/lib/listingSelection";
 import {
   accessibleLabelForTicket,
+  accessibleLabelFromSeats,
   getAccessibleLabel,
   hasAccessibleFlag,
+  isAccessibleSource,
 } from "@/lib/ticketAccessibility";
 import { getSeatAdditionalLabel } from "@/lib/seatLabels";
 import { ERROR_COLOR, shopperShellVars } from "@/lib/branding";
@@ -995,7 +997,7 @@ export default function PremiumTicketing({
 
   const mapLocked = Boolean(d.soldOut) || eventScheduled;
   const rows = useMemo(() => {
-    const filtered = d.listings.filter((l) => quantityIsAllowed(want, listingQtyLimits(l)) && (!zoneFilter.length || zoneFilter.includes(l.zone)) && !listingStillNeedsAccessCode(l, unlocked) && !(!!lockedMap[l.zone] && !unlocked.includes(l.zone)) && (!ada || hasAccessibleFlag(l.cartGroup)));
+    const filtered = d.listings.filter((l) => quantityIsAllowed(want, listingQtyLimits(l)) && (!zoneFilter.length || zoneFilter.includes(l.zone)) && !listingStillNeedsAccessCode(l, unlocked) && !(!!lockedMap[l.zone] && !unlocked.includes(l.zone)) && (!ada || hasAccessibleFlag(l.cartGroup) || isAccessibleSource(l.cartGroup) || (!l.resale && Boolean(accessibleLabelFromSeats(l.cartGroup, mapMapping)))));
     const prepared = filtered.map((listing) => {
       if (!unlocked.includes(listing.zone)) return listing;
       const offer = (listing.cartGroup?.offer || {}) as Record<string, unknown>;
@@ -1013,7 +1015,7 @@ export default function PremiumTicketing({
       ...l,
       range: `${l.min} – ${l.max} Tickets`,
     }));
-  }, [want, d.listings, zoneFilter, lockedMap, unlocked, ada, sortDir, eventTicketLimit]);
+  }, [want, d.listings, zoneFilter, lockedMap, unlocked, ada, sortDir, eventTicketLimit, mapMapping]);
   // Placeholder rows roughly match the list being replaced, so the column keeps
   // its height while new inventory settles.
   const skeletonRows = Math.min(Math.max(rows.length || 3, 3), 5);
@@ -1445,11 +1447,12 @@ export default function PremiumTicketing({
     />
   );
 
-  /** Legacy listing rows use the group's own accessible flag, not the seat map. */
+  /** Group flag or type names the icon. Mapped seats do too, except on resale rows. */
   const listingSeatIcon = (l: TicketingListing, s: number) => {
-    const accessibleLabel = hasAccessibleFlag(l.cartGroup)
-      ? getAccessibleLabel(l.cartGroup)
-      : "";
+    const accessibleLabel =
+      (hasAccessibleFlag(l.cartGroup) ? getAccessibleLabel(l.cartGroup) : "") ||
+      getAccessibleLabel(l.cartGroup) ||
+      (l.resale ? "" : accessibleLabelFromSeats(l.cartGroup, mapMapping));
     const box = { flexShrink: 0, display: "flex", alignItems: "center" };
     if (!accessibleLabel) {
       return (
@@ -2713,7 +2716,7 @@ export default function PremiumTicketing({
                 </div>
                 <div style={{ display: "flex", flexDirection: "column", gap: 5, minWidth: 0 }}>
                   <div style={{ fontSize: 22, fontWeight: 600, letterSpacing: "-0.02em", lineHeight: 1.5 }}>{listingLocationLabel(selRow)}</div>
-                  <AccessibleSeatingBadge label={panelAccessibleLabel} />
+                  <AccessibleSeatingBadge label={panelAccessibleLabel} source={selRow.cartGroup} />
                   {panelAdditionalLabel ? (
                     <div style={{ fontSize: 14, lineHeight: 1.5, color: "#6e7180" }}>
                       {panelAdditionalLabel}

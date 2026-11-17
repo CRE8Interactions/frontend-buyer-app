@@ -117,12 +117,12 @@ describe("WalletAccountActivity", () => {
     mockedDownloadOrderReceipt.mockResolvedValue(undefined);
     mockedShopperReceiptDownload.mockReset();
     mockedShopperReceiptDownload.mockImplementation(
-      async (input: { order?: unknown; user?: unknown }) => ({
+      (async (input: { order?: unknown; user?: unknown }) => ({
         order: input.order,
         purchaser: input.user,
         sellerLogoUrl: "shared-receipt-logo",
         sellerName: "Shared seller",
-      }),
+      })) as never,
     );
     mockedGetMyUpcomingOrders.mockResolvedValue({ data: [] } as never);
     mockedGetMyListings.mockResolvedValue({ data: [] } as never);
@@ -172,7 +172,7 @@ describe("WalletAccountActivity", () => {
     const ticketEvent = ticket.event as { name?: string; venue?: { timezone?: string }; organization?: { name?: string } };
     const ticketName = String(ticketEvent.name);
     const seasonName = String((season.package as { name?: string }).name);
-    const ordered = orderedDate(String(ticket.createdAt), ticketEvent.venue?.timezone);
+    const ordered = orderedDate(String((ticket as { createdAt?: string }).createdAt), ticketEvent.venue?.timezone);
     const ticketLine = `Purchase · ${ordered} · ${(ticket.tickets as unknown[]).length} tickets`;
 
     expect(await screen.findByText(ticketLine)).toBeInTheDocument();
@@ -409,7 +409,7 @@ describe("WalletAccountActivity", () => {
     render(<WalletAccountActivity />);
 
     const timezone = (base.event as { venue?: { timezone?: string } }).venue?.timezone;
-    expect(await screen.findByText(`Purchase · ${orderedDate(String(listed.createdAt), timezone)} · ${(listed.tickets as unknown[]).length} tickets`)).toBeInTheDocument();
+    expect(await screen.findByText(`Purchase · ${orderedDate(String((listed as { createdAt?: string }).createdAt), timezone)} · ${(listed.tickets as unknown[]).length} tickets`)).toBeInTheDocument();
     expect(screen.queryByText("Resold")).not.toBeInTheDocument();
     expect(screen.queryByText("Transferred")).not.toBeInTheDocument();
   });

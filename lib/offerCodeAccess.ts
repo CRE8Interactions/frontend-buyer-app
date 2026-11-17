@@ -129,7 +129,7 @@ export function unlockedOfferNotices(
 
 export function applicableUnlockedOffers(
   pageOffers: AccessCodedOffer[] | null | undefined,
-  serverOffers: Array<{ id?: string | number }> | null | undefined,
+  serverOffers: Array<{ id?: string | number; name?: string }> | null | undefined,
 ) {
   const serverIds = new Set(
     (serverOffers || []).map((offer) => String(offer.id)),

@@ -1,17 +1,19 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import SmsOptIn from "@/components/molecules/SmsOptIn";
 import { updateSmsOptIn } from "@/lib/api";
 import { getSession, setSession, type AuthSession } from "@/lib/auth";
 
 export default function ProfileSmsPreference() {
-  const [checked, setChecked] = useState(() =>
-    Boolean(getSession()?.user.smsOptIn),
-  );
+  const [checked, setChecked] = useState(false);
   const [saving, setSaving] = useState(false);
   const [updated, setUpdated] = useState(false);
   const [failed, setFailed] = useState(false);
+
+  useEffect(() => {
+    setChecked(getSession()?.user.smsOptIn === true);
+  }, []);
 
   const save = async (next: boolean) => {
     const previous = checked;

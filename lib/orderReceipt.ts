@@ -74,6 +74,7 @@ export type OrderReceiptSource = {
   paymentType?: string | null;
   paymentStatus?: string | null;
   intentDetails?: {
+    id?: string;
     charges?: {
       data?: Array<{
         payment_method_details?: {

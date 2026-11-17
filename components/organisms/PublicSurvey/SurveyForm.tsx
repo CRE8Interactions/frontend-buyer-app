@@ -214,17 +214,22 @@ export default function SurveyForm({
   };
   const visible = visibleQuestions(schema, answers);
   const branding = survey.branding || {};
+  const blocks: Array<{
+    question: (typeof visible)[number];
+    showSection: boolean;
+    showHeading: boolean;
+  }> = [];
   let previousSection = "";
   let previousHeading = "";
-  const blocks = visible.map((question) => {
+  for (const question of visible) {
     const sectionId = question.section?.id || "";
     const heading = question.heading || "";
     const showSection = Boolean(sectionId && sectionId !== previousSection);
     const showHeading = Boolean(heading && heading !== previousHeading);
     previousSection = sectionId || previousSection;
     previousHeading = heading;
-    return { question, showSection, showHeading };
-  });
+    blocks.push({ question, showSection, showHeading });
+  }
   const color =
     branding.buttonColor || branding.primaryColor || "#1f7a8c";
 

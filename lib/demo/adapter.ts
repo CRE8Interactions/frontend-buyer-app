@@ -534,7 +534,7 @@ const routes: Route[] = [
         const offer = group.offer;
         const accessCode = String(offer?.accessCode || "").trim();
         const id = offer?.id;
-        if (!offer || id == null || offer.isHidden || !accessCode) return [];
+        if (!offer || id == null || (offer as { isHidden?: boolean }).isHidden || !accessCode) return [];
         if (accessCode.toLowerCase() !== typed) return [];
         const key = String(id);
         if (seen.has(key)) return [];
