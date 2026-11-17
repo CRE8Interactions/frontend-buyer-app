@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import Link from "next/link";
 import InAppBackLink from "@/components/molecules/InAppBackLink";
 import moment from "moment-timezone";
@@ -65,6 +65,8 @@ type Invoice = {
   originalTickets?: InvoiceTicket[];
   package_tickets?: Array<{ id?: string | number }>;
   users_permissions_user?: InvoiceBuyer | null;
+  paymentStatus?: string;
+  details?: { voided?: unknown } | null;
 };
 
 type InvoiceTicket = {
@@ -113,7 +115,7 @@ function relationList<T>(value: unknown): T[] | null {
 
 /** The activity list often leaves relations wrapped, or omits the flex pack entirely. */
 function presentInvoice(invoice: Invoice): Invoice {
-  const record = invoice as Invoice & Record<string, unknown>;
+  const record = (relationRecord<Invoice>(invoice) || invoice) as Invoice & Record<string, unknown>;
   const vouchers =
     relationList<{ code?: string; flex_pack?: unknown }>(record.vouchers) ??
     invoice.vouchers ??
@@ -125,8 +127,8 @@ function presentInvoice(invoice: Invoice): Invoice {
     relationRecord<NonNullable<Invoice["flex_pack"]>>(record.flex_pack ?? record.flexPack) ||
     null;
   return {
-    ...invoice,
-    event: relationRecord(invoice.event),
+    ...record,
+    event: relationRecord(record.event ?? invoice.event),
     package: relationRecord(record.package ?? record.seasonPackage),
     flex_pack: (flex?.name?.trim() ? flex : null) || voucherPack || flex,
     vouchers: vouchers?.map((voucher) => ({ code: voucher.code })) ?? invoice.vouchers,
@@ -208,13 +210,16 @@ function unwrapFlexPack(data: unknown): NonNullable<Invoice["flex_pack"]> | null
   );
 }
 
-async function hydrateUntitledInvoice(invoice: Invoice): Promise<Invoice> {
-  if (productName(invoice)) return invoice;
+async function hydrateUntitledInvoice(
+  invoice: Invoice,
+  signal?: AbortSignal,
+): Promise<Invoice> {
+  if (signal?.aborted || productName(invoice)) return invoice;
   let next = invoice;
   const orderId = String(invoice.orderId || "");
   if (orderId) {
     try {
-      const res = await getOrder(orderId);
+      const res = await getOrder(orderId, { signal });
       next = mergeActivityInvoice(
         invoice,
         presentInvoice(normalizeOrderPayload(res.data) as Invoice),
@@ -227,7 +232,7 @@ async function hydrateUntitledInvoice(invoice: Invoice): Promise<Invoice> {
     const uuid = flexPackUuid(next) || flexPackUuid(invoice);
     if (uuid) {
       try {
-        const res = await getFlexPack(uuid);
+        const res = await getFlexPack(uuid, { signal });
         const pack = unwrapFlexPack(res.data);
         if (pack?.name?.trim()) {
           next = mergeActivityInvoice(next, {
@@ -250,9 +255,16 @@ async function hydrateUntitledInvoice(invoice: Invoice): Promise<Invoice> {
   }
 }
 
-async function labelUntitledInvoices(invoices: Invoice[]): Promise<Invoice[]> {
-  if (!invoices.some((invoice) => !productName(invoice))) return invoices;
-  return Promise.all(invoices.map((invoice) => hydrateUntitledInvoice(invoice)));
+async function labelUntitledInvoices(
+  invoices: Invoice[],
+  signal?: AbortSignal,
+): Promise<Invoice[]> {
+  if (signal?.aborted || !invoices.some((invoice) => !productName(invoice))) {
+    return invoices;
+  }
+  return Promise.all(
+    invoices.map((invoice) => hydrateUntitledInvoice(invoice, signal)),
+  );
 }
 
 function flexPackPurchase(invoice: Invoice) {
@@ -305,9 +317,23 @@ function ticketCount(invoice: Invoice) {
   return invoice.package_tickets?.length ?? 0;
 }
 
+function statusText(value: unknown) {
+  return typeof value === "string" ? value.trim().toLowerCase() : "";
+}
+
 function invoiceBadge(invoice: Invoice) {
-  const status = invoice.status?.toLowerCase() || "";
-  if (status === "refunded" || status === "released") return "Refunded";
+  const status = statusText(invoice.status);
+  const paymentStatus = statusText(invoice.paymentStatus);
+  const voided = Boolean(invoice.details && typeof invoice.details === "object" && invoice.details.voided);
+  if (
+    status === "refunded" ||
+    status === "released" ||
+    paymentStatus === "refunded" ||
+    paymentStatus === "released" ||
+    voided
+  ) {
+    return "Refunded";
+  }
   return "";
 }
 
@@ -390,10 +416,22 @@ type ActivitySnapshot = {
 
 let activitySnapshot: ActivitySnapshot | null = null;
 let activityRequest: Promise<ActivitySnapshot> | null = null;
+let activityGeneration = 0;
+let activityAbort: AbortController | null = null;
+const activityListeners = new Set<(snapshot: ActivitySnapshot) => void>();
 
 export function __resetActivitySnapshotForTests() {
+  activityAbort?.abort();
+  activityAbort = null;
   activitySnapshot = null;
   activityRequest = null;
+  activityGeneration += 1;
+  activityListeners.clear();
+}
+
+function publishActivitySnapshot(snapshot: ActivitySnapshot) {
+  activitySnapshot = snapshot;
+  activityListeners.forEach((listener) => listener(snapshot));
 }
 
 /** Assigned and transferred-in tickets were not bought by this shopper, so they stay out of activity. */
@@ -405,26 +443,67 @@ function isPurchaseActivity(invoice: Invoice) {
   return source !== "ticket_assignment" && source !== "transfer";
 }
 
-function loadActivitySnapshot() {
-  if (activitySnapshot) return Promise.resolve(activitySnapshot);
-  if (!activityRequest) {
-    activityRequest = Promise.all([
-      Promise.resolve().then(() => getMyUpcomingOrders()).catch(() => ({ data: [] })),
-      Promise.resolve().then(() => getMyListings()).catch(() => ({ data: [] })),
-      Promise.resolve().then(() => getBankAccount()).catch(() => ({ data: null })),
-    ]).then(async ([orders, listings, account]) => {
-      const listed = (Array.isArray(orders.data) ? orders.data : [])
-        .filter((row) => isPurchaseActivity(row as Invoice))
-        .map((row) => presentInvoice(row as Invoice));
-      const snapshot: ActivitySnapshot = {
-        invoices: await labelUntitledInvoices(listed),
-        sales: soldListings(listings),
-        last4: accountLast4(account),
-      };
-      activitySnapshot = snapshot;
-      return snapshot;
-    });
+function loadActivitySnapshot(options?: { refresh?: boolean }) {
+  if (!options?.refresh && activitySnapshot) return Promise.resolve(activitySnapshot);
+  if (!options?.refresh && activityRequest) return activityRequest;
+
+  activityAbort?.abort();
+  const controller = new AbortController();
+  activityAbort = controller;
+  const signal = controller.signal;
+  const generation = ++activityGeneration;
+  const previous = activitySnapshot;
+  const refreshing = Boolean(options?.refresh && previous);
+  let bankLast4 = previous?.last4 || "";
+  // The bank lookup can sit open while the shopper links an account. Profile
+  // still shows purchases; the account number fills in when the bank returns.
+  if (!refreshing) {
+    void Promise.resolve()
+      .then(() => getBankAccount({ signal }))
+      .catch(() => ({ data: null }))
+      .then((account) => {
+        if (generation !== activityGeneration) return;
+        bankLast4 = accountLast4(account);
+        if (!activitySnapshot || activitySnapshot.last4 === bankLast4) return;
+        publishActivitySnapshot({ ...activitySnapshot, last4: bankLast4 });
+      });
   }
+  const request = Promise.all([
+    Promise.resolve()
+      .then(() => getMyUpcomingOrders({ signal }))
+      .then((orders) => ({ ok: true as const, orders }))
+      .catch(() => ({ ok: false as const, orders: { data: [] as unknown[] } })),
+    refreshing
+      ? Promise.resolve(null)
+      : Promise.resolve().then(() => getMyListings({ signal })).catch(() => ({ data: [] })),
+  ]).then(([ordersResult, listings]) => {
+    if (refreshing && !ordersResult.ok && previous) {
+      if (generation === activityGeneration) publishActivitySnapshot(previous);
+      return activitySnapshot ?? previous;
+    }
+    const orders = ordersResult.orders;
+    const listed = (Array.isArray(orders.data) ? orders.data : [])
+      .filter((row) => isPurchaseActivity(row as Invoice))
+      .map((row) => presentInvoice(row as Invoice));
+    const snapshot: ActivitySnapshot = {
+      invoices: listed,
+      sales: listings ? soldListings(listings) : previous?.sales ?? [],
+      last4: bankLast4,
+    };
+    if (generation !== activityGeneration) return activitySnapshot ?? snapshot;
+    publishActivitySnapshot(snapshot);
+    // The purchase row is already visible. Fill in a missing flex pack name
+    // afterward, and resolve with that named list so it cannot be overwritten.
+    return labelUntitledInvoices(listed, signal).then((invoices) => {
+      if (generation !== activityGeneration) return activitySnapshot ?? snapshot;
+      const named = { ...snapshot, invoices, last4: bankLast4 };
+      publishActivitySnapshot(named);
+      return named;
+    });
+  });
+  activityRequest = request.finally(() => {
+    if (activityRequest === request) activityRequest = null;
+  });
   return activityRequest;
 }
 
@@ -436,21 +515,49 @@ function useActivityData() {
   const [last4, setLast4] = useState(cached?.last4 ?? "");
 
   useEffect(() => {
-    if (activitySnapshot) return;
     let cancelled = false;
-    void loadActivitySnapshot().then((snapshot) => {
+    const apply = (snapshot: ActivitySnapshot) => {
       if (cancelled) return;
       setInvoices(snapshot.invoices);
       setSales(snapshot.sales);
       setLast4(snapshot.last4);
       setReady(true);
-    });
+    };
+    activityListeners.add(apply);
+    // A visit that started before this mount can finish between render and this
+    // effect. Apply that result now, then refresh so a new purchase is included.
+    if (activitySnapshot) apply(activitySnapshot);
+    void loadActivitySnapshot(activitySnapshot ? { refresh: true } : undefined).then(apply);
     return () => {
       cancelled = true;
+      activityListeners.delete(apply);
     };
   }, []);
 
   return { ready, invoices, sales, last4 };
+}
+
+/** Profile page loader. Account activity stays hidden until that load finishes. */
+export function WalletProfileBody({
+  leading,
+  activity,
+  trailing,
+}: {
+  leading: ReactNode;
+  activity: ReactNode;
+  trailing: ReactNode;
+}) {
+  const { ready } = useActivityData();
+  if (!ready) {
+    return <WalletTicketsBlocksLoading routeDestination label="Loading profile" />;
+  }
+  return (
+    <>
+      {leading}
+      {activity}
+      {trailing}
+    </>
+  );
 }
 
 function activityLine(invoice: Invoice) {

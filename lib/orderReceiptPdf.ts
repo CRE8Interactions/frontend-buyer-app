@@ -165,12 +165,7 @@ export async function buildOrderReceiptPdf(receipt: OrderReceipt): Promise<Uint8
     color: INK,
   });
 
-  const meta = [
-    ["Invoice number:", receipt.invoiceNumber],
-    ["Payment method:", receipt.paymentMethod],
-    ["Date of issue:", receipt.issueDate],
-    ["Date due:", receipt.dueDate],
-  ];
+  const meta = receipt.meta.map((row) => [row.label, row.value]);
   let metaY = titleY - 26;
   const metaLabelX = PAGE_WIDTH - MARGIN - 248;
   for (const [label, value] of meta) {

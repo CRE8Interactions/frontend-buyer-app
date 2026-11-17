@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { act, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import moment from "moment-timezone";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -136,6 +136,50 @@ describe("WalletAccountActivity", () => {
     expect(screen.queryByText("Nothing here yet")).not.toBeInTheDocument();
   });
 
+  it("shows a flex pack when profile opens again while that purchase is still loading", async () => {
+    const flex = demoCompletedFlexPackOrder();
+    const packName = (flex.flex_pack as { name?: string }).name || "";
+    let resolveOrders: (value: unknown) => void = () => {};
+    mockedGetMyUpcomingOrders.mockReturnValue(
+      new Promise((resolve) => {
+        resolveOrders = resolve;
+      }) as never,
+    );
+
+    const first = render(<WalletAccountActivity />);
+    expect(screen.getByRole("status", { name: "Loading activity" })).toBeInTheDocument();
+    first.unmount();
+
+    render(<WalletAccountActivity />);
+    await act(async () => {
+      resolveOrders({ data: [flex] });
+    });
+
+    expect(await screen.findByText(packName)).toBeInTheDocument();
+    expect(screen.queryByRole("status", { name: "Loading activity" })).not.toBeInTheDocument();
+  });
+
+  it("leaves the loader when the first profile visit cannot load orders", async () => {
+    let rejectOrders: (reason: unknown) => void = () => {};
+    mockedGetMyUpcomingOrders.mockReturnValue(
+      new Promise((_resolve, reject) => {
+        rejectOrders = reject;
+      }) as never,
+    );
+
+    const first = render(<WalletAccountActivity />);
+    expect(screen.getByRole("status", { name: "Loading activity" })).toBeInTheDocument();
+    first.unmount();
+
+    render(<WalletAccountActivity />);
+    await act(async () => {
+      rejectOrders(new Error("orders unavailable"));
+    });
+
+    expect(await screen.findByText("Nothing here yet")).toBeInTheDocument();
+    expect(screen.queryByRole("status", { name: "Loading activity" })).not.toBeInTheDocument();
+  });
+
   it("keeps the loaded account activity when the profile list opens again", async () => {
     const order = demoCompletedTicketOrder();
     const eventName = (order.event as { name?: string }).name || "";
@@ -154,7 +198,71 @@ describe("WalletAccountActivity", () => {
     render(<WalletAccountActivity />);
     expect(screen.getByText(eventName)).toBeInTheDocument();
     expect(screen.queryByRole("status", { name: "Loading activity" })).not.toBeInTheDocument();
-    expect(mockedGetMyUpcomingOrders).toHaveBeenCalledTimes(1);
+    await waitFor(() => expect(mockedGetMyUpcomingOrders.mock.calls.length).toBeGreaterThan(1));
+    expect(screen.getByText(eventName)).toBeInTheDocument();
+  });
+
+  it("cancels the in-flight activity request when a newer one starts", async () => {
+    const order = demoCompletedTicketOrder();
+    const eventName = (order.event as { name?: string }).name || "";
+    mockedGetMyUpcomingOrders.mockResolvedValueOnce({ data: [order] } as never);
+
+    const first = render(<WalletAccountActivity />);
+    expect(await screen.findByText(eventName)).toBeInTheDocument();
+    first.unmount();
+
+    let firstRefresh: AbortSignal | undefined;
+    mockedGetMyUpcomingOrders.mockImplementation((options?: { signal?: AbortSignal }) => {
+      if (!firstRefresh && options?.signal) firstRefresh = options.signal;
+      return new Promise(() => {}) as never;
+    });
+    const second = render(<WalletAccountActivity />);
+    await waitFor(() => expect(firstRefresh).toBeInstanceOf(AbortSignal));
+    second.unmount();
+
+    render(<WalletAccountActivity />);
+    await waitFor(() => expect(firstRefresh?.aborted).toBe(true));
+    expect(screen.getByText(eventName)).toBeInTheDocument();
+  });
+
+  it("shows a flex pack bought after profile was already open", async () => {
+    const earlier = demoCompletedTicketOrder();
+    const eventName = (earlier.event as { name?: string }).name || "";
+    const flex = demoCompletedFlexPackOrder();
+    const packName = (flex.flex_pack as { name?: string }).name || "";
+    mockedGetMyUpcomingOrders.mockResolvedValueOnce({ data: [earlier] } as never);
+
+    const first = render(<WalletAccountActivity />);
+    expect(await screen.findByText(eventName)).toBeInTheDocument();
+    expect(screen.queryByText(packName)).not.toBeInTheDocument();
+    first.unmount();
+
+    mockedGetMyUpcomingOrders.mockResolvedValue({ data: [flex, earlier] } as never);
+    render(<WalletAccountActivity />);
+
+    expect(screen.getByText(eventName)).toBeInTheDocument();
+    expect(screen.queryByRole("status", { name: "Loading activity" })).not.toBeInTheDocument();
+    expect(await screen.findByText(packName)).toBeInTheDocument();
+    expect(screen.getByText(/6 vouchers/)).toBeInTheDocument();
+  });
+
+  it("keeps the loaded purchase when refreshing activity fails", async () => {
+    const order = demoCompletedTicketOrder();
+    const eventName = (order.event as { name?: string }).name || "";
+    mockedGetMyUpcomingOrders.mockResolvedValueOnce({ data: [order] } as never);
+
+    const first = render(<WalletAccountActivity />);
+    expect(await screen.findByText(eventName)).toBeInTheDocument();
+    first.unmount();
+
+    mockedGetMyUpcomingOrders.mockRejectedValue(new Error("offline"));
+    render(<WalletAccountActivity />);
+
+    expect(screen.getByText(eventName)).toBeInTheDocument();
+    expect(screen.queryByRole("status", { name: "Loading activity" })).not.toBeInTheDocument();
+    await waitFor(() => expect(mockedGetMyUpcomingOrders.mock.calls.length).toBeGreaterThan(1));
+    expect(screen.getByText(eventName)).toBeInTheDocument();
+    expect(screen.queryByText("Nothing here yet")).not.toBeInTheDocument();
   });
 
   it("shows the empty account activity when there are no orders", async () => {
@@ -452,6 +560,32 @@ describe("WalletAccountActivity", () => {
       ),
     ).toBeInTheDocument();
     expect(screen.queryByText(/0 tickets/)).not.toBeInTheDocument();
+    expect(screen.queryByText("Refunded")).not.toBeInTheDocument();
+  });
+
+  it("shows the Refunded tag on a refunded flex pack", async () => {
+    const flex = demoCompletedFlexPackOrder({ status: "refunded", paymentStatus: "refunded" });
+    const packName = (flex.flex_pack as { name?: string }).name || "";
+    mockedGetMyUpcomingOrders.mockResolvedValue({ data: [flex] } as never);
+    render(<WalletAccountActivity />);
+
+    expect(await screen.findByText(packName)).toBeInTheDocument();
+    expect(screen.getByText("Refunded")).toBeInTheDocument();
+  });
+
+  it("shows the Refunded tag when a voided flex pack keeps a complete status", async () => {
+    const flex = demoCompletedFlexPackOrder({
+      status: "complete",
+      details: { voided: { at: "2026-11-02T15:00:00.000Z", mode: "refund" } },
+    });
+    const packName = (flex.flex_pack as { name?: string }).name || "";
+    mockedGetMyUpcomingOrders.mockResolvedValue({
+      data: [{ id: flex.id, attributes: flex }],
+    } as never);
+    render(<WalletAccountActivity />);
+
+    expect(await screen.findByText(packName)).toBeInTheDocument();
+    expect(screen.getByText("Refunded")).toBeInTheDocument();
   });
 
   it("names a flex pack from the saved order when the activity list omits it", async () => {
@@ -483,7 +617,10 @@ describe("WalletAccountActivity", () => {
       ),
     ).toBeInTheDocument();
     expect(screen.queryByText(/0 tickets/)).not.toBeInTheDocument();
-    expect(mockedGetOrder).toHaveBeenCalledWith(flex.orderId);
+    expect(mockedGetOrder).toHaveBeenCalledWith(
+      flex.orderId,
+      expect.objectContaining({ signal: expect.any(AbortSignal) }),
+    );
     expect(mockedFetchCompletedOrder).not.toHaveBeenCalled();
   });
 
@@ -505,7 +642,10 @@ describe("WalletAccountActivity", () => {
     render(<WalletAccountActivity />);
 
     expect(await screen.findByText(pack.name)).toBeInTheDocument();
-    expect(mockedGetFlexPack).toHaveBeenCalledWith(pack.uuid);
+    expect(mockedGetFlexPack).toHaveBeenCalledWith(
+      pack.uuid,
+      expect.objectContaining({ signal: expect.any(AbortSignal) }),
+    );
     expect(screen.getByText(new RegExp(`${pack.gameTickets} vouchers`))).toBeInTheDocument();
     expect(mockedFetchCompletedOrder).not.toHaveBeenCalled();
   });

@@ -147,6 +147,7 @@ import {
   createBankAccount,
   getResaleFeeRules,
   getOrder,
+  getMyUpcomingOrders,
   validateEmail,
 } from "@/lib/api";
 import {
@@ -179,6 +180,7 @@ const mockedCreateListing = vi.mocked(createListing);
 const mockedUpdateMyListings = vi.mocked(updateMyListings);
 const mockedRemoveMyListings = vi.mocked(removeMyListings);
 const mockedGetOrder = vi.mocked(getOrder);
+const mockedGetMyUpcomingOrders = vi.mocked(getMyUpcomingOrders);
 const mockedValidateEmail = vi.mocked(validateEmail);
 
 function ordersFromMyEventsPayload(payload: unknown) {
@@ -298,6 +300,7 @@ async function confirmAcceptTransferInPopup(
   beforeEach(() => {
   navigationMocks.pathname = "/wallet/my-tickets/";
   navigationMocks.search = "";
+  window.history.replaceState({}, "", "/wallet/my-tickets/");
   resetWalletApiHydrationForTests();
   __resetActivitySnapshotForTests();
   __resetWalletAccountCacheForTests();
@@ -5359,7 +5362,7 @@ describe("SeasonTickets section routes", () => {
   });
 
   it("focuses the email field on the wallet sign-in screen", async () => {
-    navigationMocks.search = "login=1";
+    window.history.replaceState({}, "", "/wallet/my-tickets/?login=1");
 
     render(<SeasonTickets />);
 
@@ -5398,8 +5401,55 @@ describe("SeasonTickets section routes", () => {
     expect(
       screen.getByRole("heading", { name: "Profile", level: 1 }),
     ).toBeInTheDocument();
+    expect(screen.getByRole("status", { name: "Loading profile" })).toBeInTheDocument();
+    expect(screen.queryByText("Account activity")).not.toBeInTheDocument();
+    expect(screen.queryByRole("status", { name: "Loading activity" })).not.toBeInTheDocument();
     expect(screen.queryByLabelText("Loading tickets")).not.toBeInTheDocument();
     expect(screen.queryByText(icedogs.name)).not.toBeInTheDocument();
+    expect(await screen.findByRole("link", { name: /^sign out$/i })).toBeInTheDocument();
+    expect(screen.getByText("Account activity")).toBeInTheDocument();
+    expect(screen.queryByRole("status", { name: "Loading profile" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("status", { name: "Loading activity" })).not.toBeInTheDocument();
+    expect(document.querySelector(".shopper-page")).toHaveAttribute(
+      "data-bt-scroll-page",
+      "",
+    );
+  });
+
+  it("keeps the profile page loader and activity spinner until orders load", async () => {
+    navigationMocks.pathname = "/wallet/my-profile/";
+    mockedGetMyUpcomingOrders.mockReturnValue(new Promise(() => {}) as never);
+
+    try {
+      render(<SeasonTickets />);
+
+      expect(await screen.findByRole("heading", { name: "Profile", level: 1 })).toBeInTheDocument();
+      expect(screen.getByRole("status", { name: "Loading profile" })).toBeInTheDocument();
+      expect(screen.queryByText("Account activity")).not.toBeInTheDocument();
+      expect(screen.queryByRole("status", { name: "Loading activity" })).not.toBeInTheDocument();
+      expect(screen.queryByRole("link", { name: /^sign out$/i })).not.toBeInTheDocument();
+    } finally {
+      mockedGetMyUpcomingOrders.mockReset();
+      mockedGetMyUpcomingOrders.mockResolvedValue({ data: [] } as never);
+    }
+  });
+
+  it("opens My tickets when an earlier Profile visit is still stored", async () => {
+    window.history.replaceState({}, "", "/wallet/my-tickets/");
+    beginWalletNavigation("/wallet/my-profile/");
+    navigationMocks.pathname = "/wallet/my-tickets/";
+
+    render(<SeasonTickets />);
+
+    expect(await screen.findByText(icedogs.name)).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "Profile", level: 1 })).not.toBeInTheDocument();
+  });
+
+  it("leaves the ticket list unmarked so its loader still owns the route cover", async () => {
+    render(<SeasonTickets />);
+
+    expect(await screen.findByText(icedogs.name)).toBeInTheDocument();
+    expect(document.querySelector("[data-bt-scroll-page]")).toBeNull();
   });
 
   it("filters listings by Active, Sold, and Expired", async () => {
@@ -7735,10 +7785,14 @@ describe("SeasonTickets routed event screen", { timeout: 20_000 }, () => {
       navigationMocks.pathname = "/wallet/my-transfers/";
       const { rerender } = render(<SeasonTickets />);
       await waitFor(() => expect(mockedGetMySentTransfers).toHaveBeenCalled());
+      const transferSignal = (
+        mockedGetMySentTransfers.mock.calls.at(-1)?.[2] as { signal?: AbortSignal } | undefined
+      )?.signal;
 
       navigationMocks.pathname = "/wallet/my-tickets/";
       rerender(<SeasonTickets />);
       await waitFor(() => expect(mockedGetMyEvents).toHaveBeenCalled());
+      expect(transferSignal?.aborted).toBe(true);
 
       await act(async () => {
         resolveSentTransfers({ data: [staleTransfer] });

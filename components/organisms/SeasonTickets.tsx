@@ -29,7 +29,7 @@ import {
   type ReactNode,
 } from "react";
 import Link from "next/link";
-import { useParams, usePathname, useSearchParams } from "next/navigation";
+import { useParams, usePathname } from "next/navigation";
 import { QRCodeSVG } from "qrcode.react";
 import Spinner from "@/components/atoms/Spinner";
 import EntryQrSheet from "@/components/molecules/EntryQrSheet";
@@ -43,7 +43,7 @@ import {
   readCachedBankAccount,
   rememberCachedBankAccount,
 } from "@/lib/walletAccountCache";
-import WalletAccountActivity, { WalletActivityPage } from "@/components/organisms/WalletAccountActivity";
+import WalletAccountActivity, { WalletActivityPage, WalletProfileBody } from "@/components/organisms/WalletAccountActivity";
 import {
   WalletTicketsBlocksLoading,
 } from "@/components/organisms/WalletTicketsLoader";
@@ -2078,6 +2078,12 @@ function SellModal({
   );
 }
 
+/** Query flags without useSearchParams, which suspends the wallet on the first navigation. */
+function walletLocationQuery(name: string) {
+  if (typeof window === "undefined") return "";
+  return new URLSearchParams(window.location.search).get(name) || "";
+}
+
 export default function SeasonTickets({
   initialScreen = "events",
   eventUUID,
@@ -2096,7 +2102,11 @@ export default function SeasonTickets({
   }>();
   const pathname = usePathname() || "";
   const pendingNavPath = useWalletNavigationPending();
-  const searchParams = useSearchParams();
+  // Read the query from the address bar. useSearchParams suspends this screen
+  // during development navigations, and the wallet layout has no fallback, so
+  // the first visit to profile would paint nothing.
+  const loginQuery = walletLocationQuery("login");
+  const bankProcessing = Boolean(walletLocationQuery("processing"));
   const route = walletRouteFromPath(pathname, params);
   const routedOrderId = route.orderId;
   const routedEventUUID = eventUUID || route.eventUUID;
@@ -2109,7 +2119,7 @@ export default function SeasonTickets({
   const resolvedInitialScreen =
     initialScreen !== "events"
       ? initialScreen
-      : searchParams?.has("login")
+      : loginQuery
         ? "login"
         : section === "bank" || section === "payouts" || section === "activity"
           ? "profile"
@@ -2196,15 +2206,13 @@ export default function SeasonTickets({
     setResaleListingsLoading(false);
   }, []);
   const acquireWalletReloadSignal = useCallback(() => {
-    if (
-      !walletReloadAbortRef.current ||
-      walletReloadAbortRef.current.signal.aborted
-    ) {
-      walletReloadAbortRef.current = new AbortController();
-    }
+    walletReloadAbortRef.current?.abort();
+    walletReloadGenerationRef.current += 1;
+    const controller = new AbortController();
+    walletReloadAbortRef.current = controller;
     return {
       generation: walletReloadGenerationRef.current,
-      signal: walletReloadAbortRef.current.signal,
+      signal: controller.signal,
     };
   }, []);
   const walletReloadFetch = useCallback(
@@ -6987,6 +6995,8 @@ export default function SeasonTickets({
   const Profile = () => (
     <div style={{ maxWidth: 1100, margin: "0 auto", padding: bodyPad, display: "flex", flexDirection: "column", gap: 18 }}>
       <h1 style={{ margin: 0, fontSize: fluidSize(42), fontWeight: 600, letterSpacing: "-0.03em", lineHeight: browseLeading("h2") }}>Profile</h1>
+      <WalletProfileBody
+        leading={
       <div style={{ ...card, borderRadius: 24, boxShadow: "0 1px 2px rgba(5,27,53,0.05), 0 20px 46px -22px rgba(5,27,53,0.45)", padding: cardPad, display: "flex", alignItems: "center", gap: 16 }}>
         <div style={{ width: 56, height: 56, borderRadius: 999, background: ACCENT, color: INK, display: "flex", alignItems: "center", justifyContent: "center", fontSize: fluidSize(19), fontWeight: 600, flexShrink: 0 }}>{isHolder ? "HC" : (email[0] || "?").toUpperCase()}</div>
         <div style={{ minWidth: 0, display: "flex", flexDirection: "column", gap: 3 }}>
@@ -6995,14 +7005,17 @@ export default function SeasonTickets({
         </div>
         <Link href="/sign-out/" style={{ fontFamily: "inherit", marginLeft: "auto", flexShrink: 0, fontSize: fluidSize(13), fontWeight: 600, color: DANGER, background: "#fff", border: "1px solid rgba(194,57,74,0.28)", borderRadius: 999, padding: "10px 16px", minHeight: 40, whiteSpace: "nowrap", cursor: "pointer", textDecoration: "none", display: "inline-flex", alignItems: "center" }}>Sign out</Link>
       </div>
-
+        }
+        activity={
       <div style={{ ...card, borderRadius: 20, overflow: "hidden" }}>
         <div style={{ padding: `14px ${padX}px`, borderBottom: "1px solid rgba(5,27,53,0.06)" }}>
           <div style={{ ...eyebrow, whiteSpace: "nowrap" }}>Account activity</div>
         </div>
         <WalletAccountActivity />
       </div>
-
+        }
+        trailing={
+      <>
       {profileDefs.map((g) => (
         <div key={g.title} style={{ ...card, borderRadius: 20, overflow: "hidden" }}>
           <div style={{ padding: `14px ${padX}px`, ...eyebrow, borderBottom: "1px solid rgba(5,27,53,0.06)" }}>{g.title}</div>
@@ -7031,6 +7044,9 @@ export default function SeasonTickets({
         </div>
       ))}
       <ProfileSmsPreference />
+      </>
+        }
+      />
     </div>
   );
 
@@ -7940,8 +7956,14 @@ export default function SeasonTickets({
     };
   }, [walletTabTitle]);
 
+  const profilePageReady =
+    displaySection === "profile" ||
+    displaySection === "bank" ||
+    displaySection === "payouts" ||
+    displaySection === "activity";
+
   return (
-    <div className="shopper-page" style={{ width: "100%", maxWidth: "100%", minHeight: "100vh", color: INK, background: "#eef1f8", backgroundImage: "radial-gradient(120% 80% at 50% -10%, #ffffff 0%, #f5f7fc 42%, #e9edf6 100%)", fontFamily: "'Geist', system-ui, -apple-system, sans-serif", WebkitFontSmoothing: "antialiased", ...(showingAccessPass ? { display: "flex", flexDirection: "column", height: "100dvh", maxHeight: "100dvh", overflow: "hidden" } : {}) }}>
+    <div className="shopper-page" {...(profilePageReady ? { "data-bt-scroll-page": "" } : {})} style={{ width: "100%", maxWidth: "100%", minHeight: "100vh", color: INK, background: "#eef1f8", backgroundImage: "radial-gradient(120% 80% at 50% -10%, #ffffff 0%, #f5f7fc 42%, #e9edf6 100%)", fontFamily: "'Geist', system-ui, -apple-system, sans-serif", WebkitFontSmoothing: "antialiased", ...(showingAccessPass ? { display: "flex", flexDirection: "column", height: "100dvh", maxHeight: "100dvh", overflow: "hidden" } : {}) }}>
       <style>{`${shopperPageTypeCss()}\n.st-noscroll::-webkit-scrollbar{width:0;height:0;display:none}.st-noscroll{-ms-overflow-style:none;scrollbar-width:none}.st-sheet-up{animation:stUp .3s cubic-bezier(.22,.61,.36,1)}@keyframes stUp{from{transform:translateY(100%)}to{transform:translateY(0)}}${EVENT_CSS}`}</style>
       {showHeader ? (
         <div style={showingAccessPass ? { flexShrink: 0 } : undefined}>{Header()}</div>
@@ -7974,7 +7996,7 @@ export default function SeasonTickets({
           {displaySection === "giving" && Giving()}
           {displaySection === "profile" && Profile()}
           {displaySection === "bank" && (
-            <WalletBankAccount processing={Boolean(searchParams.get("processing"))} />
+            <WalletBankAccount processing={bankProcessing} />
           )}
           {displaySection === "payouts" && <WalletPayouts />}
           {displaySection === "activity" && <WalletActivityPage />}

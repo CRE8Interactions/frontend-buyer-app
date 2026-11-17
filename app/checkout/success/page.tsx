@@ -37,6 +37,7 @@ import { hideIntercomLauncher } from "@/lib/intercom";
 import { cacheOrgBranding } from "@/lib/orgBrandingCache";
 import {
   completedOrderResaleSummary,
+  packageConfirmationOfferName,
   resolveCompletedOrderFees,
   ticketSelectionSummary,
 } from "@/lib/ticketSummary";
@@ -48,6 +49,7 @@ import {
 } from "@/lib/flexPackDisplay";
 import { holdDocumentTitle, purchaseTabTitle } from "@/lib/seo";
 import { walletSectionHref } from "@/lib/walletNav";
+import { clearWalletNavigation } from "@/lib/walletTransition";
 import {
   formatVenueLocationFromVenue,
   formatVenueStreetAddressFromVenue,
@@ -375,7 +377,6 @@ function CheckoutSuccessPage() {
   const ticketSummary = ticketSelectionSummary(tickets, {
     ...(order?.package
       ? {
-          defaultOffer: "Standard admission",
           gameCount: Array.isArray(order.package.events)
             ? order.package.events.length
             : undefined,
@@ -384,8 +385,10 @@ function CheckoutSuccessPage() {
     seatedGaSection: showsNamedGaSectionTicketCount(tickets, order?.event),
   });
   const purchase = completedOrderResaleSummary(order);
-  // Package default offer and ticket names win; a sold resale falls back to its listing offer.
-  const offerPillName = ticketSummary.offerName || purchase.offerName;
+  // A package badge sits above the seat name. A sold resale falls back to its listing offer.
+  const offerPillName = order?.package
+    ? packageConfirmationOfferName(tickets)
+    : ticketSummary.offerName || purchase.offerName;
   const receiptFeeRows = (receiptSummary?.totals || []).filter(
     (row) => !row.strong && !row.amountDue,
   );
@@ -412,6 +415,9 @@ function CheckoutSuccessPage() {
       ? "You will instantly receive your ticket and store it in your account."
       : "We've emailed your tickets. Create an account to manage them in your wallet.";
   const walletHref = isAuthenticated ? accessPassHref : ticketsHref;
+  const openWallet = () => {
+    clearWalletNavigation();
+  };
   const walletLabel =
     isAuthenticated && isAccessPass ? "View access pass" : "Go to my wallet";
   const walletTheme = sheetWallet ? phoneWalletTheme(sheetWallet) : null;
@@ -525,6 +531,7 @@ function CheckoutSuccessPage() {
           </p>
           <Link
             href={walletHref}
+            onClick={openWallet}
             className="mt-6 inline-flex w-full items-center justify-center rounded-full px-5 py-3 text-[15px] font-semibold no-underline"
             style={{ background: accent, color: branding.theme.buttonTextColor }}
           >
@@ -695,6 +702,7 @@ function CheckoutSuccessPage() {
               </div>
               <Link
                 href={walletHref}
+                onClick={openWallet}
                 className="flex w-full items-center justify-center gap-2.5 rounded-full px-[26px] py-4 text-[16px] font-semibold no-underline"
                 style={{ background: accent, color: branding.theme.buttonTextColor }}
               >

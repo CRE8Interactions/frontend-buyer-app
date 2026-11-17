@@ -131,8 +131,10 @@ export const processFreeOrder = (data: unknown) =>
 export const getPricing = (data: unknown) =>
   instance.post("/orders/pricing", data);
 
-export const getOrder = (orderId: string) =>
-  instance.get(`/orders?filters[orderId][$eq]=${orderId}`);
+export const getOrder = (orderId: string, options?: { signal?: AbortSignal }) =>
+  instance.get(`/orders?filters[orderId][$eq]=${orderId}`, {
+    signal: options?.signal,
+  });
 
 export const getAccessPassesByOrder = (orderId: string) =>
   instance.get(`/access-passes/by-order/${orderId}`);
@@ -318,8 +320,8 @@ export function __resetMyEventsCacheForTests() {
   invalidateMyEventsCache();
 }
 
-export const getMyUpcomingOrders = () =>
-  instance.get("/events/myUpcomingOrders");
+export const getMyUpcomingOrders = (options?: { signal?: AbortSignal }) =>
+  instance.get("/events/myUpcomingOrders", { signal: options?.signal });
 
 export const getEvent = (id: string) =>
   instance.get(`/events/${id}?filters[status][$eq]=on_sale`);
@@ -354,7 +356,8 @@ export const updatePersonalDetails = (data: unknown) =>
 export const createBankAccount = (data: unknown) =>
   instance.post("/payment-information/generate", data);
 
-export const getBankAccount = () => instance.get("/payment-informations/0");
+export const getBankAccount = (options?: { signal?: AbortSignal }) =>
+  instance.get("/payment-informations/0", { signal: options?.signal });
 
 export const savePassApple = () =>
   instance.get("/aaa/apple", { responseType: "blob" });
@@ -622,8 +625,10 @@ export const getTicketsByEvent = (uuid: string) =>
 export const getVenueFlexPacks = (venueUUID: string) =>
   instance.get(`/flex-pack/get-venue-flex-packs?venueUUID=${venueUUID}`);
 
-export const getFlexPack = (uuid: string) =>
-  instance.get(`/flex-pack/get-flex-pack?uuid=${uuid}`);
+export const getFlexPack = (uuid: string, options?: { signal?: AbortSignal }) =>
+  instance.get(`/flex-pack/get-flex-pack?uuid=${uuid}`, {
+    signal: options?.signal,
+  });
 
 export const placeFlexPackIntoCart = (flexPackId: string | number) =>
   instance.post(`/flex-pack/add-to-cart?id=${flexPackId}`, withCallerCart({}));
