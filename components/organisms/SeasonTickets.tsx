@@ -2115,6 +2115,15 @@ export default function SeasonTickets({
   const routedAccessPassUUID = route.accessPassUUID;
   const section = walletSectionFromPath(pathname);
   const displaySection = walletSectionFromPath(pendingNavPath || pathname);
+  const profileGroup = walletNavSectionFromPath(pendingNavPath || pathname);
+  // Arriving from Tickets, Transfers, Listings, or Giving refetches Profile.
+  // Activity, bank, and payouts stay inside Profile and reuse that visit.
+  const [profileVisit, setProfileVisit] = useState(0);
+  const [profileGroupTrack, setProfileGroupTrack] = useState(profileGroup);
+  if (profileGroup !== profileGroupTrack) {
+    setProfileGroupTrack(profileGroup);
+    if (profileGroup === "profile") setProfileVisit((visit) => visit + 1);
+  }
   const walletNavPending = isWalletNavigationPending(pathname, pendingNavPath);
   const resolvedInitialScreen =
     initialScreen !== "events"
@@ -2839,6 +2848,15 @@ export default function SeasonTickets({
     reloadResaleListings,
     section,
   ]);
+
+  const prevDisplayedSectionRef = useRef(displaySection);
+  useLayoutEffect(() => {
+    const prevDisplayed = prevDisplayedSectionRef.current;
+    if (prevDisplayed !== displaySection && walletApiHydratedInBrowserSession) {
+      cancelInFlightWalletSectionReloads();
+    }
+    prevDisplayedSectionRef.current = displaySection;
+  }, [cancelInFlightWalletSectionReloads, displaySection]);
 
   const prevWalletSectionRef = useRef(section);
   useLayoutEffect(() => {
@@ -6996,6 +7014,7 @@ export default function SeasonTickets({
     <div style={{ maxWidth: 1100, margin: "0 auto", padding: bodyPad, display: "flex", flexDirection: "column", gap: 18 }}>
       <h1 style={{ margin: 0, fontSize: fluidSize(42), fontWeight: 600, letterSpacing: "-0.03em", lineHeight: browseLeading("h2") }}>Profile</h1>
       <WalletProfileBody
+        reloadKey={profileVisit}
         leading={
       <div style={{ ...card, borderRadius: 24, boxShadow: "0 1px 2px rgba(5,27,53,0.05), 0 20px 46px -22px rgba(5,27,53,0.45)", padding: cardPad, display: "flex", alignItems: "center", gap: 16 }}>
         <div style={{ width: 56, height: 56, borderRadius: 999, background: ACCENT, color: INK, display: "flex", alignItems: "center", justifyContent: "center", fontSize: fluidSize(19), fontWeight: 600, flexShrink: 0 }}>{isHolder ? "HC" : (email[0] || "?").toUpperCase()}</div>
@@ -7011,7 +7030,7 @@ export default function SeasonTickets({
         <div style={{ padding: `14px ${padX}px`, borderBottom: "1px solid rgba(5,27,53,0.06)" }}>
           <div style={{ ...eyebrow, whiteSpace: "nowrap" }}>Account activity</div>
         </div>
-        <WalletAccountActivity />
+        <WalletAccountActivity reloadKey={profileVisit} />
       </div>
         }
         trailing={
@@ -7999,7 +8018,7 @@ export default function SeasonTickets({
             <WalletBankAccount processing={bankProcessing} />
           )}
           {displaySection === "payouts" && <WalletPayouts />}
-          {displaySection === "activity" && <WalletActivityPage />}
+          {displaySection === "activity" && <WalletActivityPage reloadKey={profileVisit} />}
         </>
       )}
 

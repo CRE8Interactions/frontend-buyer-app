@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import Link from "next/link";
 import InAppBackLink from "@/components/molecules/InAppBackLink";
 import moment from "moment-timezone";
@@ -418,14 +418,19 @@ let activitySnapshot: ActivitySnapshot | null = null;
 let activityRequest: Promise<ActivitySnapshot> | null = null;
 let activityGeneration = 0;
 let activityAbort: AbortController | null = null;
+let activitySubscribers = 0;
+/** Profile visit that already loaded. Inner profile pages reuse it. */
+let loadedProfileVisit = 0;
 const activityListeners = new Set<(snapshot: ActivitySnapshot) => void>();
 
 export function __resetActivitySnapshotForTests() {
   activityAbort?.abort();
   activityAbort = null;
+  activitySubscribers = 0;
   activitySnapshot = null;
   activityRequest = null;
   activityGeneration += 1;
+  loadedProfileVisit = 0;
   activityListeners.clear();
 }
 
@@ -443,9 +448,10 @@ function isPurchaseActivity(invoice: Invoice) {
   return source !== "ticket_assignment" && source !== "transfer";
 }
 
-function loadActivitySnapshot(options?: { refresh?: boolean }) {
-  if (!options?.refresh && activitySnapshot) return Promise.resolve(activitySnapshot);
-  if (!options?.refresh && activityRequest) return activityRequest;
+function loadActivitySnapshot(options?: { refresh?: boolean; force?: boolean }) {
+  const force = Boolean(options?.force);
+  if (!options?.refresh && !force && activitySnapshot) return Promise.resolve(activitySnapshot);
+  if (!options?.refresh && !force && activityRequest) return activityRequest;
 
   activityAbort?.abort();
   const controller = new AbortController();
@@ -453,7 +459,7 @@ function loadActivitySnapshot(options?: { refresh?: boolean }) {
   const signal = controller.signal;
   const generation = ++activityGeneration;
   const previous = activitySnapshot;
-  const refreshing = Boolean(options?.refresh && previous);
+  const refreshing = Boolean(options?.refresh && !force && previous);
   let bankLast4 = previous?.last4 || "";
   // The bank lookup can sit open while the shopper links an account. Profile
   // still shows purchases; the account number fills in when the bank returns.
@@ -477,7 +483,7 @@ function loadActivitySnapshot(options?: { refresh?: boolean }) {
       ? Promise.resolve(null)
       : Promise.resolve().then(() => getMyListings({ signal })).catch(() => ({ data: [] })),
   ]).then(([ordersResult, listings]) => {
-    if (refreshing && !ordersResult.ok && previous) {
+    if ((refreshing || force) && !ordersResult.ok && previous) {
       if (generation === activityGeneration) publishActivitySnapshot(previous);
       return activitySnapshot ?? previous;
     }
@@ -507,12 +513,21 @@ function loadActivitySnapshot(options?: { refresh?: boolean }) {
   return activityRequest;
 }
 
-function useActivityData() {
-  const cached = activitySnapshot;
+function useActivityData(options?: { reloadKey?: number; refreshOnMount?: boolean }) {
+  const reloadKey = options?.reloadKey ?? 0;
+  const refreshOnMount = options?.refreshOnMount !== false;
+  const visitRef = useRef<{ key: number; force: boolean } | null>(null);
+  if (!visitRef.current || visitRef.current.key !== reloadKey) {
+    const nextForce = reloadKey > loadedProfileVisit;
+    if (nextForce) loadedProfileVisit = reloadKey;
+    visitRef.current = { key: reloadKey, force: nextForce };
+  }
+  const force = visitRef.current.force;
+  const cached = force ? null : activitySnapshot;
   const [ready, setReady] = useState(Boolean(cached));
-  const [invoices, setInvoices] = useState<Invoice[]>(cached?.invoices ?? []);
-  const [sales, setSales] = useState<SoldListing[]>(cached?.sales ?? []);
-  const [last4, setLast4] = useState(cached?.last4 ?? "");
+  const [invoices, setInvoices] = useState<Invoice[]>(cached?.invoices ?? activitySnapshot?.invoices ?? []);
+  const [sales, setSales] = useState<SoldListing[]>(cached?.sales ?? activitySnapshot?.sales ?? []);
+  const [last4, setLast4] = useState(cached?.last4 ?? activitySnapshot?.last4 ?? "");
 
   useEffect(() => {
     let cancelled = false;
@@ -523,16 +538,32 @@ function useActivityData() {
       setLast4(snapshot.last4);
       setReady(true);
     };
+    activitySubscribers += 1;
     activityListeners.add(apply);
-    // A visit that started before this mount can finish between render and this
-    // effect. Apply that result now, then refresh so a new purchase is included.
-    if (activitySnapshot) apply(activitySnapshot);
-    void loadActivitySnapshot(activitySnapshot ? { refresh: true } : undefined).then(apply);
+    // A new arrival from outside Profile waits for a fetch. Pages inside
+    // Profile mount again with the same visit and keep what is already loaded.
+    if (force) {
+      setReady(false);
+      void loadActivitySnapshot({ force: true }).then(apply);
+    } else if (activitySnapshot) {
+      apply(activitySnapshot);
+      if (refreshOnMount) {
+        void loadActivitySnapshot({ refresh: true }).then(apply);
+      }
+    } else {
+      void loadActivitySnapshot().then(apply);
+    }
     return () => {
       cancelled = true;
       activityListeners.delete(apply);
+      activitySubscribers = Math.max(0, activitySubscribers - 1);
+      if (activitySubscribers === 0) {
+        activityAbort?.abort();
+        activityAbort = null;
+        activityGeneration += 1;
+      }
     };
-  }, []);
+  }, [force, refreshOnMount]);
 
   return { ready, invoices, sales, last4 };
 }
@@ -542,12 +573,15 @@ export function WalletProfileBody({
   leading,
   activity,
   trailing,
+  reloadKey = 0,
 }: {
   leading: ReactNode;
   activity: ReactNode;
   trailing: ReactNode;
+  /** Increments each time the shopper opens /wallet/my-profile. */
+  reloadKey?: number;
 }) {
-  const { ready } = useActivityData();
+  const { ready } = useActivityData({ reloadKey, refreshOnMount: false });
   if (!ready) {
     return <WalletTicketsBlocksLoading routeDestination label="Loading profile" />;
   }
@@ -714,8 +748,15 @@ async function downloadActivityReceipt(invoice: Invoice) {
   );
 }
 
-export default function WalletAccountActivity() {
-  const { ready, invoices, sales, last4 } = useActivityData();
+export default function WalletAccountActivity({
+  reloadKey,
+}: {
+  /** Set on the profile page so inner profile pages do not fetch again. */
+  reloadKey?: number;
+} = {}) {
+  const { ready, invoices, sales, last4 } = useActivityData(
+    reloadKey == null ? undefined : { reloadKey, refreshOnMount: false },
+  );
   const [downloadingId, setDownloadingId] = useState<string | null>(null);
   const [receiptError, setReceiptError] = useState("");
 
@@ -851,8 +892,15 @@ function feedEntries(invoices: Invoice[], sales: SoldListing[], filter: Activity
   return entries.sort((a, b) => b.at - a.at);
 }
 
-export function WalletActivityPage() {
-  const { ready, invoices, sales, last4 } = useActivityData();
+export function WalletActivityPage({
+  reloadKey,
+}: {
+  /** Set on the profile page so inner profile pages do not fetch again. */
+  reloadKey?: number;
+} = {}) {
+  const { ready, invoices, sales, last4 } = useActivityData(
+    reloadKey == null ? undefined : { reloadKey, refreshOnMount: false },
+  );
   const [filter, setFilter] = useState<ActivityFilter>("all");
   const [downloadingId, setDownloadingId] = useState<string | null>(null);
   const [receiptError, setReceiptError] = useState("");
@@ -887,7 +935,7 @@ export function WalletActivityPage() {
 
   return (
     <div style={{ maxWidth: 1100, margin: "0 auto", padding: "28px 20px 48px", display: "flex", flexDirection: "column", gap: 18, color: NAVY }}>
-      <InAppBackLink href="/wallet/my-profile/" aria-label="Back to profile" style={{ alignSelf: "flex-start", display: "inline-flex", alignItems: "center", gap: 8, fontSize: 14, fontWeight: 600, color: NAVY, background: "#fff", border: "1px solid rgba(5,27,53,0.16)", borderRadius: 999, padding: "9px 16px 9px 12px", textDecoration: "none" }}>
+      <InAppBackLink href="/wallet/my-profile/" aria-label="Back to profile" toProfile style={{ alignSelf: "flex-start", display: "inline-flex", alignItems: "center", gap: 8, fontSize: 14, fontWeight: 600, color: NAVY, background: "#fff", border: "1px solid rgba(5,27,53,0.16)", borderRadius: 999, padding: "9px 16px 9px 12px", textDecoration: "none" }}>
         <ActivityBackArrow />
         Back to profile
       </InAppBackLink>

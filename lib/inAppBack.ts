@@ -1,3 +1,5 @@
+import { beginWalletNavigation } from "@/lib/walletTransition";
+
 const IN_APP_BACK_ATTR = "data-in-app-back";
 
 /** Browse is the shopper's home — Back never lands on the marketing page. */
@@ -16,6 +18,7 @@ export function backFallbackHref(href?: string | null) {
 type AppRouterLike = {
   back: () => void;
   push: (href: string) => void;
+  replace?: (href: string) => void;
 };
 
 /** Next App Router stores an increasing `idx` on history.state after client nav. */
@@ -33,6 +36,17 @@ export function canGoBackInApp() {
 /** Call after an in-app route change so Back can use history instead of a new Link. */
 export function markInAppNavigation() {
   inAppNavigations += 1;
+}
+
+/** Open the labeled destination without using browser history. Profile subpages must not pop an earlier wallet tab. */
+export function pushBackTarget(href: string, router?: AppRouterLike) {
+  const dest = backFallbackHref(href);
+  beginWalletNavigation(dest);
+  if (router) {
+    router.push(dest);
+    return;
+  }
+  window.location.assign(dest);
 }
 
 export function goBack(fallbackHref: string, router?: AppRouterLike) {
@@ -70,12 +84,22 @@ export function handleInAppBackClick(
 
 export function inAppBackAnchorProps<
   E extends { preventDefault: () => void } = { preventDefault: () => void },
->(href: string, router: AppRouterLike, onClick?: (event: E) => void) {
+>(
+  href: string,
+  router: AppRouterLike,
+  onClick?: (event: E) => void,
+  options?: { toProfile?: boolean },
+) {
   return {
     href: backFallbackHref(href),
     [IN_APP_BACK_ATTR]: "true",
     onClick: (event: E) => {
       onClick?.(event);
+      if (options?.toProfile) {
+        event.preventDefault();
+        pushBackTarget(href, router);
+        return;
+      }
       handleInAppBackClick(event, href, router);
     },
   };

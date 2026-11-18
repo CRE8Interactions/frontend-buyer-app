@@ -11,12 +11,15 @@ export default function InAppBackLink({
   "aria-label": ariaLabel = "Back",
   className,
   style,
+  toProfile = false,
   children,
 }: {
   href: string;
   "aria-label"?: string;
   className?: string;
   style?: CSSProperties;
+  /** Push My Profile instead of popping browser history, which can land on the wrong wallet tab. */
+  toProfile?: boolean;
   children: ReactNode;
 }) {
   const router = useRouter();
@@ -25,7 +28,7 @@ export default function InAppBackLink({
       className={className}
       style={style}
       aria-label={ariaLabel}
-      {...inAppBackAnchorProps(href, router)}
+      {...inAppBackAnchorProps(href, router, undefined, { toProfile })}
     >
       {children}
     </Link>

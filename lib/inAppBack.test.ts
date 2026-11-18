@@ -4,6 +4,7 @@ import {
   canGoBackInApp,
   goBack,
   handleInAppBackClick,
+  pushBackTarget,
   inAppBackAnchorProps,
   isInAppBackAnchor,
   markInAppNavigation,
@@ -13,6 +14,15 @@ describe("inAppBack", () => {
   afterEach(() => {
     __resetInAppBackForTests();
     vi.unstubAllGlobals();
+  });
+
+  it("opens My Profile from a profile subpage instead of the previous wallet tab", () => {
+    const router = { back: vi.fn(), push: vi.fn(), replace: vi.fn() };
+    markInAppNavigation();
+    pushBackTarget("/wallet/my-profile/", router);
+    expect(router.push).toHaveBeenCalledWith("/wallet/my-profile/");
+    expect(router.back).not.toHaveBeenCalled();
+    expect(router.replace).not.toHaveBeenCalled();
   });
 
   it("uses history back after an in-app navigation when the fallback is not browse", () => {
