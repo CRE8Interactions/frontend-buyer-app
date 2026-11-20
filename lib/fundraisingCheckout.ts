@@ -1,12 +1,3 @@
-import {
-  buildPaymentIntentRequest as buildBasePaymentIntentRequest,
-  paymentEventFromCart,
-  type PaymentIntentGuest,
-} from "@/lib/checkoutPaymentIntent";
-
-export { paymentEventFromCart };
-export type { PaymentIntentGuest };
-
 const EMPTY_FUNDRAISING_DONATION_PRICING = {
   donationAmount: 0,
   platformFee: 0,
@@ -133,9 +124,19 @@ export const buildPaymentIntentRequest = (
   cart: CartLike,
   event: unknown,
   fundraisingPayload: ReturnType<typeof buildFundraisingPayload>,
-  guest?: PaymentIntentGuest | null,
 ) => ({
-  ...buildBasePaymentIntentRequest(cart, event, guest),
+  ip: cart.ipAddress,
+  cartId: cart.id,
+  carted: true,
+  cartTickets: cart.tickets,
+  totalFromCart:
+    cart?.flex_pack || cart?.access_pass_template
+      ? Number(cart.total || 0) + Number(cart.totalTax || 0)
+      : cart.total,
+  event,
+  flex_pack: cart?.flex_pack,
+  access_pass_template: cart?.access_pass_template,
+  cart,
   ...(fundraisingPayload ? { fundraising: fundraisingPayload } : {}),
 });
 

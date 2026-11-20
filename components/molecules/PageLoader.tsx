@@ -1,11 +1,12 @@
-import Spinner from "@/components/atoms/Spinner";
+import LoaderQuip from "@/components/atoms/LoaderQuip";
+import LottieLoader from "@/components/atoms/LottieLoader";
 
 /** Centered branded loading state for page-level fetches and route transitions. */
 export default function PageLoader({
   message,
   label = "Loading",
   className = "",
-  size = 96,
+  size = 180,
 }: {
   message?: string;
   label?: string;
@@ -19,9 +20,10 @@ export default function PageLoader({
       aria-busy="true"
       aria-label={label}
     >
-      <Spinner size={size} variant="assemble" label={label} />
+      <LottieLoader size={size} label={label} />
+      <LoaderQuip className="text-[15px] font-medium text-foreground" />
       {message ? (
-        <p className="text-[14px] text-[#9DA2B3]">{message}</p>
+        <p className="text-[13px] text-ink2">{message}</p>
       ) : null}
     </div>
   );

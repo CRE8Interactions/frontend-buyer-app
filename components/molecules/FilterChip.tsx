@@ -25,8 +25,8 @@ export default function FilterChip({
       onClick={onClick}
       aria-pressed={active}
       className={`inline-flex shrink-0 items-center gap-2 rounded-full border px-4 py-2 text-[13.5px] font-semibold transition-colors ${active
-          ? "border-transparent bg-[#a6e773] text-[#051B35]"
-          : "border-white/15 bg-white/[0.04] text-[#BCBFCC] hover:bg-white/[0.1] hover:text-white"
+          ? "border-transparent bg-primary text-primary-foreground"
+          : "border-white/15 bg-white/[0.04] text-ink3 hover:bg-white/[0.1] hover:text-white"
         } ${className}`}
     >
       {icon}

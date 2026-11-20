@@ -1,4 +1,3 @@
-import { isSectionHidden } from "@/lib/hiddenSections";
 import type { TicketGroup } from "@/stores/filtersStore";
 import type { SeatmapMapping } from "@/lib/seatmapLookups";
 
@@ -15,26 +14,9 @@ export type PackageForSeatmap = {
   name?: string;
   minQuantity?: number;
   maxQuantity?: number;
-  multipleOf?: number;
-  incrementsOf?: number;
-  limit?: number;
   pricingTiers?: { price?: number }[];
   package_tickets?: TicketGroup[];
 };
-
-function packageQuantitySource(eventPackage: PackageForSeatmap) {
-  return {
-    id: eventPackage.id,
-    name: eventPackage.name,
-    minQuantity: eventPackage.minQuantity,
-    maxQuantity: eventPackage.maxQuantity,
-    multipleOf: eventPackage.multipleOf ?? eventPackage.incrementsOf,
-    incrementsOf: eventPackage.incrementsOf,
-    limit: eventPackage.limit,
-  };
-}
-
-export { packageQuantitySource };
 
 /**
  * Build seat + section lookup tables for season packages.
@@ -58,7 +40,6 @@ export function createPackageLookupTables(
       seatedTickets,
       eventPackage,
       purchaseLog,
-      mapping,
     ),
     seatOffersLookupTable: {} as Record<string, TicketGroup[]>,
     sectionLookupTable: createPackageSectionLookupTable(
@@ -70,38 +51,25 @@ export function createPackageLookupTables(
   };
 }
 
-function packageTicketSeatIds(ticket: TicketGroup): string[] {
-  const ids = new Set<string>();
-  if (ticket.seatId != null) ids.add(String(ticket.seatId));
-  for (const seatId of (ticket.seatIds as Array<string | number> | undefined) || []) {
-    ids.add(String(seatId));
-  }
-  return [...ids];
-}
-
 function createPackageSeatLookupTable(
   seatedTickets: TicketGroup[],
   eventPackage: PackageForSeatmap,
   purchaseLog: PackagePurchaseLog | null | undefined,
-  mapping: SeatmapMapping | null | undefined,
 ) {
   const packageTierPrice = eventPackage.pricingTiers?.[0]?.price;
   const lookupTable: Record<string, TicketGroup> = {};
 
   seatedTickets.forEach((ticket) => {
-    if (isSectionHidden(mapping?.sections, ticket.sectionId)) return;
-    const seatIds = packageTicketSeatIds(ticket);
-    if (!seatIds.length) return;
-    seatIds.forEach((seatId) => {
-      lookupTable[seatId] = {
-        ...ticket,
-        seatId,
-        GA: false,
-        price: packageTierPrice ?? ticket.price,
-        resale: false,
-        package: packageQuantitySource(eventPackage),
-      };
-    });
+    if (ticket.seatId == null) return;
+    lookupTable[String(ticket.seatId)] = {
+      ...ticket,
+      GA: false,
+      price: packageTierPrice ?? ticket.price,
+      resale: false,
+      offer: {
+        name: eventPackage.name,
+      },
+    };
   });
 
   (purchaseLog?.sold_package_tickets || []).forEach((soldSeatId) => {
@@ -123,7 +91,6 @@ function createPackageSectionLookupTable(
   tickets.forEach((ticket) => {
     const isGA = Boolean(ticket.GA || ticket.generalAdmission);
     if (!isGA || ticket.sectionId == null) return;
-    if (isSectionHidden(mapping?.sections, ticket.sectionId)) return;
     const sectionId = String(ticket.sectionId);
 
     if (!lookupTable[sectionId]) {
@@ -132,7 +99,17 @@ function createPackageSectionLookupTable(
           ...ticket,
           GA: true,
           price: packageTierPrice ?? ticket.price,
-          package: packageQuantitySource(eventPackage),
+          package: {
+            id: eventPackage.id,
+            name: eventPackage.name,
+            minQuantity: eventPackage.minQuantity,
+            maxQuantity: eventPackage.maxQuantity,
+          },
+          offer: {
+            name: eventPackage.name,
+            minQuantity: eventPackage.minQuantity,
+            maxQuantity: eventPackage.maxQuantity,
+          },
           availableCount: 1,
         },
       ];

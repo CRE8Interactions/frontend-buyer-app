@@ -1,32 +1,22 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useEffect, useState } from "react";
 import AppShell from "@/components/templates/AppShell";
 import BackChip from "@/components/molecules/BackChip";
 import EmptyState from "@/components/molecules/EmptyState";
-import PageLoader from "@/components/molecules/PageLoader";
-import { BrandedLoader } from "@/components/molecules/RouteLoader";
+import PageSkeleton from "@/components/molecules/PageSkeleton";
 import { cardCls } from "@/components/molecules/Card";
-import { ButtonBusyContents } from "@/components/atoms/BrandedActionButton";
 import Button from "@/components/atoms/Button";
 import { ArrowRight } from "@/components/atoms/icons";
 import { getAccessPassTemplate, placeAccessPassIntoCart } from "@/lib/api";
 import { useAuth, setLastKnown } from "@/lib/auth";
-import {
-  checkoutHref,
-  rememberCheckoutReturnPath,
-  setStoredCart,
-} from "@/lib/cart";
-import { getLoaderBranding } from "@/lib/orgBrandingCache";
-import { beginRouteTransition } from "@/lib/routeTransition";
+import { setStoredCart } from "@/lib/cart";
 import {
   formatCurrency,
   getSingularOrPluralWord,
   imageUrl,
   type ApiImage,
 } from "@/lib/helpers";
-import { accessPassNameTabTitle } from "@/lib/seo";
 
 type AccessPassTemplate = {
   id: number | string;
@@ -50,23 +40,10 @@ export default function AccessPassDetailClient({
   backHref: string;
 }) {
   const { isAuthenticated, ready } = useAuth();
-  const router = useRouter();
   const [accessPass, setAccessPass] = useState<AccessPassTemplate | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [buying, setBuying] = useState(false);
-  const [leavingForLogin, setLeavingForLogin] = useState(false);
-  const leavingForLoginRef = useRef(false);
-
-  useEffect(() => {
-    const title = accessPassNameTabTitle(accessPass?.name);
-    if (!title) return;
-    const previous = document.title;
-    document.title = title;
-    return () => {
-      if (document.title === title) document.title = previous;
-    };
-  }, [accessPass?.name]);
 
   useEffect(() => {
     let cancelled = false;
@@ -88,15 +65,11 @@ export default function AccessPassDetailClient({
     };
   }, [uuid]);
 
-  const goLogin = useCallback(() => {
-    if (leavingForLoginRef.current) return;
-    leavingForLoginRef.current = true;
-    setLeavingForLogin(true);
+  const goLogin = () => {
     const from = window.location.pathname + window.location.search;
     setLastKnown(from);
-    // Soft navigation: the loader stays painted and the tab does not spin.
-    router.replace(`/login/?from=${encodeURIComponent(from)}`);
-  }, [router]);
+    window.location.href = `/login/?from=${encodeURIComponent(from)}`;
+  };
 
   const buy = async () => {
     if (!accessPass) return;
@@ -115,11 +88,8 @@ export default function AccessPassDetailClient({
         (res.data as { id?: string | number; cartId?: string | number })?.id ??
         (res.data as { cartId?: string | number })?.cartId;
       if (cartId != null) {
-        rememberCheckoutReturnPath();
         setStoredCart(cartId, 1);
-        const href = checkoutHref(cartId);
-        beginRouteTransition(href);
-        router.push(href);
+        window.location.href = `/checkout/?cartId=${encodeURIComponent(String(cartId))}`;
         return;
       }
       setError("Cart could not be created. Please try again.");
@@ -132,28 +102,16 @@ export default function AccessPassDetailClient({
 
   const eventCount = accessPass?.events?.length || 0;
 
-  if (leavingForLogin) {
-    return (
-      <BrandedLoader
-        branding={getLoaderBranding(
-          typeof window !== "undefined" ? window.location.pathname : "",
-        )}
-        fallback="blocktickets"
-      />
-    );
-  }
-
   return (
     <AppShell>
       <div className="mx-auto max-w-[720px] pb-16">
         <BackChip href={backHref} />
 
         {loading ? (
-          <PageLoader
+          <PageSkeleton variant="detail"
             message="Loading access pass…"
             label="Loading access pass"
-            className="mt-10 min-h-[30vh]"
-          />
+            className="mt-10 min-h-[30vh]" />
         ) : !accessPass ? (
           <div className="mt-10">
             <EmptyState
@@ -180,7 +138,7 @@ export default function AccessPassDetailClient({
             <div
               className={`${cardCls} mt-7 flex flex-col gap-5 p-5 sm:flex-row sm:items-start sm:p-6`}
             >
-              <div className="relative flex h-28 w-28 shrink-0 items-center justify-center overflow-hidden rounded-xl bg-[#06203c]">
+              <div className="relative flex h-28 w-28 shrink-0 items-center justify-center overflow-hidden rounded-xl bg-card">
                 {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img
                   src={imageUrl(accessPass.artwork)}
@@ -190,26 +148,26 @@ export default function AccessPassDetailClient({
               </div>
               <div className="min-w-0 flex-1">
                 {accessPass.organization?.name && (
-                  <p className="text-[13px] font-semibold uppercase tracking-[0.08em] text-[#9DA2B3]">
+                  <p className="text-[13px] font-semibold uppercase tracking-[0.08em] text-ink2">
                     {accessPass.organization.name}
                   </p>
                 )}
-                <h1 className="mt-1 text-[36px] font-semibold tracking-[-0.02em]">
+                <h1 className="mt-1 text-[clamp(26px,3.2vw,36px)] font-semibold tracking-[-0.02em]">
                   {accessPass.name}
                 </h1>
                 {accessPass.venue?.name && (
-                  <p className="mt-1.5 text-[14px] text-[#BCBFCC]">
+                  <p className="mt-1.5 text-[14px] text-ink3">
                     {accessPass.venue.name}
                   </p>
                 )}
                 {eventCount > 0 && (
-                  <p className="mt-1 text-[13px] text-[#9DA2B3]">
+                  <p className="mt-1 text-[13px] text-ink2">
                     Includes access to {eventCount}{" "}
                     {getSingularOrPluralWord(eventCount, "event")}
                   </p>
                 )}
                 {accessPass.description && (
-                  <p className="mt-3 text-[14px] leading-relaxed text-[#9DA2B3]">
+                  <p className="mt-3 text-[14px] leading-relaxed text-ink2">
                     {accessPass.description}
                   </p>
                 )}
@@ -220,7 +178,7 @@ export default function AccessPassDetailClient({
               className={`${cardCls} mt-8 flex flex-col gap-4 p-5 sm:flex-row sm:items-center sm:justify-between sm:p-6`}
             >
               <div>
-                <p className="text-[14px] text-[#9DA2B3]">
+                <p className="text-[14px] text-ink2">
                   Total{" "}
                   <span className="font-semibold text-white">
                     {formatCurrency(accessPass.price)}
@@ -230,25 +188,21 @@ export default function AccessPassDetailClient({
               <Button
                 onClick={buy}
                 disabled={buying || accessPass.isSoldOut}
-                aria-busy={buying || undefined}
-                className="inline-flex w-full items-center justify-center gap-2.5 sm:w-auto disabled:opacity-40"
+                className="w-full sm:w-auto disabled:cursor-not-allowed disabled:opacity-40"
               >
-                <ButtonBusyContents
-                  loading={buying}
-                  loadingLabel="Adding…"
-                >
-                  {accessPass.isSoldOut
+                {buying
+                  ? "Adding…"
+                  : accessPass.isSoldOut
                     ? "Sold out"
                     : isAuthenticated
                       ? "Checkout"
                       : "Log in to buy"}{" "}
-                  {!accessPass.isSoldOut && <ArrowRight className="arrow" />}
-                </ButtonBusyContents>
+                {!accessPass.isSoldOut && <ArrowRight />}
               </Button>
             </div>
 
             {error && (
-              <p className="mt-4 text-[14px] text-[var(--bt-error-on-dark)]" role="alert">
+              <p className="mt-4 text-[14px] text-destructive" role="alert">
                 {error}
               </p>
             )}

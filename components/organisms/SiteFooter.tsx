@@ -1,5 +1,3 @@
-import Link from "next/link";
-
 /**
  * SiteFooter — the shared footer, ported from the Claude Design "Browse
  * Page.dc.html". Dark navy panel with the tagline, Company / Legal / Support
@@ -8,10 +6,9 @@ import Link from "next/link";
  * page and the dark marketing pages (Our Story, etc.).
  */
 
-const FOOT_COLS: {
-  title: string;
-  links: { label: string; href: string; newTab?: boolean }[];
-}[] = [
+import CopyrightYear from "@/components/atoms/CopyrightYear";
+
+const FOOT_COLS: { title: string; links: { label: string; href: string }[] }[] = [
   { title: "Company", links: [
     { label: "Home", href: "/" },
     { label: "Our Story", href: "/our-story" },
@@ -19,14 +16,14 @@ const FOOT_COLS: {
     { label: "Sell with us", href: "/sell" },
   ] },
   { title: "Legal", links: [
-    { label: "Purchase Policy", href: "/purchase-policy", newTab: true },
-    { label: "Terms & Conditions", href: "/terms-conditions", newTab: true },
-    { label: "Privacy Policy", href: "/privacy-policy", newTab: true },
-    { label: "Disclaimer", href: "/disclaimer", newTab: true },
-    { label: "Cookies Policy", href: "/cookies-policy", newTab: true },
+    { label: "Purchase Policy", href: "/purchase-policy" },
+    { label: "Terms & Conditions", href: "/terms-conditions" },
+    { label: "Privacy Policy", href: "/privacy-policy" },
+    { label: "Disclaimer", href: "/disclaimer" },
+    { label: "Cookies Policy", href: "/cookies-policy" },
   ] },
   { title: "Support", links: [
-    { label: "Help Center", href: "https://help.blocktickets.xyz/en/" },
+    { label: "Help Center", href: "#" },
   ] },
 ];
 
@@ -53,23 +50,9 @@ export default function SiteFooter() {
           {FOOT_COLS.map((col) => (
             <div key={col.title} style={{ display: "flex", flexDirection: "column", gap: 12, minWidth: 130 }}>
               <div style={{ fontSize: 10, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.12em", color: "#7e8fa8" }}>{col.title}</div>
-              {col.links.map((l) => {
-                const offSite = /^https?:\/\//.test(l.href);
-                const newTab = offSite || l.newTab;
-                const tabProps = newTab
-                  ? { target: "_blank" as const, rel: "noopener noreferrer" }
-                  : {};
-                const style = { color: "#b8c6dc", textDecoration: "none" };
-                return offSite ? (
-                  <a key={l.label} href={l.href} style={style} {...tabProps}>
-                    {l.label}
-                  </a>
-                ) : (
-                  <Link key={l.label} href={l.href} style={style} {...tabProps}>
-                    {l.label}
-                  </Link>
-                );
-              })}
+              {col.links.map((l) => (
+                <a key={l.label} href={l.href} style={{ color: "#b8c6dc", textDecoration: "none" }}>{l.label}</a>
+              ))}
             </div>
           ))}
         </div>
@@ -86,7 +69,7 @@ export default function SiteFooter() {
               ))}
             </div>
           </div>
-          <div style={{ fontSize: 12, color: "#7e8fa8" }}>© 2026 Blocktickets. All rights reserved · All prices shown all-in.</div>
+          <div style={{ fontSize: 12, color: "#7e8fa8" }}>© <CopyrightYear /> Blocktickets. All rights reserved · All prices shown all-in.</div>
         </div>
       </div>
     </footer>

@@ -3,7 +3,6 @@
 import type { ReactNode } from "react";
 import Pill from "@/components/atoms/Pill";
 import { Check, Accessibility } from "@/components/atoms/icons";
-import { getAccessibleLabel } from "@/lib/ticketAccessibility";
 
 /**
  * ListingRow — one purchasable listing as a dense, price-first rail row:
@@ -24,7 +23,6 @@ export default function ListingRow({
   tier = 0,
   thumb,
   accessible = false,
-  accessibleType,
   bestDeal = false,
   selected = false,
   onClick,
@@ -42,7 +40,6 @@ export default function ListingRow({
   /** Seat locator visual (e.g. <SeatMapThumb/>); replaces the tier marker. */
   thumb?: ReactNode;
   accessible?: boolean;
-  accessibleType?: string;
   bestDeal?: boolean;
   selected?: boolean;
   onClick?: () => void;
@@ -50,18 +47,6 @@ export default function ListingRow({
   onHover?: (hovering: boolean) => void;
 }) {
   const qty = qtyMin === qtyMax ? `${qtyMin} ticket${qtyMin === 1 ? "" : "s"}` : `${qtyMin}–${qtyMax} tickets`;
-  const accessibleLabel = getAccessibleLabel({ accessible, accessibleType });
-  const leftThumb = thumb ? (
-        <span className="flex h-[46px] w-[62px] shrink-0 items-center justify-center overflow-hidden rounded-lg border border-white/[0.08] bg-[#051B35]" aria-hidden>
-          {thumb}
-        </span>
-  ) : (
-        <span
-          className="h-3 w-3 shrink-0 rounded-[3px]"
-          style={{ background: selected ? "#a6e773" : TIER_FILL[tier] ?? TIER_FILL[0] }}
-          aria-hidden
-        />
-  );
   return (
     <button
       type="button"
@@ -69,28 +54,38 @@ export default function ListingRow({
       onMouseEnter={onHover ? () => onHover(true) : undefined}
       onMouseLeave={onHover ? () => onHover(false) : undefined}
       aria-pressed={selected}
-      className={`flex w-full items-center gap-3.5 px-4 py-3 text-left transition-colors sm:px-5 ${selected ? "bg-[#a6e773]/[0.1]" : "hover:bg-white/[0.04]"
+      className={`flex w-full items-center gap-3.5 px-4 py-3 text-left transition-colors sm:px-5 ${selected ? "bg-primary/[0.1]" : "hover:bg-white/[0.04]"
         }`}
     >
-      {leftThumb}
+      {thumb ? (
+        <span className="flex h-[46px] w-[62px] shrink-0 items-center justify-center overflow-hidden rounded-lg border border-white/[0.08] bg-background" aria-hidden>
+          {thumb}
+        </span>
+      ) : (
+        <span
+          className="h-3 w-3 shrink-0 rounded-[3px]"
+          style={{ background: selected ? "var(--green)" : TIER_FILL[tier] ?? TIER_FILL[0] }}
+          aria-hidden
+        />
+      )}
       <span className="min-w-0 flex-1">
         <span className="flex flex-wrap items-center gap-2">
-          {accessibleLabel && (
-            <span role="img" aria-label={accessibleLabel} title={accessibleLabel} className="flex shrink-0 text-white">
-              <Accessibility className="h-4 w-4" />
-            </span>
-          )}
           <span className="text-[14px] font-semibold text-white">{label ?? `Sec ${sec} · Row ${row}`}</span>
           {bestDeal && <Pill size="sm">Best deal</Pill>}
+          {accessible && (
+            <span className="text-ink2" title="Accessible seating">
+              <Accessibility className="h-[14px] w-[14px]" />
+            </span>
+          )}
         </span>
-        <span className="mt-0.5 block text-[12px] text-[#9DA2B3]">{qty}</span>
+        <span className="mt-0.5 block text-[12px] text-ink2">{qty}</span>
       </span>
       <span className="shrink-0 text-right">
         <span className="block text-[15px] font-semibold tabular-nums text-white">${price.toFixed(2)}</span>
-        <span className="block text-[11px] text-[#9DA2B3]">all-in</span>
+        <span className="block text-[11px] text-ink2">all-in</span>
       </span>
       {selected && (
-        <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-[#a6e773] text-[#051B35]">
+        <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-primary text-primary-foreground">
           <Check className="h-3.5 w-3.5" />
         </span>
       )}

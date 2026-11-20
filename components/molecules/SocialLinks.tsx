@@ -36,7 +36,7 @@ export default function SocialLinks({ className = "" }: { className?: string }) 
           target="_blank"
           rel="noopener noreferrer"
           aria-label={s.name}
-          className="flex h-9 w-9 items-center justify-center rounded-lg border border-white/10 text-[#9DA2B3] transition-colors hover:border-white/20 hover:bg-white/[0.06] hover:text-white"
+          className="flex h-9 w-9 items-center justify-center rounded-lg border border-white/10 text-ink2 transition-colors hover:border-white/20 hover:bg-white/[0.06] hover:text-white"
         >
           <svg viewBox="0 0 24 24" className="h-[17px] w-[17px]" fill="currentColor" aria-hidden>
             <path d={s.path} />

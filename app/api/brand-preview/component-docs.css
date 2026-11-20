@@ -1,0 +1,282 @@
+:root[data-ds-docs] { --ds-header: 108px; scroll-padding-top: 125px; }
+[data-ds-docs] .shell { padding-top: var(--ds-header); }
+[data-ds-docs] :is(#nav, #toc) { top: var(--ds-header); height: calc(100dvh - var(--ds-header)); }
+[data-ds-docs] #scrim { top: var(--ds-header); }
+.ds-area-nav {
+  position: fixed;
+  inset: 60px 0 auto;
+  z-index: 51;
+  display: flex;
+  align-items: stretch;
+  gap: clamp(12px, 2vw, 28px);
+  height: 48px;
+  padding-inline: clamp(16px, 2.2vw, 32px);
+  overflow-x: auto;
+  scrollbar-width: none;
+  border-bottom: 1px solid var(--line);
+  background: var(--paper);
+}
+.ds-area-nav a {
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  flex: none;
+  padding-inline: 5px;
+  border-bottom: 2px solid transparent;
+  color: var(--ink2);
+  font-size: 14px;
+  font-weight: 500;
+  text-decoration: none;
+  white-space: nowrap;
+}
+.ds-area-nav a:hover, .ds-area-nav a[aria-current] { color: var(--ink); }
+.ds-area-nav a[aria-current] { border-bottom-color: var(--green-deep); font-weight: 600; }
+.ds-area-nav svg { display: block; width: 16px; height: 16px; }
+.ds-area-nav a:focus-visible { outline-offset: -4px; }
+.ds-component-links { display: none; }
+[data-ds-area-current="components"] #nav > :not(.nav-tools, .ds-component-links) { display: none; }
+[data-ds-area-current="components"] .ds-component-links { display: block; }
+#nav .ds-index-link { margin-bottom: 12px; color: var(--ink); font-weight: 600; }
+#nav .ds-flat-list a { height: 32px; }
+[data-ds-area-current="components"] #main { padding-top: 32px; }
+[data-ds-area-current="components"] #doc { max-width: 900px; }
+.ds-doc-page h1 { font-size: clamp(29px, 3.5vw, 34px); letter-spacing: -.035em; }
+.ds-doc-page h2 { margin-top: 34px; font-size: 23px; }
+.ds-doc-page .lead { font-size: 16px; line-height: 1.55; }
+.ds-doc-page .crumb { margin-bottom: 10px; }
+.ds-doc-heading { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px; }
+.ds-copy-markdown {
+  display: inline-flex; align-items: center; gap: 6px; min-height: 32px; padding-inline: 11px;
+  border: 1px solid var(--line); border-radius: 24px; background: var(--paper2); color: var(--ink); font-size: 13px;
+}
+.ds-copy-markdown svg { display: block; width: 16px; height: 16px; }
+.ds-copy-markdown:hover { background: var(--paper3); }
+@media (min-width: 1261px) {
+  [data-ds-area-current="components"] .shell { grid-template-columns: 240px minmax(0, 1fr) 236px; }
+  [data-ds-area-current="components"] #main { padding-inline: 32px; }
+}
+.ds-toc-sub { padding-left: 24px !important; }
+.ds-doc-links { display: flex; flex-wrap: wrap; gap: 9px 16px; }
+.ds-doc-links a { border-radius: 24px; padding: 5px 10px; background: var(--paper2); font-size: 13px; text-decoration: none; }
+.ds-doc-links a:hover { background: var(--paper3); }
+.ds-doc-page [hidden] { display: none !important; }
+.ds-sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+#ds-component-search {
+  width: min(100%, 360px);
+  height: 42px;
+  margin: 16px 0 20px;
+  padding-inline: 12px;
+  border: 1px solid var(--line2);
+  border-radius: 12px;
+  background: var(--paper2);
+  color: var(--ink);
+  font: inherit;
+}
+.ds-directory { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 190px), 1fr)); gap: 8px; }
+.ds-directory a {
+  display: flex;
+  align-items: center;
+  min-height: 44px;
+  padding: 8px 12px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  font-size: 14px;
+  text-decoration: none;
+}
+.ds-directory a:hover { background: var(--paper2); }
+[data-ds-docs] .top { background: var(--paper); }
+[data-ds-docs] .top #theme { display: none; }
+.ds-header-actions { display: inline-flex; flex: none; align-items: center; gap: 8px; }
+.ds-header-storybook, .ds-platform {
+  display: inline-flex; align-items: center; gap: 7px; padding: 5px 12px;
+  border-radius: 24px; background: var(--paper2); color: var(--ink);
+  font-size: 13px; font-weight: 500; white-space: nowrap; text-decoration: none;
+}
+.ds-platform { align-self: center; margin-left: auto; }
+.ds-platform svg { width: 14px; height: 14px; }
+.ds-storybook-mark {
+  display: inline-grid; place-items: center; width: 14px; height: 16px; margin-right: 3px;
+  border-radius: 3px; background: #ff4785; color: #161617; font: 700 11px/1 Geist, sans-serif;
+}
+.ds-doc-links .ds-storybook-mark { vertical-align: -1px; }
+.ds-site-theme, .ds-viewport-controls {
+  display: inline-flex; align-items: center; flex: none; gap: 2px; padding: 3px;
+  border-radius: 24px; background: var(--paper2); box-shadow: inset 0 0 0 1px var(--line);
+}
+.ds-site-theme button, .ds-viewport-controls button {
+  display: grid; place-items: center; min-height: 30px; border: 0; border-radius: 20px;
+  background: transparent; color: var(--ink2); font-size: 13px; font-weight: 500;
+}
+.ds-site-theme button { width: 30px; }
+.ds-site-theme button[aria-pressed="true"], .ds-viewport-controls button[aria-pressed="true"] {
+  background: var(--paper3); color: var(--ink); box-shadow: inset 0 0 0 1px var(--line);
+}
+.ds-site-theme svg, .ds-icon-action svg { display: block; width: 16px; height: 16px; }
+.ds-viewport-controls button { padding-inline: 9px; }
+.ds-demo .code { margin-top: 12px; }
+.ds-stage { margin-top: 14px; }
+.ds-stage-bar {
+  display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between;
+  gap: 6px 14px; padding-block: 5px 10px; color: var(--ink2); font-size: 14px;
+}
+.ds-code-link {
+  display: inline-flex; align-items: center; gap: 5px; min-height: 32px; padding: 0;
+  border: 0; background: transparent; color: var(--ink2); font: inherit; text-decoration: none;
+}
+.ds-code-link:hover { color: var(--ink); }
+.ds-code-link[aria-expanded="true"] span { rotate: 90deg; }
+.ds-stage-actions { display: inline-flex; align-items: center; flex-wrap: wrap; gap: 4px; }
+.ds-icon-action {
+  display: inline-grid; place-items: center; flex: none; width: 32px; height: 32px;
+  border: 0; border-radius: 50%; background: transparent; color: var(--ink2); text-decoration: none;
+}
+.ds-icon-action:hover, .ds-header-storybook:hover { background: var(--paper3); color: var(--ink); }
+.ds-viewport-controls { margin-left: 5px; }
+.ds-viewport {
+  --ds-preview-height: clamp(240px, 30svh, 340px);
+  --ds-canvas: var(--paper);
+  position: relative;
+  height: var(--ds-preview-height); overflow: hidden;
+  border-radius: 16px; box-shadow: 0 0 0 1px var(--line2);
+  background: var(--ds-canvas);
+}
+.ds-stage[data-preview-theme="dark"] .ds-viewport { --ds-canvas: #0b0b0c; }
+.ds-stage[data-preview-theme="light"] .ds-viewport { --ds-canvas: #fff; }
+.ds-viewport iframe {
+  position: absolute; top: 0; left: 50%; display: block;
+  width: var(--ds-viewport-width, 100%); height: calc(var(--ds-preview-height) / var(--ds-viewport-scale, 1));
+  transform: translateX(-50%) scale(var(--ds-viewport-scale, 1)); transform-origin: 50% 0;
+  border: 0; background: var(--ds-canvas);
+}
+.ds-stage:not([data-ready]) iframe { visibility: hidden; }
+.ds-stage iframe:fullscreen { inset: 0; width: 100%; height: 100%; transform: none; }
+@media (min-width: 1050px) {
+  [data-ds-docs] .top .search-btn { position: absolute; left: 50%; transform: translateX(-50%); width: min(29vw, 390px); }
+}
+@media (max-width: 760px) {
+  .ds-header-storybook { display: none; }
+}
+.ds-example { margin-block: 32px; }
+.ds-doc-page .ds-example h3, .ds-doc-page h3[data-ds-section] { font-size: 20px; }
+.ds-anatomy { margin: 14px 0 0 1.25em; display: grid; gap: 7px; list-style: decimal; color: var(--ink2); }
+.ds-table { margin-top: 12px; overflow-x: auto; border: 1px solid var(--line); border-radius: 12px; }
+.ds-table table { width: 100%; min-width: 570px; border-collapse: collapse; font-size: 14px; }
+.ds-table :is(th, td) { padding: 10px 12px; border-bottom: 1px solid var(--line); text-align: left; vertical-align: top; }
+.ds-table th { background: var(--paper2); }
+.ds-table tr:last-child td { border-bottom: 0; }
+
+@media (max-width: 520px) {
+  .ds-area-nav { padding-inline: 12px; gap: 10px; }
+  .ds-area-nav a { gap: 5px; padding-inline: 3px; font-size: 13px; }
+  .ds-area-nav a span, .ds-platform { display: none; }
+  .ds-viewport { --ds-preview-height: 390px; }
+  .ds-stage-actions { gap: 1px; }
+  .ds-icon-action { width: 29px; height: 32px; }
+  .ds-viewport-controls button { padding-inline: 7px; }
+}
+
+
+[data-ds-docs] [hidden] { display: none !important; }
+.ds-library-nav { display: block; align-content: center; }
+.ds-library-toolbar { margin-top: 14px; }
+.ds-library-header, .ds-library-copy { flex: none; }
+[data-ds-shared-controls] .top .aud { display: none; }
+
+
+.ds-library-search { width: min(29vw, 390px); }
+.ds-library-directory-search { width: min(100%, 360px); margin: 16px 0 20px; }
+@media (min-width: 1050px) {
+  .ds-library-search { position: absolute; left: 50%; transform: translateX(-50%); }
+}
+@media (max-width: 767px) {
+  :root[data-ds-shared-controls] { --ds-header: 108px; scroll-padding-top: 125px; }
+  .ds-library-nav { height: 48px; }
+  .ds-library-search { width: auto; flex: none; }
+}
+
+.ds-library-menu { display: none; }
+.ds-library-sidebar-index { margin-bottom: 12px; }
+.ds-library-inline-link { display: inline-block; }
+.ds-library-code-copy { display: flex; justify-content: flex-end; padding: 6px; }
+.ds-stage .code { margin-bottom: 12px; }
+.ds-viewport-expanded { position: fixed; inset: 108px 0 0; z-index: 49; }
+@media (max-width: 900px) {
+  .ds-library-menu { display: inline-flex; }
+}
+
+.ds-library-command { width: min(576px, 92vw); }
+.ds-library-table { margin-block: 12px 24px; }
+
+/* Originals swapped for a library control stay hidden whatever their own display rule says. */
+[data-ds-replaced] { display: none !important; }
+
+/* One separator only: the section tabs own the line under the header. */
+[data-ds-docs] .top { border-bottom: 0; box-shadow: none; }
+.ds-pv-seg { display: inline-flex; flex: none; }
+.ds-ph-field { display: block; max-width: 100%; }
+/* Icon browser: the controls sit in a grid, with small labels above full-width fields. */
+#ph-app .ph-ctl { display: grid; gap: 16px 20px; align-items: end; }
+#ph-app .ph-ctl:first-child { grid-template-columns: minmax(0, 1fr) minmax(180px, 240px); }
+#ph-app .ph-ctl:first-child > label:nth-child(3) { grid-column: 1 / -1; }
+#ph-app .ph-ctl + .ph-ctl { grid-template-columns: minmax(180px, 240px) auto auto 1fr; margin-top: 16px; align-items: end; }
+#ph-app .ph-ctl label { gap: 8px; font-size: 14px; font-weight: 500; }
+#ph-app .ph-ctl label .mono { margin-left: 4px; font-size: 13px; }
+#ph-app .ph-ctl .ph-count { justify-self: end; align-self: end; padding-bottom: 10px; }
+#ph-app .ph-ctl + .ph-ctl > :nth-child(3) { align-self: end; padding-bottom: 8px; }
+#ph-app .ds-pv-seg { max-width: 100%; overflow-x: auto; scrollbar-width: none; }
+.ds-ph-search, .ds-ph-category, .ds-ph-size { width: 100%; }
+.ds-ph-colour { width: auto; }
+.ds-ph-flip { width: auto; }
+.ds-ph-size { padding-block: 6px; }
+@media (max-width: 700px) {
+  #ph-app .ph-ctl:first-child { grid-template-columns: minmax(0, 1fr); }
+  #ph-app .ph-ctl + .ph-ctl { grid-template-columns: minmax(0, 1fr); }
+  #ph-app .ph-ctl + .ph-ctl > :nth-child(3) { padding-bottom: 0; }
+  #ph-app .ph-ctl .ph-count { justify-self: start; padding-bottom: 0; }
+}
+/* The page is hidden until the shared controls mount by the inline #ds-boot-guard style at the top of brand/index.html. */
+
+/* The tab list draws the separator under the section tabs, so the nav itself has no border or padding. */
+.ds-area-nav.ds-library-nav { padding-inline: 0; gap: 0; border-bottom: 0; overflow: visible; }
+
+/* Previous / next links: the next one sits in the second column. */
+.pager .ds-pager-link { display: block; min-width: 0; }
+.pager .ds-pager-next { grid-column: 2; }
+@media (max-width: 700px) { .pager .ds-pager-next { grid-column: auto; } }
+
+/* Sidebar section headings use the same style as the components sidebar: 14px medium, sentence case, no rule. */
+#nav h5 { display: block; margin: 16px 0 4px; padding-inline: 8px; font-size: 14px; font-weight: 500; letter-spacing: 0; text-transform: none; color: var(--ink); }
+#nav h5::after { content: none; }
+#nav h5:first-of-type, #nav h5:first-child { margin-top: 4px; }
+
+/* ---------- Phone: native-feeling platform basics ---------- */
+html { -webkit-tap-highlight-color: transparent; -webkit-text-size-adjust: 100%; }
+button, [role="button"], a { touch-action: manipulation; }
+button, [role="button"] { user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; }
+@media (pointer: coarse) { input, textarea, select { font-size: 16px; } }
+
+/* Safe areas: with viewport-fit=cover the fixed header sits under the notch unless it pads itself. */
+:root { --ds-safe-top: env(safe-area-inset-top, 0px); --ds-safe-bottom: env(safe-area-inset-bottom, 0px); }
+:root[data-ds-docs] { --ds-header: calc(108px + var(--ds-safe-top)); scroll-padding-top: calc(125px + var(--ds-safe-top)); }
+[data-ds-docs] .top { height: calc(60px + var(--ds-safe-top)); padding-top: var(--ds-safe-top); box-sizing: border-box; }
+.ds-area-nav { top: calc(60px + var(--ds-safe-top)); }
+
+/* The navigation sheet: a left drawer over a scrim, full height, with its own header (logo, close, search, audience). */
+.ds-sheet-head { display: none; }
+@media (max-width: 900px) {
+  :root[data-ds-shared-controls][data-ds-docs] { --ds-header: calc(108px + var(--ds-safe-top)); }
+  .ds-sheet-head { display: block; margin-bottom: 8px; }
+  :root[data-ds-shared-controls] #scrim { top: 0; background: rgb(0 0 0 / 0.45); }
+  :root[data-ds-shared-controls] #nav {
+    top: 0; bottom: 0; height: 100dvh; width: min(88vw, 340px); z-index: 70;
+    padding: calc(12px + var(--ds-safe-top)) 12px calc(24px + var(--ds-safe-bottom));
+    border-radius: 0 24px 24px 0; background: var(--paper); box-shadow: 0 0 0 1px var(--line), 0 24px 64px rgb(0 0 0 / 0.28);
+    overflow-y: auto; overscroll-behavior: contain; -webkit-overflow-scrolling: touch;
+    transform: translateX(-102%); opacity: 1; visibility: hidden;
+    transition: transform 0.28s cubic-bezier(0.22, 1, 0.36, 1), visibility 0s 0.28s;
+  }
+  :root[data-ds-shared-controls] body.nav-open #nav { transform: none; visibility: visible; transition: transform 0.28s cubic-bezier(0.22, 1, 0.36, 1); }
+  :root[data-ds-shared-controls] #nav .nav-tools { display: none; }
+  body.nav-open { overflow: hidden; overscroll-behavior: none; }
+}
+@media (prefers-reduced-motion: reduce) { :root[data-ds-shared-controls] #nav { transition: none; } }

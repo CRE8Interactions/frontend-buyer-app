@@ -43,13 +43,13 @@ export type TrackingCart = {
   tickets?: TrackingTicket[];
   package?: {
     id?: string | number;
-    uuid?: string | number;
+    uuid?: string;
     name?: string;
     [key: string]: unknown;
   } | null;
   flex_pack?: {
     id?: string | number;
-    uuid?: string | number;
+    uuid?: string;
     name?: string;
     [key: string]: unknown;
   } | null;
@@ -66,13 +66,13 @@ export type TrackingOrder = {
   tickets?: TrackingTicket[];
   package?: {
     id?: string | number;
-    uuid?: string | number;
+    uuid?: string;
     name?: string;
     [key: string]: unknown;
   } | null;
   flex_pack?: {
     id?: string | number;
-    uuid?: string | number;
+    uuid?: string;
     name?: string;
     [key: string]: unknown;
   } | null;

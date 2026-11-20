@@ -1,0 +1,130 @@
+<link rel="stylesheet" href="/brand/component-docs.css">
+<script src="/brand/component-docs.js" data-storybook="{{STORYBOOK}}" defer></script>
+
+<template id="ds-area-navigation">
+  <nav class="ds-area-nav" aria-label="Design system sections">
+    <a href="#/overview" data-ds-area="start">Getting Started</a>
+    <a href="#/component-library" data-ds-area="components">Components</a>
+    <a href="#/changelog" data-ds-area="releases">Releases</a>
+    <a href="#/component-migration" data-ds-area="migration">Migration</a>
+    <span class="ds-platform">Web</span>
+  </nav>
+</template>
+
+<template id="ds-header-controls">
+  <div class="ds-header-actions">
+    <div class="ds-site-theme" role="group" aria-label="Site appearance">
+      <button type="button" data-ds-site-theme="light" aria-label="Light mode" title="Light mode"><span data-ds-icon="sun" aria-hidden="true"></span></button>
+      <button type="button" data-ds-site-theme="dark" aria-label="Dark mode" title="Dark mode"><span data-ds-icon="moon" aria-hidden="true"></span></button>
+      <button type="button" data-ds-site-theme="system" aria-label="System mode" title="System mode"><span data-ds-icon="monitor" aria-hidden="true"></span></button>
+    </div>
+  </div>
+</template>
+
+<template id="ds-sidebar-components">
+  <div class="ds-component-links">
+    <a class="ds-index-link" href="#/component-library">All components</a>
+    <div class="ds-flat-list"><!-- DIRECTORY --></div>
+  </div>
+</template>
+
+<section class="page ds-doc-page" id="component-library" data-group="Live components" data-title="Browse components" data-desc="Interactive examples from the Blocktickets component library">
+  <p class="crumb">Components</p>
+  <h1>All components</h1>
+  <p class="lead">Find the components used in the app. Open a component to see live examples and usage.</p>
+  <h2 id="component-list">Component index</h2>
+  <label for="ds-component-search" class="ds-sr-only">Find a component</label>
+  <input id="ds-component-search" type="search" placeholder="Find a component…" autocomplete="off">
+  <div class="ds-directory"><!-- DIRECTORY --></div>
+  <p id="ds-no-matches" role="status" hidden>No matching components.</p>
+</section>
+
+<section class="page ds-doc-page" id="component-guide" data-group="Live components" data-title="Component guide" data-desc="Live component examples">
+  <!-- GUIDE -->
+</section>
+
+<section class="page ds-doc-page" id="dialog-guide" data-group="Live components" data-title="Modal" data-desc="Modal usage, examples, API, and keyboard behavior">
+  <p class="crumb">Components <span aria-hidden="true">/</span> Overlays</p>
+  <div class="ds-doc-heading">
+    <h1>Modal</h1>
+    <button type="button" class="ds-copy-markdown" data-ds-copy-markdown><span data-ds-icon="copy" aria-hidden="true"></span>Copy Markdown</button>
+  </div>
+  <p class="lead">Use a modal for a focused task that temporarily blocks the rest of the page, such as editing a ticket holder’s name.</p>
+  <p class="ds-doc-links"><a href="#/dialog-guide/dialog-api">API reference ↓</a></p>
+
+  <h2 id="dialog-usage">Usage</h2>
+  <p>Import the dialog parts and put the trigger and panel inside <code>Dialog</code>.</p>
+  <div class="ds-demo" data-ds-demo>
+    <!-- MODAL_PREVIEW -->
+    <div id="modal-code-panel" hidden>
+      <div class="code"><button class="cp" type="button" data-copy-code>Copy</button><pre><code>import {
+  Dialog, DialogTrigger, DialogContent,
+  DialogTitle, DialogDescription,
+} from "@/components/ui/dialog"
+import { Button } from "@/components/ui/button"
+
+&lt;Dialog&gt;
+  &lt;DialogTrigger asChild&gt;&lt;Button&gt;Review ticket&lt;/Button&gt;&lt;/DialogTrigger&gt;
+  &lt;DialogContent&gt;
+    &lt;DialogTitle&gt;Review your ticket&lt;/DialogTitle&gt;
+    &lt;DialogDescription&gt;Check the name before you continue.&lt;/DialogDescription&gt;
+  &lt;/DialogContent&gt;
+&lt;/Dialog&gt;</code></pre></div>
+    </div>
+  </div>
+
+  <h2 id="dialog-anatomy">Anatomy</h2>
+  <ol class="ds-anatomy">
+    <li><b>Trigger.</b> The button that opens the modal and receives focus when it closes.</li>
+    <li><b>Header.</b> Use <code>DialogHeader</code> to group the title and optional icon.</li>
+    <li><b>Body.</b> Use <code>DialogBody</code> for independently scrollable content.</li>
+    <li><b>Footer.</b> Use <code>DialogFooter</code> for the actions that finish or cancel the task.</li>
+  </ol>
+
+  <h2 id="dialog-examples">Examples</h2>
+  <!-- MODAL_EXAMPLES -->
+
+  <h2 id="dialog-api">API reference</h2>
+  <h3 data-ds-section id="dialog-root-props">Dialog</h3>
+  <div class="ds-table"><table aria-label="Dialog properties">
+    <thead><tr><th>Prop</th><th>Type</th><th>Default</th><th>Description</th></tr></thead>
+    <tbody>
+      <tr><td><code>open</code></td><td>boolean</td><td>—</td><td>Controls whether the modal is open.</td></tr>
+      <tr><td><code>defaultOpen</code></td><td>boolean</td><td>false</td><td>Initial open state when uncontrolled.</td></tr>
+      <tr><td><code>onOpenChange</code></td><td>(open: boolean) =&gt; void</td><td>—</td><td>Called when the requested state changes.</td></tr>
+      <tr><td><code>modal</code></td><td>boolean</td><td>true</td><td>Limits interaction to the dialog while open.</td></tr>
+    </tbody>
+  </table></div>
+  <h3 data-ds-section id="dialog-content-props">DialogContent</h3>
+  <div class="ds-table"><table aria-label="DialogContent properties">
+    <thead><tr><th>Prop</th><th>Values</th><th>Default</th><th>Description</th></tr></thead>
+    <tbody>
+      <tr><td><code>size</code></td><td>xs, sm, md, lg, cover, full</td><td>md</td><td>Panel width and viewport coverage.</td></tr>
+      <tr><td><code>placement</code></td><td>auto, top, center, bottom</td><td>auto</td><td>Panel position.</td></tr>
+      <tr><td><code>scroll</code></td><td>inside, outside</td><td>inside</td><td>Whether the body or viewport scrolls.</td></tr>
+      <tr><td><code>backdrop</code></td><td>opaque, blur, transparent</td><td>opaque</td><td>Appearance behind the panel.</td></tr>
+      <tr><td><code>backdropClassName</code></td><td>string</td><td>—</td><td>Classes applied to the backdrop.</td></tr>
+      <tr><td><code>portalContainer</code></td><td>HTMLElement</td><td>document.body</td><td>Custom mount point for the panel.</td></tr>
+      <tr><td><code>dismissable</code></td><td>boolean</td><td>true</td><td>Allows dismissal by clicking outside.</td></tr>
+      <tr><td><code>keyboardDismissDisabled</code></td><td>boolean</td><td>false</td><td>Prevents dismissal with Escape.</td></tr>
+      <tr><td><code>showCloseButton</code></td><td>boolean</td><td>true</td><td>Shows the close icon in the panel.</td></tr>
+      <tr><td><code>instant</code></td><td>boolean</td><td>false</td><td>Opens and closes without animation.</td></tr>
+    </tbody>
+  </table></div>
+
+  <h2 id="dialog-accessibility">Accessibility</h2>
+  <p>Give every modal a descriptive title. Tab stays inside a modal while it is open. Escape closes it by default. If you disable Escape or backdrop dismissal, provide an explicit close or cancel action.</p>
+</section>
+
+<section class="page ds-doc-page" id="component-migration" data-group="Live components" data-title="Migration" data-desc="Adopt current components in existing screens">
+  <p class="crumb">Migration</p>
+  <h1>Migration</h1>
+  <p class="lead">Adopt current library components in existing screens one at a time.</p>
+  <h2 id="migration-steps">Update a screen</h2>
+  <ol class="ds-anatomy">
+    <li>Find the matching component and compare its examples with the existing behavior.</li>
+    <li>Update the import and map the props, including controlled state and labels.</li>
+    <li>Check both themes and keyboard interaction before replacing the old implementation.</li>
+  </ol>
+  <p><a href="#/component-library">Browse components</a></p>
+</section>

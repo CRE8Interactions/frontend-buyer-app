@@ -1,5 +1,3 @@
-import Link from "next/link";
-
 /** Ported from legacy frontend — keep legal text accurate. */
 export default function CookiesPolicyContent() {
   return (
@@ -16,9 +14,9 @@ export default function CookiesPolicyContent() {
         be linked to the information stored in and obtained from Cookies. For
         further information on how We use, store and keep your personal data
         secure, see our{" "}
-        <Link href="/privacy-policy">
+        <a href="/privacy-policy">
           Privacy Policy
-        </Link>
+        </a>
         .
       </p>
       <p className="legal-lead">
@@ -66,9 +64,9 @@ export default function CookiesPolicyContent() {
               <dt>Website </dt>
               <dd>
                 refers to Blocktickets, accessible from{" "}
-                <Link target="_blank" rel="noopener noreferrer" href="/">
+                <a target="_blank" rel="noopener noreferrer" href="/">
                   www.blocktickets.xyz
-                </Link>
+                </a>
               </dd>
             </dl>
           </li>

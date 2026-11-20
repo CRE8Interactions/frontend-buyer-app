@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useState, type ElementType } from "react";
-import Link from "next/link";
 import { cardCls } from "@/components/molecules/Card";
 import { ArrowRight } from "@/components/atoms/icons";
 import ProductCard from "@/components/organisms/ProductCard";
@@ -11,8 +10,6 @@ import {
   imageUrl,
   type ApiImage,
 } from "@/lib/helpers";
-import { formatVenueCityState } from "@/lib/venueLocation";
-import { categoryLabel } from "@/lib/eventType";
 
 export type OrganizationCardAttraction = {
   name?: string;
@@ -65,8 +62,10 @@ const SPORTS_FALLBACK_BRAND = "#0d3d2e";
 const MUSIC_FALLBACK_BRAND = "#6b2f1f";
 
 function venueAddress(address?: OrganizationCardVenue["address"] | null) {
-  const formatted = formatVenueCityState(address ?? undefined);
-  return formatted || undefined;
+  if (!address) return undefined;
+  const first = Array.isArray(address) ? address[0] : address;
+  if (!first) return undefined;
+  return [first.city, first.state].filter(Boolean).join(", ") || undefined;
 }
 
 function categoryKey(category?: { name?: string } | null) {
@@ -220,7 +219,7 @@ function ProfileOrganizationCard({
         <div className="-mt-8 flex items-end justify-between gap-3">
           <Avatar
             {...(href ? { href } : {})}
-            className="flex h-16 w-16 shrink-0 items-center justify-center overflow-hidden rounded-full border-[3px] border-[#0a2747] bg-white text-[18px] font-bold tracking-tight shadow-[0_8px_20px_-10px_rgba(0,0,0,0.55)]"
+            className="flex h-16 w-16 shrink-0 items-center justify-center overflow-hidden rounded-full border-[3px] border-card bg-white text-[18px] font-bold tracking-tight shadow-[0_8px_20px_-10px_rgba(0,0,0,0.55)]"
           >
             {hasLogo ? (
               // eslint-disable-next-line @next/next/no-img-element
@@ -246,32 +245,32 @@ function ProfileOrganizationCard({
 
         <div className="mt-3">
           {href ? (
-            <Link
+            <a
               href={href}
               className="group/name inline-block"
               style={{ ["--org-brand" as string]: brand }}
             >
-              <h3 className="text-[16px] font-semibold leading-tight tracking-[-0.02em] text-white transition-colors duration-200 group-hover/name:text-[var(--org-brand)]">
+              <h3 className="text-[20px] font-semibold leading-tight tracking-[-0.02em] text-white transition-colors duration-200 group-hover/name:text-[var(--org-brand)]">
                 {name}
               </h3>
-            </Link>
+            </a>
           ) : (
-            <h3 className="text-[16px] font-semibold leading-tight tracking-[-0.02em]">
+            <h3 className="text-[20px] font-semibold leading-tight tracking-[-0.02em]">
               {name}
             </h3>
           )}
           {subtitle ? (
-            <p className="mt-1 text-[13px] text-[#9DA2B3]">{subtitle}</p>
+            <p className="mt-1 text-[13px] text-ink2">{subtitle}</p>
           ) : null}
         </div>
 
         <div className={`mt-4 grid ${statCols} gap-2 border-y border-white/10 py-3.5`}>
           {stats.map((stat) => (
             <div key={stat.label} className="min-w-0">
-              <p className="truncate text-[15px] font-semibold leading-none tracking-[-0.02em]">
+              <p className="truncate text-[15px] font-semibold leading-none tracking-[-0.02em] sm:text-[16px]">
                 {stat.value}
               </p>
-              <p className="mt-1.5 text-[11px] leading-snug text-[#9DA2B3]">
+              <p className="mt-1.5 text-[11px] leading-snug text-ink2">
                 {stat.label}
               </p>
             </div>
@@ -279,12 +278,12 @@ function ProfileOrganizationCard({
         </div>
 
         {upcomingText && nextHref ? (
-          <Link
+          <a
             href={nextHref}
             className="mt-4 flex items-center gap-3 rounded-xl border border-white/10 bg-black/25 px-3.5 py-3 transition-colors hover:bg-black/35"
           >
             <div className="min-w-0 flex-1">
-              <p className="text-[11px] uppercase tracking-[0.08em] text-[#9DA2B3]">
+              <p className="text-[11px] uppercase tracking-[0.08em] text-ink2">
                 {upcomingLabel}
               </p>
               <p className="mt-1 truncate text-[14px] font-semibold leading-snug">
@@ -292,7 +291,7 @@ function ProfileOrganizationCard({
               </p>
             </div>
             <ArrowRight className="h-4 w-4 shrink-0 text-white/80" />
-          </Link>
+          </a>
         ) : null}
       </div>
     </article>
@@ -310,7 +309,7 @@ function SportsOrganizationCard({
   const location =
     venueAddress(org.homeVenue?.address) ||
     venueAddress(org.venues?.[0]?.address);
-  const subtitle = [categoryLabel(org.category?.name) || undefined, location || undefined]
+  const subtitle = [org.category?.name, location || undefined]
     .filter(Boolean)
     .join(" · ");
 
@@ -398,7 +397,7 @@ export default function OrganizationCard({
   const cityState =
     venueAddress(org.homeVenue?.address) ||
     venueAddress(org.venues?.[0]?.address);
-  const meta = [categoryLabel(org.category?.name) || undefined, cityState || undefined]
+  const meta = [org.category?.name, cityState || undefined]
     .filter(Boolean)
     .join(" · ");
   const href = orgHref(org);

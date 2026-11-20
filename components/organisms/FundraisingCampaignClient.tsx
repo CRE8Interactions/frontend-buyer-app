@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { loadStripe, type Stripe } from "@stripe/stripe-js";
 import {
   Elements,
@@ -8,47 +8,18 @@ import {
   useElements,
   useStripe,
 } from "@stripe/react-stripe-js";
-import BrandedActionButton from "@/components/atoms/BrandedActionButton";
-import EmailField from "@/components/molecules/EmailField";
-import NameField from "@/components/molecules/NameField";
+import AppShell from "@/components/templates/AppShell";
+import Button from "@/components/atoms/Button";
+import Spinner from "@/components/atoms/Spinner";
+import PageSkeleton from "@/components/molecules/PageSkeleton";
+import { cardCls } from "@/components/molecules/Card";
+import { Input, Label } from "@/components/atoms/form";
 import {
   confirmLandingPageDonation,
   createLandingPageDonationIntent,
   getPublicFundraisingCampaign,
 } from "@/lib/api";
-import AppShell from "@/components/templates/AppShell";
-import { BrandedLoader } from "@/components/molecules/RouteLoader";
-import useAutoFocus from "@/hooks/useAutoFocus";
-import useOrgBranding from "@/hooks/useOrgBranding";
-import {
-  BLOCKTICKETS_NAVY,
-  resolveBrandLogo,
-  type BrandingOrganization,
-} from "@/lib/branding";
 import { formatCurrency, imageUrl } from "@/lib/helpers";
-import { cacheOrgBranding } from "@/lib/orgBrandingCache";
-import {
-  FIELD_COPY,
-  emailBlurInvalid,
-  fieldClass,
-  fieldErrorTextClass,
-  formString,
-  nameAllows,
-  normalizeEmail,
-  submittedEmail,
-} from "@/lib/fieldValidation";
-import { validateSubmittedEmail } from "@/lib/submitEmailValidation";
-import {
-  stripePaymentElementAppearance,
-  STRIPE_PAYMENT_ELEMENT_FONTS,
-} from "@/lib/stripePaymentElement";
-
-const AMOUNT_ERROR = "Select or enter a donation amount.";
-import { FUNDRAISER_LOADER_MESSAGE } from "@/lib/loaderMessages";
-
-const lightCard =
-  "rounded-[20px] border border-[rgba(5,27,53,0.08)] bg-white text-[#051b35]";
-const muted = "text-[#6e7180]";
 
 type Campaign = {
   slug: string;
@@ -58,7 +29,6 @@ type Campaign = {
   enableLandingPageDonation?: boolean;
   organizationUUID?: string;
   accentColor?: string;
-  organization?: BrandingOrganization;
   suggestedAmounts?: Array<number | string>;
   participants?: Array<{ uuid: string; name: string }>;
   [key: string]: unknown;
@@ -74,8 +44,6 @@ function DonationForm({
   platformFee,
   processingFee,
   totalCharge,
-  primaryColor,
-  textColor,
   onSuccess,
   onError,
 }: {
@@ -83,8 +51,6 @@ function DonationForm({
   platformFee: number;
   processingFee: number;
   totalCharge: number;
-  primaryColor?: string;
-  textColor?: string;
   onSuccess: () => void;
   onError: (msg: string) => void;
 }) {
@@ -120,39 +86,31 @@ function DonationForm({
   return (
     <form onSubmit={handleSubmit} className="mt-4 space-y-4">
       <PaymentElement options={{ wallets: { link: "never" } }} />
-      <div className={`${lightCard} space-y-2 p-4`}>
+      <div className={`${cardCls} space-y-2 p-4`}>
         <div className="flex justify-between text-[14px]">
-          <span className={muted}>Donation</span>
+          <span className="text-ink2">Donation</span>
           <span>{formatCurrency(donationAmount)}</span>
         </div>
         {platformFee > 0 ? (
           <div className="flex justify-between text-[14px]">
-            <span className={muted}>Platform fee</span>
+            <span className="text-ink2">Platform fee</span>
             <span>{formatCurrency(platformFee)}</span>
           </div>
         ) : null}
         {processingFee > 0 ? (
           <div className="flex justify-between text-[14px]">
-            <span className={muted}>Processing fee</span>
+            <span className="text-ink2">Processing fee</span>
             <span>{formatCurrency(processingFee)}</span>
           </div>
         ) : null}
-        <div className="flex justify-between border-t border-[rgba(5,27,53,0.08)] pt-2 font-semibold">
+        <div className="flex justify-between border-t border-white/10 pt-2 font-semibold">
           <span>Total</span>
           <span>{formatCurrency(totalCharge)}</span>
         </div>
       </div>
-      <BrandedActionButton
-        type="submit"
-        className="w-full"
-        primaryColor={primaryColor}
-        textColor={textColor}
-        loading={submitting}
-        loadingLabel="Processing…"
-        disabled={!stripe || submitting}
-      >
-        Complete donation
-      </BrandedActionButton>
+      <Button type="submit" className="w-full disabled:opacity-50" disabled={!stripe || submitting}>
+        {submitting ? <Spinner size={18} /> : "Complete donation"}
+      </Button>
     </form>
   );
 }
@@ -166,7 +124,6 @@ export function FundraisingCampaignClient({
   organizationUUID?: string;
   organizationSlug?: string;
 }) {
-  const autoFocusField = useAutoFocus<HTMLInputElement>(true);
   const [loading, setLoading] = useState(true);
   const [campaign, setCampaign] = useState<Campaign | null>(null);
   const [loadError, setLoadError] = useState("");
@@ -200,10 +157,6 @@ export function FundraisingCampaignClient({
         const c = res?.data?.campaign as Campaign | null;
         setCampaign(c);
         if (!c) setLoadError("This fundraiser is unavailable.");
-        const org = (c?.organization || c) as BrandingOrganization | undefined;
-        if (org && (org.slug || org.branding || org.primaryColor)) {
-          cacheOrgBranding(org);
-        }
         const presets = c?.suggestedAmounts || [];
         if (presets.length) {
           setAmount(String(presets[Math.floor(presets.length / 2)]));
@@ -225,44 +178,16 @@ export function FundraisingCampaignClient({
     [campaign],
   );
 
-  const startDonation = async (data?: FormData) => {
+  const startDonation = async () => {
     if (!campaign) return;
-    const donationAmount = parseAmount(
-      data ? formString(data, "amount") || amount : amount,
-    );
-    const nextName = data ? formString(data, "donorName") || donorName : donorName;
-    const nextEmail = data
-      ? submittedEmail(data, "email") || normalizeEmail(donorEmail)
-      : normalizeEmail(donorEmail);
-    const nextMessage = data
-      ? formString(data, "donorMessage") || donorMessage
-      : donorMessage;
-    if (data) {
-      setAmount(String(donationAmount || formString(data, "amount") || amount));
-      setDonorName(nextName);
-      setDonorEmail(nextEmail);
-      setDonorMessage(nextMessage);
-    }
+    const donationAmount = parseAmount(amount);
     if (donationAmount <= 0) {
-      setError(AMOUNT_ERROR);
+      setError("Select or enter a donation amount.");
       return;
     }
-    if (!anonymous) {
-      const emailResult = await validateSubmittedEmail(nextEmail);
-      if (!emailResult.ok) {
-        setError(
-          emailResult.error === "required"
-            ? FIELD_COPY.emailRequired
-            : emailResult.error === "invalid"
-              ? FIELD_COPY.invalidEmail
-              : FIELD_COPY.network,
-        );
-        return;
-      }
-      if (!nameAllows(nextName)) {
-        setError(FIELD_COPY.namePattern);
-        return;
-      }
+    if (!anonymous && !donorEmail.trim()) {
+      setError("Email is required unless donating anonymously.");
+      return;
     }
     setError("");
     setLoadingIntent(true);
@@ -275,9 +200,9 @@ export function FundraisingCampaignClient({
         donationAmount,
         participantUuid,
         anonymous,
-        donorMessage: nextMessage,
-        donorName: anonymous ? "" : nextName,
-        donorEmail: anonymous ? "" : nextEmail,
+        donorMessage,
+        donorName: anonymous ? "" : donorName,
+        donorEmail: anonymous ? "" : donorEmail,
       });
       const data = response?.data || {};
       if (!data.clientSecret) throw new Error("Missing payment session");
@@ -301,73 +226,35 @@ export function FundraisingCampaignClient({
     }
   };
 
-  const { organization: brandedOrg, theme } = useOrgBranding({
-    slug: organizationSlug,
-    uuid: organizationUUID,
-    organization: campaign?.organization,
-  });
-
-  const shell = (body: ReactNode) => (
-    <AppShell
-      variant="light"
-      search={false}
-      accent={organizationSlug ? theme.accent : undefined}
-      brandLogoSrc={
-        organizationSlug && brandedOrg ? theme.brandLogoSrc : undefined
-      }
-      brandName={organizationSlug ? brandedOrg?.name || null : undefined}
-    >
-      {body}
-    </AppShell>
-  );
-
   if (loading) {
-    // The org route holds its tenant loader (never the Blocktickets one); the
-    // platform /fundraise route holds the Blocktickets loader.
-    return (
-      <BrandedLoader
-        branding={
-          organizationSlug && brandedOrg
-            ? {
-                primaryColor: theme.accent,
-                logoSrc: resolveBrandLogo(null, brandedOrg)
-                  ? theme.brandLogoSrc
-                  : null,
-                name: brandedOrg.name || null,
-              }
-            : null
-        }
-        fallback={organizationSlug ? "none" : "blocktickets"}
-        message={FUNDRAISER_LOADER_MESSAGE}
-      />
-    );
+    return <PageSkeleton variant="detail" label="Loading fundraiser" className="min-h-[40vh]" />;
   }
 
   if (loadError || !campaign) {
-    return shell(
-      <div className={`${lightCard} mx-auto max-w-lg p-8 text-center`}>
+    return (
+      <div className={`${cardCls} mx-auto max-w-lg p-8 text-center`}>
         <h1 className="text-[22px] font-semibold">Fundraiser not found</h1>
-        <p className={`mt-2 ${muted}`}>{loadError}</p>
-      </div>,
+        <p className="mt-2 text-ink2">{loadError}</p>
+      </div>
     );
   }
 
   if (success) {
-    return shell(
-      <div className={`${lightCard} mx-auto max-w-lg p-8 text-center`}>
+    return (
+      <div className={`${cardCls} mx-auto max-w-lg p-8 text-center`}>
         <h1 className="text-[28px] font-semibold">Thank you!</h1>
-        <p className={`mt-2 ${muted}`}>
+        <p className="mt-2 text-ink2">
           Your donation to {campaign.title} was successful.
         </p>
-      </div>,
+      </div>
     );
   }
 
-  return shell(
-    <div className="mx-auto max-w-xl pb-16 text-[#051b35]">
-      <div className={`${lightCard} overflow-hidden`}>
+  return (
+    <div className="mx-auto max-w-xl pb-16">
+      <div className={`${cardCls} overflow-hidden`}>
         {campaign.heroImage ? (
-          <div className="aspect-[21/9] bg-[#f1f3f8]">
+          <div className="aspect-[21/9] bg-card">
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
               src={imageUrl(campaign.heroImage as never)}
@@ -377,11 +264,11 @@ export function FundraisingCampaignClient({
           </div>
         ) : null}
         <div className="p-6">
-          <h1 className="text-[clamp(28px,4vw,36px)] font-semibold tracking-[-0.03em]">
+          <h1 className="text-[clamp(28px,4vw,36px)] font-semibold tracking-[-0.02em]">
             {campaign.title}
           </h1>
           {campaign.description ? (
-            <p className={`mt-3 whitespace-pre-wrap text-[15px] leading-relaxed ${muted}`}>
+            <p className="mt-3 whitespace-pre-wrap text-[15px] leading-relaxed text-ink2">
               {campaign.description}
             </p>
           ) : null}
@@ -389,63 +276,30 @@ export function FundraisingCampaignClient({
       </div>
 
       {campaign.enableLandingPageDonation ? (
-        <div className={`${lightCard} mt-6 p-6`}>
+        <div className={`${cardCls} mt-6 p-6`}>
           <h2 className="text-[16px] font-semibold">Donate</h2>
-          {error &&
-          error !== FIELD_COPY.emailRequired &&
-          error !== FIELD_COPY.invalidEmail &&
-          error !== FIELD_COPY.network &&
-          error !== FIELD_COPY.namePattern &&
-          error !== AMOUNT_ERROR ? (
-            <p className={`mt-3 text-[14px] ${fieldErrorTextClass("light")}`}>{error}</p>
+          {error ? (
+            <p className="mt-3 text-[14px] text-red-400">{error}</p>
           ) : null}
 
           {!clientSecret ? (
-            <form
-              noValidate
-              className="mt-4 space-y-4"
-              onSubmit={(e) => {
-                e.preventDefault();
-                void startDonation(new FormData(e.currentTarget));
-              }}
-            >
+            <div className="mt-4 space-y-4">
               {campaign.participants?.length ? (
                 <div>
-                  <label
-                    htmlFor="participant"
-                    className="text-[12px] font-semibold text-[#4a5567]"
+                  <Label htmlFor="participant">Support</Label>
+                  <select
+                    id="participant"
+                    className="mt-2 h-12 w-full rounded-xl border border-white/15 bg-background px-4 text-[15px] text-white outline-none focus:border-primary"
+                    value={participantUuid}
+                    onChange={(e) => setParticipantUuid(e.target.value)}
                   >
-                    Support
-                  </label>
-                  <div className="relative mt-2">
-                    <select
-                      id="participant"
-                      className={`${fieldClass("light", false)} appearance-none !pr-10`}
-                      value={participantUuid}
-                      onChange={(e) => setParticipantUuid(e.target.value)}
-                    >
-                      <option value="">General campaign fund</option>
-                      {campaign.participants.map((p) => (
-                        <option key={p.uuid} value={p.uuid}>
-                          {p.name}
-                        </option>
-                      ))}
-                    </select>
-                    <svg
-                      viewBox="0 0 12 12"
-                      aria-hidden
-                      className="pointer-events-none absolute right-4 top-1/2 h-3 w-3 -translate-y-1/2"
-                    >
-                      <path
-                        d="M2.25 4.35 6 8.1l3.75-3.75"
-                        fill="none"
-                        stroke="#6e7180"
-                        strokeWidth="1.5"
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                      />
-                    </svg>
-                  </div>
+                    <option value="">General campaign fund</option>
+                    {campaign.participants.map((p) => (
+                      <option key={p.uuid} value={p.uuid}>
+                        {p.name}
+                      </option>
+                    ))}
+                  </select>
                 </div>
               ) : null}
 
@@ -456,16 +310,11 @@ export function FundraisingCampaignClient({
                       key={p}
                       type="button"
                       onClick={() => setAmount(String(p))}
-                      className="rounded-full border px-4 py-2 text-[14px] font-semibold transition-colors"
-                      style={
+                      className={`rounded-full border px-4 py-2 text-[14px] font-semibold transition-colors ${
                         parseAmount(amount) === p
-                          ? {
-                              borderColor: theme.buttonColor || BLOCKTICKETS_NAVY,
-                              background: theme.buttonColor || BLOCKTICKETS_NAVY,
-                              color: theme.buttonTextColor,
-                            }
-                          : undefined
-                      }
+                          ? "border-primary bg-primary/15 text-white"
+                          : "border-white/15 bg-white/[0.04] text-ink2 hover:bg-white/[0.1]"
+                      }`}
                     >
                       {formatCurrency(p)}
                     </button>
@@ -474,33 +323,17 @@ export function FundraisingCampaignClient({
               ) : null}
 
               <div>
-                <label
-                  htmlFor="amount"
-                  className="text-[12px] font-semibold text-[#4a5567]"
-                >
-                  Amount
-                </label>
-                <input
-                  ref={autoFocusField}
+                <Label htmlFor="amount">Amount</Label>
+                <Input
                   id="amount"
-                  name="amount"
-                  aria-invalid={error === AMOUNT_ERROR}
-                  className={`mt-2 ${fieldClass("light", error === AMOUNT_ERROR)}`}
+                  className="mt-2"
                   value={amount}
-                  onChange={(e) => {
-                    setAmount(e.target.value);
-                    if (error === AMOUNT_ERROR) setError("");
-                  }}
+                  onChange={(e) => setAmount(e.target.value)}
                   placeholder="25"
                 />
-                {error === AMOUNT_ERROR ? (
-                  <p className={fieldErrorTextClass("light")} role="alert">
-                    {error}
-                  </p>
-                ) : null}
               </div>
 
-              <label className={`text-[14px] ${muted}`}>
+              <label className="flex items-center gap-2 text-[14px] text-ink2">
                 <input
                   type="checkbox"
                   checked={anonymous}
@@ -511,95 +344,62 @@ export function FundraisingCampaignClient({
 
               {!anonymous ? (
                 <>
-                  <NameField
-                    id="donor-name"
-                    name="donorName"
-                    label="Name"
-                    required={false}
-                    value={donorName}
-                    errorMessage={
-                      error === FIELD_COPY.namePattern ? error : null
-                    }
-                    onChange={(value) => {
-                      setDonorName(value);
-                      if (error === FIELD_COPY.namePattern) setError("");
-                    }}
-                  />
-                  <EmailField
-                    id="donor-email"
-                    name="email"
-                    label="Email address"
-                    value={donorEmail}
-                    error={
-                      error === FIELD_COPY.emailRequired
-                        ? "required"
-                        : error === FIELD_COPY.invalidEmail
-                          ? "invalid"
-                          : null
-                    }
-                    networkError={error === FIELD_COPY.network}
-                    onChange={(value) => {
-                      setDonorEmail(value);
-                      if (
-                        error === FIELD_COPY.invalidEmail ||
-                        error === FIELD_COPY.emailRequired ||
-                        error === FIELD_COPY.network
-                      ) {
-                        setError("");
-                      }
-                    }}
-                    onBlur={(value) => {
-                      if (emailBlurInvalid(value)) setError(FIELD_COPY.invalidEmail);
-                      else if (
-                        error === FIELD_COPY.invalidEmail ||
-                        error === FIELD_COPY.emailRequired ||
-                        error === FIELD_COPY.network
-                      ) {
-                        setError("");
-                      }
-                    }}
-                  />
+                  <div>
+                    <Label htmlFor="donor-name">Name</Label>
+                    <Input
+                      id="donor-name"
+                      className="mt-2"
+                      value={donorName}
+                      onChange={(e) => setDonorName(e.target.value)}
+                    />
+                  </div>
+                  <div>
+                    <Label htmlFor="donor-email">Email</Label>
+                    <Input
+                      id="donor-email"
+                      type="email"
+                      className="mt-2"
+                      value={donorEmail}
+                      onChange={(e) => setDonorEmail(e.target.value)}
+                    />
+                  </div>
                 </>
               ) : null}
 
               <div>
-                <label
-                  htmlFor="donor-msg"
-                  className="text-[12px] font-semibold text-[#4a5567]"
-                >
-                  Message (optional)
-                </label>
-                <input
+                <Label htmlFor="donor-msg">Message (optional)</Label>
+                <Input
                   id="donor-msg"
-                  className={`mt-2 ${fieldClass("light", false)}`}
+                  className="mt-2"
                   value={donorMessage}
-                  name="donorMessage"
                   onChange={(e) => setDonorMessage(e.target.value)}
                 />
               </div>
 
-              <BrandedActionButton
-                type="submit"
-                className="w-full"
-                primaryColor={theme.buttonColor || BLOCKTICKETS_NAVY}
-                textColor={theme.buttonTextColor}
-                loading={loadingIntent}
-                loadingLabel="Loading…"
+              <Button
+                className="w-full disabled:opacity-50"
                 disabled={loadingIntent}
+                onClick={startDonation}
               >
-                Continue to payment
-              </BrandedActionButton>
-            </form>
+                {loadingIntent ? <Spinner size={18} /> : "Continue to payment"}
+              </Button>
+            </div>
           ) : stripePromise ? (
             <Elements
               stripe={stripePromise}
               options={{
                 clientSecret,
-                appearance: stripePaymentElementAppearance(
-                  theme.accent,
-                  theme.buttonTextColor,
-                ),
-                fonts: STRIPE_PAYMENT_ELEMENT_FONTS,
+                appearance: {
+                  theme: "night",
+                  variables: {
+                    // Stripe's iframe cannot read CSS variables: brand v0.1 dark tokens as hex
+                    colorPrimary: "#97DD62",
+                    colorBackground: "#151517",
+                    colorText: "#F2F2F0",
+                    colorTextSecondary: "#A6A6A8",
+                    borderRadius: "12px",
+                  },
+                },
               }}
             >
               <DonationForm
@@ -607,8 +407,6 @@ export function FundraisingCampaignClient({
                 platformFee={pricing.platformFee}
                 processingFee={pricing.processingFee}
                 totalCharge={pricing.totalCharge}
-                primaryColor={theme.buttonColor || BLOCKTICKETS_NAVY}
-                textColor={theme.buttonTextColor}
                 onSuccess={() => setSuccess(true)}
                 onError={setError}
               />
@@ -616,10 +414,10 @@ export function FundraisingCampaignClient({
           ) : null}
         </div>
       ) : (
-        <p className={`mt-6 text-center text-[14px] ${muted}`}>
+        <p className="mt-6 text-center text-[14px] text-ink2">
           Online donations are not enabled for this campaign.
         </p>
       )}
-    </div>,
+    </div>
   );
 }

@@ -1,62 +1,24 @@
 "use client";
 
-import { fluidSize } from "@/lib/shopperFluidType";
-
-import { useEffect, useRef, useState } from "react";
-import { useRouter } from "next/navigation";
-import BrandedActionButton from "@/components/atoms/BrandedActionButton";
-import MobileStickyFooter from "@/components/molecules/MobileStickyFooter";
-import { ShopperFluidTypeStyles } from "@/components/templates/ShopperFluidType";
-import InAppBackLink from "@/components/molecules/InAppBackLink";
-import RouteLoader from "@/components/molecules/RouteLoader";
+import { useEffect, useState } from "react";
+import { motion, useReducedMotion } from "framer-motion";
+import AppShell from "@/components/templates/AppShell";
+import BackChip from "@/components/molecules/BackChip";
+import EmptyState from "@/components/molecules/EmptyState";
+import PageSkeleton from "@/components/molecules/PageSkeleton";
+import { cardCls } from "@/components/molecules/Card";
+import { deckColour } from "@/lib/flex-deck";
+import Button from "@/components/atoms/Button";
+import { ArrowRight } from "@/components/atoms/icons";
 import { getFlexPack, placeFlexPackIntoCart } from "@/lib/api";
-import {
-  brandingToTicketingTheme,
-  ERROR_COLOR,
-  type BrandingOrganization,
-} from "@/lib/branding";
-import {
-  checkoutHref,
-  rememberCheckoutReturnPath,
-  setStoredCart,
-} from "@/lib/cart";
-import {
-  flexPackDisplayPrice,
-  flexPackPriceCaption,
-  flexPackSeasonLabel,
-  flexPackVoucherCount,
-} from "@/lib/flexPackDisplay";
+import { useAuth, setLastKnown } from "@/lib/auth";
+import { setStoredCart } from "@/lib/cart";
 import {
   formatCurrency,
+  formatEventWhen,
   getSingularOrPluralWord,
+  imageUrl,
 } from "@/lib/helpers";
-import { cacheOrgBranding } from "@/lib/orgBrandingCache";
-import { beginRouteTransition } from "@/lib/routeTransition";
-import { flexPackTabTitle } from "@/lib/seo";
-import { TICKETING_STICKY_GAP_PX } from "@/lib/ticketingSticky";
-
-const NAVY = "#051b35";
-const MUTE = "#8a93a3";
-const SUB = "#6e7180";
-const FIELD = "#f7f8fc";
-
-const STEPS = [
-  {
-    n: "1",
-    title: "Buy the vouchers",
-    body: "Pick how many you want. They land in your wallet right away.",
-  },
-  {
-    n: "2",
-    title: "Redeem when you know",
-    body: "Trade a voucher for a seat at the Box Office for any available game.",
-  },
-  {
-    n: "3",
-    title: "Share what you skip",
-    body: "Can't make a game? Send your ticket to a friend.",
-  },
-];
 
 type FlexPack = {
   id: number | string;
@@ -70,18 +32,8 @@ type FlexPack = {
   isSoldOut?: boolean;
   image?: { url?: string };
   venue?: { name?: string; slug?: string; timezone?: string };
-  organization?: BrandingOrganization & { name?: string; slug?: string };
+  organization?: { name?: string; slug?: string };
 };
-
-function unwrapFlexPack(data: unknown): FlexPack | null {
-  if (!data) return null;
-  if (Array.isArray(data)) return (data[0] as FlexPack) ?? null;
-  if (typeof data === "object" && data && "name" in data) {
-    return data as FlexPack;
-  }
-  const wrapped = data as { flexPack?: FlexPack; data?: FlexPack };
-  return wrapped.flexPack ?? wrapped.data ?? null;
-}
 
 /** Shared flex pack detail + add-to-cart for org and venue routes. */
 export default function FlexPackDetailClient({
@@ -91,51 +43,20 @@ export default function FlexPackDetailClient({
   uuid: string;
   backHref: string;
 }) {
-  const router = useRouter();
+  const { isAuthenticated, ready } = useAuth();
   const [flexPack, setFlexPack] = useState<FlexPack | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [buying, setBuying] = useState(false);
-  const [vw, setVw] = useState(1440);
-  const [heroH, setHeroH] = useState(0);
-  const heroRef = useRef<HTMLDivElement | null>(null);
-
-  useEffect(() => {
-    const onR = () => setVw(window.innerWidth);
-    onR();
-    window.addEventListener("resize", onR);
-    return () => window.removeEventListener("resize", onR);
-  }, []);
-
-  useEffect(() => {
-    const el = heroRef.current;
-    if (!el || loading) return;
-    const update = () => setHeroH(el.offsetHeight);
-    update();
-    if (typeof ResizeObserver === "undefined") return;
-    const ro = new ResizeObserver(update);
-    ro.observe(el);
-    return () => ro.disconnect();
-  }, [loading, flexPack, vw]);
-
-  useEffect(() => {
-    const title = flexPackTabTitle(flexPack?.name);
-    if (!title) return;
-    const previous = document.title;
-    document.title = title;
-    return () => {
-      if (document.title === title) document.title = previous;
-    };
-  }, [flexPack?.name]);
 
   useEffect(() => {
     let cancelled = false;
     getFlexPack(uuid)
       .then((res) => {
         if (cancelled) return;
-        const pack = unwrapFlexPack(res.data);
-        setFlexPack(pack);
-        if (pack?.organization) cacheOrgBranding(pack.organization);
+        const data = res.data;
+        const pack = Array.isArray(data) ? data[0] : data;
+        setFlexPack((pack as FlexPack) ?? null);
       })
       .catch(() => {
         if (!cancelled) setError("Could not load this flex pack.");
@@ -148,10 +69,19 @@ export default function FlexPackDetailClient({
     };
   }, [uuid]);
 
-  // Guests are not gated here: checkout owns the login redirect so the shopper
-  // comes back to their cart instead of this page.
+  const goLogin = () => {
+    const from = window.location.pathname + window.location.search;
+    setLastKnown(from);
+    window.location.href = `/login/?from=${encodeURIComponent(from)}`;
+  };
+
   const buy = async () => {
     if (!flexPack) return;
+    if (!ready) return;
+    if (!isAuthenticated) {
+      goLogin();
+      return;
+    }
     if (flexPack.isSoldOut) return;
 
     setBuying(true);
@@ -162,11 +92,8 @@ export default function FlexPackDetailClient({
         (res.data as { id?: string | number; cartId?: string | number })?.id ??
         (res.data as { cartId?: string | number })?.cartId;
       if (cartId != null) {
-        rememberCheckoutReturnPath();
-        setStoredCart(cartId, flexPackVoucherCount(flexPack.gameTickets) || 1);
-        const href = checkoutHref(cartId);
-        beginRouteTransition(href);
-        router.push(href);
+        setStoredCart(cartId, Number(flexPack.gameTickets || 0) || 1);
+        window.location.href = `/checkout/?cartId=${encodeURIComponent(String(cartId))}`;
         return;
       }
       setError("Cart could not be created. Please try again.");
@@ -177,450 +104,141 @@ export default function FlexPackDetailClient({
     }
   };
 
-  const mobile = vw < 900;
-  const theme = brandingToTicketingTheme(null, flexPack?.organization);
-  const voucherCount = flexPackVoucherCount(flexPack?.gameTickets);
-  const shownPrice = flexPackDisplayPrice(flexPack);
-  const priceCaption = flexPackPriceCaption(flexPack);
-  const season = flexPackSeasonLabel(
-    flexPack?.start,
-    flexPack?.end,
-    flexPack?.venue?.timezone,
-  );
-  const buyLabel = flexPack?.isSoldOut
-    ? "Sold out"
-    : buying
-      ? "Adding…"
-      : `Get ${voucherCount} ${getSingularOrPluralWord(voucherCount, "voucher").toLowerCase()}`;
-  const pills = [
-    flexPack?.organization?.name || flexPack?.venue?.name,
-    "Any home game",
-    "Redeem any time",
-  ].filter((value): value is string => Boolean(value));
-
-  if (loading) {
-    return <RouteLoader />;
-  }
-
-  if (!flexPack) {
-    return (
-      <div className="shopper-page" style={{ maxWidth: 720, margin: "0 auto", padding: "32px 20px" }}>
-        <ShopperFluidTypeStyles />
-        <InAppBackLink
-          href={backHref}
-          aria-label="Back"
-          style={{
-            display: "inline-flex",
-            alignItems: "center",
-            gap: 8,
-            fontSize: fluidSize(14),
-            fontWeight: 600,
-            color: NAVY,
-            textDecoration: "none",
-          }}
-        >
-          Back
-        </InAppBackLink>
-        <p style={{ marginTop: 24, fontSize: fluidSize(16), color: SUB }} role="status">
-          {error || "Flex pack not found."}
-        </p>
-      </div>
-    );
-  }
+  const reduce = !!useReducedMotion();
+  const timezone = flexPack?.venue?.timezone;
+  const windowLabel =
+    flexPack?.start && flexPack?.end
+      ? `${formatEventWhen(flexPack.start, timezone, "MMM D, YYYY")} – ${formatEventWhen(flexPack.end, timezone, "MMM D, YYYY")}`
+      : "";
+  const count = Number(flexPack?.gameTickets ?? 0);
+  const each = flexPack?.price && count ? flexPack.price / count : 0;
+  /* the deck takes the colour the pack names (description first, then its name); otherwise the brand red of the team pages */
+  const tint = flexPack ? deckColour(flexPack.description, flexPack.name) ?? { t: "#b3202a", t2: "#e8584f", on: "#fff" } : { t: "#b3202a", t2: "#e8584f", on: "#fff" };
+  const shown = Math.min(Math.max(count, 2), 8);
+  const description = flexPack?.description && flexPack.description !== "None" ? flexPack.description : "";
+  const label = flexPack?.isSoldOut ? "Sold out" : buying ? "Adding…" : isAuthenticated ? "Add to cart" : "Log in to buy";
+  const steps = [
+    ["Buy the pack", "One purchase, one price, and every voucher is yours to use."],
+    ["Pick the games later", "Choose any game in the window when you know your plans."],
+    ["Spend them your way", "One a night, or all of them on the same night."],
+  ];
 
   return (
-    // `.shopper-page` leads at 1.6; this page's type scale is built on 1.5.
-    <div
-      className="shopper-page"
-      style={{ minHeight: "100vh", background: FIELD, color: NAVY, lineHeight: 1.5 }}
-    >
-      <ShopperFluidTypeStyles />
-      <div
-        ref={heroRef}
-        style={{
-          position: "sticky",
-          top: 0,
-          zIndex: 20,
-          overflow: "hidden",
-          background: `linear-gradient(115deg, ${theme.accentDark} 0%, ${theme.accent} 52%, ${theme.accent} 100%)`,
-          color: "#fff",
-        }}
-      >
-        <div
-          style={{
-            position: "absolute",
-            top: -70,
-            right: -40,
-            width: 320,
-            height: 320,
-            borderRadius: 999,
-            background: "rgba(255,255,255,0.06)",
-          }}
-        />
-        <div
-          style={{
-            position: "relative",
-            maxWidth: 1180,
-            margin: "0 auto",
-            padding: mobile ? "16px 18px 20px" : "22px 32px 26px",
-            boxSizing: "border-box",
-            display: "flex",
-            flexDirection: "column",
-            gap: 14,
-          }}
-        >
-          <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
-            <InAppBackLink
-              href={backHref}
-              aria-label="Back"
-              style={{
-                flexShrink: 0,
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                width: 40,
-                height: 40,
-                color: "#fff",
-                background: "rgba(255,255,255,0.14)",
-                borderRadius: 999,
-                textDecoration: "none",
-              }}
-            >
-              <svg
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth={2}
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                style={{ width: 18, height: 18 }}
-              >
-                <line x1="19" y1="12" x2="5" y2="12" />
-                <polyline points="12 19 5 12 12 5" />
-              </svg>
-            </InAppBackLink>
-            <div
-              style={{
-                fontSize: fluidSize(10),
-                fontWeight: 600,
-                textTransform: "uppercase",
-                letterSpacing: "0.14em",
-                color: "rgba(255,255,255,0.75)",
-              }}
-            >
-              Flex pack
-              {season ? ` · ${season} season` : ""}
-            </div>
-          </div>
-          <div
-            style={{
-              display: "flex",
-              gap: 20,
-              alignItems: "center",
-              flexWrap: "wrap",
-            }}
-          >
-            <div
-              style={{
-                width: 104,
-                height: 104,
-                flexShrink: 0,
-                borderRadius: 22,
-                background: "#fff",
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                padding: 14,
-                boxSizing: "border-box",
-                boxShadow: "0 12px 24px -12px rgba(0,0,0,0.5)",
-              }}
-            >
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img
-                src={theme.brandLogoSrc || theme.logoSrc}
-                alt={flexPack.organization?.name || "Organization"}
-                style={{
-                  maxWidth: "100%",
-                  maxHeight: "100%",
-                  display: "block",
-                  objectFit: "contain",
-                }}
-              />
-            </div>
-            <div
-              style={{
-                flex: "1 1 300px",
-                minWidth: 0,
-                display: "flex",
-                flexDirection: "column",
-                gap: 10,
-              }}
-            >
-              <h1
-                style={{
-                  margin: 0,
-                  fontSize: mobile ? 30 : 42,
-                  fontWeight: 600,
-                  letterSpacing: "-0.03em",
-                  lineHeight: 1.06,
-                }}
-              >
-                {flexPack.name}
-              </h1>
-              <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
-                {pills.map((label) => (
-                  <span
-                    key={label}
-                    style={{
-                      fontSize: fluidSize(12),
-                      fontWeight: 600,
-                      color: "#fff",
-                      background: "rgba(255,255,255,0.14)",
-                      borderRadius: 999,
-                      padding: "7px 12px",
-                      whiteSpace: "nowrap",
-                    }}
-                  >
-                    {label}
-                  </span>
-                ))}
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
+    <AppShell>
+      <div className="mx-auto max-w-[1040px] pb-20">
+        <BackChip href={backHref} />
 
-      <div>
-        <div
-          style={{
-            maxWidth: 1180,
-            margin: "0 auto",
-            padding: mobile
-              ? "20px 18px 120px"
-              : `${TICKETING_STICKY_GAP_PX}px 32px 120px`,
-            boxSizing: "border-box",
-            display: "grid",
-            gridTemplateColumns: mobile
-              ? "minmax(0, 1fr)"
-              : "minmax(0, 1fr) 360px",
-            gap: 32,
-          }}
-        >
-          <div
-            style={{
-              minWidth: 0,
-              display: "flex",
-              flexDirection: "column",
-              gap: 14,
-            }}
-          >
-            <div
-              style={{
-                fontSize: fluidSize(12),
-                fontWeight: 600,
-                textTransform: "uppercase",
-                letterSpacing: "0.12em",
-                color: MUTE,
-              }}
+        {loading ? (
+          <PageSkeleton variant="detail" message="Loading flex pack…" label="Loading flex pack" className="mt-10 min-h-[30vh]" />
+        ) : !flexPack ? (
+          <div className="mt-10">
+            <EmptyState
+              icon={
+                <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden>
+                  <path d="M4 8h16v10a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V8Z" />
+                  <path d="M8 8V6a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+                </svg>
+              }
             >
-              How the flex pack works
-            </div>
-            <div
-              style={{
-                display: "grid",
-                gridTemplateColumns: mobile
-                  ? "minmax(0, 1fr)"
-                  : "repeat(3, minmax(0, 1fr))",
-                gap: 10,
-              }}
-            >
-              {STEPS.map((st) => (
-                <div
-                  key={st.n}
-                  style={{
-                    background: FIELD,
-                    borderRadius: 16,
-                    padding: 16,
-                    display: "flex",
-                    flexDirection: "column",
-                    gap: 6,
-                    backgroundColor: "#fff",
-                    border: "1px solid rgba(5,27,53,0.08)",
-                  }}
+              Flex pack not found.
+            </EmptyState>
+          </div>
+        ) : (
+          <div className="mt-6 grid gap-5 lg:grid-cols-[minmax(0,1fr)_340px] lg:items-start lg:gap-6">
+            <div className="grid gap-5">
+              {/* the stage: the deck of vouchers in the pack's colour, its name and what it covers */}
+              <section className={`${cardCls} overflow-hidden`} aria-labelledby="fp-title">
+                <motion.div
+                  className="group relative grid h-[230px] items-end justify-items-center overflow-hidden sm:h-[280px]"
+                  style={{ background: `radial-gradient(70% 90% at 50% 105%, ${tint.t}55, transparent 70%), linear-gradient(180deg, ${tint.t}1f, transparent)` }}
+                  initial="rest"
+                  animate="rest"
+                  whileHover="hover"
                 >
-                  <div
-                    style={{
-                      width: 26,
-                      height: 26,
-                      borderRadius: 999,
-                      background: theme.accent,
-                      color: "#fff",
-                      fontSize: fluidSize(13),
-                      fontWeight: 600,
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "center",
-                    }}
-                  >
-                    {st.n}
+                  <div className="relative mb-10 h-[150px] w-[104px] sm:mb-12 sm:h-[176px] sm:w-[122px]" aria-hidden>
+                    {Array.from({ length: shown }, (_, k) => {
+                      const a = (k - (shown - 1) / 2) * (shown > 5 ? 5.5 : 8);
+                      return (
+                        <motion.i
+                          key={k}
+                          className="absolute inset-0 rounded-[18px]"
+                          style={{
+                            transformOrigin: "50% 135%",
+                            background: `linear-gradient(170deg, ${tint.t2}, ${tint.t})`,
+                            boxShadow: "0 0 0 1px rgba(0,0,0,.22), 0 10px 24px rgba(0,0,0,.28)",
+                          }}
+                          variants={{ rest: { rotate: a, y: 0 }, hover: { rotate: a * 1.5, y: -6 } }}
+                          initial={reduce ? false : { rotate: 0, y: 18, opacity: 0 }}
+                          animate={{ rotate: a, y: 0, opacity: 1 }}
+                          transition={reduce ? { duration: 0 } : { type: "spring", stiffness: 260, damping: 26, delay: k * 0.03 }}
+                        >
+                          <span className="absolute inset-[9px] rounded-[11px] border-[1.5px] border-dashed" style={{ borderColor: `${tint.on}66` }} />
+                          <span className="absolute left-1/2 top-1/2 h-9 w-9 -translate-x-1/2 -translate-y-1/2 rounded-full" style={{ boxShadow: `inset 0 0 0 2px ${tint.on}99, inset 0 0 0 11px transparent, inset 0 0 0 17px ${tint.on}99` }} />
+                        </motion.i>
+                      );
+                    })}
                   </div>
-                  <div style={{ fontSize: fluidSize(14), fontWeight: 600 }}>{st.title}</div>
-                  <div style={{ fontSize: fluidSize(13), color: SUB, lineHeight: 1.55 }}>
-                    {st.body}
-                  </div>
+                </motion.div>
+
+                <div className="p-5 sm:p-7">
+                  {flexPack.organization?.name && (
+                    <p className="text-[13px] font-semibold uppercase tracking-[0.08em] text-ink2">{flexPack.organization.name.trim()}</p>
+                  )}
+                  <h1 id="fp-title" className="mt-1.5 text-[clamp(28px,4vw,42px)] font-semibold leading-[1.05] tracking-[-0.03em]">
+                    {flexPack.name}
+                  </h1>
+                  <ul className="mt-4 flex flex-wrap gap-2 text-[13.5px] text-foreground/90">
+                    {[
+                      `${count} ${getSingularOrPluralWord(count, "voucher")}`,
+                      windowLabel && `Valid ${windowLabel}`,
+                      flexPack.venue?.name,
+                    ].filter(Boolean).map((t) => (
+                      <li key={String(t)} className="rounded-full bg-foreground/[0.07] px-3.5 py-1.5 font-medium">{t}</li>
+                    ))}
+                  </ul>
+                  {description && (
+                    <p className="mt-5 max-w-[60ch] text-[15.5px] leading-relaxed text-ink3">{description}</p>
+                  )}
                 </div>
-              ))}
+              </section>
+
+              <section className={`${cardCls} p-5 sm:p-7`} aria-labelledby="fp-how">
+                <h2 id="fp-how" className="text-[18px] font-semibold tracking-[-0.02em]">How flex packs work</h2>
+                <ol className="mt-4 grid gap-4 sm:grid-cols-3 sm:gap-5">
+                  {steps.map(([t, d], i) => (
+                    <li key={t} className="flex gap-3 sm:block">
+                      <span className="grid h-7 w-7 shrink-0 place-items-center rounded-full bg-foreground/[0.08] text-[13px] font-semibold tabular-nums">{i + 1}</span>
+                      <div>
+                        <p className="font-semibold sm:mt-3">{t}</p>
+                        <p className="mt-1 text-[14px] leading-snug text-ink2">{d}</p>
+                      </div>
+                    </li>
+                  ))}
+                </ol>
+              </section>
             </div>
-            {flexPack.description ? (
-              <div
-                style={{
-                  display: "flex",
-                  flexDirection: "column",
-                  gap: 10,
-                  paddingTop: 12,
-                  borderTop: "1px solid rgba(5,27,53,0.08)",
-                }}
-              >
-                <div
-                  style={{
-                    fontSize: fluidSize(12),
-                    fontWeight: 600,
-                    textTransform: "uppercase",
-                    letterSpacing: "0.12em",
-                    color: MUTE,
-                  }}
-                >
-                  More info
-                </div>
-                <p style={{ margin: 0, fontSize: fluidSize(15), lineHeight: 1.65, color: "#4a5567" }}>
-                  {flexPack.description}
+
+            {/* the purchase: price first, then the one action */}
+            <aside className={`${cardCls} p-5 sm:p-6 lg:sticky lg:top-6`} aria-label="Buy this pack">
+              <p className="text-[13px] text-ink2">Pack price</p>
+              <p className="mt-1 text-[44px] font-semibold leading-none tracking-[-0.04em] tabular-nums">{formatCurrency(flexPack.price)}</p>
+              {each > 0 && <p className="mt-2 text-[14px] text-ink2 tabular-nums">{formatCurrency(each)} per voucher</p>}
+              <dl className="mt-5 grid gap-3 border-t border-dashed border-foreground/15 pt-5 text-[14px]">
+                <div className="flex justify-between gap-4"><dt className="text-ink2">Vouchers</dt><dd className="font-semibold tabular-nums">{count}</dd></div>
+                {windowLabel && <div className="flex justify-between gap-4"><dt className="text-ink2">Valid</dt><dd className="text-right font-semibold">{windowLabel}</dd></div>}
+              </dl>
+              <Button onClick={buy} disabled={buying || flexPack.isSoldOut} className="mt-6 w-full disabled:cursor-not-allowed disabled:opacity-40">
+                {label} {!flexPack.isSoldOut && <ArrowRight />}
+              </Button>
+              {error && (
+                <p className="mt-4 text-[14px] text-destructive" role="alert">
+                  {error}
                 </p>
-              </div>
-            ) : null}
-            {error ? (
-              <p style={{ margin: 0, fontSize: fluidSize(14), color: ERROR_COLOR }} role="alert">
-                {error}
-              </p>
-            ) : null}
+              )}
+            </aside>
           </div>
-
-          {!mobile && (
-            <div style={{ minWidth: 0 }}>
-              <div
-                style={{
-                  display: "flex",
-                  flexDirection: "column",
-                  gap: 14,
-                  background: "#fff",
-                  borderRadius: 22,
-                  padding: 22,
-                  boxSizing: "border-box",
-                  position: "sticky",
-                  top: heroH + TICKETING_STICKY_GAP_PX,
-                  maxHeight: `calc(100vh - ${heroH + TICKETING_STICKY_GAP_PX + 24}px)`,
-                  overflowY: "auto",
-                  boxShadow: "0 18px 40px -26px rgba(5,27,53,0.45)",
-                }}
-              >
-                <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-                  <span style={{ fontSize: fluidSize(13), color: MUTE }}>
-                    Flex pack · {voucherCount}{" "}
-                    {getSingularOrPluralWord(voucherCount, "voucher").toLowerCase()}
-                  </span>
-                  <span
-                    style={{
-                      fontSize: 34,
-                      fontWeight: 600,
-                      letterSpacing: "-0.03em",
-                      lineHeight: 1,
-                      fontVariantNumeric: "tabular-nums",
-                    }}
-                  >
-                    {formatCurrency(shownPrice)}
-                  </span>
-                  <span style={{ fontSize: fluidSize(13), lineHeight: 1.5, color: MUTE }}>
-                    {priceCaption}
-                  </span>
-                </div>
-                <BrandedActionButton
-                  primaryColor={theme.buttonColor}
-                  textColor={theme.buttonTextColor}
-                  onClick={() => void buy()}
-                  disabled={buying || flexPack.isSoldOut}
-                  loading={buying}
-                  loadingLabel="Adding…"
-                  className="w-full text-[16px]"
-                  style={{ minHeight: 52, padding: 16, borderRadius: 999 }}
-                >
-                  {buyLabel}
-                </BrandedActionButton>
-                <div style={{ fontSize: fluidSize(13), color: SUB }}>
-                  One voucher, one ticket to any home game. Pick your seat when
-                  you redeem.
-                </div>
-              </div>
-            </div>
-          )}
-        </div>
+        )}
       </div>
-
-      {mobile && (
-        <MobileStickyFooter
-          accentColor={theme.accent}
-          background="rgba(255,255,255,0.96)"
-          boxShadow="0 -12px 30px -24px rgba(5,27,53,0.6)"
-          innerPadding="12px 16px 14px"
-          shellStyle={{ backdropFilter: "blur(10px)", lineHeight: 1.5 }}
-          innerStyle={{
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "space-between",
-            gap: 12,
-          }}
-        >
-          <div
-            style={{
-              display: "flex",
-              flexDirection: "column",
-              gap: 1,
-              minWidth: 0,
-              flexShrink: 0,
-            }}
-          >
-            <span
-              style={{
-                fontSize: 18,
-                fontWeight: 600,
-                letterSpacing: "-0.02em",
-                fontVariantNumeric: "tabular-nums",
-                color: "#000",
-              }}
-            >
-              {formatCurrency(shownPrice)}
-            </span>
-            <span style={{ fontSize: fluidSize(12), lineHeight: 1.5, color: MUTE }}>
-              {priceCaption}
-            </span>
-          </div>
-          <BrandedActionButton
-            primaryColor={theme.buttonColor}
-            textColor={theme.buttonTextColor}
-            onClick={() => void buy()}
-            disabled={buying || flexPack.isSoldOut}
-            loading={buying}
-            loadingLabel="Adding…"
-            className="text-[15px]"
-            style={{
-              flexShrink: 0,
-              minHeight: 48,
-              padding: "14px 22px",
-              borderRadius: 999,
-            }}
-          >
-            {buyLabel}
-          </BrandedActionButton>
-        </MobileStickyFooter>
-      )}
-    </div>
+    </AppShell>
   );
 }

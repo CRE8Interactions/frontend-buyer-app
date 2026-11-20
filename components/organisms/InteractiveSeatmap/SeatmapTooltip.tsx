@@ -1,609 +1,211 @@
 "use client";
 
-import {
-  Children,
-  useEffect,
-  useLayoutEffect,
-  useMemo,
-  useRef,
-  useState,
-  type ReactNode,
-} from "react";
+import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { motion, useReducedMotion, type Variants } from "framer-motion";
+import { Check, Info, Lock, X } from "@phosphor-icons/react";
 import Button from "@/components/atoms/Button";
+import { Badge } from "@/components/ui/badge";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
+import { NumberStepper, NumberStepperDecrementButton, NumberStepperGroup, NumberStepperIncrementButton, NumberStepperValue } from "@/components/ui/number-stepper";
 import { formatOfferListPrice } from "@/lib/helpers";
-import { gaOfferSelectionKey } from "@/lib/connectedOffers";
-import {
-  gaOfferRowRestrictionLabel,
-  gaPopoverDefaultLimitLabel,
-  limitsFromSeatedOfferRow,
-  limitsFromTicketGroup,
-  offerRestrictionLimits,
-  seatedOfferRowRestrictionLabel,
-} from "@/lib/ticketListings";
-import type { QuantityLimits, RawTicketGroup } from "@/lib/ticketListings";
-import {
-  selectionIsResale,
-  selectionIsUnnamedResale,
-  selectionOfferName,
-  selectionTooltipOfferLabel,
-} from "@/lib/ticketSummary";
-import { mapSectionHeading, seatDisplayValue, sectionDisplayValue } from "@/lib/wallet";
-import useFiltersStore from "@/stores/filtersStore";
 import useSeatmapStore from "@/stores/seatmapStore";
+import useFiltersStore from "@/stores/filtersStore";
 import type { TicketGroup } from "@/stores/filtersStore";
-import { ORG_SCROLLBAR_CLASS, orgScrollbarCss } from "@/lib/orgScrollbar";
-import { isMobileSeatmapViewport } from "./SeatmapSeat";
-import {
-  clampPopupToViewport,
-  seatmapSeatOfferScrollMaxHeight,
-  SEATMAP_SEAT_OFFER_ROW_HEIGHT_PX,
-  SEATMAP_SEAT_OFFER_ROWS_VISIBLE,
-} from "@/lib/seatmapPopup";
-import type { PopupRect } from "@/lib/seatmapPopup";
-import {
-  adjacentSeatWindow,
-  type SeatmapMapping,
-  type SeatmapSeat as SeatmapSeatData,
-} from "@/lib/seatmapLookups";
 
 export type SeatmapTooltipTarget =
   | { kind: "seat"; seatId: string; x: number; y: number; pinned?: boolean }
-  | {
-      kind: "section";
-      sectionId: string;
-      x: number;
-      y: number;
-      pinned?: boolean;
-    }
+  | { kind: "section"; sectionId: string; x: number; y: number; pinned?: boolean }
   | null;
 
 type Props = {
   target: SeatmapTooltipTarget;
   onClose: () => void;
-  onHoverStart?: () => void;
-  onHoverEnd?: () => void;
-  onUnlockOffer?: (offerName: string) => void;
-  /** Asks the map to pan so the seat popup fits without being clipped. */
-  onRequestReveal?: (rect: PopupRect) => void;
-  accent?: string;
-  buttonColor?: string;
-  buttonTextColor?: string;
-  /** Event ticket prices include taxes and fees; package/flex prices do not. */
-  pricesIncludeFees?: boolean;
+  onUnlock?: (offer: TicketGroup["offer"]) => void;
+  /** the card as frosted glass (the site's glass recipe) instead of the opaque overlay */
+  glass?: boolean;
 };
 
-function inkOn(hex: string) {
-  const raw = hex.replace("#", "");
-  const full =
-    raw.length === 3
-      ? raw
-          .split("")
-          .map((c) => c + c)
-          .join("")
-      : raw;
-  if (full.length < 6) return "#ffffff";
-  const r = parseInt(full.slice(0, 2), 16);
-  const g = parseInt(full.slice(2, 4), 16);
-  const b = parseInt(full.slice(4, 6), 16);
-  const luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
-  return luminance > 0.55 ? "#051b35" : "#ffffff";
-}
+/* The card that opens on a seat (or a general-admission section): a raised overlay with the place at the top (Sec, Row, Seat, as small labels over the values, in one row),
+   the price in a quiet well under it, and one button. It uses the design tokens only, so it follows the theme, and it is lifted off the map by its shadow and a hairline ring
+   instead of a border. The page can say what a price means (a game, times how many games) through the store's priceContext. */
+const CARD_OPAQUE = "w-[264px] rounded-[22px] bg-h-overlay p-3.5 text-h-foreground [box-shadow:var(--ss-float,0_0_0_1px_color-mix(in_srgb,var(--h-foreground)_8%,transparent),0_24px_50px_-18px_color-mix(in_srgb,var(--shade)_60%,transparent))]";
 
-function resolvedOfferQuantity(
-  offerQtys: Record<string, number>,
-  key: string,
-) {
-  if (offerQtys[key] != null) return offerQtys[key];
-  return 0;
-}
-
-function seatedResolvedOfferQuantity(
-  offerQtys: Record<string, number>,
-  key: string,
-) {
-  if (offerQtys[key] != null) return offerQtys[key];
-  return 0;
-}
-
-/** Offer name as text. A resale seat with no offer says Verified Resale, with no badge. */
-function OfferResaleLabel({
-  group,
-  fallback = "",
-  color,
-}: {
-  group?: TicketGroup | null;
-  fallback?: string;
-  color?: string;
-}) {
-  const name = selectionIsUnnamedResale(group)
-    ? "Verified Resale"
-    : selectionTooltipOfferLabel(group, fallback);
-  if (!name) return null;
-  return <span style={color ? { color } : undefined}>{name}</span>;
-}
-
-/** Package rows use the season name. A missing offer must not fall back to "GA". */
-function gaPackageOrOfferName(group?: TicketGroup | null): string {
-  const offerName = selectionOfferName(group, "");
-  if (offerName) return offerName;
-  const packageName = String(group?.package?.name ?? "").trim();
-  return packageName || "Offer";
-}
-
-function isLockedOffer(offer: TicketGroup) {
-  return Boolean(offer.offer?.accessCode && !offer.offer?.unlocked);
-}
-
-/** Single game ticket prices include taxes and fees; package prices do not. */
-function priceIncludesTaxesAndFees(
-  offer: TicketGroup,
-  pricesIncludeFees: boolean,
-) {
-  return pricesIncludeFees && !offer.package;
-}
-
-function OfferPriceNote({ color }: { color: string }) {
+function Cell({ label, value, grow }: { label: string; value: string; grow?: boolean }) {
   return (
-    <p className="text-[10px]" style={{ color }}>
-      Incl. taxes &amp; fees
-    </p>
+    <div className={`min-w-0 ${grow ? "flex-1" : "shrink-0"}`}>
+      <p className="text-xs font-semibold uppercase leading-none tracking-[0.06em]">{label}</p>
+      <p className="mt-1.5 truncate text-[17px] font-semibold leading-none tracking-[-0.01em] tabular-nums">{value}</p>
+    </div>
   );
 }
 
-function GaOfferLimitNote({
-  group,
-  limits,
-  color,
-}: {
-  group: TicketGroup;
-  limits: QuantityLimits;
-  color: string;
-}) {
-  const label = gaOfferRowRestrictionLabel(group.package || group.offer, limits);
-  if (!label) return null;
+/* The player's seat hover card, in this map: an optional notice badge (wheelchair space), the pass (a quiet panel with the brand's seat-dot motif fading out to the left;
+   small muted labels over large numerals, hairlines between), then the price row. Tapping elsewhere or Escape closes it. */
+function Notice({ children }: { children: React.ReactNode }) {
   return (
-    <p className="text-[10px]" style={{ color }}>
-      Ticket limit: {label}
-    </p>
+    <div className="flex items-center justify-center gap-2 rounded-[16px] bg-[color-mix(in_oklab,#f5a524_18%,transparent)] px-3 py-2 text-sm font-medium text-[color-mix(in_oklab,#f5a524_70%,var(--h-foreground))]">
+      <Info weight="bold" className="size-4 shrink-0" aria-hidden />{children}
+    </div>
   );
 }
 
-function SeatedOfferLimitNote({
-  group,
-  limits,
-  color,
-}: {
-  group: TicketGroup;
-  limits: QuantityLimits;
-  color: string;
-}) {
-  const label = seatedOfferRowRestrictionLabel(
-    group.package || group.offer,
-    limits,
-  );
-  if (!label) return null;
+function Pass({ cells, chips }: { cells: { label: string; value: string }[]; chips?: string[] }) {
   return (
-    <p className="text-[10px]" style={{ color }}>
-      {label}
-    </p>
-  );
-}
-
-function seatedSelectionPreview(
-  mapping: SeatmapMapping | null,
-  seatIds: string[] | null,
-) {
-  if (!seatIds?.length) return null;
-  const labels = seatIds.map((id) => {
-    const number = mapping?.seats?.[id]?.seatNumber;
-    return number == null || number === ""
-      ? id
-      : seatDisplayValue(number) || id;
-  });
-  return labels.length === 1
-    ? `Seat ${labels[0]} will be added`
-    : `Seats ${labels[0]}-${labels[labels.length - 1]} will be added`;
-}
-
-function PopoverTicketLimit({
-  label,
-  color,
-}: {
-  label: string | null;
-  color: string;
-}) {
-  if (!label) return null;
-  return (
-    <p className="mt-2 text-[11px]" style={{ color }}>
-      Ticket limit: {label}
-    </p>
-  );
-}
-
-const UNLOCK_OFFER_BTN_CLASS =
-  "!h-auto min-h-0 rounded-full !px-2.5 !py-1 text-[11px] font-semibold leading-tight";
-/** Same size as Add now — used when the popup shows exactly one offer. */
-const SINGLE_OFFER_ACTION_BTN_CLASS =
-  "mt-4 w-full !h-auto min-h-11 rounded-full py-3 text-[16px] font-semibold";
-const MOBILE_SINGLE_OFFER_ACTION_BTN_CLASS =
-  "mt-5 w-full !h-auto min-h-11 rounded-full py-3 text-[16px] font-semibold";
-
-/** Same org-colored thumb + light track as the select-tickets filter bar. */
-
-function SeatOfferList({
-  offerCount,
-  thumbColor,
-  children,
-}: {
-  offerCount: number;
-  thumbColor: string;
-  children: ReactNode;
-}) {
-  const rows = Children.toArray(children);
-  const needsScroll = offerCount > SEATMAP_SEAT_OFFER_ROWS_VISIBLE;
-  const pinnedRow = needsScroll ? rows[0] : null;
-  const scrollRows = needsScroll ? rows.slice(1) : rows;
-  const scrollMaxHeight = needsScroll
-    ? seatmapSeatOfferScrollMaxHeight(offerCount, { pinFirstOffer: true })
-    : null;
-
-  return (
-    <div className="mt-3 space-y-2">
-      {pinnedRow ? (
-        <div data-testid="seat-offer-pinned">{pinnedRow}</div>
-      ) : null}
-      {scrollRows.length > 0 ? (
-        <div
-          className={`space-y-2 pr-1${
-            scrollMaxHeight != null
-              ? ` overflow-y-auto overscroll-contain ${ORG_SCROLLBAR_CLASS}`
-              : ""
-          }`}
-          style={
-            scrollMaxHeight != null
-              ? { maxHeight: scrollMaxHeight }
-              : undefined
-          }
-          data-testid={
-            scrollMaxHeight != null ? "seat-offer-scroll" : undefined
-          }
-        >
-          {scrollRows}
+    <div className="relative isolate overflow-hidden rounded-[18px] bg-[color-mix(in_oklab,var(--h-foreground)_9%,var(--h-overlay))] px-3.5 pb-3.5 pt-3">
+      <span aria-hidden className="pointer-events-none absolute inset-0 -z-10 [background-image:radial-gradient(circle,color-mix(in_srgb,currentColor_14%,transparent)_1.4px,transparent_1.8px)] [background-size:12px_12px] [background-position:6px_6px] [mask-image:linear-gradient(to_left,#000_0%,transparent_62%)]" />
+      {chips && chips.length ? (
+        <div className="mb-3 flex flex-wrap gap-2">
+          {chips.map((c) => (
+            <span key={c} className="inline-flex h-8 max-w-full items-center gap-2 rounded-full bg-[color-mix(in_oklab,var(--h-foreground)_8%,transparent)] px-3.5 text-sm font-medium shadow-[inset_0_0_0_1px_color-mix(in_oklab,var(--h-foreground)_8%,transparent)]">
+              <i aria-hidden className="size-2 shrink-0 rounded-full bg-current" /><span className="truncate">{c}</span>
+            </span>
+          ))}
         </div>
       ) : null}
-      {scrollMaxHeight != null ? (
-        <style>{orgScrollbarCss(thumbColor)}</style>
-      ) : null}
-    </div>
-  );
-}
-
-function TooltipQuantityStepper({
-  value,
-  limits,
-  ink,
-  onChange,
-  allowZero = false,
-}: {
-  value: number;
-  limits: QuantityLimits;
-  ink: string;
-  onChange: (next: number) => void;
-  allowZero?: boolean;
-}) {
-  const defaultQty = limits.valid ? limits.min : 0;
-  const resolved =
-    allowZero && value === 0
-      ? 0
-      : limits.valid
-        ? Math.min(
-            Math.max(value ?? defaultQty, allowZero ? 0 : limits.min),
-            limits.max,
-          )
-        : allowZero
-          ? Math.max(0, value ?? 0)
-          : limits.min;
-  const canDecrease = allowZero ? resolved > 0 : limits.valid && resolved > limits.min;
-  const canIncrease =
-    limits.valid &&
-    (resolved === 0 ? limits.min <= limits.max : resolved + limits.step <= limits.max);
-  const boxBg =
-    ink === "#ffffff" ? "rgba(255,255,255,0.16)" : "rgba(5,27,53,0.08)";
-
-  const decrease = () => {
-    if (allowZero && resolved <= limits.min) {
-      onChange(0);
-      return;
-    }
-    onChange(Math.max(limits.min, resolved - limits.step));
-  };
-
-  const increase = () => {
-    if (allowZero && resolved === 0) {
-      onChange(limits.min);
-      return;
-    }
-    onChange(Math.min(limits.max, resolved + limits.step));
-  };
-
-  return (
-    <div className="flex shrink-0 items-center gap-2">
-      <button
-        type="button"
-        aria-label="Decrease quantity"
-        disabled={!canDecrease}
-        onClick={decrease}
-        className="flex h-10 w-7 items-center justify-center border-0 bg-transparent text-[24px] font-light disabled:opacity-30"
-        style={{ color: ink }}
-      >
-        −
-      </button>
-      <output
-        aria-label="Ticket quantity"
-        className="flex h-10 min-w-10 items-center justify-center rounded-lg px-2 text-[16px] font-semibold tabular-nums"
-        style={{ background: boxBg, color: ink }}
-      >
-        {resolved}
-      </output>
-      <button
-        type="button"
-        aria-label="Increase quantity"
-        disabled={!canIncrease}
-        onClick={increase}
-        className="flex h-10 w-7 items-center justify-center border-0 bg-transparent text-[24px] font-light disabled:opacity-30"
-        style={{ color: ink }}
-      >
-        +
-      </button>
-    </div>
-  );
-}
-
-const MOBILE_SEAT_CARD_WIDTH = 272;
-const MOBILE_SEAT_POPUP_WIDTH = 280;
-const MOBILE_SEAT_CARET_SIZE = 10;
-const MOBILE_SEAT_POPUP_ESTIMATED_HEIGHT = 140;
-const GA_POPUP_WIDTH = 280;
-const GA_POPUP_ESTIMATED_HEIGHT = 220;
-
-/** Anchor popup above the seat so the caret tip lands on target.y. */
-export function mobileSeatPopupPosition(
-  target: { x: number; y: number },
-  cardWidth: number,
-  cardHeight: number,
-) {
-  // Where the popup wants to sit so its caret lands on the seat; the clamped
-  // values below keep it on screen, the desired ones tell the map how far to
-  // pan so no clamping is needed.
-  const desiredLeft = target.x - cardWidth / 2;
-  const desiredTop = target.y - cardHeight - MOBILE_SEAT_CARET_SIZE;
-  const left = Math.min(
-    Math.max(desiredLeft, 16),
-    window.innerWidth - cardWidth - 16,
-  );
-  const caretLeft = Math.min(
-    Math.max(target.x - left - MOBILE_SEAT_CARET_SIZE, 20),
-    cardWidth - 20,
-  );
-  const top = Math.max(desiredTop, 16);
-  return { left, top, caretLeft, cardWidth, cardHeight, desiredLeft, desiredTop };
-}
-
-function SeatPopupCaret({ left, color }: { left: number; color: string }) {
-  return (
-    <div
-      aria-hidden
-      data-testid="seat-popup-caret"
-      className="absolute h-0 w-0 border-x-[10px] border-t-[10px] border-x-transparent"
-      style={{
-        left,
-        top: "100%",
-        marginTop: -1,
-        borderTopColor: color,
-      }}
-    />
-  );
-}
-
-function MobileSeatAnchoredPopup({
-  target,
-  width,
-  accent,
-  caretColor,
-  children,
-  hoverProps,
-  onRequestReveal,
-}: {
-  target: { x: number; y: number };
-  width: number;
-  accent: string;
-  caretColor?: string;
-  children: React.ReactNode;
-  hoverProps?: React.HTMLAttributes<HTMLDivElement>;
-  onRequestReveal?: (rect: PopupRect) => void;
-}) {
-  const cardRef = useRef<HTMLDivElement>(null);
-  const [cardHeight, setCardHeight] = useState(MOBILE_SEAT_POPUP_ESTIMATED_HEIGHT);
-  const { left, top, caretLeft, desiredLeft, desiredTop } =
-    mobileSeatPopupPosition(target, width, cardHeight);
-
-  useLayoutEffect(() => {
-    const nextHeight = cardRef.current?.offsetHeight;
-    if (nextHeight && nextHeight !== cardHeight) {
-      setCardHeight(nextHeight);
-      return;
-    }
-    onRequestReveal?.({
-      left: desiredLeft,
-      top: desiredTop,
-      width,
-      height: cardHeight,
-    });
-  }, [
-    cardHeight,
-    children,
-    desiredLeft,
-    desiredTop,
-    onRequestReveal,
-    target.x,
-    target.y,
-    width,
-  ]);
-
-  return (
-    <div
-      data-seatmap-tooltip="true"
-      className="fixed z-[80]"
-      style={{ left, top, width }}
-      onClick={(e) => e.stopPropagation()}
-      {...hoverProps}
-    >
-      <div
-        ref={cardRef}
-        className="relative rounded-2xl border p-4 shadow-2xl shadow-black/40"
-        style={{ background: accent, borderColor: "rgba(255,255,255,0.22)" }}
-      >
-        {children}
-        <SeatPopupCaret left={caretLeft} color={caretColor ?? accent} />
+      <div className={`grid ${cells.length === 1 ? "grid-cols-1" : "grid-cols-3"}`}>
+        {cells.map((c, i) => (
+          <div key={c.label} className={`grid min-w-0 gap-0.5 ${i === 0 ? "justify-items-start" : i === cells.length - 1 ? "justify-items-end border-l border-foreground/10 pl-3" : "justify-items-center border-l border-foreground/10 px-3"}`}>
+            <small className="text-[13px] font-medium leading-4 text-h-foreground/75">{c.label}</small>
+            <b className="max-w-full truncate text-[22px] font-medium leading-7 tracking-[-0.02em] tabular-nums">{c.value}</b>
+          </div>
+        ))}
       </div>
     </div>
   );
 }
 
-function mobileSeatCardPosition(
-  target: { x: number; y: number },
-  cardHeight: number,
-) {
-  return mobileSeatPopupPosition(target, MOBILE_SEAT_CARD_WIDTH, cardHeight);
+/* the player's locked offer: a lock in a quiet round chip, the title, one line of why, the code field and the button */
+function LockedOffer({ offerName, onUnlock }: { offerName?: string; onUnlock: () => void }) {
+  const [code, setCode] = useState("");
+  return (
+    <form className="grid justify-items-center gap-3 px-2 pb-1 pt-3 text-center" onSubmit={(e) => { e.preventDefault(); onUnlock(); }}>
+      <span className="grid size-10 place-items-center rounded-[14px] bg-h-default"><Lock weight="bold" className="size-5" aria-hidden /></span>
+      <div className="grid gap-1">
+        <b className="text-base font-medium leading-5">Locked offer</b>
+        <p className="text-sm leading-5 text-h-foreground/75 text-pretty">{offerName ? <>Enter an access code for <span className="font-medium text-h-foreground">{offerName}</span> to reveal purchasing options.</> : "Enter an access code to reveal purchasing options."}</p>
+      </div>
+      <input
+        value={code} onChange={(e) => setCode(e.target.value)} placeholder="Add access code" aria-label="Access code" autoComplete="off" autoCapitalize="none" spellCheck={false}
+        className="h-10 w-full rounded-[14px] bg-h-default px-3.5 text-base outline-none placeholder:text-h-foreground/50 focus-visible:ring-2 focus-visible:ring-h-focus md:text-sm"
+      />
+      <Button type="submit" className="w-full">Unlock</Button>
+    </form>
+  );
 }
 
-function MobileSingleOfferSeatPopup({
-  target,
-  seat,
-  primary,
-  accent,
-  actionLabel,
-  onAction,
-  onRequestReveal,
-}: {
-  target: { x: number; y: number };
-  seat: SeatmapSeatData | null | undefined;
-  primary: TicketGroup;
-  accent: string;
-  actionLabel: string;
-  onAction: () => void;
-  onRequestReveal?: (rect: PopupRect) => void;
-}) {
-  const cardRef = useRef<HTMLDivElement>(null);
-  const [cardHeight, setCardHeight] = useState(260);
-  const { left, top, caretLeft, desiredLeft, desiredTop } =
-    mobileSeatCardPosition(target, cardHeight);
-  const offerName = selectionTooltipOfferLabel(primary, "Standard");
-  const price = formatOfferListPrice(primary?.price ?? 0, primary?.offer);
-  const section =
-    sectionDisplayValue(
-      primary?.sectionName || primary?.sectionNumber || seat?.sectionNumber,
-    ) || "—";
-  const row = primary?.rowName || primary?.rowNumber || "—";
-  const seatNumber = seatDisplayValue(seat?.seatNumber) || "—";
-
-  useLayoutEffect(() => {
-    const nextHeight = cardRef.current?.offsetHeight;
-    if (nextHeight && nextHeight !== cardHeight) {
-      setCardHeight(nextHeight);
-      return;
-    }
-    onRequestReveal?.({
-      left: desiredLeft,
-      top: desiredTop,
-      width: MOBILE_SEAT_CARD_WIDTH,
-      height: cardHeight,
-    });
-  }, [
-    cardHeight,
-    desiredLeft,
-    desiredTop,
-    actionLabel,
-    offerName,
-    onRequestReveal,
-    price,
-    section,
-    row,
-    seatNumber,
-  ]);
-
+/* the hover card of a locked offer: what it is, without the field (the field is for the click, which keeps the card open) */
+function LockedPreview({ offerName }: { offerName?: string }) {
   return (
-    <div
-      data-seatmap-tooltip="true"
-      className="fixed z-[80]"
-      style={{ left, top, width: MOBILE_SEAT_CARD_WIDTH }}
-      onClick={(e) => e.stopPropagation()}
-    >
-      <div ref={cardRef} className="relative">
-        <div
-          className="overflow-hidden rounded-2xl shadow-2xl shadow-black/50"
-          style={{ background: accent }}
-        >
-          <div className="flex flex-wrap items-center justify-center gap-2 px-4 py-3 text-center text-[15px] font-semibold text-white">
-            <OfferResaleLabel group={primary} fallback="Standard" color="#ffffff" />
-          </div>
-          <div className="px-5 pb-5 pt-4 text-white">
-            <p className="text-center text-[26px] font-bold leading-none tracking-tight">
-              {price}
-            </p>
-            <div className="mt-5 grid grid-cols-3 gap-3 text-center">
-              {[
-                { label: "Section", value: section },
-                { label: "Row", value: row },
-                { label: "Seat", value: seatNumber },
-              ].map(({ label, value }) => (
-                <div key={label}>
-                  <p className="text-[11px] text-white/70">{label}</p>
-                  <p className="mt-1 text-[17px] font-semibold tabular-nums">
-                    {value}
-                  </p>
-                </div>
-              ))}
-            </div>
-            <Button
-              className={MOBILE_SINGLE_OFFER_ACTION_BTN_CLASS}
-              style={{ background: "#ffffff", color: accent }}
-              onClick={onAction}
-            >
-              {actionLabel}
-            </Button>
-          </div>
-        </div>
-        <SeatPopupCaret left={caretLeft} color={accent} />
-      </div>
+    <div className="flex items-center gap-3 px-3.5 pb-1 pt-1">
+      <span className="grid size-8 shrink-0 place-items-center rounded-[11px] bg-h-default"><Lock weight="bold" className="size-4" aria-hidden /></span>
+      <span className="grid min-w-0 gap-0.5">
+        <b className="text-sm font-medium leading-4">Locked offer</b>
+        <span className="truncate text-xs leading-4 text-h-foreground/75">{offerName ? `${offerName} needs an access code` : "Needs an access code"}</span>
+      </span>
     </div>
   );
 }
 
-export default function SeatmapTooltip({
-  target,
-  onClose,
-  onHoverStart,
-  onHoverEnd,
-  onUnlockOffer,
-  onRequestReveal,
-  accent = "#0a2747",
-  buttonColor = "#A6E773",
-  buttonTextColor = "#051B35",
-  pricesIncludeFees = true,
-}: Props) {
+function PriceRow({ price, offer, count, unit }: { price: number; offer: TicketGroup["offer"]; count: number; unit?: string }) {
+  const amount = (
+    <strong className="whitespace-nowrap text-lg font-medium leading-7 tracking-[-0.02em] tabular-nums">{formatOfferListPrice(price, offer)}{unit ? <span className="ml-1.5 text-xs font-medium text-h-foreground/75">{unit}</span> : null}</strong>
+  );
+  /* one offer is a fixed price: just the price. "From" only where there are several offers and it is the lowest. */
+  return count > 1 ? (
+    <div className="flex items-center justify-between gap-3 px-3.5 pb-1 pt-1">
+      <span className="inline-flex items-center gap-2 text-sm font-medium text-h-foreground/80"><i className="size-2 rounded-full bg-[#97dd62]" />{`${count} offers from`}</span>
+      {amount}
+    </div>
+  ) : (
+    <div className="flex items-center gap-2 px-3.5 pb-1 pt-1"><i className="size-2 shrink-0 rounded-full bg-[#97dd62]" />{amount}</div>
+  );
+}
+
+function Close({ onClose }: { onClose: () => void }) {
+  return (
+    <button type="button" onClick={onClose} aria-label="Close" className="-mr-1 -mt-1 grid size-7 shrink-0 place-items-center rounded-full text-h-muted outline-none transition-colors duration-150 focus-visible:ring-2 focus-visible:ring-h-focus [@media(hover:hover)]:hover:bg-h-default [@media(hover:hover)]:hover:text-h-foreground">
+      <X weight="bold" className="size-3.5" aria-hidden />
+    </button>
+  );
+}
+
+const cardVariants: Variants = { hidden: { opacity: 0, scale: 0.92, y: 6 }, show: { opacity: 1, scale: 1, y: 0, transition: { type: "spring", stiffness: 520, damping: 34, staggerChildren: 0.04, delayChildren: 0.05 } } };
+const partVariants: Variants = { hidden: { opacity: 0, y: 5 }, show: { opacity: 1, y: 0, transition: { type: "spring", stiffness: 420, damping: 32 } } };
+
+/* the glass card (the player's seat hover card): 26px corners, 8px padding, 6px between its parts; it opens from the tap point on a short spring */
+function HoverCard({ style, children, wide }: { style: React.CSSProperties; children: React.ReactNode; wide?: boolean }) {
+  const still = useReducedMotion();
+  return (
+    <motion.div
+      style={{ ...style, transformOrigin: "0% 50%" }}
+      className={`grid ${wide ? "w-[min(360px,calc(100vw-24px))]" : "w-[264px]"} grid-cols-[minmax(0,1fr)] gap-1.5 rounded-[26px] glass glass-panel p-2 text-h-foreground [--glass-fill-panel:color-mix(in_oklab,var(--h-overlay)_96%,transparent)]`}
+      onClick={(e) => e.stopPropagation()}
+      initial={still ? false : "hidden"}
+      animate="show"
+      variants={still ? undefined : cardVariants}
+    >
+      {React.Children.toArray(children).map((c, i) => (
+        <motion.div key={i} variants={still ? undefined : partVariants} className="grid grid-cols-[minmax(0,1fr)] gap-1.5 empty:hidden [&>*]:mt-0">{c}</motion.div>
+      ))}
+    </motion.div>
+  );
+}
+
+/* Puts a card by the pointer where all of it can be seen. The card is measured, then placed below and to the right of the pointer, flipping above or to the left when
+   it would run out of the screen, and kept clear of the page's floating dock, its list of your seats and its header, so nothing sits on top of the card. */
+function Floating({ x, y, children }: { x: number; y: number; children: React.ReactNode }) {
+  const ref = useRef<HTMLDivElement>(null);
+  const [pos, setPos] = useState<{ left: number; top: number } | null>(null);
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const place = () => {
+      const w = el.offsetWidth, h = el.offsetHeight, vw = window.innerWidth, vh = window.innerHeight, m = 12, gap = 16;
+      let bottom = vh - m;
+      for (const sel of ['[role="toolbar"][aria-label="Seat controls"]', "#dock-seats"]) {
+        const r = document.querySelector(sel)?.getBoundingClientRect();
+        if (r && r.height > 0) bottom = Math.min(bottom, r.top - 10);
+      }
+      const head = document.querySelector('[aria-label="Choose your seats"] header')?.getBoundingClientRect();
+      const topLimit = head && head.bottom < vh / 2 ? head.bottom + 10 : m;
+      let left = x + gap;
+      if (left + w > vw - m) left = x - gap - w;
+      left = Math.max(m, Math.min(left, vw - w - m));
+      let top = y + gap;
+      if (top + h > bottom) top = y - gap - h;
+      top = Math.max(topLimit, Math.min(top, bottom - h));
+      setPos((p) => (p && p.left === left && p.top === top ? p : { left, top }));
+    };
+    place();
+    const ro = new ResizeObserver(place);
+    ro.observe(el);
+    window.addEventListener("resize", place);
+    return () => { ro.disconnect(); window.removeEventListener("resize", place); };
+  }, [x, y]);
+  return (
+    <div ref={ref} style={{ position: "fixed", left: pos?.left ?? 0, top: pos?.top ?? 0, zIndex: 80, visibility: pos ? "visible" : "hidden" }}>
+      {children}
+    </div>
+  );
+}
+
+export default function SeatmapTooltip({ target, onClose, onUnlock, glass }: Props) {
+  const CARD = glass ? "w-[264px] rounded-[22px] glass glass-panel p-3.5 text-h-foreground" : CARD_OPAQUE;
   const data = useSeatmapStore((s) => s.data);
   const seatLookupTable = useSeatmapStore((s) => s.seatLookupTable);
   const seatOffersLookupTable = useSeatmapStore((s) => s.seatOffersLookupTable);
   const sectionLookupTable = useSeatmapStore((s) => s.sectionLookupTable);
-  const selectSeatedOffers = useSeatmapStore((s) => s.selectSeatedOffers);
   const selectSpecificSeat = useSeatmapStore((s) => s.selectSpecificSeat);
+  const selectSeatedOffers = useSeatmapStore((s) => s.selectSeatedOffers);
   const selectGASeats = useSeatmapStore((s) => s.selectGASeats);
   const selectedFromMap = useSeatmapStore((s) => s.selectedFromMap);
-  const eventTicketLimit = useFiltersStore((s) => s.eventTicketLimit);
+  const { unit, multiplier } = useSeatmapStore((s) => s.priceContext);
 
-  const [gaQty, setGaQty] = useState(0);
+  const [gaQty, setGaQty] = useState(2);
   const [offerQtys, setOfferQtys] = useState<Record<string, number>>({});
+  /* the offer picked in the radio list, per seat (the first one until the buyer chooses) */
+  const [chosen, setChosen] = useState<Record<string, string>>({});
+  const feesIn = useFiltersStore((s) => (s.event as { includeFees?: boolean } | null | undefined)?.includeFees !== false);
 
   useEffect(() => {
     if (!target) return;
@@ -614,18 +216,6 @@ export default function SeatmapTooltip({
     return () => window.removeEventListener("keydown", onKey);
   }, [target, onClose]);
 
-  useEffect(() => {
-    setOfferQtys({});
-    setGaQty(0);
-  }, [
-    target?.kind,
-    target?.kind === "seat"
-      ? target.seatId
-      : target?.kind === "section"
-        ? target.sectionId
-        : null,
-  ]);
-
   const seat = target?.kind === "seat" ? data?.seats?.[target.seatId] : null;
   const seatOffers =
     target?.kind === "seat"
@@ -634,595 +224,206 @@ export default function SeatmapTooltip({
           ? [seatLookupTable[target.seatId]]
           : [])
       : [];
-  const sectionOffers =
+  const sectionGroups =
     target?.kind === "section"
       ? sectionLookupTable[target.sectionId] || []
       : [];
 
-  const groupQuantityLimits = (
-    group: TicketGroup,
-    available?: number,
-  ) =>
-    limitsFromTicketGroup(
-      {
-        ...(group as RawTicketGroup),
-        ...(available != null
-          ? { availableCount: available, maxContiguous: available }
-          : {}),
-      },
-      eventTicketLimit,
-    );
-
-  const visibleSeatOffers = useMemo(
-    () => seatOffers.map((offer, index) => ({ offer, index })),
-    [seatOffers],
-  );
-
-  // The GA card grows with its offer list, so its height has to be measured
-  // before it can be placed: a guessed height clips the last offer rows off
-  // the bottom of the window.
-  const gaCardRef = useRef<HTMLDivElement>(null);
-  const [gaCardHeight, setGaCardHeight] = useState(GA_POPUP_ESTIMATED_HEIGHT);
-
-  useLayoutEffect(() => {
-    const measured = gaCardRef.current?.offsetHeight;
-    if (measured && measured !== gaCardHeight) setGaCardHeight(measured);
-  }, [gaCardHeight, sectionOffers.length, target]);
+  const sectionMeta = useMemo(() => {
+    if (target?.kind !== "section") return null;
+    return data?.sections?.[target.sectionId] || null;
+  }, [data?.sections, target]);
 
   if (!target) return null;
 
-  const ink = inkOn(accent);
-  const muted = ink === "#ffffff" ? "rgba(255,255,255,0.82)" : "rgba(5,27,53,0.72)";
-  const line = ink === "#ffffff" ? "rgba(255,255,255,0.22)" : "rgba(5,27,53,0.14)";
-  const actionBg = buttonColor.toLowerCase() === accent.toLowerCase() ? ink : buttonColor;
-  const actionInk = buttonColor.toLowerCase() === accent.toLowerCase() ? accent : buttonTextColor;
+  const style: React.CSSProperties = {};
 
-  const style: React.CSSProperties = {
-    position: "fixed",
-    ...clampPopupToViewport(
-      target,
-      { width: GA_POPUP_WIDTH, height: gaCardHeight },
-      { width: window.innerWidth, height: window.innerHeight },
-    ),
-    zIndex: 80,
-    // A window too short for the whole card scrolls it instead of clipping it.
-    maxHeight: "calc(100vh - 32px)",
-    overflowY: "auto",
-    background: accent,
-    color: ink,
-    borderColor: line,
-  };
-  const hoverProps = {
-    onMouseEnter: onHoverStart,
-    onMouseLeave: onHoverEnd,
+  /* the price well: the price on the left, and what it comes to on the right when a page says a price repeats */
+  const priceWell = (price: number, offer: TicketGroup["offer"], extra?: React.ReactNode) => {
+    const shown = formatOfferListPrice(price, offer);
+    return (
+      <div className="mt-3 flex items-end justify-between gap-3 rounded-[16px] bg-h-default px-3 py-2.5">
+        <span className="grid leading-none">
+          <b className="text-2xl font-semibold tracking-[-0.03em] tabular-nums">{shown}</b>
+          {unit && <span className="mt-1.5 text-xs font-medium">{unit}</span>}
+        </span>
+        {multiplier > 1 && price > 0 && (
+          <span className="grid justify-items-end leading-none">
+            <b className="text-[15px] font-semibold tabular-nums">{`$${(price * multiplier).toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ",")}`}</b>
+            <span className="mt-1.5 text-xs font-medium">{multiplier} games</span>
+          </span>
+        )}
+        {extra}
+      </div>
+    );
   };
 
   if (target.kind === "seat") {
-    const primary = visibleSeatOffers[0]?.offer ?? seatOffers[0];
-    const locked =
-      visibleSeatOffers.length === 1 &&
-      Boolean(primary && isLockedOffer(primary));
+    const primary = seatOffers[0];
+    const locked = Boolean(
+      primary?.offer?.accessCode && !primary?.offer?.unlocked,
+    );
     const alreadySelected = selectedFromMap.some(
       (g) => g.seatId === target.seatId,
     );
-    const multiOffer = visibleSeatOffers.length > 1;
-    const showSeatActions =
-      isMobileSeatmapViewport() || target.pinned === true;
-    const showUnlockForLockedOffer = (offerLocked: boolean) =>
-      offerLocked &&
-      Boolean(onUnlockOffer) &&
-      (showSeatActions || !isMobileSeatmapViewport());
-    const addPrimarySeat = () => {
-      if (!primary) return;
-      // Quantity rules only apply when the shopper has to choose between
-      // offers. A seat with one offer behaves like standard admission.
-      selectSpecificSeat(target.seatId, primary);
-    };
-    const mobileSingleOffer =
-      isMobileSeatmapViewport() &&
-      visibleSeatOffers.length === 1 &&
-      primary &&
-      (!isLockedOffer(primary) ||
-        Boolean(onUnlockOffer && primary.offer?.name));
+    const offerName = primary?.package?.name || primary?.offer?.name;
 
-    if (mobileSingleOffer && primary) {
-      const mobileLocked = isLockedOffer(primary);
-      return (
-        <MobileSingleOfferSeatPopup
-          target={target}
-          seat={seat}
-          primary={primary}
-          accent={accent}
-          actionLabel={mobileLocked ? "Unlock offer" : "Add now"}
-          onRequestReveal={onRequestReveal}
-          onAction={() => {
-            if (mobileLocked) {
-              onUnlockOffer!(primary.offer!.name!);
-              return;
-            }
-            addPrimarySeat();
-            onClose();
-          }}
-        />
-      );
-    }
-
-    const seatedOfferPicks = () =>
-      seatOffers
-        .map((offer, index) => {
-          if (isLockedOffer(offer)) {
-            return null;
-          }
-          const key = gaOfferSelectionKey(offer, index);
-          return {
-            ...offer,
-            quantity: seatedResolvedOfferQuantity(offerQtys, key),
-          };
-        })
-        .filter(
-          (offer): offer is TicketGroup & { quantity: number } =>
-            offer != null && Number(offer.quantity) > 0,
-        );
-
-    const seatPopupBody = (
+    const accessible = Boolean(seat?.accessible || primary?.accessible);
+    const seatHeader = glass ? (
       <>
-        <div className="flex items-start justify-between gap-3">
-          <div>
-            <p
-              className="text-[12px] font-semibold uppercase tracking-[0.12em]"
-              style={{ color: muted }}
-            >
-              Seat {seatDisplayValue(seat?.seatNumber) || "—"}
-            </p>
-            <p className="mt-1 text-[15px] font-semibold" style={{ color: ink }}>
-              {mapSectionHeading(primary?.sectionName || primary?.sectionNumber)} · Row{" "}
-              {primary?.rowName || primary?.rowNumber}
-            </p>
-          </div>
-          <button
-            type="button"
-            onClick={onClose}
-            className="opacity-80 hover:opacity-100"
-            style={{ color: ink }}
-            aria-label="Close"
-          >
-            ×
-          </button>
-        </div>
+        {accessible ? <Notice>Wheelchair space</Notice> : null}
+        <Pass
+          chips={seatOffers.length > 1 ? [`${seatOffers.length} offers`] : offerName && offerName !== "Standard" && offerName !== "Standard Admission" ? [offerName] : undefined}
+          cells={[
+            { label: "Section", value: String(primary?.sectionName || primary?.sectionNumber || "—") },
+            { label: "Row", value: String(primary?.rowName || primary?.rowNumber || "—") },
+            { label: "Seat", value: String(seat?.seatNumber ?? "—") },
+          ]} />
+      </>
+    ) : (
+      <div className="flex items-start gap-5">
+        <Cell label="Sec" value={String(primary?.sectionName || primary?.sectionNumber || "—")} />
+        <Cell label="Row" value={String(primary?.rowName || primary?.rowNumber || "—")} />
+        <Cell label="Seat" value={String(seat?.seatNumber ?? "—")} grow />
+        <Close onClose={onClose} />
+      </div>
+    );
+    const seatBody = (
+      <>
 
-        {visibleSeatOffers.length === 0 ? (
-          <p className="mt-3 text-[14px]" style={{ color: muted }}>
-            No ticket offers are available for this seat on the map.
-          </p>
-        ) : multiOffer ? (
-          <>
-          <SeatOfferList
-            offerCount={visibleSeatOffers.length}
-            thumbColor={accent}
-          >
-            {visibleSeatOffers.map(({ offer, index }) => {
-                const key = gaOfferSelectionKey(offer, index);
-                const offerLocked = isLockedOffer(offer);
-                const limits = limitsFromSeatedOfferRow(
-                  offer as RawTicketGroup,
-                  eventTicketLimit,
-                );
-                const selectedQty = seatedResolvedOfferQuantity(offerQtys, key);
-                const preview =
-                  selectedQty > 0 &&
-                  seatedOfferRowRestrictionLabel(
-                    offer.package || offer.offer,
-                    limits,
-                  )
-                    ? seatedSelectionPreview(
-                        data,
-                        adjacentSeatWindow(
-                          data,
-                          String(target.seatId),
-                          Array.isArray(offer.seatIds)
-                            ? offer.seatIds.map(String)
-                            : [],
-                          new Set(
-                            selectedFromMap.map((selected) =>
-                              String(selected.seatId),
-                            ),
-                          ),
-                          selectedQty,
-                        ),
-                      )
-                    : null;
-                return (
-                  <div
-                    key={key}
-                    className="flex shrink-0 items-center justify-between gap-2 rounded-xl border px-3 py-2"
-                    style={{
-                      borderColor: line,
-                      minHeight: SEATMAP_SEAT_OFFER_ROW_HEIGHT_PX,
-                    }}
-                  >
-                    <div className="min-w-0">
-                      <p className="text-[13px] font-semibold" style={{ color: ink }}>
-                        <OfferResaleLabel
-                          group={offer}
-                          fallback={offer.offer?.name || "Offer"}
-                          color={ink}
-                        />
-                      </p>
-                      {!offerLocked ? (
-                        <p className="text-[12px]" style={{ color: muted }}>
-                          {formatOfferListPrice(offer.price ?? 0, offer.offer)}
-                        </p>
-                      ) : null}
-                    {offerLocked ? (
-                      <p className="text-[10px]" style={{ color: muted }}>
-                        Requires access code
-                      </p>
-                    ) : (
-                      <>
-                        {priceIncludesTaxesAndFees(offer, pricesIncludeFees) ? (
-                          <OfferPriceNote color={muted} />
-                        ) : null}
-                        <SeatedOfferLimitNote
-                          group={offer}
-                          limits={limits}
-                          color={muted}
-                        />
-                        {preview ? (
-                          <p
-                            className="whitespace-nowrap text-[10px]"
-                            style={{ color: muted }}
-                          >
-                            {preview}
-                          </p>
-                        ) : null}
-                      </>
-                    )}
-                    </div>
-                    {offerLocked &&
-                    showUnlockForLockedOffer(offerLocked) &&
-                    offer.offer?.name ? (
-                      <Button
-                        className={`shrink-0 ${UNLOCK_OFFER_BTN_CLASS}`}
-                        style={{ background: "#ffffff", color: accent }}
-                        onClick={() => onUnlockOffer!(offer.offer!.name!)}
-                      >
-                        Unlock offer
-                      </Button>
-                    ) : showSeatActions ? (
-                      <TooltipQuantityStepper
-                        value={selectedQty}
-                        limits={limits}
-                        ink={ink}
-                        allowZero
-                        onChange={(next) =>
-                          setOfferQtys((current) => {
-                            const updated = { ...current, [key]: next };
-                            if (next > 0) {
-                              visibleSeatOffers.forEach(
-                                ({ offer: otherOffer, index: otherIndex }) => {
-                                  const otherKey = gaOfferSelectionKey(
-                                    otherOffer,
-                                    otherIndex,
-                                  );
-                                  if (otherKey !== key) updated[otherKey] = 0;
-                                },
-                              );
-                            }
-                            return updated;
-                          })
-                        }
-                      />
-                    ) : null}
+        {locked ? (
+          glass ? (
+            target.pinned ? (
+              <LockedOffer offerName={primary?.offer?.name} onUnlock={() => { onUnlock?.(primary?.offer); onClose(); }} />
+            ) : (
+              <LockedPreview offerName={primary?.offer?.name} />
+            )
+          ) : (
+            <>
+              <p className="mt-3 text-sm">
+                Needs an access code for <b className="font-semibold text-h-foreground">{primary?.offer?.name}</b>.
+              </p>
+              <Button className="mt-3 w-full" onClick={() => { onUnlock?.(primary?.offer); onClose(); }}>Unlock offer</Button>
+            </>
+          )
+        ) : seatOffers.length > 1 && glass && !target.pinned ? (
+          /* hovering: what the seat is and what it starts at; the choice itself belongs to the click */
+          <PriceRow price={Math.min(...seatOffers.map((o) => o.price ?? 0))} offer={primary?.offer} count={seatOffers.length} unit={unit} />
+        ) : seatOffers.length > 1 && glass ? (
+          /* selected: one offer for this seat, as selectable cards (the library's radio cards), the fees note, one button */
+          (() => {
+            const keyOf = (o: TicketGroup) => String(o.offer?.id ?? o.id);
+            const sel = chosen[target.seatId] ?? keyOf(seatOffers[0]);
+            const pick = seatOffers.find((o) => keyOf(o) === sel) ?? seatOffers[0];
+            return (
+              <div className="grid grid-cols-[minmax(0,1fr)] gap-2">
+                <RadioGroup layout="card" variant="secondary" value={sel} onValueChange={(v) => setChosen((c) => ({ ...c, [target.seatId]: v }))} aria-label="Choose an offer" className="gap-2">
+                  {seatOffers.map((o) => (
+                    <RadioGroupItem key={keyOf(o)} value={keyOf(o)} label={o.offer?.name || "Offer"} meta={formatOfferListPrice(o.price ?? 0, o.offer)} />
+                  ))}
+                </RadioGroup>
+                <p className="px-1 text-right text-[13px] leading-5 text-h-foreground/70">{feesIn ? "Prices include taxes and fees" : "Fees are added at checkout"}</p>
+                <Button className="w-full" disabled={alreadySelected} onClick={() => { selectSeatedOffers(target.seatId, [{ ...pick, quantity: 1 }]); onClose(); }}>
+                  {alreadySelected ? <><Check weight="bold" aria-hidden />Selected</> : "Add seat"}
+                </Button>
+              </div>
+            );
+          })()
+        ) : seatOffers.length > 1 ? (
+
+          <div className="mt-3 grid grid-cols-[minmax(0,1fr)] gap-2">
+            {seatOffers.map((offer) => {
+              const key = String(offer.offer?.id ?? offer.id);
+              return (
+                <div key={key} className="flex min-w-0 items-center justify-between gap-2.5 rounded-[16px] bg-h-default p-2.5 pl-3">
+                  <div className="min-w-0 flex-1">
+                    <p className="line-clamp-2 text-sm font-semibold leading-[18px] text-balance break-words" title={offer.offer?.name || undefined}>{offer.offer?.name || "Offer"}</p>
+                    <p className="mt-0.5 text-[13px] tabular-nums text-h-foreground/75">{formatOfferListPrice(offer.price ?? 0, offer.offer)}</p>
                   </div>
-                );
-              })}
-          </SeatOfferList>
-            {!alreadySelected && showSeatActions ? (
-              <Button
-                className="mt-2 w-full disabled:opacity-50"
-                style={{ background: actionBg, color: actionInk }}
-                disabled={seatedOfferPicks().length !== 1}
-                onClick={() => {
-                  const picks = seatedOfferPicks();
-                  if (picks.length !== 1) return;
-                  selectSeatedOffers(target.seatId, picks);
-                  onClose();
-                }}
-              >
-                Add now
-              </Button>
-            ) : null}
-          </>
-        ) : locked ? (
-          <>
-            <p className="mt-3 text-[14px]" style={{ color: muted }}>
-              This seat requires an access code for{" "}
-              <span className="font-semibold" style={{ color: ink }}>
-                {primary?.offer?.name}
-              </span>
-              .
-            </p>
-            {showUnlockForLockedOffer(true) && primary?.offer?.name ? (
-              <Button
-                className={SINGLE_OFFER_ACTION_BTN_CLASS}
-                style={{ background: actionBg, color: actionInk }}
-                onClick={() => onUnlockOffer!(primary.offer!.name!)}
-              >
-                Unlock offer
-              </Button>
-            ) : null}
-          </>
+                  <NumberStepper className="shrink-0" size="sm" minValue={1} maxValue={4} value={offerQtys[key] || 1} onChange={(v) => setOfferQtys((c) => ({ ...c, [key]: v }))} aria-label={`How many, ${offer.offer?.name || "offer"}`}>
+                    <NumberStepperGroup><NumberStepperDecrementButton /><NumberStepperValue /><NumberStepperIncrementButton /></NumberStepperGroup>
+                  </NumberStepper>
+                </div>
+              );
+            })}
+            <Button disabled={alreadySelected} onClick={() => {
+              const picks = seatOffers.map((offer) => { const key = String(offer.offer?.id ?? offer.id); return { ...offer, quantity: offerQtys[key] || 1 }; });
+              selectSeatedOffers(target.seatId, picks);
+              onClose();
+            }}>{alreadySelected ? <><Check weight="bold" aria-hidden />Selected</> : "Add seats"}</Button>
+          </div>
         ) : (
           <>
-            <p className="mt-3 flex flex-wrap items-center gap-2 text-[14px]" style={{ color: muted }}>
-              <OfferResaleLabel group={primary} fallback="Standard" color={muted} />
-              <span>
-                · {formatOfferListPrice(primary?.price ?? 0, primary?.offer)}
-              </span>
-            </p>
-            {!alreadySelected && showSeatActions && primary ? (
-              <Button
-                className={SINGLE_OFFER_ACTION_BTN_CLASS}
-                style={{ background: actionBg, color: actionInk }}
-                onClick={() => {
-                  addPrimarySeat();
-                  onClose();
-                }}
-              >
-                Add now
+            {glass ? <PriceRow price={primary?.price ?? 0} offer={primary?.offer} count={seatOffers.length} unit={unit} /> : priceWell(primary?.price ?? 0, primary?.offer)}
+            {!glass && offerName && offerName !== "Standard" && offerName !== "Standard Admission" && <div className="mt-2"><Badge variant="soft" color="default" size="md">{offerName}</Badge></div>}
+            {glass && window.innerWidth > 768 ? null : (
+              <Button className="mt-3 w-full" disabled={alreadySelected || !primary} onClick={() => { if (!primary) return; selectSpecificSeat(target.seatId, primary); onClose(); }}>
+                {alreadySelected ? <><Check weight="bold" aria-hidden />Selected</> : "Select seat"}
               </Button>
-            ) : null}
+            )}
           </>
         )}
       </>
     );
-
     return (
-      <MobileSeatAnchoredPopup
-        target={target}
-        width={MOBILE_SEAT_POPUP_WIDTH}
-        accent={accent}
-        hoverProps={hoverProps}
-        onRequestReveal={onRequestReveal}
-      >
-        <div style={{ color: ink }}>{seatPopupBody}</div>
-      </MobileSeatAnchoredPopup>
+      <Floating x={target.x} y={target.y}>
+        {glass ? (
+          <HoverCard style={style} wide={Boolean(target.pinned)}>{seatHeader}{seatBody}</HoverCard>
+        ) : (
+          <div style={style} className={CARD} onClick={(e) => e.stopPropagation()}>
+            {seatHeader}
+            {seatBody}
+          </div>
+        )}
+      </Floating>
     );
   }
 
   // GA section tooltip
-  const primary = sectionOffers[0];
-  const locked =
-    sectionOffers.length === 1 &&
-    Boolean(primary && isLockedOffer(primary));
-  const showGaUnlockForLockedOffer = (offerLocked: boolean) =>
-    offerLocked && Boolean(onUnlockOffer);
-  const gaLimits = groupQuantityLimits(primary ?? {});
-  const selectedGaQty = gaLimits.valid
-    ? Math.min(Math.max(gaQty, 0), gaLimits.max)
-    : 0;
-  const packageOrOfferName = gaPackageOrOfferName(primary);
-  const multiGaOffers = sectionOffers.length > 1;
-  const gaHeaderLimitLabel = gaPopoverDefaultLimitLabel(
-    sectionOffers.map((group) =>
-      isLockedOffer(group)
-        ? null
-        : offerRestrictionLimits(
-            group.package || group.offer,
-            groupQuantityLimits(group),
-          ),
-    ),
+  const primary = sectionGroups[0];
+  const packageLimits = primary?.package || primary?.offer;
+  const minQty = Math.max(1, Number(packageLimits?.minQuantity) || 1);
+  const packageMax = Number(packageLimits?.maxQuantity) || 12;
+  const maxQty = Math.max(minQty, Math.min(primary?.availableCount || 8, packageMax, 12));
+  const selectedGaQty = Math.min(Math.max(gaQty, minQty), maxQty);
+
+  const gaHeader = glass ? (
+    <Pass cells={[{ label: "General admission", value: String(sectionMeta?.sectionNumber || primary?.sectionName || "Section") }]} />
+  ) : (
+    <div className="flex items-start gap-5">
+      <Cell label="General admission" value={String(sectionMeta?.sectionNumber || primary?.sectionName || "Section")} grow />
+      <Close onClose={onClose} />
+    </div>
   );
-  const gaOfferPicks = () =>
-    sectionOffers
-      .map((group, index) => {
-        if (isLockedOffer(group)) return null;
-        const key = gaOfferSelectionKey(group, index);
-        return {
-          ...group,
-          quantity: resolvedOfferQuantity(offerQtys, key),
-        };
-      })
-      .filter(
-        (group): group is TicketGroup & { quantity: number } =>
-          group != null && Number(group.quantity) > 0,
-      );
+  const gaBody = (
+    <>
 
-  return (
-    <div
-      ref={gaCardRef}
-      data-seatmap-tooltip="true"
-      style={style}
-      className={`w-[280px] rounded-2xl border p-4 shadow-2xl shadow-black/40 ${ORG_SCROLLBAR_CLASS}`}
-      onClick={(e) => e.stopPropagation()}
-      {...hoverProps}
-    >
-      <style>{orgScrollbarCss(accent)}</style>
-      <div className="flex items-start justify-between gap-3">
-        <div>
-          <p
-            className="text-[12px] font-semibold uppercase tracking-[0.12em]"
-            style={{ color: muted }}
-          >
-            Section
-          </p>
-          <p className="mt-1 text-[15px] font-semibold" style={{ color: ink }}>
-            {primary?.sectionName ?? "Unknown"}
-          </p>
-          <PopoverTicketLimit label={gaHeaderLimitLabel} color={muted} />
-        </div>
-        <button
-          type="button"
-          onClick={onClose}
-          className="opacity-80 hover:opacity-100"
-          style={{ color: ink }}
-          aria-label="Close"
-        >
-          ×
-        </button>
-      </div>
-
-      {sectionOffers.length === 0 ? (
-        <p className="mt-3 text-[14px]" style={{ color: muted }}>No tickets available.</p>
-      ) : multiGaOffers ? (
-        <>
-          <SeatOfferList offerCount={sectionOffers.length} thumbColor={accent}>
-            {sectionOffers.map((group, index) => {
-              const key = gaOfferSelectionKey(group, index);
-              const offerLocked = isLockedOffer(group);
-              const limits = groupQuantityLimits(group);
-              const selectedQty = resolvedOfferQuantity(offerQtys, key);
-              return (
-                <div
-                  key={key}
-                  className="flex shrink-0 items-center justify-between gap-2 rounded-xl border px-3 py-2"
-                  style={{
-                    borderColor: line,
-                    minHeight: SEATMAP_SEAT_OFFER_ROW_HEIGHT_PX,
-                  }}
-                >
-                  <div className="min-w-0">
-                    <p className="truncate text-[13px] font-semibold" style={{ color: ink }}>
-                      {gaPackageOrOfferName(group)}
-                    </p>
-                    {!offerLocked ? (
-                      <p className="text-[12px]" style={{ color: muted }}>
-                        {formatOfferListPrice(group.price ?? 0, group.offer)} ea
-                      </p>
-                    ) : null}
-                    {offerLocked ? (
-                      <p className="text-[10px]" style={{ color: muted }}>
-                        Requires access code
-                      </p>
-                    ) : (
-                      <>
-                        {priceIncludesTaxesAndFees(group, pricesIncludeFees) ? (
-                          <OfferPriceNote color={muted} />
-                        ) : null}
-                        <GaOfferLimitNote
-                          group={group}
-                          limits={limits}
-                          color={muted}
-                        />
-                      </>
-                    )}
-                  </div>
-                  {offerLocked &&
-                  showGaUnlockForLockedOffer(offerLocked) &&
-                  group.offer?.name ? (
-                    <Button
-                      className={`shrink-0 ${UNLOCK_OFFER_BTN_CLASS}`}
-                      style={{ background: "#ffffff", color: accent }}
-                      onClick={() => onUnlockOffer!(group.offer!.name!)}
-                    >
-                      Unlock offer
-                    </Button>
-                  ) : (
-                    <TooltipQuantityStepper
-                      value={selectedQty}
-                      limits={limits}
-                      ink={ink}
-                      allowZero
-                      onChange={(next) =>
-                        setOfferQtys((c) => ({
-                          ...c,
-                          [key]: next,
-                        }))
-                      }
-                    />
-                  )}
-                </div>
-              );
-            })}
-          </SeatOfferList>
-          <Button
-            className="mt-4 w-full disabled:opacity-50"
-            style={{ background: actionBg, color: actionInk }}
-            disabled={gaOfferPicks().length === 0}
-            onClick={() => {
-              const picks = gaOfferPicks();
-              if (!picks.length) return;
-              selectGASeats(picks);
-              onClose();
-            }}
-          >
-            Add seats
-          </Button>
-        </>
-      ) : locked ? (
-        <>
-          <p className="mt-3 text-[14px]" style={{ color: muted }}>
-            This section requires an access code for{" "}
-            <span className="font-semibold" style={{ color: ink }}>
-              {primary?.offer?.name}
-            </span>
-            .
-          </p>
-          {showGaUnlockForLockedOffer(true) && primary?.offer?.name ? (
-            <Button
-              className={SINGLE_OFFER_ACTION_BTN_CLASS}
-              style={{ background: actionBg, color: actionInk }}
-              onClick={() => onUnlockOffer!(primary.offer!.name!)}
-            >
-              Unlock offer
-            </Button>
-          ) : null}
-        </>
-      ) : !gaLimits.valid ? (
-        <p className="mt-3 text-[14px]" style={{ color: muted }}>No tickets available.</p>
+      {sectionGroups.length === 0 || maxQty < minQty ? (
+        <p className="mt-3 text-sm">No tickets available.</p>
       ) : (
         <>
-          <div className="mt-4 flex items-start justify-between gap-4">
-            <div className="min-w-0">
-              <p className="break-words text-[13px] font-semibold" style={{ color: ink }}>
-                {selectionIsResale(primary) ? (
-                  <OfferResaleLabel
-                    group={primary}
-                    fallback={packageOrOfferName}
-                    color={ink}
-                  />
-                ) : (
-                  packageOrOfferName
-                )}
-              </p>
-              <p className="mt-1 text-[12px] font-semibold" style={{ color: ink }}>
-                {formatOfferListPrice(primary?.price ?? 0, primary?.offer)} ea
-              </p>
-              {primary && priceIncludesTaxesAndFees(primary, pricesIncludeFees) ? (
-                <OfferPriceNote color={muted} />
-              ) : null}
-              {primary ? (
-                <GaOfferLimitNote
-                  group={primary}
-                  limits={gaLimits}
-                  color={muted}
-                />
-              ) : null}
-            </div>
-            <TooltipQuantityStepper
-              value={selectedGaQty}
-              limits={gaLimits}
-              ink={ink}
-              allowZero
-              onChange={setGaQty}
-            />
+          {glass ? <PriceRow price={primary?.price ?? 0} offer={primary?.offer} count={1} unit={unit} /> : priceWell(primary?.price ?? 0, primary?.offer)}
+          <div className="mt-3 flex items-center justify-between gap-3 px-3.5 [&:first-child]:mt-0">
+            <span className="text-sm font-medium">How many</span>
+            <NumberStepper size="md" minValue={minQty} maxValue={maxQty} value={selectedGaQty} onChange={setGaQty} aria-label="How many tickets">
+              <NumberStepperGroup><NumberStepperDecrementButton /><NumberStepperValue /><NumberStepperIncrementButton /></NumberStepperGroup>
+            </NumberStepper>
           </div>
-          <Button
-            className={`${SINGLE_OFFER_ACTION_BTN_CLASS} disabled:opacity-50`}
-            style={{ background: actionBg, color: actionInk }}
-            disabled={!gaLimits.valid || selectedGaQty < gaLimits.min}
-            onClick={() => {
-              if (selectedGaQty < gaLimits.min) return;
-              selectGASeats(
-                sectionOffers.map((g) => ({ ...g, quantity: selectedGaQty })),
-              );
-              onClose();
-            }}
-          >
-            Add seats
-          </Button>
+          <Button className="mt-3 w-full" onClick={() => { selectGASeats(sectionGroups.map((g) => ({ ...g, quantity: selectedGaQty }))); onClose(); }}>Add to selection</Button>
         </>
       )}
-    </div>
+    </>
+  );
+  return (
+    <Floating x={target.x} y={target.y}>
+      {glass ? (
+        <HoverCard style={style} wide={Boolean(target.pinned)}>{gaHeader}{gaBody}</HoverCard>
+      ) : (
+        <div style={style} className={CARD} onClick={(e) => e.stopPropagation()}>
+          {gaHeader}
+          {gaBody}
+        </div>
+      )}
+    </Floating>
   );
 }

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, type ReactNode } from "react";
+import { useEffect, type ReactNode } from "react";
 import { usePathname } from "next/navigation";
 import { GrowthBookProvider } from "@growthbook/growthbook-react";
 import { getGrowthBook, initGrowthBook } from "@/lib/growthbook";
@@ -11,17 +11,11 @@ import {
   updateIntercom,
 } from "@/lib/intercom";
 import { useAuth, displayName } from "@/lib/auth";
-import GlobalRouteTransitionLoader from "@/components/molecules/GlobalRouteTransitionLoader";
-import { markInAppNavigation } from "@/lib/inAppBack";
-import { restorePageScroll } from "@/lib/pageScroll";
-import { notifyRouteCommitted } from "@/lib/routeTransition";
 
 const HOTJAR_ID = 3697606;
 
 function injectHotjar() {
   if (typeof window === "undefined") return;
-  // Session replay interferes with Stripe Elements keystrokes in local/dev.
-  if (process.env.NEXT_PUBLIC_CLIENT_ENV === "development") return;
   if (window.hj || document.getElementById("hotjar-script")) return;
 
   window.hj =
@@ -58,16 +52,11 @@ function GrowthBookGate({ children }: { children: ReactNode }) {
 function IntercomAndHotjar() {
   const pathname = usePathname() || "/";
   const { session, ready } = useAuth();
-  const onPurchaseRoute = PURCHASE_ROUTE.test(pathname);
 
   useEffect(() => {
-    // Hotjar session recording can break Stripe Elements keyboard input
-    // (focus works, typing does not). Skip it on purchase flows.
-    if (!onPurchaseRoute) {
-      injectHotjar();
-    }
+    injectHotjar();
     bootIntercom();
-  }, [onPurchaseRoute]);
+  }, []);
 
   useEffect(() => {
     if (!ready) return;
@@ -80,61 +69,20 @@ function IntercomAndHotjar() {
       });
     }
 
-    if (onPurchaseRoute) {
+    if (PURCHASE_ROUTE.test(pathname)) {
       hideIntercomLauncher();
     } else {
       showIntercomLauncher();
     }
-  }, [pathname, ready, session, onPurchaseRoute]);
+  }, [pathname, ready, session]);
 
   return null;
 }
 
 export default function AppProviders({ children }: { children: ReactNode }) {
-  const pathname = usePathname();
-  const seenPath = useRef<string | null>(null);
-
-  useEffect(() => {
-    if (seenPath.current != null && seenPath.current !== pathname) {
-      markInAppNavigation();
-      notifyRouteCommitted(pathname);
-      // In-app Back skips the route cover, so leftover tickets/wallet
-      // overflow:hidden would otherwise pin browse / team / venue.
-      if (!document.body.dataset.btRouteTransition) restorePageScroll();
-    }
-    seenPath.current = pathname;
-  }, [pathname]);
-
-  useEffect(() => {
-    const onPageShow = () => {
-      if (!document.body.dataset.btRouteTransition) restorePageScroll();
-    };
-    window.addEventListener("pageshow", onPageShow);
-    return () => window.removeEventListener("pageshow", onPageShow);
-  }, []);
-
-  useEffect(() => {
-    const id = window.requestAnimationFrame(() => {
-      // A painting BrandedLoader dismisses the splash itself, in the same
-      // commit, so removing it here too would blink the loader. An older splash
-      // marked itself as the platform loader, so exclude it by id or it would
-      // match itself and never be removed.
-      if (
-        document.querySelector(
-          "[data-bt-route-transition],[data-bt-destination-loader],[data-bt-tenant-loader]:not(#bt-boot-loader),[data-bt-platform-loader]:not(#bt-boot-loader)",
-        )
-      ) {
-        return;
-      }
-      document.getElementById("bt-boot-loader")?.remove();
-    });
-    return () => window.cancelAnimationFrame(id);
-  }, [pathname]);
-
   return (
     <GrowthBookGate>
       <IntercomAndHotjar />
-      <GlobalRouteTransitionLoader />
       {children}
     </GrowthBookGate>
   );

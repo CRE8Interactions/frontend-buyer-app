@@ -2,24 +2,12 @@
 
 import { memo, useLayoutEffect, useMemo, useRef, useState } from "react";
 import {
-  countSectionAvailability,
-  createSectionInventoryTable,
-  sectionAvailabilityGradientId,
-  sectionOverlayPaint,
   type SeatmapMapping,
   type SeatmapSection,
-  type SectionOverlayPaint,
   zoomableCoverPathD,
 } from "@/lib/seatmapLookups";
-import { repairLabelSections } from "@/lib/repairLabelSections";
 import useSeatmapStore from "@/stores/seatmapStore";
 import type { SeatmapTooltipTarget } from "./SeatmapTooltip";
-
-const AVAILABLE_FILL = "#3E8BF7";
-const UNAVAILABLE_FILL = "#9DA2B3";
-/** Matches the gray field on the venue background so hidden blocks disappear into it. */
-const HIDDEN_SECTION_FILL = "#D6D8DB";
-const NO_REVEALED_SECTIONS: string[] = [];
 
 function isWheelchairCompanionSection(section: SeatmapSection) {
   const compact = String(section.sectionNumber ?? "")
@@ -59,29 +47,57 @@ type Props = {
   data: SeatmapMapping;
   sectionCoversEnabled?: boolean;
   showCovers?: boolean;
-  revealedSectionIds?: string[];
+  focusedSectionId?: string | null;
   onZoomableSectionClick?: (sectionId: string, bounds: DOMRect) => void;
-  onTooltip: (target: SeatmapTooltipTarget | null) => void;
+  onTooltip: (target: SeatmapTooltipTarget | null, force?: boolean) => void;
+  /** polished focus: the section you zoom into stays a tinted shape behind its seats and the others step back, instead of every cover going blank white */
+  polish?: boolean;
+  /** polished: the section under the pointer (null when it leaves), for the price tip */
+  onHover?: (t: { sectionId: string; x: number; y: number } | null) => void;
 };
 
 const SeatmapSections = memo(function SeatmapSections({
   data,
   sectionCoversEnabled = false,
   showCovers = true,
-  revealedSectionIds = NO_REVEALED_SECTIONS,
+  focusedSectionId = null,
   onZoomableSectionClick,
   onTooltip,
+  polish = false,
+  onHover,
 }: Props) {
   const sectionLookupTable = useSeatmapStore((s) => s.sectionLookupTable);
   const seatLookupTable = useSeatmapStore((s) => s.seatLookupTable);
+  /* polished: a section with seats but none you can buy (sold out, or held back) is drawn as a faint grey cover instead of a blue one */
+  const { soldOut, few } = useMemo(() => {
+    const out = new Set<string>();
+    const low = new Set<string>();
+    if (!polish || !data.sections) return { soldOut: out, few: low };
+    for (const sec of Object.values(data.sections)) {
+      const rowIds = sec.rows ?? [];
+      if (!rowIds.length) continue;
+      let left = 0;
+      for (const rid of rowIds) for (const id of data.rows?.[rid]?.seats ?? []) if (seatLookupTable[String(id)]) left += 1;
+      if (left === 0) out.add(String(sec.sectionId));
+      else if (left <= 8) low.add(String(sec.sectionId));
+    }
+    return { soldOut: out, few: low };
+  }, [polish, data.sections, data.rows, seatLookupTable]);
+  /* polished: the name under the pointer is underlined (as in the player) */
+  const [hoverId, setHoverId] = useState<string | null>(null);
+  const hoverTip = (t: { sectionId: string; x: number; y: number } | null) => { setHoverId(t ? t.sectionId : null); onHover?.(t); };
   const pathRefs = useRef<Record<string, SVGPathElement | null>>({});
+  const idRefs = useRef<Record<string, SVGPathElement | null>>({});
+  /* polished: where the status dot goes, to the left of a section's drawn name (the names of most sections are artwork, not text) */
+  const [dots, setDots] = useState<Record<string, { cx: number; cy: number; r: number }>>({});
   const [labels, setLabels] = useState<
     Record<string, { text: string; x: number; y: number; fontSize: number }>
   >({});
 
   const sectionsList = useMemo(() => {
+    if (!data.sections) return [];
     const seen = new Set<string>();
-    return repairLabelSections(data.sections).filter((section) => {
+    return Object.values(data.sections).filter((section) => {
       const sid = String(section.sectionId ?? "");
       if (!sid || seen.has(sid)) return false;
       seen.add(sid);
@@ -89,186 +105,103 @@ const SeatmapSections = memo(function SeatmapSections({
     });
   }, [data.sections]);
 
-  const sectionInventory = useMemo(
-    () => createSectionInventoryTable(data, sectionLookupTable, seatLookupTable),
-    [data, sectionLookupTable, seatLookupTable],
-  );
-
-  const availabilityBySectionId = useMemo(() => {
-    const map = new Map<string, SectionOverlayPaint>();
-    for (const section of sectionsList) {
-      if (!section.zoomable) continue;
-      map.set(
-        String(section.sectionId),
-        sectionOverlayPaint(
-          section,
-          countSectionAvailability(section, data.rows, seatLookupTable),
-        ),
-      );
-    }
-    return map;
-  }, [data.rows, seatLookupTable, sectionsList]);
-
   useLayoutEffect(() => {
     const next: typeof labels = {};
     sectionsList.forEach((section) => {
-      if (section.hidden) return;
       const el = pathRefs.current[String(section.sectionId)];
       if (!el) return;
       const layout = computeLabelLayout(el.getBBox(), section.sectionNumber);
       if (layout) next[String(section.sectionId)] = layout;
     });
     setLabels(next);
-  }, [sectionsList, showCovers, revealedSectionIds, sectionCoversEnabled]);
+    if (polish) {
+      const d: typeof dots = {};
+      for (const [sid, el] of Object.entries(idRefs.current)) {
+        if (!el) continue;
+        const b = el.getBBox();
+        if (b.width && b.height) d[sid] = { cx: b.x - b.height * 0.32, cy: b.y + b.height / 2, r: Math.max(b.height * 0.13, 1.5) };
+      }
+      setDots(d);
+    }
+  }, [sectionsList, showCovers, focusedSectionId, sectionCoversEnabled, polish]);
 
   return (
     <g className="polygons">
       {sectionsList.map((section) => {
         const sid = String(section.sectionId);
-        if (section.hidden) {
-          const strokeWidth = Math.max(Number(section.strokeWidth) || 0, 2) + 2;
-          return (
-            <path
-              key={sid}
-              d={section.zoomable ? zoomableCoverPathD(section) : section.path || ""}
-              id={sid}
-              data-section-hidden="true"
-              fill={HIDDEN_SECTION_FILL}
-              stroke={HIDDEN_SECTION_FILL}
-              strokeWidth={strokeWidth}
-              strokeLinejoin="miter"
-              pointerEvents="none"
-            />
-          );
-        }
         const isZoomable = Boolean(section.zoomable);
-        const hasInventory = sectionInventory[sid] ?? false;
 
         if (isZoomable && !sectionCoversEnabled) return null;
 
         if (isZoomable) {
-          const inventoryPaint = availabilityBySectionId.get(sid);
-          const soldOut = Boolean(inventoryPaint?.soldOut);
-          // A sold-out cover stays up. Uncovering it draws every physical seat
-          // and reads as a full section even when nothing is for sale.
           const uncovered =
-            !soldOut && revealedSectionIds.map(String).includes(sid);
-          const overlayVisible = soldOut || (showCovers && !uncovered);
+            focusedSectionId != null && focusedSectionId === sid;
+          const overlayVisible = showCovers && !uncovered;
           const coverD = zoomableCoverPathD(section);
-          const pathD = overlayVisible ? coverD : section.path || coverD;
-          const availableFill =
-            inventoryPaint?.fill ||
-            section.coverFill ||
-            section.fill ||
-            AVAILABLE_FILL;
-          const fill = !overlayVisible
-            ? section.uncoveredFill ?? "#FFFFFF"
-            : soldOut
-              ? inventoryPaint?.fill
-              : inventoryPaint?.kind === "gradient"
-                ? `url(#${sectionAvailabilityGradientId(sid)})`
-                : availableFill;
-          const stroke = !overlayVisible
-            ? "rgba(0,0,0,0)"
-            : soldOut
-              ? "#C5C8D0"
-              : section.coverStroke ??
-                section.stroke ??
-                "rgba(255,255,255,0.95)";
-          const strokeWidth = !overlayVisible
-            ? 0
-            : soldOut
-              ? 2
-              : Number(section.coverStrokeWidth ?? section.strokeWidth ?? 2);
-          const interactive = !soldOut && overlayVisible;
-          const gradientId = sectionAvailabilityGradientId(sid);
+          const pathD = overlayVisible || polish ? coverD : section.path || coverD;
+          const gone = soldOut.has(sid);
+          const tint = gone ? "#7F8697" : section.coverFill ?? section.fill ?? "#3E8BF7";
+          /* the section you are in carries no hue (it is the ground for its seats): a plain light fill and a neutral outline */
+          const fill = overlayVisible
+            ? tint
+            : polish ? "#FFFFFF" : section.uncoveredFill ?? "#FFFFFF";
+          /* a sold-out cover is drawn exactly like a sold-out general-admission area: the same grey, the same fine outline */
+          const stroke = overlayVisible
+            ? polish && gone ? section.stroke || "rgba(255,255,255,0.4)" : section.coverStroke ?? section.stroke ?? "rgba(255,255,255,0.95)"
+            : polish ? "#8F95A3" : "rgba(0,0,0,0)";
+          const strokeWidth = overlayVisible
+            ? polish && gone ? Number(section.strokeWidth ?? 1) : Number(section.coverStrokeWidth ?? section.strokeWidth ?? 2)
+            : polish ? 2 : 0;
+          /* polished: the focused section is a soft tint under its seats, the rest step back to a quarter strength (a transition, not a cut) */
+          /* neighbours keep their own colour (blue if they have seats, grey if sold out); only the focused section changes */
+          const stepBack = false;
 
           return (
-            <g
-              key={sid}
-              data-zoomable-section="true"
-              data-section-root={interactive ? "true" : undefined}
-              data-sold-out={soldOut ? "true" : undefined}
-              data-available-ratio={
-                inventoryPaint ? String(inventoryPaint.ratio) : undefined
-              }
-            >
-              {overlayVisible && inventoryPaint?.kind === "gradient" ? (
-                <defs>
-                  <linearGradient
-                    id={gradientId}
-                    x1="0"
-                    y1="0"
-                    x2="0"
-                    y2="1"
-                    gradientUnits="objectBoundingBox"
-                  >
-                    <stop
-                      offset="0%"
-                      stopColor={inventoryPaint.unavailableFill}
-                    />
-                    <stop
-                      offset={`${(1 - inventoryPaint.ratio) * 100}%`}
-                      stopColor={inventoryPaint.unavailableFill}
-                    />
-                    <stop
-                      offset={`${(1 - inventoryPaint.ratio) * 100}%`}
-                      stopColor={inventoryPaint.fill}
-                    />
-                    <stop offset="100%" stopColor={inventoryPaint.fill} />
-                  </linearGradient>
-                </defs>
-              ) : null}
+            <g key={sid} data-zoomable-section="true" data-section-root="true">
               <path
                 ref={(el) => {
                   pathRefs.current[sid] = el;
                 }}
                 id={sid}
                 d={pathD}
-                fill={fill}
                 stroke={stroke}
                 strokeWidth={strokeWidth}
-                opacity={1}
-                className={interactive ? "cursor-pointer" : undefined}
-                pointerEvents={interactive ? "auto" : "none"}
-                style={{ cursor: interactive ? "pointer" : "default" }}
+                fill={stepBack ? "#7F8697" : fill}
+                fillOpacity={polish ? (uncovered ? 0.85 : gone ? 0.6 : stepBack ? 0.45 : undefined) : undefined}
+                strokeOpacity={polish && uncovered ? 0.55 : undefined}
+                opacity={stepBack ? 0.55 : 1}
+                style={polish ? { transition: "fill 320ms cubic-bezier(0.2,0,0,1), stroke 320ms, fill-opacity 320ms cubic-bezier(0.2,0,0,1), stroke-width 320ms, stroke-opacity 320ms, opacity 260ms " } : undefined}
+                className={polish ? "cursor-pointer" : "cursor-pointer"}
+                onMouseEnter={polish ? (e) => hoverTip({ sectionId: sid, x: e.clientX, y: e.clientY }) : undefined}
+                onMouseMove={polish ? (e) => hoverTip({ sectionId: sid, x: e.clientX, y: e.clientY }) : undefined}
+                onMouseLeave={polish ? () => hoverTip(null) : undefined}
                 onClick={(e) => {
-                  if (!interactive) return;
                   e.stopPropagation();
-                  const el = pathRefs.current[sid];
-                  if (!el || !onZoomableSectionClick) return;
-                  onZoomableSectionClick(sid, el.getBBox() as unknown as DOMRect);
-                }}
-                onTouchEnd={(e) => {
-                  if (!interactive) return;
-                  e.preventDefault();
-                  e.stopPropagation();
+                  /* the section already zoomed to: a click on it only clears the hover and any card, it does not move the view again */
+                  if (polish && focusedSectionId === sid) { onTooltip(null, true); hoverTip(null); return; }
                   const el = pathRefs.current[sid];
                   if (!el || !onZoomableSectionClick) return;
                   onZoomableSectionClick(sid, el.getBBox() as unknown as DOMRect);
                 }}
               />
-              {section.identifier?.path && overlayVisible ? (
+              {section.identifier?.path && (overlayVisible || polish) ? (
                 <path
+                  ref={(el) => { idRefs.current[sid] = el; }}
                   d={section.identifier.path}
-                  fill={
-                    soldOut
-                      ? inventoryPaint?.labelFill
-                      : section.identifier.fill || "white"
-                  }
-                  opacity={section.identifier.opacity ?? 1}
+                  fill={section.identifier.fill || "white"}
+                  opacity={(section.identifier.opacity ?? 1) * (polish && uncovered ? 0 : 1)}
                   fillRule={section.identifier.evenodd ? "evenodd" : undefined}
                   pointerEvents="none"
+                  style={polish ? { transition: "opacity 260ms cubic-bezier(0.2,0,0,1)" } : undefined}
                 />
               ) : null}
             </g>
           );
         }
 
-        // GA / non-zoomable section. Only GA groups drive the section tooltip;
-        // seated inventory here is reachable through its seats instead.
+        // GA / non-zoomable section
         const gaGroups = sectionLookupTable[sid] || [];
-        const canOpen = hasInventory && gaGroups.length > 0;
+        const hasInventory = gaGroups.length > 0;
         const hideIdentifierArt = isWheelchairCompanionSection(section);
         return (
           <g key={sid} data-section-root="true">
@@ -278,15 +211,18 @@ const SeatmapSections = memo(function SeatmapSections({
               }}
               id={sid}
               d={section.path || ""}
-              fill={
-                hasInventory ? section.fill || AVAILABLE_FILL : UNAVAILABLE_FILL
-              }
+              fill={polish ? (hasInventory ? section.fill || "#3E8BF7" : "#7F8697") : section.fill || (hasInventory ? "#3E8BF7" : "#9DA2B3")}
               stroke={section.stroke || "rgba(255,255,255,0.4)"}
               strokeWidth={Number(section.strokeWidth ?? 1)}
-              className={canOpen ? "cursor-pointer" : undefined}
-              opacity={hasInventory ? 1 : 0.45}
+              className={hasInventory ? (polish ? "cursor-pointer" : "cursor-pointer") : undefined}
+              onMouseEnter={polish ? (e) => hoverTip({ sectionId: sid, x: e.clientX, y: e.clientY }) : undefined}
+              onMouseMove={polish ? (e) => hoverTip({ sectionId: sid, x: e.clientX, y: e.clientY }) : undefined}
+              onMouseLeave={polish ? () => hoverTip(null) : undefined}
+              opacity={polish ? 1 : hasInventory ? 1 : 0.45}
+              fillOpacity={polish && !hasInventory ? 0.6 : undefined}
+              style={polish ? { transition: "opacity 260ms cubic-bezier(0.2,0,0,1) " } : undefined}
               onClick={
-                canOpen
+                hasInventory
                   ? (e) => {
                       e.stopPropagation();
                       onTooltip({
@@ -299,31 +235,11 @@ const SeatmapSections = memo(function SeatmapSections({
                     }
                   : undefined
               }
-              onTouchEnd={
-                canOpen
-                  ? (e) => {
-                      e.preventDefault();
-                      e.stopPropagation();
-                      const touch = e.changedTouches[0];
-                      onTooltip({
-                        kind: "section",
-                        sectionId: sid,
-                        x: touch?.clientX ?? 0,
-                        y: touch?.clientY ?? 0,
-                        pinned: true,
-                      });
-                    }
-                  : undefined
-              }
             />
             {!hideIdentifierArt && section.identifier?.path ? (
               <path
                 d={section.identifier.path}
-                fill={
-                  (!hasInventory ? section.identifier.soldOutFill : undefined) ||
-                  section.identifier.fill ||
-                  "white"
-                }
+                fill={section.identifier.fill || "white"}
                 opacity={section.identifier.opacity ?? 1}
                 fillRule={section.identifier.evenodd ? "evenodd" : "nonzero"}
                 clipRule={section.identifier.evenodd ? "evenodd" : "nonzero"}
@@ -334,35 +250,43 @@ const SeatmapSections = memo(function SeatmapSections({
         );
       })}
 
+      {polish && hoverId && focusedSectionId == null ? (() => {
+        const hs = sectionsList.find((x) => String(x.sectionId) === hoverId);
+        const d = hs ? (hs.zoomable ? zoomableCoverPathD(hs) : hs.path) : null;
+        return d ? (
+          /* the section under the pointer: a dark wash over its own colour, so it reads as pressed-in on blue and on grey alike (no outline) */
+          <path d={d} fill="#0B1220" fillOpacity={0.24} pointerEvents="none" style={{ animation: "bt-fade-in 110ms ease-out both" }} />
+        ) : null;
+      })() : null}
+
       <g className="section-number-labels" pointerEvents="none">
         {sectionsList.map((section) => {
-          if (section.hidden) return null;
           const sid = String(section.sectionId);
           if (isWheelchairCompanionSection(section)) return null;
           if (section.identifier?.path) return null;
-          const inventoryPaint = section.zoomable
-            ? availabilityBySectionId.get(sid)
-            : undefined;
           if (section.zoomable && sectionCoversEnabled) {
-            const soldOut = Boolean(inventoryPaint?.soldOut);
             const uncovered =
-              !soldOut && revealedSectionIds.map(String).includes(sid);
-            if ((!soldOut && !showCovers) || uncovered) return null;
+              focusedSectionId != null && focusedSectionId === sid;
+            if (!polish && (!showCovers || uncovered)) return null;
           }
           const layout = labels[sid];
           if (!layout) return null;
+          const faint = soldOut.has(sid);
           const lines = layout.text.split("\n");
           return (
             <text
               key={`label-${sid}`}
               x={layout.x}
               y={layout.y}
-              fill={inventoryPaint?.labelFill ?? "white"}
+              fill="white"
+              opacity={polish && section.zoomable && focusedSectionId === sid ? 0 : polish && faint ? 0.75 : 1}
+              style={polish ? { transition: "opacity 260ms cubic-bezier(0.2,0,0,1)" } : undefined}
               fontSize={layout.fontSize}
               fontWeight="700"
               fontFamily="Inter, system-ui, sans-serif"
               textAnchor="middle"
               dominantBaseline="middle"
+              textDecoration={polish && hoverId === sid ? "underline" : undefined}
             >
               {lines.map((line, index) => (
                 <tspan

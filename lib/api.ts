@@ -2,19 +2,6 @@ import axios, { type AxiosRequestConfig, type AxiosResponse } from "axios";
 import moment from "moment";
 import { getToken, isLoggedIn } from "@/lib/auth";
 import { demoAdapter } from "@/lib/demo/adapter";
-import { createInflightCache } from "@/lib/inflightCache";
-import {
-  buildCancelTransferRequestBody,
-  resolveCancelTransferId,
-} from "@/lib/ticketTransfers";
-import { dropCartRequestBody, withCallerCart } from "@/lib/cart";
-import {
-  clearWaitingRoomToken,
-  getCurrentWaitingRoomEventUuid,
-  getQueueSessionId,
-  getWaitingRoomToken,
-  setWaitingRoomReturnPath,
-} from "@/lib/waitingRoom";
 
 /** Demo mode: serve local dummy data, never hit a backend. */
 const DEMO = process.env.NEXT_PUBLIC_DEMO === "true";
@@ -26,84 +13,20 @@ const instance = axios.create({
   ...(DEMO ? { adapter: demoAdapter } : {}),
 });
 
-const WAITING_ROOM_GATED_URLS = [
-  /\/events\/seatmap\//,
-  /\/tickets\/available/,
-  /\/events\/place-tickets-into-cart/,
-  /\/events\/place-ga-tickets-into-cart/,
-  /\/events\/place-package-into-cart/,
-  /\/access-pass-templates\/add-to-cart/,
-  /\/flex-pack\/add-to-cart/,
-];
+/** Sign-in calls are made before there is a session, so they never carry one: a stored token (an earlier sign-in, an expired session) makes
+ *  the backend's email check answer 500. Covers /verifies and everything under it, and the email validation. */
+const SIGN_IN_PATHS = ["/verifies", "/registration/validate-email"];
 
 instance.interceptors.request.use(
   (config) => {
-    if (isLoggedIn()) {
+    const signingIn = SIGN_IN_PATHS.some((p) => (config.url || "").startsWith(p));
+    if (isLoggedIn() && !signingIn) {
       const token = getToken();
       if (token) config.headers.Authorization = `Bearer ${token}`;
-    }
-    const url = config.url || "";
-    const waitingRoomRequest = url.includes("/waiting-room/");
-    const gated = WAITING_ROOM_GATED_URLS.some((pattern) => pattern.test(url));
-    if (waitingRoomRequest || gated) {
-      const sessionId = getQueueSessionId();
-      if (sessionId) config.headers["X-Queue-Session-Id"] = sessionId;
-    }
-    if (gated) {
-      const body = config.data as
-        | {
-            eventUUID?: string;
-            eventUuid?: string;
-            data?: { eventUUID?: string; eventUuid?: string };
-          }
-        | undefined;
-      const params = config.params as
-        | { eventUUID?: string; eventUuid?: string }
-        | undefined;
-      const eventUuid =
-        params?.eventUUID ||
-        params?.eventUuid ||
-        body?.eventUUID ||
-        body?.eventUuid ||
-        body?.data?.eventUUID ||
-        body?.data?.eventUuid ||
-        getCurrentWaitingRoomEventUuid();
-      const waitingRoomToken = getWaitingRoomToken(eventUuid);
-      if (waitingRoomToken) {
-        config.headers["X-Waiting-Room-Token"] = waitingRoomToken;
-      }
     }
     return config;
   },
   (error) => Promise.reject(error),
-);
-
-instance.interceptors.response.use(
-  (response) => response,
-  (error) => {
-    const data = error?.response?.data as
-      | { code?: string; eventUuid?: string; joinUrl?: string }
-      | undefined;
-    if (
-      data?.code === "WAITING_ROOM_REQUIRED" &&
-      typeof window !== "undefined"
-    ) {
-      if (data.eventUuid) {
-        clearWaitingRoomToken(data.eventUuid);
-        const returnPath = `${window.location.pathname}${window.location.search}`;
-        if (returnPath && !returnPath.includes("/waiting-room")) {
-          setWaitingRoomReturnPath(data.eventUuid, returnPath);
-        }
-      }
-      if (
-        data.joinUrl &&
-        !window.location.pathname.includes("/waiting-room")
-      ) {
-        window.location.assign(data.joinUrl);
-      }
-    }
-    return Promise.reject(error);
-  },
 );
 
 export const verifyUser = (data: unknown) => instance.post("/verifies", data);
@@ -116,9 +39,6 @@ export const phoneUnique = (data: unknown) =>
 
 export const createNewUser = (data: unknown) =>
   instance.post("/verifies/newUser", data);
-
-export const updateSmsOptIn = (data: unknown) =>
-  instance.post("/verifies/sms-opt-in", data);
 
 export const createOrder = (data: unknown) => instance.post("/orders", data);
 
@@ -137,14 +57,8 @@ export const getOrder = (orderId: string) =>
 export const getAccessPassesByOrder = (orderId: string) =>
   instance.get(`/access-passes/by-order/${orderId}`);
 
-export const getMyAccessPasses = (
-  type = "organizer",
-  options?: { signal?: AbortSignal },
-) =>
-  instance.get("/events/myAccessPasses", {
-    params: type ? { type } : {},
-    signal: options?.signal,
-  });
+export const getMyAccessPasses = (type = "organizer") =>
+  instance.get("/events/myAccessPasses", { params: type ? { type } : {} });
 
 export const getMyAccessPass = (uuid: string) =>
   instance.get(`/events/myAccessPasses/${uuid}`);
@@ -158,10 +72,7 @@ export const getAccessPassTemplate = (uuid: string) =>
   instance.get(`/access-pass-templates/get-access-pass?uuid=${uuid}`);
 
 export const placeAccessPassIntoCart = (templateId: string | number) =>
-  instance.post(
-    `/access-pass-templates/add-to-cart?id=${templateId}`,
-    withCallerCart(undefined),
-  );
+  instance.post(`/access-pass-templates/add-to-cart?id=${templateId}`);
 
 export const findMadeOrder = (data: unknown) =>
   instance.post("/orders/findMadeOrder", data);
@@ -245,51 +156,13 @@ export const getGuestList = (phoneNumber: string) =>
   instance.get(`/guest-lists?phoneNumber=${phoneNumber}`);
 
 export const getVenue = (id: string) =>
-  instance.get(`/venues?filters[slug][$eq]=${encodeURIComponent(id)}`);
+  instance.get(`/venues?filters[slug][$eq]=${id}`);
 
 export const getVenueUpcomingEvents = (id: string | number) =>
   instance.get(`/venues/${id}/upcoming-events`);
 
-const UUID_RE =
-  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-
-/** Enrich stub venue/team events with pricingLevels (id, uuid, or shortCode). */
-export const getEventsByIds = (ids: Array<string | number>) => {
-  const params = new URLSearchParams();
-  const numeric: string[] = [];
-  const uuids: string[] = [];
-  const codes: string[] = [];
-  ids.forEach((id) => {
-    const value = String(id);
-    if (/^\d+$/.test(value)) numeric.push(value);
-    else if (UUID_RE.test(value) || value.includes("-")) uuids.push(value);
-    else codes.push(value);
-  });
-  const branches = [
-    { key: "id", values: numeric },
-    { key: "uuid", values: uuids },
-    { key: "shortCode", values: codes },
-  ].filter((branch) => branch.values.length);
-  if (branches.length === 1) {
-    branches[0].values.forEach((id, i) =>
-      params.set(`filters[${branches[0].key}][$in][${i}]`, id),
-    );
-  } else {
-    branches.forEach((branch, orIndex) => {
-      branch.values.forEach((id, i) =>
-        params.set(`filters[$or][${orIndex}][${branch.key}][$in][${i}]`, id),
-      );
-    });
-  }
-  params.set("pagination[pageSize]", String(Math.max(ids.length, 1)));
-  return instance.get(`/events?${params.toString()}`);
-};
-
 export const getOrganizationStorefront = (slug: string) =>
-  instance.get(`/organizations/storefront/${encodeURIComponent(slug)}`);
-
-export const getPublicOrganizationBranding = (idOrSlug: string) =>
-  getOrganizationStorefront(idOrSlug);
+  instance.get(`/organizations/storefront/${slug}`);
 
 export const getEvents = () => instance.get(`/events/on-sale`);
 
@@ -298,25 +171,7 @@ export const getTaxRates = (city: string, state: string) =>
 
 export const searchEvents = (q: unknown) => instance.post(`/events/search`, q);
 
-const myEventsCache = createInflightCache<AxiosResponse>(5_000);
-
-export const getMyEvents = (options?: {
-  fresh?: boolean;
-  signal?: AbortSignal;
-}) =>
-  myEventsCache.get(
-    () =>
-      instance.get("/events/myUpcomingEvents", { signal: options?.signal }),
-    options,
-  );
-
-export function invalidateMyEventsCache() {
-  myEventsCache.reset();
-}
-
-export function __resetMyEventsCacheForTests() {
-  invalidateMyEventsCache();
-}
+export const getMyEvents = () => instance.get("/events/myUpcomingEvents");
 
 export const getMyUpcomingOrders = () =>
   instance.get("/events/myUpcomingOrders");
@@ -324,13 +179,8 @@ export const getMyUpcomingOrders = () =>
 export const getEvent = (id: string) =>
   instance.get(`/events/${id}?filters[status][$eq]=on_sale`);
 
-const eventByShortCodeCache = createInflightCache<AxiosResponse>(5_000);
-
 export const getEventByShortCode = (id: string, slug: string, code: string) =>
-  eventByShortCodeCache.get(
-    () => instance.get(`/events/${slug}/${id}?code=${code}`),
-    { key: `${slug}/${id}?code=${code}` },
-  );
+  instance.get(`/events/${slug}/${id}?code=${code}`);
 
 export const getSeatmapByShortCode = (id: string, slug: string) =>
   instance.get(`/events/seatmap/${slug}/${id}`);
@@ -364,44 +214,21 @@ export const savePassGoogle = () => instance.get("/aaa/google");
 export const removeBankAccount = () =>
   instance.get("/payment-information/deactive");
 
-/** Legacy wallet uses populate=* so transfer rows include tickets with seat fields. */
-export const TICKET_TRANSFER_POPULATE_QUERY = "populate=*";
-
-export const getMySentTransfers = (
-  userEmail: string,
-  page: number,
-  options?: { signal?: AbortSignal },
-) =>
+export const getMySentTransfers = (userEmail: string, page: number) =>
   instance.get(
-    `/ticket-transfers?filters[fromUserEmail][$eq]=${userEmail}&${TICKET_TRANSFER_POPULATE_QUERY}&sort[0]=createdAt:desc&pagination[page]=${page}&pagination[pageSize]=50`,
-    { signal: options?.signal },
+    `/ticket-transfers?filters[fromUserEmail][$eq]=${userEmail}&populate=*&sort[0]=createdAt:desc&pagination[page]=${page}&pagination[pageSize]=50`,
   );
 
-export const getMyReceivedTransfers = (
-  userEmail: string,
-  page: number,
-  options?: { signal?: AbortSignal },
-) =>
+export const getMyReceivedTransfers = (userEmail: string, page: number) =>
   instance.get(
-    `/ticket-transfers?filters[emailAddressToUser][$eq]=${userEmail}&${TICKET_TRANSFER_POPULATE_QUERY}&sort[0]=createdAt:desc&pagination[page]=${page}&pagination[pageSize]=50`,
-    { signal: options?.signal },
+    `/ticket-transfers?filters[emailAddressToUser][$eq]=${userEmail}&populate=*&sort[0]=createdAt:desc&pagination[page]=${page}&pagination[pageSize]=50`,
   );
 
-export const cancelMyTransfers = (data: unknown) => {
-  const payload = buildCancelTransferRequestBody(resolveCancelTransferId(data));
-  if (!payload) {
-    return Promise.reject(
-      Object.assign(new Error("Invalid transfer id"), {
-        code: "INVALID_TRANSFER_ID",
-      }),
-    );
-  }
-  return instance.post("/ticket-transfers/cancel", payload);
-};
+export const cancelMyTransfers = (data: unknown) =>
+  instance.post("/ticket-transfers/cancel", data);
 
-/** Custom route — backend populates order, event, and tickets; query populates are ignored. */
-export const getIncomingTransfers = (options?: { signal?: AbortSignal }) =>
-  instance.get("/ticket-transfers/incoming", { signal: options?.signal });
+export const getIncomingTransfers = () =>
+  instance.get("/ticket-transfers/incoming");
 
 export const acceptIncomingTransfers = (data: unknown) =>
   instance.post("/ticket-transfers/accept", data);
@@ -411,16 +238,10 @@ export const createListing = (data: unknown) => instance.post("/listings", data)
 export const getListingsByEvent = (id: string) =>
   instance.get(`/listings/byEvent?id=${id}`);
 
-export const getMyListings = (options?: { signal?: AbortSignal }) =>
-  instance.get("/listings/mylisting", { signal: options?.signal });
+export const getMyListings = () => instance.get("/listings/mylisting");
 
 export const getAvailableFunds = () =>
   instance.get("/listings/available-funds");
-
-export const getResaleFeeRules = (eventId: string | number) =>
-  instance.get(`/listings/resale-fee-rules?eventId=${eventId}`);
-
-export const claimResaleFunds = () => instance.post("/listings/claim-funds");
 
 export const removeMyListings = (id: string | number) =>
   instance.delete(`/listings/${id}`);
@@ -448,11 +269,6 @@ export const confirmCode = (data: unknown) =>
 export const checkAccessCode = (data: unknown) =>
   instance.post("/tickets/checkAccessCode", data);
 
-export const findOffersByAccessCode = (data: {
-  event?: { id?: string | number; uuid?: string } | null;
-  code: string;
-}) => instance.post("/tickets/find-offers-by-access-code", data);
-
 export const getOffers = (eventId: string) =>
   instance.get(`/events/offers?uuid=${eventId}`);
 
@@ -460,92 +276,22 @@ export const getTicketsFromOffer = (offerId: string, eventId: string) =>
   instance.get(`/events/offer-tickets?uuid=${eventId}&offerUUID=${offerId}`);
 
 export const placeTicketsIntoCart = (data: unknown) =>
-  instance.post(`/events/place-tickets-into-cart`, withCallerCart(data));
+  instance.post(`/events/place-tickets-into-cart`, data);
 
 export const placeGATicketsIntoCart = (data: unknown) =>
-  instance.post(`/events/place-ga-tickets-into-cart`, withCallerCart(data));
+  instance.post(`/events/place-ga-tickets-into-cart`, data);
 
 export const placePackageIntoCart = (data: unknown) =>
-  instance.post(`/events/place-package-into-cart`, withCallerCart(data));
+  instance.post(`/events/place-package-into-cart`, data);
 
 export const getTicketGroups = (data: unknown) =>
   instance.post(`/ticket-group/get-ticket-groups`, data);
 
-export const joinWaitingRoom = (eventUuid: string) =>
-  instance.post("/waiting-room/join", { data: { eventUuid } });
-
-export const getWaitingRoomStatus = (eventUuid: string) =>
-  instance.get("/waiting-room/status", { params: { eventUuid } });
-
-export const heartbeatWaitingRoom = (eventUuid: string, token: string) =>
-  instance.post("/waiting-room/heartbeat", {
-    data: { eventUuid, token },
-  });
-
-export const leaveWaitingRoom = (
-  eventUuid: string,
-  token?: string | null,
-  soft = false,
-) =>
-  instance.post("/waiting-room/leave", {
-    data: {
-      eventUuid,
-      ...(token ? { token } : {}),
-      ...(soft ? { soft: true } : {}),
-    },
-  });
-
-/**
- * Best-effort queue release for page close/refresh. `fetch` with keepalive is
- * used because sendBeacon cannot carry the queue-session header.
- */
-export function beaconLeaveWaitingRoom(
-  eventUuid: string,
-  token?: string | null,
-  { soft = false }: { soft?: boolean } = {},
-) {
-  if (!eventUuid || typeof window === "undefined" || typeof fetch === "undefined") {
-    return;
-  }
-  const base = process.env.NEXT_PUBLIC_API?.replace(/\/$/, "");
-  if (!base) return;
-  const sessionId = getQueueSessionId();
-  if (!sessionId) return;
-
-  try {
-    void fetch(`${base}/waiting-room/leave`, {
-      method: "POST",
-      keepalive: true,
-      headers: {
-        "Content-Type": "application/json",
-        "X-Queue-Session-Id": sessionId,
-        ...(token ? { "X-Waiting-Room-Token": token } : {}),
-      },
-      body: JSON.stringify({
-        data: {
-          eventUuid,
-          ...(token ? { token } : {}),
-          ...(soft ? { soft: true } : {}),
-        },
-      }),
-    }).catch(() => {});
-  } catch {
-    // Admission TTL still reclaims the slot if unload networking is unavailable.
-  }
-}
-
-export function isWaitingRoomRequiredError(error: unknown) {
-  return (
-    (error as { response?: { data?: { code?: string } } })?.response?.data
-      ?.code === "WAITING_ROOM_REQUIRED"
-  );
-}
-
 export const getCart = (cartId: string) =>
   instance.get(`/cart/myCart?cartId=${cartId}`);
 
-export const dropUserCart = (data: unknown = {}) =>
-  instance.post(`/cart/drop-user-cart`, dropCartRequestBody(data));
+export const dropUserCart = (data: unknown) =>
+  instance.post(`/cart/drop-user-cart`, data);
 
 export const getVenuePackages = (venueUUID: string) =>
   instance.get(`/packages/get-venue-packages?venueUUID=${venueUUID}`);
@@ -597,22 +343,6 @@ export const downloadApplePass = (data: unknown) =>
 export const downloadGooglePass = (data: unknown) =>
   instance.post("/create_download_google_pass", data);
 
-/** Public ticket link from a text message. 410 when the link has expired. */
-export const getSmsTickets = (token: string) =>
-  instance.get(`/orders/sms-tickets/${encodeURIComponent(token)}`);
-
-export const downloadSmsApplePasses = (token: string) =>
-  instance.get(
-    `/orders/sms-tickets/${encodeURIComponent(token)}/apple-passes`,
-    { responseType: "blob", timeout: 90000 },
-  );
-
-export const downloadSmsGooglePasses = (token: string) =>
-  instance.get(
-    `/orders/sms-tickets/${encodeURIComponent(token)}/google-passes`,
-    { timeout: 90000 },
-  );
-
 export const validateEmail = (data: unknown) =>
   instance.post("/registration/validate-email", data);
 
@@ -626,7 +356,7 @@ export const getFlexPack = (uuid: string) =>
   instance.get(`/flex-pack/get-flex-pack?uuid=${uuid}`);
 
 export const placeFlexPackIntoCart = (flexPackId: string | number) =>
-  instance.post(`/flex-pack/add-to-cart?id=${flexPackId}`, withCallerCart({}));
+  instance.post(`/flex-pack/add-to-cart?id=${flexPackId}`);
 
 export const trackCartSessionEvent = (data: unknown) =>
   instance.post("/cart-sessions/track", data);
@@ -648,12 +378,6 @@ export const removePromoCode = (data: unknown) =>
 export const getOrderByPaymentIntentId = (paymentIntentId: string) =>
   instance.get(
     `/orders/get-order-by-payment-intent-id?paymentIntentId=${paymentIntentId}`,
-  );
-
-export const getOrderReceiptHtml = (paymentIntentId: string) =>
-  instance.get<string>(
-    `/orders/order-receipt-html?paymentIntentId=${encodeURIComponent(paymentIntentId)}`,
-    { responseType: "text" },
   );
 
 export const getPublicMenu = (
@@ -723,23 +447,6 @@ export const getPublicOrderStatus = (
     { params },
   );
 };
-
-export const getPublicSurvey = (token: string, idempotencyKey?: string) =>
-  instance.get(`/public/surveys/${encodeURIComponent(token)}`, {
-    params: idempotencyKey ? { k: idempotencyKey } : undefined,
-  });
-
-export const startPublicSurvey = (token: string, body: unknown) =>
-  instance.post(`/public/surveys/${encodeURIComponent(token)}/start`, body);
-
-export const submitPublicSurvey = (token: string, body: unknown) =>
-  instance.post(
-    `/public/surveys/${encodeURIComponent(token)}/responses`,
-    body,
-  );
-
-export const unsubscribeSurvey = (token: string) =>
-  instance.post("/public/surveys/unsubscribe", { token });
 
 export default instance;
 

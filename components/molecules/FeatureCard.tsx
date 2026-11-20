@@ -1,5 +1,4 @@
 import type { ReactNode } from "react";
-import Link from "next/link";
 import Reveal from "@/components/atoms/Reveal";
 import IconChip from "@/components/atoms/IconChip";
 import { ArrowRight } from "@/components/atoms/icons";
@@ -39,14 +38,14 @@ export default function FeatureCard({
       <div className="relative flex flex-1 flex-col gap-8 lg:flex-row lg:items-center lg:justify-between">
         <div className="flex flex-col">
           <IconChip>{icon}</IconChip>
-          <p className="mt-5 text-[12px] font-medium uppercase tracking-[0.06em] text-[#9DA2B3]">{eyebrow}</p>
+          <p className="mt-5 text-[12px] font-medium uppercase tracking-[0.06em] text-ink2">{eyebrow}</p>
           <h3 className="mt-2 text-[24px] font-medium leading-snug tracking-[-0.01em] text-white">{title}</h3>
-          <p className={`mt-2 max-w-[60ch] leading-relaxed text-[#9DA2B3] ${bodyClassName}`}>{body}</p>
+          <p className={`mt-2 max-w-[60ch] leading-relaxed text-ink2 ${bodyClassName}`}>{body}</p>
           {link && (
-            <Link href={link.href} className="group/lnk mt-auto inline-flex items-center gap-1.5 pt-6 text-[14px] font-medium text-[#BCBFCC] transition-colors hover:text-[#a6e773]">
+            <a href={link.href} className="group/lnk mt-auto inline-flex items-center gap-1.5 pt-6 text-[14px] font-medium text-ink3 transition-colors hover:text-primary">
               {link.label}
               <ArrowRight className="h-4 w-4 transition-transform group-hover/lnk:translate-x-0.5" />
-            </Link>
+            </a>
           )}
         </div>
         {aside && <div className="shrink-0">{aside}</div>}

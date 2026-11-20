@@ -1,8 +1,8 @@
 import type { Metadata } from "next";
 import { Suspense } from "react";
-import { BrandedLoader } from "@/components/molecules/RouteLoader";
+import AppShell from "@/components/templates/AppShell";
+import PageSkeleton from "@/components/molecules/PageSkeleton";
 import { FundraisingCampaignClient } from "@/components/organisms/FundraisingCampaignClient";
-import { FUNDRAISER_LOADER_MESSAGE } from "@/lib/loaderMessages";
 import { fundraiserPageMetadata } from "@/lib/seo";
 
 type Props = {
@@ -41,18 +41,15 @@ export default async function FundraiseSlugPage({ params, searchParams }: Props)
   const { organizationUUID } = await searchParams;
 
   return (
-    <Suspense
-      fallback={
-        <BrandedLoader
-          fallback="blocktickets"
-          message={FUNDRAISER_LOADER_MESSAGE}
+    <AppShell search={false}>
+      <Suspense
+        fallback={<PageSkeleton variant="detail" label="Loading fundraiser" className="min-h-[40vh]" />}
+      >
+        <FundraiseInner
+          campaignSlug={slug}
+          organizationUUID={organizationUUID}
         />
-      }
-    >
-      <FundraiseInner
-        campaignSlug={slug}
-        organizationUUID={organizationUUID}
-      />
-    </Suspense>
+      </Suspense>
+    </AppShell>
   );
 }

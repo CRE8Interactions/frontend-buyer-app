@@ -84,7 +84,7 @@ export default function RotatingWord({ words, className = "" }: { words: string[
     <b
       ref={ref}
       style={{ fontVariantLigatures: "none", letterSpacing: "0.01em" }}
-      className={`inline-block font-light text-[#a6e773] ${motion} ${state} ${className}`}
+      className={`inline-block font-light text-primary ${motion} ${state} ${className}`}
     >
       {words[i]}
     </b>

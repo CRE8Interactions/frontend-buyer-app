@@ -1,0 +1,37 @@
+{
+  "format": "seatmap-delivery",
+  "version": 1,
+  "mapId": "e8896c55-57df-448a-9407-c56b28eb6050",
+  "mapRevision": "3b601225-270d-47ec-892f-4ceb6012e78c",
+  "mapSchemaVersion": 3,
+  "clientProfile": "seatmap-player-v3",
+  "createdAt": "2026-09-28T23:24:38.990Z",
+  "counts": {
+    "sections": 53,
+    "rows": 376,
+    "seats": 5150
+  },
+  "files": {
+    "json": {
+      "name": "venue-map.json",
+      "sha256": "bcf52ace35fd6bbee79fe677fc9cf215f1eb330fe7240dd39ca68746aaba69ef"
+    },
+    "svg": {
+      "name": "venue-map.svg",
+      "sha256": "e116644de290c8e787b6bd4e739fadc435c4baed3408ffd93b91caa5a5f8e123"
+    },
+    "venue": {
+      "name": "venue.json",
+      "sha256": "0560819d36ffd823f31aea37ac6149b21fab84cb339945efba5ee798c32f132f"
+    },
+    "decor": {
+      "name": "venue-decor.svg",
+      "sha256": "9608457384bccb07a473a8e04c038b1de43f10afddda0c559939d6b8844cc26a"
+    },
+    "pack": {
+      "name": "venue-map.pack.json",
+      "sha256": "3ec0761d63003f7ed2552818c0a20034911855499df47f701d3ec490137405a9"
+    }
+  },
+  "slug": "meridian-centre"
+}

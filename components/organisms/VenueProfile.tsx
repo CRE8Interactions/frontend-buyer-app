@@ -1,884 +1,199 @@
 "use client";
 
 /**
- * VenueProfile — venue page UI. Loads identity + upcoming events for the
- * route slug from Strapi (find-on-sale + venue filter), so each /venue/:slug
- * shows that venue — not hardcoded NM State fixtures.
+ * VenueProfile — the venue page, ported from the Claude Design
+ * "Venue Profile.dc.html". Navy header, sticky venue identity aside
+ * (photo, name, location, description, follow/share), and a main column
+ * of month-grouped upcoming event rows. Light theme, brand green CTAs.
  */
 
-import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
-import Link from "next/link";
-import { notFound } from "next/navigation";
-import EventPromo from "@/components/atoms/EventPromo";
-import InAppBackLink from "@/components/molecules/InAppBackLink";
-import NavAuthActions from "@/components/molecules/NavAuthActions";
-import RouteLoader from "@/components/molecules/RouteLoader";
-import { BROWSE_TRACK, browseLeading, browsePageTypeCss } from "@/lib/browseType";
-import { fluidSize } from "@/lib/shopperFluidType";
-import {
-  fieldFocusVars,
-  resolveBrandLogo,
-  resolveButtonColor,
-  resolveButtonTextColor,
-  resolvePrimaryColor,
-  type BrandingOrganization,
-} from "@/lib/branding";
-import {
-  cacheOrgBranding,
-  cacheVenueBranding,
-  getCachedBrandingForPath,
-} from "@/lib/orgBrandingCache";
-import {
-  getOrganizationStorefront,
-  getVenue,
-  getVenueUpcomingEvents,
-  getVenues,
-} from "@/lib/api";
-import { isEventSoldOut, onSaleBadgeLabel, withSoldOutFlags } from "@/lib/eventSoldOut";
-import {
-  dateChip,
-  eventPurchasePath,
-  formatCurrency,
-  formatEventWhen,
-  imageUrl,
-  sortByDate,
-  type ApiImage,
-} from "@/lib/helpers";
-import { copyPageUrl } from "@/lib/copy";
-import type { EventPriceSource } from "@/lib/eventFromPrice";
-import {
-  compareUpcomingEvents,
-  groupUpcomingEvents,
-} from "@/lib/upcomingEventOrder";
-import { googleMapsDirectionsUrl } from "@/lib/venueLocation";
-import {
-  venueWebsiteFromUpcomingEvents,
-  venueWebsiteHref,
-} from "@/lib/venueWebsite";
-import { storefrontSportLabel } from "@/lib/eventSport";
-import { eventPromotionalCopy } from "@/lib/promotionalDescription";
-import { useClientReady } from "@/lib/useClientReady";
-import {
-  stickyOffsetBelowHeader,
-  TICKETING_HEADER_FALLBACK_PX,
-  TICKETING_STICKY_GAP_PX,
-} from "@/lib/ticketingSticky";
+import { useEffect, useMemo, useState } from "react";
 
-const NAVY = "#051b35";
-const GREEN = "#a6e773";
+const NAVY = "var(--paper)";
+const GREEN = "var(--green)";
+const LOCKUP = "/nmstate/blocktickets-lockup-white.svg";
 
-type VenueAddress =
-  | { city?: string; state?: string; address_1?: string }
-  | Array<{ city?: string; state?: string; address_1?: string }>;
+type Raw = { mon: string; day: string; dow: string; time: string; sport: string; title: string; host: string; p: number; status: string };
 
-type VenueEvent = {
-  id?: string | number;
-  uuid?: string;
-  name?: string;
-  title?: string;
-  start?: string;
-  status?: string;
-  listPriority?: number | string | null;
-  soldout?: boolean | null;
-  soldOut?: boolean | null;
-  generalOnsale?: string | null;
-  hideGeneralOnsale?: boolean | null;
-  scheduled?: boolean | null;
-  scheduledTime?: string | null;
-  sport?: string;
-  category?: { name?: string } | null;
-  sub_categories?: Array<{ name?: string | null }> | null;
-  attractions?: Array<{ name?: string | null }> | null;
-  slug?: string | null;
-  seoUrl?: string;
-  shortCode?: string;
-  shortcode?: string;
-  minPrice?: number;
-  lowestPrice?: number;
-  price?: number;
-  pricingLevels?: EventPriceSource["pricingLevels"];
-  priceLevels?: EventPriceSource["priceLevels"];
-  pricingTiers?: EventPriceSource["pricingTiers"];
-  offers?: EventPriceSource["offers"];
-  ticketGroups?: EventPriceSource["ticketGroups"];
-  ticket_groups?: EventPriceSource["ticket_groups"];
-  tickets?: EventPriceSource["tickets"];
-  organization?: {
-    name?: string;
-    slug?: string | null;
-    website?: string;
-    url?: string;
-    category?: { name?: string } | null;
-  };
-  venue?: {
-    name?: string;
-    timezone?: string;
-    isGeneralAdmissionOnly?: boolean;
-  };
-  seatmap?: { ga_only?: boolean };
-  isGeneralAdmissionOnly?: boolean;
-  generalAdmissionOnly?: boolean;
-  promotionalDescription?: unknown;
-};
+const RAW: Raw[] = [
+  { mon: "Sep", day: "05", dow: "Sat", time: "7:00 PM", sport: "Football", title: "NM State vs. Mercyhurst", host: "New Mexico State Athletics", p: 22, status: "On sale" },
+  { mon: "Sep", day: "26", dow: "Sat", time: "7:00 PM", sport: "Football", title: "NM State vs. New Mexico", host: "New Mexico State Athletics", p: 38, status: "Few left" },
+  { mon: "Oct", day: "01", dow: "Thu", time: "7:00 PM", sport: "Football", title: "NM State vs. Western Kentucky", host: "New Mexico State Athletics", p: 24, status: "On sale" },
+  { mon: "Oct", day: "17", dow: "Sat", time: "2:00 PM", sport: "Football", title: "NM State vs. Liberty", host: "New Mexico State Athletics", p: 28, status: "Presale" },
+  { mon: "Nov", day: "07", dow: "Sat", time: "6:00 PM", sport: "Football", title: "NM State vs. Sam Houston", host: "New Mexico State Athletics", p: 26, status: "On sale" },
+  { mon: "Nov", day: "21", dow: "Sat", time: "1:00 PM", sport: "Concert", title: "Aggie Fest — Live on the Field", host: "NMSU Student Activities", p: 35, status: "On sale" },
+];
 
-type VenueRecord = {
-  id?: string | number;
-  uuid?: string;
-  name?: string;
-  slug?: string;
-  website?: string;
-  url?: string;
+const MONTH_NAMES: Record<string, string> = { Sep: "September 2026", Oct: "October 2026", Nov: "November 2026" };
+const MONTH_ORDER = ["Sep", "Oct", "Nov"];
+
+/** Route to the real seated / GA event page (demo snapshots are keyed by shortcode). */
+const hrefFor = (sport: string) =>
+  sport === "Concert" ? `/e/nm-state/KpIeUYbz` : `/e/nm-state/W50prW0I/tickets`;
+
+const tagFor = (st: string) =>
+  st === "Few left" ? { tagBg: "#fbf1de", tagInk: "#b5791e" }
+  : st === "Presale" ? { tagBg: "#f1f3f8", tagInk: "#4a5567" }
+  : { tagBg: "#e6f4eb", tagInk: "#2f8f4e" };
+
+export type VenueProfileProps = {
+  venueName?: string;
+  city?: string;
+  capacity?: string;
   description?: string;
-  capacity?: number | string | null;
-  timezone?: string;
-  image?: ApiImage | ApiImage[];
-  address?: VenueAddress;
-  allEvents?: VenueEvent[];
+  photoSrc?: string;
 };
 
-type RowEvent = {
-  key: string;
-  mon: string;
-  day: string;
-  dow: string;
-  monthKey: string;
-  monthTitle: string;
-  time: string;
-  sport: string;
-  title: string;
-  promo: string;
-  host: string;
-  status: string;
-  soldOut: boolean;
-  onSaleLabel: string;
-  href: string;
-  listPriority?: number | string | null;
-  sortKey: number;
-};
-
-function firstAddress(address?: VenueAddress) {
-  if (!address) return undefined;
-  return Array.isArray(address) ? address[0] : address;
-}
-
-function cityState(address?: VenueAddress) {
-  const a = firstAddress(address);
-  if (!a) return "";
-  const city = (a.city || "")
-    .split(" ")
-    .filter(Boolean)
-    .map((w) => w[0].toUpperCase() + w.slice(1))
-    .join(" ");
-  const state = (a.state || "").toUpperCase();
-  return [city, state].filter(Boolean).join(", ");
-}
-
-/** Null unless the organization defines a color of its own. */
-function organizationAccent(organization: BrandingOrganization | null) {
-  if (!organization) return null;
-  const hasColor = Boolean(
-    organization.branding?.primaryColor ||
-      organization.branding?.buttonColor ||
-      organization.primaryColor ||
-      organization.accentColor ||
-      organization.brandColor,
-  );
-  return hasColor ? resolvePrimaryColor(null, organization) : null;
-}
-
-function venuePhoto(img?: ApiImage | ApiImage[], fallback = "/cases/nmstate.jpg") {
-  if (Array.isArray(img)) return imageUrl(img[0], fallback);
-  return imageUrl(img, fallback);
-}
-
-function unwrapVenueEntry(raw: unknown): VenueRecord | null {
-  if (!raw || typeof raw !== "object") return null;
-  const row = raw as {
-    id?: string | number;
-    attributes?: VenueRecord;
-  } & VenueRecord;
-  if (row.attributes) {
-    return { id: row.id, ...row.attributes };
-  }
-  return row;
-}
-
-function eventStatus(ev: VenueEvent) {
-  const raw = (ev.status || "").trim();
-  if (!raw || raw === "on_sale" || raw === "published") return "On sale";
-  return raw.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
-}
-
-function EventRowFrame({
-  soldOut,
-  href,
-  className,
-  style,
-  children,
-}: {
-  soldOut: boolean;
-  href: string;
-  className: string;
-  style: CSSProperties;
-  children: ReactNode;
-}) {
-  if (soldOut) {
-    return (
-      <div className={className} style={{ ...style, cursor: "default" }}>
-        {children}
-      </div>
-    );
-  }
-  return (
-    <Link href={href} className={className} style={style}>
-      {children}
-    </Link>
-  );
-}
-
-function unwrapEventList(payload: unknown): VenueEvent[] {
-  if (!payload) return [];
-  if (Array.isArray(payload)) {
-    return payload.map((row) => {
-      const r = row as { id?: string | number; attributes?: VenueEvent } & VenueEvent;
-      return r.attributes ? { id: r.id, ...r.attributes } : r;
-    });
-  }
-  const obj = payload as { data?: unknown; events?: unknown; allEvents?: unknown };
-  if (Array.isArray(obj.allEvents)) return unwrapEventList(obj.allEvents);
-  if (Array.isArray(obj.data)) return unwrapEventList(obj.data);
-  if (obj.data && typeof obj.data === "object") return unwrapEventList(obj.data);
-  if (Array.isArray(obj.events)) return unwrapEventList(obj.events);
-  return [];
-}
-
-function toRow(
-  ev: VenueEvent,
-  timezone?: string,
-  fallbackHost?: string,
-  org?: BrandingOrganization | null,
-): RowEvent | null {
-  const start = ev.start;
-  if (!start) return null;
-  const tz = ev.venue?.timezone || timezone;
-  const chip = dateChip(start, tz);
-  const monthTitleTz =
-    formatEventWhen(start, tz, "MMMM YYYY") ||
-    chip.m;
-  const monthKey = formatEventWhen(start, tz, "YYYY-MM") || start.slice(0, 7);
-  const short =
-    ev.shortCode || ev.shortcode || ev.seoUrl
-      ? ev
-      : { ...ev, slug: ev.seoUrl || ev.slug || undefined };
-  const href =
-    ev.shortCode || ev.shortcode || ev.seoUrl || ev.slug
-      ? eventPurchasePath({
-          ...short,
-          slug: ev.seoUrl || ev.slug || undefined,
-          shortCode: ev.shortCode || ev.shortcode,
-        })
-      : "#";
-
-  return {
-    key: String(ev.uuid || ev.id || ev.shortCode || ev.name || start),
-    mon: chip.m,
-    day: chip.d,
-    dow: formatEventWhen(start, tz, "ddd") || "",
-    monthKey,
-    monthTitle: monthTitleTz,
-    time: formatEventWhen(start, tz, "h:mm A") || "",
-    sport: storefrontSportLabel(ev, org ? [org] : []),
-    title: ev.name || ev.title || "Event",
-    promo: eventPromotionalCopy(ev),
-    host: ev.organization?.name?.trim() || fallbackHost || "",
-    status: eventStatus(ev),
-    soldOut: isEventSoldOut(ev),
-    onSaleLabel: onSaleBadgeLabel(ev),
-    href,
-    listPriority: ev.listPriority,
-    sortKey: new Date(start).getTime() || 0,
-  };
-}
-
-export default function VenueProfile({ slug }: { slug: string }) {
-  const clientReady = useClientReady();
+export default function VenueProfile({
+  venueName = "Aggie Memorial Stadium",
+  city = "Las Cruces, NM",
+  capacity = "30,343",
+  description = "Outdoor football stadium on the campus of New Mexico State University, home of Aggie football since 1978.",
+  photoSrc = "/cases/nmstate.jpg",
+}: VenueProfileProps) {
   const [vw, setVw] = useState(1440);
-  const [loading, setLoading] = useState(true);
-  const [missing, setMissing] = useState(false);
-  const [venue, setVenue] = useState<VenueRecord | null>(null);
-  const [events, setEvents] = useState<VenueEvent[]>([]);
-  const [organization, setOrganization] = useState<BrandingOrganization | null>(
-    null,
-  );
-  /** Cached team color for this venue — paints before the org fetch lands. */
-  const [accentHint, setAccentHint] = useState<string | null>(null);
 
   useEffect(() => {
+    setVw(window.innerWidth);
     const onR = () => setVw(window.innerWidth);
-    onR();
     window.addEventListener("resize", onR);
     return () => window.removeEventListener("resize", onR);
   }, []);
 
-  useEffect(() => {
-    let cancelled = false;
-
-    (async () => {
-      setLoading(true);
-      setMissing(false);
-      setVenue(null);
-      setEvents([]);
-      setOrganization(null);
-      setAccentHint(
-        getCachedBrandingForPath(`/venue/${slug}/`)?.primaryColor || null,
-      );
-
-      try {
-        const [detailRes, onSaleRes] = await Promise.all([
-          getVenue(slug).catch(() => null),
-          getVenues().catch(() => null),
-        ]);
-
-        if (cancelled) return;
-
-        const detailBody = detailRes?.data as
-          | { data?: unknown[] }
-          | unknown[]
-          | undefined;
-        let detailRow: unknown = null;
-        if (Array.isArray(detailBody)) {
-          detailRow = detailBody[0];
-        } else if (detailBody && typeof detailBody === "object") {
-          detailRow = detailBody.data?.[0] ?? null;
-        }
-        const fromFilter = unwrapVenueEntry(detailRow);
-
-        const onSaleList = Array.isArray(onSaleRes?.data)
-          ? (onSaleRes.data as VenueRecord[])
-          : [];
-        const fromOnSale =
-          onSaleList.find((v) => v.slug === slug) ||
-          onSaleList.find(
-            (v) => (v.slug || "").toLowerCase() === slug.toLowerCase(),
-          ) ||
-          null;
-
-        const merged: VenueRecord | null =
-          fromOnSale || fromFilter
-            ? {
-                ...(fromFilter || {}),
-                ...(fromOnSale || {}),
-                // find-on-sale only keeps 3 preview events — never use that list.
-                allEvents: fromFilter?.allEvents,
-                description:
-                  fromFilter?.description || fromOnSale?.description,
-                capacity: fromFilter?.capacity ?? fromOnSale?.capacity,
-              }
-            : null;
-
-        if (!merged?.name && !merged?.id) {
-          setMissing(true);
-          return;
-        }
-
-        setVenue(merged);
-
-        let stubs: VenueEvent[] = [];
-        try {
-          const up = await getVenueUpcomingEvents(merged.slug || slug);
-          if (!cancelled) {
-            stubs = unwrapEventList(up?.data);
-            // This record carries the website even when /venues omits it.
-            const site = venueWebsiteFromUpcomingEvents(up?.data);
-            if (site) {
-              setVenue((current) =>
-                current && !venueWebsiteHref(current)
-                  ? { ...current, website: site }
-                  : current,
-              );
-            }
-          }
-        } catch {
-          /* endpoint may 404 on some Strapi builds */
-        }
-
-        if (!stubs.length && Array.isArray(fromFilter?.allEvents)) {
-          stubs = [...fromFilter.allEvents];
-        }
-
-        const flagged = await withSoldOutFlags(stubs);
-        if (cancelled) return;
-
-        const upcoming = flagged.filter((e) => {
-          if (!e.start) return false;
-          return new Date(e.start).getTime() >= Date.now() - 3 * 60 * 60 * 1000;
-        });
-
-        setEvents(sortByDate(upcoming));
-
-        // Venue records carry no branding, so take it from the team that plays
-        // here and remember it for the next visit's loader. Keep the loader up
-        // until the complete organization record has also arrived.
-        const orgFromEvents = upcoming.find(
-          (e) =>
-            e.organization?.slug ||
-            e.organization?.website ||
-            e.organization?.url,
-        )?.organization;
-        if (orgFromEvents) {
-          const brandingOrg: BrandingOrganization = {
-            ...orgFromEvents,
-            slug: orgFromEvents.slug ?? undefined,
-          };
-          setOrganization((current) => current ?? brandingOrg);
-        }
-
-        const orgSlug = orgFromEvents?.slug;
-        if (orgSlug) {
-          try {
-            const res = await getOrganizationStorefront(orgSlug);
-            if (cancelled) return;
-            const org = (
-              res.data as { organization?: BrandingOrganization | null }
-            )?.organization;
-            if (org) {
-              setOrganization((current) => ({
-                ...current,
-                ...org,
-                website:
-                  org.website || org.url || current?.website || current?.url,
-              }));
-              cacheOrgBranding(org);
-              cacheVenueBranding([{ slug }], org);
-            }
-          } catch {
-            /* branding is optional — the page keeps the default palette */
-          }
-        }
-      } catch {
-        if (!cancelled) setMissing(true);
-      } finally {
-        if (!cancelled) setLoading(false);
-      }
-    })();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [slug]);
-
   const mobile = vw < 900;
   const narrow = !mobile && vw < 1160;
-  const wide = !mobile && !narrow;
   const stacked = mobile || narrow;
-  const headerRef = useRef<HTMLElement | null>(null);
-  const [headerH, setHeaderH] = useState(TICKETING_HEADER_FALLBACK_PX);
-
-  useEffect(() => {
-    const el = headerRef.current;
-    if (!el || typeof ResizeObserver === "undefined") return;
-    const apply = () => {
-      const h = Math.round(el.getBoundingClientRect().height);
-      if (h > 1) setHeaderH((prev) => (prev === h ? prev : h));
-    };
-    apply();
-    const ro = new ResizeObserver(apply);
-    ro.observe(el);
-    return () => ro.disconnect();
-  }, [vw]);
-
-  const stickTop = Math.round(stickyOffsetBelowHeader(headerH));
-
-  const venueName = venue?.name || "Venue";
-  const city = cityState(venue?.address) || "";
-  const capacity =
-    venue?.capacity != null && String(venue.capacity).trim() !== ""
-      ? Number(venue.capacity).toLocaleString("en-US")
-      : "";
-  const venueMeta = [city, capacity ? `${capacity} capacity` : ""]
-    .filter(Boolean)
-    .join(" · ");
-  const description =
-    venue?.description?.trim() ||
-    `Find upcoming events and buy tickets at ${venueName}.`;
-  const photoSrc = venuePhoto(venue?.image);
-  const website = venueWebsiteHref(venue);
-  const directionsHref = googleMapsDirectionsUrl(venue?.address);
-
-  // Only take over the palette when the team actually has branding, so plain
-  // venues keep the Blocktickets navy + green look.
-  const accent = organizationAccent(organization) || accentHint;
-  const ACC = accent || NAVY;
-  const BTN = accent ? resolveButtonColor(null, organization, ACC) : GREEN;
-  const BTN_INK = accent ? resolveButtonTextColor(null, organization) : NAVY;
 
   const groups = useMemo(() => {
-    const rows = events
-      .map((e) => toRow(e, venue?.timezone, venueName, organization))
-      .filter(Boolean) as RowEvent[];
-    return groupUpcomingEvents(rows.sort(compareUpcomingEvents));
-  }, [events, venue?.timezone, venueName, organization]);
-
-  if (missing) notFound();
-
-  const cachedVenueBranding = clientReady
-    ? getCachedBrandingForPath(`/venue/${slug}/`)
-    : null;
-  const loaderName = organization?.name || cachedVenueBranding?.name || "";
-  const loaderAccent = organization
-    ? resolvePrimaryColor(null, organization)
-    : cachedVenueBranding?.primaryColor || accentHint;
-  const loaderLogo = organization
-    ? imageUrl(resolveBrandLogo(null, organization), "")
-    : cachedVenueBranding?.logoSrc || "";
-  if (loading || !venue) {
-    return (
-      <RouteLoader
-        branding={
-          loaderAccent && (loaderLogo || loaderName)
-            ? {
-                primaryColor: loaderAccent,
-                logoSrc: loaderLogo || undefined,
-                name: loaderName || undefined,
-              }
-            : null
-        }
-      />
+    const chrono = RAW.slice().sort(
+      (a, b) => MONTH_ORDER.indexOf(a.mon) - MONTH_ORDER.indexOf(b.mon) || Number(a.day) - Number(b.day)
     );
-  }
+    const keys: string[] = [];
+    chrono.forEach((e) => { if (!keys.includes(e.mon)) keys.push(e.mon); });
+    return keys.map((m) => ({
+      title: MONTH_NAMES[m],
+      rows: chrono.filter((e) => e.mon === m),
+    }));
+  }, []);
 
-  const iconBtn = {
-    fontFamily: "inherit",
-    width: 44,
-    height: 44,
-    borderRadius: 999,
-    background: "#fff",
-    borderWidth: 1,
-    borderStyle: "solid",
-    color: NAVY,
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-    cursor: "pointer",
-    textDecoration: "none",
-  } as const;
-
-  const venueActions = (
-    <div style={{ display: "flex", alignItems: "center", gap: 8, justifyContent: mobile ? "flex-start" : "center" }}>
-      {website ? (
-        <a
-          href={website}
-          target="_blank"
-          rel="noopener noreferrer"
-          style={{
-            fontFamily: "inherit",
-            fontSize: 14,
-            fontWeight: 600,
-            lineHeight: 1.5,
-            color: BTN_INK,
-            background: BTN,
-            border: `1px solid ${BTN}`,
-            borderRadius: 999,
-            padding: "12px 22px",
-            minHeight: 44,
-            display: "inline-flex",
-            alignItems: "center",
-            justifyContent: "center",
-            textDecoration: "none",
-            cursor: "pointer",
-            whiteSpace: "nowrap",
-            boxSizing: "border-box",
-          }}
-        >
-          Follow venue
-        </a>
-      ) : null}
-      {directionsHref ? (
-        <a
-          className="vp-action"
-          href={directionsHref}
-          target="_blank"
-          rel="noopener noreferrer"
-          aria-label="Directions"
-          style={iconBtn}
-        >
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" style={{ width: 17, height: 17 }}><polygon points="3 11 22 2 13 21 11 13 3 11" /></svg>
-        </a>
-      ) : null}
-      <button
-        type="button"
-        className="vp-action"
-        aria-label="Share"
-        onClick={() => copyPageUrl()}
-        style={iconBtn}
-      >
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" style={{ width: 17, height: 17 }}><path d="M4 12v7a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-7" /><polyline points="16 6 12 2 8 6" /><line x1="12" y1="2" x2="12" y2="15" /></svg>
-      </button>
+  const searchPill = (
+    <div style={{ display: "flex", alignItems: "center", gap: 10, flex: "1 1 auto", maxWidth: 460, background: "rgba(255,255,255,0.10)", border: "1px solid rgba(158,182,216,0.22)", borderRadius: 999, padding: "10px 18px", color: "rgba(255,255,255,0.65)" }}>
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" style={{ width: 17, height: 17, flexShrink: 0 }}><circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" /></svg>
+      <span style={{ fontSize: 14, whiteSpace: "nowrap" }}>Search events, teams, venues</span>
     </div>
   );
 
   return (
-    <div className="shopper-page" data-bt-scroll-page="" style={{ background: "#f7f8fc", color: NAVY, minHeight: "100vh", fontFamily: "'Geist', system-ui, -apple-system, sans-serif", WebkitFontSmoothing: "antialiased", ["--vp-accent"]: ACC, ...fieldFocusVars(accent) } as CSSProperties}>
-      <style>{`${browsePageTypeCss()}
-.vp-row{box-shadow:0 1px 2px rgba(5,27,53,0.05);border-color:rgba(5,27,53,0.10);transition:box-shadow 150ms ease,border-color 150ms ease}.vp-row:hover{box-shadow:0 8px 30px rgba(5,27,53,0.09);border-color:rgba(5,27,53,0.20)}.vp-row.vp-row-still,.vp-row.vp-row-still:hover{box-shadow:0 1px 2px rgba(5,27,53,0.05);border-color:rgba(5,27,53,0.10);transition:none}.vp-action{outline:none;border-color:rgba(5,27,53,0.14);transition:border-color 140ms ease}.vp-action:hover,.vp-action:focus-visible{border-color:var(--vp-accent)}`}</style>
+    <div style={{ background: "#f7f8fc", color: NAVY, minHeight: "100vh", fontFamily: "'Geist', system-ui, -apple-system, sans-serif", WebkitFontSmoothing: "antialiased" }}>
+      <style>{`.vp-row{transition:box-shadow 150ms ease,border-color 150ms ease}.vp-row:hover{box-shadow:0 8px 30px color-mix(in srgb, var(--paper) 9%, transparent);border-color:color-mix(in srgb, var(--paper) 20%, transparent)}`}</style>
 
-      <header
-        ref={headerRef}
-        style={{
-          background: ACC,
-          position: wide ? "fixed" : "sticky",
-          top: 0,
-          left: wide ? 0 : undefined,
-          right: wide ? 0 : undefined,
-          zIndex: 20,
-        }}
-      >
-        <div
-          style={{
-            maxWidth: 1320,
-            margin: "0 auto",
-            padding: mobile ? "12px 20px" : "16px 32px",
-            display: "flex",
-            alignItems: "center",
-            gap: 16,
-          }}
-        >
-          <InAppBackLink
-            href="/browse/"
-            aria-label="Back to browse"
-            style={{
-              width: 40,
-              height: 40,
-              borderRadius: 999,
-              background: "rgba(255,255,255,0.14)",
-              color: "#fff",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              flexShrink: 0,
-              textDecoration: "none",
-            }}
-          >
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" style={{ width: 19, height: 19 }}>
-              <polyline points="15 18 9 12 15 6" />
-            </svg>
-          </InAppBackLink>
-          <div
-            style={{
-              marginLeft: "auto",
-              display: "flex",
-              alignItems: "center",
-              gap: 16,
-              flexShrink: 0,
-            }}
-          >
-            <NavAuthActions
-              buttonStyle={{
-                fontFamily: "inherit",
-                fontSize: fluidSize(14),
-                fontWeight: 600,
-                color: ACC,
-                background: "#fff",
-                border: "none",
-                borderRadius: 999,
-                padding: "11px 22px",
-                cursor: "pointer",
-                whiteSpace: "nowrap",
-                textDecoration: "none",
-                display: "inline-flex",
-                alignItems: "center",
-              }}
-            />
-          </div>
+      <header style={{ background: NAVY, position: "sticky", top: 0, zIndex: 20 }}>
+        <div style={{ maxWidth: 1320, margin: "0 auto", padding: mobile ? "12px 20px" : "16px 32px", display: "flex", alignItems: "center", gap: 16 }}>
+          <a href="/browse" aria-label="Back to browse" style={{ width: 40, height: 40, borderRadius: 999, background: "rgba(255,255,255,0.12)", color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, textDecoration: "none" }}>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" style={{ width: 19, height: 19 }}><polyline points="15 18 9 12 15 6" /></svg>
+          </a>
+          <a href="/browse" style={{ display: "flex", alignItems: "center", flexShrink: 0, textDecoration: "none" }}>
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src={LOCKUP} alt="blocktickets" style={{ height: 19, width: "auto" }} />
+          </a>
+          {!mobile && searchPill}
+          <a href="/wallet" style={{ fontFamily: "inherit", marginLeft: "auto", fontSize: 14, fontWeight: 600, color: NAVY, background: GREEN, border: "none", borderRadius: 999, padding: "11px 22px", cursor: "pointer", whiteSpace: "nowrap", textDecoration: "none", display: "inline-flex", alignItems: "center" }}>My wallet</a>
         </div>
       </header>
 
-      {wide ? (
-        <div aria-hidden style={{ height: stickTop, flexShrink: 0 }} />
-      ) : null}
+      <div style={{ maxWidth: 1320, margin: "0 auto", padding: mobile ? "20px 20px 0" : "32px 32px 0", display: "grid", gridTemplateColumns: mobile ? "1fr" : narrow ? "300px minmax(0, 1fr)" : "344px minmax(0, 1fr)", gap: mobile ? 20 : 28, alignItems: "start" }}>
 
-      <main
-        style={{
-          width: "100%",
-          maxWidth: 1320,
-          margin: "0 auto",
-          padding: mobile
-            ? "20px 20px 0"
-            : wide
-              ? "0 32px 120px"
-              : `${TICKETING_STICKY_GAP_PX}px 32px 120px`,
-          boxSizing: "border-box",
-          display: "grid",
-          gridTemplateColumns: mobile
-            ? "1fr"
-            : narrow
-              ? "300px minmax(0, 1fr)"
-              : "minmax(300px, 360px) minmax(0, 1fr)",
-          gap: mobile ? 20 : 28,
-          alignItems: mobile || narrow ? "start" : "stretch",
-        }}
-      >
         {!mobile && (
-          <div style={{ minWidth: 0, ...(wide ? { alignSelf: "stretch" } : {}) }}>
-            <div
-              data-testid="venue-profile-sidebar"
-              style={{
-                display: "flex",
-                flexDirection: "column",
-                gap: 16,
-                minWidth: 0,
-                ...(wide
-                  ? {
-                      position: "sticky",
-                      top: stickTop,
-                      zIndex: 5,
-                    }
-                  : {}),
-              }}
-            >
-              <aside
-                style={{
-                  background: "#fff",
-                  border: "1px solid rgba(5,27,53,0.10)",
-                  borderRadius: 24,
-                  boxShadow: "0 8px 30px rgba(5,27,53,0.08)",
-                  padding: 24,
-                  display: "flex",
-                  flexDirection: "column",
-                  gap: 18,
-                  width: "100%",
-                  boxSizing: "border-box",
-                }}
-              >
-              <div style={{ display: "flex", flexDirection: "column", gap: 14, alignItems: "center" }}>
-                <div style={{ position: "relative", width: 116, height: 116, borderRadius: 24, overflow: "hidden", background: "#f1f3f8", border: "1px solid rgba(5,27,53,0.08)", flexShrink: 0 }}>
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img src={photoSrc} alt={venueName} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
-                </div>
-                <div style={{ display: "flex", flexDirection: "column", gap: 8, alignItems: "center", textAlign: "center", minWidth: 0 }}>
-                  <h1 style={{ margin: 0, fontSize: 32, fontWeight: 600, letterSpacing: BROWSE_TRACK.display, lineHeight: 1.08 }}>{venueName}</h1>
-                  {venueMeta ? (
-                    <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13, lineHeight: 1.5, color: "#6e7180", textAlign: "center", flexWrap: "wrap", justifyContent: "center" }}>
-                      {city ? (
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" style={{ width: 13, height: 13, flexShrink: 0 }}><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z" /><circle cx="12" cy="10" r="3" /></svg>
-                      ) : null}
-                      {venueMeta}
-                    </div>
-                  ) : null}
+          <aside style={{ background: "#fff", border: "1px solid color-mix(in srgb, var(--paper) 10%, transparent)", borderRadius: 24, boxShadow: "0 8px 30px color-mix(in srgb, var(--paper) 8%, transparent)", padding: 24, position: "sticky", top: 84, zIndex: 5, display: "flex", flexDirection: "column", gap: 18 }}>
+            <div style={{ display: "flex", flexDirection: "column", gap: 14, alignItems: "center" }}>
+              <div style={{ position: "relative", width: 116, height: 116, borderRadius: 24, overflow: "hidden", background: "#f1f3f8", border: "1px solid color-mix(in srgb, var(--paper) 8%, transparent)", flexShrink: 0 }}>
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src={photoSrc} alt={venueName} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+              </div>
+              <div style={{ display: "flex", flexDirection: "column", gap: 8, alignItems: "center", textAlign: "center", minWidth: 0 }}>
+                <h1 style={{ margin: 0, fontSize: 32, fontWeight: 600, letterSpacing: "-0.03em", lineHeight: 1.08 }}>{venueName}</h1>
+                <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13, color: "#6e7180", whiteSpace: "nowrap" }}>
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" style={{ width: 13, height: 13, flexShrink: 0 }}><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z" /><circle cx="12" cy="10" r="3" /></svg>
+                  {city}
                 </div>
               </div>
-
-              <p style={{ margin: 0, paddingTop: 16, borderTop: "1px solid rgba(5,27,53,0.08)", fontSize: fluidSize(13), lineHeight: browseLeading("body"), color: "#6e7180" }}>{description}</p>
-
-              {venueActions}
-              </aside>
             </div>
-          </div>
+
+            <p style={{ margin: 0, paddingTop: 16, borderTop: "1px solid color-mix(in srgb, var(--paper) 8%, transparent)", fontSize: 13, lineHeight: 1.6, color: "#6e7180" }}>{description}</p>
+
+            <div style={{ display: "flex", alignItems: "center", gap: 8, justifyContent: "center" }}>
+              <button style={{ fontFamily: "inherit", fontSize: 14, fontWeight: 600, color: NAVY, background: GREEN, border: "none", borderRadius: 999, padding: "13px 22px", cursor: "pointer", whiteSpace: "nowrap" }}>Follow venue</button>
+              <button aria-label="Directions" style={{ fontFamily: "inherit", width: 44, height: 44, borderRadius: 999, background: "#fff", border: "1px solid color-mix(in srgb, var(--paper) 14%, transparent)", color: NAVY, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}>
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" style={{ width: 17, height: 17 }}><polygon points="3 11 22 2 13 21 11 13 3 11" /></svg>
+              </button>
+              <button aria-label="Share" style={{ fontFamily: "inherit", width: 44, height: 44, borderRadius: 999, background: "#fff", border: "1px solid color-mix(in srgb, var(--paper) 14%, transparent)", color: NAVY, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}>
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" style={{ width: 17, height: 17 }}><path d="M4 12v7a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-7" /><polyline points="16 6 12 2 8 6" /><line x1="12" y1="2" x2="12" y2="15" /></svg>
+              </button>
+            </div>
+          </aside>
         )}
 
-        <div
-          style={{
-            display: "flex",
-            flexDirection: "column",
-            gap: 14,
-            minWidth: 0,
-            ...(mobile || narrow ? {} : { alignSelf: "start" }),
-          }}
-        >
+        <main style={{ display: "flex", flexDirection: "column", gap: 14, minWidth: 0 }}>
           {mobile && (
-            <div
-              data-testid="venue-profile-mobile-card"
-              style={{
-                background: "#fff",
-                border: "1px solid rgba(5,27,53,0.10)",
-                borderRadius: 18,
-                boxShadow: "0 1px 2px rgba(5,27,53,0.05)",
-                padding: 14,
-                display: "flex",
-                flexDirection: "column",
-                gap: 14,
-                width: "100%",
-                boxSizing: "border-box",
-              }}
-            >
-              <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
-                <div style={{ position: "relative", width: 64, height: 64, borderRadius: 16, overflow: "hidden", background: "#f1f3f8", border: "1px solid rgba(5,27,53,0.08)", flexShrink: 0 }}>
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img src={photoSrc} alt={venueName} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
-                </div>
-                <div style={{ display: "flex", flexDirection: "column", gap: 3, minWidth: 0 }}>
-                  <h1 style={{ margin: 0, fontSize: 21, fontWeight: 600, letterSpacing: BROWSE_TRACK.display, lineHeight: 1.15 }}>{venueName}</h1>
-                  <div style={{ fontSize: 13, lineHeight: 1.5, color: "#6e7180" }}>
-                    {venueMeta}
-                  </div>
-                </div>
+            <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
+              <div style={{ position: "relative", width: 64, height: 64, borderRadius: 16, overflow: "hidden", background: "#f1f3f8", border: "1px solid color-mix(in srgb, var(--paper) 8%, transparent)", flexShrink: 0 }}>
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src={photoSrc} alt={venueName} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
               </div>
-
-              <div style={{ paddingTop: 14, borderTop: "1px solid rgba(5,27,53,0.08)" }}>
-                <pre style={{ margin: 0, fontFamily: "inherit", whiteSpace: "pre-wrap", overflowWrap: "anywhere", fontSize: fluidSize(13), lineHeight: browseLeading("body"), color: "#6e7180" }}>{description}</pre>
+              <div style={{ display: "flex", flexDirection: "column", gap: 3, minWidth: 0 }}>
+                <h1 style={{ margin: 0, fontSize: 21, fontWeight: 600, letterSpacing: "-0.025em", lineHeight: 1.15 }}>{venueName}</h1>
+                <div style={{ fontSize: 13, color: "#6e7180" }}>{city} · {capacity} capacity</div>
               </div>
-
-              {venueActions}
             </div>
           )}
 
-          <h2 style={{ margin: 0, fontSize: mobile ? 20 : 26, fontWeight: 600, letterSpacing: BROWSE_TRACK.display, lineHeight: 1.5 }}>Upcoming events</h2>
+          <h2 style={{ margin: 0, fontSize: mobile ? 20 : 26, fontWeight: 600, letterSpacing: "-0.025em" }}>Upcoming events</h2>
 
-          {!groups.length ? (
-            <div style={{ background: "#fff", border: "1px solid rgba(5,27,53,0.10)", borderRadius: 18, padding: 28, color: "#6e7180", fontSize: fluidSize(14) }}>
-              No upcoming events for {venueName}.
-            </div>
-          ) : (
-            groups.map((g) => (
-              <div key={g.key} style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-                <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "10px 2px 8px" }}>
-                  <div style={{ fontSize: 13, fontWeight: 600, lineHeight: 1.5, textTransform: "uppercase", letterSpacing: BROWSE_TRACK.eyebrow, color: accent || "#7fbe4d", whiteSpace: "nowrap" }}>{g.title}</div>
-                  <div style={{ fontSize: 12, lineHeight: 1.5, color: "#8a93a3", whiteSpace: "nowrap" }}>{g.meta}</div>
-                  <div style={{ flex: 1, height: 1, background: "rgba(5,27,53,0.10)" }} />
-                </div>
-                {g.rows.map((e) => {
-                  const soon = e.status === "Presale" || Boolean(e.onSaleLabel);
-                  const soldOut = e.soldOut;
-                  const dateW = stacked ? 64 : 76;
-                  return (
-                    <EventRowFrame key={e.key} href={e.href} soldOut={soldOut} className={soldOut ? "vp-row vp-row-still" : "vp-row"} style={{ background: "#fff", borderWidth: 1, borderStyle: "solid", borderRadius: 18, padding: mobile ? 14 : "16px 20px", display: "grid", gridTemplateColumns: stacked ? "64px minmax(0, 1fr)" : "76px minmax(0, 1fr) auto", gap: mobile ? 14 : 20, alignItems: "center", cursor: soldOut ? "default" : "pointer", color: NAVY, textDecoration: "none" }}>
-                      <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 2, width: dateW, height: dateW, borderRadius: 14, background: "#f1f3f8", border: "1px solid rgba(5,27,53,0.08)", flexShrink: 0 }}>
-                        <div style={{ fontSize: 10, fontWeight: 600, lineHeight: 1.5, textTransform: "uppercase", letterSpacing: BROWSE_TRACK.label, color: "#6e7180" }}>{e.mon}</div>
-                        <div style={{ fontSize: 22, fontWeight: 600, letterSpacing: BROWSE_TRACK.statement, fontVariantNumeric: "tabular-nums", lineHeight: 1 }}>{e.day}</div>
-                        <div style={{ fontSize: 10, lineHeight: 1.5, color: "#8a93a3" }}>{e.dow}</div>
-                      </div>
-                      <div style={{ display: "flex", flexDirection: "column", gap: 5, minWidth: 0 }}>
-                        <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-                          <span style={{ fontSize: 12, lineHeight: 1.5, color: "#6e7180" }}>{e.sport}{e.time ? ` · ${e.time}` : ""}</span>
-                          {soldOut ? (
-                            <span style={{ fontSize: 10, fontWeight: 600, lineHeight: 1.5, letterSpacing: "0.08em", textTransform: "uppercase", color: "#6e7180", background: "#eef0f6", borderRadius: 999, padding: "3px 8px" }}>
-                              Sold out
-                            </span>
-                          ) : e.onSaleLabel ? (
-                            <span style={{ fontSize: 10, fontWeight: 600, lineHeight: 1.5, letterSpacing: "0.08em", textTransform: "uppercase", color: "#6e7180", background: "#eef0f6", borderRadius: 999, padding: "3px 8px", whiteSpace: "nowrap" }}>
-                              {e.onSaleLabel}
-                            </span>
-                          ) : null}
-                        </div>
-                        <div style={{ fontSize: mobile ? 16 : 17, fontWeight: 600, letterSpacing: BROWSE_TRACK.card, lineHeight: 1.25 }}>{e.title}</div>
-                        {e.host ? (
-                          <div style={{ fontSize: 13, lineHeight: 1.5, color: "#6e7180", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{e.host}</div>
-                        ) : null}
-                        <EventPromo text={e.promo} />
-                      </div>
-                      <div style={{ gridColumn: stacked ? "1 / -1" : "auto", display: "flex", alignItems: "center", gap: 16, justifyContent: "flex-end", paddingTop: stacked ? 12 : 0, borderTop: stacked ? "1px solid rgba(5,27,53,0.08)" : "none" }}>
-                        <span style={{ fontFamily: "inherit", fontSize: 14, fontWeight: 600, lineHeight: 1.5, color: soldOut ? "#6e7180" : soon ? NAVY : BTN_INK, background: soldOut || soon ? "#fff" : BTN, border: `1px solid ${soldOut || soon ? "rgba(5,27,53,0.14)" : BTN}`, borderRadius: 999, padding: "12px 22px", minHeight: 44, display: "inline-flex", alignItems: "center", cursor: soldOut ? "default" : "pointer", whiteSpace: "nowrap" }}>{soldOut ? "Sold out" : soon ? "Remind me" : "Get tickets"}</span>
-                      </div>
-                    </EventRowFrame>
-                  );
-                })}
+          {groups.map((g) => (
+            <div key={g.title} style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "10px 2px 8px" }}>
+                <div style={{ fontSize: 13, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.1em", color: "#7fbe4d", whiteSpace: "nowrap" }}>{g.title}</div>
+                <div style={{ flex: 1, height: 1, background: "color-mix(in srgb, var(--paper) 10%, transparent)" }} />
               </div>
-            ))
-          )}
+              {g.rows.map((e, i) => {
+                const soon = e.status === "Presale";
+                const tag = tagFor(e.status);
+                const dateW = stacked ? 64 : 76;
+                return (
+                  <a key={`${e.title}-${i}`} href={hrefFor(e.sport)} className="vp-row" style={{ background: "#fff", border: "1px solid color-mix(in srgb, var(--paper) 10%, transparent)", borderRadius: 18, boxShadow: "0 1px 2px color-mix(in srgb, var(--paper) 5%, transparent)", padding: mobile ? 14 : "16px 20px", display: "grid", gridTemplateColumns: stacked ? "64px minmax(0, 1fr)" : "76px minmax(0, 1fr) auto", gap: mobile ? 14 : 20, alignItems: "center", cursor: "pointer", color: NAVY, textDecoration: "none" }}>
+                    <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 2, width: dateW, height: dateW, borderRadius: 14, background: "#f1f3f8", border: "1px solid color-mix(in srgb, var(--paper) 8%, transparent)", flexShrink: 0 }}>
+                      <div style={{ fontSize: 10, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.1em", color: "#6e7180" }}>{e.mon}</div>
+                      <div style={{ fontSize: 22, fontWeight: 600, letterSpacing: "-0.02em", fontVariantNumeric: "tabular-nums", lineHeight: 1 }}>{e.day}</div>
+                      <div style={{ fontSize: 10, color: "#8a93a3" }}>{e.dow}</div>
+                    </div>
+                    <div style={{ display: "flex", flexDirection: "column", gap: 5, minWidth: 0 }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                        <span style={{ fontSize: 12, color: "#6e7180" }}>{e.sport} · {e.time}</span>
+                        {e.status !== "On sale" && (
+                          <span style={{ fontSize: 10, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.12em", color: tag.tagInk, background: tag.tagBg, borderRadius: 999, padding: "4px 9px" }}>{e.status}</span>
+                        )}
+                      </div>
+                      <div style={{ fontSize: mobile ? 16 : 17, fontWeight: 600, letterSpacing: "-0.015em", lineHeight: 1.25 }}>{e.title}</div>
+                      <div style={{ fontSize: 13, color: "#6e7180", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{e.host}</div>
+                    </div>
+                    <div style={{ gridColumn: stacked ? "1 / -1" : "auto", display: "flex", alignItems: "center", gap: 16, justifyContent: stacked ? "space-between" : "flex-end", paddingTop: stacked ? 12 : 0, borderTop: stacked ? "1px solid color-mix(in srgb, var(--paper) 8%, transparent)" : "none" }}>
+                      <div style={{ display: "flex", gap: 5, flexDirection: stacked ? "row" : "column", alignItems: stacked ? "baseline" : "flex-end", whiteSpace: "nowrap" }}>
+                        <span style={{ fontSize: 10, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.12em", color: "#8a93a3" }}>From</span>
+                        <span style={{ fontSize: 17, fontWeight: 600, fontVariantNumeric: "tabular-nums", letterSpacing: "-0.015em" }}>${e.p}</span>
+                      </div>
+                      <span style={{ fontFamily: "inherit", fontSize: 14, fontWeight: 600, color: NAVY, background: soon ? "#fff" : GREEN, border: `1px solid ${soon ? "color-mix(in srgb, var(--paper) 14%, transparent)" : GREEN}`, borderRadius: 999, padding: "12px 22px", minHeight: 44, display: "inline-flex", alignItems: "center", cursor: "pointer", whiteSpace: "nowrap" }}>{soon ? "Remind me" : "Get tickets"}</span>
+                    </div>
+                  </a>
+                );
+              })}
+            </div>
+          ))}
 
-          <div style={{ height: 32 }} />
-        </div>
-      </main>
+          <div style={{ display: "flex", justifyContent: "center", padding: "12px 0 32px" }}>
+            <button style={{ fontFamily: "inherit", fontSize: 14, fontWeight: 600, color: NAVY, background: "#fff", border: "1px solid color-mix(in srgb, var(--paper) 14%, transparent)", borderRadius: 999, padding: "13px 28px", cursor: "pointer" }}>See full schedule</button>
+          </div>
+        </main>
+      </div>
     </div>
   );
 }

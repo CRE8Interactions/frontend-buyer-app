@@ -84,12 +84,12 @@ export default function Testimonials() {
               <blockquote className="mx-auto mt-8 max-w-[720px] text-[clamp(24px,3vw,30px)] font-medium leading-snug tracking-[-0.01em] text-white">
                 {t.q}
               </blockquote>
-              <div className="mt-7 inline-flex items-center gap-2.5 rounded-full bg-white px-2 py-1.5 pr-4 text-[14px] font-medium text-[#051B35]">
+              <div className="mt-7 inline-flex items-center gap-2.5 rounded-full bg-white px-2 py-1.5 pr-4 text-[14px] font-medium text-primary-foreground">
                 {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img src={t.img} alt={t.name} className="h-8 w-8 rounded-full object-cover" />
                 {t.name}
               </div>
-              <p className="mt-4 text-[12px] uppercase tracking-[0.16em] text-[#9DA2B3]">{t.role}</p>
+              <p className="mt-4 text-[12px] uppercase tracking-[0.16em] text-ink2">{t.role}</p>
             </div>
           );
         })}
@@ -103,7 +103,7 @@ export default function Testimonials() {
             type="button"
             aria-label={`Show quote from ${t.name}`}
             onClick={() => setActive(i)}
-            className={`h-1.5 rounded-full transition-all duration-300 ${i === active ? "w-6 bg-[#a6e773]" : "w-1.5 bg-white/20 hover:bg-white/40"
+            className={`h-1.5 rounded-full transition-all duration-300 ${i === active ? "w-6 bg-primary" : "w-1.5 bg-white/20 hover:bg-white/40"
               }`}
           />
         ))}

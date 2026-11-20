@@ -1,7 +1,6 @@
 "use client";
 
-import { Suspense, useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from "react";
-import Link from "next/link";
+import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { loadStripe, type Stripe } from "@stripe/stripe-js";
 import {
@@ -10,63 +9,23 @@ import {
   useElements,
   useStripe,
 } from "@stripe/react-stripe-js";
-import BrandedCheckoutShell from "@/components/organisms/BrandedCheckoutShell";
-import GuestContact from "@/components/organisms/GuestContact";
-import BrandedActionButton from "@/components/atoms/BrandedActionButton";
-import AccessibleSeatingBadge from "@/components/atoms/AccessibleSeatingBadge";
-import VerifiedResaleBadge from "@/components/atoms/VerifiedResaleBadge";
-import MobileStickyFooter from "@/components/molecules/MobileStickyFooter";
+import AppShell from "@/components/templates/AppShell";
 import Button from "@/components/atoms/Button";
 import Spinner from "@/components/atoms/Spinner";
+import PageLoader from "@/components/molecules/PageLoader";
 import Modal from "@/components/molecules/Modal";
-import { BrandedLoader } from "@/components/molecules/RouteLoader";
-import SeatViewImage from "@/components/molecules/SeatViewImage";
-import SectionLocatorThumb from "@/components/molecules/SectionLocatorThumb";
-import { BLOCKTICKETS_NAVY, type BrandingOrganization } from "@/lib/branding";
-import { holdDocumentTitle, purchaseTabTitle } from "@/lib/seo";
-import {
-  cachedBrandingForCheckout,
-  checkoutBrandingFromCart,
-  checkoutHoldSeconds,
-  type CheckoutCartBrandingSource,
-} from "@/lib/checkoutBranding";
-import { cacheOrgBranding, orgSlugFromPathname } from "@/lib/orgBrandingCache";
-import { beginRouteTransition } from "@/lib/routeTransition";
-import { useClientReady } from "@/lib/useClientReady";
-import { promoCodeRedeemDisplayMessage } from "@/lib/fieldValidation";
-import MarketingOptIn from "@/components/molecules/MarketingOptIn";
-import PromoCodeForm, { type PromoRedeemResult } from "@/components/molecules/PromoCodeForm";
-import {
-  flexPackEachPrice,
-  flexPackSeasonLine,
-  flexPackVoucherCount,
-} from "@/lib/flexPackDisplay";
-import {
-  alignPackageSeatPrices,
-  checkoutTaxLine,
-  getPrimaryTicketFeeBreakdown,
-  packageCartTickets,
-  packageOrderSummary,
-  promoSummaryLabel,
-  resolveFlexPackCheckoutTotals,
-  resolvePackageCheckoutTotals,
-  ticketSelectionSummary,
-  withPackageCheckoutSeatPrices,
-} from "@/lib/ticketSummary";
-import { ticketsWithGaSections } from "@/lib/gaTicketSections";
+import { cardCls } from "@/components/molecules/Card";
+import { Input, Label } from "@/components/atoms/form";
 import {
   dropUserCart,
   getCart,
   getPaymentIntent,
-  getSeatmapByShortCode,
   processFreeOrder,
   processOrder,
   redeemPromoCode,
   removePromoCode,
   resolveFundraisingCampaign,
 } from "@/lib/api";
-import { buildProcessOrderRequest } from "@/lib/checkoutPaymentIntent";
-import { readTrackingCodeForCart } from "@/lib/trackingLink";
 import {
   buildFundraisingPayload,
   buildPaymentIntentRequest,
@@ -77,65 +36,15 @@ import {
   type FundraisingSelection,
 } from "@/lib/fundraisingCheckout";
 import {
-  CHECKOUT_PAYMENT_COPY,
-  paymentIntentLoadOutcome,
-  purchaseFailureDisplayMessage,
-  stripeConfirmDisplayMessage,
-  waitForPaymentIntentSucceeded,
-} from "@/lib/checkoutPaymentErrors";
-import {
   formatCurrency,
   formatEventWhen,
-  imageUrl,
   isCartExpiredResponse,
-  isRequestCanceled,
+  isCartGoneResponse,
+  isZeroFeeCompFlexPackCart,
 } from "@/lib/helpers";
-import {
-  guestContactStartFailed,
-  isComplimentaryWebsiteCart,
-  isGuestEligibleCart,
-  setGuestCheckoutBuyer,
-  type GuestBuyer,
-} from "@/lib/guestCheckout";
-import { checkoutMarketingOrganization } from "@/lib/marketingOptIn";
-import { setLastKnown, useAuth } from "@/lib/auth";
-import {
-  captureCheckoutReferrer,
-  clearStoredCart,
-  countCartItems,
-  getCheckoutReturnPath,
-  getStoredCart,
-  hadCheckoutLoginDetour,
-  markCheckoutLoginDetour,
-  setStoredCart,
-} from "@/lib/cart";
-import {
-  checkoutLeavePath,
-  dropUserCartPayload,
-  resolveCheckoutReturnPath,
-  shouldPopCheckoutHistory,
-} from "@/lib/checkoutLeave";
+import { useAuth } from "@/lib/auth";
+import { clearStoredCart, countCartItems, getStoredCart, setStoredCart } from "@/lib/cart";
 import { hideIntercomLauncher } from "@/lib/intercom";
-import { BACK_FALLBACK_HREF } from "@/lib/inAppBack";
-import {
-  checkoutSuccessReturnUrl,
-  leaveCheckoutForSuccess,
-  paymentIntentAlreadySucceeded,
-  succeededStripeRedirectIntentId,
-} from "@/lib/checkoutSuccess";
-import {
-  cartShowsGaTicketIcon,
-  eventIsExplicitlyGaOnly,
-  GA_TICKET_PLACEHOLDER,
-  getSeatViewImageCandidates,
-  seatLocationSection,
-  showsSeatedGaTicketCount,
-} from "@/lib/seatView";
-import {
-  normalizeSeatmapBackground,
-  type SeatmapBackground,
-  type SeatmapMapping,
-} from "@/lib/seatmapLookups";
 import {
   injectMetaPixel,
   trackAddPaymentInfo,
@@ -144,42 +53,23 @@ import {
   trackCheckoutStarted,
   type TrackingOrganization,
 } from "@/lib/tracking";
-import {
-  STRIPE_PAYMENT_ELEMENT_FONTS,
-  checkoutPaymentElementOptions,
-  stripePaymentElementAppearance,
-} from "@/lib/stripePaymentElement";
 
 type CartData = {
   id: string | number;
   tickets?: Array<Record<string, unknown>>;
-  package_tickets?: Array<Record<string, unknown>>;
   package?: {
-    uuid?: string | number;
-    id?: string | number;
     name?: string;
-    price?: number;
-    pricingTiers?: Array<{ price?: number } | null> | null;
-    start?: string;
-    image?: { url?: string };
     events?: Array<{
       uuid?: string;
       name?: string;
       start?: string;
-      venue?: { name?: string; timezone?: string };
       [key: string]: unknown;
     }>;
-    venue?: { name?: string; timezone?: string };
     organization?: Record<string, unknown>;
   } | null;
   flex_pack?: {
     name?: string;
-    price?: number;
     gameTickets?: number;
-    start?: string;
-    end?: string;
-    image?: { url?: string };
-    venue?: { name?: string; timezone?: string };
     organization?: Record<string, unknown>;
     [key: string]: unknown;
   } | null;
@@ -210,9 +100,7 @@ type CartData = {
       connected_account_id?: string;
       test_connected_account_id?: string;
       uuid?: string;
-      name?: string;
-      branding?: BrandingOrganization["branding"];
-    } & BrandingOrganization;
+    };
     venue?: { timezone?: string; name?: string };
     [key: string]: unknown;
   } | null;
@@ -220,102 +108,110 @@ type CartData = {
   totalTax?: number;
   serviceFee?: number;
   processingFee?: number;
-  estimatedProcessingFee?: number;
-  discountApplied?: number;
   salesTax?: number;
   remainingTime?: number;
   ipAddress?: string;
   [key: string]: unknown;
 };
 
-async function loadCheckoutSeatLocation(event: CartData["event"]) {
-  const slug = event?.slug || event?.seoUrl;
-  const code = event?.shortCode || event?.shortcode;
-  if (!slug || !code) return null;
-  try {
-    const res = await getSeatmapByShortCode(String(code), String(slug));
-    const raw = res?.data as
-      | {
-          ga_only?: boolean;
-          background?: unknown;
-          mapping?: SeatmapMapping;
-        }
-      | null
-      | undefined;
-    if (!raw || raw.ga_only) return { ga_only: true, background: null, mapping: null };
-    return {
-      ga_only: false,
-      background: normalizeSeatmapBackground(raw.background),
-      mapping: (raw.mapping || null) as SeatmapMapping | null,
-    };
-  } catch {
-    return null;
-  }
+function isComplimentaryWebsiteCart(cart: CartData | null) {
+  if (!cart) return false;
+  if (cart.flex_pack && isZeroFeeCompFlexPackCart(cart.flex_pack)) return true;
+  if (cart.flex_pack || cart.package || cart.access_pass_template) return false;
+  const tickets = cart.tickets || [];
+  if (!tickets.length) return false;
+  return tickets.every((t) => {
+    if (t.free === true) return true;
+    const o = t.offer as { freeOffer?: boolean } | undefined;
+    return Boolean(o && typeof o === "object" && o.freeOffer === true);
+  });
 }
 
-const lightCard =
-  "rounded-[18px] border border-[rgba(5,27,53,0.08)] bg-white shadow-[0_10px_30px_-20px_rgba(5,27,53,0.35)]";
-const muted = "text-[#6e7180]";
+const stripeAppearance = {
+  theme: "night" as const,
+  variables: {
+    // Stripe's iframe cannot read CSS variables, so these are the brand v0.1 dark tokens as hex.
+    fontFamily: "Geist, system-ui, sans-serif",
+    fontSizeBase: "14px",
+    borderRadius: "12px",
+    colorPrimary: "#97DD62",
+    colorBackground: "#151517",
+    colorText: "#F2F2F0",
+    colorTextSecondary: "#A6A6A8",
+    colorDanger: "#E5645A",
+  },
+};
 
-type CheckoutPromoDiscount = { label: string; amount: number };
+/** Stripe iframes can't use next/font; load Geist from Google Fonts. */
+const stripeFonts = [
+  {
+    cssSrc:
+      "https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&display=swap",
+  },
+];
 
 function CheckoutPaymentForm({
   intentId,
-  clientSecret,
   cart,
   donationChargeTotal = 0,
   donationRequirementMet,
   isRefreshingIntent,
-  buttonColor,
-  buttonTextColor,
-  accent,
-  orgLabel,
-  onTotalChange,
-  onPromoChange,
   onSuccess,
   onDeclined,
   onExpired,
-  showMarketingOptIn = false,
-  organizationName,
-  optInMessage,
 }: {
   intentId: string;
-  clientSecret: string;
   cart: CartData;
   donationChargeTotal?: number;
   donationRequirementMet: boolean;
   isRefreshingIntent: boolean;
-  buttonColor: string;
-  buttonTextColor: string;
-  accent: string;
-  orgLabel: string;
-  onTotalChange?: (total: number) => void;
-  onPromoChange?: (promo: CheckoutPromoDiscount | null) => void;
   onSuccess: () => void;
   onDeclined: (msg: string) => void;
   onExpired: () => void;
-  showMarketingOptIn?: boolean;
-  organizationName?: string | null;
-  optInMessage?: string | null;
 }) {
   const stripe = useStripe();
   const elements = useElements();
-  // Only the applied code — the promo form owns the value being typed.
   const [promoCode, setPromoCode] = useState("");
   const [isDiscountApplied, setIsDiscountApplied] = useState(false);
   const [discountedPrice, setDiscountedPrice] = useState<number | null>(null);
+  const [originalTotal, setOriginalTotal] = useState<number | null>(null);
   const [promoDetails, setPromoDetails] = useState<Record<string, unknown> | null>(
     null,
   );
+  const [codeError, setCodeError] = useState("");
+  const [submittingPromo, setSubmittingPromo] = useState(false);
   const [removingPromo, setRemovingPromo] = useState(false);
   const [purchasing, setPurchasing] = useState(false);
   const [paymentReady, setPaymentReady] = useState(false);
-  const [marketingEmailOptIn, setMarketingEmailOptIn] = useState(false);
   const hasTrackedPaymentInfoRef = useRef(false);
 
-  const flexPackTotals = cart.flex_pack
-    ? resolveFlexPackCheckoutTotals(cart)
-    : null;
+  const ticketCount = cart.access_pass_template
+    ? 1
+    : cart.flex_pack
+      ? Number(cart.flex_pack.gameTickets || 0)
+      : cart.package
+        ? (cart.package.events?.length || 0)
+        : (cart.tickets?.length || 0);
+
+  const itemLabel = cart.access_pass_template
+    ? ticketCount === 1
+      ? "Pass"
+      : "Passes"
+    : cart.flex_pack
+      ? ticketCount === 1
+        ? "Voucher"
+        : "Vouchers"
+      : ticketCount === 1
+        ? "item"
+        : "items";
+
+  // Flex pack cart.total includes voucher service fees; access pass keeps face
+  // value in total and stores platform fee on serviceFee.
+  const flexPackChargeTotal =
+    Number(cart.total ?? 0) +
+    Number(cart.totalTax ?? cart.salesTax ?? 0) +
+    Number(cart.processingFee ?? 0) +
+    Number(donationChargeTotal || 0);
 
   const accessPassChargeTotal =
     Number(cart.total ?? 0) +
@@ -327,69 +223,33 @@ function CheckoutPaymentForm({
   const displayTotal = isDiscountApplied
     ? Number(discountedPrice ?? cart.total ?? 0) + Number(donationChargeTotal || 0)
     : cart.flex_pack
-      ? (flexPackTotals?.total || 0) + Number(donationChargeTotal || 0)
+      ? flexPackChargeTotal
       : cart.access_pass_template
         ? accessPassChargeTotal
-        : cart.package
-          ? resolvePackageCheckoutTotals(
-              cart,
-              packageOrderSummary(
-                cart.package,
-                packageCartTickets(cart),
-                cart.package_tickets?.length || 0,
-              ).subtotal,
-            ).total + Number(donationChargeTotal || 0)
-          : Number(cart.total ?? 0) + Number(donationChargeTotal || 0);
+        : Number(cart.total ?? 0) + Number(donationChargeTotal || 0);
 
-  useEffect(() => {
-    onTotalChange?.(displayTotal);
-  }, [displayTotal, onTotalChange]);
-
-  const promoPricing = promoDetails?.promoPricingDetails as
-    | {
-        code?: string;
-        name?: string;
-        amountDiscounted?: number;
-        originalPrice?: number;
-        discountedPrice?: number;
-      }
-    | undefined;
-  // Blocktickets sends the discount as amountDiscounted; older payloads only
-  // carry the before/after prices.
-  const promoDiscountAmount = isDiscountApplied
-    ? Number(promoPricing?.amountDiscounted) ||
-      Math.max(
-        0,
-        Number(promoPricing?.originalPrice || 0) -
-          Number(promoPricing?.discountedPrice || 0),
-      )
-    : 0;
-  const promoDiscountCode = promoPricing?.code || promoCode.trim();
-  const promoDiscountLabel =
-    String(promoPricing?.name || "").trim() || promoDiscountCode;
-
-  useEffect(() => {
-    onPromoChange?.(
-      promoDiscountAmount > 0
-        ? { label: promoDiscountLabel, amount: promoDiscountAmount }
-        : null,
-    );
-  }, [onPromoChange, promoDiscountAmount, promoDiscountLabel]);
-
-  const redeemPromo = async (code: string): Promise<PromoRedeemResult> => {
+  const submitPromo = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!promoCode.trim()) return;
+    setSubmittingPromo(true);
+    setCodeError("");
     try {
       const res = await redeemPromoCode({
-        code: code.trim(),
+        code: promoCode.trim(),
         paymentIntentId: intentId,
         cart,
       });
-      setPromoCode(code);
       setIsDiscountApplied(true);
       setDiscountedPrice(res.data?.promoPricingDetails?.discountedPrice);
+      setOriginalTotal(res.data?.promoPricingDetails?.originalPrice);
       setPromoDetails(res.data);
-      return null;
     } catch (err: unknown) {
-      return { rejectedMessage: promoCodeRedeemDisplayMessage(err) };
+      const msg =
+        (err as { response?: { data?: { error?: { message?: string } } } })
+          ?.response?.data?.error?.message || "Promo code could not be applied.";
+      setCodeError(`${msg}${/[.!?]$/.test(msg.trim()) ? " " : ". "}Please try again.`);
+    } finally {
+      setSubmittingPromo(false);
     }
   };
 
@@ -399,6 +259,7 @@ function CheckoutPaymentForm({
       await removePromoCode({ paymentIntentId: intentId, cart });
       setIsDiscountApplied(false);
       setDiscountedPrice(null);
+      setOriginalTotal(null);
       setPromoDetails(null);
       setPromoCode("");
     } catch {
@@ -408,37 +269,19 @@ function CheckoutPaymentForm({
     }
   };
 
-  const completePurchase = async (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
+  const completePurchase = async () => {
     if (!donationRequirementMet || isRefreshingIntent || purchasing) return;
     if (!stripe || !elements) return;
     setPurchasing(true);
     try {
-      // Elements already has the PaymentIntent client secret. Legacy checkout
-      // confirms once; a prior elements.submit() makes confirmPayment reject
-      // in the browser before Stripe's confirm request.
-      await processOrder(
-        buildProcessOrderRequest(
-          cart,
-          intentId,
-          readTrackingCodeForCart(cart),
-          showMarketingOptIn ? marketingEmailOptIn : undefined,
-        ),
-      );
-      const confirmed = await stripe.confirmPayment({
+      await processOrder({ cart, paymentIntentId: intentId });
+      const { error } = await stripe.confirmPayment({
         elements,
-        confirmParams: {
-          return_url: checkoutSuccessReturnUrl(intentId),
-        },
+        confirmParams: { return_url: window.location.href },
         redirect: "if_required",
       });
-      const confirmError = await waitForPaymentIntentSucceeded(
-        stripe,
-        clientSecret,
-        confirmed,
-      );
-      if (confirmError) {
-        onDeclined(stripeConfirmDisplayMessage(confirmError.message));
+      if (error) {
+        onDeclined(error.message || "Card declined");
         setPurchasing(false);
         return;
       }
@@ -446,167 +289,139 @@ function CheckoutPaymentForm({
       onSuccess();
     } catch (err: unknown) {
       setPurchasing(false);
-      if (isRequestCanceled(err)) return;
       if (isCartExpiredResponse(err)) {
         onExpired();
         return;
       }
-      onDeclined(purchaseFailureDisplayMessage(err));
+      onDeclined("Unable to complete purchase. Please try again.");
     }
   };
 
   return (
     <div>
-      <form
-        id="checkout-payment"
-        noValidate
-        onSubmit={completePurchase}
-      >
-        <PaymentElement
-          onChange={(e) => {
-            setPaymentReady(Boolean(e.complete));
-            if (e.complete && !hasTrackedPaymentInfoRef.current) {
-              const organization = (cart?.event?.organization ||
-                cart?.package?.organization ||
-                cart?.flex_pack?.organization ||
-                cart?.access_pass_template?.organization) as
-                | TrackingOrganization
-                | undefined;
-              trackAddPaymentInfo({ organization, cart });
-              trackCheckoutStage(
-                "payment",
-                { payment_info_entered: true },
-                cart?.id,
-              );
-              hasTrackedPaymentInfoRef.current = true;
-            }
-          }}
-          options={checkoutPaymentElementOptions}
-        />
-      </form>
+      <PaymentElement
+        onChange={(e) => {
+          setPaymentReady(Boolean(e.complete));
+          if (e.complete && !hasTrackedPaymentInfoRef.current) {
+            const organization = (cart?.event?.organization ||
+              cart?.package?.organization ||
+              cart?.flex_pack?.organization ||
+              cart?.access_pass_template?.organization) as
+              | TrackingOrganization
+              | undefined;
+            trackAddPaymentInfo({ organization, cart });
+            trackCheckoutStage(
+              "payment",
+              { payment_info_entered: true },
+              cart?.id,
+            );
+            hasTrackedPaymentInfoRef.current = true;
+          }
+        }}
+        options={{ wallets: { applePay: "auto", googlePay: "auto" } }}
+      />
 
-      {!cart.flex_pack && !cart.package && !cart.access_pass_template ? (
+      {!cart.flex_pack && !cart.access_pass_template ? (
         <div className="mt-6">
           {isDiscountApplied ? (
-            <div className="flex items-center justify-between gap-3 rounded-[14px] border border-[rgba(5,27,53,0.10)] bg-[#f7f8fc] p-4">
+            <div className={`${cardCls} flex items-center justify-between gap-3 p-4`}>
               <div>
                 <p className="text-[14px] font-semibold">
                   {(promoDetails?.promoPricingDetails as { code?: string } | undefined)
                     ?.code || "Promo"}
                 </p>
-                <p className={`text-[13px] ${muted}`}>Promo code applied</p>
+                <p className="text-[13px] text-ink2">Promo code applied</p>
               </div>
-              <BrandedActionButton
-                tone="secondary"
-                loading={removingPromo}
-                loadingLabel="Removing…"
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={removingPromo}
                 onClick={handleRemovePromo}
-                className="!w-auto px-[18px] py-2.5 text-[14px]"
               >
-                Remove
-              </BrandedActionButton>
+                {removingPromo ? <Spinner size={16} /> : "Remove"}
+              </Button>
             </div>
           ) : (
-            <div>
-              <p className="mb-2 text-[12px] font-semibold uppercase tracking-[0.1em] text-[#8a93a3]">
-                Promo code
-              </p>
-              <PromoCodeForm onRedeem={redeemPromo} />
-            </div>
+            <form onSubmit={submitPromo} className="flex gap-2">
+              <div className="flex-1">
+                <Label htmlFor="promo">Promo code</Label>
+                <Input
+                  id="promo"
+                  className="mt-2"
+                  value={promoCode}
+                  onChange={(e) => setPromoCode(e.target.value)}
+                  placeholder="Enter code"
+                />
+              </div>
+              <Button
+                type="submit"
+                variant="outline"
+                className="mt-7 self-end disabled:opacity-50"
+                disabled={!promoCode.trim() || submittingPromo}
+              >
+                {submittingPromo ? <Spinner size={16} /> : "Apply"}
+              </Button>
+            </form>
           )}
+          {codeError ? (
+            <p className="mt-2 text-[13px] text-red-400">{codeError}</p>
+          ) : null}
         </div>
       ) : null}
 
-      {showMarketingOptIn ? (
-        <MarketingOptIn
-          className="mt-6"
-          checked={marketingEmailOptIn}
-          onChange={setMarketingEmailOptIn}
-          organizationName={organizationName}
-          optInMessage={optInMessage}
-          disabled={purchasing || isRefreshingIntent}
-        />
-      ) : null}
-      <label className="mt-6">
-        <input type="checkbox" defaultChecked />
-        <span className="text-[13px] text-[#4a5567]">
-          Save my info for one-click checkout with Link
-          {orgLabel && orgLabel !== "Blocktickets"
-            ? ` at ${orgLabel} venues`
-            : ""}
-          .
-        </span>
-      </label>
-      <div className="mt-4 flex flex-wrap items-center justify-between gap-3.5">
-        <p className="max-w-[380px] text-[12px] leading-relaxed text-[#8a93a3]">
-          By paying you agree to the Blocktickets{" "}
-          <Link href="/purchase-policy/" className="underline">
-            Purchase Policy
-          </Link>{" "}
-          and{" "}
-          <Link href="/terms-conditions/" className="underline">
-            Terms &amp; Conditions
-          </Link>
-          . All prices are all-in.
-        </p>
-        <div className="flex items-center gap-1.5 whitespace-nowrap text-[12px] text-[#8a93a3]">
-          <svg
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth={2}
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            className="h-[13px] w-[13px]"
-            aria-hidden
-          >
-            <rect x="3" y="11" width="18" height="11" rx="2" />
-            <path d="M7 11V7a5 5 0 0 1 10 0v4" />
-          </svg>
-          Payments secured by Stripe
+      <div className={`${cardCls} mt-6 space-y-2 p-4`}>
+        <div className="flex justify-between text-[14px] text-ink2">
+          <span>
+            {ticketCount} {itemLabel}
+          </span>
+          {isDiscountApplied && originalTotal != null ? (
+            <span className="line-through">{formatCurrency(originalTotal)}</span>
+          ) : null}
+        </div>
+        {Number(cart.serviceFee || 0) > 0 ? (
+          <div className="flex justify-between text-[14px]">
+            <span className="text-ink2">Service fee</span>
+            <span>{formatCurrency(cart.serviceFee)}</span>
+          </div>
+        ) : null}
+        {Number(cart.processingFee || cart.salesTax || cart.totalTax || 0) >
+        0 ? (
+          <>
+            {Number(cart.processingFee || 0) > 0 ? (
+              <div className="flex justify-between text-[14px]">
+                <span className="text-ink2">Processing fee</span>
+                <span>{formatCurrency(cart.processingFee)}</span>
+              </div>
+            ) : null}
+            {Number(cart.salesTax || cart.totalTax || 0) > 0 ? (
+              <div className="flex justify-between text-[14px]">
+                <span className="text-ink2">Tax</span>
+                <span>
+                  {formatCurrency(cart.salesTax ?? cart.totalTax)}
+                </span>
+              </div>
+            ) : null}
+          </>
+        ) : null}
+        <div className="flex justify-between border-t border-white/10 pt-3 text-[18px] font-semibold">
+          <span>Total</span>
+          <span>{formatCurrency(displayTotal)}</span>
         </div>
       </div>
 
-      <MobileStickyFooter
-        accentColor={accent}
-        zIndex={3}
-        innerPadding="0"
-        boxShadow="none"
-        shellClassName="md:bg-white/94 md:backdrop-blur"
+      <Button
+        className="mt-5 w-full disabled:opacity-50"
+        disabled={
+          !paymentReady ||
+          !donationRequirementMet ||
+          isRefreshingIntent ||
+          purchasing ||
+          !stripe
+        }
+        onClick={completePurchase}
       >
-        <div className="mx-auto flex max-w-[1140px] px-3.5 py-3 md:justify-end md:px-5">
-          <BrandedActionButton
-            type="submit"
-            form="checkout-payment"
-            primaryColor={buttonColor}
-            textColor={buttonTextColor}
-            loading={purchasing}
-            loadingLabel="Processing…"
-            disabled={
-              !paymentReady ||
-              !donationRequirementMet ||
-              isRefreshingIntent ||
-              !stripe
-            }
-            className="w-full px-[34px] py-4 text-[17px] md:ml-auto md:w-[340px]"
-          >
-            <svg
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth={2}
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              className="h-[17px] w-[17px]"
-              aria-hidden
-            >
-              <rect x="3" y="11" width="18" height="11" rx="2" />
-              <path d="M7 11V7a5 5 0 0 1 10 0v4" />
-            </svg>
-            Pay {formatCurrency(displayTotal)}
-          </BrandedActionButton>
-        </div>
-      </MobileStickyFooter>
+        {purchasing ? <Spinner size={18} /> : `Pay ${formatCurrency(displayTotal)}`}
+      </Button>
     </div>
   );
 }
@@ -615,23 +430,11 @@ function CheckoutPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const cartIdFromQuery = searchParams.get("cartId");
-  const stripeRedirectIntentId = succeededStripeRedirectIntentId(searchParams);
   const { ready: authReady, isAuthenticated } = useAuth();
 
   const [loading, setLoading] = useState(true);
   const [cart, setCart] = useState<CartData | null>(null);
-
-  useEffect(() => {
-    const title = purchaseTabTitle(cart);
-    if (!title) return;
-    return holdDocumentTitle(title);
-  }, [cart]);
   const [event, setEvent] = useState<CartData["event"]>(null);
-  const [seatLocation, setSeatLocation] = useState<{
-    ga_only?: boolean;
-    background: SeatmapBackground | null;
-    mapping: SeatmapMapping | null;
-  } | null>(null);
   const [clientSecret, setClientSecret] = useState("");
   const [intentId, setIntentId] = useState("");
   const [stripe, setStripe] = useState<Stripe | null>(null);
@@ -648,163 +451,44 @@ function CheckoutPage() {
   const [expiredOpen, setExpiredOpen] = useState(false);
   const [leaveOpen, setLeaveOpen] = useState(false);
   const [cancelling, setCancelling] = useState(false);
-  const [cancelError, setCancelError] = useState("");
   const [declineMsg, setDeclineMsg] = useState("");
-  const [dueTotal, setDueTotal] = useState(0);
-  const [promoDiscount, setPromoDiscount] =
-    useState<CheckoutPromoDiscount | null>(null);
   const [loadError, setLoadError] = useState("");
-  const allowCachedBranding = useClientReady();
-  const [guestBuyer, setGuestBuyer] = useState<GuestBuyer | null>(null);
-
-  const [leavingForLogin, setLeavingForLogin] = useState(false);
 
   const cartRef = useRef<CartData | null>(null);
   const eventRef = useRef<CartData["event"]>(null);
-  const seatLocationRef = useRef(seatLocation);
-  seatLocationRef.current = seatLocation;
-  const leavingForSuccessRef = useRef(false);
-  const leavingForLoginRef = useRef(false);
   const paymentContextRef = useRef<{
     connectedAccountId?: string | null;
   } | null>(null);
-  const guestBuyerRef = useRef<GuestBuyer | null>(null);
-
-  const goToSuccess = useCallback(
-    (id: string) => {
-      if (leavingForSuccessRef.current) return;
-      leavingForSuccessRef.current = true;
-      leaveCheckoutForSuccess(id, (href) => router.replace(href));
-    },
-    [router],
-  );
 
   useEffect(() => {
     hideIntercomLauncher();
-    captureCheckoutReferrer();
   }, []);
 
-  // Hold the loader until the router commits to /login/ so checkout never
-  // paints behind the redirect.
-  const sendToLogin = useCallback(() => {
-    if (leavingForLoginRef.current) return;
-    leavingForLoginRef.current = true;
-    setLeavingForLogin(true);
-    const returnTo = `${window.location.pathname}${window.location.search}`;
-    setLastKnown(returnTo);
-    markCheckoutLoginDetour();
-    const href = `/login/?from=${encodeURIComponent(returnTo)}`;
-    beginRouteTransition(href, { replace: true });
-    router.replace(href);
-  }, [router]);
-
-  const expiredRef = useRef(false);
-  const [restarting, setRestarting] = useState(false);
-  const [restartError, setRestartError] = useState("");
-  const [leaving, setLeaving] = useState(false);
-
-  const handleHoldExpired = useCallback(() => {
-    if (expiredRef.current || leaveOpen || cancelling) return;
-    expiredRef.current = true;
+  const handleCartExpired = useCallback(() => {
     setExpiredOpen(true);
-  }, [leaveOpen, cancelling]);
-
-  /**
-   * Package/flex carts often omit the org slug, which would send the shopper to
-   * the venue copy of the product page. The page they came from names the team.
-   */
-  const leaveOrgSlug = useCallback(() => {
-    const source = cartRef.current as CheckoutCartBrandingSource | null;
-    const returnPath = (getCheckoutReturnPath() || "").split("?")[0];
-    return (
-      orgSlugFromPathname(returnPath) ||
-      checkoutBrandingFromCart(source).organization?.slug ||
-      cachedBrandingForCheckout(source)?.slug ||
-      null
-    );
-  }, []);
-
-  const startOver = useCallback(async () => {
-    if (restarting) return;
-    setRestarting(true);
-    setRestartError("");
-    const eventData = eventRef.current || cartRef.current?.event;
-    const dest =
-      checkoutLeavePath(
-        cartRef.current,
-        eventData,
-        leaveOrgSlug(),
-        seatLocationRef.current,
-      ) ||
-      BACK_FALLBACK_HREF;
-    const returnPath = getCheckoutReturnPath();
-    const loginDetour = hadCheckoutLoginDetour();
-    try {
-      await dropUserCart(
-        dropUserCartPayload(cartRef.current, eventData, getStoredCart()),
-      );
-    } catch {
-      setRestarting(false);
-      setRestartError("We couldn't release your tickets. Please try again.");
-      return;
-    }
+    const cartId = getStoredCart()?.cartId ?? cart?.id;
+    if (cartId) dropUserCart({ cartId }).catch(() => undefined);
     clearStoredCart();
-    // Swap to the loader only once the release is done — the dialog keeps its
-    // in-flight state until then.
-    setLeaving(true);
-    if (shouldPopCheckoutHistory(dest, returnPath, loginDetour)) router.back();
-    else router.replace(dest);
-  }, [leaveOrgSlug, restarting, router]);
-
-  const abandonGoneCart = useCallback(
-    (eventData?: CartData["event"] | null) => {
-      const dest = resolveCheckoutReturnPath(
-        cartRef.current,
-        eventData ?? cartRef.current?.event,
-        leaveOrgSlug(),
-        seatLocationRef.current,
-      );
-      const payload = dropUserCartPayload(
-        cartRef.current,
-        eventData ?? cartRef.current?.event,
-        getStoredCart(),
-      );
-      if (payload.cartId) dropUserCart(payload).catch(() => undefined);
-      clearStoredCart();
-      router.replace(dest);
-    },
-    [leaveOrgSlug, router],
-  );
+  }, [cart?.id]);
 
   const cancelOrder = useCallback(async () => {
     if (cancelling) return;
     setCancelling(true);
-    setCancelError("");
-    const eventData = eventRef.current || cartRef.current?.event;
-    const dest = resolveCheckoutReturnPath(
-      cartRef.current,
-      eventData,
-      leaveOrgSlug(),
-      seatLocationRef.current,
-    );
-    const returnPath = getCheckoutReturnPath();
-    const loginDetour = hadCheckoutLoginDetour();
+    const eventUUID = (eventRef.current as { uuid?: string } | null)?.uuid;
+    const cartId = cartRef.current?.id ?? getStoredCart()?.cartId;
     try {
-      await dropUserCart(
-        dropUserCartPayload(cartRef.current, eventData, getStoredCart()),
-      );
+      await dropUserCart({ eventUUID, cartId });
     } catch {
-      setCancelling(false);
-      setCancelError(
-        "We couldn't release your tickets. Please try cancelling again.",
-      );
-      return;
+      /* release best-effort — still leave checkout */
     }
     clearStoredCart();
-    setLeaving(true);
-    if (shouldPopCheckoutHistory(dest, returnPath, loginDetour)) router.back();
-    else router.replace(dest);
-  }, [cancelling, leaveOrgSlug, router]);
+    setLeaveOpen(false);
+    if (typeof window !== "undefined" && window.history.length > 1) {
+      router.back();
+    } else {
+      router.push("/");
+    }
+  }, [cancelling, router]);
 
   const buildStripe = async (connectedAccountID: string | null) => {
     const key = process.env.NEXT_PUBLIC_STRIPE_KEY;
@@ -820,13 +504,11 @@ function CheckoutPage() {
       cartData: CartData,
       eventData: CartData["event"],
       fundraisingPayload: ReturnType<typeof buildFundraisingPayload>,
-      guest?: GuestBuyer | null,
     ) => {
       const request = buildPaymentIntentRequest(
         cartData,
         eventData,
         fundraisingPayload,
-        guest,
       );
       const response = await getPaymentIntent(request);
       const isDestinationCharge = Boolean(
@@ -837,35 +519,26 @@ function CheckoutPage() {
       setStripeAccountContext(isDestinationCharge ? null : connectedAccountId);
       setClientSecret(response.data.client_secret);
       setIntentId(response.data.id);
-      if (paymentIntentAlreadySucceeded(response.data?.status)) {
-        goToSuccess(String(response.data.id || ""));
-      }
       return response;
     },
-    [goToSuccess],
+    [],
   );
 
   useEffect(() => {
-    if (!authReady) return;
-
-    if (leavingForSuccessRef.current) return;
-
-    if (stripeRedirectIntentId) {
-      goToSuccess(stripeRedirectIntentId);
-      return;
-    }
+    // Cart load lives above AppShell's auth gate — wait for login so we don't
+    // race the redirect and wipe sessionStorage.cart on aborted/failed requests.
+    if (!authReady || !isAuthenticated) return;
 
     let cancelled = false;
     const run = async () => {
       setLoading(true);
       setLoadError("");
-      setSeatLocation(null);
       let cartId = cartIdFromQuery;
       if (!cartId) {
         cartId = getStoredCart()?.cartId ?? null;
       }
       if (!cartId) {
-        setLoadError(CHECKOUT_PAYMENT_COPY.noCart);
+        setLoadError("No cart found. Please select tickets again.");
         setLoading(false);
         return;
       }
@@ -876,24 +549,9 @@ function CheckoutPage() {
         const cartData = res.data as CartData | null;
         if (!cartData?.id) {
           clearStoredCart();
-          setLoadError(CHECKOUT_PAYMENT_COPY.noCart);
+          setLoadError("No cart found. Please select tickets again.");
           return;
         }
-        cartData.tickets = await ticketsWithGaSections(
-          cartData.tickets || [],
-          cartData.event,
-        );
-        // The listing image does not need the venue map. Loading that map
-        // first kept the thumbnail on a spinner after the summary was ready.
-        if (
-          (cartData.tickets?.length ?? 0) > 0 &&
-          !eventIsExplicitlyGaOnly(cartData.event)
-        ) {
-          void loadCheckoutSeatLocation(cartData.event).then((location) => {
-            if (!cancelled) setSeatLocation(location);
-          });
-        }
-        if (cancelled) return;
         setCart(cartData);
         cartRef.current = cartData;
         const itemCount = countCartItems(cartData);
@@ -903,25 +561,15 @@ function CheckoutPage() {
           clearStoredCart();
         }
 
-        if (!isAuthenticated && !isGuestEligibleCart(cartData)) {
-          sendToLogin();
-          return;
-        }
-
         if (isComplimentaryWebsiteCart(cartData)) {
-          if (!isAuthenticated) {
-            sendToLogin();
-            return;
-          }
-          const processRes = await processFreeOrder({
-            cartId: cartData.id,
-            trackingCode: readTrackingCodeForCart(cartData),
-          });
+          const processRes = await processFreeOrder({ cartId: cartData.id });
           sessionStorage.setItem(
             "order",
             JSON.stringify({ id: processRes.data?.id }),
           );
-          goToSuccess(String(processRes.data?.paymentIntentId || ""));
+          router.replace(
+            `/checkout/checkout-success/?intentId=${encodeURIComponent(processRes.data?.paymentIntentId)}`,
+          );
           return;
         }
 
@@ -942,7 +590,6 @@ function CheckoutPage() {
           cartData?.flex_pack?.organization ||
           cartData?.access_pass_template?.organization ||
           eventData?.organization) as TrackingOrganization | undefined;
-        cacheOrgBranding(organization as BrandingOrganization | undefined);
         const pixelId = cartData?.flex_pack
           ? (cartData.flex_pack.organization as { meta_pixel_id?: string } | undefined)
               ?.meta_pixel_id
@@ -999,11 +646,7 @@ function CheckoutPage() {
           !cartData.access_pass_template &&
           !eventData
         ) {
-          setLoadError(CHECKOUT_PAYMENT_COPY.loadFailed);
-          return;
-        }
-
-        if (!isAuthenticated) {
+          setLoadError("Unable to load checkout. Please try again.");
           return;
         }
 
@@ -1014,21 +657,16 @@ function CheckoutPage() {
         );
       } catch (err: unknown) {
         if (cancelled) return;
-        if (paymentIntentLoadOutcome(err) === "gone") {
-          abandonGoneCart(cartRef.current?.event);
+        if (isCartGoneResponse(err)) {
+          // 410 timed out, or 404 missing for this session/IP — drop ghost badge.
+          handleCartExpired();
         } else {
           // Keep sessionStorage.cart so login/redirect races and transient
           // API failures don't force the shopper to rebuild their cart.
-          setLoadError(CHECKOUT_PAYMENT_COPY.loadFailed);
+          setLoadError("Unable to load checkout. Please try again.");
         }
       } finally {
-        if (
-          !cancelled &&
-          !leavingForSuccessRef.current &&
-          !leavingForLoginRef.current
-        ) {
-          setLoading(false);
-        }
+        if (!cancelled) setLoading(false);
       }
     };
     run();
@@ -1039,11 +677,8 @@ function CheckoutPage() {
     authReady,
     isAuthenticated,
     cartIdFromQuery,
-    stripeRedirectIntentId,
-    abandonGoneCart,
+    handleCartExpired,
     loadPaymentIntent,
-    goToSuccess,
-    sendToLogin,
     router,
   ]);
 
@@ -1052,22 +687,6 @@ function CheckoutPage() {
       buildStripe(stripeAccountContext);
     }
   }, [stripeAccountContext]);
-
-  useEffect(() => {
-    if (leavingForSuccessRef.current || !stripe || !clientSecret || !intentId) {
-      return;
-    }
-    let cancelled = false;
-    stripe.retrievePaymentIntent(clientSecret).then((retrieved) => {
-      if (cancelled) return;
-      if (paymentIntentAlreadySucceeded(retrieved.paymentIntent?.status)) {
-        goToSuccess(retrieved.paymentIntent?.id || intentId);
-      }
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [stripe, clientSecret, intentId, goToSuccess]);
 
   const fundraisingPayload = buildFundraisingPayload(
     fundraisingCampaign as never,
@@ -1089,56 +708,15 @@ function CheckoutPage() {
     const next = { ...fundraisingSelection, donationAmount: amount };
     setFundraisingSelection(next);
     if (!cartRef.current) return;
-    if (!isAuthenticated && !guestBuyerRef.current) return;
     setIsRefreshingIntent(true);
     try {
       await loadPaymentIntent(
         cartRef.current,
         eventRef.current,
         buildFundraisingPayload(fundraisingCampaign as never, next),
-        guestBuyerRef.current,
       );
     } catch (err) {
-      if (paymentIntentLoadOutcome(err) === "gone") abandonGoneCart();
-      else setLoadError(CHECKOUT_PAYMENT_COPY.loadFailed);
-    } finally {
-      setIsRefreshingIntent(false);
-    }
-  };
-
-  const checkoutLoginHref = `/login/?from=${encodeURIComponent(
-    `${typeof window !== "undefined" ? window.location.pathname : "/checkout/"}${
-      typeof window !== "undefined" ? window.location.search : ""
-    }`,
-  )}`;
-
-  const confirmGuestBuyer = async (buyer: GuestBuyer) => {
-    if (!cartRef.current) return;
-    guestBuyerRef.current = buyer;
-    setIsRefreshingIntent(true);
-    try {
-      await loadPaymentIntent(
-        cartRef.current,
-        eventRef.current,
-        buildFundraisingPayload(
-          fundraisingCampaign as never,
-          fundraisingSelection,
-        ),
-        buyer,
-      );
-      setGuestBuyer(buyer);
-      setGuestCheckoutBuyer(buyer);
-    } catch (err) {
-      guestBuyerRef.current = null;
-      if (isRequestCanceled(err)) return;
-      if (paymentIntentLoadOutcome(err) === "gone") {
-        handleHoldExpired();
-        return;
-      }
-      if (guestContactStartFailed(err)) {
-        throw err;
-      }
-      setLoadError(CHECKOUT_PAYMENT_COPY.loadFailed);
+      if (isCartGoneResponse(err)) handleCartExpired();
     } finally {
       setIsRefreshingIntent(false);
     }
@@ -1159,827 +737,239 @@ function CheckoutPage() {
         event?.venue?.timezone,
       );
 
-  const branding = checkoutBrandingFromCart(
-    cart as CheckoutCartBrandingSource | null,
-    allowCachedBranding ? undefined : null,
-  );
-  const eventVenue =
-    cart?.access_pass_template?.venue ||
-    (event?.venue as
-      | {
-          name?: string;
-          city?: string;
-          state?: string;
-          address?: Array<{ city?: string; state?: string; country?: string }>;
-        }
-      | undefined);
-  const ticketSummary = ticketSelectionSummary(cart?.tickets || [], {
-    seatedGaSection: showsSeatedGaTicketCount(
-      cart?.tickets,
-      event,
-      seatLocation,
-    ),
-  });
-  const packageSummary = cart?.package
-    ? packageOrderSummary(
-        cart.package,
-        packageCartTickets(cart),
-        cart.package_tickets?.length || 0,
-      )
-    : null;
-  const packageTotals = resolvePackageCheckoutTotals(
-    cart,
-    packageSummary?.subtotal || 0,
-  );
-  const packageSeats = alignPackageSeatPrices(
-    withPackageCheckoutSeatPrices(
-      packageSummary?.seats || [],
-      packageTotals.subtotal,
-    ),
-    packageTotals.subtotal,
-  );
-  const flexTotals = cart?.flex_pack
-    ? resolveFlexPackCheckoutTotals(cart)
-    : null;
-  const flexVoucherCount = flexPackVoucherCount(cart?.flex_pack?.gameTickets);
-  const flexHasCustomFee = Boolean(flexTotals?.customFeeLines.length);
-  const flexLineAmount = flexHasCustomFee
-    ? flexTotals?.total || 0
-    : flexTotals?.subtotal || 0;
-  const flexEach = flexHasCustomFee
-    ? flexPackEachPrice(flexTotals?.total, flexVoucherCount)
-    : flexPackEachPrice(cart?.flex_pack?.price, flexVoucherCount);
-  const summaryWhen =
-    packageSummary?.seasonLine ||
-    (cart?.flex_pack ? flexPackSeasonLine(cart.flex_pack) : when);
-  const summaryVenue =
-    packageSummary?.venueName ||
-    cart?.flex_pack?.venue?.name ||
-    eventVenue?.name ||
-    "";
-  // A package or flex pack is the thing being bought, so its artwork wins over
-  // the poster of whichever event the cart happens to be anchored to.
-  const eventPosterSrc = imageUrl(
-    cart?.package?.image ||
-      cart?.flex_pack?.image ||
-      (event?.image as { url?: string } | undefined) ||
-      (cart?.event as { image?: { url?: string } } | undefined)?.image,
-  );
-  const venueSlug =
-    (event?.venue as { slug?: string } | undefined)?.slug ||
-    (cart?.event as { venue?: { slug?: string } } | undefined)?.venue?.slug;
-  const summaryTicket = cart?.tickets?.[0];
-  const gaTicketIcon = cartShowsGaTicketIcon(cart?.tickets, event, seatLocation);
-  const locatedSection = seatLocationSection(summaryTicket);
-  const venueMapReady = Boolean(
-    !gaTicketIcon &&
-      seatLocation &&
-      !seatLocation.ga_only &&
-      seatLocation.background?.url &&
-      seatLocation.mapping,
-  );
-  // Same highlights image the tickets listing uses, then the venue map.
-  const seatLocationCandidates =
-    !gaTicketIcon && locatedSection.sectionNumber
-      ? getSeatViewImageCandidates(
-          venueSlug,
-          locatedSection.sectionNumber,
-          locatedSection.sectionNumber,
-          ["highlights", "thumbnail"],
-        )
-      : [];
-  const showSeatLocationThumb =
-    seatLocationCandidates.length > 0 || venueMapReady;
-  const seatViewCandidates =
-    gaTicketIcon || showSeatLocationThumb
-      ? []
-      : getSeatViewImageCandidates(
-          venueSlug,
-          summaryTicket?.sectionNumber as string | number | undefined,
-          summaryTicket?.sectionName as string | number | undefined,
-        );
-  const dueAmount =
-    dueTotal ||
-    (cart?.package
-      ? packageTotals.total
-      : cart?.flex_pack
-        ? flexTotals?.total || 0
-        : Number(cart?.total || 0));
-  const taxLine = checkoutTaxLine(cart);
-  const singleEvent =
-    Boolean(cart?.tickets?.length) &&
-    !cart?.package &&
-    !cart?.flex_pack &&
-    !cart?.access_pass_template;
-  const primaryFeeBreakdown = singleEvent
-    ? getPrimaryTicketFeeBreakdown(cart?.tickets, cart?.am_pricing_objects)
-    : null;
-  const primaryFeeRows = primaryFeeBreakdown
-    ? (
-        [
-          ["Processing Fee", primaryFeeBreakdown.processingFee],
-          ["Service Fee", primaryFeeBreakdown.serviceFee],
-          ["Facility Fee", primaryFeeBreakdown.facilityFee],
-          ["Chargeback protection", primaryFeeBreakdown.chargeBackProtection],
-        ] as const
-      ).filter(([, amount]) => amount > 0)
-    : [];
-  const resaleServiceFee = Number(cart?.serviceFee || 0);
-  const estimatedProcessingFee = Number(cart?.estimatedProcessingFee);
-  const resaleProcessingFee =
-    estimatedProcessingFee > 0
-      ? estimatedProcessingFee
-      : Number(cart?.processingFee || 0);
+  const packageEventNameByUuid = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const ev of cart?.package?.events || []) {
+      const uuid = ev?.uuid != null ? String(ev.uuid) : "";
+      const name = typeof ev?.name === "string" ? ev.name.trim() : "";
+      if (uuid && name) map.set(uuid, name);
+    }
+    return map;
+  }, [cart?.package?.events]);
+
+  const ticketEventLabel = (ticket: Record<string, unknown>) => {
+    const uuid =
+      ticket.eventUUID != null
+        ? String(ticket.eventUUID)
+        : ticket.eventId != null
+          ? String(ticket.eventId)
+          : "";
+    if (uuid && packageEventNameByUuid.has(uuid)) {
+      return packageEventNameByUuid.get(uuid) || "";
+    }
+    const nested = ticket.event as { name?: string } | undefined;
+    return typeof nested?.name === "string" ? nested.name.trim() : "";
+  };
 
   const elementsOptions = useMemo(
     () =>
       clientSecret
         ? {
             clientSecret,
-            appearance: stripePaymentElementAppearance(
-              branding.theme.accent,
-              branding.theme.buttonTextColor,
-            ),
-            fonts: STRIPE_PAYMENT_ELEMENT_FONTS,
-            loader: "always" as const,
+            appearance: stripeAppearance,
+            fonts: stripeFonts,
+            loader: "auto" as const,
           }
         : undefined,
-    [clientSecret, branding],
+    [clientSecret],
   );
 
-  const needsGuestContact =
-    Boolean(cart) &&
-    !isAuthenticated &&
-    !guestBuyer &&
-    isGuestEligibleCart(cart);
-  const marketingOrg = checkoutMarketingOrganization(cart, event);
-  const awaitingAuth = !authReady;
-  const shellLoading = awaitingAuth || (loading && !expiredOpen);
-  const loaderBranding = branding.organization
-    ? {
-        primaryColor: branding.theme.accent,
-        logoSrc: branding.theme.brandLogoSrc,
-        name: branding.orgLabel,
-      }
-    : null;
-
-  // Hold the tenant loader here until the destination route commits, so leaving
-  // checkout never flashes an empty page.
-  if (leavingForLogin) {
-    return <BrandedLoader fallback="blocktickets" routeDestination />;
-  }
-
-  if (leaving) {
-    return <BrandedLoader branding={loaderBranding} routeDestination />;
-  }
-
   return (
-    <BrandedCheckoutShell
-      accent={branding.theme.accent || BLOCKTICKETS_NAVY}
-      remainingSeconds={
-        cart && !cancelling
-          ? checkoutHoldSeconds(cart.remainingTime)
-          : null
-      }
-      holdPaused={leaveOpen || cancelling}
-      onBack={() => {
-        setCancelError("");
-        setLeaveOpen(true);
-      }}
-      onExpire={handleHoldExpired}
-      loading={shellLoading}
-      loaderBranding={loaderBranding}
-    >
-      {expiredOpen ? null : loadError ? (
-        <div className={`${lightCard} mx-auto mt-10 max-w-lg p-8 text-center`}>
-          <h1 className="text-[16px] font-semibold">Checkout unavailable</h1>
-          <p className={`mt-2 ${muted}`}>{loadError}</p>
+    <AppShell requireAuth search={false}>
+      {loading ? (
+        <PageLoader message="Securing your tickets…" label="Loading checkout" />
+      ) : expiredOpen ? null : loadError ? (
+        <div className={`${cardCls} mx-auto max-w-lg p-8 text-center`}>
+          <h1 className="text-[22px] font-semibold">Checkout unavailable</h1>
+          <p className="mt-2 text-ink2">{loadError}</p>
           <div className="mt-6 flex flex-col gap-3 sm:flex-row sm:justify-center">
-            <BrandedActionButton
-              tone="secondary"
-              loading={cancelling}
-              loadingLabel="Cancelling…"
+            <Button
+              variant="outline"
+              disabled={cancelling}
               onClick={cancelOrder}
-              className="w-full px-5 py-2.5 text-[14px] sm:w-auto"
             >
-              Cancel order
-            </BrandedActionButton>
+              {cancelling ? <Spinner size={16} /> : "Cancel order"}
+            </Button>
             <Button href="/">Back home</Button>
           </div>
         </div>
       ) : (
-        <div className="mx-auto grid max-w-[1140px] grid-cols-1 gap-5 px-3.5 pb-28 pt-3.5 min-[900px]:grid-cols-[minmax(0,1fr)_372px] min-[900px]:px-5 min-[900px]:pt-6">
-          <div className="order-2 flex min-w-0 flex-col gap-3.5 min-[900px]:order-1 min-[900px]:col-start-1 min-[900px]:row-start-1">
-            <div className={`${lightCard} flex flex-col gap-5 p-[22px]`}>
-              {needsGuestContact ? null : (
-              <div>
-                <h1 className="font-semibold tracking-[-0.03em] [font-size:24px]">
-                  Payment
-                </h1>
-                <p className={`mt-1 text-[14px] ${muted}`}>
-                  Complete your purchase to lock in these seats.
+        <div className="mx-auto max-w-xl pb-16">
+          <button
+            type="button"
+            onClick={() => setLeaveOpen(true)}
+            className="text-[14px] text-ink2 hover:text-white"
+          >
+            ← Back
+          </button>
+          <h1 className="mt-4 text-[clamp(28px,4vw,36px)] font-semibold tracking-[-0.02em]">
+            You&apos;re so close!
+          </h1>
+          <p className="mt-2 text-[15px] text-ink2">
+            Select your payment method and complete your purchase.
+          </p>
+
+          <div className={`${cardCls} mt-8 p-5`}>
+            <p className="text-[12px] font-semibold uppercase tracking-[0.12em] text-ink2">
+              Buying
+            </p>
+            <p className="mt-2 text-[18px] font-semibold">{eventTitle}</p>
+            {when ? (
+              <p className="mt-1 text-[14px] text-ink2">{when}</p>
+            ) : null}
+            {cart?.access_pass_template ? (
+              <ul className="mt-4 space-y-2 border-t border-white/10 pt-4">
+                <li className="flex justify-between gap-3 text-[14px]">
+                  <span className="min-w-0 truncate">Access pass</span>
+                  <span className="shrink-0 text-ink2">
+                    {formatCurrency(
+                      Number(cart.access_pass_template.price || cart.total || 0),
+                    )}
+                  </span>
+                </li>
+              </ul>
+            ) : cart?.tickets?.length ? (
+              <ul className="mt-4 space-y-2 border-t border-white/10 pt-4">
+                {cart.tickets.map((t, i) => {
+                  const eventLabel = ticketEventLabel(t);
+                  const seatLabel = t.generalAdmission
+                    ? String(t.sectionName || t.offerName || "GA")
+                    : `Sec ${t.sectionName || t.sectionNumber} · Row ${t.rowNumber} · Seat ${t.seatNumber}`;
+                  return (
+                    <li
+                      key={i}
+                      className="flex justify-between gap-3 text-[14px]"
+                    >
+                      <span className="min-w-0">
+                        {eventLabel ? (
+                          <span className="block truncate text-[12px] text-ink2">
+                            {eventLabel}
+                          </span>
+                        ) : null}
+                        <span className="block truncate">{seatLabel}</span>
+                      </span>
+                      <span className="shrink-0 text-ink2">
+                        {formatCurrency(Number(t.cost || t.price || 0))}
+                      </span>
+                    </li>
+                  );
+                })}
+              </ul>
+            ) : null}
+          </div>
+
+          {fundraisingCampaign ? (
+            <div className={`${cardCls} mt-4 p-5`}>
+              <p className="text-[14px] font-semibold">
+                {(fundraisingCampaign.title as string) || "Support the campaign"}
+              </p>
+              <p className="mt-1 text-[13px] text-ink2">
+                Optional donation added to your checkout.
+              </p>
+              <Input
+                className="mt-3"
+                type="number"
+                min={0}
+                step="1"
+                value={fundraisingSelection.donationAmount || ""}
+                onChange={(e) =>
+                  handleFundraisingAmount(Number(e.target.value) || 0)
+                }
+                placeholder="Donation amount"
+              />
+              {donationPricing.donationAmount > 0 ? (
+                <p className="mt-2 text-[13px] text-ink2">
+                  Donation total {formatCurrency(donationPricing.totalCharge)}
                 </p>
-              </div>
-              )}
-              {fundraisingCampaign && !needsGuestContact ? (
-                <div className="rounded-[14px] border border-[rgba(5,27,53,0.08)] bg-[#f7f8fc] p-4">
-                  <p className="text-[14px] font-semibold">
-                    {(fundraisingCampaign.title as string) ||
-                      "Support the campaign"}
-                  </p>
-                  <p className={`mt-1 text-[13px] ${muted}`}>
-                    Optional donation added to your checkout.
-                  </p>
-                  <input
-                    className="mt-3 h-12 w-full rounded-full border border-[rgba(5,27,53,0.16)] bg-white px-[18px] text-[15px] text-[#051b35] outline-none"
-                    type="number"
-                    min={0}
-                    step="1"
-                    value={fundraisingSelection.donationAmount || ""}
-                    onChange={(e) =>
-                      handleFundraisingAmount(Number(e.target.value) || 0)
-                    }
-                    placeholder="Donation amount"
-                  />
-                  {donationPricing.donationAmount > 0 ? (
-                    <p className={`mt-2 text-[13px] ${muted}`}>
-                      Donation total {formatCurrency(donationPricing.totalCharge)}
-                    </p>
-                  ) : null}
-                </div>
               ) : null}
-              <div>
-                {needsGuestContact ? (
-                  <GuestContact
-                    loginHref={checkoutLoginHref}
-                    onSignIn={() => {
-                      setLastKnown(
-                        `${window.location.pathname}${window.location.search}`,
-                      );
-                      markCheckoutLoginDetour();
-                    }}
-                    onContinue={confirmGuestBuyer}
-                    buttonColor={branding.theme.buttonColor}
-                    buttonTextColor={branding.theme.buttonTextColor}
-                    organizationName={marketingOrg?.name}
-                    optInMessage={marketingOrg?.opt_in_message}
+            </div>
+          ) : null}
+
+          <div className={`${cardCls} mt-4 p-5`}>
+            <h2 className="text-[16px] font-semibold">Payment</h2>
+            <div className="mt-4">
+              {clientSecret && stripe && elementsOptions && checkoutCart ? (
+                <Elements
+                  key={clientSecret}
+                  stripe={stripe}
+                  options={elementsOptions}
+                >
+                  <CheckoutPaymentForm
+                    intentId={intentId}
+                    cart={checkoutCart}
+                    donationChargeTotal={donationPricing.totalCharge}
+                    donationRequirementMet={donationRequirementMet}
+                    isRefreshingIntent={isRefreshingIntent}
+                    onSuccess={() =>
+                      router.push(
+                        `/checkout/checkout-success/?intentId=${encodeURIComponent(intentId)}`,
+                      )
+                    }
+                    onDeclined={setDeclineMsg}
+                    onExpired={handleCartExpired}
                   />
-                ) : clientSecret && stripe && elementsOptions && checkoutCart ? (
-                  <Elements
-                    key={clientSecret}
-                    stripe={stripe}
-                    options={elementsOptions}
-                  >
-                    <CheckoutPaymentForm
-                      intentId={intentId}
-                      clientSecret={clientSecret}
-                      cart={checkoutCart}
-                      donationChargeTotal={donationPricing.totalCharge}
-                      donationRequirementMet={donationRequirementMet}
-                      isRefreshingIntent={isRefreshingIntent}
-                      buttonColor={branding.theme.buttonColor}
-                      buttonTextColor={branding.theme.buttonTextColor}
-                      accent={branding.theme.accent}
-                      orgLabel={branding.orgLabel}
-                      onTotalChange={setDueTotal}
-                      onPromoChange={setPromoDiscount}
-                      onSuccess={() => goToSuccess(intentId)}
-                      onDeclined={setDeclineMsg}
-                      onExpired={handleHoldExpired}
-                      showMarketingOptIn={isAuthenticated}
-                      organizationName={marketingOrg?.name}
-                      optInMessage={marketingOrg?.opt_in_message}
-                    />
-                  </Elements>
-                ) : (
-                  <div className="flex justify-center py-8">
-                    <Spinner />
-                  </div>
-                )}
-              </div>
+                </Elements>
+              ) : (
+                <div className="flex justify-center py-8">
+                  <Spinner />
+                </div>
+              )}
             </div>
           </div>
 
-          <div className="order-1 flex min-w-0 flex-col gap-3 min-[900px]:order-none min-[900px]:col-start-2 min-[900px]:row-start-1">
-            <div className="min-[900px]:sticky min-[900px]:top-[84px]">
-            <div className={`${lightCard} flex flex-col gap-4 p-[18px]`}>
-              <div className="flex items-center gap-3.5">
-                <div className="h-[52px] w-[52px] shrink-0 overflow-hidden rounded-xl border border-[rgba(5,27,53,0.08)] bg-[#f1f3f8]">
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img
-                    src={eventPosterSrc}
-                    alt={eventTitle}
-                    className="h-full w-full object-cover"
-                  />
-                </div>
-                <div className="flex min-w-0 flex-col gap-0.5">
-                  <div className="text-[16px] font-semibold tracking-[-0.02em]">
-                    {eventTitle}
-                  </div>
-                  {summaryWhen ? (
-                    <div className={`text-[13px] ${muted}`}>{summaryWhen}</div>
-                  ) : null}
-                  {summaryVenue ? (
-                    <div className={`text-[13px] ${muted}`}>{summaryVenue}</div>
-                  ) : null}
-                </div>
-              </div>
-              {cart?.access_pass_template ? (
-                <>
-                  <div className="h-px bg-[rgba(5,27,53,0.08)]" />
-                  <div className="flex justify-between gap-3 text-[14px]">
-                    <span className="min-w-0 truncate">Access pass</span>
-                    <span className="shrink-0 tabular-nums">
-                      {formatCurrency(
-                        Number(
-                          cart.access_pass_template.price || cart.total || 0,
-                        ),
-                      )}
-                    </span>
-                  </div>
-                </>
-              ) : cart?.package ? (
-                <>
-                  {packageSeats.length ? (
-                    <>
-                      <div className="h-px bg-[rgba(5,27,53,0.08)]" />
-                      <div className="flex flex-col gap-2.5">
-                        {packageSeats.map((seat, index) => (
-                          <div
-                            key={`${seat.seatLine}-${index}`}
-                            className="flex items-start justify-between gap-3"
-                          >
-                            <div className="flex min-w-0 flex-col gap-0.5">
-                              <div className="text-[14px] font-semibold">
-                                {seat.seatLine}
-                              </div>
-                              <div className={`min-w-0 text-[12px] ${muted}`}>
-                                {seat.context}
-                              </div>
-                              {seat.accessibleLabel ? (
-                                <AccessibleSeatingBadge
-                                  label={seat.accessibleLabel}
-                                  style={{ marginTop: 4 }}
-                                />
-                              ) : null}
-                              {seat.additionalLabel ? (
-                                <div className={`text-[13px] ${muted}`}>
-                                  {seat.additionalLabel}
-                                </div>
-                              ) : null}
-                            </div>
-                            <div className="shrink-0 text-[14px] font-semibold tabular-nums">
-                              {formatCurrency(seat.price)}
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    </>
-                  ) : cart.package.name ? (
-                    <>
-                      <div className="h-px bg-[rgba(5,27,53,0.08)]" />
-                      <div className={`text-[14px] ${muted}`}>
-                        {cart.package.name}
-                      </div>
-                    </>
-                  ) : null}
-                  <div className="h-px bg-[rgba(5,27,53,0.08)]" />
-                  <div className="flex flex-col gap-2.5 text-[14px] text-[#4a5567]">
-                    <div className="flex justify-between gap-3">
-                      <span>Subtotal</span>
-                      <span className="tabular-nums text-[#051b35]">
-                        {formatCurrency(packageTotals.subtotal)}
-                      </span>
-                    </div>
-                    <div className="flex justify-between gap-3">
-                      <span>Processing Fee</span>
-                      <span className="tabular-nums text-[#051b35]">
-                        {formatCurrency(packageTotals.processingFee)}
-                      </span>
-                    </div>
-                    <div className="flex justify-between gap-3">
-                      <span>Service Fee</span>
-                      <span className="tabular-nums text-[#051b35]">
-                        {formatCurrency(packageTotals.serviceFee)}
-                      </span>
-                    </div>
-                    {packageTotals.customFeeLines.map((line) => (
-                      <div
-                        key={`${line.name}-${line.amount}`}
-                        className="flex justify-between gap-3"
-                      >
-                        <span>{line.name}</span>
-                        <span className="tabular-nums text-[#051b35]">
-                          {formatCurrency(line.amount)}
-                        </span>
-                      </div>
-                    ))}
-                    <div className="flex justify-between gap-3">
-                      <span>{taxLine.label}</span>
-                      <span className="tabular-nums text-[#051b35]">
-                        {formatCurrency(taxLine.amount)}
-                      </span>
-                    </div>
-                  </div>
-                </>
-              ) : cart?.flex_pack ? (
-                <>
-                  <div className="h-px bg-[rgba(5,27,53,0.08)]" />
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="flex min-w-0 flex-col gap-0.5">
-                      <div className="text-[14px] font-semibold">
-                        {flexVoucherCount} flex{" "}
-                        {flexVoucherCount === 1 ? "voucher" : "vouchers"}
-                      </div>
-                      {flexVoucherCount > 0 && flexEach != null ? (
-                        <div className={`min-w-0 text-[12px] ${muted}`}>
-                          {formatCurrency(flexEach)} each
-                        </div>
-                      ) : null}
-                    </div>
-                    <div className="shrink-0 text-[14px] font-semibold tabular-nums">
-                      {formatCurrency(flexLineAmount)}
-                    </div>
-                  </div>
-                  <div className="h-px bg-[rgba(5,27,53,0.08)]" />
-                  <div className="flex flex-col gap-2.5 text-[14px] text-[#4a5567]">
-                    <div className="flex justify-between gap-3">
-                      <span>Subtotal</span>
-                      <span className="tabular-nums text-[#051b35]">
-                        {formatCurrency(flexTotals?.subtotal || 0)}
-                      </span>
-                    </div>
-                    <div className="flex justify-between gap-3">
-                      <span>Processing Fee</span>
-                      <span className="tabular-nums text-[#051b35]">
-                        {formatCurrency(flexTotals?.processingFee || 0)}
-                      </span>
-                    </div>
-                    <div className="flex items-start justify-between gap-3">
-                      <span>Service Fee</span>
-                      <span className="tabular-nums text-[#051b35]">
-                        {formatCurrency(flexTotals?.serviceFee || 0)}
-                      </span>
-                    </div>
-                    <div className="flex justify-between gap-3">
-                      <span>{taxLine.label}</span>
-                      <span className="tabular-nums text-[#051b35]">
-                        {formatCurrency(taxLine.amount)}
-                      </span>
-                    </div>
-                    {flexTotals?.customFeeLines.map((line) => (
-                      <div
-                        key={`${line.name}-${line.amount}`}
-                        className="flex justify-between gap-3"
-                      >
-                        <span>{line.name}</span>
-                        <span className="tabular-nums text-[#051b35]">
-                          {formatCurrency(line.amount)}
-                        </span>
-                      </div>
-                    ))}
-                  </div>
-                </>
-              ) : cart?.tickets?.length ? (
-                <>
-                  <div className="h-px bg-[rgba(5,27,53,0.08)]" />
-                  <div className="flex items-start gap-3.5">
-                    <div className="h-[84px] w-[84px] shrink-0 overflow-hidden rounded-xl border border-[rgba(5,27,53,0.10)] bg-[#f1f3f8]">
-                      {gaTicketIcon ? (
-                        // eslint-disable-next-line @next/next/no-img-element
-                        <img
-                          src={GA_TICKET_PLACEHOLDER}
-                          alt="General admission"
-                          className="h-full w-full object-cover"
-                        />
-                      ) : showSeatLocationThumb ? (
-                        <SectionLocatorThumb
-                          background={seatLocation?.background}
-                          mapping={seatLocation?.mapping}
-                          sectionId={locatedSection.sectionId}
-                          sectionNumber={locatedSection.sectionNumber}
-                          thumbnailCandidates={seatLocationCandidates}
-                          spinnerColor={branding.theme.accent}
-                          priority
-                          className="h-full w-full"
-                        />
-                      ) : (
-                        <SeatViewImage
-                          candidates={seatViewCandidates}
-                          alt="Seat view for this ticket"
-                          className="h-full w-full object-cover"
-                        />
-                      )}
-                    </div>
-                    <div className="flex min-w-0 flex-1 flex-col gap-1.5">
-                      {ticketSummary.offerName || ticketSummary.resale ? (
-                        <span className="flex flex-wrap items-center gap-2">
-                          {ticketSummary.offerName ? (
-                            <span
-                              className="inline-flex w-fit items-center gap-1 rounded-full px-2.5 py-1 text-[13px] font-semibold"
-                              style={{
-                                background: branding.theme.accentSoft,
-                                color: branding.theme.accent,
-                              }}
-                            >
-                              <svg
-                                viewBox="0 0 24 24"
-                                fill="currentColor"
-                                className="h-3 w-3"
-                                aria-hidden
-                              >
-                                <path d="M12 2.5l2.6 6.3 6.9.6-5.2 4.5 1.6 6.7L12 16.9 6.1 20.6l1.6-6.7L2.5 9.4l6.9-.6L12 2.5z" />
-                              </svg>
-                              {ticketSummary.offerName}
-                            </span>
-                          ) : null}
-                          {ticketSummary.resale ? <VerifiedResaleBadge /> : null}
-                        </span>
-                      ) : null}
-                      <div className="text-[16px] font-semibold tracking-[-0.015em]">
-                        {ticketSummary.seatLine}
-                      </div>
-                      <div className={`text-[13px] ${muted}`}>
-                        {ticketSummary.subtitle}
-                      </div>
-                      {ticketSummary.accessibleLabel ? (
-                        <AccessibleSeatingBadge
-                          label={ticketSummary.accessibleLabel}
-                          style={{ marginTop: 4 }}
-                        />
-                      ) : null}
-                      {ticketSummary.additionalLabel ? (
-                        <div className={`text-[13px] ${muted}`}>
-                          {ticketSummary.additionalLabel}
-                        </div>
-                      ) : null}
-                    </div>
-                  </div>
-                  <div className="h-px bg-[rgba(5,27,53,0.08)]" />
-                  <div className="flex flex-col gap-2.5 text-[14px] text-[#4a5567]">
-                    {ticketSummary.resale ? (
-                      <>
-                        <div className="flex justify-between gap-3">
-                          <span>
-                            Tickets: {formatCurrency(ticketSummary.unit)} x{" "}
-                            {ticketSummary.count}
-                          </span>
-                          <span className="tabular-nums text-[#051b35]">
-                            {formatCurrency(ticketSummary.subtotal)}
-                          </span>
-                        </div>
-                        {resaleProcessingFee > 0 ? (
-                          <div className="flex justify-between gap-3">
-                            <span>Processing Fee</span>
-                            <span className="tabular-nums text-[#051b35]">
-                              {formatCurrency(resaleProcessingFee)}
-                            </span>
-                          </div>
-                        ) : null}
-                        {resaleServiceFee > 0 ? (
-                          <div className="flex justify-between gap-3">
-                            <span>Service Fee</span>
-                            <span className="tabular-nums text-[#051b35]">
-                              {formatCurrency(resaleServiceFee)}
-                            </span>
-                          </div>
-                        ) : null}
-                        <div className="flex justify-between gap-3">
-                          <span>Tax</span>
-                          <span className="tabular-nums text-[#051b35]">
-                            {formatCurrency(taxLine.amount)}
-                          </span>
-                        </div>
-                      </>
-                    ) : (
-                    <>
-                    <div className="flex flex-col gap-0.5">
-                      {primaryFeeBreakdown ? (
-                        primaryFeeBreakdown.groups.length > 1 ? (
-                          primaryFeeBreakdown.groups.map((group) => (
-                            <div
-                              key={`${group.label}-${group.unitPrice}`}
-                              className="flex justify-between gap-3"
-                            >
-                              <span>
-                                {group.label} x {group.quantity} (
-                                {formatCurrency(group.unitPrice)})
-                              </span>
-                              <span className="tabular-nums text-[#051b35]">
-                                {formatCurrency(group.subtotal)}
-                              </span>
-                            </div>
-                          ))
-                        ) : (
-                          <div className="flex justify-between gap-3">
-                            <span className="text-[14px] text-[#4a5567]">
-                              Tickets:{" "}
-                              {formatCurrency(
-                                primaryFeeBreakdown.groups[0]?.unitPrice,
-                              )}{" "}
-                              × {primaryFeeBreakdown.groups[0]?.quantity ?? 0}
-                            </span>
-                            <span className="tabular-nums text-[#051b35]">
-                              {formatCurrency(
-                                primaryFeeBreakdown.groups[0]?.subtotal,
-                              )}
-                            </span>
-                          </div>
-                        )
-                      ) : ticketSummary.offerLines.length > 1 ? (
-                        ticketSummary.offerLines.map((line) => (
-                            <div
-                              key={`${line.offerName}-${line.unit}`}
-                              className="flex justify-between gap-3"
-                            >
-                              <span>
-                                {line.offerName} x {line.count} (
-                                {formatCurrency(line.unit)})
-                              </span>
-                              <span className="tabular-nums text-[#051b35]">
-                                {formatCurrency(line.subtotal)}
-                              </span>
-                            </div>
-                          ))
-                        ) : (
-                            <div className="flex justify-between gap-3">
-                              <span className="text-[14px] text-[#4a5567]">
-                                Tickets: {formatCurrency(ticketSummary.unit)} ×{" "}
-                                {ticketSummary.count}
-                              </span>
-                              <span className="tabular-nums text-[#051b35]">
-                                {formatCurrency(ticketSummary.subtotal)}
-                              </span>
-                            </div>
-                          )}
-                    </div>
-                    {primaryFeeBreakdown ? (
-                      <>
-                        {primaryFeeRows.map(([label, amount]) => (
-                          <div
-                            key={label}
-                            className="flex justify-between gap-3"
-                          >
-                            <span>{label}</span>
-                            <span className="tabular-nums text-[#051b35]">
-                              {formatCurrency(amount)}
-                            </span>
-                          </div>
-                        ))}
-                        <div className="flex justify-between gap-3">
-                          <span>Tax</span>
-                          <span className="tabular-nums text-[#051b35]">
-                            {formatCurrency(primaryFeeBreakdown.salesTax)}
-                          </span>
-                        </div>
-                      </>
-                    ) : (
-                      <div className="flex justify-between gap-3">
-                        <span>{taxLine.label}</span>
-                        <span className="tabular-nums text-[#051b35]">
-                          {formatCurrency(taxLine.amount)}
-                        </span>
-                      </div>
-                    )}
-                    </>
-                    )}
-                  </div>
-                </>
-              ) : cart?.package?.name ? (
-                <>
-                  <div className="h-px bg-[rgba(5,27,53,0.08)]" />
-                  <div className={`text-[14px] ${muted}`}>
-                    {cart.package.name}
-                  </div>
-                </>
-              ) : null}
-              <div className="h-px bg-[rgba(5,27,53,0.08)]" />
-              {!cart?.tickets?.length &&
-              !cart?.package &&
-              !cart?.flex_pack &&
-              cart?.access_pass_template ? (
-                <div className="flex justify-between gap-3 text-[14px] text-[#4a5567]">
-                  <span>{taxLine.label}</span>
-                  <span className="tabular-nums text-[#051b35]">
-                    {formatCurrency(taxLine.amount)}
-                  </span>
-                </div>
-              ) : null}
-              {promoDiscount ? (
-                <div className="flex justify-between gap-3 text-[14px] text-[#4a5567]">
-                  <span>{promoSummaryLabel(promoDiscount.label)}</span>
-                  <span className="tabular-nums text-[#051b35]">
-                    -{formatCurrency(promoDiscount.amount)}
-                  </span>
-                </div>
-              ) : null}
-              <div className="flex items-baseline justify-between gap-3">
-                <span className="text-[15px] font-semibold">
-                  Total
-                </span>
-                <span className="text-[26px] font-semibold tracking-[-0.03em] tabular-nums">
-                  {formatCurrency(dueAmount)}
-                </span>
-              </div>
-            </div>
-            </div>
-          </div>
+          <p className="mt-6 text-center text-[12px] text-ink2">
+            By completing this purchase you agree to our purchase policy and
+            terms.
+          </p>
         </div>
       )}
 
       {expiredOpen && (
-        <Modal
-          variant="light"
-          title="Cart expired"
-          onClose={() => void startOver()}
-          busy={restarting}
-          hideClose
-          closeOnBackdrop
-        >
-          <p className="mt-4 text-[15px] text-[#6e7180]">
+        <Modal title="Cart expired" onClose={() => router.push("/")}>
+          <p className="mt-4 text-[15px] text-ink2">
             Your reserved tickets were released. Please select tickets again.
           </p>
-          {restartError ? (
-            <p role="alert" className="mt-3 text-[14px] text-[#b42318]">
-              {restartError}
-            </p>
-          ) : null}
-          <BrandedActionButton
-            primaryColor={branding.theme.accent}
-            textColor={branding.theme.buttonTextColor}
-            loading={restarting}
-            loadingLabel="Starting over…"
-            onClick={() => void startOver()}
-            className="mt-5 w-full"
-          >
+          <Button className="mt-5 w-full" href="/">
             Start over
-          </BrandedActionButton>
+          </Button>
         </Modal>
       )}
 
       {leaveOpen && (
-        <Modal
-          variant="light"
-          title="Are you sure?"
-          onClose={() => setLeaveOpen(false)}
-          busy={cancelling}
-          hideClose
-        >
-          <p className="mt-4 text-[15px] text-[#6e7180]">
-            Cancelling releases these tickets so another shopper can purchase
-            them.
+        <Modal title="Are you sure?" onClose={() => setLeaveOpen(false)}>
+          <p className="mt-4 text-[15px] text-ink2">
+            If you leave this page, you&apos;ll lose your chance to purchase
+            these tickets.
           </p>
-          {cancelError ? (
-            <p role="alert" className="mt-3 text-[14px] text-[var(--bt-error)]">
-              {cancelError}
-            </p>
-          ) : null}
           <div className="mt-5 flex flex-col gap-3">
-            <BrandedActionButton
-              tone="secondary"
-              loading={cancelling}
-              loadingLabel="Cancelling…"
-              onClick={cancelOrder}
+            <Button
+              variant="outline"
               className="w-full"
-            >
-              Cancel order
-            </BrandedActionButton>
-            <BrandedActionButton
-              primaryColor={branding.theme.accent}
-              textColor={branding.theme.buttonTextColor}
               disabled={cancelling}
-              onClick={() => {
-                setCancelError("");
-                setLeaveOpen(false);
-              }}
+              onClick={cancelOrder}
+            >
+              {cancelling ? <Spinner size={16} /> : "Cancel order"}
+            </Button>
+            <Button
               className="w-full"
+              disabled={cancelling}
+              onClick={() => setLeaveOpen(false)}
             >
               Continue with checkout
-            </BrandedActionButton>
+            </Button>
           </div>
         </Modal>
       )}
 
       {declineMsg && (
-        <Modal
-          variant="light"
-          title="Card declined"
-          onClose={() => setDeclineMsg("")}
-          hideClose
-          closeOnBackdrop
-        >
-          <p className="mt-4 text-[15px] text-[#6e7180]">{declineMsg}</p>
-          <BrandedActionButton
-            primaryColor={branding.theme.accent}
-            textColor={branding.theme.buttonTextColor}
-            onClick={() => setDeclineMsg("")}
-            className="mt-5 w-full"
-          >
+        <Modal title="Card declined" onClose={() => setDeclineMsg("")}>
+          <p className="mt-4 text-[15px] text-ink2">{declineMsg}</p>
+          <Button className="mt-5 w-full" onClick={() => setDeclineMsg("")}>
             Try again
-          </BrandedActionButton>
+          </Button>
         </Modal>
       )}
-    </BrandedCheckoutShell>
+    </AppShell>
   );
 }
 
@@ -1988,13 +978,9 @@ export default function CheckoutPageRoute() {
   return (
     <Suspense
       fallback={
-        <BrandedCheckoutShell
-          accent={BLOCKTICKETS_NAVY}
-          onBack={() => undefined}
-          loading
-        >
-          {null}
-        </BrandedCheckoutShell>
+        <AppShell requireAuth search={false}>
+          <PageLoader label="Loading checkout" />
+        </AppShell>
       }
     >
       <CheckoutPage />

@@ -1,0 +1,66 @@
+/* Three-color venue mark shared by initial loading and map transitions. */
+#boot-loader, #loading, #map-transition {
+  background: #fff;
+  color: #344054;
+}
+#boot-loader .boot-map {
+  background: #fff;
+}
+.boot-venue, .map-loader-animation {
+  width: min(208px, 48vw);
+  filter: none;
+}
+.venue-loader-symbol {
+  display: block;
+  width: 100%;
+  overflow: visible;
+}
+.venue-loader-symbol .venue-loader-tier {
+  fill: none;
+  stroke: #344054;
+  stroke-opacity: .18;
+  stroke-width: 10;
+  stroke-dasharray: 20 5;
+}
+.venue-loader-symbol .venue-loader-floor {
+  fill: #fff;
+  stroke: #344054;
+  stroke-opacity: .38;
+  stroke-width: 2;
+}
+.venue-loader-symbol .venue-loader-midline {
+  stroke: #344054;
+  stroke-opacity: .18;
+  stroke-width: 2;
+}
+.venue-loader-symbol .venue-loader-trace {
+  fill: none;
+  stroke: #2563eb;
+  stroke-width: 10;
+  stroke-linecap: round;
+  stroke-dasharray: 12 88;
+  animation: venue-loader-orbit 2.4s linear infinite;
+}
+#loading, #map-transition { gap: 12px; padding: 24px; text-align: center; }
+.boot-label strong, #loading strong, #map-transition strong {
+  display: block;
+  margin-top: 8px;
+  font-size: 20px;
+  font-weight: 650;
+  line-height: 1.35;
+  color: #344054;
+}
+.boot-label > span, #loading > span, #map-transition > span {
+  display: block;
+  max-width: 360px;
+  margin: 0 auto;
+  font-size: 15px;
+  line-height: 1.5;
+  color: #344054;
+  opacity: .72;
+}
+.boot-label > span { margin-top: 10px; }
+@keyframes venue-loader-orbit { to { stroke-dashoffset: -100; } }
+@media (prefers-reduced-motion: reduce) {
+  .venue-loader-symbol .venue-loader-trace { animation: none; }
+}

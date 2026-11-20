@@ -13,7 +13,7 @@ export default function IconChip({
   className?: string;
   children: ReactNode;
 }) {
-  const color = tone === "steel" ? "text-[#BCBFCC]" : "text-[#9DA2B3]";
+  const color = tone === "steel" ? "text-ink3" : "text-ink2";
   return (
     <span className={`inline-flex h-10 w-10 items-center justify-center rounded-lg bg-white/[0.06] ${color} ${className}`}>
       {children}

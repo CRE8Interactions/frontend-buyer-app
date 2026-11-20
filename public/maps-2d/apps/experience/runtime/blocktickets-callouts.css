@@ -1,0 +1,775 @@
+/* Blocktickets callouts for the map player (v3): the component library's own specs, ported 1:1.
+   The player is plain JS in an iframe, so the React components cannot mount here; this file carries their tokens and rules.
+   Source of truth: app/globals.css (--h-* tokens, .glass) and components/ui:
+   - Popover (seat card, seat popup): .glass fill, 24px corners, 16px padding, 14px text, 150ms scale-and-fade from 90%.
+   - Tooltip (section price, toast): foreground fill, background text, 12px corners, 14px/20px, 14px x 10px padding.
+   - Badge (section names, offer name, notices): pill, 16px corners, 12px/500 (lg 14px/500), soft colours.
+   - Button primary (add, unlock): accent fill, navy text, pill, 36px tall, press scale .97.
+   - Menu rows (offers): 36px+ rows, 16px corners, default fill on hover, accent-selected tint when chosen. */
+
+@font-face { font-family: "Geist"; src: url("assets/fonts/Geist.woff2") format("woff2"); font-weight: 100 900; font-display: swap; }
+
+body.player-only {
+  --bt-sans: "Geist", ui-sans-serif, system-ui, sans-serif;
+  /* library tokens, light theme (app/globals.css) */
+  /* seat states on the map and in the seat key: map semantics, kept apart from the brand roles */
+  --seat-available: #051b35;
+  --seat-selected: #97dd62;
+  --seat-focused: #f5a524;
+  --seat-locked: color-mix(in oklab, #051b35 62%, white);
+  --seat-unavailable: #d4d4d8;
+  --seat-accessible: #087f5b;
+  --h-foreground: oklch(0.2103 0.0059 285.89);
+  /* fields and radios, as in the library's Input and RadioGroup (app/globals.css, light) */
+  --h-field: oklch(0.977 0.002 286);
+  --h-field-hover: color-mix(in oklab, var(--h-field) 90%, var(--h-foreground) 2%);
+  --h-field-focus: #fff;
+  --h-field-outline: inset 0 0 0 1px rgb(10 10 10 / 0.07);
+  --h-focus: var(--h-accent);
+  --h-control-outline: inset 0 0 0 1px rgba(10, 10, 10, 0.2);
+  --h-control-outline-hover: inset 0 0 0 1px rgba(10, 10, 10, 0.38);
+  --h-radio-hole: 4.5px;
+  --h-radio-dot: transparent;
+  --h-accent-soft: color-mix(in oklab, var(--h-accent) 15%, transparent);
+  --h-accent-soft-hover: color-mix(in oklab, var(--h-accent) 20%, transparent);
+  --h-background: #fff;
+  --h-muted: oklch(0.5517 0.0138 285.94);
+  --h-separator: oklch(92% 0.004 286.32);
+  --h-default: oklch(94% 0.001 286.375);
+  --h-default-hover: color-mix(in oklab, var(--h-default) 96%, var(--h-foreground) 4%);
+  --h-accent: #97dd62;
+  --h-accent-foreground: #051b35;
+  --h-accent-hover: color-mix(in oklab, var(--h-accent) 90%, white 10%);
+  --h-accent-selected: color-mix(in oklab, var(--h-accent) 55%, transparent);
+  --h-info: oklch(0.55 0.18 262);
+  --h-warning: oklch(0.7819 0.1585 72.33);
+  --h-warning-soft: color-mix(in oklab, var(--h-warning) 18%, white);
+  --h-warning-soft-foreground: color-mix(in oklab, var(--h-warning) 40%, var(--h-foreground) 60%);
+  --h-danger: #b3382c;
+  /* .glass (popover fill is the most opaque, it holds text; the library's 0.78 is raised to 0.92 on the map) */
+  --glass-fill: rgb(255 255 255 / 0.78);        /* the library's values: cards that hold text to read */
+  --glass-fill-float: rgb(255 255 255 / 0.58);  /* floating bars, pills and small tips: the most see-through */
+  --glass-highlight: rgb(255 255 255 / 0.2);
+  --glass-edge: rgb(255 255 255 / 0.5);
+  --glass-shadow: 0 2px 6px 0 rgb(0 0 0 / 0.03), 0 12px 32px -6px rgb(0 0 0 / 0.07);
+  --h-overlay-shadow: 0 2px 8px 0 rgba(0, 0, 0, 0.06), 0 -6px 12px 0 rgba(0, 0, 0, 0.03), 0 14px 28px 0 rgba(0, 0, 0, 0.08);
+  --e-out: cubic-bezier(0.23, 1, 0.32, 1);
+  /* surfaces that differ between themes */
+  --bt-pass: oklch(0.9524 0.0013 286.37);
+  --bt-dot: rgb(10 10 10 / .11);
+  --bt-hair: rgb(10 10 10 / .1);
+  --bt-chip-bg: #fff;
+  --bt-card: color-mix(in oklab, var(--h-default) 55%, white);
+  --bt-chosen: color-mix(in oklab, var(--h-accent) 20%, white);
+  --bt-field: #fff;
+  --bt-wash: #fff;
+}
+
+@keyframes bt-pop { from { opacity: 0; scale: .9; } to { opacity: 1; scale: 1; } }
+@keyframes bt-tip { from { opacity: 0; scale: .95; } to { opacity: 1; scale: 1; } }
+
+/* ───────────── Section names on the map ─────────────
+   No pill: the name is set straight onto the artwork, with a dot that says whether seats are left.
+   Green = available, amber and pulsing = few left, red = sold out. As the map zooms in to the seats the names fade to a quiet grey. */
+body.player-only .section-annotation-badge {
+  -webkit-font-smoothing: antialiased;
+  --badge-ink: var(--h-foreground); /* the names sit on light grey section blocks in light, dark grey ones in dark */
+  --badge-dot: var(--h-accent);
+  min-width: 0;
+  min-height: 0;
+  padding: 2px 4px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent !important;
+  box-shadow: none !important;
+  color: color-mix(in srgb, var(--badge-ink) calc(100% - var(--badge-detail, 0%)), var(--h-muted));
+  text-shadow: 0 1px 2px rgb(0 0 0 / .35);
+  font: 600 14px/20px var(--bt-sans) !important;
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+  overflow: visible;
+  transition: color 150ms var(--e-out);
+}
+body.player-only.bt-map-dark .section-annotation-badge { --badge-ink: var(--h-foreground); }
+body.player-only .section-annotation-badge::before, body.player-only .section-annotation-badge::after { content: none; }
+body.player-only .section-annotation-badge .section-badge-name { display: inline-flex; align-items: center; justify-content: center; gap: 6px; }
+body.player-only .section-annotation-badge .section-badge-name::before { content: ""; flex: none; width: 8px; height: 8px; border-radius: 50%; background: var(--badge-dot); }
+body.player-only .section-stock-caption { display: block; margin-top: 0; font: 500 11px/14px var(--bt-sans); letter-spacing: 0; text-transform: none; color: inherit; opacity: .8; }
+body.player-only .section-annotation-badge[data-availability="nearly-sold-out"] { --badge-dot: var(--h-warning); }
+body.player-only .section-annotation-badge[data-availability="nearly-sold-out"] .section-badge-name::before { animation: bt-dot-pulse 1.8s ease-out infinite; }
+body.player-only .section-annotation-badge[data-availability="sold-out"] { --badge-dot: var(--h-danger); --badge-ink: var(--h-muted); text-shadow: none; }
+body.player-only .section-annotation-badge[data-availability="killed"] { --badge-dot: var(--h-muted); --badge-ink: var(--h-muted); text-shadow: none; }
+body.player-only .section-annotation-badge:is(:hover, :focus-visible, .is-selected) { text-decoration: underline; text-decoration-color: var(--h-accent); text-decoration-thickness: 2px; text-underline-offset: 4px; }
+body.player-only .section-annotation-badge:focus-visible { outline: 2px solid var(--h-foreground); outline-offset: 3px; }
+@keyframes bt-dot-pulse { from { box-shadow: 0 0 0 0 color-mix(in srgb, var(--badge-dot) 70%, transparent); } to { box-shadow: 0 0 0 8px transparent; } }
+@media (prefers-reduced-motion: reduce) { body.player-only .section-annotation-badge .section-badge-name::before { animation: none !important; } }
+
+/* ───────────── Popover: seat hover card and seat popup ───────────── */
+body.player-only #map-hover-card.seat-popover,
+body.player-only #seat-popup:not(.seat-view-dock) {
+  border: 0;
+  border-radius: 28px;
+  padding: 8px;
+  background: var(--glass-fill);
+  color: var(--h-foreground);
+  -webkit-backdrop-filter: blur(40px) saturate(1.5);
+  backdrop-filter: blur(40px) saturate(1.5);
+  box-shadow: inset 0 2px 0 var(--glass-highlight), inset 0 0 0 1px var(--glass-edge), var(--glass-shadow);
+  font: 400 14px/20px var(--bt-sans);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  overflow: hidden;
+}
+body.player-only #map-hover-card:not([hidden]),
+body.player-only #seat-popup:not([hidden]):not(:empty) { animation: bt-pop 150ms var(--e-out) both; transform-origin: 0 50%; }
+body.player-only #map-hover-card.seat-popover { position: absolute; display: grid; gap: 6px; width: 264px; min-height: 0; border-radius: 26px; }
+body.player-only #seat-popup:not(.seat-view-dock) { width: 360px !important; display: grid; gap: 8px; align-content: start; }
+
+/* Badge, soft warning: wheelchair space, obstructed view */
+body.player-only #map-hover-card .seat-information.compact,
+body.player-only #seat-popup:not(.seat-view-dock) .seat-information.compact { display: block; margin: 0; padding: 4px 4px 0; background: transparent; border-radius: 0; }
+body.player-only #map-hover-card .seat-information.compact span,
+body.player-only #map-hover-card .seat-information.compact span.accessibility,
+body.player-only #map-hover-card .seat-information.compact span.information,
+body.player-only #seat-popup:not(.seat-view-dock) .seat-information.compact span,
+body.player-only #seat-popup:not(.seat-view-dock) .seat-information.compact span.accessibility,
+body.player-only #seat-popup:not(.seat-view-dock) .seat-information.compact span.information {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 8px;
+  width: auto;
+  min-height: 0;
+  padding: 8px 12px;
+  border-radius: 16px;
+  background: var(--h-warning-soft);
+  color: var(--h-warning-soft-foreground);
+  font: 500 14px/20px var(--bt-sans);
+}
+body.player-only .seat-information.compact span img { display: none; }
+body.player-only .seat-information.compact span::before {
+  content: "";
+  flex: 0 0 16px;
+  width: 16px;
+  height: 16px;
+  background: currentColor;
+  -webkit-mask: var(--bt-icon) center / contain no-repeat;
+  mask: var(--bt-icon) center / contain no-repeat;
+}
+body.player-only .seat-information.compact span.accessibility { --bt-icon: url("assets/figma/wheelchair.svg"); }
+body.player-only .seat-information.compact span.information { --bt-icon: url("assets/figma/obstructed.svg"); }
+body.player-only .seat-information.compact b { font-weight: 500; }
+
+/* ───────────── The pass: identity header shared by the seat card, the popup and general admission ─────────────
+   Surface-secondary panel with a faint field of seat dots fading out to the left (the brand's seat-dot motif). */
+body.player-only .bt-pass {
+  position: relative;
+  isolation: isolate;
+  padding: 12px 16px 14px;
+  border-radius: 20px;
+  background: var(--bt-pass);
+  overflow: hidden;
+}
+body.player-only .bt-pass::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  background-image: radial-gradient(circle, var(--bt-dot) 1.4px, transparent 1.8px);
+  background-size: 12px 12px;
+  background-position: 6px 6px;
+  -webkit-mask-image: linear-gradient(to left, #000 0%, transparent 62%);
+  mask-image: linear-gradient(to left, #000 0%, transparent 62%);
+}
+body.player-only .bt-pass-top { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 24px; margin-bottom: 12px; }
+body.player-only .bt-pass-top:empty { display: none; }
+body.player-only .bt-pass--hover { padding: 12px 14px 14px; border-radius: 18px; }
+body.player-only .bt-pass--hover .bt-pass-top { margin-bottom: 10px; }
+
+/* Badge (white on the pass) */
+body.player-only .bt-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 100%;
+  padding: 2px 8px;
+  border-radius: 16px;
+  background: var(--bt-chip-bg);
+  box-shadow: 0 0 0 1px var(--bt-hair);
+  color: var(--h-foreground);
+  font: 500 12px/20px var(--bt-sans);
+  white-space: nowrap;
+}
+body.player-only .bt-chip:empty { display: none; }
+body.player-only .bt-chip--offer i { flex: 0 0 8px; width: 8px; height: 8px; border-radius: 50%; background: var(--offer-color, var(--h-info)); }
+body.player-only .bt-chip--danger { background: color-mix(in oklab, var(--h-danger) 14%, var(--bt-wash)); color: var(--h-danger); }
+
+/* section, row, seat: large numerals, small muted labels, hairline between */
+body.player-only .bt-ids { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); }
+body.player-only .bt-ids > div { display: grid; justify-items: center; gap: 2px; min-width: 0; padding: 0 12px; border-left: 1px solid var(--bt-hair); text-align: center; }
+body.player-only .bt-ids > div:first-child { justify-items: start; padding-left: 0; border-left: 0; text-align: left; }
+body.player-only .bt-ids > div:last-child { justify-items: end; padding-right: 0; text-align: right; }
+body.player-only .bt-ids small { font: 400 13px/16px var(--bt-sans); color: var(--h-muted); }
+body.player-only .bt-ids b { font: 500 28px/32px var(--bt-sans); letter-spacing: -.025em; font-variant-numeric: tabular-nums; color: var(--h-foreground); overflow-wrap: anywhere; }
+body.player-only .bt-pass--hover .bt-ids b { font-size: 22px; line-height: 28px; }
+body.player-only .bt-title { margin: 0; font: 500 22px/28px var(--bt-sans); letter-spacing: -.02em; color: var(--h-foreground); text-wrap: balance; }
+body.player-only .bt-sub { margin: 2px 0 0; font: 400 14px/20px var(--bt-sans); color: var(--h-muted); text-wrap: pretty; }
+
+/* price row under the hover card pass */
+body.player-only .bt-price { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 4px 14px 8px 14px; }
+body.player-only .bt-price > span { display: inline-flex; align-items: center; gap: 8px; font: 400 14px/20px var(--bt-sans); color: var(--h-muted); }
+body.player-only .bt-price > strong { font: 500 18px/28px var(--bt-sans); letter-spacing: -.02em; font-variant-numeric: tabular-nums; color: var(--h-foreground); white-space: nowrap; }
+body.player-only .bt-price i,
+body.player-only #map-hover-card.section-popover strong i { display: block; flex: 0 0 8px; width: 8px; height: 8px; margin: 0; border-radius: 50%; background: var(--h-accent); font-size: 0; line-height: 0; }
+body.player-only .bt-price--locked > span img { width: 16px; height: 16px; opacity: .6; }
+body.player-only .bt-price--locked > strong { font: 500 14px/20px var(--bt-sans); }
+
+/* ───────────── Tooltip: section price on hover ───────────── */
+body.player-only #map-hover-card.section-popover,
+body.player-only #map-hover-card.ga-section-popover,
+body.player-only #map-hover-card.locked-section-popover {
+  -webkit-font-smoothing: antialiased;
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 8px;
+  width: max-content !important;
+  min-width: 0;
+  max-width: min(320px, calc(100% - 20px));
+  height: auto;
+  min-height: 0;
+  padding: 10px 14px;
+  border: 0;
+  border-radius: 12px;
+  background: var(--h-foreground);
+  color: var(--h-background);
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+  box-shadow: var(--h-overlay-shadow);
+  font: 400 14px/20px var(--bt-sans);
+  text-align: left;
+  text-wrap: pretty;
+  overflow: visible;
+  animation: bt-tip 120ms var(--e-out) both;
+}
+body.player-only #map-hover-card.section-popover > span,
+body.player-only #map-hover-card.ga-section-popover > span,
+body.player-only #map-hover-card.locked-section-popover > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font: 400 14px/20px var(--bt-sans);
+  letter-spacing: 0;
+  text-transform: none;
+  color: color-mix(in oklab, var(--h-background) 70%, transparent);
+  white-space: nowrap;
+}
+body.player-only #map-hover-card.section-popover > span svg { width: 16px; height: 16px; vertical-align: 0; }
+body.player-only #map-hover-card.section-popover > strong,
+body.player-only #map-hover-card.ga-section-popover > strong,
+body.player-only #map-hover-card.locked-section-popover > strong {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font: 500 14px/20px var(--bt-sans) !important;
+  font-variant-numeric: tabular-nums;
+  color: var(--h-background);
+  text-align: left;
+  white-space: nowrap;
+}
+body.player-only #map-hover-card.section-popover[data-availability="nearly-sold-out"] strong i { background: var(--h-warning); }
+
+body.player-only #map-hover-card.section-popover[data-availability="sold-out"] strong i { background: var(--h-danger); }
+
+/* ───────────── Seat popup contents ───────────── */
+/* offers: radio cards (library RadioGroup layout="card"): 16px corners, field fill, the chosen card takes the accent outline */
+body.player-only #seat-popup .bt-offers { display: grid; gap: 8px; }
+body.player-only #seat-popup .bt-offer {
+  display: grid;
+  grid-template-columns: 24px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  min-height: 52px;
+  margin: 0;
+  padding: 10px 16px 10px 14px;
+  border: 0;
+  border-radius: 16px;
+  background: var(--bt-card);
+  color: var(--h-foreground);
+  text-align: left;
+  cursor: pointer;
+  transition: background-color 150ms var(--e-out), box-shadow 150ms var(--e-out), scale 150ms var(--e-out);
+}
+body.player-only #seat-popup .bt-offer:active:not(:disabled) { scale: .985; }
+/* one line under the offers says what every price includes, so the rows themselves stay to a name and a price */
+body.player-only #seat-popup .bt-offers-note { margin: -2px 0 0; padding: 0 6px; font: 400 12px/16px var(--bt-sans); color: var(--h-muted); text-align: right; }
+body.player-only #seat-popup .bt-offer:hover:not(:disabled) { background: var(--h-default); }
+body.player-only #seat-popup .bt-offer.is-chosen { background: var(--bt-chosen); box-shadow: 0 0 0 2px var(--h-accent); }
+body.player-only #seat-popup .bt-offer i { display: grid; width: 24px; height: 24px; place-items: center; border-radius: 50%; background: var(--bt-field); box-shadow: inset 0 0 0 1.5px var(--bt-hair); color: transparent; transition: background-color 150ms var(--e-out), box-shadow 150ms var(--e-out); }
+body.player-only #seat-popup .bt-offer:hover:not(:disabled) i { box-shadow: inset 0 0 0 1.5px rgb(10 10 10 / .5); }
+body.player-only #seat-popup .bt-offer.is-chosen i { background: var(--h-accent); box-shadow: none; color: var(--h-accent-foreground); }
+body.player-only #seat-popup .bt-offer i svg { width: 14px; height: 14px; }
+body.player-only #seat-popup .bt-offer-name { font: 500 15px/20px var(--bt-sans); color: var(--h-foreground); }
+body.player-only #seat-popup .bt-offer-price { font: 600 16px/24px var(--bt-sans); letter-spacing: -.015em; font-variant-numeric: tabular-nums; color: var(--h-foreground); text-align: right; }
+body.player-only #seat-popup .bt-offer-price b { font: 500 16px/24px var(--bt-sans); letter-spacing: -.015em; font-variant-numeric: tabular-nums; color: var(--h-foreground); }
+body.player-only #seat-popup .bt-offer-price small { font: 400 13px/16px var(--bt-sans); color: var(--h-muted); }
+body.player-only #seat-popup .bt-offer:disabled { opacity: .5; cursor: not-allowed; }
+body.player-only #seat-popup .bt-offer,
+body.player-only #seat-popup .bt-offer:focus,
+body.player-only #seat-popup .bt-offer:focus-visible,
+body.player-only #seat-popup .bt-step button:focus-visible,
+body.player-only #seat-popup #add-ga:focus-visible { outline: 0; }
+body.player-only #seat-popup .bt-offer:focus-visible:not(.is-chosen) { box-shadow: 0 0 0 2px color-mix(in oklab, var(--h-accent) 60%, transparent); }
+body.player-only #seat-popup .bt-step button:focus-visible,
+body.player-only #seat-popup #add-ga:focus-visible { box-shadow: 0 0 0 2px color-mix(in oklab, var(--h-accent) 70%, transparent); }
+body.player-only #seat-popup .bt-note { margin: 0; padding: 0 4px; font: 400 13px/18px var(--bt-sans); color: var(--h-muted); }
+body.player-only #seat-popup .popup-empty { padding: 16px; border-radius: 16px; background: var(--bt-card); color: var(--h-muted); font: 400 14px/20px var(--bt-sans); text-align: center; }
+
+/* general admission buy bar: stepper pill and the accent button on one row */
+body.player-only #seat-popup .bt-buy { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 8px; align-items: center; }
+body.player-only #seat-popup .bt-step { display: inline-flex; align-items: center; width: auto; height: 40px; padding: 4px; border-radius: 36px; background: var(--h-default); }
+body.player-only #seat-popup .bt-step button { display: grid; width: 32px; height: 32px; min-height: 0; padding: 0; place-items: center; border: 0; border-radius: 50%; background: transparent; color: var(--h-foreground); transition: background-color 150ms var(--e-out), scale 120ms var(--e-out); }
+body.player-only #seat-popup .bt-step button:hover { background: var(--h-default-hover); }
+body.player-only #seat-popup .bt-step button:active { scale: .94; }
+body.player-only #seat-popup .bt-step button svg { width: 16px; height: 16px; }
+body.player-only #seat-popup .bt-step input { flex: none; width: 36px; min-width: 0; height: 32px; padding: 0; border: 0; border-radius: 0; background: transparent; box-shadow: none; color: var(--h-foreground); font: 500 16px/24px var(--bt-sans); font-variant-numeric: tabular-nums; text-align: center; -moz-appearance: textfield; appearance: textfield; }
+body.player-only #seat-popup .bt-step input::-webkit-inner-spin-button,
+body.player-only #seat-popup .bt-step input::-webkit-outer-spin-button { margin: 0; -webkit-appearance: none; }
+body.player-only #seat-popup .bt-step input:focus { outline: 0; }
+
+/* Button primary, large */
+body.player-only #seat-popup .locked-offer-form button,
+body.player-only #seat-popup .popup-unlock button,
+body.player-only #seat-popup.ga-popup #add-ga,
+body.player-only #seat-popup .bt-wide {
+  width: 100%;
+  height: 40px;
+  min-height: 40px;
+  margin: 0;
+  padding: 0 16px;
+  white-space: nowrap;
+  border: 0;
+  border-radius: 36px;
+  background: var(--h-accent) !important;
+  color: var(--h-accent-foreground) !important;
+  font: 500 14px/20px var(--bt-sans);
+  transition: background-color 150ms var(--e-out), scale 120ms var(--e-out);
+}
+@media (min-width: 768px) {
+  body.player-only #seat-popup .locked-offer-form button,
+  body.player-only #seat-popup .popup-unlock button,
+  body.player-only #seat-popup.ga-popup #add-ga,
+  body.player-only #seat-popup .bt-wide { height: 36px; min-height: 36px; }
+}
+body.player-only #seat-popup .locked-offer-form button:hover,
+body.player-only #seat-popup .popup-unlock button:hover,
+body.player-only #seat-popup.ga-popup #add-ga:hover,
+body.player-only #seat-popup .bt-wide:hover { background: var(--h-accent-hover) !important; }
+body.player-only #seat-popup .locked-offer-form button:active,
+body.player-only #seat-popup .popup-unlock button:active,
+body.player-only #seat-popup.ga-popup #add-ga:active,
+body.player-only #seat-popup .bt-wide:active { scale: .97; }
+body.player-only #seat-popup.ga-popup #add-ga:disabled { opacity: .5; }
+body.player-only #seat-popup .bt-wide { width: 100%; }
+
+/* locked offer: dialog icon tile, title, field + button */
+body.player-only #seat-popup .locked-offer-panel { display: grid; justify-items: center; gap: 4px; padding: 20px 12px 12px; background: transparent; text-align: center; }
+body.player-only #seat-popup .locked-offer-icon { width: 48px; height: 48px; margin-bottom: 8px; border-radius: 16px; background: var(--h-default); color: var(--h-foreground); }
+body.player-only #seat-popup .popup-unlock b,
+body.player-only #seat-popup .locked-offer-panel b { font: 500 18px/28px var(--bt-sans) !important; color: var(--h-foreground); }
+body.player-only #seat-popup .popup-unlock small,
+body.player-only #seat-popup .locked-offer-panel small { margin: 0 0 12px; color: var(--h-muted); font: 400 14px/20px var(--bt-sans); }
+body.player-only #seat-popup .locked-offer-form { display: grid; grid-template-columns: minmax(0, 1fr); gap: 8px; width: 100%; }
+body.player-only #seat-popup .locked-offer-form input,
+body.player-only #seat-popup .popup-unlock input { width: 100%; height: 40px; padding: 0 14px; border: 0; border-radius: 12px; background: var(--h-default); color: var(--h-foreground); font: 400 14px/20px var(--bt-sans); }
+body.player-only #seat-popup .locked-offer-form input:focus { outline: 2px solid var(--h-foreground); outline-offset: 0; }
+
+body.player-only #seat-popup .seat-view-pill { border-radius: 36px; font: 500 14px/20px var(--bt-sans); }
+
+/* ───────────── Toast: Tooltip surface, a little larger ───────────── */
+body.player-only #toast {
+  -webkit-font-smoothing: antialiased;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 16px 10px 14px;
+  border: 0;
+  border-radius: 16px;
+  background: var(--h-foreground);
+  color: var(--h-background);
+  box-shadow: var(--h-overlay-shadow);
+  font: 400 14px/20px var(--bt-sans);
+  text-wrap: pretty;
+}
+body.player-only #toast::before { content: ""; flex: 0 0 8px; width: 8px; height: 8px; border-radius: 50%; background: var(--h-accent); }
+body.player-only #toast:not([hidden]):not(:empty) { animation: bt-tip 150ms var(--e-out) both; }
+
+@media (prefers-reduced-motion: reduce) {
+  body.player-only #map-hover-card,
+  body.player-only #seat-popup,
+  body.player-only #toast { animation: none !important; }
+  body.player-only .section-annotation-badge,
+  body.player-only #seat-popup .reference-offer-row,
+  body.player-only #seat-popup .reference-offer-row i { transition: none; }
+}
+
+/* style.css forces weight 600 on every b, strong, h2 and button with !important; Geist at 600 reads heavy, so callouts sit at 500 */
+body.player-only :is(#map-hover-card, #seat-popup, #toast) :is(b, strong, h2, button, small) { font-weight: 500 !important; }
+body.player-only :is(#map-hover-card, #seat-popup) .bt-ids small,
+body.player-only #seat-popup .bt-offer-price small,
+body.player-only :is(#map-hover-card, #seat-popup) .bt-note,
+body.player-only #seat-popup .bt-sub { font-weight: 400 !important; }
+
+/* ticket counter: digits roll in the direction of the change, buttons press and dim at the limits */
+@keyframes bt-roll-up { from { opacity: 0; translate: 0 70%; } to { opacity: 1; translate: 0 0; } }
+@keyframes bt-roll-down { from { opacity: 0; translate: 0 -70%; } to { opacity: 1; translate: 0 0; } }
+body.player-only #seat-popup .bt-step input.is-up { animation: bt-roll-up 220ms var(--e-out) both; }
+body.player-only #seat-popup .bt-step input.is-down { animation: bt-roll-down 220ms var(--e-out) both; }
+body.player-only #seat-popup .bt-step button { background: var(--bt-field); box-shadow: 0 1px 2px rgb(0 0 0 / .12); }
+body.player-only #seat-popup .bt-step button:hover:not(:disabled) { background: var(--bt-field); scale: 1.06; }
+body.player-only #seat-popup .bt-step button:active:not(:disabled) { scale: .9; }
+body.player-only #seat-popup .bt-step button:disabled { background: transparent; box-shadow: none; opacity: .35; cursor: not-allowed; }
+@media (prefers-reduced-motion: reduce) { body.player-only #seat-popup .bt-step input { animation: none !important; } body.player-only #seat-popup .bt-step button { transition: none; scale: 1 !important; } }
+
+/* adaptive section labels: the short code drops the stock caption and keeps the pill compact */
+body.player-only .section-annotation-badge.is-compact .section-stock-caption { display: none; }
+
+/* ───────────── Party size: sections that seat the whole group light up, the rest step back ───────────── */
+body.player-only .section-annotation-badge.no-fit { filter: saturate(.15) opacity(.55); }
+body.player-only .section-annotation-badge.fits-party { animation: bt-fit 1.1s var(--e-out) 2; }
+@keyframes bt-fit { 0% { box-shadow: 0 0 0 0 color-mix(in oklab, var(--h-accent) 80%, transparent), 0 4px 10px -2px rgb(0 0 0 / .16); } 70%, 100% { box-shadow: 0 0 0 12px color-mix(in oklab, var(--h-accent) 0%, transparent), 0 4px 10px -2px rgb(0 0 0 / .16); } }
+
+/* ───────────── Season context and the view link ───────────── */
+body.player-only .bt-season { display: flex; align-items: center; gap: 8px; padding: 2px 8px 0; font: 400 13px/18px var(--bt-sans); color: var(--h-muted); }
+body.player-only .bt-season i { flex: 0 0 8px; width: 8px; height: 8px; border-radius: 50%; background: var(--h-accent); }
+body.player-only #seat-popup .bt-link { display: inline-flex; align-items: center; justify-content: center; gap: 8px; width: 100%; height: 40px; padding: 0 16px; border: 0; border-radius: 36px; background: transparent; color: var(--h-foreground); font: 500 14px/20px var(--bt-sans); transition: background-color 150ms var(--e-out), scale 120ms var(--e-out); cursor: pointer; }
+body.player-only #seat-popup .bt-link:hover { background: var(--h-default); }
+body.player-only #seat-popup .bt-link:active { scale: .97; }
+/* The top of the seat popover: two pictures to swipe between, set in like the cards below (the popover's padding all round, the cards' 20px corners).
+   Picture one is the view from the seat and is a button that opens the full 3D view; picture two shows where the seat is on the map. */
+body.player-only #seat-popup .bt-view { order: -1; position: relative; overflow: hidden; border-radius: 20px; background: color-mix(in oklab, var(--h-foreground) 8%, transparent); }
+/* sideways only: it cannot be pulled up, down or diagonally */
+body.player-only #seat-popup .bt-view-track { display: flex; aspect-ratio: 16 / 9; overflow-x: auto; overflow-y: hidden; overscroll-behavior: contain; touch-action: pan-x; scroll-snap-type: x mandatory; scrollbar-width: none; }
+body.player-only #seat-popup .bt-view-track::-webkit-scrollbar { display: none; }
+body.player-only #seat-popup .bt-view-slide { position: relative; flex: 0 0 100%; display: block; width: 100%; height: 100%; margin: 0; padding: 0; overflow: hidden; border: 0; border-radius: 0; background: none; color: inherit; font: inherit; text-align: left; scroll-snap-align: start; scroll-snap-stop: always; }
+body.player-only #seat-popup button.bt-view-slide { cursor: pointer; }
+body.player-only #seat-popup button.bt-view-slide:focus-visible { outline: 2px solid var(--h-accent); outline-offset: -2px; }
+body.player-only #seat-popup .bt-view-shot { position: absolute; inset: 0; background: center / cover no-repeat; animation: bt-view-wait 1.2s ease-in-out infinite alternate; transform: perspective(700px) rotateX(0deg) rotateY(0deg) scale(1.001); transition: transform 700ms cubic-bezier(.22,1,.36,1); will-change: transform; }
+body.player-only #seat-popup .bt-view-shot[data-ready="true"] { animation: none; }
+body.player-only #seat-popup .bt-view-shot[data-empty="true"] { animation: none; }
+body.player-only #seat-popup button.bt-view-slide:hover .bt-view-shot[data-ready="true"] { transform: perspective(700px) rotateX(calc(var(--bt-tilt-y, 0) * -3deg)) rotateY(calc(var(--bt-tilt-x, 0) * 4deg)) translate(calc(var(--bt-tilt-x, 0) * -6px), calc(var(--bt-tilt-y, 0) * -4px)) scale(1.09); transition-duration: 450ms; }
+body.player-only #seat-popup .bt-view-label { position: absolute; left: 12px; bottom: 12px; display: inline-flex; align-items: center; gap: 8px; height: 32px; max-width: calc(100% - 72px); padding: 0 12px; overflow: hidden; border-radius: 36px; background: var(--glass-fill); color: var(--h-foreground); font: 500 13px/16px var(--bt-sans); white-space: nowrap; text-overflow: ellipsis; -webkit-backdrop-filter: blur(20px) saturate(1.5); backdrop-filter: blur(20px) saturate(1.5); box-shadow: inset 0 0 0 1px var(--glass-edge), var(--glass-shadow); transition: background 150ms var(--e-out); }
+body.player-only #seat-popup .bt-view-label svg { flex: none; }
+body.player-only #seat-popup .bt-view-nav { position: absolute; top: 50%; translate: 0 -50%; display: grid; place-items: center; width: 32px; height: 32px; padding: 0; border: 0; border-radius: 50%; background: color-mix(in oklab, var(--h-background) 86%, transparent); color: var(--h-foreground); cursor: pointer; backdrop-filter: blur(10px); transition: scale 150ms var(--e-out), background-color 150ms var(--e-out); }
+body.player-only #seat-popup .bt-view-nav[data-view-go="-1"] { left: 8px; }
+body.player-only #seat-popup .bt-view-nav[data-view-go="1"] { right: 8px; }
+body.player-only #seat-popup .bt-view-nav[hidden] { display: none; }
+body.player-only #seat-popup .bt-view-nav:hover { background: var(--h-background); }
+body.player-only #seat-popup .bt-view-nav:active { scale: .94; }
+body.player-only #seat-popup .bt-view-dots { position: absolute; right: 14px; bottom: 25px; display: flex; gap: 5px; pointer-events: none; }
+body.player-only #seat-popup .bt-view-dots i { width: 6px; height: 6px; border-radius: 6px; background: color-mix(in oklab, var(--h-background) 60%, transparent); box-shadow: 0 0 0 1px color-mix(in oklab, var(--h-foreground) 14%, transparent); transition: width 200ms var(--e-out), background-color 200ms var(--e-out); }
+body.player-only #seat-popup .bt-view-dots i[data-on] { width: 16px; background: var(--h-background); }
+/* the plan of the building */
+body.player-only #seat-popup .bt-view-map { background: color-mix(in oklab, var(--h-foreground) 4%, var(--h-background)); }
+body.player-only #seat-popup .bt-loc { display: block; width: 100%; height: 100%; }
+body.player-only #seat-popup .bt-loc-sec { fill: color-mix(in oklab, var(--h-foreground) 13%, transparent); stroke: color-mix(in oklab, var(--h-foreground) 4%, var(--h-background)); stroke-width: 1.5; vector-effect: non-scaling-stroke; }
+body.player-only #seat-popup .bt-loc-sec[data-current] { fill: var(--h-accent); }
+body.player-only #seat-popup .bt-loc-ice { fill: var(--h-background); stroke: color-mix(in oklab, var(--h-foreground) 26%, transparent); stroke-width: 1.5; vector-effect: non-scaling-stroke; }
+body.player-only #seat-popup .bt-loc-b0 { stop-color: var(--h-accent); stop-opacity: .75; }
+body.player-only #seat-popup .bt-loc-b1 { stop-color: var(--h-accent); stop-opacity: 0; }
+/* a ripple: two rings leave the seat one after the other, quick at first, then slowing and fading as they spread */
+body.player-only #seat-popup .bt-loc-halo { fill: var(--h-accent); opacity: 0; transform-box: fill-box; transform-origin: center; animation: bt-loc-pulse 2.4s cubic-bezier(.16,1,.3,1) infinite; }
+body.player-only #seat-popup .bt-loc-halo-2 { animation-delay: 1.2s; }
+body.player-only #seat-popup .bt-loc-dot { fill: var(--h-foreground); stroke: var(--h-background); }
+@keyframes bt-loc-pulse { 0% { scale: .35; opacity: 0; } 12% { opacity: .7; } 100% { scale: 1.2; opacity: 0; } }
+@keyframes bt-view-wait { from { opacity: .55; } to { opacity: 1; } }
+@media (prefers-reduced-motion: reduce) { body.player-only #seat-popup .bt-view-shot, body.player-only #seat-popup .bt-loc-halo { animation: none; transition: none; } }
+
+/* ───────────── Selecting an offer: the check pops and one soft ring leaves it ───────────── */
+@keyframes bt-check { 0% { scale: .6; } 60% { scale: 1.12; } 100% { scale: 1; } }
+@keyframes bt-ring { from { box-shadow: 0 0 0 0 color-mix(in oklab, var(--h-accent) 70%, transparent); } to { box-shadow: 0 0 0 14px color-mix(in oklab, var(--h-accent) 0%, transparent); } }
+body.player-only #seat-popup .bt-offer.is-chosen i { animation: bt-check 260ms var(--e-out), bt-ring 520ms var(--e-out); }
+
+/* ───────────── Loading and failure states, in the same voice ───────────── */
+body.player-only #boot-loader, #boot-loader { font-family: var(--bt-sans, "Geist", system-ui, sans-serif); }
+#boot-loader[role="alert"]:not([hidden]) { padding: 24px; text-align: center; font: 400 14px/20px "Geist", system-ui, sans-serif; color: oklch(0.5517 0.0138 285.94); }
+body.player-only #loading, body.player-only #map-transition { font-family: var(--bt-sans); color: var(--h-muted); }
+body.player-only #loading strong, body.player-only #loading h2, body.player-only #loading b { font: 500 16px/24px var(--bt-sans) !important; color: var(--h-foreground); }
+@media (prefers-reduced-motion: reduce) { body.player-only .section-annotation-badge.fits-party, body.player-only #seat-popup .bt-offer.is-chosen i { animation: none; transition: none; } }
+
+/* ───────────── Hold timer: a calm pill with a draining bar ───────────── */
+body.player-only .bt-hold { position: absolute; z-index: 6; top: 16px; left: 50%; translate: -50% 0; display: flex; align-items: center; gap: 8px; padding: 8px 14px 12px; border-radius: 999px; background: var(--glass-fill); -webkit-backdrop-filter: blur(40px) saturate(1.5); backdrop-filter: blur(40px) saturate(1.5); box-shadow: inset 0 2px 0 var(--glass-highlight), inset 0 0 0 1px var(--glass-edge), var(--glass-shadow); color: var(--h-muted); font: 400 14px/20px var(--bt-sans); overflow: hidden; animation: bt-tip 150ms var(--e-out) both; }
+body.player-only .bt-hold[hidden] { display: none; }
+body.player-only .bt-hold b { min-width: 3ch; color: var(--h-foreground); font: 500 14px/20px var(--bt-sans); font-variant-numeric: tabular-nums; }
+body.player-only .bt-hold-bar { position: absolute; left: 14px; right: 14px; bottom: 5px; height: 3px; border-radius: 3px; background: var(--h-default); overflow: hidden; }
+body.player-only .bt-hold-bar i { display: block; width: 100%; height: 100%; border-radius: 3px; background: var(--h-accent); transform-origin: left; transition: transform 1s linear; }
+body.player-only .bt-hold[data-low="true"] b { color: var(--h-danger); }
+body.player-only .bt-hold[data-low="true"] .bt-hold-bar i { background: var(--h-danger); }
+body.player-only.map-loading .bt-hold { display: none; }
+@media (max-width: 720px) { body.player-only .bt-hold { top: 10px; } }
+@media (prefers-reduced-motion: reduce) { body.player-only .bt-hold, body.player-only .bt-hold-bar i { animation: none; transition: none; } }
+
+/* Section label: which section is open. pointer-events is off so it never blocks a seat. */
+body.player-only .bt-section-chip { position: absolute; z-index: 6; top: 16px; left: 50%; display: grid; gap: 0; justify-items: center; padding: 8px 18px; border-radius: 16px; text-align: center; white-space: nowrap; background: var(--glass-fill); -webkit-backdrop-filter: blur(40px) saturate(1.5); backdrop-filter: blur(40px) saturate(1.5); box-shadow: inset 0 2px 0 var(--glass-highlight), inset 0 0 0 1px var(--glass-edge), var(--glass-shadow); pointer-events: none; user-select: none; opacity: 0; translate: -50% -4px; transition: opacity 240ms ease, translate 240ms cubic-bezier(.23,1,.32,1); }
+body.player-only .bt-section-chip.on { opacity: 1; translate: -50% 0; }
+/* the seat-hold timer also sits top centre: step below it while seats are held */
+body.player-only #map-area:has(.bt-hold:not([hidden])) .bt-section-chip { top: 68px; }
+body.player-only .bt-section-chip b { color: var(--h-foreground); font: 500 15px/20px var(--bt-sans); }
+body.player-only .bt-section-chip span { color: var(--h-muted); font: 400 12px/16px var(--bt-sans); font-variant-numeric: tabular-nums; }
+body.player-only.seat-view-active .bt-section-chip { display: none; }
+@media (prefers-reduced-motion: reduce) { body.player-only .bt-section-chip { transition: opacity 120ms linear; translate: -50% 0; } }
+
+/* Section labels around a focused section: the map under them is dimmed, so the name reads dark and strong. */
+body.player-only .section-annotation-badge.is-beside { color: var(--h-foreground); font-weight: 700 !important; text-shadow: 0 0 6px #fff, 0 0 2px #fff; }
+body.player-only .section-annotation-badge.is-beside .section-badge-name::before { display: none; }
+
+/* Seat key. One disclosure at every size: a "Seat key" pill that opens to the list. The pill is always drawn, so the key can never
+   collapse to an empty shell. Colours, type and glass come from the shared tokens above. */
+body.player-only #map-area > #availability-legend { display: block; padding: 0; max-width: calc(100% - 32px); border: 0; border-radius: 20px; background: var(--glass-fill); -webkit-backdrop-filter: blur(40px) saturate(1.5); backdrop-filter: blur(40px) saturate(1.5); box-shadow: inset 0 2px 0 var(--glass-highlight), inset 0 0 0 1px var(--glass-edge), var(--glass-shadow); color: var(--h-muted); font: 400 12px/16px var(--bt-sans); pointer-events: auto; }
+body.player-only #map-area > #availability-legend summary { display: flex; align-items: center; gap: 8px; min-height: 36px; margin: 0; padding: 8px 12px; border-radius: 20px; color: var(--h-foreground); font: 500 12px/16px var(--bt-sans); cursor: pointer; list-style: none; user-select: none; -webkit-tap-highlight-color: transparent; }
+body.player-only #map-area > #availability-legend summary::-webkit-details-marker { display: none; }
+body.player-only #map-area > #availability-legend summary:hover { background: var(--h-default); }
+body.player-only #map-area > #availability-legend summary:focus-visible { outline: 2px solid var(--h-foreground); outline-offset: 2px; }
+body.player-only #map-area > #availability-legend summary svg { width: 12px; height: 12px; margin-left: auto; color: var(--h-muted); transition: transform 160ms var(--e-out, ease); }
+body.player-only #map-area > #availability-legend details[open] summary svg { transform: rotate(180deg); }
+body.player-only #map-area > #availability-legend details[open] summary:hover { background: transparent; }
+body.player-only #map-area > #availability-legend .map-legend-items { display: grid; grid-template-columns: auto auto; gap: 8px 16px; padding: 8px 12px 12px; border-top: 1px solid var(--h-separator); }
+body.player-only #map-area > #availability-legend .legend-item { gap: 8px; color: var(--h-muted); }
+@media (max-width: 760px), (max-height: 500px) and (max-width: 1024px) { body.player-only #map-area > #availability-legend summary { min-height: 44px; padding: 12px; } }
+@media (prefers-reduced-motion: reduce) { body.player-only #map-area > #availability-legend summary svg { transition: none; } }
+
+/* Section tooltip: the section name on top ("Sec 104"), "From ● $18.00" under it. White glass surface like the other callouts.
+   A grid sizes itself to its widest row, so the card hugs the text. */
+body.player-only #map-hover-card:is(.section-popover, .ga-section-popover, .locked-section-popover) { display: grid; grid-template-columns: auto auto; justify-content: start; justify-items: start; align-items: center; gap: 2px 6px; padding: 10px 14px; border-radius: 14px; background: var(--glass-fill); color: var(--h-foreground); -webkit-backdrop-filter: blur(40px) saturate(1.5); backdrop-filter: blur(40px) saturate(1.5); box-shadow: inset 0 2px 0 var(--glass-highlight), inset 0 0 0 1px var(--glass-edge), var(--h-overlay-shadow); }
+body.player-only #map-hover-card .bt-tip-sec { grid-column: 1 / -1; color: var(--h-foreground); font: 500 16px/22px var(--bt-sans); letter-spacing: -.01em; font-variant-numeric: tabular-nums; white-space: nowrap; }
+body.player-only #map-hover-card:is(.section-popover, .ga-section-popover, .locked-section-popover) > span { color: var(--h-muted); font: 400 14px/20px var(--bt-sans); }
+body.player-only #map-hover-card:is(.section-popover, .ga-section-popover, .locked-section-popover) > strong { gap: 6px; color: var(--h-foreground); font: 500 14px/20px var(--bt-sans) !important; }
+body.player-only #map-hover-card:is(.section-popover, .ga-section-popover, .locked-section-popover) > :only-child, body.player-only #map-hover-card .bt-tip-sec + :last-child { grid-column: 1 / -1; }
+body.player-only #map-hover-card.section-popover[data-availability="sold-out"] > strong { color: var(--h-muted); }
+/* the open seat key is taller than the pill: the minimap steps up so the two never overlap */
+body.player-only #map-area:has(#availability-legend details[open]) #map-navigator { bottom: 116px !important; transition: bottom 200ms var(--e-out, ease); }
+@media (prefers-reduced-motion: reduce) { body.player-only #map-area #map-navigator { transition: none; } }
+
+/* "View in 3D": a small neutral pill on the photo, cube icon plus label; it brightens when the photo is hovered */
+body.player-only #seat-popup .bt-view-label { gap: 6px; height: 28px; padding: 0 10px 0 8px; }
+body.player-only #seat-popup button.bt-view-slide:hover .bt-view-label { background: var(--h-background); }
+@media (prefers-reduced-motion: reduce) { body.player-only #seat-popup .bt-view-label { transition: none; } }
+
+/* Minimap card on the library tokens: glass surface, token type and separators, info-blue viewport frame */
+body.player-only #map-area > #map-navigator { width: 160px; padding: 8px; border: 0; border-radius: 20px; background: var(--glass-fill); -webkit-backdrop-filter: blur(40px) saturate(1.5); backdrop-filter: blur(40px) saturate(1.5); box-shadow: inset 0 2px 0 var(--glass-highlight), inset 0 0 0 1px var(--glass-edge), var(--glass-shadow); }
+body.player-only #map-area > #map-navigator > span { margin: 0 4px 6px; color: var(--h-foreground); font: 500 12px/16px var(--bt-sans); font-variant-numeric: tabular-nums; }
+body.player-only #map-area > #map-navigator #map-navigator-stage { border: 0; border-radius: 12px; background: var(--h-default); box-shadow: inset 0 0 0 1px var(--h-separator); }
+body.player-only #map-area > #map-navigator #map-navigator-stage i { border: 1.5px solid var(--h-accent) !important; border-radius: 6px !important; background: color-mix(in oklab, var(--h-accent) 14%, transparent) !important; box-shadow: 0 0 0 1px color-mix(in oklab, var(--h-background) 60%, transparent); }
+
+/* Map background: the library's default surface grey (index.html paints the same value, #ececed, before these styles load).
+   The venue footprint on the schematic map is near white, so it reads as a lighter shape on this grey. */
+/* Light map surface: the library's default grey taken one small step (4%) toward the foreground, behind a near-white building
+   (index.html paints the same value, #e4e4e6, before these styles load). The dark theme sets its own surface in map-dark.css. */
+body.player-only .map-area, body.player-only #loading, body.player-only #map-transition { background: color-mix(in oklab, var(--h-default) 96%, var(--h-foreground) 4%) !important; }
+
+/* Section labels once seats are drawn: a solid white pill, so the name reads over the seats instead of ghosting through them */
+body.player-only .section-annotation-badge { transition: color 150ms var(--e-out), background-color 200ms var(--e-out), box-shadow 200ms var(--e-out), padding 200ms var(--e-out); }
+body.player-only .section-annotation-badge.is-pill { padding: 4px 10px; border-radius: 999px; background: var(--glass-fill) !important; box-shadow: inset 0 0 0 1px var(--glass-edge), 0 1px 2px rgb(0 0 0 / .06), 0 4px 12px -2px rgb(0 0 0 / .12) !important; color: var(--h-foreground); text-shadow: none; }
+body.player-only .section-annotation-badge.is-pill .section-stock-caption { color: var(--h-muted); }
+body.player-only .section-annotation-badge.is-pill:is(:hover, :focus-visible, .is-selected) { text-decoration: none; }
+@media (prefers-reduced-motion: reduce) { body.player-only .section-annotation-badge { transition: none; } }
+
+/* Base behaviour for the player's own controls, on the library tokens (this replaces the old HeroUI-derived foundations file). */
+html:has(body.player-only), body.player-only { font-family: var(--bt-sans); }
+body.player-only :where(button, input, select, textarea) { font: inherit; }
+body.player-only :where(button, a, input, select, textarea, summary):focus-visible { outline: 2px solid var(--h-foreground); outline-offset: 2px; }
+body.player-only :where(button, input, select, textarea):disabled { opacity: .5; cursor: not-allowed; }
+@media (prefers-reduced-motion: reduce) { body.player-only *, body.player-only *::before, body.player-only *::after { scroll-behavior: auto !important; animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; } }
+/* zoom and home buttons: token surfaces, so they follow the light and dark themes on their own */
+body.player-only #map-area .map-control-rail button, body.player-only #map-area .map-zoom-controls button { border-color: transparent; background: var(--bt-chip-bg); color: var(--h-foreground); box-shadow: inset 0 0 0 1px var(--h-separator); }
+body.player-only #map-area .map-control-rail button:hover, body.player-only #map-area .map-zoom-controls button:hover { background: var(--h-default); }
+body.player-only #map-area .map-control-rail button.active { background: var(--h-accent); color: var(--h-accent-foreground); box-shadow: none; }
+
+
+/* Minimap sections on tokens (the script still writes fixed fills; these override them), so the picture follows light and dark by itself:
+   sections a quiet grey, the section in focus in the accent green. The rink picture stays as authored. */
+body.player-only #map-navigator-stage svg path[data-mini-section] { fill: color-mix(in oklab, var(--h-foreground) 14%, transparent); stroke: var(--h-default); }
+body.player-only #map-navigator-stage svg path[data-mini-section][fill="#4e8ce8"] { fill: var(--h-accent); }
+/* Accessibility and notice banners in the seat card: icon and text centred */
+body.player-only :is(#seat-popup, #map-hover-card) .seat-information span:is(.accessibility, .information) { justify-content: center; text-align: center; }
+/* seat key: wheelchair and exclusive entries */
+body.player-only #availability-legend i.wheelchair { background: #facc15; }
+body.player-only #availability-legend i.exclusive { background: #7c3aed; }
+
+/* The lock artwork is drawn white. On light surfaces it is turned to the foreground ink; the dark theme keeps it as drawn. */
+body.player-only:not(.bt-map-dark) :is(#seat-popup, #map-hover-card) img[src$="figma/lock.svg"] { filter: brightness(0); }
+
+/* ───────────── Library-native fields ─────────────
+   The text input and the offer radios follow the library's Input and RadioGroup (card layout) one to one: same fills, edges,
+   focus ring, sizes and type. Values come from the field tokens above. */
+@property --radio-fill { syntax: "<color>"; inherits: true; initial-value: transparent; }
+@property --radio-hole { syntax: "<length>"; inherits: true; initial-value: 0px; }
+/* Input: 40px, 12px corners, faint field fill with a 1px inner edge; hover steps the fill, focus turns it white under a 2px accent ring */
+body.player-only #seat-popup :is(.locked-offer-form, .popup-unlock) input { width: 100%; height: 40px; padding: 8px 12px; border: 0; border-radius: 12px; background: var(--h-field); color: var(--h-foreground); box-shadow: var(--h-field-outline); font: 400 14px/20px var(--bt-sans); outline: none; transition: background-color 150ms ease, box-shadow 150ms ease; }
+body.player-only #seat-popup :is(.locked-offer-form, .popup-unlock) input::placeholder { color: var(--h-muted); }
+@media (hover: hover) { body.player-only #seat-popup :is(.locked-offer-form, .popup-unlock) input:hover:not(:focus) { background: var(--h-field-hover); } }
+body.player-only #seat-popup :is(.locked-offer-form, .popup-unlock) input:is(:focus, :focus-visible) { background: var(--h-field-focus); box-shadow: 0 0 0 2px var(--h-focus); outline: none; }
+body.player-only #seat-popup :is(.locked-offer-form, .popup-unlock) input[aria-invalid="true"] { box-shadow: 0 0 0 1px var(--h-danger); }
+/* Radio cards: field fill, soft edge, 16px corners; the chosen card takes the soft accent fill and a 2px inner accent outline */
+body.player-only #seat-popup .bt-offer { grid-template-columns: 20px minmax(0, 1fr) auto; gap: 10px; min-height: 52px; padding: 14px 16px; border-radius: 16px; background: var(--h-field); box-shadow: var(--h-field-outline); transition: background-color 150ms ease, box-shadow 150ms var(--e-out), scale 150ms var(--e-out); }
+body.player-only #seat-popup .bt-offer:hover:not(:disabled):not(.is-chosen) { background: var(--h-field-hover); }
+body.player-only #seat-popup .bt-offer.is-chosen { background: var(--h-accent-soft); box-shadow: inset 0 0 0 2px var(--h-accent); }
+body.player-only #seat-popup .bt-offer.is-chosen:hover:not(:disabled) { background: var(--h-accent-soft-hover); }
+body.player-only #seat-popup .bt-offer:focus-visible:not(.is-chosen) { box-shadow: var(--h-field-outline), 0 0 0 2px var(--h-focus); }
+/* The 20px control: an outlined field-coloured disc; chosen, it fills with the accent and its middle is cut out (light) or holds a dark dot (dark) */
+body.player-only #seat-popup .bt-offer i { position: relative; display: block; width: 20px; height: 20px; border-radius: 50%; --radio-fill: var(--h-field); --radio-hole: 0px; background: radial-gradient(circle at center, transparent var(--radio-hole), var(--radio-fill) calc(var(--radio-hole) + .5px)) border-box; box-shadow: var(--h-control-outline); color: transparent; animation: none !important; transition: --radio-fill 260ms cubic-bezier(0, 0, .2, 1), --radio-hole 260ms cubic-bezier(0, 0, .2, 1), box-shadow 260ms cubic-bezier(0, 0, .2, 1); }
+body.player-only #seat-popup .bt-offer i svg { display: none; }
+body.player-only #seat-popup .bt-offer i::before { content: ""; position: absolute; inset: 1.5px; border-radius: 50%; background: transparent; scale: 1; transition: scale 260ms cubic-bezier(0, 0, .2, 1), background-color 260ms cubic-bezier(0, 0, .2, 1); }
+body.player-only #seat-popup .bt-offer:hover:not(:disabled):not(.is-chosen) i { --radio-fill: var(--h-field-hover); box-shadow: var(--h-control-outline-hover); }
+body.player-only #seat-popup .bt-offer.is-chosen i { --radio-fill: var(--h-accent); --radio-hole: var(--h-radio-hole); background: radial-gradient(circle at center, transparent var(--radio-hole), var(--radio-fill) calc(var(--radio-hole) + .5px)) border-box; box-shadow: none; color: transparent; }
+body.player-only #seat-popup .bt-offer.is-chosen i::before { scale: .47; background: var(--h-radio-dot); }
+body.player-only #seat-popup .bt-offer:active:not(:disabled) i { scale: .95; }
+/* type as in the library's radio rows: 14px medium label, 14px medium price with tabular numbers */
+body.player-only #seat-popup .bt-offer-name { font: 500 14px/20px var(--bt-sans); }
+body.player-only #seat-popup .bt-offer-price, body.player-only #seat-popup .bt-offer-price b { font: 500 14px/20px var(--bt-sans); letter-spacing: 0; font-variant-numeric: tabular-nums; }
+@media (prefers-reduced-motion: reduce) { body.player-only #seat-popup .bt-offer i, body.player-only #seat-popup .bt-offer i::before, body.player-only #seat-popup :is(.locked-offer-form, .popup-unlock) input { transition: none; } }
+
+/* One colour for every open seat, in both themes: no offer colours on the map, so none in the seat key or on the offer chip either */
+body.player-only #availability-legend :is(.legend-offers, .legend-preview) i { background: var(--seat-available) !important; }
+body.player-only #availability-legend :is(.legend-offers, .legend-preview) i + i { display: none; }
+body.player-only .bt-chip--offer { --offer-color: var(--h-foreground) !important; }
+body.player-only .section-annotation-badge:not(.is-pill):not(.is-beside) { text-shadow: none; }
+/* standing areas are drawn in the artwork in the section marker blue: light theme shows them a touch darker than the seated sections */
+/* light theme: section names sit on navy blocks (the brand navy, --h-accent-foreground), so the name is white with the green availability dot;
+   sold-out and unavailable blocks are grey and keep their own inks */
+body.player-only:not(.bt-map-dark) .section-annotation-badge:not(.is-pill):not([data-availability="sold-out"]):not([data-availability="killed"]) { --badge-ink: #fff; }
+
+/* the chosen radio never takes the hover outline of an unchosen one */
+body.player-only #seat-popup .bt-offer.is-chosen i, body.player-only #seat-popup .bt-offer.is-chosen:hover:not(:disabled) i { box-shadow: none !important; }
+
+/* "Return to seat": the library's secondary Button, full width (default fill, 36px pill, 40px tall, 14px medium label, press scale) */
+body.player-only #seat-popup .seat-popup-actions { display: block; padding: 4px 0 0; background: transparent; }
+body.player-only #seat-popup .seat-popup-actions button { display: flex; align-items: center; justify-content: center; gap: 8px; width: 100%; height: 40px; min-height: 40px; padding: 0 16px; border: 0; border-radius: 36px; background: var(--h-default); color: var(--h-foreground); font: 500 14px/20px var(--bt-sans); cursor: pointer; transition: background-color 150ms var(--e-out), scale 100ms var(--e-out); }
+body.player-only #seat-popup .seat-popup-actions button span { font: inherit; }
+body.player-only #seat-popup .seat-popup-actions button:hover { background: var(--h-default-hover); color: var(--h-foreground); }
+body.player-only #seat-popup .seat-popup-actions button:active { scale: .97; }
+body.player-only #seat-popup .seat-popup-actions button:focus-visible { outline: 2px solid var(--h-focus); outline-offset: 2px; }
+body.player-only #seat-popup .seat-popup-actions img { width: 16px; height: 16px; }
+/* the icon artwork is white: turned to ink on the light fill */
+body.player-only:not(.bt-map-dark) #seat-popup .seat-popup-actions img { filter: brightness(0); }
+@media (prefers-reduced-motion: reduce) { body.player-only #seat-popup .seat-popup-actions button { transition: none; } }
+
+/* the map is dark in both themes, so the seat key shows the seats as they are drawn; a hairline keeps the white dot visible on the light key */
+body.player-only #availability-legend .map-legend-items i, body.player-only #availability-legend .legend-preview i { box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--h-foreground) 22%, transparent); }
+
+/* the clicked section is filled with the brand green at full-venue zoom, so its name and dot turn navy to stay readable */
+body.player-only .section-annotation-badge.is-selected:not(.is-pill) { --badge-ink: var(--h-accent-foreground) !important; --badge-dot: var(--h-accent-foreground) !important; text-decoration: none; }
+
+/* light theme: standing areas, drawn in the artwork's section marker colour, take the same brand navy as the seated sections */
+body.player-only:not(.bt-map-dark) .flat-vector-artwork [fill="#2563EB" i] { fill: var(--team-strong, #051b35); }
+
+/* ───────────── Frosted glass, as in the library ─────────────
+   Every element floating over the map is the library's .glass: a translucent fill, blur(40px) saturate(1.5), a 2px reflection along the top
+   edge, a 1px rim and the soft wide shadow. Cards that hold text use the fuller fill; bars, pills and tips use the float fill. */
+body.player-only :is(#seat-popup:not(.seat-view-dock), #map-area > #map-navigator, #map-area > #availability-legend, #toast, .bt-sv-sheet) { background: var(--glass-fill); -webkit-backdrop-filter: blur(40px) saturate(1.5); backdrop-filter: blur(40px) saturate(1.5); box-shadow: inset 0 2px 0 var(--glass-highlight), inset 0 0 0 1px var(--glass-edge), var(--glass-shadow); }
+body.player-only :is(.map-control-rail, .bt-section-chip, .bt-hold, .bt-theme-switch, #minimap-toggle, .section-annotation-badge.is-pill), body.player-only #map-hover-card:is(.section-popover, .ga-section-popover, .locked-section-popover), body.player-only #seat-popup .bt-view-label { background: var(--glass-fill-float) !important; -webkit-backdrop-filter: blur(40px) saturate(1.5); backdrop-filter: blur(40px) saturate(1.5); box-shadow: inset 0 2px 0 var(--glass-highlight), inset 0 0 0 1px var(--glass-edge), var(--glass-shadow) !important; }
+
+/* Map controls: one frosted pill. Home sits apart from the zoom pair by a hairline; buttons are bare icons that take a soft fill on hover
+   and shrink a touch when pressed. Neutral by design: green stays for the things a buyer picks. */
+body.player-only #map-area .map-control-rail { gap: 2px; padding: 4px; border: 0; border-radius: 999px; }
+body.player-only #map-area .map-control-rail button { position: relative; display: grid; place-items: center; width: 40px; height: 40px; min-height: 40px; padding: 0; border: 0; border-radius: 50%; background: transparent; color: var(--h-foreground); box-shadow: none; transition: background-color 150ms var(--e-out), scale 100ms var(--e-out); }
+body.player-only #map-area .map-control-rail button svg { width: 20px; height: 20px; }
+body.player-only #map-area .map-control-rail button:hover { background: color-mix(in oklab, var(--h-foreground) 8%, transparent); }
+body.player-only #map-area .map-control-rail button:active { scale: .94; background: color-mix(in oklab, var(--h-foreground) 12%, transparent); }
+body.player-only #map-area .map-control-rail button:focus-visible { outline: 2px solid var(--h-focus); outline-offset: 1px; }
+body.player-only #map-area .map-control-rail button.active { background: var(--h-accent); color: var(--h-accent-foreground); }
+body.player-only #map-area .map-control-rail #overview { margin-bottom: 5px; }
+body.player-only #map-area .map-control-rail #overview::after { content: ""; position: absolute; left: 9px; right: 9px; bottom: -4px; height: 1px; background: color-mix(in oklab, var(--h-foreground) 12%, transparent); pointer-events: none; }
+@media (prefers-reduced-motion: reduce) { body.player-only #map-area .map-control-rail button { transition: none; } }
+
+/* Popovers that appear over the map (seat card, seat and section hover cards, control tips): the glass rim plus a deeper soft drop shadow so
+   they lift clearly off the map. Fixed chrome (minimap, seat key, controls) keeps the library's standard glass shadow. */
+body.player-only { --bt-lift: 0 4px 12px 0 rgb(0 0 0 / .07), 0 18px 40px -8px rgb(0 0 0 / .2), 0 40px 80px -24px rgb(0 0 0 / .22); }
+body.player-only.bt-map-dark { --bt-lift: 0 0 1px 0 rgb(255 255 255 / .3) inset, 0 16px 32px 0 rgb(0 0 0 / .45), 0 40px 80px -20px rgb(0 0 0 / .55); }
+body.player-only #seat-popup:not(.seat-view-dock), body.player-only #map-hover-card.seat-popover { box-shadow: inset 0 2px 0 var(--glass-highlight), inset 0 0 0 1px var(--glass-edge), var(--bt-lift); }
+/* the section tooltip is a small card of text: a fuller fill than the floating bars so it reads over any section colour */
+body.player-only { --glass-fill-tip: rgb(255 255 255 / 0.88); }
+body.player-only.bt-map-dark { --glass-fill-tip: color-mix(in oklab, oklch(0.2103 0.0059 285.89) 84%, transparent); }
+body.player-only #map-hover-card:is(.section-popover, .ga-section-popover, .locked-section-popover), body.player-only .bt-control-tip { background: var(--glass-fill-tip) !important; box-shadow: inset 0 2px 0 var(--glass-highlight), inset 0 0 0 1px var(--glass-edge), var(--bt-lift) !important; }
+
+/* map controls hold still: no lift on hover (an old rule moved them up a pixel), no shift when pressed */
+body.player-only #map-area .map-control-rail button, body.player-only #map-area .map-control-rail button:hover, body.player-only #map-area .map-control-rail button:active { transform: none !important; scale: 1; }
+/* control tooltip: a small frosted tip to the left of the control, after a two-second rest */
+body.player-only .bt-control-tip { position: absolute; z-index: 8; translate: 4px -50%; padding: 4px 8px; border-radius: 8px; background: var(--glass-fill); color: var(--h-foreground); -webkit-backdrop-filter: blur(40px) saturate(1.5); backdrop-filter: blur(40px) saturate(1.5); box-shadow: inset 0 0 0 1px var(--glass-edge), var(--glass-shadow); font: 500 12px/16px var(--bt-sans); white-space: nowrap; pointer-events: none; opacity: 0; transition: opacity 150ms var(--e-out), translate 150ms var(--e-out); }
+body.player-only .bt-control-tip.on { opacity: 1; translate: 0 -50%; }
+body.player-only .bt-control-tip[hidden] { display: none; }
+@media (prefers-reduced-motion: reduce) { body.player-only .bt-control-tip { transition: none; } }
+
+/* "View in 3D" sits on a photo, which can be bright ice or dark seats: it takes the fuller tip fill and the theme's own ink, so it is a
+   clean white pill with dark text in light and a dark pill with light text in dark, whatever is behind it */
+body.player-only #seat-popup .bt-view-label { background: var(--glass-fill-tip) !important; color: var(--h-foreground); box-shadow: inset 0 0 0 1px var(--glass-edge), 0 1px 2px rgb(0 0 0 / .12), 0 6px 16px -4px rgb(0 0 0 / .28) !important; }
+body.player-only #seat-popup button.bt-view-slide:hover .bt-view-label { background: var(--h-background) !important; }
+
+/* light theme: the lines between sections are a lighter shade of the section navy rather than white (the seated sections get the same colour in flat-webgl.js) */
+body.player-only:not(.bt-map-dark) .flat-vector-artwork .schematic-tile { stroke: var(--team-line, #4a6690); }
+
+/* ───────────── Picking a seat ─────────────
+   The ring round a picked seat arrives quietly: it eases in from slightly wider, with no overshoot and no ripple, then settles into its slow breathing.
+   Its colour eases from amber (looking at this seat) to green (chosen) instead of switching. */
+body.player-only #seat-focus-ring { transition: opacity .2s ease-out, visibility 0s linear .2s, border-color .25s ease; }
+body.player-only #seat-focus-ring.is-visible { transition: opacity .16s ease-in, visibility 0s linear 0s, border-color .25s ease; }
+body.player-only #seat-focus-ring.bt-land { animation: bt-ring-land .28s cubic-bezier(.22, 1, .36, 1) both, seat-breathe 2.4s ease-in-out .35s infinite; }
+@keyframes bt-ring-land { from { scale: 1.28; opacity: 0; } to { scale: 1; } }
+@media (prefers-reduced-motion: reduce) { body.player-only #seat-focus-ring.bt-land { animation: none; } }
+
+/* the seat card's little plan of the building: the playing surface keeps the map's own markings, so it is clear which end is which; the outline is drawn over them */
+body.player-only #seat-popup .bt-loc-ice.bt-loc-edge { fill: none; }
+
+/* minimap: the chosen section stays green with a thin white edge, just enough to set its shape apart from its neighbours */
+body.player-only #map-navigator-stage svg path[data-mini-section][fill="#4e8ce8"] { stroke: #fff; stroke-width: 1.25px; vector-effect: non-scaling-stroke; stroke-linejoin: round; }
+
+/* ───────────── The seat card and the on-screen keyboard ─────────────
+   On touch screens the card can scroll inside itself, so when the keyboard leaves it less room than it needs nothing is cut off (the script shortens the card to
+   what is visible and brings the field into view). Fields are 16px there: under that, iOS zooms the whole page in when a field is tapped and does not zoom back. */
+@media (pointer: coarse), (max-width: 760px) {
+  body.player-only #seat-popup { overflow-y: auto; overscroll-behavior: contain; scrollbar-width: none; -webkit-overflow-scrolling: touch; }
+  body.player-only #seat-popup::-webkit-scrollbar { display: none; }
+  body.player-only #seat-popup :is(input, textarea, select) { font-size: 16px !important; }
+}
+
+/* ───────────── Price shades in the seat key ─────────────
+   With more than one price, the key lists them, each with the shade its seats are drawn in (--tier is the rank, 0 cheapest to 1 dearest). The two ends are the
+   same as the map's own (PRICE_SEATS in flat-webgl.js). */
+body.player-only #availability-legend i.tier { background: color-mix(in srgb, var(--team-strong, #051b35) calc(var(--tier, 1) * 100%), var(--team-soft, #4a6fa5)) !important; display: inline-block !important; }
+body.player-only.bt-map-dark #availability-legend i.tier { background: color-mix(in srgb, var(--team-strong-dark, #fafafa) calc(var(--tier, 1) * 100%), var(--team-soft-dark, #8ab0e6)) !important; }
+body.player-only #availability-legend .legend-preview i.tier + i.tier { margin-left: -4px; }
+
+/* ───────────── The seat card as a bottom sheet (phones held upright) ─────────────
+   Same glass, same contents as the card. It is pinned to the bottom edge, full width, with only its top corners rounded, and carries the component library's
+   drawer grabber (a 36 x 5px pill, muted at 45%, 12px from the top). The handle does one thing: pull it down to close. The pictures are always shown, and step aside only while a field is being typed in.
+   --bt-kb is the height of the on-screen keyboard and --bt-room the height left above it; both are set by the script. */
+body.player-only #seat-popup .bt-sheet-grab { display: none; }
+@media (max-width: 640px) {
+  body.player-only #seat-popup.bt-sheet, body.player-only.mobile-studio #seat-popup.bt-sheet.ga-popup { position: fixed !important; inset: auto 0 var(--bt-kb, 0px) 0 !important; width: auto !important; max-width: none !important; max-height: min(88dvh, var(--bt-room, 88dvh)) !important; margin: 0 !important; padding: 0 12px calc(12px + env(safe-area-inset-bottom, 0px)) !important; border-radius: 28px 28px 0 0 !important; transform: none !important; overflow-y: auto; overscroll-behavior: contain; transition: translate 340ms cubic-bezier(.32, .72, 0, 1), opacity .18s !important; animation: bt-sheet-in 380ms cubic-bezier(.32, .72, 0, 1) !important; box-shadow: inset 0 2px 0 var(--glass-highlight), inset 0 0 0 1px var(--glass-edge), 0 -10px 40px -12px rgb(0 0 0 / .28) !important; }
+  body.player-only #seat-popup.bt-sheet .bt-sheet-grab { display: block; position: sticky; top: 0; z-index: 4; order: -2; width: 100%; height: 36px; margin: 0 0 -10px; padding: 0; border: 0; background: none; box-shadow: none; cursor: grab; touch-action: none; -webkit-tap-highlight-color: transparent; user-select: none; -webkit-user-select: none; }
+  body.player-only #seat-popup.bt-sheet .bt-sheet-grab::before { content: ""; position: absolute; left: 50%; top: 12px; width: 36px; height: 5px; margin-left: -18px; border-radius: 999px; background: color-mix(in oklab, var(--h-muted) 45%, transparent); transition: background .15s, width .2s cubic-bezier(.32, .72, 0, 1); }
+  body.player-only #seat-popup.bt-sheet .bt-sheet-grab:active::before { width: 44px; margin-left: -22px; background: color-mix(in oklab, var(--h-muted) 70%, transparent); }
+  /* the pictures step aside while the keyboard is up */
+  body.player-only #seat-popup.bt-sheet .bt-view { max-height: 62vw; transition: max-height 340ms cubic-bezier(.32, .72, 0, 1), opacity 220ms ease, margin 340ms cubic-bezier(.32, .72, 0, 1); }
+  body.player-only #seat-popup.bt-sheet[data-detent="peek"] .bt-view { max-height: 0; margin-bottom: -8px; opacity: 0; pointer-events: none; }
+}
+@keyframes bt-sheet-in { from { translate: 0 100%; } }
+@media (prefers-reduced-motion: reduce) { body.player-only #seat-popup.bt-sheet { animation: none !important; transition: none !important; } body.player-only #seat-popup.bt-sheet .bt-view { transition: none; } }
+
+/* the 3D picture while the arena is being made ready: its label breathes, so a tap is seen to have registered */
+body.player-only #seat-popup .bt-view-slide[aria-busy="true"] .bt-view-label { animation: bt-view-busy 1s ease-in-out infinite; }
+body.player-only #seat-popup .bt-view-slide[aria-busy="true"] { cursor: progress; }
+@keyframes bt-view-busy { 50% { opacity: .55; } }
+@media (prefers-reduced-motion: reduce) { body.player-only #seat-popup .bt-view-slide[aria-busy="true"] .bt-view-label { animation: none; opacity: .7; } }
+
+/* ───────────── The picture slot while the view is made ready ─────────────
+   Until the 3D still arrives the slot holds the site's thinking orb (the thinking-orbs package, drawn by runtime/thinking-orb.js), centred, with no text. When
+   the still is there the orb fades out; if no still can be made the orb goes and a short line says so. */
+body.player-only #seat-popup .bt-view-shot { animation: none; opacity: 0; transition: opacity 420ms ease, transform 700ms cubic-bezier(.22,1,.36,1); }
+body.player-only #seat-popup .bt-view-shot[data-ready="true"] { opacity: 1; }
+body.player-only #seat-popup .bt-view-orb { position: absolute; left: 50%; top: 50%; translate: -50% -50%; display: block; pointer-events: none; transition: opacity 320ms ease; }
+body.player-only #seat-popup .bt-view-shot[data-ready="true"] ~ .bt-view-orb { opacity: 0; }
+body.player-only #seat-popup .bt-view-shot[data-empty="true"] ~ .bt-view-orb { display: none; }
+body.player-only #seat-popup .bt-view-wait { position: absolute; left: 0; right: 0; top: calc(50% - 9px); text-align: center; font: 500 13px/18px var(--bt-sans); color: var(--h-muted); pointer-events: none; }
+body.player-only #seat-popup .bt-view-wait[hidden] { display: none; }

@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import Link from "next/link";
 import DateChip from "@/components/molecules/DateChip";
 import { cardCls } from "@/components/molecules/Card";
 import { ArrowRight } from "@/components/atoms/icons";
@@ -148,11 +147,11 @@ export default function EventCard({
   const matchup = getMatchup(event.attractions);
 
   return (
-    <Link
+    <a
       href={to}
       className={`${cardCls} group flex flex-col overflow-hidden transition-transform hover:-translate-y-0.5 ${className}`}
     >
-      <div className="relative aspect-[16/10] overflow-hidden bg-[#06203c]">
+      <div className="relative aspect-[16/10] overflow-hidden bg-card">
         {matchup ? (
           <>
             <MatchupPanel
@@ -180,7 +179,7 @@ export default function EventCard({
               className="absolute inset-0"
               style={{
                 background:
-                  "linear-gradient(180deg, transparent 40%, rgba(5,27,53,0.85) 100%)",
+                  "linear-gradient(180deg, transparent 40%, color-mix(in srgb, var(--paper) 85%, transparent) 100%)",
               }}
               aria-hidden
             />
@@ -196,10 +195,10 @@ export default function EventCard({
             {title}
           </h3>
           {when && (
-            <p className="mt-1.5 text-[13px] text-[#9DA2B3]">{when}</p>
+            <p className="mt-1.5 text-[13px] text-ink2">{when}</p>
           )}
           {event.venue?.name && (
-            <p className="mt-0.5 truncate text-[13px] text-[#BCBFCC]">
+            <p className="mt-0.5 truncate text-[13px] text-ink3">
               {event.venue.name}
             </p>
           )}
@@ -211,6 +210,6 @@ export default function EventCard({
           <ArrowRight className="h-3.5 w-3.5" />
         </span>
       </div>
-    </Link>
+    </a>
   );
 }

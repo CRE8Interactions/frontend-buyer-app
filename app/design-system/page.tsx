@@ -32,16 +32,16 @@ export const metadata: Metadata = pageMetadata({
 });
 
 const COLORS = [
-  { name: "Navy (field)", hex: "#051B35", use: "Page background — the field everything sits on", border: true },
-  { name: "White", hex: "#FFFFFF", use: "Headings, primary text, emphasis" },
-  { name: "Green (accent)", hex: "#A6E773", use: "Act here / this is the brand — one moment per viewport" },
-  { name: "Green (hover)", hex: "#B9EF93", use: "Primary button hover" },
-  { name: "Steel", hex: "#BCBFCC", use: "Secondary text, icons, static links" },
-  { name: "Space", hex: "#9DA2B3", use: "Muted/body text, eyebrows, captions" },
-  { name: "Graphite", hex: "#6E7180", use: "Tertiary text, separators" },
-  { name: "Electric blue", hex: "#3874E0", use: "Ambient glows only — never text, borders, or fills" },
-  { name: "Elevated surface", hex: "#0A2747", use: "App cards on navy", border: true },
-  { name: "Tile surface", hex: "#06203C", use: "Image and logo tiles", border: true },
+  { name: "Paper (field)", hex: "var(--paper)", use: "Page background, token --paper. Brand v0.1: neutral field", border: true },
+  { name: "Ink", hex: "var(--ink)", use: "Headings and primary text, --ink" },
+  { name: "Green (accent)", hex: "var(--green)", use: "Act here / this is the brand, --green (bg-primary). One moment per viewport" },
+  { name: "Green (hover)", hex: "var(--green-h)", use: "Primary button hover, --green-h" },
+  { name: "Ink 3", hex: "var(--ink3)", use: "Stronger secondary text and icons, text-ink3" },
+  { name: "Ink 2", hex: "var(--ink2)", use: "Muted and body text, captions, text-muted-foreground" },
+  { name: "Mute", hex: "var(--mut)", use: "Tertiary text, separators, text-mute" },
+  { name: "Seat blue", hex: "var(--seat)", use: "Rare second accent (seat maps). Never a background" },
+  { name: "Card", hex: "var(--paper2)", use: "Standard card fill, bg-card. 24px radius, no border, no shadow", border: true },
+  { name: "Feature", hex: "var(--dark)", use: "Dark feature card, bg-feature. One per view", border: true },
 ];
 
 const ICONS = [
@@ -69,9 +69,9 @@ function Swatch({ name, hex, use, border }: { name: string; hex: string; use: st
       <div className="p-4">
         <div className="flex items-baseline justify-between gap-3">
           <span className="text-[14px] font-semibold text-white">{name}</span>
-          <code className="text-[11px] tabular-nums text-[#9DA2B3]">{hex}</code>
+          <code className="text-[11px] tabular-nums text-ink2">{hex}</code>
         </div>
-        <p className="mt-1.5 text-[12px] leading-relaxed text-[#9DA2B3]">{use}</p>
+        <p className="mt-1.5 text-[12px] leading-relaxed text-ink2">{use}</p>
       </div>
     </div>
   );
@@ -82,7 +82,7 @@ function Spec({ title, code, children, className = "" }: { title: string; code?:
     <div className={`card p-6 sm:p-7 ${className}`}>
       <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
         <h3 className="text-[15px] font-semibold text-white">{title}</h3>
-        {code && <code className="text-[11px] text-[#6E7180]">{code}</code>}
+        {code && <code className="text-[11px] text-mute">{code}</code>}
       </div>
       <div className="mt-5">{children}</div>
     </div>
@@ -92,7 +92,7 @@ function Spec({ title, code, children, className = "" }: { title: string; code?:
 function Row({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <div className="flex flex-wrap items-center gap-3 border-t border-white/[0.06] py-3.5 first:border-t-0 first:pt-0 last:pb-0">
-      <span className="w-28 shrink-0 text-[11px] font-semibold uppercase tracking-[0.1em] text-[#6E7180]">{label}</span>
+      <span className="w-28 shrink-0 text-[11px] font-semibold uppercase tracking-[0.1em] text-mute">{label}</span>
       {children}
     </div>
   );
@@ -109,8 +109,8 @@ export default function DesignSystemPage() {
           eyebrow="Design system"
           title={
             <>
-              Atoms <span className="text-[#6E7180]">→</span> molecules <span className="text-[#6E7180]">→</span> organisms{" "}
-              <span className="text-[#6E7180]">→</span> templates <span className="text-[#6E7180]">→</span> pages.
+              Atoms <span className="text-mute">→</span> molecules <span className="text-mute">→</span> organisms{" "}
+              <span className="text-mute">→</span> templates <span className="text-mute">→</span> pages.
             </>
           }
           titleMax="820px"
@@ -124,7 +124,7 @@ export default function DesignSystemPage() {
         <SectionHeader
           eyebrow="Foundations"
           title="Color & type."
-          lede="Navy is the field, everything else is accent. Green means “act here” — roughly one green moment per viewport. Never introduce a new color."
+          lede="Neutral is the field, everything else is accent. Green means “act here”, roughly one green moment per viewport. Colors are tokens (see app/globals.css); never hardcode one."
           ledeMax="640px"
         />
         <div className="mt-10 grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
@@ -137,21 +137,21 @@ export default function DesignSystemPage() {
           <Spec title="Typography" code="Inter · next/font">
             <div className="space-y-7">
               <div>
-                <div className="text-[11px] font-semibold uppercase tracking-[0.1em] text-[#6E7180]">Hero h1 · clamp(40–76px)</div>
+                <div className="text-[11px] font-semibold uppercase tracking-[0.1em] text-mute">Hero h1 · clamp(40–76px)</div>
                 <div className="mt-2 text-[clamp(32px,4vw,56px)] font-semibold leading-[1.02] tracking-[-0.025em] text-white">
-                  Build Bigger. <span className="text-[#a6e773]">Block by Block.</span>
+                  Build Bigger. <span className="text-primary">Block by Block.</span>
                 </div>
               </div>
               <div>
-                <div className="text-[11px] font-semibold uppercase tracking-[0.1em] text-[#6E7180]">Section .h2 · clamp(30–48px)</div>
+                <div className="text-[11px] font-semibold uppercase tracking-[0.1em] text-mute">Section .h2 · clamp(30–48px)</div>
                 <h2 className="h2 mt-2">The results speak for themselves.</h2>
               </div>
               <div>
-                <div className="text-[11px] font-semibold uppercase tracking-[0.1em] text-[#6E7180]">.eyebrow</div>
+                <div className="text-[11px] font-semibold uppercase tracking-[0.1em] text-mute">.eyebrow</div>
                 <div className="eyebrow mt-2">Twelve px · uppercase · tracked</div>
               </div>
               <div>
-                <div className="text-[11px] font-semibold uppercase tracking-[0.1em] text-[#6E7180]">.lede</div>
+                <div className="text-[11px] font-semibold uppercase tracking-[0.1em] text-mute">.lede</div>
                 <p className="lede mt-2 max-w-[520px]">
                   Body copy runs Space gray at a relaxed 1.6 leading. Emphasis inside body copy is{" "}
                   <span className="font-semibold text-white">semibold white</span> — never color.
@@ -160,17 +160,17 @@ export default function DesignSystemPage() {
             </div>
           </Spec>
           <Spec title="Ambient glow" code='<Glow color="blue|green" />'>
-            <p className="text-[13px] leading-relaxed text-[#9DA2B3]">
+            <p className="text-[13px] leading-relaxed text-ink2">
               One per section, alternating sides. Blue for most sections; green reserved for the statement and final CTA.
             </p>
             <div className="mt-5 grid gap-4 sm:grid-cols-2">
-              <div className="relative h-44 overflow-hidden rounded-xl border border-white/[0.08] bg-[#051B35]">
+              <div className="relative h-44 overflow-hidden rounded-xl border border-white/[0.08] bg-background">
                 <Glow className="-left-16 top-1/2 h-56 w-56 -translate-y-1/2" opacity={0.2} blur={70} />
-                <span className="absolute bottom-3 left-4 text-[11px] font-semibold uppercase tracking-[0.1em] text-[#6E7180]">Blue · default</span>
+                <span className="absolute bottom-3 left-4 text-[11px] font-semibold uppercase tracking-[0.1em] text-mute">Blue · default</span>
               </div>
-              <div className="relative h-44 overflow-hidden rounded-xl border border-white/[0.08] bg-[#051B35]">
+              <div className="relative h-44 overflow-hidden rounded-xl border border-white/[0.08] bg-background">
                 <Glow color="green" className="-right-16 top-1/2 h-56 w-56 -translate-y-1/2" opacity={0.16} blur={70} />
-                <span className="absolute bottom-3 left-4 text-[11px] font-semibold uppercase tracking-[0.1em] text-[#6E7180]">Green · statement + CTA only</span>
+                <span className="absolute bottom-3 left-4 text-[11px] font-semibold uppercase tracking-[0.1em] text-mute">Green · statement + CTA only</span>
               </div>
             </div>
           </Spec>
@@ -188,7 +188,7 @@ export default function DesignSystemPage() {
         <div className="mt-10 grid gap-4 lg:grid-cols-2">
           <Spec title="Button" code='<Button variant size href?>'>
             <Row label="Primary">
-              <Button href="#">Book a walkthrough <ArrowRight className="arrow" /></Button>
+              <Button href="#">Book a walkthrough <ArrowRight /></Button>
               <Button href="#" size="sm">Log in</Button>
             </Row>
             <Row label="Outline">
@@ -199,7 +199,7 @@ export default function DesignSystemPage() {
               <Button variant="ghost" href="#">See the platform</Button>
             </Row>
             <Row label="Disabled">
-              <Button disabled className="disabled:opacity-40">Validate</Button>
+              <Button disabled className="disabled:cursor-not-allowed disabled:opacity-40">Validate</Button>
             </Row>
           </Spec>
 
@@ -229,12 +229,12 @@ export default function DesignSystemPage() {
             <Row label="BlockMarker">
               <BlockMarker />
               <BlockMarker size="sm" />
-              <span className="text-[12px] text-[#9DA2B3]">the green square motif</span>
+              <span className="text-[12px] text-ink2">the green square motif</span>
             </Row>
             <Row label="IconChip">
               <IconChip><Bolt className="h-5 w-5" /></IconChip>
               <IconChip tone="space"><Shield className="h-5 w-5" /></IconChip>
-              <span className="text-[12px] text-[#9DA2B3]">icons stay Steel/Space — never green</span>
+              <span className="text-[12px] text-ink2">icons stay Steel/Space — never green</span>
             </Row>
           </Spec>
 
@@ -243,7 +243,7 @@ export default function DesignSystemPage() {
               <Label htmlFor="ds-email">Email</Label>
               <Input id="ds-email" type="email" placeholder="Enter your email" className="mt-3" />
             </div>
-            <p className="mt-4 text-[12px] leading-relaxed text-[#9DA2B3]">
+            <p className="mt-4 text-[12px] leading-relaxed text-ink2">
               Navy input well on the elevated surface; green border on focus.
             </p>
           </Spec>
@@ -251,20 +251,20 @@ export default function DesignSystemPage() {
           <Spec title="Icons" code="atoms/icons.tsx · 24px grid · currentColor" className="lg:col-span-2">
             <div className="grid grid-cols-3 gap-3 sm:grid-cols-5 lg:grid-cols-9">
               {ICONS.map((i) => (
-                <div key={i.name} className="flex flex-col items-center gap-2.5 rounded-xl border border-white/[0.06] bg-white/[0.02] py-5 text-[#BCBFCC]">
+                <div key={i.name} className="flex flex-col items-center gap-2.5 rounded-xl border border-white/[0.06] bg-white/[0.02] py-5 text-ink3">
                   {i.el}
-                  <span className="text-[11px] text-[#6E7180]">{i.name}</span>
+                  <span className="text-[11px] text-mute">{i.name}</span>
                 </div>
               ))}
             </div>
-            <p className="mt-4 text-[12px] text-[#9DA2B3]">Tickets are always the Ticket icon — never a diamond or placeholder shape.</p>
+            <p className="mt-4 text-[12px] text-ink2">Tickets are always the Ticket icon — never a diamond or placeholder shape.</p>
           </Spec>
 
           <Spec title="Motion" code="<Reveal delay> <RotatingWord words>" className="lg:col-span-2">
-            <p className="text-[13px] leading-relaxed text-[#9DA2B3]">
+            <p className="text-[13px] leading-relaxed text-ink2">
               Reveal fades + rises content into view on scroll (reduced-motion safe). RotatingWord cycles the statement line:
             </p>
-            <div className="mt-4 text-[clamp(26px,3.4vw,44px)] font-light leading-[1.05] tracking-[-0.03em] text-[#9DA2B3]">
+            <div className="mt-4 text-[clamp(26px,3.4vw,44px)] font-light leading-[1.05] tracking-[-0.03em] text-ink2">
               Your <RotatingWord words={["game day", "front office", "box office", "fan base"]} />
             </div>
           </Spec>
@@ -318,11 +318,11 @@ export default function DesignSystemPage() {
           <Spec title="DateChip · LogoTile" code='<DateChip variant="glass|navy"> <LogoTile src>'>
             <Row label="Glass">
               <DateChip month="Jul" day="18" />
-              <span className="text-[12px] text-[#9DA2B3]">hero event rows</span>
+              <span className="text-[12px] text-ink2">hero event rows</span>
             </Row>
             <Row label="Navy">
               <DateChip variant="navy" month="Aug" day="02" />
-              <span className="text-[12px] text-[#9DA2B3]">compact list rows</span>
+              <span className="text-[12px] text-ink2">compact list rows</span>
             </Row>
             <Row label="LogoTile">
               <LogoTile src="/cases/logos/raptors.svg" />
@@ -346,19 +346,19 @@ export default function DesignSystemPage() {
             <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
               <div className="card p-5">
                 <p className="text-[13px] font-semibold text-white">Marketing card</p>
-                <p className="mt-1 text-[12px] text-[#9DA2B3]"><code>.card</code> — faint wash + hairline, 18px radius</p>
+                <p className="mt-1 text-[12px] text-ink2"><code>.card</code> — faint wash + hairline, 18px radius</p>
               </div>
               <div className={`${cardCls} p-5`}>
                 <p className="text-[13px] font-semibold text-white">App card</p>
-                <p className="mt-1 text-[12px] text-[#9DA2B3]"><code>cardCls</code> — elevated #0a2747 + sheen</p>
+                <p className="mt-1 text-[12px] text-ink2"><code>cardCls</code> — elevated #0a2747 + sheen</p>
               </div>
               <div className={`${cardCls} card-glow p-5`}>
                 <p className="text-[13px] font-semibold text-white">Glow card</p>
-                <p className="mt-1 text-[12px] text-[#9DA2B3]"><code>card-glow</code> — the one card that owns the moment</p>
+                <p className="mt-1 text-[12px] text-ink2"><code>card-glow</code> — the one card that owns the moment</p>
               </div>
               <div className="tile-glass rounded-2xl p-5">
                 <p className="text-[13px] font-semibold text-white">Glass tile</p>
-                <p className="mt-1 text-[12px] text-[#9DA2B3]"><code>tile-glass</code> — electric-blue glass</p>
+                <p className="mt-1 text-[12px] text-ink2"><code>tile-glass</code> — electric-blue glass</p>
               </div>
             </div>
           </Spec>
@@ -383,7 +383,7 @@ export default function DesignSystemPage() {
         <div className="mt-4">
           <div className="mb-4 flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1 px-1">
             <h3 className="text-[15px] font-semibold text-white">CtaPanel</h3>
-            <code className="text-[11px] text-[#6E7180]">{'<CtaPanel title sub action size tint note?>'}</code>
+            <code className="text-[11px] text-mute">{'<CtaPanel title sub action size tint note?>'}</code>
           </div>
           <CtaPanel
             size="md"
@@ -399,38 +399,39 @@ export default function DesignSystemPage() {
         <SectionHeader
           eyebrow="Tiers 3–5 · organisms, templates, pages"
           title="Organisms, templates, pages."
-          lede="Organisms are full page regions — Nav, PageHero, LogoMarquee, Testimonials, SwitchTimeline, PricingEngine, BlockStack, SiteFooter. Templates wrap them into chrome; pages are the app/ routes."
+          lede="Organisms are full page regions — Nav, PageHero, LogoMarquee, Testimonials, SwitchTimeline, PricingEngine, BlockStack, SiteFooter, WalletMenu. Templates wrap them into chrome; pages are the app/ routes."
           ledeMax="720px"
         />
         <div className="mt-10 grid gap-4 lg:grid-cols-3">
           {[
             { t: "MarketingPage", d: "Nav on top, slim SiteFooter below — this page is wrapped in it. Every marketing route composes it with PageHero + Sections." },
             { t: "AppShell", d: "Demo fan-app chrome: header with search, auth guard, ambient grid + glow orbs behind the content." },
+            { t: "WalletShell", d: "AppShell plus the wallet identity strip and persistent section tabs (Events / Transfers / Listings / Settings)." },
           ].map((x) => (
             <div key={x.t} className="card p-6">
               <div className="flex items-center gap-3">
                 <BlockMarker size="sm" />
                 <h3 className="text-[16px] font-semibold text-white">{x.t}</h3>
               </div>
-              <p className="mt-3 text-[13px] leading-relaxed text-[#9DA2B3]">{x.d}</p>
+              <p className="mt-3 text-[13px] leading-relaxed text-ink2">{x.d}</p>
             </div>
           ))}
         </div>
         <div className="mt-10 overflow-hidden rounded-[22px] border border-white/[0.08]">
-          <div className="border-b border-white/[0.08] bg-white/[0.02] px-5 py-3 text-[11px] font-semibold uppercase tracking-[0.1em] text-[#6E7180]">
+          <div className="border-b border-white/[0.08] bg-white/[0.02] px-5 py-3 text-[11px] font-semibold uppercase tracking-[0.1em] text-mute">
             PageHero — photo + 4-layer navy stack (wash · radial · fade)
           </div>
           <div className="relative flex h-[340px] items-center overflow-hidden">
             <div className="absolute inset-0">
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img src="/hero-bg.jpg" alt="" className="absolute inset-0 h-full w-full object-cover" style={{ objectPosition: "center 18%" }} />
-              <div className="absolute inset-0" style={{ background: "rgba(5,27,53,0.38)" }} />
-              <div className="absolute inset-0" style={{ background: "radial-gradient(ellipse 85% 68% at 50% 46%, rgba(5,27,53,0.42), transparent 72%)" }} />
-              <div className="absolute inset-0" style={{ background: "linear-gradient(to bottom, #051B35 0%, transparent 26%, transparent 52%, #051B35 92%)" }} />
+              <div className="absolute inset-0" style={{ background: "color-mix(in srgb, var(--paper) 38%, transparent)" }} />
+              <div className="absolute inset-0" style={{ background: "radial-gradient(ellipse 85% 68% at 50% 46%, color-mix(in srgb, var(--paper) 42%, transparent), transparent 72%)" }} />
+              <div className="absolute inset-0" style={{ background: "linear-gradient(to bottom, var(--paper) 0%, transparent 26%, transparent 52%, var(--paper) 92%)" }} />
             </div>
             <div className="container-x relative w-full text-center">
               <h2 className="text-[clamp(28px,3.6vw,48px)] font-semibold leading-[1.02] tracking-[-0.025em] text-white [text-shadow:0_2px_30px_rgba(0,0,0,0.55)]">
-                Build Bigger. <span className="text-[#a6e773]">Block by Block.</span>
+                Build Bigger. <span className="text-primary">Block by Block.</span>
               </h2>
             </div>
           </div>

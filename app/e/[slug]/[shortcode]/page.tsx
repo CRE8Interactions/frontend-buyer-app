@@ -1,94 +1,24 @@
 "use client";
 
 import { Suspense, useEffect, useMemo, useState } from "react";
-import { useParams, useRouter, useSearchParams } from "next/navigation";
-import BrandedNotice from "@/components/molecules/BrandedNotice";
-import RouteLoader from "@/components/molecules/RouteLoader";
+import { useParams, useSearchParams } from "next/navigation";
+import BrandLoader from "@/components/molecules/BrandLoader";
 import PremiumTicketing, {
+  NM_STATE_DATA,
   type TicketingData,
 } from "@/components/organisms/PremiumTicketing";
-import { getEventByShortCode, getTicketGroups } from "@/lib/api";
-import { rememberTrackingCode } from "@/lib/trackingLink";
-import { brandingToTicketingTheme, type OrgBranding } from "@/lib/branding";
-import { cacheEventBranding } from "@/lib/orgBrandingCache";
-import { isSportingEvent } from "@/lib/eventCategory";
-import { eventPromotionalCopy } from "@/lib/promotionalDescription";
-import {
-  eventAboutText,
-  eventDoorsIso,
-  eventWhenShortWithDoors,
-  eventWhenWithDoors,
-  formatEventWhen,
-  formatOnSaleWhen,
-  imageUrl,
-  resolveEventMatchup,
-  type ApiImage,
-  type TimezoneLike,
-} from "@/lib/helpers";
-import {
-  formatVenueCityState,
-  formatVenueLocationLine,
-} from "@/lib/venueLocation";
-import {
-  groupsToGaTiers,
-  lockedZonesFromGroups,
-  normalizeGlobalTicketLimit,
-  type RawTicketGroup as RawGroup,
-} from "@/lib/ticketListings";
-import useWaitingRoomHeartbeat from "@/hooks/useWaitingRoomHeartbeat";
-import {
-  getWaitingRoomPath,
-  hasValidWaitingRoomToken,
-  isWaitingRoomRequired,
-  rememberWaitingRoomEntry,
-} from "@/lib/waitingRoom";
+import { getEventByShortCode } from "@/lib/api";
+import { formatEventWhen } from "@/lib/helpers";
 
 type EventData = {
-  id?: string | number;
-  uuid?: string;
   name?: string;
-  slug?: string;
-  seoUrl?: string;
-  shortCode?: string;
-  globalTicketLimit?: number | string | null;
-  waitingRoomEnabled?: boolean | null;
   start?: string;
   doorsOpen?: string;
-  realDoorsOpen?: string;
   summary?: string;
-  description?: string;
-  promotionalDescription?: unknown;
-  image?: ApiImage;
-  category?: { name?: string | null };
-  categoryName?: string | null;
-  attractions?: Array<{
-    name?: string;
-    primary?: boolean;
-    artwork?: { url?: string };
-    images?: ApiImage[];
-  }>;
-  branding?: OrgBranding | null;
-  organization?: {
-    name?: string;
-    slug?: string;
-    branding?: OrgBranding | null;
-    category?: { name?: string | null };
-    primaryColor?: string;
-    accentColor?: string;
-    brandColor?: string;
-    image?: ApiImage;
-    logo?: ApiImage;
-    logoUrl?: string;
-  };
-  venue?: {
-    name?: string;
-    timezone?: TimezoneLike;
-    image?: unknown;
-    address?: Array<{ address_1?: string; city?: string; state?: string; zipcode?: string }>;
-  };
-  status?: string | null;
-  soldout?: boolean | null;
-  soldOut?: boolean | null;
+  image?: unknown;
+  attractions?: Array<{ name?: string; primary?: boolean; artwork?: { url?: string } }>;
+  organization?: { name?: string };
+  venue?: { name?: string; timezone?: string; image?: unknown; address?: Array<{ address_1?: string; city?: string; state?: string; zipcode?: string }> };
 };
 
 const titleCase = (s?: string) =>
@@ -101,160 +31,83 @@ function imageOf(img: unknown): string | null {
   return o.url || o.formats?.small?.url || o.formats?.thumbnail?.url || null;
 }
 
-function toGaData(
-  ev: EventData,
-  groups: RawGroup[],
-  soldOut: boolean,
-  scheduled: boolean,
-  scheduledTime?: string | null,
-): TicketingData {
+function formatDoors(iso?: string, tz?: string) {
+  if (!iso) return null;
+  try {
+    return new Intl.DateTimeFormat("en-US", { hour: "numeric", minute: "2-digit", timeZone: tz || undefined }).format(new Date(iso));
+  } catch {
+    return null;
+  }
+}
+
+function toGaData(ev: EventData): TicketingData {
   const tz = ev.venue?.timezone;
-  const doorsIso = eventDoorsIso(ev);
   const when = formatEventWhen(ev.start, tz) || "";
-  const whenLong = eventWhenWithDoors(ev.start, doorsIso, tz);
+  const doors = formatDoors(ev.doorsOpen, tz);
+  const whenLong = [when, doors ? `Doors ${doors}` : null].filter(Boolean).join(" · ");
   const addr = ev.venue?.address?.[0];
   const city = titleCase(addr?.city);
   const state = (addr?.state || "").toUpperCase();
   const venueName = ev.venue?.name || "Venue";
-  const venueLine = formatVenueLocationLine(venueName, ev.venue?.address);
-  const venueCityState = formatVenueCityState(ev.venue?.address);
+  const venueCityState = [city, state].filter(Boolean).join(", ");
+  const venueLine = [venueName, venueCityState].filter(Boolean).join(", ");
   const venueAddress = [addr?.address_1, city, state, addr?.zipcode].filter(Boolean).join(", ");
+  const home = ev.attractions?.find((a) => a.primary) || ev.attractions?.[0];
+  const away = ev.attractions?.find((a) => a !== home);
   const orgLabel = ev.organization?.name || "Blocktickets";
   const poster = imageOf(ev.image);
-  const matchup = resolveEventMatchup(ev.attractions, {
-    orgName: orgLabel,
-    sportingEvent: isSportingEvent(ev),
-  });
-  const gaTiers = groupsToGaTiers(
-    groups,
-    {
-      globalMax: normalizeGlobalTicketLimit(ev.globalTicketLimit),
-      includeLocked: true,
-    },
-  );
-  const lockedZones = lockedZonesFromGroups(groups);
-  const theme = brandingToTicketingTheme(ev, ev.organization, poster);
 
   return {
-    ...theme,
-    eventId: ev.id,
-    eventUuid: ev.uuid,
+    ...NM_STATE_DATA,
     eventType: "ga",
-    listings: [],
-    gaTiers: gaTiers.length ? gaTiers : undefined,
-    lockedZones,
-    soldOut,
-    scheduled,
-    scheduledAt: scheduledTime
-      ? formatOnSaleWhen(scheduledTime, tz) || scheduledTime
-      : undefined,
     eventName: ev.name || "Event",
     whenLong: whenLong || when,
-    whenShort: eventWhenShortWithDoors(ev.start, doorsIso, tz),
+    whenShort: [when.replace(/\s\d{1,2}:\d{2}\s?[AP]M/i, ""), doors ? `Doors ${doors}` : null].filter(Boolean).join(" · "),
     whenPlain: when,
     doorsLine: whenLong || when,
     venueName,
     venueLine,
     venueAddress: venueAddress || venueLine,
     venueCityState,
-    mapsQuery: `${venueName} ${city} ${state}`.trim(),
-    logoSrc: matchup.homeLogoSrc || theme.logoSrc,
-    homeLogoSrc: matchup.homeLogoSrc,
-    awayLogoSrc: matchup.awayLogoSrc,
-    posterSrc: poster || theme.brandLogoSrc,
-    venuePhotoSrc: imageUrl(ev.venue?.image, "") || undefined,
+    mapsQuery: `${venueName} ${venueCityState}`.trim(),
+    logoSrc: imageOf(home?.artwork) || poster || NM_STATE_DATA.logoSrc,
+    brandLogoSrc: NM_STATE_DATA.logoSrc,
+    posterSrc: poster || NM_STATE_DATA.logoSrc,
+    venuePhotoSrc: imageOf(ev.venue?.image) || poster || undefined,
     orgLabel,
-    providerLabel: `Official ticketing marketplace for ${orgLabel}`,
-    aboutText: eventAboutText(ev),
-    promo: eventPromotionalCopy(ev),
-    homeLabel: matchup.homeLabel,
-    awayLabel: matchup.awayLabel,
-    awayShort: matchup.awayShort,
-    showMatchupSection: matchup.showMatchupSection,
-    showAwayTeam: matchup.showAwayTeam,
+    aboutText:
+      ev.summary ||
+      `General admission for ${ev.name}. Gates open one hour before start — mobile tickets, verified inventory, all-in pricing.`,
+    homeLabel: home?.name || orgLabel,
+    awayLabel: away?.name || "Visitor",
+    awayShort: (away?.name || "AWAY").slice(0, 3).toUpperCase(),
+    // gaTiers omitted → component uses the designed default tiers (on-sale / scheduled / sold-out)
   };
 }
 
 function GAEvent() {
   const params = useParams<{ slug: string; shortcode: string }>();
-  const router = useRouter();
   const searchParams = useSearchParams();
   const code = searchParams.get("code") || "0";
 
   const [ev, setEv] = useState<EventData | null>(null);
-  const [groups, setGroups] = useState<RawGroup[]>([]);
-  const [soldOut, setSoldOut] = useState(false);
-  const [scheduled, setScheduled] = useState(false);
-  const [scheduledTime, setScheduledTime] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
-  const [leavingForWaitingRoom, setLeavingForWaitingRoom] = useState(false);
   const [error, setError] = useState("");
-
-  useWaitingRoomHeartbeat(
-    ev?.uuid,
-    isWaitingRoomRequired(ev) && hasValidWaitingRoomToken(ev?.uuid),
-  );
 
   useEffect(() => {
     let cancelled = false;
+    // Keep the branded loader up for a beat so it never flashes like a glitch.
     const started = Date.now();
     const MIN_MS = 1100;
     setLoading(true);
     getEventByShortCode(params.shortcode, params.slug, code)
-      .then(async (res) => {
+      .then((res) => {
         if (cancelled) return;
         if (res.data?.status === 404 || !res.data?.event) {
           setError("This event page could not be found.");
           return;
         }
-        const event = res.data.event as EventData;
-        rememberTrackingCode(event.uuid, searchParams.get("code"));
-        cacheEventBranding(event, event.organization);
-        if (
-          event.uuid &&
-          isWaitingRoomRequired(event) &&
-          !hasValidWaitingRoomToken(event.uuid)
-        ) {
-          const returnPath = `${window.location.pathname}${window.location.search}`;
-          rememberWaitingRoomEntry({
-            eventUuid: event.uuid,
-            destination: "ga",
-            returnPath,
-          });
-          setLeavingForWaitingRoom(true);
-          router.replace(
-            getWaitingRoomPath(params.slug, params.shortcode),
-          );
-          return;
-        }
-        setEv(event);
-        try {
-          const gr = await getTicketGroups({
-            event,
-            quantity: 0,
-            offerIds: [],
-            priceRange: [0, 500],
-            accessCodes: [],
-            accessible: false,
-            sort: "price",
-            returnLocked: true,
-          });
-          if (!cancelled) {
-            const inventoryScheduled = Boolean(gr.data?.isScheduled);
-            const inventorySoldOut =
-              Boolean(gr.data?.soldout) && !inventoryScheduled;
-            setScheduled(inventoryScheduled);
-            setScheduledTime(gr.data?.scheduledTime || null);
-            setSoldOut(inventorySoldOut);
-            setGroups(
-              inventorySoldOut
-                ? []
-                : ((gr.data?.ticketGroups || []) as RawGroup[]),
-            );
-          }
-        } catch {
-          if (!cancelled) setGroups([]);
-        }
+        setEv(res.data.event as EventData);
       })
       .catch(() => {
         if (!cancelled) setError("Unable to load this event.");
@@ -262,63 +115,21 @@ function GAEvent() {
       .finally(() => {
         if (cancelled) return;
         const wait = Math.max(0, MIN_MS - (Date.now() - started));
-        setTimeout(() => {
-          if (!cancelled) setLoading(false);
-        }, wait);
+        setTimeout(() => { if (!cancelled) setLoading(false); }, wait);
       });
     return () => {
       cancelled = true;
     };
-  }, [params.shortcode, params.slug, code, router]);
+  }, [params.shortcode, params.slug, code]);
 
-  const data = useMemo(
-    () =>
-      ev
-        ? toGaData(ev, groups, soldOut, scheduled, scheduledTime)
-        : null,
-    [ev, groups, soldOut, scheduled, scheduledTime],
-  );
+  const data = useMemo(() => (ev ? toGaData(ev) : null), [ev]);
 
-  const theme = ev ? brandingToTicketingTheme(ev, ev.organization) : null;
-  const noticeBranding = theme && {
-    primaryColor: theme.accent,
-    logoSrc: theme.brandLogoSrc,
-    name: ev?.organization?.name,
-    slug: ev?.organization?.slug,
-  };
-
-  if (loading || leavingForWaitingRoom) {
-    return (
-      <RouteLoader
-        branding={
-          theme && {
-            primaryColor: theme.accent,
-            logoSrc: theme.brandLogoSrc,
-            name: ev?.organization?.name,
-          }
-        }
-      />
-    );
-  }
+  if (loading) return <BrandLoader variant="tenant" accent={NM_STATE_DATA.accent} logoSrc={NM_STATE_DATA.logoSrc} name="NM State Athletics" message="Loading Aggie tickets" />;
   if (error || !data) {
     return (
-      <BrandedNotice
-        title="Event unavailable"
-        message={error || "Event not found."}
-        branding={noticeBranding}
-      />
-    );
-  }
-  // Sold-out inventory shows the sold-out panel, even when groups came back
-  // with that response. An empty event that is still on sale uses the seated
-  // empty notice. Scheduled events still show their on-sale time.
-  if (!data.gaTiers?.length && !scheduled && !soldOut) {
-    return (
-      <BrandedNotice
-        title="No tickets on sale"
-        message="No ticket inventory is currently on sale for this event."
-        branding={noticeBranding}
-      />
+      <div style={{ minHeight: "60vh", display: "flex", alignItems: "center", justifyContent: "center", color: "#9DA2B3" }}>
+        {error || "Event not found."}
+      </div>
     );
   }
   return <PremiumTicketing data={data} />;
@@ -326,7 +137,7 @@ function GAEvent() {
 
 export default function GAEventRoute() {
   return (
-    <Suspense fallback={<RouteLoader />}>
+    <Suspense fallback={<BrandLoader variant="tenant" accent={NM_STATE_DATA.accent} logoSrc={NM_STATE_DATA.logoSrc} name="NM State Athletics" message="Loading Aggie tickets" />}>
       <GAEvent />
     </Suspense>
   );

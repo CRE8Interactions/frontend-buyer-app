@@ -55,7 +55,7 @@ export default function PageHero({
         )}
         <div className="absolute inset-0" style={{ background: `rgba(5,27,53,${wash})` }} />
         <div className="absolute inset-0" style={{ background: `radial-gradient(${radial}, rgba(5,27,53,${radialOpacity}), transparent 72%)` }} />
-        <div className="absolute inset-0" style={{ background: `linear-gradient(to bottom, #051B35 0%, transparent 26%, transparent ${fadeMid}, #051B35 ${fadeEnd})` }} />
+        <div className="absolute inset-0" style={{ background: `linear-gradient(to bottom, var(--paper) 0%, transparent 26%, transparent ${fadeMid}, var(--paper) ${fadeEnd})` }} />
       </div>
       {children}
     </header>

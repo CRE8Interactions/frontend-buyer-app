@@ -9,31 +9,19 @@ import {
   useElements,
   useStripe,
 } from "@stripe/react-stripe-js";
-import BrandedActionButton from "@/components/atoms/BrandedActionButton";
-import MobileStickyFooter from "@/components/molecules/MobileStickyFooter";
-import PageLoader from "@/components/molecules/PageLoader";
-import { BrandedLoader } from "@/components/molecules/RouteLoader";
+import Button from "@/components/atoms/Button";
+import Spinner from "@/components/atoms/Spinner";
+import PageSkeleton from "@/components/molecules/PageSkeleton";
 import Modal from "@/components/molecules/Modal";
-import useAutoFocus from "@/hooks/useAutoFocus";
+import { cardCls } from "@/components/molecules/Card";
+import { Input, Label } from "@/components/atoms/form";
 import {
   createPublicMenuPaymentIntent,
   getPublicMenu,
   getPublicMenuPricing,
   submitPublicMenuOrder,
 } from "@/lib/api";
-import { BLOCKTICKETS_NAVY } from "@/lib/branding";
-import { fieldClass, fieldErrorTextClass } from "@/lib/fieldValidation";
 import { formatCurrency } from "@/lib/helpers";
-import { MENU_LOADER_MESSAGE } from "@/lib/loaderMessages";
-import { menuTabTitle } from "@/lib/seo";
-import {
-  stripePaymentElementAppearance,
-  STRIPE_PAYMENT_ELEMENT_FONTS,
-} from "@/lib/stripePaymentElement";
-
-const lightCard =
-  "rounded-[20px] border border-[rgba(5,27,53,0.08)] bg-white text-[#051b35]";
-const muted = "text-[#6e7180]";
 
 type MenuItem = {
   id: string | number;
@@ -70,14 +58,10 @@ function visitKey(
 function MenuPayForm({
   totalLabel,
   submitting,
-  primaryColor,
-  textColor,
   onSubmit,
 }: {
   totalLabel: string;
   submitting: boolean;
-  primaryColor?: string;
-  textColor?: string;
   onSubmit: (intentId: string) => void;
 }) {
   const stripe = useStripe();
@@ -110,18 +94,15 @@ function MenuPayForm({
     <form onSubmit={handleSubmit} className="space-y-4">
       <PaymentElement onChange={(e) => setReady(Boolean(e.complete))} />
       {localError ? (
-        <p className={fieldErrorTextClass("light")}>{localError}</p>
+        <p className="text-[13px] text-red-400">{localError}</p>
       ) : null}
-      <BrandedActionButton
+      <Button
         type="submit"
-        className="w-full"
-        primaryColor={primaryColor}
-        textColor={textColor}
-        loading={submitting}
+        className="w-full disabled:opacity-50"
         disabled={!stripe || !ready || submitting}
       >
-        Pay {totalLabel}
-      </BrandedActionButton>
+        {submitting ? <Spinner size={18} /> : `Pay ${totalLabel}`}
+      </Button>
     </form>
   );
 }
@@ -135,10 +116,6 @@ export default function MenuExperience({
   venueUuid?: string;
   menuKey: string;
 }) {
-  // In-venue ordering always wears Blocktickets colors, not the org's.
-  const primaryColor = BLOCKTICKETS_NAVY;
-  const textColor = "#ffffff";
-  const autoFocusField = useAutoFocus<HTMLInputElement>(true);
   const router = useRouter();
   const searchParams = useSearchParams();
   const eventUuid =
@@ -156,14 +133,11 @@ export default function MenuExperience({
   const [accessMode, setAccessMode] = useState<"seat_delivery" | "pickup">(
     "seat_delivery",
   );
-  const [accessModeReady, setAccessModeReady] = useState(false);
   const [gateRow, setGateRow] = useState(rowFromQuery);
   const [gateSeat, setGateSeat] = useState(seatFromQuery);
-  const [gateError, setGateError] = useState("");
   const [rememberSeat, setRememberSeat] = useState(true);
 
   const [menuLoading, setMenuLoading] = useState(false);
-  const [menuLoaded, setMenuLoaded] = useState(false);
   const [menuError, setMenuError] = useState("");
   const [categories, setCategories] = useState<MenuCategory[]>([]);
   const [items, setItems] = useState<MenuItem[]>([]);
@@ -216,16 +190,9 @@ export default function MenuExperience({
           res?.data?.accessMode === "pickup" ? "pickup" : "seat_delivery",
         );
         setLocationName(res?.data?.location?.name || null);
-        document.title = menuTabTitle(
-          res?.data?.organization?.name,
-          res?.data?.accessMode === "pickup",
-        );
       })
       .catch(() => {
         if (!cancelled) setAccessMode("seat_delivery");
-      })
-      .finally(() => {
-        if (!cancelled) setAccessModeReady(true);
       });
     return () => {
       cancelled = true;
@@ -234,9 +201,6 @@ export default function MenuExperience({
 
   useEffect(() => {
     if (!organizationUuid || !menuKey) return;
-    // A pickup menu has no seat gate, so wait for the access mode before
-    // deciding what this route shows.
-    if (!accessModeReady) return;
 
     if (accessMode === "pickup") {
       setShowGate(false);
@@ -273,7 +237,6 @@ export default function MenuExperience({
     setReady(true);
   }, [
     accessMode,
-    accessModeReady,
     organizationUuid,
     menuKey,
     venueUuid,
@@ -302,18 +265,12 @@ export default function MenuExperience({
         setCategories(res.data?.categories || []);
         setItems(res.data?.items || []);
         setLocationName(res.data?.location?.name || null);
-        document.title = menuTabTitle(
-          res.data?.organization?.name,
-          isPickup,
-        );
       })
       .catch(() => {
         if (!cancelled) setMenuError("Unable to load this menu.");
       })
       .finally(() => {
-        if (cancelled) return;
-        setMenuLoading(false);
-        setMenuLoaded(true);
+        if (!cancelled) setMenuLoading(false);
       });
     return () => {
       cancelled = true;
@@ -390,18 +347,10 @@ export default function MenuExperience({
     (a, b) => (a.displayOrder ?? 0) - (b.displayOrder ?? 0),
   );
 
-  const continueGate = (rowValue = gateRow, seatValue = gateSeat) => {
-    const row = rowValue.trim();
-    const seat = seatValue.trim();
-    if (!row) {
-      setGateError("Row is required.");
-      return;
-    }
-    if (!seat) {
-      setGateError("Seat is required.");
-      return;
-    }
-    setGateError("");
+  const continueGate = () => {
+    const row = gateRow.trim();
+    const seat = gateSeat.trim();
+    if (!row || !seat) return;
     if (rememberSeat) {
       sessionStorage.setItem(
         visitKey(organizationUuid, menuKey, venueUuid, eventUuid),
@@ -470,15 +419,8 @@ export default function MenuExperience({
 
   const displayTotal = pricing?.total ?? cartSubtotal;
 
-  // Hold the Blocktickets loader through seat resolution and the first menu
-  // fetch so the page never appears half-built.
-  if (!ready || (!showGate && !menuLoaded)) {
-    return (
-      <BrandedLoader
-        fallback="blocktickets"
-        message={MENU_LOADER_MESSAGE}
-      />
-    );
+  if (!ready) {
+    return <PageSkeleton variant="cards" label="Loading menu" className="min-h-[40vh]" />;
   }
 
   if (showGate) {
@@ -487,58 +429,31 @@ export default function MenuExperience({
         <h1 className="text-[clamp(28px,4vw,36px)] font-semibold tracking-[-0.02em]">
           Where are you sitting?
         </h1>
-        <p className={`mt-2 text-[15px] ${muted}`}>
+        <p className="mt-2 text-[15px] text-ink2">
           Enter your seat for {menuKeyLabel}
           {locationName ? ` at ${locationName}` : ""} so we can deliver your
           order.
         </p>
-        <form
-          noValidate
-          className={`${lightCard} mt-8 space-y-4 p-5`}
-          onSubmit={(e) => {
-            e.preventDefault();
-            const data = new FormData(e.currentTarget);
-            const row = String(data.get("row") || "");
-            const seat = String(data.get("seat") || "");
-            setGateRow(row);
-            setGateSeat(seat);
-            continueGate(row, seat);
-          }}
-        >
+        <div className={`${cardCls} mt-8 space-y-4 p-5`}>
           <div>
-            <label htmlFor="row" className="text-[12px] font-semibold text-[#4a5567]">
-              Row
-            </label>
-            <input
-              ref={autoFocusField}
+            <Label htmlFor="row">Row</Label>
+            <Input
               id="row"
-              name="row"
-              aria-invalid={Boolean(gateError) && !gateRow.trim()}
-              className={`mt-2 ${fieldClass("light", Boolean(gateError) && !gateRow.trim())}`}
+              className="mt-2"
               value={gateRow}
-              onChange={(e) => {
-                setGateRow(e.target.value);
-                setGateError("");
-              }}
+              onChange={(e) => setGateRow(e.target.value)}
             />
           </div>
           <div>
-            <label htmlFor="seat" className="text-[12px] font-semibold text-[#4a5567]">
-              Seat
-            </label>
-            <input
+            <Label htmlFor="seat">Seat</Label>
+            <Input
               id="seat"
-              name="seat"
-              aria-invalid={Boolean(gateError) && !gateSeat.trim()}
-              className={`mt-2 ${fieldClass("light", Boolean(gateError) && !gateSeat.trim())}`}
+              className="mt-2"
               value={gateSeat}
-              onChange={(e) => {
-                setGateSeat(e.target.value);
-                setGateError("");
-              }}
+              onChange={(e) => setGateSeat(e.target.value)}
             />
           </div>
-          <label className={`text-[14px] ${muted}`}>
+          <label className="flex items-center gap-2 text-[14px] text-ink2">
             <input
               type="checkbox"
               checked={rememberSeat}
@@ -546,59 +461,50 @@ export default function MenuExperience({
             />
             Remember this seat
           </label>
-          {gateError ? (
-            <p className={fieldErrorTextClass("light")}>{gateError}</p>
-          ) : null}
-          <BrandedActionButton
-            type="submit"
-            className="w-full"
-            primaryColor={primaryColor}
-            textColor={textColor}
+          <Button
+            className="w-full disabled:opacity-50"
+            disabled={!gateRow.trim() || !gateSeat.trim()}
+            onClick={continueGate}
           >
             Continue
-          </BrandedActionButton>
-        </form>
+          </Button>
+        </div>
       </div>
     );
   }
 
   return (
     <div className="mx-auto max-w-2xl pb-28">
-      <p className="text-[12px] font-semibold uppercase tracking-[0.12em] text-[#6e7180]">
+      <p className="text-[12px] font-semibold uppercase tracking-[0.12em] text-ink2">
         {isPickup ? "Pickup menu" : "Seat delivery"}
       </p>
       <h1 className="mt-2 text-[clamp(28px,4vw,36px)] font-semibold tracking-[-0.02em]">
         {locationName || menuKeyLabel}
       </h1>
       {!isPickup ? (
-        <p className="mt-1 text-[14px] text-[#6e7180]">
+        <p className="mt-1 text-[14px] text-ink2">
           Section {menuKeyLabel} · Row {rowName} · Seat {seatName}
         </p>
       ) : null}
 
       {confirmation ? (
-        <div className={`${lightCard} mt-8 p-6 text-center`}>
+        <div className={`${cardCls} mt-8 p-6 text-center`}>
           <h2 className="text-[22px] font-semibold">Order received</h2>
-          <p className="mt-2 text-[#6e7180]">
+          <p className="mt-2 text-ink2">
             Order #{confirmation.orderNumber}
           </p>
-          <BrandedActionButton
-            className="mt-5"
-            primaryColor={primaryColor}
-            textColor={textColor}
-            onClick={() => setConfirmation(null)}
-          >
+          <Button className="mt-5" onClick={() => setConfirmation(null)}>
             Order more
-          </BrandedActionButton>
+          </Button>
         </div>
       ) : null}
 
       {menuLoading ? (
-        <div className="mt-12">
-          <PageLoader label="Loading menu" className="min-h-[20vh]" />
+        <div className="mt-12 flex justify-center">
+          <Spinner />
         </div>
       ) : menuError ? (
-        <p className="mt-8 text-[#6e7180]">{menuError}</p>
+        <p className="mt-8 text-ink2">{menuError}</p>
       ) : (
         <>
           <div className="mt-6 flex gap-2 overflow-x-auto pb-2">
@@ -607,8 +513,8 @@ export default function MenuExperience({
               onClick={() => setActiveCategory("all")}
               className={`shrink-0 rounded-full border px-4 py-2 text-[13px] font-semibold ${
                 activeCategory === "all"
-                  ? "border-[#051b35] bg-[#051b35] text-white"
-                  : "border-[rgba(5,27,53,0.16)] text-[#6e7180]"
+                  ? "border-primary bg-primary/15"
+                  : "border-white/15 text-ink2"
               }`}
             >
               All
@@ -620,8 +526,8 @@ export default function MenuExperience({
                 onClick={() => setActiveCategory(String(c.id))}
                 className={`shrink-0 rounded-full border px-4 py-2 text-[13px] font-semibold ${
                   activeCategory === String(c.id)
-                    ? "border-[#051b35] bg-[#051b35] text-white"
-                    : "border-[rgba(5,27,53,0.16)] text-[#6e7180]"
+                    ? "border-primary bg-primary/15"
+                    : "border-white/15 text-ink2"
                 }`}
               >
                 {c.name}
@@ -633,12 +539,12 @@ export default function MenuExperience({
             {visibleItems.map((item) => (
               <li
                 key={String(item.id)}
-                className={`${lightCard} flex items-start justify-between gap-4 p-4`}
+                className={`${cardCls} flex items-start justify-between gap-4 p-4`}
               >
                 <div className="min-w-0">
                   <p className="font-semibold">{item.name}</p>
                   {item.description ? (
-                    <p className="mt-1 text-[13px] text-[#6e7180]">
+                    <p className="mt-1 text-[13px] text-ink2">
                       {item.description}
                     </p>
                   ) : null}
@@ -646,10 +552,9 @@ export default function MenuExperience({
                     {formatCurrency(item.price)}
                   </p>
                 </div>
-                <BrandedActionButton
-                  type="button"
-                  tone="secondary"
-                  className="shrink-0 px-4 py-2 text-[13px]"
+                <Button
+                  size="sm"
+                  variant="outline"
                   onClick={() =>
                     setCart((cur) => ({
                       ...cur,
@@ -658,7 +563,7 @@ export default function MenuExperience({
                   }
                 >
                   Add
-                </BrandedActionButton>
+                </Button>
               </li>
             ))}
           </ul>
@@ -666,21 +571,19 @@ export default function MenuExperience({
       )}
 
       {cartCount > 0 ? (
-        <MobileStickyFooter innerPadding="16px">
+        <div className="fixed inset-x-0 bottom-0 z-40 border-t border-white/10 bg-card/95 p-4 backdrop-blur">
           <div className="mx-auto flex max-w-2xl items-center justify-between gap-4">
             <div>
               <p className="text-[14px] font-semibold">
                 {cartCount} item{cartCount === 1 ? "" : "s"}
               </p>
-              <p className="text-[13px] text-[#6e7180]">
+              <p className="text-[13px] text-ink2">
                 {formatCurrency(cartSubtotal)}
               </p>
             </div>
-            <BrandedActionButton type="button" primaryColor={primaryColor} textColor={textColor} onClick={() => setCartOpen(true)}>
-              View cart
-            </BrandedActionButton>
+            <Button onClick={() => setCartOpen(true)}>View cart</Button>
           </div>
-        </MobileStickyFooter>
+        </div>
       ) : null}
 
       {cartOpen ? (
@@ -695,7 +598,7 @@ export default function MenuExperience({
           }}
         >
           {error ? (
-            <p className={`mt-3 text-[14px] ${fieldErrorTextClass("light")}`}>{error}</p>
+            <p className="mt-3 text-[14px] text-red-400">{error}</p>
           ) : null}
           {checkoutStep === "review" ? (
             <>
@@ -711,7 +614,7 @@ export default function MenuExperience({
                     <div className="flex items-center gap-2">
                       <button
                         type="button"
-                        className="h-8 w-8 rounded-full border border-[rgba(5,27,53,0.16)]"
+                        className="h-8 w-8 rounded-full border border-white/15"
                         onClick={() =>
                           setCart((cur) => {
                             const next = (cur[String(item.id)] || 0) - 1;
@@ -730,20 +633,17 @@ export default function MenuExperience({
                   </li>
                 ))}
               </ul>
-              <div className="mt-4 flex justify-between border-t border-[rgba(5,27,53,0.08)] pt-3 font-semibold">
+              <div className="mt-4 flex justify-between border-t border-white/10 pt-3 font-semibold">
                 <span>Total</span>
                 <span>{formatCurrency(displayTotal)}</span>
               </div>
-              <BrandedActionButton
-                className="mt-5 w-full"
-                primaryColor={primaryColor}
-                textColor={textColor}
-                loading={loadingPayment}
+              <Button
+                className="mt-5 w-full disabled:opacity-50"
                 disabled={!cartLines.length || loadingPayment}
                 onClick={continueToPayment}
               >
-                Continue to payment
-              </BrandedActionButton>
+                {loadingPayment ? <Spinner size={18} /> : "Continue to payment"}
+              </Button>
             </>
           ) : clientSecret && stripePromise ? (
             <div className="mt-4">
@@ -751,18 +651,21 @@ export default function MenuExperience({
                 stripe={stripePromise}
                 options={{
                   clientSecret,
-                  appearance: stripePaymentElementAppearance(
-                    primaryColor,
-                    textColor,
-                  ),
-                  fonts: STRIPE_PAYMENT_ELEMENT_FONTS,
+                  appearance: {
+                    theme: "night",
+                    variables: {
+                      // Stripe's iframe cannot read CSS variables: brand v0.1 dark tokens as hex
+                      colorPrimary: "#97DD62",
+                      colorBackground: "#151517",
+                      colorText: "#F2F2F0",
+                      borderRadius: "12px",
+                    },
+                  },
                 }}
               >
                 <MenuPayForm
                   totalLabel={formatCurrency(displayTotal)}
                   submitting={submitting}
-                  primaryColor={primaryColor}
-                  textColor={textColor}
                   onSubmit={async (intentId) => {
                     setSubmitting(true);
                     try {
@@ -786,7 +689,9 @@ export default function MenuExperience({
               </Elements>
             </div>
           ) : (
-            <PageLoader label="Loading payment" className="min-h-[20vh]" />
+            <div className="flex justify-center py-8">
+              <Spinner />
+            </div>
           )}
         </Modal>
       ) : null}

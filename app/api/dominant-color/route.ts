@@ -1,10 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
 import sharp from "sharp";
-import {
-  dominantFromRgba,
-  meshBackgroundFromRgba,
-  panelFillFromRgba,
-} from "@/lib/logoColor";
 
 export const runtime = "nodejs";
 
@@ -29,6 +24,65 @@ function isAllowedImageUrl(raw: string) {
   }
 }
 
+function rgbToHex(r: number, g: number, b: number) {
+  return `#${[r, g, b]
+    .map((c) => Math.max(0, Math.min(255, c)).toString(16).padStart(2, "0"))
+    .join("")}`;
+}
+
+/** Pick a saturated brand-ish fill from logo pixels. */
+function dominantFromRgba(data: Buffer, channels: number) {
+  let bestScore = 0;
+  let best = { r: 30, g: 60, b: 100 };
+  let sumR = 0;
+  let sumG = 0;
+  let sumB = 0;
+  let count = 0;
+
+  for (let i = 0; i < data.length; i += channels) {
+    const r = data[i];
+    const g = data[i + 1];
+    const b = data[i + 2];
+    const a = channels >= 4 ? data[i + 3] : 255;
+    if (a < 140) continue;
+
+    const max = Math.max(r, g, b);
+    const min = Math.min(r, g, b);
+    const sat = max === 0 ? 0 : (max - min) / max;
+    const lum = (r + g + b) / 3;
+
+    // Skip near-white / near-black / washed neutrals
+    if (lum > 235 || lum < 18) continue;
+    if (sat < 0.12 && lum > 170) continue;
+
+    sumR += r;
+    sumG += g;
+    sumB += b;
+    count += 1;
+
+    const score = sat * 1.6 + (1 - Math.abs(lum - 110) / 255);
+    if (score > bestScore) {
+      bestScore = score;
+      best = { r, g, b };
+    }
+  }
+
+  const pick =
+    bestScore > 0.3
+      ? best
+      : count > 0
+        ? {
+            r: Math.round(sumR / count),
+            g: Math.round(sumG / count),
+            b: Math.round(sumB / count),
+          }
+        : best;
+
+  // Deepen so logos stay readable on the panel
+  const deepen = (c: number) => Math.max(0, Math.min(255, Math.round(c * 0.78)));
+  return rgbToHex(deepen(pick.r), deepen(pick.g), deepen(pick.b));
+}
+
 export async function GET(req: NextRequest) {
   const src = req.nextUrl.searchParams.get("src");
   if (!src || !isAllowedImageUrl(src)) {
@@ -45,40 +99,13 @@ export async function GET(req: NextRequest) {
     }
 
     const input = Buffer.from(await res.arrayBuffer());
-    const mode = req.nextUrl.searchParams.get("mode");
-
-    const sampleSize = mode === "jersey" ? 128 : 64;
     const { data, info } = await sharp(input)
-      .resize(sampleSize, sampleSize, { fit: "inside" })
+      .resize(64, 64, { fit: "inside" })
       .ensureAlpha()
       .raw()
       .toBuffer({ resolveWithObject: true });
 
-    if (mode === "jersey") {
-      const color =
-        panelFillFromRgba(
-          data,
-          info.channels,
-          info.width,
-          info.height,
-        ) || dominantFromRgba(data, info.channels, { deepen: 1 });
-      return NextResponse.json(
-        { color },
-        {
-          headers: {
-            "Cache-Control":
-              "public, max-age=86400, stale-while-revalidate=604800",
-          },
-        },
-      );
-    }
-
-    const color =
-      mode === "mesh"
-        ? meshBackgroundFromRgba(data, info.channels, info.width, info.height)
-        : dominantFromRgba(data, info.channels, {
-            deepen: mode === "panel" ? 1 : 0.78,
-          });
+    const color = dominantFromRgba(data, info.channels);
     return NextResponse.json(
       { color },
       {

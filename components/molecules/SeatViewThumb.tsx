@@ -37,7 +37,7 @@ export default function SeatViewThumb({
       }}
       aria-label="View from seats"
       title="View from seats"
-      className={`group relative h-[52px] w-[72px] shrink-0 overflow-hidden rounded-lg border border-white/10 bg-[#051B35] transition-colors hover:border-[#a6e773]/50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#a6e773] ${className}`}
+      className={`group relative h-[52px] w-[72px] shrink-0 overflow-hidden rounded-lg border border-white/10 bg-background transition-colors hover:border-primary/50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary ${className}`}
     >
       <SeatViewImage
         candidates={candidates}

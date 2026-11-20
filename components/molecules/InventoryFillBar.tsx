@@ -13,7 +13,7 @@ export type InventoryFill = {
 function fillColor(fullPct: number) {
   if (fullPct >= 85) return "#f07167";
   if (fullPct >= 60) return "#e8b86d";
-  return "#a6e773";
+  return "var(--green)";
 }
 
 export default function InventoryFillBar({

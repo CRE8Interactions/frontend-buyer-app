@@ -3,16 +3,12 @@
 import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import AppShell from "@/components/templates/AppShell";
-import BrandedActionButton from "@/components/atoms/BrandedActionButton";
-import { BrandedLoader } from "@/components/molecules/RouteLoader";
-import { fieldClass } from "@/lib/fieldValidation";
+import Button from "@/components/atoms/Button";
+import PageSkeleton from "@/components/molecules/PageSkeleton";
+import { cardCls } from "@/components/molecules/Card";
+import { Input } from "@/components/atoms/form";
 import { getGroupInvitation } from "@/lib/api";
 import { formatEventWhen, imageUrl } from "@/lib/helpers";
-import { GROUP_LOADER_MESSAGE } from "@/lib/loaderMessages";
-
-const lightCard =
-  "rounded-[20px] border border-[rgba(5,27,53,0.08)] bg-white text-[#051b35]";
-const muted = "text-[#6e7180]";
 
 type GroupInvite = {
   groupCode?: string;
@@ -95,39 +91,30 @@ export default function GroupManagePage() {
     setNewName("");
   };
 
-  // Group invites are a Blocktickets surface: hold the platform loader until
-  // the invitation is on screen.
-  if (loading) {
-    return (
-      <BrandedLoader
-        fallback="blocktickets"
-        message={GROUP_LOADER_MESSAGE}
-      />
-    );
-  }
-
   return (
-    <AppShell variant="light" search={false}>
-      {error || !data ? (
-        <div className={`${lightCard} mx-auto max-w-lg p-8 text-center`}>
+    <AppShell search={false}>
+      {loading ? (
+        <PageSkeleton variant="detail" label="Loading group" className="min-h-[40vh]" />
+      ) : error || !data ? (
+        <div className={`${cardCls} mx-auto max-w-lg p-8 text-center`}>
           <h1 className="text-[22px] font-semibold">Group not found</h1>
-          <p className={`mt-2 ${muted}`}>{error}</p>
+          <p className="mt-2 text-ink2">{error}</p>
         </div>
       ) : (
-        <div className="mx-auto max-w-xl pb-16 text-[#051b35]">
-          <p className="text-[12px] font-semibold uppercase tracking-[0.12em] text-[#8a93a3]">
+        <div className="mx-auto max-w-xl pb-16">
+          <p className="text-[12px] font-semibold uppercase tracking-[0.12em] text-ink2">
             Group purchase
           </p>
-          <h1 className="mt-2 text-[clamp(28px,4vw,36px)] font-semibold tracking-[-0.03em]">
+          <h1 className="mt-2 text-[clamp(28px,4vw,36px)] font-semibold tracking-[-0.02em]">
             Manage your group
           </h1>
-          <p className={`mt-2 text-[15px] ${muted}`}>
-            Code <span className="font-semibold text-[#051b35]">{groupCode}</span>
+          <p className="mt-2 text-[15px] text-ink2">
+            Code <span className="font-semibold text-white">{groupCode}</span>
           </p>
 
-          <div className={`${lightCard} mt-8 overflow-hidden`}>
+          <div className={`${cardCls} mt-8 overflow-hidden`}>
             {event?.image ? (
-              <div className="aspect-[21/9] bg-[#f1f3f8]">
+              <div className="aspect-[21/9] bg-card">
                 {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img
                   src={imageUrl(event.image as never)}
@@ -140,7 +127,7 @@ export default function GroupManagePage() {
               <p className="text-[18px] font-semibold">
                 {event?.name || "Event"}
               </p>
-              <p className={`mt-1 text-[14px] ${muted}`}>
+              <p className="mt-1 text-[14px] text-ink2">
                 {[
                   formatEventWhen(event?.start, venue?.timezone),
                   venue?.name,
@@ -151,35 +138,27 @@ export default function GroupManagePage() {
             </div>
           </div>
 
-          <div className={`${lightCard} mt-4 p-5`}>
+          <div className={`${cardCls} mt-4 p-5`}>
             <p className="text-[14px] font-semibold">Invite link</p>
             <div className="mt-3 flex gap-2">
-              <input
-                readOnly
-                value={inviteLink}
-                className={`flex-1 text-[13px] ${fieldClass("light", false)}`}
-              />
-              <BrandedActionButton
-                type="button"
-                className="shrink-0 px-5"
-                onClick={copyLink}
-              >
+              <Input readOnly value={inviteLink} className="flex-1 text-[13px]" />
+              <Button variant="outline" onClick={copyLink}>
                 {copied ? "Copied" : "Copy"}
-              </BrandedActionButton>
+              </Button>
             </div>
           </div>
 
-          <div className={`${lightCard} mt-4 p-5`}>
+          <div className={`${cardCls} mt-4 p-5`}>
             <div className="flex items-center justify-between">
               <p className="text-[14px] font-semibold">Friends</p>
-              <span className={`text-[13px] ${muted}`}>
+              <span className="text-[13px] text-ink2">
                 {friends.filter((f) => f.status === "Going").length + 1} going
               </span>
             </div>
             <ul className="mt-4 space-y-3">
               <li className="flex items-center justify-between text-[14px]">
                 <span>You (host)</span>
-                <span className="font-semibold">Going</span>
+                <span className="text-primary">Going</span>
               </li>
               {friends.map((f) => (
                 <li
@@ -187,26 +166,21 @@ export default function GroupManagePage() {
                   className="flex items-center justify-between text-[14px]"
                 >
                   <span>{f.name}</span>
-                  <span className={muted}>{f.status}</span>
+                  <span className="text-ink2">{f.status}</span>
                 </li>
               ))}
             </ul>
             <div className="mt-4 flex gap-2">
-              <input
+              <Input
                 value={newName}
                 onChange={(e) => setNewName(e.target.value)}
                 placeholder="Add a friend name"
-                className={fieldClass("light", false)}
               />
-              <BrandedActionButton
-                type="button"
-                className="shrink-0 px-5"
-                onClick={addFriend}
-              >
+              <Button variant="outline" onClick={addFriend}>
                 Add
-              </BrandedActionButton>
+              </Button>
             </div>
-            <p className={`mt-3 text-[12px] ${muted}`}>
+            <p className="mt-3 text-[12px] text-ink2">
               Local manage UI — invite delivery APIs from the old app are not
               fully wired here yet.
             </p>

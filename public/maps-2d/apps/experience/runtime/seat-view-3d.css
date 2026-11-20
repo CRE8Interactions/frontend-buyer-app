@@ -1,0 +1,100 @@
+/* View from the seat (runtime/seat-view-3d.js). Same ported library specs as blocktickets-callouts.css:
+   sheet = Popover (.glass, 24px corners, 16px padding), location pill and hint = Tooltip (foreground fill, 12px corners),
+   buttons = Button primary / secondary (pill, 40px tall, press scale .97). */
+
+.bt-seatview { position: absolute; inset: 0; z-index: 5000; overflow: hidden; background: #14161a; color: var(--h-foreground); font: 400 14px/20px var(--bt-sans); opacity: 0; }
+/* opacity is driven frame by frame during the flight; this is only the plain fade used when there is no flight */
+.bt-seatview[data-fading="true"] { opacity: 0; transition: opacity 300ms ease-in; }
+/* the seat popup steps aside while the camera is away */
+#seat-popup { transition: opacity 200ms var(--e-out); }
+.bt-flying #seat-popup { opacity: 0 !important; pointer-events: none; }
+.bt-sv-stage { position: absolute; inset: 0; cursor: grab; touch-action: none; }
+.bt-sv-stage[data-dragging="true"] { cursor: grabbing; }
+.bt-sv-stage canvas { display: block; width: 100%; height: 100%; }
+/* lens falloff: darker corners, as a camera would give */
+.bt-sv-stage::after { content: ""; position: absolute; inset: 0; pointer-events: none; background: radial-gradient(ellipse at 50% 45%, transparent 55%, rgb(0 0 0 / .34) 100%); }
+
+.bt-sv-top { position: absolute; top: max(16px, env(safe-area-inset-top)); left: 16px; right: 16px; display: flex; align-items: center; gap: 8px; pointer-events: none; }
+.bt-sv-top > * { pointer-events: auto; }
+/* the bar arrives with the seat and leaves before the flight back */
+.bt-sv-top { opacity: 0; transition: opacity 300ms var(--e-out); }
+.bt-seatview[data-ready="true"] .bt-sv-top { opacity: 1; }
+.bt-seatview[data-closing="true"] .bt-sv-top { opacity: 0; transition-duration: 150ms; }
+.bt-sv-back { display: grid; place-items: center; flex: none; width: 40px; height: 40px; padding: 0; border: 0; border-radius: 50%; background: var(--h-foreground); color: var(--h-background); cursor: pointer; transition: scale 150ms var(--e-out); }
+.bt-sv-back:active { scale: .97; }
+.bt-sv-where { display: flex; align-items: center; gap: 8px; min-width: 0; padding: 10px 14px; border-radius: 12px; background: var(--h-foreground); color: var(--h-background); font: 500 14px/20px var(--bt-sans); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.bt-sv-where i { flex: none; width: 8px; height: 8px; border-radius: 50%; background: var(--h-accent); }
+
+.bt-sv-hint { position: absolute; left: 50%; top: 42%; translate: -50% 0; display: flex; align-items: center; gap: 8px; padding: 10px 14px; border-radius: 12px; background: var(--h-foreground); color: var(--h-background); font: 500 14px/20px var(--bt-sans); pointer-events: none; opacity: 0; transition: opacity 300ms var(--e-out); }
+.bt-seatview[data-ready="true"] .bt-sv-hint { opacity: 1; }
+.bt-seatview .bt-sv-hint[data-gone="true"], .bt-seatview[data-closing="true"] .bt-sv-hint { opacity: 0; }
+
+.bt-sv-sheet { position: absolute; left: 16px; bottom: max(16px, env(safe-area-inset-bottom)); width: 360px; max-width: calc(100% - 32px); box-sizing: border-box; display: grid; grid-template-columns: minmax(0, 1fr); gap: 16px; padding: 16px; border-radius: 24px; background: var(--glass-fill); box-shadow: var(--h-overlay-shadow), inset 0 0 0 1px var(--glass-edge); backdrop-filter: blur(16px); translate: 0 16px; opacity: 0; transition: translate 300ms var(--e-out), opacity 300ms var(--e-out); }
+.bt-seatview[data-ready="true"] .bt-sv-sheet { translate: 0 0; opacity: 1; }
+.bt-seatview[data-closing="true"] .bt-sv-sheet { translate: 0 16px; opacity: 0; transition-duration: 150ms; }
+.bt-sv-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+.bt-sv-eyebrow { display: inline-block; padding: 2px 8px; border-radius: 16px; background: var(--h-accent-selected); color: var(--h-accent-foreground); font: 500 12px/16px var(--bt-sans); }
+.bt-sv-head h2 { margin: 8px 0 2px; font: 500 24px/28px var(--bt-sans); letter-spacing: -0.01em; color: var(--h-foreground); }
+.bt-sv-head p { margin: 0; color: var(--h-muted); }
+.bt-sv-mini { flex: none; width: 88px; height: 66px; overflow: visible; }
+.bt-sv-mini path { fill: color-mix(in oklab, var(--h-foreground) 14%, transparent); stroke: none; }
+.bt-sv-mini path[data-current] { fill: var(--h-accent); stroke: none; }
+.bt-sv-mini .bt-sv-mini-surface { fill: none; stroke: var(--h-muted); stroke-width: 1.5; vector-effect: non-scaling-stroke; }
+.bt-sv-mini .bt-sv-mini-cone { fill: url(#bt-sv-beam); stroke: none; }
+.bt-sv-beam0 { stop-color: var(--h-foreground); stop-opacity: .5; }
+.bt-sv-beam1 { stop-color: var(--h-foreground); stop-opacity: 0; }
+.bt-sv-mini .bt-sv-mini-halo { fill: var(--h-foreground); fill-opacity: .14; stroke: none; }
+.bt-sv-mini circle { fill: var(--h-foreground); stroke: var(--h-background); stroke-width: 1.5; vector-effect: non-scaling-stroke; }
+.bt-sv-stats { display: grid; grid-template-columns: repeat(3, 1fr); border-block: 1px solid var(--h-separator); }
+.bt-sv-stats > div { display: grid; gap: 2px; padding: 12px 12px 12px 0; }
+.bt-sv-stats > div + div { padding-left: 12px; border-left: 1px solid var(--h-separator); }
+.bt-sv-stats strong { font: 500 20px/24px var(--bt-sans); font-variant-numeric: tabular-nums; color: var(--h-foreground); }
+.bt-sv-stats span { font: 400 12px/16px var(--bt-sans); color: var(--h-muted); }
+.bt-sv-note { margin: -4px 0 0; font: 400 12px/16px var(--bt-sans); color: var(--h-muted); }
+/* offers, chosen in the sheet (same row as the seat popover's: Button-height rows, 16px corners, accent ring when chosen) */
+.bt-sv-offers { display: grid; gap: 8px; }
+.bt-sv-offers[hidden] { display: none; }
+.bt-sv-offer { display: grid; grid-template-columns: 24px minmax(0, 1fr) auto; align-items: center; gap: 12px; width: 100%; min-height: 52px; margin: 0; padding: 10px 16px 10px 14px; border: 0; border-radius: 16px; background: var(--h-default); color: var(--h-foreground); text-align: left; cursor: pointer; transition: background-color 150ms var(--e-out), box-shadow 150ms var(--e-out); }
+.bt-sv-offer:hover { background: var(--h-default-hover); }
+.bt-sv-offer.is-chosen { box-shadow: 0 0 0 2px var(--h-accent); }
+.bt-sv-offer i { display: grid; place-items: center; width: 24px; height: 24px; border-radius: 50%; box-shadow: inset 0 0 0 1.5px color-mix(in oklab, var(--h-foreground) 30%, transparent); color: transparent; transition: background-color 150ms var(--e-out), box-shadow 150ms var(--e-out); }
+.bt-sv-offer.is-chosen i { background: var(--h-accent); box-shadow: none; color: var(--h-accent-foreground); }
+.bt-sv-offer-name { font: 500 15px/20px var(--bt-sans); }
+.bt-sv-offer-price { font: 600 16px/24px var(--bt-sans); letter-spacing: -.015em; font-variant-numeric: tabular-nums; text-align: right; }
+.bt-sv-offers-note { margin: -2px 0 0; padding: 0 6px; font: 400 12px/16px var(--bt-sans); color: var(--h-muted); text-align: right; }
+.bt-sv-offer-price b { font: 500 16px/24px var(--bt-sans); letter-spacing: -.015em; font-variant-numeric: tabular-nums; }
+.bt-sv-offer-price small { font: 400 13px/16px var(--bt-sans); color: var(--h-muted); }
+.bt-sv-primary:disabled { opacity: .55; cursor: default; }
+.bt-sv-actions { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 8px; }
+.bt-sv-actions button { height: 40px; padding: 0 16px; border: 0; border-radius: 36px; font: 500 14px/20px var(--bt-sans); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; cursor: pointer; transition: background-color 150ms var(--e-out), scale 150ms var(--e-out); }
+.bt-sv-actions button:active { scale: .97; }
+.bt-sv-secondary { background: var(--h-default); color: var(--h-foreground); }
+.bt-sv-secondary:hover { background: var(--h-default-hover); }
+.bt-sv-primary { background: var(--h-accent); color: var(--h-accent-foreground); }
+.bt-sv-primary:hover { background: var(--h-accent-hover); }
+.bt-seatview button:focus-visible { outline: 2px solid var(--h-accent); outline-offset: 2px; }
+
+@media (max-width: 640px) {
+  .bt-sv-sheet { left: 8px; right: 8px; bottom: max(8px, env(safe-area-inset-bottom)); width: auto; max-width: none; }
+  .bt-sv-hint { top: 34%; }
+}
+/* short viewports (landscape phones, small embeds): dock the sheet to the side and drop detail so the view stays visible */
+@media (max-height: 560px) {
+  .bt-sv-sheet { right: auto; width: min(340px, calc(100% - 16px)); gap: 12px; }
+  .bt-sv-note { display: none; }
+  .bt-sv-hint { top: 24%; }
+}
+@media (max-height: 340px) {
+  .bt-sv-stats { display: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .bt-seatview, .bt-sv-sheet, .bt-sv-hint { transition-duration: 1ms !important; }
+}
+
+/* Under the 3D view the map's own controls and panels are frosted glass, which the browser keeps working out every frame even when they are covered. They step out for the flight
+   (the seat card already does), the map itself steps out once the 3D picture has fully taken over, and the controls ease back in when the view closes. */
+.bt-flying > :not(.bt-seatview):not(#canvas-host) { visibility: hidden !important; }
+.bt-covered > #canvas-host { visibility: hidden !important; }
+@keyframes bt-chrome-back { from { opacity: 0; } }
+.bt-back > :not(.bt-seatview):not(#canvas-host) { animation: bt-chrome-back 260ms ease-out; }
+@media (prefers-reduced-motion: reduce) { .bt-back > * { animation: none !important; } }

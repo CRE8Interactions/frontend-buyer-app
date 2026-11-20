@@ -1,14 +1,18 @@
 /**
- * Glow — ambient blurred orb behind section content. One per section,
- * alternating sides. Blue for most sections; green reserved for the
- * statement + final CTA (DESIGN-SYSTEM.md §4).
+ * Glow: ambient blurred orb behind section content, one per section, alternating sides.
+ * Brand v0.1 keeps the field neutral, so the default is a soft ink wash; green is reserved for the statement and
+ * the final CTA, and blue (the seat accent) is a rare second accent. `blue` is kept so old call sites still work.
  */
 
-const COLORS = { blue: "56, 116, 224", green: "166, 231, 115" } as const;
+const COLORS = {
+  neutral: "var(--ink-rgb)",
+  blue: "var(--ink-rgb)",
+  green: "var(--green-rgb)",
+} as const;
 
 export default function Glow({
-  color = "blue",
-  opacity = 0.12,
+  color = "neutral",
+  opacity = 0.06,
   blur = 150,
   className = "",
 }: {
@@ -22,7 +26,7 @@ export default function Glow({
     <div
       aria-hidden
       className={`pointer-events-none absolute rounded-full ${className}`}
-      style={{ background: `rgba(${COLORS[color]}, ${opacity})`, filter: `blur(${blur}px)` }}
+      style={{ background: `rgb(${COLORS[color]} / ${Math.min(opacity, 0.1) * (color === "green" ? 1 : 0.6)})`, filter: `blur(${blur}px)` }}
     />
   );
 }

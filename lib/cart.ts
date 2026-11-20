@@ -7,12 +7,6 @@ import { isCartGoneResponse } from "@/lib/helpers";
 
 export const CART_KEY = "cart";
 export const CART_EVENT = "blocktickets:cart";
-export const CHECKOUT_RETURN_KEY = "checkoutReturnPath";
-export const CHECKOUT_LOGIN_DETOUR_KEY = "checkoutLoginDetour";
-
-export function checkoutHref(cartId: string | number) {
-  return `/checkout/?cartId=${encodeURIComponent(String(cartId))}`;
-}
 
 export type StoredCart = {
   cartId: string;
@@ -52,32 +46,6 @@ export function getStoredCart(): StoredCart | null {
   }
 }
 
-/** Positive integer cart id, matching the API's parseReplaceCartId. */
-export function readStoredCartId(): number | undefined {
-  const id = Number(getStoredCart()?.cartId);
-  return Number.isInteger(id) && id > 0 ? id : undefined;
-}
-
-/** Overlapping place-in-cart calls all name the cart they replace. */
-export function withCallerCart(data: unknown) {
-  const replaceCartId = readStoredCartId();
-  if (!replaceCartId) return data;
-  const body =
-    data && typeof data === "object" ? (data as Record<string, unknown>) : {};
-  return { ...body, replaceCartId };
-}
-
-/** Drop needs a cart id; use the stored one when the caller only knows the event. */
-export function dropCartRequestBody(data: unknown = {}) {
-  const body =
-    data && typeof data === "object"
-      ? { ...(data as Record<string, unknown>) }
-      : {};
-  const cartId = body.cartId || readStoredCartId();
-  if (cartId) body.cartId = cartId;
-  return body;
-}
-
 function emitCartChange() {
   if (typeof window === "undefined") return;
   window.dispatchEvent(new Event(CART_EVENT));
@@ -99,108 +67,7 @@ export function setStoredCart(cartId: string | number, itemCount?: number) {
 
 export function clearStoredCart() {
   sessionStorage.removeItem(CART_KEY);
-  clearCheckoutReturnPath();
   emitCartChange();
-}
-
-export function isCheckoutPath(path: string) {
-  const pathname = path.split("?")[0];
-  return pathname === "/checkout" || pathname.startsWith("/checkout/");
-}
-
-export function isLoginPath(path: string) {
-  const pathname = path.split("?")[0].replace(/\/+$/, "") || "/";
-  return pathname === "/login";
-}
-
-/**
- * Checkout sends signed-out shoppers to /login, so the referrer coming back is
- * the login page. Returning there on cancel would bounce them into checkout
- * again instead of the tickets / package / flex pack page.
- */
-function isReturnablePath(path: string) {
-  return Boolean(path) && !isCheckoutPath(path) && !isLoginPath(path);
-}
-
-export function getCheckoutReturnPath(): string | null {
-  if (typeof window === "undefined") return null;
-  try {
-    const raw = sessionStorage.getItem(CHECKOUT_RETURN_KEY);
-    if (!raw || !isReturnablePath(raw)) return null;
-    return raw;
-  } catch {
-    return null;
-  }
-}
-
-export function setCheckoutReturnPath(path: string) {
-  if (typeof window === "undefined") return;
-  try {
-    if (!isReturnablePath(path)) {
-      sessionStorage.removeItem(CHECKOUT_RETURN_KEY);
-      return;
-    }
-    sessionStorage.setItem(CHECKOUT_RETURN_KEY, path);
-  } catch {
-    /* ignore quota / private mode */
-  }
-}
-
-export function clearCheckoutReturnPath() {
-  if (typeof window === "undefined") return;
-  try {
-    sessionStorage.removeItem(CHECKOUT_RETURN_KEY);
-    sessionStorage.removeItem(CHECKOUT_LOGIN_DETOUR_KEY);
-  } catch {
-    /* ignore */
-  }
-}
-
-/**
- * Checkout sent a signed-out shopper to /login, so the login page now sits
- * between checkout and the page they came from. Back would land there.
- */
-export function markCheckoutLoginDetour() {
-  if (typeof window === "undefined") return;
-  try {
-    sessionStorage.setItem(CHECKOUT_LOGIN_DETOUR_KEY, "1");
-  } catch {
-    /* ignore quota / private mode */
-  }
-}
-
-export function hadCheckoutLoginDetour() {
-  if (typeof window === "undefined") return false;
-  try {
-    return sessionStorage.getItem(CHECKOUT_LOGIN_DETOUR_KEY) === "1";
-  } catch {
-    return false;
-  }
-}
-
-/** Remember the current page so checkout cancel can send the shopper back. */
-export function rememberCheckoutReturnPath() {
-  if (typeof window === "undefined") return;
-  // A fresh trip into checkout from this page — any earlier login bounce is
-  // no longer in front of it.
-  try {
-    sessionStorage.removeItem(CHECKOUT_LOGIN_DETOUR_KEY);
-  } catch {
-    /* ignore */
-  }
-  setCheckoutReturnPath(`${window.location.pathname}${window.location.search}`);
-}
-
-/** Fill in a return path from the same-origin referrer when none was stored. */
-export function captureCheckoutReferrer() {
-  if (getCheckoutReturnPath()) return;
-  try {
-    const url = new URL(document.referrer);
-    if (url.origin !== window.location.origin) return;
-    setCheckoutReturnPath(`${url.pathname}${url.search}`);
-  } catch {
-    /* ignore missing / invalid referrer */
-  }
 }
 
 /** Live cart badge state for header chrome. */
@@ -258,7 +125,9 @@ export function useCartBadge() {
   }, [authReady, isAuthenticated, cart?.cartId]);
 
   const itemCount = cart?.itemCount ?? 0;
-  const href = cart?.cartId ? checkoutHref(cart.cartId) : "/checkout/";
+  const href = cart?.cartId
+    ? `/checkout/?cartId=${encodeURIComponent(cart.cartId)}`
+    : "/checkout/";
 
   return {
     ready,

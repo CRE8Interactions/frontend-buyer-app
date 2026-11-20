@@ -1,6 +1,5 @@
 "use client";
 
-import Link from "next/link";
 import { useCartBadge } from "@/lib/cart";
 
 function CartIcon({ className }: { className?: string }) {
@@ -35,15 +34,15 @@ export default function CartButton({ className = "" }: { className?: string }) {
   const label = `Cart, ${itemCount} item${itemCount === 1 ? "" : "s"}`;
 
   return (
-    <Link
+    <a
       href={href}
       aria-label={label}
-      className={`relative flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-white/15 text-[#F4F4F5] transition-colors hover:bg-white/5 ${className}`}
+      className={`relative flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-white/15 text-foreground transition-colors hover:bg-white/5 ${className}`}
     >
       <CartIcon />
-      <span className="absolute -right-1.5 -top-1.5 flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-[#A6E773] px-1 text-[10px] font-bold leading-none text-[#051B35]">
+      <span className="absolute -right-1.5 -top-1.5 flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-primary px-1 text-[10px] font-bold leading-none text-primary-foreground">
         {itemCount > 99 ? "99+" : itemCount}
       </span>
-    </Link>
+    </a>
   );
 }

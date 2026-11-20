@@ -1,0 +1,8 @@
+{
+  "format": "seatmap-venues",
+  "version": 1,
+  "default": "meridian-centre",
+  "venues": {
+    "meridian-centre": { "mapId": "e8896c55-57df-448a-9407-c56b28eb6050", "name": "Meridian Centre" }
+  }
+}

@@ -14,7 +14,7 @@ export default function ModalDemo() {
       </Button>
       {open && (
         <Modal title="Modal" onClose={() => setOpen(false)}>
-          <p className="mt-5 text-[15px] leading-relaxed text-[#9DA2B3]">
+          <p className="mt-5 text-[15px] leading-relaxed text-ink2">
             App-surface dialog on the elevated card color. Backdrop click or the × closes it.
           </p>
           <Button onClick={() => setOpen(false)} className="mt-6 w-full">

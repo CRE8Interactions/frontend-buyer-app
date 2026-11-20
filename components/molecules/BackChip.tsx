@@ -1,10 +1,5 @@
-"use client";
-
 import type { MouseEventHandler } from "react";
-import Link from "next/link";
-import { useRouter } from "next/navigation";
 import { chipBtnCls } from "@/components/molecules/Card";
-import { inAppBackAnchorProps } from "@/lib/inAppBack";
 
 /** BackChip — chip-style back link for app detail pages. */
 export default function BackChip({
@@ -16,10 +11,9 @@ export default function BackChip({
   label?: string;
   onClick?: MouseEventHandler<HTMLAnchorElement>;
 }) {
-  const router = useRouter();
   return (
-    <Link className={chipBtnCls} {...inAppBackAnchorProps(href, router, onClick)}>
+    <a href={href} className={chipBtnCls} onClick={onClick}>
       <span aria-hidden>←</span> {label}
-    </Link>
+    </a>
   );
 }

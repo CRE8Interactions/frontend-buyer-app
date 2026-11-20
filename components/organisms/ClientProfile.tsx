@@ -1,601 +1,93 @@
 "use client";
 
 /**
- * ClientProfile — team / athletics-program storefront UI (from Claude Design
- * "Client Profile.dc.html"). Loads identity, events, packages, and flex packs
- * from GET /organizations/storefront/:slug so each org URL shows that org.
+ * ClientProfile — team / athletics-program storefront, ported from the Claude
+ * Design "Client Profile.dc.html". Light theme, NM State crimson. Sticky
+ * identity card (logo, sport filters, Follow) + tabbed content:
+ * Upcoming events (grouped by month), Season tickets, Flex packages.
  */
 
-import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
-import Link from "next/link";
-import { notFound, useSearchParams } from "next/navigation";
-import EventPromo from "@/components/atoms/EventPromo";
-import InAppBackLink from "@/components/molecules/InAppBackLink";
-import NavAuthActions from "@/components/molecules/NavAuthActions";
-import RouteLoader from "@/components/molecules/RouteLoader";
-import { BROWSE_TRACK, browseLeading, browsePageTypeCss } from "@/lib/browseType";
-import { fluidSize } from "@/lib/shopperFluidType";
-import { getOrganizationStorefront, getVenueUpcomingEvents } from "@/lib/api";
-import { isEventSoldOut, onSaleBadgeLabel, withSoldOutFlags } from "@/lib/eventSoldOut";
-import {
-  packageFromPriceLabel,
-  type EventPriceSource,
-} from "@/lib/eventFromPrice";
-import { eventPromotionalCopy } from "@/lib/promotionalDescription";
-import { teamStorefrontDescription } from "@/lib/teamCopy";
-import { categoryLabel } from "@/lib/eventType";
-import {
-  matchesSport,
-  orderedSportLabels,
-  packageSport,
-  resolveSportSelection,
-  sportMatchesQuery,
-  storefrontSportLabel,
-} from "@/lib/eventSport";
-import {
-  BLOCKTICKETS_NAVY,
-  resolveBrandLogo,
-  resolveButtonColor,
-  resolvePrimaryColor,
-  type OrgBranding,
-} from "@/lib/branding";
-import {
-  cacheOrgBranding,
-  cacheOrgEventBranding,
-  getCachedOrgBranding,
-} from "@/lib/orgBrandingCache";
-import { useClientReady } from "@/lib/useClientReady";
-import {
-  flexPackCardTone,
-  flexPackDisplayPrice,
-  flexPackEachPrice,
-} from "@/lib/flexPackDisplay";
-import {
-  stickyOffsetBelowHeader,
-  TICKETING_HEADER_FALLBACK_PX,
-  TICKETING_STICKY_GAP_PX,
-} from "@/lib/ticketingSticky";
-import {
-  firstVenueWebsiteHref,
-  venueWebsiteFromUpcomingEvents,
-  venueWebsiteLookupSlug,
-} from "@/lib/venueWebsite";
-import {
-  dateChip,
-  eventPurchasePath,
-  formatCurrency,
-  formatEventWhen,
-  imageUrl,
-  sortByDate,
-  type ApiImage,
-} from "@/lib/helpers";
-import {
-  initializeTracking,
-  type TrackingOrganization,
-} from "@/lib/tracking";
-import {
-  compareUpcomingEvents,
-  groupUpcomingEvents,
-} from "@/lib/upcomingEventOrder";
+import { useEffect, useMemo, useState } from "react";
+import BrandLoader from "@/components/molecules/BrandLoader";
 
-const NAVY = "#051b35";
+const ACC = "#8c0b42";
+const NAVY = "var(--paper)";
+const LOGO = "/nmstate/nmstate-logo-nowordmark.png";
 
-type VenueAddress =
-  | { city?: string; state?: string }
-  | Array<{ city?: string; state?: string }>;
+type RawEvent = { mon: string; day: string; dow: string; time: string; sport: string; title: string; venue: string; city: string; p: number; status: string };
 
-type StoreEvent = {
-  uuid?: string;
-  id?: string | number;
-  name?: string;
-  title?: string;
-  slug?: string;
-  seoUrl?: string;
-  shortCode?: string;
-  shortcode?: string;
-  start?: string;
-  status?: string;
-  listPriority?: number | string | null;
-  soldout?: boolean | null;
-  soldOut?: boolean | null;
-  generalOnsale?: string | null;
-  hideGeneralOnsale?: boolean | null;
-  scheduled?: boolean | null;
-  scheduledTime?: string | null;
-  sport?: string;
-  category?: { name?: string } | null;
-  image?: ApiImage;
-  attractions?: Array<{ name?: string; primary?: boolean; order?: number }>;
-  sub_categories?: Array<{ name?: string }> | null;
-  venue?: {
-    name?: string;
-    timezone?: string;
-    isGeneralAdmissionOnly?: boolean;
-    address?: VenueAddress;
-  };
-  seatmap?: { ga_only?: boolean };
-  isGeneralAdmissionOnly?: boolean;
-  generalAdmissionOnly?: boolean;
-  minPrice?: number;
-  lowestPrice?: number;
-  price?: number;
-  pricingLevels?: EventPriceSource["pricingLevels"];
-  priceLevels?: EventPriceSource["priceLevels"];
-  pricingTiers?: EventPriceSource["pricingTiers"];
-  offers?: EventPriceSource["offers"];
-  ticketGroups?: EventPriceSource["ticketGroups"];
-  ticket_groups?: EventPriceSource["ticket_groups"];
-  tickets?: EventPriceSource["tickets"];
-  promotionalDescription?: unknown;
-  organization?: {
-    slug?: string;
-    name?: string;
-    category?: { name?: string } | null;
-  } | null;
-};
+const RAW: RawEvent[] = [
+  { mon: "Sep", day: "05", dow: "Sat", time: "7:00 PM", sport: "Football", title: "Aggies vs. Mercyhurst", venue: "Aggie Memorial Stadium", city: "Las Cruces, NM", p: 22, status: "On sale" },
+  { mon: "Sep", day: "26", dow: "Sat", time: "7:00 PM", sport: "Football", title: "Aggies vs. New Mexico", venue: "Aggie Memorial Stadium", city: "Las Cruces, NM", p: 38, status: "Few left" },
+  { mon: "Oct", day: "01", dow: "Thu", time: "7:00 PM", sport: "Football", title: "Aggies vs. Western Kentucky", venue: "Aggie Memorial Stadium", city: "Las Cruces, NM", p: 24, status: "On sale" },
+  { mon: "Sep", day: "03", dow: "Thu", time: "7:00 PM", sport: "Soccer", title: "Soccer vs. Grand Canyon", venue: "NMSU Soccer Field", city: "Las Cruces, NM", p: 12, status: "On sale" },
+  { mon: "Sep", day: "14", dow: "Mon", time: "6:00 PM", sport: "Soccer", title: "Soccer vs. Seattle U", venue: "NMSU Soccer Field", city: "Las Cruces, NM", p: 12, status: "On sale" },
+  { mon: "Nov", day: "12", dow: "Thu", time: "7:00 PM", sport: "Basketball", title: "Men's Basketball vs. UTEP", venue: "Pan American Center", city: "Las Cruces, NM", p: 20, status: "Presale" },
+  { mon: "Nov", day: "21", dow: "Sat", time: "5:00 PM", sport: "Volleyball", title: "Volleyball vs. Tarleton State", venue: "Pan American Center", city: "Las Cruces, NM", p: 10, status: "On sale" },
+  { mon: "Apr", day: "10", dow: "Fri", time: "6:00 PM", sport: "Baseball", title: "Baseball vs. Grand Canyon", venue: "Presley Askew Field", city: "Las Cruces, NM", p: 9, status: "On sale" },
+];
 
-type PackageItem = {
-  uuid?: string;
-  id?: number | string;
-  name?: string;
-  start?: string;
-  end?: string;
-  description?: string;
-  pricingTiers?: { price?: number; name?: string }[];
-  venue?: { timezone?: string; name?: string };
-  category?: { name?: string } | null;
-  sub_categories?: Array<{ name?: string }> | null;
-  attractions?: Array<{ name?: string }> | null;
-};
+const MONTH_NAMES: Record<string, string> = { Sep: "September 2026", Oct: "October 2026", Nov: "November 2026", Apr: "April 2027" };
+const MONTH_ORDER = ["Sep", "Oct", "Nov", "Apr"];
 
-type FlexPackItem = {
-  uuid?: string;
-  id?: number | string;
-  name?: string;
-  start?: string;
-  end?: string;
-  price?: number;
-  gameTickets?: number;
-  image?: ApiImage;
-  color?: string;
-  backgroundColor?: string;
-  offerColor?: string;
-  venue?: { timezone?: string };
-  organization?: {
-    name?: string;
-    isTaxable?: unknown;
-    taxRate?: { estimatedCombinedRate?: unknown } | null;
-    tax_rate?: { estimatedCombinedRate?: unknown } | null;
-    fee_structure?: {
-      stripeCharge?: unknown;
-      stripeServicePecentage?: unknown;
-    } | null;
-    feeStructure?: {
-      stripeCharge?: unknown;
-      stripeServicePecentage?: unknown;
-    } | null;
-  } | null;
-  customFees?: unknown;
-  custom_fees?: unknown;
-};
+const PACKAGES = [
+  { kicker: "Football", title: "Aggie Football Season Seats — Level A", range: "Sep 5 → Nov 7 · 6 home games", note: "Sideline seats with playoff priority.", price: "$200.00" },
+  { kicker: "All sports", title: "Aggie All-Access Pass", range: "Sep 2026 → May 2027 · 42 events", note: "Every home event across all five sports and four venues.", price: "$450.00" },
+  { kicker: "Basketball", title: "Men's Basketball Season Seats — Level B", range: "Nov 12 → Mar 3 · 16 home games", note: "Lower bowl at the Pan American Center.", price: "$150.00" },
+];
 
-type VenueItem = {
-  name?: string;
-  slug?: string;
-  timezone?: string;
-  website?: string;
-  url?: string;
-  address?: VenueAddress;
-};
+const FLEX = [
+  { count: 3, price: "$66.00", each: "$22.00" },
+  { count: 5, price: "$99.00", each: "$19.80" },
+  { count: 10, price: "$185.00", each: "$18.50" },
+];
 
-type Org = TrackingOrganization & {
-  name?: string;
-  slug?: string;
-  image?: ApiImage;
-  website?: string;
-  url?: string;
-  primaryColor?: string;
-  accentColor?: string;
-  branding?: OrgBranding | null;
-  description?: string;
-  summary?: string;
-  homeVenue?: VenueItem | null;
-  venues?: VenueItem[];
-  category?: { name?: string } | null;
-};
+const tagFor = (st: string) =>
+  st === "Few left" ? { tagBg: "#fbf1de", tagInk: "#b5791e" }
+  : st === "Presale" ? { tagBg: "#f1f3f8", tagInk: "#4a5567" }
+  : { tagBg: "#e6f4eb", tagInk: "#2f8f4e" };
 
-type RowEvent = {
-  key: string;
-  mon: string;
-  day: string;
-  dow: string;
-  monthKey: string;
-  monthTitle: string;
-  time: string;
-  sport: string;
-  title: string;
-  promo: string;
-  venue: string;
-  status: string;
-  soldOut: boolean;
-  onSaleLabel: string;
-  href: string;
-  listPriority?: number | string | null;
-  sortKey: number;
-};
-
-export type StorefrontInitialData = {
-  organization?: Org | null;
-  venues?: VenueItem[];
-  events?: StoreEvent[];
-  packages?: PackageItem[];
-  flexPacks?: FlexPackItem[];
-  venueWebsite?: string | null;
-} | null;
-
-function teamVenues(org?: Org | null, venues: VenueItem[] = []) {
-  return [org?.homeVenue, ...(org?.venues || []), ...venues];
-}
-
-function firstAddress(address?: VenueAddress) {
-  if (!address) return undefined;
-  return Array.isArray(address) ? address[0] : address;
-}
-
-function cityState(address?: VenueAddress) {
-  const a = firstAddress(address);
-  if (!a) return "";
-  const city = (a.city || "")
-    .split(" ")
-    .filter(Boolean)
-    .map((w) => w[0].toUpperCase() + w.slice(1))
-    .join(" ");
-  const state = (a.state || "").toUpperCase();
-  return [city, state].filter(Boolean).join(", ");
-}
-
-function eventStatus(ev: StoreEvent) {
-  const raw = (ev.status || "").trim();
-  if (!raw || raw === "on_sale") return "On sale";
-  return raw.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
-}
-
-function EventRowFrame({
-  soldOut,
-  href,
-  className,
-  style,
-  children,
-}: {
-  soldOut: boolean;
-  href: string;
-  className: string;
-  style: CSSProperties;
-  children: ReactNode;
-}) {
-  if (soldOut) {
-    return (
-      <div className={className} style={{ ...style, cursor: "default" }}>
-        {children}
-      </div>
-    );
-  }
-  return (
-    <Link href={href} className={className} style={style}>
-      {children}
-    </Link>
-  );
-}
-
-const ALL_FILTER = "All";
-
-function toRow(ev: StoreEvent, org?: Org | null): RowEvent | null {
-  const start = ev.start;
-  if (!start) return null;
-  const tz = ev.venue?.timezone;
-  const chip = dateChip(start, tz);
-  const m = new Date(start);
-  const monthTitle = Number.isNaN(m.getTime())
-    ? chip.m
-    : m.toLocaleString("en-US", { month: "long", year: "numeric", timeZone: undefined });
-  // Prefer venue tz formatting for month header when possible
-  const monthTitleTz = formatEventWhen(start, tz, "MMMM YYYY") || monthTitle;
-  const monthKey = formatEventWhen(start, tz, "YYYY-MM") || start.slice(0, 7);
-
-  return {
-    key: String(ev.uuid || ev.id || ev.shortCode || ev.name || start),
-    mon: chip.m,
-    day: chip.d,
-    dow: formatEventWhen(start, tz, "ddd") || "",
-    monthKey,
-    monthTitle: monthTitleTz,
-    time: formatEventWhen(start, tz, "h:mm A") || "",
-    sport: storefrontSportLabel(ev, org ? [org] : []),
-    title: ev.name || ev.title || "Event",
-    promo: eventPromotionalCopy(ev),
-    venue: ev.venue?.name || "",
-    status: eventStatus(ev),
-    soldOut: isEventSoldOut(ev),
-    onSaleLabel: onSaleBadgeLabel(ev),
-    href: eventPurchasePath(ev),
-    listPriority: ev.listPriority,
-    sortKey: new Date(start).getTime() || 0,
-  };
-}
-
-export default function ClientProfile({
-  slug,
-  initialData = null,
-}: {
-  slug: string;
-  initialData?: StorefrontInitialData;
-}) {
-  const clientReady = useClientReady();
+export default function ClientProfile({ orgName = "New Mexico State Athletics", logoSrc = LOGO }: { orgName?: string; logoSrc?: string } = {}) {
   const [tab, setTab] = useState<"events" | "packages" | "flex">("events");
-  const [sport, setSport] = useState(ALL_FILTER);
-  const searchParams = useSearchParams();
-  const categoryQuery = (
-    searchParams.get("category") ||
-    searchParams.get("sport") ||
-    searchParams.get("filter") ||
-    ""
-  ).trim();
-  const appliedCategoryRef = useRef<string | null>(null);
-  const categoryQueryRef = useRef(categoryQuery);
-  categoryQueryRef.current = categoryQuery;
+  const [sport, setSport] = useState("All sports");
   const [vw, setVw] = useState(1440);
-
-  const [organization, setOrganization] = useState<Org | null>(
-    initialData?.organization ?? null,
-  );
-  const [venues, setVenues] = useState<VenueItem[]>(initialData?.venues ?? []);
-  const [events, setEvents] = useState<StoreEvent[]>(
-    initialData?.events ? sortByDate(initialData.events) : [],
-  );
-  const [packages, setPackages] = useState<PackageItem[]>(
-    initialData?.packages ?? [],
-  );
-  const [flexPacks, setFlexPacks] = useState<FlexPackItem[]>(
-    initialData?.flexPacks ?? [],
-  );
-  const [loading, setLoading] = useState(() => !initialData?.organization);
-  const [missing, setMissing] = useState(false);
-  const [venueWebsite, setVenueWebsite] = useState<string | null>(
-    () =>
-      initialData?.venueWebsite ||
-      firstVenueWebsiteHref(
-        teamVenues(initialData?.organization, initialData?.venues),
-      ),
-  );
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    setVw(window.innerWidth);
     const onR = () => setVw(window.innerWidth);
-    onR();
     window.addEventListener("resize", onR);
     return () => window.removeEventListener("resize", onR);
   }, []);
 
+  // Branded entry loader so the crimson tenant page never flashes our navy — held
+  // for a beat so it reads as a hand-off, not a glitch.
   useEffect(() => {
-    if (!initialData?.organization) return;
-    initializeTracking(initialData.organization);
-    cacheOrgBranding(initialData.organization);
-    cacheOrgEventBranding(initialData.events, initialData.organization);
-  }, [initialData]);
-
-  useEffect(() => {
-    let cancelled = false;
-    setMissing(false);
-    if (!categoryQueryRef.current) {
-      appliedCategoryRef.current = null;
-      setSport(ALL_FILTER);
-    }
-    setTab("events");
-
-    if (initialData?.organization) {
-      setLoading(false);
-      const initialEvents = initialData.events || [];
-      void withSoldOutFlags(initialEvents).then((flagged) => {
-        if (cancelled || flagged.every((ev, i) => ev === initialEvents[i])) return;
-        setEvents(sortByDate(flagged));
-      });
-      return () => {
-        cancelled = true;
-      };
-    }
-
-    setLoading(true);
-    getOrganizationStorefront(slug)
-      .then(async (res) => {
-        if (cancelled) return;
-        const data = res.data as {
-          organization?: Org | null;
-          venues?: VenueItem[];
-          events?: StoreEvent[];
-          packages?: PackageItem[];
-          flexPacks?: FlexPackItem[];
-          venueWebsite?: string | null;
-        };
-        if (!data?.organization) {
-          setMissing(true);
-          return;
-        }
-        const incoming = await withSoldOutFlags(data.events || []);
-        if (cancelled) return;
-        // Branding can paint the loader immediately; shopper content remains
-        // gated until the venue website lookup below has completed.
-        setOrganization(data.organization);
-        initializeTracking(data.organization);
-        cacheOrgBranding(data.organization);
-        cacheOrgEventBranding(incoming, data.organization);
-        const candidates = teamVenues(data.organization, data.venues);
-        let website =
-          data.venueWebsite || firstVenueWebsiteHref(candidates);
-        const venueSlug =
-          candidates.find((venue) => venue?.slug)?.slug || "";
-        if (!website && venueSlug) {
-          try {
-            const upcoming = await getVenueUpcomingEvents(venueSlug);
-            website = venueWebsiteFromUpcomingEvents(upcoming?.data);
-          } catch {
-            /* website is optional, but its lookup is now complete */
-          }
-        }
-        if (cancelled) return;
-        setVenues(data.venues || []);
-        setEvents(sortByDate(incoming));
-        setPackages(data.packages || []);
-        setFlexPacks(data.flexPacks || []);
-        setVenueWebsite(website);
-      })
-      .catch(() => {
-        if (!cancelled) setMissing(true);
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false);
-      });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [slug, initialData?.organization, initialData?.events]);
+    const t = setTimeout(() => setLoading(false), 1100);
+    return () => clearTimeout(t);
+  }, []);
 
   const mobile = vw < 900;
   const narrow = !mobile && vw < 1160;
-  const wide = !mobile && !narrow;
-  const headerRef = useRef<HTMLElement | null>(null);
-  const [headerH, setHeaderH] = useState(TICKETING_HEADER_FALLBACK_PX);
 
-  useEffect(() => {
-    const el = headerRef.current;
-    if (!el || typeof ResizeObserver === "undefined") return;
-    const apply = () => {
-      const h = Math.round(el.getBoundingClientRect().height);
-      if (h > 1) setHeaderH((prev) => (prev === h ? prev : h));
-    };
-    apply();
-    const ro = new ResizeObserver(apply);
-    ro.observe(el);
-    return () => ro.disconnect();
-  }, [vw]);
-
-  const stickTop = Math.round(stickyOffsetBelowHeader(headerH));
-
-  const cachedBranding = clientReady ? getCachedOrgBranding(slug) : null;
-  const ACC = organization
-    ? resolvePrimaryColor(null, organization)
-    : cachedBranding?.primaryColor || BLOCKTICKETS_NAVY;
-  const BTN = organization
-    ? resolveButtonColor(null, organization, ACC)
-    : cachedBranding?.primaryColor || BLOCKTICKETS_NAVY;
-  const orgName = organization?.name || cachedBranding?.name || "";
-  const logoSrc = organization
-    ? imageUrl(resolveBrandLogo(null, organization), "/blocktickets-logo-navy.svg")
-    : imageUrl(cachedBranding?.logoSrc, "/blocktickets-logo-navy.svg");
-  const hasLoaderBranding = Boolean(
-    organization ||
-      (cachedBranding && (cachedBranding.logoSrc || cachedBranding.primaryColor)),
-  );
-  const location =
-    cityState(organization?.homeVenue?.address) ||
-    cityState(venues[0]?.address) ||
-    "";
-  const about = teamStorefrontDescription(orgName, [
-    organization?.homeVenue,
-    ...(organization?.venues || []),
-    ...venues,
-  ]);
-  const rows = useMemo(
-    () =>
-      events
-        .map((ev) => toRow(ev, organization))
-        .filter((r): r is RowEvent => Boolean(r))
-        .sort((a, b) => a.sortKey - b.sortKey),
-    [events, organization],
-  );
-
-  const packageRows = useMemo(
-    () => packages.map((pkg) => ({ pkg, sport: packageSport(pkg) })),
-    [packages],
-  );
-
-  const { groups, sportFilters, showFilters, filterHeading, visiblePackages } =
-    useMemo(() => {
-      const eventLabels = [ALL_FILTER, ...orderedSportLabels(rows)];
-      const realSports = eventLabels.filter((s) => !/^events?$/i.test(s));
-      const eventFilterLabels =
-        realSports.length > 1
-          ? realSports
-          : eventLabels.length > 1
-            ? eventLabels
-            : [ALL_FILTER];
-
-      const packageLabels = [ALL_FILTER, ...orderedSportLabels(packageRows)];
-
-      const filterLabels =
-        tab === "packages" ? packageLabels : eventFilterLabels;
-      const active = filterLabels.includes(sport) ? sport : ALL_FILTER;
-      const filteredEvents = rows
-        .filter((e) => matchesSport(e.sport, active))
-        .slice()
-        .sort(compareUpcomingEvents);
-      const groups = groupUpcomingEvents(filteredEvents);
-
-      const sourceCount =
-        tab === "packages"
-          ? (label: string) =>
-              packageRows.filter((row) => matchesSport(row.sport, label)).length
-          : (label: string) =>
-              rows.filter((e) => matchesSport(e.sport, label)).length;
-
-      const sportFilters = filterLabels.map((label) => ({
-        label,
-        n: sourceCount(label),
-        on: label === active,
-      }));
-
-      const visiblePackages = packageRows
-        .filter((row) => matchesSport(row.sport, active))
-        .map((row) => row.pkg);
-
-      return {
-        groups,
-        sportFilters,
-        showFilters: tab !== "flex" && filterLabels.length > 1,
-        filterHeading: tab === "packages" ? "Category" : "Sport",
-        visiblePackages,
-      };
-    }, [rows, sport, tab, packageRows]);
-
-  useEffect(() => {
-    if (!categoryQuery) {
-      if (appliedCategoryRef.current) {
-        appliedCategoryRef.current = null;
-        setSport(ALL_FILTER);
-      }
-      return;
-    }
-    if (appliedCategoryRef.current === categoryQuery) return;
-
-    if (
-      sportMatchesQuery(ALL_FILTER, categoryQuery) ||
-      categoryQuery.toLowerCase() === "all"
-    ) {
-      appliedCategoryRef.current = categoryQuery;
-      setSport(ALL_FILTER);
-      return;
-    }
-
-    const sports = orderedSportLabels([...rows, ...packageRows]);
-    const match = resolveSportSelection(sports, categoryQuery);
-    if (!match) return;
-    appliedCategoryRef.current = categoryQuery;
-    setSport(match);
-  }, [categoryQuery, rows, packageRows]);
-
-  const selectSport = (label: string) => {
-    setSport(label);
-    window.scrollTo({ top: 0, behavior: "auto" });
-  };
+  const { groups, sportFilters, sports } = useMemo(() => {
+    const filtered = sport === "All sports" ? RAW : RAW.filter((e) => e.sport === sport);
+    const chrono = filtered.slice().sort((a, b) => MONTH_ORDER.indexOf(a.mon) - MONTH_ORDER.indexOf(b.mon) || Number(a.day) - Number(b.day));
+    const monthKeys: string[] = [];
+    chrono.forEach((e) => { if (!monthKeys.includes(e.mon)) monthKeys.push(e.mon); });
+    const groups = monthKeys.map((m) => {
+      const rows = chrono.filter((e) => e.mon === m);
+      return { title: MONTH_NAMES[m], meta: rows.length === 1 ? "1 event" : `${rows.length} events`, rows };
+    });
+    const sports = ["All sports"];
+    RAW.forEach((e) => { if (!sports.includes(e.sport)) sports.push(e.sport); });
+    const sportFilters = sports.map((label) => ({
+      label,
+      n: label === "All sports" ? RAW.length : RAW.filter((e) => e.sport === label).length,
+      on: label === sport,
+    }));
+    return { groups, sportFilters, sports };
+  }, [sport]);
 
   const tabs = [
     { key: "events" as const, label: "Upcoming events" },
@@ -603,615 +95,152 @@ export default function ClientProfile({
     { key: "flex" as const, label: "Flex packages" },
   ];
 
-  const card: React.CSSProperties = {
-    background: "#fff",
-    border: "1px solid rgba(5,27,53,0.10)",
-    borderRadius: 18,
-    boxShadow: "0 1px 2px rgba(5,27,53,0.05)",
-  };
+  const card: React.CSSProperties = { background: "#fff", border: "1px solid color-mix(in srgb, var(--paper) 10%, transparent)", borderRadius: 18, boxShadow: "0 1px 2px color-mix(in srgb, var(--paper) 5%, transparent)" };
+
   const rowCols = mobile || narrow ? "64px minmax(0, 1fr)" : "76px minmax(0, 1fr) auto";
   const dateW = mobile || narrow ? 64 : 76;
   const ctaSpan = mobile || narrow ? "1 / -1" : "auto";
 
-  if (loading) {
-    // Without branding a tenant loader would invent an identity, so let the
-    // shared loader fall back to ours.
-    return (
-      <RouteLoader
-        branding={
-          hasLoaderBranding
-            ? { primaryColor: ACC, logoSrc, name: orgName }
-            : null
-        }
-      />
-    );
-  }
-
-  if (missing || !organization) {
-    notFound();
-  }
-
-  const teamActions = (
-    <div
-      style={{
-        display: "flex",
-        alignItems: "center",
-        gap: 8,
-        justifyContent: mobile ? "flex-start" : "center",
-      }}
-    >
-      {venueWebsite ? (
-        <a
-          className="cp-action"
-          href={venueWebsite}
-          target="_blank"
-          rel="noopener noreferrer"
-          aria-label="Visit venue website"
-          style={{
-            width: 44,
-            height: 44,
-            borderRadius: 999,
-            background: "#fff",
-            borderWidth: 1,
-            borderStyle: "solid",
-            color: NAVY,
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            cursor: "pointer",
-          }}
-        >
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" style={{ width: 18, height: 18 }}>
-            <circle cx="12" cy="12" r="10" />
-            <line x1="2" y1="12" x2="22" y2="12" />
-            <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z" />
-          </svg>
-        </a>
-      ) : null}
-      <button
-        type="button"
-        className="cp-action"
-        aria-label="Share"
-        onClick={() => {
-          if (typeof navigator !== "undefined" && navigator.share) {
-            void navigator.share({ title: orgName, url: window.location.href });
-          } else if (typeof navigator !== "undefined" && navigator.clipboard) {
-            void navigator.clipboard.writeText(window.location.href);
-          }
-        }}
-        style={{
-          fontFamily: "inherit",
-          width: 44,
-          height: 44,
-          borderRadius: 999,
-          background: "#fff",
-          borderWidth: 1,
-          borderStyle: "solid",
-          color: NAVY,
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          cursor: "pointer",
-        }}
-      >
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" style={{ width: 17, height: 17 }}>
-          <path d="M4 12v7a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-7" />
-          <polyline points="16 6 12 2 8 6" />
-          <line x1="12" y1="2" x2="12" y2="15" />
-        </svg>
-      </button>
-    </div>
-  );
+  if (loading) return <BrandLoader variant="tenant" accent={ACC} logoSrc={logoSrc} name="NM State Athletics" message="Loading Aggie tickets" />;
 
   return (
-    <div
-      className="shopper-page"
-      data-bt-scroll-page=""
-      style={{
-        background: "#f7f8fc",
-        color: NAVY,
-        minHeight: "100vh",
-        fontFamily: "'Geist', system-ui, -apple-system, sans-serif",
-        WebkitFontSmoothing: "antialiased",
-        ["--cp-accent"]: ACC,
-      } as React.CSSProperties}
-    >
-      <style>{`${browsePageTypeCss()}
-.cp-a{transition:background 140ms}.cp-row{box-shadow:0 1px 2px rgba(5,27,53,0.05);transition:box-shadow 150ms ease}.cp-row:hover{box-shadow:0 8px 30px rgba(5,27,53,0.09)}.cp-row.cp-row-still,.cp-row.cp-row-still:hover{box-shadow:0 1px 2px rgba(5,27,53,0.05);transition:none}.cp-action{outline:none;border-color:rgba(5,27,53,0.14);transition:border-color 140ms ease}.cp-action:hover,.cp-action:focus-visible{border-color:var(--cp-accent)}`}</style>
+    <div style={{ background: "#f7f8fc", color: NAVY, minHeight: "100vh", fontFamily: "'Geist', system-ui, -apple-system, sans-serif", WebkitFontSmoothing: "antialiased" }}>
+      <style>{`.cp-a{transition:background 140ms}.cp-row{transition:box-shadow 150ms ease}.cp-row:hover{box-shadow:0 8px 30px color-mix(in srgb, var(--paper) 9%, transparent)}`}</style>
 
-      <header
-        ref={headerRef}
-        style={{
-          background: ACC,
-          position: wide ? "fixed" : "sticky",
-          top: 0,
-          left: wide ? 0 : undefined,
-          right: wide ? 0 : undefined,
-          zIndex: 20,
-        }}
-      >
-        <div
-          style={{
-            maxWidth: 1320,
-            margin: "0 auto",
-            padding: mobile ? "12px 20px" : "16px 32px",
-            display: "flex",
-            alignItems: "center",
-            gap: 16,
-          }}
-        >
-          <InAppBackLink
-            href="/browse/"
-            aria-label="Back to browse"
-            style={{
-              width: 40,
-              height: 40,
-              borderRadius: 999,
-              background: "rgba(255,255,255,0.14)",
-              color: "#fff",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              flexShrink: 0,
-              textDecoration: "none",
-            }}
-          >
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" style={{ width: 19, height: 19 }}>
-              <polyline points="15 18 9 12 15 6" />
-            </svg>
-          </InAppBackLink>
-          <div
-            style={{
-              marginLeft: "auto",
-              display: "flex",
-              alignItems: "center",
-              gap: 16,
-              flexShrink: 0,
-            }}
-          >
-            <NavAuthActions
-              buttonStyle={{
-                fontFamily: "inherit",
-                fontSize: fluidSize(14),
-                fontWeight: 600,
-                color: ACC,
-                background: "#fff",
-                border: "none",
-                borderRadius: 999,
-                padding: "11px 22px",
-                cursor: "pointer",
-                whiteSpace: "nowrap",
-                textDecoration: "none",
-                display: "inline-flex",
-                alignItems: "center",
-              }}
-            />
-          </div>
+      <header style={{ background: ACC, position: "sticky", top: 0, zIndex: 20 }}>
+        <div style={{ maxWidth: 1320, margin: "0 auto", padding: mobile ? "12px 20px" : "16px 32px", display: "flex", alignItems: "center", gap: 16 }}>
+          <button onClick={() => window.history.back()} aria-label="Back to browse" style={{ fontFamily: "inherit", width: 40, height: 40, borderRadius: 999, background: "rgba(255,255,255,0.14)", color: "#fff", border: "none", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, cursor: "pointer" }}>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" style={{ width: 19, height: 19 }}><polyline points="15 18 9 12 15 6" /></svg>
+          </button>
+          <a href="/login" style={{ fontFamily: "inherit", marginLeft: "auto", fontSize: 14, fontWeight: 600, color: ACC, background: "#fff", border: "none", borderRadius: 999, padding: "11px 22px", cursor: "pointer", whiteSpace: "nowrap", textDecoration: "none", display: "inline-flex", alignItems: "center" }}>Log in</a>
         </div>
       </header>
 
-      {wide ? (
-        <div aria-hidden style={{ height: stickTop, flexShrink: 0 }} />
-      ) : null}
-
-      <main
-        style={{
-          width: "100%",
-          maxWidth: 1320,
-          margin: "0 auto",
-          padding: mobile
-            ? "20px 20px 40px"
-            : wide
-              ? "0 32px 120px"
-              : `${TICKETING_STICKY_GAP_PX}px 32px 120px`,
-          boxSizing: "border-box",
-          display: "grid",
-          gridTemplateColumns: mobile
-            ? "1fr"
-            : narrow
-              ? "300px minmax(0, 1fr)"
-              : "minmax(300px, 360px) minmax(0, 1fr)",
-          gap: mobile ? 20 : 28,
-          alignItems: mobile || narrow ? "start" : "stretch",
-        }}
-      >
+      <div style={{ maxWidth: 1320, margin: "0 auto", padding: mobile ? "20px 20px 40px" : "32px 32px 48px", display: "grid", gridTemplateColumns: mobile ? "1fr" : narrow ? "300px minmax(0, 1fr)" : "344px minmax(0, 1fr)", gap: mobile ? 20 : 28, alignItems: "start" }}>
+        {/* identity aside (desktop) */}
         {!mobile && (
-          <div style={{ minWidth: 0, ...(wide ? { alignSelf: "stretch" } : {}) }}>
-            <div
-              data-testid="team-profile-sidebar"
-              style={{
-                display: "flex",
-                flexDirection: "column",
-                gap: 16,
-                minWidth: 0,
-                ...(wide
-                  ? {
-                      position: "sticky",
-                      top: stickTop,
-                      zIndex: 5,
-                    }
-                  : {}),
-              }}
-            >
-              <aside
-                style={{
-                  ...card,
-                  borderRadius: 24,
-                  boxShadow: "0 8px 30px rgba(5,27,53,0.08)",
-                  padding: 24,
-                  display: "flex",
-                  flexDirection: "column",
-                  gap: 18,
-                  width: "100%",
-                  boxSizing: "border-box",
-                }}
-              >
+          <aside style={{ ...card, borderRadius: 24, boxShadow: "0 8px 30px color-mix(in srgb, var(--paper) 8%, transparent)", padding: 24, display: "flex", flexDirection: "column", gap: 18, position: "sticky", top: 84, zIndex: 5 }}>
             <div style={{ display: "flex", flexDirection: "column", gap: 14, alignItems: "center" }}>
-              <div
-                style={{
-                  width: 116,
-                  height: 116,
-                  borderRadius: 999,
-                  background: "#fff",
-                  border: "1px solid rgba(5,27,53,0.08)",
-                  boxShadow: "0 8px 30px rgba(5,27,53,0.10)",
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  padding: 14,
-                  boxSizing: "border-box",
-                  flexShrink: 0,
-                }}
-              >
+              <div style={{ width: 116, height: 116, borderRadius: 999, background: "#fff", border: "1px solid color-mix(in srgb, var(--paper) 8%, transparent)", boxShadow: "0 8px 30px color-mix(in srgb, var(--paper) 10%, transparent)", display: "flex", alignItems: "center", justifyContent: "center", padding: 14, boxSizing: "border-box", flexShrink: 0 }}>
                 {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img src={logoSrc} alt={orgName} style={{ maxWidth: "100%", maxHeight: "100%", objectFit: "contain" }} />
               </div>
               <div style={{ display: "flex", flexDirection: "column", gap: 8, alignItems: "center", textAlign: "center", minWidth: 0 }}>
-                <div
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    gap: 8,
-                    fontSize: 10,
-                    fontWeight: 600,
-                    lineHeight: 1.5,
-                    textTransform: "uppercase",
-                    letterSpacing: BROWSE_TRACK.label,
-                    color: ACC,
-                    whiteSpace: "nowrap",
-                  }}
-                >
+                <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 10, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.12em", color: ACC, whiteSpace: "nowrap" }}>
                   <span style={{ width: 5, height: 5, borderRadius: 999, background: ACC }} />
-                  {categoryLabel(organization.category?.name) || "Organization"}
+                  Athletics program
                 </div>
-                <h1 style={{ margin: 0, fontSize: 32, fontWeight: 600, letterSpacing: BROWSE_TRACK.display, lineHeight: 1.08 }}>
-                  {orgName}
-                </h1>
-                {location && (
-                  <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13, lineHeight: 1.5, color: "#6e7180" }}>
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" style={{ width: 13, height: 13, flexShrink: 0 }}>
-                      <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z" />
-                      <circle cx="12" cy="10" r="3" />
-                    </svg>
-                    {location}
-                  </div>
-                )}
+                <h1 style={{ margin: 0, fontSize: 32, fontWeight: 600, letterSpacing: "-0.03em", lineHeight: 1.08 }}>{orgName}</h1>
+                <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13, color: "#6e7180" }}>
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" style={{ width: 13, height: 13, flexShrink: 0 }}><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z" /><circle cx="12" cy="10" r="3" /></svg>
+                  Las Cruces, NM
+                </div>
               </div>
             </div>
 
-            {showFilters && (
-              <div style={{ display: "flex", flexDirection: "column", gap: 8, borderTop: "1px solid rgba(5,27,53,0.08)" }}>
-                <div style={{ fontSize: 10, fontWeight: 600, lineHeight: 1.5, textTransform: "uppercase", letterSpacing: BROWSE_TRACK.label, color: "#8a93a3", paddingTop: 14 }}>
-                  {filterHeading}
-                </div>
-                <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
-                  {sportFilters.map((f) => (
-                    <button
-                      key={f.label}
-                      className="cp-a"
-                      onClick={() => selectSport(f.label)}
-                      style={{
-                        fontFamily: "inherit",
-                        display: "flex",
-                        alignItems: "center",
-                        justifyContent: "space-between",
-                        gap: 10,
-                        textAlign: "left",
-                        fontSize: 14,
-                        lineHeight: 1.5,
-                        fontWeight: 500,
-                        whiteSpace: "nowrap",
-                        background: f.on ? `${ACC}14` : "transparent",
-                        color: f.on ? ACC : NAVY,
-                        border: "none",
-                        borderRadius: 10,
-                        padding: "9px 10px",
-                        cursor: "pointer",
-                      }}
-                    >
-                      <span style={{ minWidth: 0, overflow: "hidden", textOverflow: "ellipsis" }}>{f.label}</span>
-                      <span style={{ flexShrink: 0, fontSize: 12, lineHeight: 1.5, color: "#8a93a3", fontVariantNumeric: "tabular-nums" }}>{f.n}</span>
-                    </button>
-                  ))}
-                </div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 8, borderTop: "1px solid color-mix(in srgb, var(--paper) 8%, transparent)" }}>
+              <div style={{ fontSize: 10, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.12em", color: "#8a93a3", paddingTop: 14 }}>Sport</div>
+              <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+                {sportFilters.map((f) => (
+                  <button key={f.label} className="cp-a" onClick={() => setSport(f.label)} style={{ fontFamily: "inherit", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, textAlign: "left", fontSize: 14, fontWeight: 500, whiteSpace: "nowrap", background: f.on ? "#fbecf1" : "transparent", color: f.on ? ACC : NAVY, border: "none", borderRadius: 10, padding: "9px 10px", cursor: "pointer" }}>
+                    <span style={{ minWidth: 0, overflow: "hidden", textOverflow: "ellipsis" }}>{f.label}</span>
+                    <span style={{ flexShrink: 0, fontSize: 12, color: "#8a93a3", fontVariantNumeric: "tabular-nums" }}>{f.n}</span>
+                  </button>
+                ))}
               </div>
-            )}
-
-            <p
-              style={{
-                margin: 0,
-                paddingTop: 16,
-                borderTop: "1px solid rgba(5,27,53,0.08)",
-                fontSize: fluidSize(13),
-                lineHeight: browseLeading("body"),
-                color: "#6e7180",
-              }}
-            >
-              {about}
-            </p>
-
-            {teamActions}
-              </aside>
             </div>
-          </div>
+
+            <p style={{ margin: 0, paddingTop: 16, borderTop: "1px solid color-mix(in srgb, var(--paper) 8%, transparent)", fontSize: 13, lineHeight: 1.6, color: "#6e7180" }}>Every Aggie home ticket in one place — football, basketball, soccer, volleyball and baseball, across all four campus venues.</p>
+
+            <div style={{ display: "flex", alignItems: "center", gap: 8, justifyContent: "center" }}>
+              <a href="https://nmstatesports.com" target="_blank" rel="noopener noreferrer" aria-label="Visit website" style={{ width: 44, height: 44, borderRadius: 999, background: "#fff", border: "1px solid color-mix(in srgb, var(--paper) 14%, transparent)", color: NAVY, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}>
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" style={{ width: 18, height: 18 }}><circle cx="12" cy="12" r="10" /><line x1="2" y1="12" x2="22" y2="12" /><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z" /></svg>
+              </a>
+              <button aria-label="Share" style={{ fontFamily: "inherit", width: 44, height: 44, borderRadius: 999, background: "#fff", border: "1px solid color-mix(in srgb, var(--paper) 14%, transparent)", color: NAVY, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}>
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" style={{ width: 17, height: 17 }}><path d="M4 12v7a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-7" /><polyline points="16 6 12 2 8 6" /><line x1="12" y1="2" x2="12" y2="15" /></svg>
+              </button>
+            </div>
+          </aside>
         )}
 
-        <div
-          style={{
-            display: "flex",
-            flexDirection: "column",
-            gap: 16,
-            minWidth: 0,
-            ...(mobile || narrow ? {} : { alignSelf: "start" }),
-          }}
-        >
+        {/* main */}
+        <main style={{ display: "flex", flexDirection: "column", gap: 16, minWidth: 0 }}>
+          {/* mobile identity strip */}
           {mobile && (
-            <div
-              data-testid="team-profile-mobile-card"
-              style={{
-                ...card,
-                padding: 14,
-                display: "flex",
-                flexDirection: "column",
-                gap: 14,
-                width: "100%",
-                boxSizing: "border-box",
-              }}
-            >
-              <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
-                <div
-                  style={{
-                    width: 64,
-                    height: 64,
-                    borderRadius: 999,
-                    background: "#fff",
-                    border: "1px solid rgba(5,27,53,0.08)",
-                    boxShadow: "0 8px 30px rgba(5,27,53,0.10)",
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    padding: 9,
-                    boxSizing: "border-box",
-                    flexShrink: 0,
-                  }}
-                >
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img src={logoSrc} alt={orgName} style={{ maxWidth: "100%", maxHeight: "100%", objectFit: "contain" }} />
-                </div>
-                <div style={{ display: "flex", flexDirection: "column", gap: 3, minWidth: 0 }}>
-                  <div style={{ fontSize: 10, fontWeight: 600, lineHeight: 1.5, textTransform: "uppercase", letterSpacing: BROWSE_TRACK.label, color: ACC }}>
-                    {categoryLabel(organization.category?.name) || "Organization"}
-                  </div>
-                  <h1 style={{ margin: 0, fontSize: 21, fontWeight: 600, letterSpacing: BROWSE_TRACK.display, lineHeight: 1.1 }}>
-                    {orgName}
-                  </h1>
-                  {location ? (
-                    <div style={{ fontSize: 13, lineHeight: 1.5, color: "#6e7180" }}>{location}</div>
-                  ) : null}
-                </div>
+            <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
+              <div style={{ width: 64, height: 64, borderRadius: 999, background: "#fff", border: "1px solid color-mix(in srgb, var(--paper) 8%, transparent)", boxShadow: "0 8px 30px color-mix(in srgb, var(--paper) 10%, transparent)", display: "flex", alignItems: "center", justifyContent: "center", padding: 9, boxSizing: "border-box", flexShrink: 0 }}>
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src={logoSrc} alt={orgName} style={{ maxWidth: "100%", maxHeight: "100%", objectFit: "contain" }} />
               </div>
-
-              <div style={{ paddingTop: 14, borderTop: "1px solid rgba(5,27,53,0.08)" }}>
-                <pre style={{ margin: 0, fontFamily: "inherit", whiteSpace: "pre-wrap", overflowWrap: "anywhere", fontSize: fluidSize(13), lineHeight: browseLeading("body"), color: "#6e7180" }}>{about}</pre>
+              <div style={{ display: "flex", flexDirection: "column", gap: 4, minWidth: 0 }}>
+                <div style={{ fontSize: 10, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.12em", color: ACC }}>Athletics program</div>
+                <h1 style={{ margin: 0, fontSize: 21, fontWeight: 600, letterSpacing: "-0.03em", lineHeight: 1.1 }}>{orgName}</h1>
               </div>
-
-              {teamActions}
             </div>
           )}
 
-          <div
-            style={{
-              display: "flex",
-              alignItems: "center",
-              gap: 6,
-              background: "#edeff7",
-              borderRadius: 999,
-              padding: 5,
-              alignSelf: mobile ? "stretch" : "flex-start",
-              width: mobile ? "100%" : "auto",
-              boxSizing: "border-box",
-            }}
-          >
+          {/* tabs */}
+          <div style={{ display: "flex", alignItems: "center", gap: 6, background: "#edeff7", borderRadius: 999, padding: 5, alignSelf: mobile ? "stretch" : "flex-start", width: mobile ? "100%" : "auto", boxSizing: "border-box" }}>
             {tabs.map((t) => (
-              <button
-                key={t.key}
-                onClick={() => setTab(t.key)}
-                style={{
-                  fontFamily: "inherit",
-                  flex: mobile ? "1 1 0" : "0 0 auto",
-                  fontSize: mobile ? 11 : 14,
-                  lineHeight: 1.5,
-                  fontWeight: 600,
-                  whiteSpace: "nowrap",
-                  border: "none",
-                  borderRadius: 999,
-                  padding: `11px ${mobile ? 6 : 20}px`,
-                  cursor: "pointer",
-                  background: t.key === tab ? ACC : "transparent",
-                  color: t.key === tab ? "#fff" : "#4a5567",
-                }}
-              >
-                {t.label}
-              </button>
+              <button key={t.key} onClick={() => setTab(t.key)} style={{ fontFamily: "inherit", flex: mobile ? "1 1 0" : "0 0 auto", fontSize: mobile ? 11 : 14, fontWeight: 600, whiteSpace: "nowrap", border: "none", borderRadius: 999, padding: `11px ${mobile ? 6 : 20}px`, cursor: "pointer", background: t.key === tab ? ACC : "transparent", color: t.key === tab ? "#fff" : "#4a5567" }}>{t.label}</button>
             ))}
           </div>
 
+          {/* EVENTS */}
           {tab === "events" && (
             <>
-              {mobile && showFilters && (
+              {mobile && (
                 <div style={{ display: "flex", alignItems: "center", gap: 8, overflowX: "auto", margin: "0 -20px", padding: "0 20px" }}>
                   {sportFilters.map((f) => (
-                    <button
-                      key={f.label}
-                      onClick={() => selectSport(f.label)}
-                      style={{
-                        fontFamily: "inherit",
-                        display: "inline-flex",
-                        alignItems: "center",
-                        gap: 6,
-                        fontSize: 13,
-                        fontWeight: 600,
-                        lineHeight: 1.5,
-                        whiteSpace: "nowrap",
-                        height: 34,
-                        borderRadius: 8,
-                        padding: "0 12px",
-                        cursor: "pointer",
-                        background: f.on ? `${ACC}14` : "#fff",
-                        color: f.on ? ACC : "#4a5567",
-                        border: `1px solid ${f.on ? ACC : "rgba(5,27,53,0.12)"}`,
-                      }}
-                    >
+                    <button key={f.label} onClick={() => setSport(f.label)} style={{ fontFamily: "inherit", display: "inline-flex", alignItems: "center", gap: 6, fontSize: 13, fontWeight: 600, whiteSpace: "nowrap", height: 34, borderRadius: 8, padding: "0 12px", cursor: "pointer", background: f.on ? "#fbecf1" : "#fff", color: f.on ? ACC : "#4a5567", border: `1px solid ${f.on ? ACC : "color-mix(in srgb, var(--paper) 12%, transparent)"}` }}>
                       {f.label}
-                      <span style={{ fontSize: 11, fontWeight: 600, lineHeight: 1.5, color: f.on ? `${ACC}99` : "#8a93a3", fontVariantNumeric: "tabular-nums" }}>
-                        {f.n}
-                      </span>
+                      <span style={{ fontSize: 11, fontWeight: 600, color: f.on ? "rgba(140,11,66,0.6)" : "#8a93a3", fontVariantNumeric: "tabular-nums" }}>{f.n}</span>
                     </button>
                   ))}
-                </div>
-              )}
-
-              {groups.length === 0 && (
-                <div style={{ ...card, padding: 28, textAlign: "center", color: "#6e7180", fontSize: fluidSize(14) }}>
-                  No upcoming events for {orgName}.
                 </div>
               )}
 
               {groups.map((g) => (
-                <div key={g.key} style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                <div key={g.title} style={{ display: "flex", flexDirection: "column", gap: 10 }}>
                   <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "10px 2px 8px" }}>
-                    <div style={{ fontSize: 13, fontWeight: 600, lineHeight: 1.5, textTransform: "uppercase", letterSpacing: BROWSE_TRACK.eyebrow, color: ACC, whiteSpace: "nowrap" }}>
-                      {g.title}
-                    </div>
-                    <div style={{ fontSize: 12, lineHeight: 1.5, color: "#8a93a3", whiteSpace: "nowrap" }}>{g.meta}</div>
-                    <div style={{ flex: 1, height: 1, background: "rgba(5,27,53,0.10)" }} />
+                    <div style={{ fontSize: 13, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.1em", color: ACC, whiteSpace: "nowrap" }}>{g.title}</div>
+                    <div style={{ fontSize: 12, color: "#8a93a3", whiteSpace: "nowrap" }}>{g.meta}</div>
+                    <div style={{ flex: 1, height: 1, background: "color-mix(in srgb, var(--paper) 10%, transparent)" }} />
                   </div>
-                  {g.rows.map((e) => {
-                    const soon = e.status === "Presale" || Boolean(e.onSaleLabel);
-                    const soldOut = e.soldOut;
+                  {g.rows.map((e, i) => {
+                    const soon = e.status === "Presale";
+                    const tag = tagFor(e.status);
+                    // Soccer/volleyball are GA; the rest route to the reserved-seat ticketing page.
+                    const evHref = e.sport === "Soccer" || e.sport === "Volleyball" ? "/e/nm-state/KpIeUYbz" : "/e/nm-state/W50prW0I/tickets";
                     return (
-                      <EventRowFrame
-                        key={e.key}
-                        href={e.href}
-                        soldOut={soldOut}
-                        className={soldOut ? "cp-row cp-row-still" : "cp-row"}
-                        style={{
-                          ...card,
-                          boxShadow: undefined,
-                          padding: mobile ? 14 : "16px 20px",
-                          display: "grid",
-                          gridTemplateColumns: rowCols,
-                          gap: mobile ? 14 : 20,
-                          alignItems: "center",
-                          cursor: soldOut ? "default" : "pointer",
-                          color: NAVY,
-                          textDecoration: "none",
-                        }}
-                      >
-                        <div
-                          style={{
-                            display: "flex",
-                            flexDirection: "column",
-                            alignItems: "center",
-                            justifyContent: "center",
-                            gap: 2,
-                            width: dateW,
-                            height: dateW,
-                            borderRadius: 14,
-                            background: "#f1f3f8",
-                            border: "1px solid rgba(5,27,53,0.08)",
-                            flexShrink: 0,
-                          }}
-                        >
-                          <div style={{ fontSize: 10, fontWeight: 600, lineHeight: 1.5, textTransform: "uppercase", letterSpacing: BROWSE_TRACK.label, color: "#6e7180" }}>
-                            {e.mon}
-                          </div>
-                          <div style={{ fontSize: 22, fontWeight: 600, letterSpacing: BROWSE_TRACK.statement, fontVariantNumeric: "tabular-nums", lineHeight: 1 }}>
-                            {e.day}
-                          </div>
-                          <div style={{ fontSize: 10, lineHeight: 1.5, color: "#8a93a3" }}>{e.dow}</div>
+                      <article key={`${e.title}-${i}`} className="cp-row" style={{ ...card, padding: mobile ? 14 : "16px 20px", display: "grid", gridTemplateColumns: rowCols, gap: mobile ? 14 : 20, alignItems: "center", cursor: "pointer" }}>
+                        <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 2, width: dateW, height: dateW, borderRadius: 14, background: "#f1f3f8", border: "1px solid color-mix(in srgb, var(--paper) 8%, transparent)", flexShrink: 0 }}>
+                          <div style={{ fontSize: 10, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.1em", color: "#6e7180" }}>{e.mon}</div>
+                          <div style={{ fontSize: 22, fontWeight: 600, letterSpacing: "-0.02em", fontVariantNumeric: "tabular-nums", lineHeight: 1 }}>{e.day}</div>
+                          <div style={{ fontSize: 10, color: "#8a93a3" }}>{e.dow}</div>
                         </div>
                         <div style={{ display: "flex", flexDirection: "column", gap: 5, minWidth: 0 }}>
                           <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-                            <span style={{ fontSize: 12, lineHeight: 1.5, color: "#6e7180" }}>
-                              {e.sport}
-                              {e.time ? ` · ${e.time}` : ""}
-                            </span>
-                            {soldOut ? (
-                              <span style={{ fontSize: 10, fontWeight: 600, lineHeight: 1.5, letterSpacing: "0.08em", textTransform: "uppercase", color: "#6e7180", background: "#eef0f6", borderRadius: 999, padding: "3px 8px" }}>
-                                Sold out
-                              </span>
-                            ) : e.onSaleLabel ? (
-                              <span style={{ fontSize: 10, fontWeight: 600, lineHeight: 1.5, letterSpacing: "0.08em", textTransform: "uppercase", color: "#6e7180", background: "#eef0f6", borderRadius: 999, padding: "3px 8px", whiteSpace: "nowrap" }}>
-                                {e.onSaleLabel}
-                              </span>
-                            ) : null}
+                            <span style={{ fontSize: 12, color: "#6e7180" }}>{e.sport} · {e.time}</span>
+                            {e.status !== "On sale" && (
+                              <span style={{ fontSize: 10, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.12em", color: tag.tagInk, background: tag.tagBg, borderRadius: 999, padding: "4px 9px" }}>{e.status}</span>
+                            )}
                           </div>
-                          <div style={{ fontSize: mobile ? 16 : 17, fontWeight: 600, letterSpacing: "-0.015em", lineHeight: 1.25 }}>
-                            {e.title}
+                          <div style={{ fontSize: mobile ? 16 : 17, fontWeight: 600, letterSpacing: "-0.015em", lineHeight: 1.25 }}>{e.title}</div>
+                          <div style={{ fontSize: 13, color: "#6e7180", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{e.venue}</div>
+                        </div>
+                        <div style={{ gridColumn: ctaSpan, display: "flex", alignItems: "center", gap: mobile ? 12 : 18, justifyContent: mobile || narrow ? "space-between" : "flex-end", paddingTop: mobile || narrow ? 12 : 0, borderTop: mobile || narrow ? "1px solid color-mix(in srgb, var(--paper) 8%, transparent)" : "none" }}>
+                          <div style={{ display: "flex", gap: 5, flexDirection: mobile || narrow ? "row" : "column", alignItems: mobile || narrow ? "baseline" : "flex-end", whiteSpace: "nowrap" }}>
+                            <span style={{ fontSize: 10, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.12em", color: "#8a93a3" }}>From</span>
+                            <span style={{ fontSize: 17, fontWeight: 600, fontVariantNumeric: "tabular-nums", letterSpacing: "-0.015em" }}>${e.p}</span>
                           </div>
-                          {e.venue && (
-                            <div style={{ fontSize: 13, lineHeight: 1.5, color: "#6e7180", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                              {e.venue}
-                            </div>
+                          {soon ? (
+                            <button style={{ fontFamily: "inherit", fontSize: 14, fontWeight: 600, color: NAVY, background: "#fff", border: "1px solid color-mix(in srgb, var(--paper) 14%, transparent)", borderRadius: 999, padding: "12px 22px", minHeight: 44, cursor: "pointer", whiteSpace: "nowrap" }}>Remind me</button>
+                          ) : (
+                            <a href={evHref} style={{ fontFamily: "inherit", fontSize: 14, fontWeight: 600, color: "#fff", background: ACC, border: `1px solid ${ACC}`, borderRadius: 999, padding: "12px 22px", minHeight: 44, cursor: "pointer", whiteSpace: "nowrap", textDecoration: "none", display: "inline-flex", alignItems: "center", justifyContent: "center", boxSizing: "border-box" }}>Get tickets</a>
                           )}
-                          <EventPromo text={e.promo} />
                         </div>
-                        <div
-                          style={{
-                            gridColumn: ctaSpan,
-                            display: "flex",
-                            alignItems: "center",
-                            gap: mobile ? 12 : 18,
-                            justifyContent: "flex-end",
-                            paddingTop: mobile || narrow ? 12 : 0,
-                            borderTop: mobile || narrow ? "1px solid rgba(5,27,53,0.08)" : "none",
-                          }}
-                        >
-                          <span
-                            style={{
-                              fontFamily: "inherit",
-                              fontSize: 14,
-                              fontWeight: 600,
-                              lineHeight: 1.5,
-                              color: soldOut ? "#6e7180" : soon ? NAVY : "#fff",
-                              background: soldOut || soon ? "#fff" : BTN,
-                              border: `1px solid ${soldOut || soon ? "rgba(5,27,53,0.14)" : BTN}`,
-                              borderRadius: 999,
-                              padding: "12px 22px",
-                              minHeight: 44,
-                              cursor: soldOut ? "default" : "pointer",
-                              whiteSpace: "nowrap",
-                              display: "inline-flex",
-                              alignItems: "center",
-                              justifyContent: "center",
-                              boxSizing: "border-box",
-                            }}
-                          >
-                            {soldOut ? "Sold out" : soon ? "Remind me" : "Get tickets"}
-                          </span>
-                        </div>
-                      </EventRowFrame>
+                      </article>
                     );
                   })}
                 </div>
@@ -1219,227 +248,46 @@ export default function ClientProfile({
             </>
           )}
 
+          {/* PACKAGES */}
           {tab === "packages" && (
             <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-              {mobile && showFilters && (
-                <div style={{ display: "flex", alignItems: "center", gap: 8, overflowX: "auto", margin: "0 -20px", padding: "0 20px" }}>
-                  {sportFilters.map((f) => (
-                    <button
-                      key={f.label}
-                      onClick={() => selectSport(f.label)}
-                      style={{
-                        fontFamily: "inherit",
-                        display: "inline-flex",
-                        alignItems: "center",
-                        gap: 6,
-                        fontSize: 13,
-                        fontWeight: 600,
-                        lineHeight: 1.5,
-                        whiteSpace: "nowrap",
-                        height: 34,
-                        borderRadius: 8,
-                        padding: "0 12px",
-                        cursor: "pointer",
-                        background: f.on ? `${ACC}14` : "#fff",
-                        color: f.on ? ACC : "#4a5567",
-                        border: `1px solid ${f.on ? ACC : "rgba(5,27,53,0.12)"}`,
-                      }}
-                    >
-                      {f.label}
-                      <span style={{ fontSize: 11, lineHeight: 1.5, color: "#8a93a3" }}>{f.n}</span>
-                    </button>
-                  ))}
-                </div>
-              )}
-              {visiblePackages.length === 0 && (
-                <div style={{ ...card, padding: 28, textAlign: "center", color: "#6e7180", fontSize: fluidSize(14) }}>
-                  No season tickets
-                  {sport !== ALL_FILTER ? ` for ${sport}` : ""} on sale right now.
-                </div>
-              )}
-              {visiblePackages.map((p) => {
-                const tz = p.venue?.timezone || venues[0]?.timezone;
-                const range =
-                  p.start && p.end
-                    ? `${formatEventWhen(p.start, tz, "MMM D")} → ${formatEventWhen(p.end, tz, "MMM D, YYYY")}`
-                    : "";
-                const price = packageFromPriceLabel(p);
-                return (
-                  <Link
-                    key={String(p.uuid || p.id)}
-                    href={p.uuid ? `/${slug}/package/${p.uuid}/` : "#"}
-                    className="cp-row"
-                    style={{
-                      ...card,
-                      padding: mobile ? 14 : "16px 20px",
-                      display: "grid",
-                      gridTemplateColumns: mobile ? "1fr" : "minmax(0, 1fr) auto",
-                      gap: mobile ? 14 : 20,
-                      alignItems: "center",
-                      cursor: "pointer",
-                      color: NAVY,
-                      textDecoration: "none",
-                    }}
-                  >
-                    <div style={{ display: "flex", flexDirection: "column", gap: 6, minWidth: 0 }}>
-                      <div style={{ fontSize: 10, fontWeight: 600, lineHeight: 1.5, textTransform: "uppercase", letterSpacing: BROWSE_TRACK.label, color: ACC }}>
-                        {packageSport(p) || "Season"}
-                      </div>
-                      <div style={{ fontSize: mobile ? 16 : 17, fontWeight: 600, letterSpacing: "-0.015em", lineHeight: 1.5 }}>
-                        {p.name || "Season package"}
-                      </div>
-                      {range && <div style={{ fontSize: 13, lineHeight: 1.5, color: "#6e7180" }}>{range}</div>}
-                      {p.description && <div style={{ fontSize: 13, lineHeight: 1.5, color: "#4a5567" }}>{p.description}</div>}
+              {PACKAGES.map((p) => (
+                <article key={p.title} style={{ ...card, padding: mobile ? 14 : "16px 20px", display: "grid", gridTemplateColumns: mobile ? "1fr" : "minmax(0, 1fr) auto", gap: mobile ? 14 : 20, alignItems: "center" }}>
+                  <div style={{ display: "flex", flexDirection: "column", gap: 6, minWidth: 0 }}>
+                    <div style={{ fontSize: 10, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.12em", color: ACC }}>{p.kicker}</div>
+                    <div style={{ fontSize: mobile ? 16 : 17, fontWeight: 600, letterSpacing: "-0.015em" }}>{p.title}</div>
+                    <div style={{ fontSize: 13, color: "#6e7180" }}>{p.range}</div>
+                    <div style={{ fontSize: 13, color: "#4a5567" }}>{p.note}</div>
+                  </div>
+                  <div style={{ display: "flex", alignItems: "center", gap: mobile ? 12 : 18, justifyContent: mobile ? "space-between" : "flex-end" }}>
+                    <div style={{ display: "flex", flexDirection: "column", gap: 1, alignItems: mobile ? "baseline" : "flex-end" }}>
+                      <span style={{ fontSize: 10, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.12em", color: "#8a93a3" }}>From</span>
+                      <span style={{ fontSize: 17, fontWeight: 600, fontVariantNumeric: "tabular-nums", letterSpacing: "-0.015em" }}>{p.price}</span>
                     </div>
-                    <div style={{ display: "flex", alignItems: "center", gap: mobile ? 12 : 18, justifyContent: mobile ? "space-between" : "flex-end" }}>
-                      <div style={{ display: "flex", flexDirection: "column", gap: 1, alignItems: mobile ? "baseline" : "flex-end" }}>
-                        <span style={{ fontSize: 10, fontWeight: 600, lineHeight: 1.5, textTransform: "uppercase", letterSpacing: BROWSE_TRACK.label, color: "#8a93a3" }}>From</span>
-                        <span style={{ fontSize: 17, fontWeight: 600, lineHeight: 1.5, letterSpacing: "-0.015em", fontVariantNumeric: "tabular-nums", color: price ? NAVY : "#8a93a3" }}>
-                          {price || "—"}
-                        </span>
-                      </div>
-                      <span
-                        style={{
-                          fontFamily: "inherit",
-                          fontSize: 14,
-                          fontWeight: 600,
-                          lineHeight: 1.5,
-                          color: "#fff",
-                          background: BTN,
-                          border: `1px solid ${BTN}`,
-                          borderRadius: 999,
-                          padding: "12px 22px",
-                          cursor: "pointer",
-                          whiteSpace: "nowrap",
-                          display: "inline-flex",
-                          alignItems: "center",
-                        }}
-                      >
-                        Select
-                      </span>
-                    </div>
-                  </Link>
-                );
-              })}
+                    <a href="/season-tickets" style={{ fontFamily: "inherit", fontSize: 14, fontWeight: 600, color: "#fff", background: ACC, border: `1px solid ${ACC}`, borderRadius: 999, padding: "12px 22px", cursor: "pointer", whiteSpace: "nowrap", textDecoration: "none", display: "inline-flex", alignItems: "center" }}>Select</a>
+                  </div>
+                </article>
+              ))}
             </div>
           )}
 
+          {/* FLEX */}
           {tab === "flex" && (
-            <div
-              style={{
-                display: "grid",
-                gridTemplateColumns: mobile
-                  ? "1fr"
-                  : narrow
-                    ? "repeat(2, minmax(0, 1fr))"
-                    : "repeat(3, minmax(0, 1fr))",
-                gap: 14,
-              }}
-            >
-              {flexPacks.length === 0 && (
-                <div style={{ ...card, padding: 28, textAlign: "center", color: "#6e7180", fontSize: fluidSize(14), gridColumn: "1 / -1" }}>
-                  No flex packages on sale right now.
-                </div>
-              )}
-              {flexPacks.map((f) => {
-                const count = f.gameTickets ?? 0;
-                const shownPrice = f.price != null ? flexPackDisplayPrice(f) : null;
-                const price = shownPrice != null ? formatCurrency(shownPrice) : "—";
-                const each =
-                  shownPrice != null ? flexPackEachPrice(shownPrice, count) : null;
-                const packImage = f.image ? imageUrl(f.image, "") : "";
-                const tone = flexPackCardTone(
-                  f.name,
-                  f.color || f.backgroundColor || f.offerColor,
-                  ACC,
-                );
-                return (
-                  <Link
-                    key={String(f.uuid || f.id)}
-                    href={f.uuid ? `/${slug}/flex-pack/${f.uuid}/` : "#"}
-                    style={{
-                      ...card,
-                      borderRadius: 20,
-                      overflow: "hidden",
-                      padding: 0,
-                      display: "flex",
-                      flexDirection: "column",
-                      textDecoration: "none",
-                      color: NAVY,
-                      cursor: "pointer",
-                    }}
-                  >
-                    <div
-                      style={{
-                        height: 132,
-                        background: packImage
-                          ? `url(${packImage}) center/cover no-repeat`
-                          : tone.bg,
-                        display: "flex",
-                        alignItems: "center",
-                        justifyContent: "center",
-                      }}
-                    >
-                      {packImage ? (
-                        // eslint-disable-next-line @next/next/no-img-element
-                        <img
-                          src={packImage}
-                          alt={f.name || "Flex pack"}
-                          style={{
-                            width: "100%",
-                            height: "100%",
-                            objectFit: "cover",
-                            display: "block",
-                          }}
-                        />
-                      ) : (
-                        <span
-                          style={{
-                            fontSize: fluidSize(56),
-                            fontWeight: 700,
-                            letterSpacing: BROWSE_TRACK.statement,
-                            color: tone.ink,
-                            fontVariantNumeric: "tabular-nums",
-                          }}
-                        >
-                          {count || ""}
-                        </span>
-                      )}
-                    </div>
-                    <div
-                      style={{
-                        padding: 20,
-                        display: "flex",
-                        flexDirection: "column",
-                        gap: 10,
-                      }}
-                    >
-                      <div style={{ fontSize: 20, fontWeight: 600, letterSpacing: BROWSE_TRACK.card, lineHeight: 1.5 }}>
-                        {f.name || (count ? `${count} vouchers` : "Flex pack")}
-                      </div>
-                      {count > 0 ? (
-                        <div style={{ fontSize: 20, lineHeight: 1.5, color: "#6e7180" }}>
-                          {count} {count === 1 ? "voucher" : "vouchers"}
-                        </div>
-                      ) : null}
-                      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
-                        <span style={{ fontSize: 20, fontWeight: 600, lineHeight: 1.5, fontVariantNumeric: "tabular-nums" }}>
-                          {price}
-                        </span>
-                        {each != null && (
-                          <span style={{ fontSize: 13, fontWeight: 600, lineHeight: 1.5, color: ACC, background: `${ACC}14`, borderRadius: 999, padding: "7px 14px", whiteSpace: "nowrap" }}>
-                            {formatCurrency(each)} each
-                          </span>
-                        )}
-                      </div>
-                    </div>
-                  </Link>
-                );
-              })}
+            <div style={{ display: "grid", gridTemplateColumns: mobile ? "1fr" : narrow ? "repeat(2, minmax(0, 1fr))" : "repeat(3, minmax(0, 1fr))", gap: 14 }}>
+              {FLEX.map((f) => (
+                <a key={f.count} href="/flex-pack" style={{ ...card, borderRadius: 20, padding: 20, display: "flex", flexDirection: "column", gap: 14, textDecoration: "none", color: NAVY, cursor: "pointer" }}>
+                  <div style={{ fontSize: 20, fontWeight: 600, letterSpacing: "-0.02em" }}>{f.count} vouchers</div>
+                  <div style={{ height: 1, background: "color-mix(in srgb, var(--paper) 8%, transparent)" }} />
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
+                    <span style={{ fontSize: 20, fontWeight: 600, fontVariantNumeric: "tabular-nums", letterSpacing: "-0.02em" }}>{f.price}</span>
+                    <span style={{ fontSize: 13, fontWeight: 600, color: ACC, background: "#fbecf1", borderRadius: 999, padding: "7px 14px", whiteSpace: "nowrap" }}>{f.each} each</span>
+                  </div>
+                </a>
+              ))}
             </div>
           )}
-        </div>
-      </main>
+        </main>
+      </div>
     </div>
   );
 }

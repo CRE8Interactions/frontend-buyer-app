@@ -1,104 +1,36 @@
 "use client";
 
 import { memo, useMemo, useRef } from "react";
-import { RESALE_MAP_COLOR, type SeatmapSeat } from "@/lib/seatmapLookups";
-import { ticketGroupIsResale } from "@/lib/ticketListings";
-import { SEATMAP_TAP_THRESHOLD_PX } from "@/lib/seatmapPopup";
-import type { TicketGroup } from "@/stores/filtersStore";
+import type { SeatmapSeat } from "@/lib/seatmapLookups";
 import useSeatmapStore from "@/stores/seatmapStore";
-import { accessibleSeatColor } from "@/lib/ticketAccessibility";
 import type { SeatmapTooltipTarget } from "./SeatmapTooltip";
 
 const TOOLTIP_TIMEOUT = 500;
-export const TOOLTIP_DISMISS_DELAY_MS = 200;
 const SEAT_SCALE = 0.95;
-/** Matches the `vw < 900` layout breakpoint that swaps in the mobile selection footer. */
-const MOBILE_MAX_PX = 899;
 
-export function isMobileSeatmapViewport() {
-  return typeof window !== "undefined" && window.innerWidth <= MOBILE_MAX_PX;
-}
-
-function eventPoint(event: {
-  clientX?: number;
-  clientY?: number;
-  changedTouches?: ArrayLike<{ clientX: number; clientY: number }>;
-}) {
-  const touch = event.changedTouches?.[0];
-  if (touch) return { x: touch.clientX, y: touch.clientY };
-  return { x: event.clientX ?? 0, y: event.clientY ?? 0 };
-}
-
-function isLockedOffer(group: TicketGroup) {
-  return Boolean(group.offer?.accessCode && !group.offer?.unlocked);
-}
-
-function isExclusiveOffer(group?: TicketGroup | null) {
-  return (
-    (group?.offer as { inventoryType?: string } | undefined)?.inventoryType ===
-    "exclusive"
-  );
-}
-
-/** Tap/click a sellable seat: select it, and on mobile also open the details panel. */
-export function activateSellableSeat(args: {
-  ticketGroup?: TicketGroup | null;
-  seatId: string;
-  selected?: boolean;
-  hasMultipleOffers?: boolean;
-  clientX: number;
-  clientY: number;
-  onTooltip: (target: SeatmapTooltipTarget | null) => void;
-  selectSpecificSeat: (id: string, ticketGroup: TicketGroup) => void;
-  unselectSeat: (id: string, ticketGroup: TicketGroup) => void;
-}) {
-  const {
-    ticketGroup,
-    seatId,
-    selected,
-    hasMultipleOffers,
-    clientX,
-    clientY,
-    onTooltip,
-    selectSpecificSeat,
-    unselectSeat,
-  } = args;
-  if (!ticketGroup) return;
-
-  const locked = Boolean(
-    ticketGroup.offer?.accessCode && !ticketGroup.offer?.unlocked,
-  );
-  if (selected) {
-    unselectSeat(seatId, ticketGroup);
-    onTooltip(null);
-    return;
-  }
-  if (locked || hasMultipleOffers) {
-    onTooltip({ kind: "seat", seatId, x: clientX, y: clientY, pinned: true });
-    return;
-  }
-  if (isMobileSeatmapViewport()) {
-    onTooltip({ kind: "seat", seatId, x: clientX, y: clientY, pinned: true });
-    return;
-  }
-  selectSpecificSeat(seatId, ticketGroup);
-  // Selecting straight off the map is still a click elsewhere for whichever
-  // card was open, so it closes rather than hanging over the new selection.
-  onTooltip(null);
+function accessibleColor(accessibleType?: string) {
+  if (accessibleType === "DA") return "#2DEDB4";
+  if (accessibleType === "DB") return "#F4BC16";
+  return "#F4BC16";
 }
 
 type Props = {
   seat: SeatmapSeat;
-  onTooltip: (target: SeatmapTooltipTarget | null) => void;
-  onTooltipLeave?: () => void;
+  /** `force` closes a card a click opened too (picking a seat); without it a hover only changes a hover card */
+  onTooltip: (target: SeatmapTooltipTarget | null, force?: boolean) => void;
   isTooltipActive: boolean;
+  /** the colour of a seat nobody can buy (default: the pale grey the map has always used) */
+  unavailableFill?: string;
+  /** a buyable seat grows a little under the pointer (default: no) */
+  hoverGrow?: boolean;
 };
 
 const SeatmapSeat = memo(function SeatmapSeat({
   seat,
   onTooltip,
-  onTooltipLeave,
   isTooltipActive,
+  unavailableFill = "#E6E8EC",
+  hoverGrow = false,
 }: Props) {
   const selectSpecificSeat = useSeatmapStore((s) => s.selectSpecificSeat);
   const unselectSeat = useSeatmapStore((s) => s.unselectSeat);
@@ -107,35 +39,11 @@ const SeatmapSeat = memo(function SeatmapSeat({
   const seatBorderRadius = useSeatmapStore((s) => s.seatBorderRadius);
 
   const ticketGroup = seatLookupTable[seat.seatId];
-  const seatOffers =
-    seatOffersLookupTable[seat.seatId]?.length
-      ? seatOffersLookupTable[seat.seatId]
-      : ticketGroup
-        ? [ticketGroup]
-        : [];
+  const seatOffers = seatOffersLookupTable[seat.seatId] || [];
   const hasMultipleOffers = seatOffers.length > 1;
-  const displayTicketGroup =
-    ticketGroup && !isLockedOffer(ticketGroup)
-      ? ticketGroup
-      : seatOffers.find((offer) => !isLockedOffer(offer)) ?? ticketGroup;
-  const canActivate = Boolean(ticketGroup);
-  const canHoverPreview = Boolean(ticketGroup);
 
   const hoverTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const hoverCoordsRef = useRef({ x: 0, y: 0 });
-  const pointerStartRef = useRef<{ x: number; y: number } | null>(null);
-  const suppressClickRef = useRef(false);
-  const seatRectRef = useRef<SVGRectElement>(null);
-
-  const tooltipAnchor = (fallback: { x: number; y: number }) => {
-    const node = seatRectRef.current;
-    if (!node) return fallback;
-    const box = node.getBoundingClientRect();
-    return {
-      x: box.left + box.width / 2,
-      y: box.top + box.height / 2,
-    };
-  };
 
   const accessibleType =
     seat.accessibleType ||
@@ -150,22 +58,21 @@ const SeatmapSeat = memo(function SeatmapSeat({
     Boolean(seat.accessible || ticketGroup?.accessible);
 
   const seatColor = useMemo(() => {
-    if (seat.selected) return "var(--seatmap-selected, #A6E773)";
-    if (!ticketGroup) return "#E6E8EC";
-    if (isAccessible) return accessibleSeatColor(accessibleType);
-    if (displayTicketGroup && isLockedOffer(displayTicketGroup)) return "#353945";
-    if (displayTicketGroup && ticketGroupIsResale(displayTicketGroup)) {
-      return RESALE_MAP_COLOR;
+    /* a picked seat takes the team colour (--t, set on a team page) and the brand green anywhere else */
+    if (seat.selected) return "var(--t, var(--green))";
+    if (!ticketGroup) return unavailableFill;
+    if (isAccessible) return accessibleColor(accessibleType);
+    if (ticketGroup.offer?.accessCode && !ticketGroup.offer?.unlocked)
+      return "#353945";
+    if (ticketGroup.resale) return "#E06C35";
+    if (
+      (ticketGroup.offer as { inventoryType?: string } | undefined)
+        ?.inventoryType === "exclusive"
+    ) {
+      return "#9757D7";
     }
-    if (isExclusiveOffer(displayTicketGroup)) return "#9757D7";
-    return "var(--seatmap-accent, #3E8BF7)";
-  }, [
-    accessibleType,
-    displayTicketGroup,
-    isAccessible,
-    seat.selected,
-    ticketGroup,
-  ]);
+    return "#3E8BF7";
+  }, [accessibleType, isAccessible, seat.selected, ticketGroup, unavailableFill]);
 
   const clearHover = () => {
     if (hoverTimerRef.current) {
@@ -174,114 +81,63 @@ const SeatmapSeat = memo(function SeatmapSeat({
     }
   };
 
-  const activate = (event: {
-    stopPropagation: () => void;
-    preventDefault?: () => void;
-    clientX?: number;
-    clientY?: number;
-    changedTouches?: ArrayLike<{ clientX: number; clientY: number }>;
-  }) => {
+  const handleSeatClick = (event: React.MouseEvent) => {
     event.stopPropagation();
     clearHover();
-    const anchor = tooltipAnchor(eventPoint(event));
-    activateSellableSeat({
-      ticketGroup,
-      seatId: seat.seatId,
-      selected: seat.selected,
-      hasMultipleOffers,
-      clientX: anchor.x,
-      clientY: anchor.y,
-      onTooltip,
-      selectSpecificSeat,
-      unselectSeat,
-    });
-  };
+    if (!ticketGroup) return;
 
-  const handlePointerDown = (event: React.PointerEvent) => {
-    if (!canActivate) return;
-    event.stopPropagation();
-    pointerStartRef.current = { x: event.clientX, y: event.clientY };
-  };
-
-  const finishPointerTap = (event: React.PointerEvent) => {
-    event.stopPropagation();
-    const start = pointerStartRef.current;
-    pointerStartRef.current = null;
-    if (!start) return;
-    const dx = event.clientX - start.x;
-    const dy = event.clientY - start.y;
-    if (Math.hypot(dx, dy) > SEATMAP_TAP_THRESHOLD_PX) return;
-
-    suppressClickRef.current = true;
-    activate(event);
-  };
-
-  const handlePointerUp = (event: React.PointerEvent) => {
-    if (event.pointerType === "touch") {
-      event.preventDefault();
-    }
-    finishPointerTap(event);
-  };
-
-  const handlePointerCancel = () => {
-    pointerStartRef.current = null;
-  };
-
-  const handleSeatClick = (event: React.MouseEvent) => {
-    if (suppressClickRef.current) {
-      event.stopPropagation();
-      suppressClickRef.current = false;
+    const locked = Boolean(
+      ticketGroup.offer?.accessCode && !ticketGroup.offer?.unlocked,
+    );
+    if (locked || window.innerWidth <= 768 || hasMultipleOffers) {
+      onTooltip({
+        kind: "seat",
+        seatId: seat.seatId,
+        x: event.clientX,
+        y: event.clientY,
+        pinned: true,
+      });
       return;
     }
-    activate(event);
+    onTooltip(null, true);
+    selectSpecificSeat(seat.seatId, ticketGroup);
   };
 
-  const handleSeatTouchEnd = (event: React.TouchEvent) => {
-    event.preventDefault();
+  const handleUnselect = (event: React.MouseEvent) => {
     event.stopPropagation();
-    suppressClickRef.current = true;
-    pointerStartRef.current = null;
-    activate(event);
+    clearHover();
+    if (!ticketGroup) return;
+    unselectSeat(seat.seatId, ticketGroup);
   };
 
   const handleMouseEnter = (event: React.MouseEvent) => {
-    if (!canHoverPreview || isMobileSeatmapViewport()) {
+    /* a locked offer shows a hover card too (the click then keeps it open); a seat with several offers hovers as a short card (the place and "N offers from"), and its click opens the choice */
+    if (!ticketGroup || window.innerWidth <= 768) {
       return;
     }
-    hoverCoordsRef.current = tooltipAnchor({
-      x: event.clientX,
-      y: event.clientY,
-    });
+    hoverCoordsRef.current = { x: event.clientX, y: event.clientY };
     clearHover();
     hoverTimerRef.current = setTimeout(() => {
       const { x, y } = hoverCoordsRef.current;
-      onTooltip({ kind: "seat", seatId: seat.seatId, x, y, pinned: false });
-    }, TOOLTIP_TIMEOUT);
+      onTooltip({ kind: "seat", seatId: seat.seatId, x, y });
+    }, hoverGrow ? 60 : TOOLTIP_TIMEOUT);
   };
 
   const handleMouseMove = (event: React.MouseEvent) => {
-    const anchor = tooltipAnchor({
-      x: event.clientX,
-      y: event.clientY,
-    });
-    hoverCoordsRef.current = anchor;
-    if (!canHoverPreview || isMobileSeatmapViewport() || !isTooltipActive) return;
+    hoverCoordsRef.current = { x: event.clientX, y: event.clientY };
+    if (!ticketGroup || window.innerWidth <= 768 || !isTooltipActive) return;
     onTooltip({
       kind: "seat",
       seatId: seat.seatId,
-      x: anchor.x,
-      y: anchor.y,
-      pinned: false,
+      x: event.clientX,
+      y: event.clientY,
     });
   };
 
   const handleMouseLeave = () => {
-    if (isMobileSeatmapViewport()) return;
+    /* the map keeps a card that a click opened (it ignores this clear), and takes away a hover card */
+    if (window.innerWidth <= 768) return;
     clearHover();
-    if (onTooltipLeave) {
-      onTooltipLeave();
-      return;
-    }
     onTooltip(null);
   };
 
@@ -296,28 +152,15 @@ const SeatmapSeat = memo(function SeatmapSeat({
 
   const iconId = (() => {
     if (seat.selected) return "icon-selected";
-    if (!ticketGroup) return null;
-    // Legacy badges resale before accessibility, so an accessible resale seat
-    // keeps the accessible color and shows the resale symbol.
-    if (displayTicketGroup && ticketGroupIsResale(displayTicketGroup)) {
-      return "icon-resale";
-    }
+    if (ticketGroup?.resale) return "icon-resale";
     if (isAccessible) return "icon-accessible";
-    if (displayTicketGroup && isLockedOffer(displayTicketGroup)) {
-      return "icon-locked";
-    }
-    if (isExclusiveOffer(displayTicketGroup)) {
-      if (displayTicketGroup?.offer?.unlocked) return "icon-unlocked";
-      return "icon-vip";
-    }
-    // Worth badging only when the code opened the seat's one offer. Sharing the
-    // seat with open inventory means the shopper buys it either way.
+    if (ticketGroup?.offer?.unlocked) return "icon-unlocked";
+    if (ticketGroup?.offer?.accessCode) return "icon-locked";
     if (
-      !hasMultipleOffers &&
-      displayTicketGroup?.offer?.accessCode &&
-      displayTicketGroup.offer.unlocked
+      (ticketGroup?.offer as { inventoryType?: string } | undefined)
+        ?.inventoryType === "exclusive"
     ) {
-      return "icon-unlocked";
+      return "icon-vip";
     }
     return null;
   })();
@@ -325,9 +168,10 @@ const SeatmapSeat = memo(function SeatmapSeat({
   return (
     <g data-interactive-seat="true">
       <rect
-        ref={seatRectRef}
         id={seat.seatId}
-        className={canActivate ? "cursor-pointer" : undefined}
+        data-active={hoverGrow && isTooltipActive ? "true" : undefined}
+        className={ticketGroup ? (hoverGrow ? "cursor-pointer [transform-box:fill-box] [transform-origin:center] transition-[fill,stroke] duration-150 ease-[cubic-bezier(0.23,1,0.32,1)] hover:fill-[color-mix(in_oklab,var(--seat)_78%,black)] hover:stroke-[color-mix(in_oklab,var(--seat)_45%,transparent)] data-[active=true]:fill-[color-mix(in_oklab,var(--seat)_78%,black)] data-[active=true]:stroke-[color-mix(in_oklab,var(--seat)_45%,transparent)] [paint-order:stroke] [stroke:transparent] motion-reduce:transition-none" : "cursor-pointer") : undefined}
+        style={hoverGrow && ticketGroup ? ({ "--seat": seatColor, strokeWidth: width * 0.5 } as React.CSSProperties) : undefined}
         x={x}
         y={y}
         rx={radius}
@@ -335,14 +179,16 @@ const SeatmapSeat = memo(function SeatmapSeat({
         width={width}
         height={height}
         fill={seatColor}
-        onPointerDown={canActivate ? handlePointerDown : undefined}
-        onPointerUp={canActivate ? handlePointerUp : undefined}
-        onPointerCancel={canActivate ? handlePointerCancel : undefined}
-        onClick={canActivate ? handleSeatClick : undefined}
-        onTouchEnd={canActivate ? handleSeatTouchEnd : undefined}
-        onMouseEnter={canHoverPreview ? handleMouseEnter : undefined}
-        onMouseMove={canHoverPreview ? handleMouseMove : undefined}
-        onMouseLeave={canHoverPreview ? handleMouseLeave : undefined}
+        onClick={
+          ticketGroup
+            ? seat.selected
+              ? handleUnselect
+              : handleSeatClick
+            : undefined
+        }
+        onMouseEnter={ticketGroup ? handleMouseEnter : undefined}
+        onMouseMove={ticketGroup ? handleMouseMove : undefined}
+        onMouseLeave={ticketGroup ? handleMouseLeave : undefined}
       />
       {iconId ? (
         <use

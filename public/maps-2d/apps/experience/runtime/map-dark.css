@@ -1,0 +1,87 @@
+/* Dark map. The artwork is authored light, so the artwork layer alone is inverted and its hues turned back: light greys become dark, colours keep their hue.
+   Seats, their icons, row letters, section outlines and labels are drawn on top in their real dark-theme colours (inversion cannot produce a bright yellow or green).
+   The playing surface is put through the same pair again, which restores it. Callouts take the component library's own dark tokens (app/globals.css, where dark is the default theme).
+   Light is the default; this applies with ?theme=dark or maps2d.setTheme('dark'). */
+html:has(body.bt-map-dark), body.bt-map-dark, body.bt-map-dark #map-area, body.bt-map-dark #workspace { background: #18191b !important; }
+body.bt-map-dark #canvas-host { background: transparent !important; }
+body.bt-map-dark #canvas-host > .flat-vector-artwork { filter: invert(1) hue-rotate(180deg) saturate(1.15); }
+/* the faint wash over the sections around the one in focus is dark here, where the light theme uses a pale one */
+body.bt-map-dark #canvas-host .flat-section-outline [mask] { fill: #0b0b0d; }
+/* the playing surface stays as authored (white ice, true logo colours): its own colours are swapped for ones this filter turns back (themeSurface in flat-artwork.js).
+   A second filter on it would do the same on a computer, but phone browsers do not apply filters to parts inside an SVG, which left the ice black there. */
+/* the wash behind a focused seat darkens the map, where the light theme whitens it */
+body.bt-map-dark #seat-focus-veil { background: rgb(8 10 14 / .5) !important; }
+
+/* Callouts: the library's dark theme, ported 1:1 like the light one in blocktickets-callouts.css.
+   Popover = dark glass (the library's 72% overlay fill is raised to 88% on the map, as the light fill is), Tooltip = snow fill with dark text. */
+body.player-only.bt-map-dark {
+  color-scheme: dark;
+  /* seat states in dark: open seats are white, the rest grey (the seat key reads these) */
+  --seat-available: #fafafa;
+  --seat-locked: #7c7c86;
+  --seat-unavailable: #5a5a63;
+  --h-foreground: oklch(0.9911 0 0);
+  /* fields and radios, the library's dark values */
+  --h-field: oklch(0.238 0.006 286);
+  --h-field-focus: var(--h-field);
+  --h-field-outline: inset 0 0 0 1px rgb(255 255 255 / 0.07);
+  --h-control-outline: inset 0 0 0 1px rgb(255 255 255 / 0.17);
+  --h-control-outline-hover: inset 0 0 0 1px rgb(255 255 255 / 0.3);
+  --h-radio-hole: 0px;
+  --h-radio-dot: color-mix(in oklab, var(--h-accent) 45%, black);
+  --h-accent-soft: color-mix(in oklab, var(--h-accent) 12%, transparent);
+  --h-accent-soft-hover: color-mix(in oklab, var(--h-accent) 16%, transparent);
+  --h-background: oklch(12% 0.005 285.823);
+  --h-muted: oklch(70.5% 0.015 286.067);
+  --h-separator: oklch(25% 0.006 286.033);
+  --h-default: oklch(27.4% 0.006 286.033);
+  --h-default-hover: color-mix(in oklab, var(--h-default) 96%, var(--h-foreground) 4%);
+  --h-accent-selected: color-mix(in oklab, var(--h-accent) 26%, transparent);
+  --h-warning: oklch(0.8203 0.1388 76.34);
+  --h-warning-soft: color-mix(in oklab, var(--h-warning) 12%, transparent);
+  --h-warning-soft-foreground: color-mix(in oklab, var(--h-warning) 80%, var(--h-foreground) 30%);
+  --h-danger: oklch(0.594 0.1967 24.63);
+  --glass-fill: color-mix(in oklab, oklch(0.2103 0.0059 285.89) 72%, transparent);
+  --glass-fill-float: color-mix(in oklab, oklch(0.2103 0.0059 285.89) 52%, transparent);
+  --glass-highlight: rgb(255 255 255 / 0.06);
+  --glass-edge: rgb(255 255 255 / 0.07);
+  --h-overlay-shadow: 0 0 1px 0 rgba(255, 255, 255, 0.3) inset, 0 14px 28px 0 rgba(0, 0, 0, 0.35);
+  --glass-shadow: var(--h-overlay-shadow);
+  --bt-pass: oklch(0.255 0.006 286);
+  --bt-dot: rgb(255 255 255 / .12);
+  --bt-hair: rgb(255 255 255 / .1);
+  --bt-chip-bg: oklch(0.31 0.006 286);
+  --bt-card: color-mix(in oklab, var(--h-default) 70%, oklch(0.2103 0.0059 285.89));
+  --bt-chosen: color-mix(in oklab, var(--h-accent) 22%, oklch(0.2103 0.0059 285.89));
+  --bt-field: var(--h-default);
+  --bt-wash: oklch(0.2103 0.0059 285.89);
+}
+
+/* Surfaces the player styles with fixed light colours, not tokens: the venue loader and the dialogs */
+body.bt-map-dark #map-transition { background: #18191b !important; color: var(--h-muted); }
+body.bt-map-dark #map-transition strong { color: var(--h-foreground); }
+body.bt-map-dark #map-transition > span { color: var(--h-muted); }
+body.bt-map-dark .venue-loader-symbol { filter: invert(1) hue-rotate(180deg); }
+body.bt-map-dark dialog { border-color: var(--h-separator); background: oklch(0.2103 0.0059 285.89); color: var(--h-foreground); box-shadow: var(--h-overlay-shadow); }
+body.bt-map-dark dialog :is(h2, h3, strong, label) { color: var(--h-foreground); }
+body.bt-map-dark dialog :is(p, .message, .fine, .eyebrow, small) { color: var(--h-muted); }
+body.bt-map-dark dialog :is(input, select, textarea) { background: var(--h-default); color: var(--h-foreground); border-color: var(--h-separator); }
+body.bt-map-dark dialog button.secondary, body.bt-map-dark dialog button.ghost { background: var(--h-default); color: var(--h-foreground); border-color: transparent; }
+body.bt-map-dark dialog::backdrop { background: rgb(0 0 0 / .6); }
+
+/* standing areas are drawn in the artwork itself in the section blue; give them the same neutral grey family, a touch lighter so they still read as their own kind of place */
+body.bt-map-dark .flat-vector-artwork [fill="#2563EB" i] { fill: #bfbfc5; } /* inverts to the #3f3f46 of the seated sections */
+/* Schematic map in dark. The map layer is colour-inverted (see the top of this file), so each fill here is the light value that lands on the
+   wanted dark grey: building footprint #27272a (the library's dark default surface), walkways, bays and closed rooms #1c1c1f a step below it,
+   seated sections #3f3f46 and standing areas #4a4a52 a step above (the section values are set in flat-webgl.js and the rule above). */
+body.bt-map-dark .flat-vector-artwork .schematic-ground { fill: #d8d8da; }
+body.bt-map-dark .flat-vector-artwork :is(.schematic-bay, .schematic-room) { fill: #e3e3e5; }
+/* the base of the building: a dark neutral grey a step above the page, with the walkways between blocks kept darker */
+body.bt-map-dark .flat-vector-artwork [fill="#F9FAFA" i] { fill: #d6d6d4; }
+body.bt-map-dark .flat-vector-artwork [fill="#E6E8EC" i] { fill: #c9c9c7; }
+/* bench and penalty-box names kept from the venue artwork: they sit inside the playing-surface group, which is shown as authored, so they take the muted text token directly */
+body.bt-map-dark .flat-vector-artwork .schematic-decor > path { fill: #a1a1aa; }
+
+/* Seat key in dark: every open seat is white on the map, so the key shows one white dot, not one per offer */
+body.bt-map-dark #availability-legend :is(.legend-offers, .legend-preview) i { background: var(--seat-available) !important; }
+body.bt-map-dark #availability-legend :is(.legend-offers, .legend-preview) i + i { display: none; }

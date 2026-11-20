@@ -1,127 +1,298 @@
 @import "tailwindcss";
+@import "tw-animate-css";
 
+/* ---------- Blocktickets brand v0.1 tokens ----------
+   Source: brand/guidelines.html (supersedes the navy field and Inter in DESIGN-SYSTEM.md). A neutral field with
+   one green, in a dark and a light theme with the same structure. Dark is the app default for now; set
+   data-nt="light" on <html> for the light theme (the /concept page already does). The names match the ones in
+   app/concept/styles.ts so both stay in step. Never hardcode a colour in a component: use the token. */
 :root {
-  --bg: #051b35;
-  --fg: #fafafa;
-  --muted: #9da2b3;
-  --line: rgba(255, 255, 255, 0.1);
-  --line-soft: rgba(255, 255, 255, 0.08);
-  --accent: #a6e773;
+  color-scheme: dark;
+  --paper: #0B0B0C;
+  --paper2: #151517;
+  --paper3: #212124;
+  --surface: #1B1B1E;
+  --surface-rgb: 27 27 30;
+  --ink: #F2F2F0;
+  --ink-rgb: 242 242 240;
+  --on-ink: #0B0B0C;
+  --ink2: #A6A6A8;
+  --ink3: #C6C6C8;
+  --mut: #6E6E72;
+  --dark: #1A1A1D;
+  --d-1: #1F1F1F;
+  --d-2: #151515;
+  --line: rgb(var(--ink-rgb) / .1);
+  --line-2: #2B2B2F;
+  --unlit: #3A3B3E;
+  --tile: #2A2B2D;
+  --green: #97DD62;
+  --green-h: #ABE882;
+  --green-d: #78C246;
+  --green-l: #CBF2A6;
+  --green-rgb: 151 221 98;
+  --green-ink: #C8F2A3;
+  --green-deep: #97DD62; /* dark: the brand green, as in the brand guidelines and DESIGN-SYSTEM.md (light keeps the deeper #4D9A1F) */
+  --on-green: var(--navy);
+  --warn: #E8A317;
+  --warn-ink: #F2C45E;
+  --danger: #E5645A;
+  --slate: #3B4754;
+  --slate-2: #7B828A;
+  --navy: #051B35;
+  --seat: #3358D4;
+  --seat-h: #2646B8;
+  --seat-off: #3A3A40;
+  --ticket: #F6F6F2;
+  --ticket-ink: #0A0A0A;
+  --ticket-ink2: #5E5E5E;
+  --wedge: #25262B;
+  --wedge-on: #30323A;
+  --rink-line: #3A3C42;
+  --bar-neutral: #4A4D55;
+  --plate: #1C1C1F;
+  --plate-line: rgb(255 255 255 / .1);
+  --plate-ink: #F2F2F0;
+  --plate-ink2: #A6A6A8;
+  --logo-tile: transparent;
+  --tile-line: rgb(255 255 255 / .12);
+  --logo-img-filter: drop-shadow(1px 0 0 rgb(255 255 255 / .92)) drop-shadow(-1px 0 0 rgb(255 255 255 / .92)) drop-shadow(0 1px 0 rgb(255 255 255 / .92)) drop-shadow(0 -1px 0 rgb(255 255 255 / .92));
+  --logo-inv: 1;
+  --logo-filter: brightness(0) invert(1);
+  --sold: var(--seat);
+  --on-sold: #fff;
+  --sun-d: block;
+  --moon-d: none;
+  --fs-title-lg: clamp(22px,2vw,28px);
+  --fs-title-sm: 18px;
+  --fs-body-lg: 17px;
+  --fs-body-sm: 15px;
+  --fs-caption: 13px;
+  --fs-micro: 12px;
+  /* older names still used by app CSS, pointed at the tokens above */
+  --bg: var(--paper);
+  --fg: var(--ink);
+  --muted: var(--ink2);
+  --line-soft: rgb(var(--ink-rgb) / 0.08);
+  --accent: var(--green);
+  --sidebar: var(--paper2);
+  --sidebar-foreground: var(--ink);
+  --sidebar-primary: var(--green);
+  --sidebar-primary-foreground: var(--navy);
+  --sidebar-accent: rgb(var(--ink-rgb) / 0.07);
+  --sidebar-accent-foreground: var(--ink);
+  --sidebar-border: var(--line);
+  --sidebar-ring: var(--green);
+  --chart-1: var(--green);
+  --chart-2: var(--seat);
+  --chart-3: var(--ink2);
+  --chart-4: var(--warn);
+  --chart-5: var(--danger);
+}
+:root[data-nt="light"] {
+    --h-danger-text: oklch(0.55 0.21 25.7);
+  color-scheme: light;
+  --paper: #FFFFFF;
+  --paper2: #F5F5F5;
+  --paper3: #E9E9E9;
+  --surface: #FFFFFF;
+  --surface-rgb: 255 255 255;
+  --ink: #0A0A0A;
+  --ink-rgb: 10 10 10;
+  --on-ink: #FFFFFF;
+  --ink2: #6B6B6B;
+  --ink3: #4A4A4A;
+  --mut: #A1A1A1;
+  --dark: #111111;
+  --d-1: #1F1F1F;
+  --d-2: #151515;
+  --line: rgb(var(--ink-rgb) / .1);
+  --line-2: #E7E7E7;
+  --unlit: #C3C7C0;
+  --tile: #E6E9E4;
+  --green: #97DD62;
+  --green-h: #ABE882;
+  --green-d: #78C246;
+  --green-l: #CBF2A6;
+  --green-rgb: 151 221 98;
+  --green-ink: #1D4A0C;
+  --green-deep: #4D9A1F;
+  --on-green: var(--navy);
+  --warn: #E8A317;
+  --warn-ink: #7A4F00;
+  --danger: #B3382C;
+  --slate: #2F3A45;
+  --slate-2: #9AA0A6;
+  --navy: #051B35;
+  --seat: #3358D4;
+  --seat-h: #2646B8;
+  --seat-off: #D6D8DC;
+  --ticket: #F6F6F2;
+  --ticket-ink: #0A0A0A;
+  --ticket-ink2: #5E5E5E;
+  --wedge: #E7E8EB;
+  --wedge-on: #DEDFE3;
+  --rink-line: #CFD2D7;
+  --bar-neutral: #C9CDD2;
+  --plate: #FFFFFF;
+  --plate-line: rgb(10 10 10 / .1);
+  --plate-ink: #0A0A0A;
+  --plate-ink2: #6B6B6B;
+  --logo-tile: transparent;
+  --tile-line: rgb(10 10 10 / .1);
+  --logo-img-filter: none;
+  --logo-inv: 0;
+  --logo-filter: none;
+  --sold: var(--navy);
+  --on-sold: #fff;
+  --sun-d: none;
+  --moon-d: block;
+  --fs-title-lg: clamp(22px,2vw,28px);
+  --fs-title-sm: 18px;
+  --fs-body-lg: 17px;
+  --fs-body-sm: 15px;
+  --fs-caption: 13px;
+  --fs-micro: 12px;
+}
+/* /concept and /our-story follow the device unless the switch has set data-nt (the rest of the app stays dark) */
+@media (prefers-color-scheme: light) {
+  :root:not([data-nt="dark"]):has(.n) {
+    color-scheme: light;
+    --paper: #FFFFFF;
+    --paper2: #F5F5F5;
+    --paper3: #E9E9E9;
+    --surface: #FFFFFF;
+    --surface-rgb: 255 255 255;
+    --ink: #0A0A0A;
+    --ink-rgb: 10 10 10;
+    --on-ink: #FFFFFF;
+    --ink2: #6B6B6B;
+    --ink3: #4A4A4A;
+    --mut: #A1A1A1;
+    --dark: #111111;
+    --d-1: #1F1F1F;
+    --d-2: #151515;
+    --line: rgb(var(--ink-rgb) / .1);
+    --line-2: #E7E7E7;
+    --unlit: #C3C7C0;
+    --tile: #E6E9E4;
+    --green: #97DD62;
+    --green-h: #ABE882;
+    --green-d: #78C246;
+    --green-l: #CBF2A6;
+    --green-rgb: 151 221 98;
+    --green-ink: #1D4A0C;
+    --green-deep: #4D9A1F;
+    --on-green: var(--navy);
+    --warn: #E8A317;
+    --warn-ink: #7A4F00;
+    --danger: #B3382C;
+    --slate: #2F3A45;
+    --slate-2: #9AA0A6;
+    --navy: #051B35;
+    --seat: #3358D4;
+    --seat-h: #2646B8;
+    --seat-off: #D6D8DC;
+    --ticket: #F6F6F2;
+    --ticket-ink: #0A0A0A;
+    --ticket-ink2: #5E5E5E;
+    --wedge: #E7E8EB;
+    --wedge-on: #DEDFE3;
+    --rink-line: #CFD2D7;
+    --bar-neutral: #C9CDD2;
+    --plate: #FFFFFF;
+    --plate-line: rgb(10 10 10 / .1);
+    --plate-ink: #0A0A0A;
+    --plate-ink2: #6B6B6B;
+    --logo-tile: transparent;
+    --tile-line: rgb(10 10 10 / .1);
+    --logo-img-filter: none;
+    --logo-inv: 0;
+    --logo-filter: none;
+    --sold: var(--navy);
+    --on-sold: #fff;
+    --sun-d: none;
+    --moon-d: block;
+    --fs-title-lg: clamp(22px,2vw,28px);
+    --fs-title-sm: 18px;
+    --fs-body-lg: 17px;
+    --fs-body-sm: 15px;
+    --fs-caption: 13px;
+    --fs-micro: 12px;
+  }
 }
 
-.bt-event-promo {
-  margin: 10px 0 0;
+/* shadcn/ui semantic colors (bg-primary, text-muted-foreground, border-border ...) on the brand tokens */
+@custom-variant dark (&:is(.dark *));
+
+/* shadcn components draw borders with the bare `border` class: give them the hairline colour instead of currentColor */
+@layer base {
+  *,
+  ::after,
+  ::before,
+  ::backdrop,
+  ::file-selector-button {
+    border-color: var(--color-border);
+  }
+  /* Text selection: a faint green wash, keeps the text colour. */
+  ::selection {
+    background: color-mix(in oklab, var(--green) 28%, transparent);
+    color: inherit;
+  }
 }
 
-/* The flex gap already separates the promo, so don't add a second 10px. */
-[style*="display: flex"][style*="gap: 10px"] > .bt-event-promo,
-[style*="display:flex"][style*="gap:10px"] > .bt-event-promo,
-[style*="display: inline-flex"][style*="gap: 10px"] > .bt-event-promo,
-[style*="display:inline-flex"][style*="gap:10px"] > .bt-event-promo,
-.flex.gap-2\.5 > .bt-event-promo,
-.inline-flex.gap-2\.5 > .bt-event-promo,
-.flex.gap-\[10px\] > .bt-event-promo,
-.inline-flex.gap-\[10px\] > .bt-event-promo {
-  margin-top: 0;
+@theme inline {
+  --color-background: var(--paper);
+  --color-foreground: var(--ink);
+  --color-card: var(--paper2);
+  --color-card-foreground: var(--ink);
+  --color-popover: var(--surface);
+  --color-popover-foreground: var(--ink);
+  --color-primary: var(--green);
+  --color-primary-foreground: var(--navy);
+  --color-secondary: var(--paper3);
+  --color-secondary-foreground: var(--ink);
+  --color-muted: var(--paper2);
+  --color-muted-foreground: var(--ink2);
+  --color-accent: var(--paper3);
+  --color-accent-foreground: var(--ink);
+  --color-destructive: var(--danger);
+  --color-border: var(--line);
+  --color-input: rgb(var(--ink-rgb) / 0.15);
+  --color-ring: var(--green);
+  --color-ink2: var(--ink2);
+  --color-ink3: var(--ink3);
+  --color-mute: var(--mut);
+  --color-feature: var(--dark);
+  --color-navy: var(--navy);
+  --color-seat: var(--seat);
+  --color-warn: var(--warn);
+  --color-green-deep: var(--green-deep);
+  --color-green-light: var(--green-l);
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 16px;
+  --radius-xl: 24px;
+  --radius-2xl: 28px;
+  --radius-3xl: 36px;
+  --font-sans: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: var(--font-geist-mono), ui-monospace, monospace;
+  --color-chart-1: var(--chart-1);
+  --color-chart-2: var(--chart-2);
+  --color-chart-3: var(--chart-3);
+  --color-chart-4: var(--chart-4);
+  --color-chart-5: var(--chart-5);
+  --color-sidebar-ring: var(--sidebar-ring);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar: var(--sidebar);
 }
 
-/* Brand focus for every field: the field's own edge takes the brand colour, with
-   no ring around it. Blocktickets lime by default; an org-branded surface sets
-   `--bt-field-focus` / `--acc` on its root so its fields focus in the org's colour.
-   Invalid fields are red only while idle — the error copy carries the failure,
-   and focus always returns to brand so the shopper can see where they are typing.
-   Marked !important so inline `outline: none` / `border: none`
-   on ported design markup cannot suppress it. `:focus` is matched alongside
-   `:focus-visible` because mobile browsers focus a field on tap without matching
-   `:focus-visible`, and would otherwise paint their own dark outline. */
-input[aria-invalid="true"]:not([type="checkbox"]):not([type="radio"]):not(:focus),
-textarea[aria-invalid="true"]:not(:focus),
-select[aria-invalid="true"]:not(:focus),
-.bt-focus-edge[aria-invalid="true"]:not(:focus-within) {
-  border-color: var(--bt-error) !important;
-}
-
-input:not([type="checkbox"]):not([type="radio"]):focus,
-input:not([type="checkbox"]):not([type="radio"]):focus-visible,
-textarea:focus,
-textarea:focus-visible,
-select:focus,
-select:focus-visible {
-  border-color: var(--bt-field-focus, var(--acc, var(--accent))) !important;
-  outline: none !important;
-}
-
-/* Fields with no border of their own (phone pill, search pills) hand their edge
-   to a wrapper, which paints the same brand colour while it holds the cursor. */
-.bt-focus-edge:focus-within {
-  border-color: var(--bt-field-focus, var(--acc, var(--accent))) !important;
-}
-
-/* Branded checkbox. A 1.5px border rasterizes unevenly (2px on some sides,
-   1px on others), so the edge is one device pixel of #8A90A0 (3.2:1 on white).
-   Checked fills with the org colour (--bt-field-focus) and a thin white check.
-   Focus recolours that same edge and adds no second ring. */
-input[type="checkbox"] {
-  appearance: none !important;
-  -webkit-appearance: none !important;
-  box-sizing: border-box !important;
-  width: 20px !important;
-  height: 20px !important;
-  min-width: 20px !important;
-  flex-shrink: 0;
-  margin: 0 !important;
-  padding: 0 !important;
-  border: 1px solid #8a90a0 !important;
-  border-radius: 5px !important;
-  background-color: #fff !important;
-  background-image: none !important;
-  background-repeat: no-repeat !important;
-  background-position: center !important;
-  background-size: 20px 20px !important;
-  box-shadow: none !important;
-  outline: none !important;
-  cursor: pointer;
-  vertical-align: top;
-}
-
-input[type="checkbox"]:focus,
-input[type="checkbox"]:focus-visible {
-  outline: none !important;
-  box-shadow: none !important;
-  border-color: var(--bt-field-focus, var(--acc, var(--accent))) !important;
-}
-
-input[type="checkbox"]:checked,
-input[type="checkbox"]:checked:focus,
-input[type="checkbox"]:checked:focus-visible {
-  border-color: var(--bt-field-focus, var(--acc, var(--accent))) !important;
-  background-color: var(--bt-field-focus, var(--acc, var(--accent))) !important;
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 14 14' fill='none'%3E%3Cpath d='M2.4 7.1 5.2 9.9 11.4 3.4' stroke='%23fff' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") !important;
-  background-origin: border-box !important;
-  background-clip: border-box !important;
-  background-repeat: no-repeat !important;
-  background-position: center !important;
-  background-size: 14px 14px !important;
-  box-shadow: none !important;
-  outline: none !important;
-}
-
-input[type="checkbox"]:disabled {
-  cursor: default !important;
-  opacity: 0.45;
-}
-
-label:has(> input[type="checkbox"]) {
-  display: flex;
-  align-items: flex-start;
-  gap: 10px;
-  min-height: 44px;
-  padding-top: 12px;
-  padding-bottom: 12px;
-  cursor: pointer;
-}
-
-/* react-phone-number-input — layout only; color is theme-scoped below */
+/* react-phone-number-input on the dark surface */
 .PhoneInput {
   display: flex;
   align-items: center;
@@ -132,155 +303,74 @@ label:has(> input[type="checkbox"]) {
   background: transparent;
   border: 0;
   outline: none;
+  color: var(--ink);
   font-size: 15px;
   height: 40px;
-  width: 100%;
 }
 .PhoneInputCountryIcon {
   border-radius: 2px;
-  overflow: hidden;
 }
 .PhoneInputCountrySelect {
   background: transparent;
-}
-.phone-input-dark .PhoneInputInput,
-.phone-input-dark .PhoneInputCountrySelect {
-  color: #fff;
-}
-.phone-input-light .PhoneInputInput,
-.phone-input-light .PhoneInputCountrySelect {
-  color: #051b35;
-}
-.phone-input-light .PhoneInputCountrySelectArrow {
-  color: #9da2b3;
-  opacity: 1;
+  color: var(--ink);
 }
 
 * {
   box-sizing: border-box;
 }
-button,
-[type="button"],
-[type="submit"],
-[type="reset"] {
-  cursor: pointer;
-}
-/* Many buttons set cursor: pointer inline, which would otherwise keep the hand
-   cursor once they are greyed out or spinning. */
-button:disabled,
-[type="button"]:disabled,
-[type="submit"]:disabled,
-[type="reset"]:disabled,
-button[aria-busy="true"] {
-  cursor: default !important;
-}
 html {
   -webkit-text-size-adjust: 100%;
-  /* Kills the dark flash mobile browsers paint over tapped fields and controls. */
-  -webkit-tap-highlight-color: transparent;
-  /* hidden + auto (not clip): clip on either html or body becomes a page-tall
-     sticky containing block, so wallet sidebars never pin while scrolling. */
-  overflow-x: hidden;
-  overflow-y: auto;
 }
 body {
-  background: var(--bg);
-  color: var(--fg);
+  background: var(--paper);
+  color: var(--ink);
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
+  overflow-x: clip;
 }
 
-/* ---------- layout helpers ---------- */
-.container-x {
+/* ---------- brand utilities (Tailwind v4 @utility, on the brand tokens) ----------
+   Usage stays `className="container-x"`, `eyebrow`, `h2`, `lede`, `card`; they now compile as utilities so
+   variants work on them (md:h2, hover:card ...). Buttons are the shadcn Button, not a CSS class. */
+@utility container-x {
   width: 100%;
-  max-width: 1200px;
+  max-width: 1240px;
   margin-inline: auto;
-  padding-inline: 24px;
-}
-@media (min-width: 1024px) {
-  .container-x {
-    padding-inline: 40px;
+  padding-inline: 16px;
+  @media (min-width: 640px) {
+    padding-inline: 32px;
+  }
+  @media (min-width: 1536px) {
+    max-width: 1440px;
   }
 }
-
-.eyebrow {
+/* mono label (guidelines: capitals only in mono labels) */
+@utility eyebrow {
+  font-family: var(--font-mono);
   font-size: 12px;
-  font-weight: 600;
-  letter-spacing: 0.16em;
-  text-transform: uppercase;
-  color: var(--muted);
-}
-.h2 {
-  font-size: clamp(30px, 4vw, 48px);
-  line-height: 1.05;
-  letter-spacing: -0.025em;
-  font-weight: 600;
-  color: var(--fg);
-}
-.lede {
-  color: var(--muted);
-  font-size: clamp(15px, 1.4vw, 18px);
-  line-height: 1.6;
-}
-.card {
-  background: rgba(255, 255, 255, 0.02);
-  border: 1px solid var(--line-soft);
-  border-radius: 18px;
-}
-
-/* ---------- buttons ---------- */
-.btn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  height: 44px;
-  padding: 0 22px;
-  border-radius: 8px;
   font-weight: 500;
-  font-size: 14px;
-  white-space: nowrap;
-  cursor: pointer;
-  transition:
-    background 0.18s ease,
-    color 0.18s ease,
-    border-color 0.18s ease,
-    transform 0.18s ease;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink2);
 }
-.btn svg {
-  width: 16px;
-  height: 16px;
+/* headline 32-56px / 1.06 / -0.03em */
+@utility h2 {
+  font-size: clamp(32px, 4vw, 56px);
+  line-height: 1.06;
+  letter-spacing: -0.03em;
+  font-weight: 600;
+  color: var(--ink);
 }
-.btn-primary {
-  background: var(--accent);
-  color: #051b35;
-  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+/* body large 17px / 1.5, ink 2 */
+@utility lede {
+  color: var(--ink2);
+  font-size: 17px;
+  line-height: 1.5;
 }
-.btn-primary:hover {
-  background: #b9ef93;
-}
-.btn-ghost {
-  color: var(--fg);
-}
-.btn-ghost:hover {
-  background: rgba(255, 255, 255, 0.06);
-}
-.btn-outline {
-  border: 1px solid rgba(255, 255, 255, 0.15);
-  color: #f4f4f5;
-}
-.btn-outline:hover {
-  background: rgba(255, 255, 255, 0.05);
-}
-.btn-sm {
-  height: 36px;
-  padding: 0 14px;
-}
-.btn .arrow {
-  transition: transform 0.18s ease;
-}
-.btn:hover .arrow {
-  transform: translateX(2px);
+/* standard card: soft fill, 24px, no border, no shadow */
+@utility card {
+  background: var(--paper2);
+  border-radius: 24px;
 }
 
 /* ---------- scroll reveal ---------- */
@@ -303,51 +393,29 @@ body {
   }
 }
 
-/* ---------- brand pop ---------- */
-/* Faint rounded-grid field, fading out radially — gives the page a lit
-   backdrop instead of flat navy. Layer inside a positioned parent. */
-.bg-grid {
+/* ---------- brand surfaces ---------- */
+/* Faint rounded-grid field, fading out radially. Layer inside a positioned parent. */
+@utility bg-grid {
   background-image:
-    linear-gradient(rgba(255, 255, 255, 0.045) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(255, 255, 255, 0.045) 1px, transparent 1px);
+    linear-gradient(rgb(var(--ink-rgb) / 0.045) 1px, transparent 1px),
+    linear-gradient(90deg, rgb(var(--ink-rgb) / 0.045) 1px, transparent 1px);
   background-size: 56px 56px;
-  -webkit-mask-image: radial-gradient(
-    ellipse 90% 65% at 50% 0%,
-    black,
-    transparent 72%
-  );
-  mask-image: radial-gradient(
-    ellipse 90% 65% at 50% 0%,
-    black,
-    transparent 72%
-  );
+  -webkit-mask-image: radial-gradient(ellipse 90% 65% at 50% 0%, black, transparent 72%);
+  mask-image: radial-gradient(ellipse 90% 65% at 50% 0%, black, transparent 72%);
 }
 
-/* Glassy icon tile — electric-blue glass with a top highlight and neon edge. */
-.tile-glass {
+/* Icon / date / logo tile: a slightly raised fill with a hairline ring. No glow (guidelines: no shadows). */
+@utility tile-glass {
   position: relative;
-  background:
-    linear-gradient(
-      145deg,
-      rgba(96, 165, 250, 0.22),
-      rgba(59, 130, 246, 0.06) 45%,
-      rgba(56, 116, 224, 0.16)
-    ),
-    #0a2747;
-  border: 1px solid rgba(96, 165, 250, 0.4);
-  box-shadow:
-    0 0 26px -4px rgba(59, 130, 246, 0.45),
-    inset 0 1px 0 rgba(255, 255, 255, 0.3),
-    inset 0 -10px 18px rgba(5, 27, 53, 0.55);
+  background: var(--paper3);
+  box-shadow: inset 0 0 0 1px rgb(var(--ink-rgb) / 0.08);
 }
 
-/* Neon-edge card — for the one card per screen that should own the moment. */
-.card-glow {
-  border-color: rgba(96, 165, 250, 0.3);
-  box-shadow:
-    0 0 0 1px rgba(96, 165, 250, 0.14),
-    0 0 44px -10px rgba(59, 130, 246, 0.4),
-    0 20px 50px -24px rgba(0, 0, 0, 0.7);
+/* The one card per screen that owns the moment: the dark feature look with its thin inner ring. */
+@utility card-glow {
+  background: var(--dark);
+  color: #fff;
+  box-shadow: inset 0 0 0 1px rgb(255 255 255 / 0.08);
 }
 
 /* ---------- legal / policy docs ---------- */
@@ -357,7 +425,7 @@ body {
   line-height: 1.7;
 }
 .legal-doc .legal-lead {
-  color: #bcbfcc;
+  color: var(--ink3);
   font-size: clamp(15px, 1.4vw, 17px);
   line-height: 1.65;
   margin-bottom: 1.25rem;
@@ -389,7 +457,7 @@ body {
   margin-bottom: 0.5rem;
 }
 .legal-doc .legal-h4 {
-  color: #edeef7;
+  color: var(--ink);
   font-size: 14px;
   font-weight: 600;
   margin-top: 1.15rem;
@@ -422,7 +490,7 @@ body {
   padding: 1rem 1.1rem;
   border: 1px solid var(--line-soft);
   border-radius: 12px;
-  background: rgba(255, 255, 255, 0.02);
+  background: rgb(var(--ink-rgb) / 0.04);
 }
 .legal-doc dl {
   margin: 0;
@@ -442,12 +510,24 @@ body {
   text-underline-offset: 2px;
 }
 .legal-doc a:hover {
-  color: #7ec8fa;
+  color: var(--ink3);
 }
 
 /* ---------- phone input (login) ---------- */
+.phone-input .PhoneInputInput {
+  background: transparent;
+  border: 0;
+  outline: none;
+  color: white;
+  width: 100%;
+  font-size: 15px;
+}
 .phone-input .PhoneInputCountryIcon {
   border-radius: 2px;
+}
+.phone-input .PhoneInputCountrySelectArrow {
+  color: var(--ink2);
+  opacity: 1;
 }
 
 /* ---------- misc ---------- */
@@ -458,8 +538,8 @@ body {
 .bar {
   background: linear-gradient(
     180deg,
-    rgba(166, 231, 115, 0.85) 0%,
-    rgba(166, 231, 115, 0.35) 100%
+    rgb(var(--green-rgb) / 0.85) 0%,
+    rgb(var(--green-rgb) / 0.35) 100%
   );
   border-radius: 6px 6px 0 0;
 }
@@ -668,45 +748,902 @@ body {
   }
 }
 
-/* Covers iOS overscroll so page content cannot peek below fixed mobile footers. */
-.mobile-sticky-footer-shell {
-  isolation: isolate;
+
+/* ===== Token layer =====
+   Exact copy of the reference theme variables (docs/style-ref/themes/default/variables.css), renamed with an
+   h- prefix so they never collide with the brand tokens or the shadcn aliases above. The only deliberate change:
+   --h-accent is our green and --h-accent-foreground is navy. Dark is the default, light is :root[data-nt="light"]. */
+:root {
+
+    /* Primitive Colors (Do not change between light and dark) */
+    --h-white: oklch(100% 0 0);
+    --h-black: oklch(0% 0 0);
+    --h-snow: oklch(0.9911 0 0);
+    --h-eclipse: oklch(0.2103 0.0059 285.89);
+
+    /* Spacing scale */
+    --h-spacing: 0.25rem;
+    /* Red for text and thin icons: lighter in dark so it clears 4.5:1 on the page and on soft red fills. */
+    --h-danger-text: oklch(0.76 0.15 24.63);
+
+    /* Border */
+    --h-border-width: 1px;
+    --h-field-border-width: 0px;
+    --h-disabled-opacity: 0.5;
+
+    /* Ring offset - Used for focus ring */
+    --h-ring-offset-width: 2px;
+
+    /* Cursor */
+    --h-cursor-interactive: pointer;
+    --h-cursor-disabled: not-allowed;
+
+    /* Radius */
+    --h-radius: 0.5rem;
+    --h-field-radius: calc(var(--h-radius) * 1.5);
+
+    /* Accent and status hues (shared with the dark theme) */
+    --h-accent: var(--green);
+    --h-accent-foreground: var(--navy);
+
+    --h-success: var(--green);
+    /* info: a blue for statuses that are neither good nor bad (Scheduled, On sale). Brand seat blue, lifted for dark. */
+    --h-info: oklch(0.55 0.18 262);
+    --h-info-foreground: var(--h-snow);
+    /* purple: special tiers and campaigns (VIP, Premium, Resale). Never a status of success or failure. */
+    --h-purple: oklch(0.53 0.2 300);
+    --h-purple-foreground: var(--h-snow);
+    --h-success-foreground: var(--navy);
+
+    /* no border by default on form fields */
+    --h-field-border: transparent;
+
+    /* Skeleton Default Global Animation */
+
+    /* Tooltip Default Delays */
+    --h-tooltip-delay: 1500ms;
+    --h-tooltip-close-delay: 500ms;
+  
+    /* == Dark Theme Variables == */
+
+    /* Base Colors */
+    --h-background: oklch(12% 0.005 285.823);
+    --h-foreground: var(--h-snow);
+
+    /* Surface: Used for non-overlay components (cards, accordions, disclosure groups) */
+    --h-surface: oklch(0.2103 0.0059 285.89);
+    --h-surface-foreground: var(--h-foreground);
+
+    --h-surface-secondary: oklch(0.257 0.0037 286.14);
+    --h-surface-secondary-foreground: var(--h-foreground);
+
+    --h-surface-tertiary: oklch(0.2721 0.0024 247.91);
+    --h-surface-tertiary-foreground: var(--h-foreground);
+
+    /* Overlay: Used for floating/overlay components (tooltips, popovers, modals, menus) - lighter for contrast */
+    --h-overlay: oklch(0.2103 0.0059 285.89);
+    --h-overlay-foreground: var(--h-foreground);
+
+    --h-muted: oklch(70.5% 0.015 286.067);
+
+    --h-scrollbar: var(--h-scrollbar-thumb);
+    --h-scrollbar-thumb: color-mix(in oklch, var(--h-foreground) 15%, transparent);
+    --h-scrollbar-track: transparent;
+    --h-scrollbar-gutter: auto;
+    --h-scrollbar-width: thin;
+    --h-scrollbar-color: var(--h-scrollbar-thumb) var(--h-scrollbar-track);
+
+    --h-default: oklch(27.4% 0.006 286.033);
+    --h-default-foreground: var(--h-snow);
+
+    /* Form Fields */
+    --h-field-background: oklch(0.2103 0.0059 285.89);
+    --h-field-foreground: var(--h-foreground);
+    --h-field-placeholder: var(--h-muted);
+
+    /* Status Colors */
+    --h-warning: oklch(0.8203 0.1388 76.34);
+    --h-warning-foreground: var(--h-eclipse);
+
+    --h-danger: oklch(0.594 0.1967 24.63);
+    --h-danger-foreground: var(--h-snow);
+
+    /* Component Colors */
+    --h-segment: oklch(0.3964 0.01 285.93);
+    --h-segment-foreground: var(--h-foreground);
+
+    /* Misc Colors */
+    --h-border: oklch(28% 0.006 286.033);
+    --h-separator: oklch(25% 0.006 286.033);
+    --h-focus: var(--h-accent);
+    --h-link: var(--h-foreground);
+
+    /* Backdrop */
+    --h-backdrop: rgba(0, 0, 0, 0.6);
+
+    /* Shadows */
+    --h-surface-shadow: 0 0 0 0 transparent inset; /* No shadow on dark mode */
+    --h-overlay-shadow: 0 0 1px 0 rgba(255, 255, 255, 0.3) inset;
+    --h-field-shadow: 0 0 0 0 transparent inset; /* Transparent shadow to allow ring utilities to work */
+
+    /* Calculated Colors */
+    --h-surface-hover: color-mix(in oklab, var(--h-surface) 92%, var(--h-surface-foreground) 8%);
+
+    --h-background-secondary: color-mix(in oklab, var(--h-background) 96%, var(--h-foreground) 4%);
+    --h-background-tertiary: color-mix(in oklab, var(--h-background) 92%, var(--h-foreground) 8%);
+    --h-background-inverse: var(--h-foreground);
+
+    --h-default-hover: color-mix(in oklab, var(--h-default) 96%, var(--h-default-foreground) 4%);
+    --h-accent-hover: color-mix(in oklab, var(--h-accent) 90%, white 10%);
+    --h-success-hover: color-mix(in oklab, var(--h-success) 90%, var(--h-success-foreground) 10%);
+    --h-warning-hover: color-mix(in oklab, var(--h-warning) 90%, var(--h-warning-foreground) 10%);
+    --h-danger-hover: color-mix(in oklab, var(--h-danger) 90%, var(--h-danger-foreground) 10%);
+
+    --h-field-hover: color-mix(
+      in oklab,
+      var(--h-field-background, var(--h-default)) 90%,
+      var(--h-field-foreground, var(--h-foreground)) 2%
+    );
+    --h-field-focus: var(--h-field-background, var(--h-default));
+    --h-field-border-hover: color-mix(
+      in oklab,
+      var(--h-field-border, var(--h-border)) 88%,
+      var(--h-field-foreground, var(--h-foreground)) 10%
+    );
+    --h-field-border-focus: color-mix(
+      in oklab,
+      var(--h-field-border, var(--h-border)) 74%,
+      var(--h-field-foreground, var(--h-foreground)) 22%
+    );
+
+    --h-default-soft: color-mix(in oklab, var(--h-default) 50%, transparent);
+    --h-default-soft-foreground: var(--h-default-foreground);
+    --h-default-soft-hover: color-mix(in oklab, var(--h-default) 60%, transparent);
+
+    --h-accent-soft: color-mix(in oklab, var(--h-accent) 12%, transparent);
+    --h-accent-soft-foreground: color-mix(in oklab, var(--h-accent) 80%, var(--h-foreground) 30%);
+    --h-accent-soft-hover: color-mix(in oklab, var(--h-accent) 16%, transparent);
+    --h-accent-selected: color-mix(in oklab, var(--h-accent) 26%, transparent);
+    --h-accent-selected-hover: color-mix(in oklab, var(--h-accent) 32%, transparent);
+    --h-neutral-selected: #3d3d42;
+    --h-neutral-selected-hover: #45454a;
+    --h-neutral-selected-foreground: #ffffff;
+    --h-neutral-track: color-mix(in oklab, var(--h-default) 80%, transparent);
+
+    --h-danger-soft: color-mix(in oklab, var(--h-danger) 15%, transparent);
+    --h-danger-soft-foreground: color-mix(in oklab, var(--h-danger) 80%, var(--h-foreground) 30%);
+    --h-danger-soft-hover: color-mix(in oklab, var(--h-danger) 20%, transparent);
+
+    --h-warning-soft: color-mix(in oklab, var(--h-warning) 12%, transparent);
+    --h-warning-soft-foreground: color-mix(in oklab, var(--h-warning) 80%, var(--h-foreground) 30%);
+    --h-warning-soft-hover: color-mix(in oklab, var(--h-warning) 16%, transparent);
+
+    --h-success-soft: color-mix(in oklab, var(--h-success) 12%, transparent);
+    --h-success-soft-foreground: color-mix(in oklab, var(--h-success) 80%, var(--h-foreground) 30%);
+    --h-success-soft-hover: color-mix(in oklab, var(--h-success) 16%, transparent);
+    --h-info-hover: color-mix(in oklab, var(--h-info) 90%, var(--h-info-foreground) 10%);
+    --h-info-soft: color-mix(in oklab, var(--h-info) 14%, transparent);
+    --h-info-soft-foreground: color-mix(in oklab, var(--h-info) 80%, var(--h-foreground) 30%);
+    --h-info-soft-hover: color-mix(in oklab, var(--h-info) 18%, transparent);
+    --h-purple-hover: color-mix(in oklab, var(--h-purple) 90%, var(--h-purple-foreground) 10%);
+    --h-purple-soft: color-mix(in oklab, var(--h-purple) 14%, transparent);
+    --h-purple-soft-foreground: color-mix(in oklab, var(--h-purple) 80%, var(--h-foreground) 30%);
+    --h-purple-soft-hover: color-mix(in oklab, var(--h-purple) 18%, transparent);
+
+    --h-separator-secondary: color-mix(in oklab, var(--h-surface) 85%, var(--h-surface-foreground) 15%);
+    --h-separator-tertiary: color-mix(in oklab, var(--h-surface) 81%, var(--h-surface-foreground) 19%);
+
+    --h-border-secondary: color-mix(in oklab, var(--h-surface) 78%, var(--h-surface-foreground) 22%);
+    --h-border-tertiary: color-mix(in oklab, var(--h-surface) 66%, var(--h-surface-foreground) 34%);
+  }
+:root[data-nt="light"] {
+
+
+    /* == Light Theme Variables == */
+
+    /* Base Colors */
+    --h-background: oklch(0.9702 0 0);
+    --h-foreground: var(--h-eclipse);
+
+    /* Surface: Used for non-overlay components (cards, accordions, disclosure groups) */
+    --h-surface: var(--h-white);
+    --h-surface-foreground: var(--h-foreground);
+
+    --h-surface-secondary: oklch(0.9524 0.0013 286.37);
+    --h-surface-secondary-foreground: var(--h-foreground);
+
+    --h-surface-tertiary: oklch(0.9373 0.0013 286.37);
+    --h-surface-tertiary-foreground: var(--h-foreground);
+
+    /* Overlay: Used for floating/overlay components (tooltips, popovers, modals, menus) */
+    --h-overlay: var(--h-white);
+    --h-overlay-foreground: var(--h-foreground);
+
+    --h-muted: oklch(0.5517 0.0138 285.94);
+
+    --h-scrollbar: var(--h-scrollbar-thumb);
+    --h-scrollbar-thumb: color-mix(in oklch, var(--h-foreground) 15%, transparent);
+    --h-scrollbar-track: transparent;
+    --h-scrollbar-gutter: auto;
+    --h-scrollbar-width: thin;
+    --h-scrollbar-color: var(--h-scrollbar-thumb) var(--h-scrollbar-track);
+
+    --h-default: oklch(94% 0.001 286.375);
+    --h-default-foreground: var(--h-eclipse);
+
+    /* Form Fields */
+    --h-field-background: var(--h-white);
+    --h-field-foreground: oklch(0.2103 0.0059 285.89);
+    --h-field-placeholder: var(--h-muted);
+
+    /* Status Colors */
+    --h-warning: oklch(0.7819 0.1585 72.33);
+    --h-warning-foreground: var(--h-eclipse);
+
+    --h-danger: oklch(0.6532 0.2328 25.74);
+    --h-danger-foreground: var(--h-snow);
+
+    /* Component Colors */
+    --h-segment: var(--h-white);
+    --h-segment-foreground: var(--h-eclipse);
+
+    /* Misc Colors */
+    --h-border: oklch(90% 0.004 286.32);
+    --h-separator: oklch(92% 0.004 286.32);
+    --h-focus: var(--h-accent);
+    --h-link: var(--h-foreground);
+
+    /* Backdrop */
+    --h-backdrop: rgba(0, 0, 0, 0.5);
+
+    /* Calculated Colors */
+    --h-surface-hover: color-mix(in oklab, var(--h-surface) 92%, var(--h-surface-foreground) 8%);
+
+    --h-background-secondary: color-mix(in oklab, var(--h-background) 96%, var(--h-foreground) 4%);
+    --h-background-tertiary: color-mix(in oklab, var(--h-background) 92%, var(--h-foreground) 8%);
+    --h-background-inverse: var(--h-foreground);
+
+    --h-default-hover: color-mix(in oklab, var(--h-default) 96%, var(--h-default-foreground) 4%);
+    --h-accent-hover: color-mix(in oklab, var(--h-accent) 90%, white 10%);
+    --h-success-hover: color-mix(in oklab, var(--h-success) 90%, var(--h-success-foreground) 10%);
+    --h-warning-hover: color-mix(in oklab, var(--h-warning) 90%, var(--h-warning-foreground) 10%);
+    --h-danger-hover: color-mix(in oklab, var(--h-danger) 90%, var(--h-danger-foreground) 10%);
+
+    --h-field-hover: color-mix(
+      in oklab,
+      var(--h-field-background, var(--h-default)) 90%,
+      var(--h-field-foreground, var(--h-foreground)) 2%
+    );
+    --h-field-focus: var(--h-field-background, var(--h-default));
+    --h-field-border-hover: color-mix(
+      in oklab,
+      var(--h-field-border, var(--h-border)) 88%,
+      var(--h-field-foreground, var(--h-foreground)) 10%
+    );
+    --h-field-border-focus: color-mix(
+      in oklab,
+      var(--h-field-border, var(--h-border)) 74%,
+      var(--h-field-foreground, var(--h-foreground)) 22%
+    );
+
+    --h-default-soft: color-mix(in oklab, var(--h-default) 50%, transparent);
+    --h-default-soft-foreground: var(--h-default-foreground);
+    --h-default-soft-hover: color-mix(in oklab, var(--h-default) 60%, transparent);
+
+    --h-accent-soft: color-mix(in oklab, var(--h-accent) 15%, transparent);
+    --h-accent-soft-foreground: color-mix(in oklab, var(--h-accent) 70%, var(--h-foreground) 30%);
+    --h-accent-soft-hover: color-mix(in oklab, var(--h-accent) 20%, transparent);
+    --h-accent-selected: color-mix(in oklab, var(--h-accent) 55%, transparent);
+    --h-accent-selected-hover: color-mix(in oklab, var(--h-accent) 65%, transparent);
+    --h-neutral-selected: #ffffff;
+    --h-neutral-selected-hover: #ffffff;
+    --h-neutral-selected-foreground: #171717;
+    --h-neutral-track: var(--color-muted);
+
+    --h-danger-soft: color-mix(in oklab, var(--h-danger) 15%, transparent);
+    --h-danger-soft-foreground: color-mix(in oklab, var(--h-danger) 70%, var(--h-foreground) 40%);
+    --h-danger-soft-hover: color-mix(in oklab, var(--h-danger) 20%, transparent);
+
+    --h-warning-soft: color-mix(in oklab, var(--h-warning) 15%, transparent);
+    --h-warning-soft-foreground: color-mix(in oklab, var(--h-warning) 80%, var(--h-foreground) 70%);
+    --h-warning-soft-hover: color-mix(in oklab, var(--h-warning) 20%, transparent);
+
+    --h-success-soft: color-mix(in oklab, var(--h-success) 15%, transparent);
+    --h-success-soft-foreground: color-mix(in oklab, var(--h-success) 80%, var(--h-foreground) 60%);
+    --h-success-soft-hover: color-mix(in oklab, var(--h-success) 20%, transparent);
+    --h-info-hover: color-mix(in oklab, var(--h-info) 90%, var(--h-info-foreground) 10%);
+    --h-info-soft: color-mix(in oklab, var(--h-info) 14%, transparent);
+    --h-info-soft-foreground: color-mix(in oklab, var(--h-info) 80%, var(--h-foreground) 30%);
+    --h-info-soft-hover: color-mix(in oklab, var(--h-info) 18%, transparent);
+    --h-purple-hover: color-mix(in oklab, var(--h-purple) 90%, var(--h-purple-foreground) 10%);
+    --h-purple-soft: color-mix(in oklab, var(--h-purple) 14%, transparent);
+    --h-purple-soft-foreground: color-mix(in oklab, var(--h-purple) 80%, var(--h-foreground) 30%);
+    --h-purple-soft-hover: color-mix(in oklab, var(--h-purple) 18%, transparent);
+
+    --h-separator-secondary: color-mix(in oklab, var(--h-surface) 85%, var(--h-surface-foreground) 15%);
+    --h-separator-tertiary: color-mix(in oklab, var(--h-surface) 81%, var(--h-surface-foreground) 19%);
+
+    --h-border-secondary: color-mix(in oklab, var(--h-surface) 78%, var(--h-surface-foreground) 22%);
+    --h-border-tertiary: color-mix(in oklab, var(--h-surface) 66%, var(--h-surface-foreground) 34%);
+
+    /* Shadows */
+    /* --h-surface-shadow: 0 0px 0px 0 rgba(24, 24, 27, 0.03), 0 2px 10px 0 rgba(24, 24, 27, 0.08); */
+    --h-surface-shadow:
+      0 2px 4px 0 rgba(0, 0, 0, 0.04), 0 1px 2px 0 rgba(0, 0, 0, 0.06),
+      0 0 1px 0 rgba(0, 0, 0, 0.06);
+    /* Overlay shadow */
+    --h-overlay-shadow:
+      0 2px 8px 0 rgba(0, 0, 0, 0.06), 0 -6px 12px 0 rgba(0, 0, 0, 0.03),
+      0 14px 28px 0 rgba(0, 0, 0, 0.08);
+    --h-field-shadow:
+      0 2px 4px 0 rgba(0, 0, 0, 0.04), 0 1px 2px 0 rgba(0, 0, 0, 0.06),
+      0 0 1px 0 rgba(0, 0, 0, 0.06);
+  }
+
+@theme inline {
+  --color-h-background: var(--h-background);
+  --color-h-foreground: var(--h-foreground);
+  --color-h-surface: var(--h-surface);
+  --color-h-surface-foreground: var(--h-surface-foreground);
+  --color-h-surface-hover: var(--h-surface-hover);
+  --color-h-surface-secondary: var(--h-surface-secondary);
+  --color-h-surface-secondary-foreground: var(--h-surface-secondary-foreground);
+  --color-h-surface-tertiary: var(--h-surface-tertiary);
+  --color-h-surface-tertiary-foreground: var(--h-surface-tertiary-foreground);
+  --color-h-overlay: var(--h-overlay);
+  --color-h-overlay-foreground: var(--h-overlay-foreground);
+  --color-h-muted: var(--h-muted);
+  --color-h-accent: var(--h-accent);
+  --color-h-accent-foreground: var(--h-accent-foreground);
+  --color-h-segment: var(--h-segment);
+  --color-h-segment-foreground: var(--h-segment-foreground);
+  --color-h-border: var(--h-border);
+  --color-h-separator: var(--h-separator);
+  --color-h-focus: var(--h-focus);
+  --color-h-link: var(--h-link);
+  --color-h-default: var(--h-default);
+  --color-h-default-foreground: var(--h-default-foreground);
+  --color-h-success: var(--h-success);
+  --color-h-success-foreground: var(--h-success-foreground);
+  --color-h-info: var(--h-info);
+  --color-h-info-foreground: var(--h-info-foreground);
+  --color-h-info-hover: var(--h-info-hover);
+  --color-h-info-soft: var(--h-info-soft);
+  --color-h-info-soft-foreground: var(--h-info-soft-foreground);
+  --color-h-info-soft-hover: var(--h-info-soft-hover);
+  --color-h-purple: var(--h-purple);
+  --color-h-purple-foreground: var(--h-purple-foreground);
+  --color-h-purple-hover: var(--h-purple-hover);
+  --color-h-purple-soft: var(--h-purple-soft);
+  --color-h-purple-soft-foreground: var(--h-purple-soft-foreground);
+  --color-h-purple-soft-hover: var(--h-purple-soft-hover);
+  --color-h-warning: var(--h-warning);
+  --color-h-warning-foreground: var(--h-warning-foreground);
+  --color-h-danger: var(--h-danger);
+  --color-h-danger-text: var(--h-danger-text);
+  --color-h-danger-foreground: var(--h-danger-foreground);
+  --color-h-backdrop: var(--h-backdrop);
+  --shadow-h-surface: var(--h-surface-shadow);
+  --shadow-h-overlay: var(--h-overlay-shadow);
+  --shadow-h-field: var(--h-field-shadow);
+  --color-h-field: var(--h-field-background, var(--h-default));
+  --color-h-field-hover: var(--h-field-hover);
+  --color-h-field-foreground: var(--h-field-foreground, var(--h-foreground));
+  --color-h-field-placeholder: var(--h-field-placeholder, var(--h-muted));
+  --color-h-field-border: var(--h-field-border, var(--h-border));
+  --color-h-background-secondary: var(--h-background-secondary);
+  --color-h-background-tertiary: var(--h-background-tertiary);
+  --color-h-background-inverse: var(--h-background-inverse);
+  --color-h-default-hover: var(--h-default-hover);
+  --color-h-accent-hover: var(--h-accent-hover);
+  --color-h-success-hover: var(--h-success-hover);
+  --color-h-warning-hover: var(--h-warning-hover);
+  --color-h-danger-hover: var(--h-danger-hover);
+  --color-h-field-focus: var(--h-field-focus);
+  --color-h-field-border-hover: var(--h-field-border-hover);
+  --color-h-field-border-focus: var(--h-field-border-focus);
+  --color-h-default-soft: var(--h-default-soft);
+  --color-h-default-soft-foreground: var(--h-default-soft-foreground);
+  --color-h-default-soft-hover: var(--h-default-soft-hover);
+  --color-h-accent-soft: var(--h-accent-soft);
+  --color-h-accent-soft-foreground: var(--h-accent-soft-foreground);
+  --color-h-accent-soft-hover: var(--h-accent-soft-hover);
+  --color-h-danger-soft: var(--h-danger-soft);
+  --color-h-danger-soft-foreground: var(--h-danger-soft-foreground);
+  --color-h-danger-soft-hover: var(--h-danger-soft-hover);
+  --color-h-warning-soft: var(--h-warning-soft);
+  --color-h-warning-soft-foreground: var(--h-warning-soft-foreground);
+  --color-h-warning-soft-hover: var(--h-warning-soft-hover);
+  --color-h-success-soft: var(--h-success-soft);
+  --color-h-success-soft-foreground: var(--h-success-soft-foreground);
+  --color-h-success-soft-hover: var(--h-success-soft-hover);
+  --color-h-separator-secondary: var(--h-separator-secondary);
+  --color-h-separator-tertiary: var(--h-separator-tertiary);
+  --color-h-border-secondary: var(--h-border-secondary);
+  --color-h-border-tertiary: var(--h-border-tertiary);
+  --radius-h-field: var(--h-field-radius, calc(var(--h-radius) * 1.5));
+  --border-width-h-field: var(--h-field-border-width, var(--h-border-width));
 }
 
-.mobile-sticky-footer-shell::after {
-  content: "";
-  position: absolute;
-  left: 0;
-  right: 0;
-  top: 100%;
-  height: 100vh;
-  background: inherit;
-  pointer-events: none;
+/* the reference utilities (docs/style-ref/utilities/index.css), h- prefixed. */
+@utility h-focus-ring {
+  box-shadow: 0 0 0 var(--h-ring-offset-width) var(--background), 0 0 0 calc(var(--h-ring-offset-width) + 2px) var(--h-focus);
+  outline: none;
+}
+@utility h-focus-field-ring {
+  box-shadow: 0 0 0 2px var(--h-focus);
+  outline: none;
+}
+@utility h-invalid-field-ring {
+  outline: 1px solid var(--h-danger);
+  &:focus, &:focus-visible, &[data-focused="true"], &[data-focus-visible="true"], &:focus-within, &[data-focus-within="true"] {
+    outline: none;
+    box-shadow: 0 0 0 2px var(--h-danger);
+  }
+}
+@utility h-no-highlight { -webkit-tap-highlight-color: transparent; }
+@utility h-status-disabled { opacity: var(--h-disabled-opacity); cursor: var(--h-cursor-disabled); pointer-events: none; }
+@utility h-status-pending { pointer-events: none; }
+@utility h-touch-target { &::after { content: ""; position: absolute; top: 50%; left: 50%; width: 1.5rem; height: 1.5rem; transform: translate(-50%, -50%); } }
+
+/* the reference keyframes (progress bar indeterminate, progress circle spin). Loading placeholders use the pulse below (t-skel-pulse), never a sweep. */
+@keyframes h-progress-bar-indeterminate { 0% { transform: translateX(-100%); } 100% { transform: translateX(350%); } }
+@keyframes h-progress-circle-spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+
+/* Light-theme contrast overrides. Kept last so they win over the generated light block above: deeper fills so
+   white text on solid badges and buttons clears 4.5:1, and a dark green for green text on light surfaces
+   (the lime itself is too light to read as text). */
+:root[data-nt="light"] {
+  --h-info: oklch(0.54 0.18 262);
+  --h-purple: oklch(0.52 0.2 300);
+  --h-danger: oklch(0.56 0.22 26);
+  --h-accent-soft-foreground: oklch(0.38 0.1 140);
+  --h-success-soft-foreground: oklch(0.38 0.1 140);
+  --h-warning-soft-foreground: oklch(0.4 0.09 65);
+  --h-default-foreground: var(--navy);
 }
 
-/* Shopper search: desktop field vs mobile trigger + fullscreen sheet. */
-.ssb-input::placeholder {
-  color: var(--ssb-ph, rgba(255, 255, 255, 0.65));
-  opacity: 1;
+/* Dark-theme contrast override: a slightly deeper red so white text on solid danger clears 4.5:1. */
+:root:not([data-nt="light"]) {
+  --h-danger: oklch(0.57 0.21 25);
+  --h-purple-soft-foreground: color-mix(in oklab, var(--h-purple) 65%, var(--h-foreground) 40%);
+  /* Fields sit a touch lighter than surfaces in dark (was the surface colour itself, oklch 0.2103). */
+  --h-field-background: oklch(0.238 0.006 286);
+  /* Every neutral fill in dark is the field fill, so inputs, button groups, secondary and tertiary buttons, switch and
+     slider tracks, kbd and the like all read as one colour. */
+  --h-default: var(--h-field-background);
+  /* --h-default-hover stays derived (a step lighter than the fill) so hovering a neutral button is visible in dark. */
+  /* Surfaces (cards, menus, popovers, dialogs) stay on their own darker grey (oklch 0.2103, set above), so a primary field on a card
+     reads as a slightly lifted box. A field that needs to stand out more uses the secondary variant, a step lighter again. */
+  --h-default-soft: var(--h-field-background);
+  --h-default-soft-hover: var(--h-default-hover);
+  /* A tertiary button sits on the soft fill and its hover is the default fill. In dark those are the same colour, so the hover steps up instead. */
+  --h-tertiary-hover: var(--h-default-hover);
+  /* Switch and slider tracks need to read against the page, so they sit a step above the field fill. */
+  --h-track: oklch(0.33 0.006 286);
+  --h-field-secondary: color-mix(in oklab, var(--h-field-background) 93%, white);
+  --h-field-secondary-hover: color-mix(in oklab, var(--h-field-secondary) 95%, white);
 }
-.ssb-mobile {
-  display: none;
+
+/* Dark text on the amber fill uses the brand navy, in both themes, instead of near-black grey. */
+:root {
+  --h-warning-foreground: var(--navy);
+  --h-track: var(--h-default);
+  --h-tertiary-hover: var(--h-default);
+  /* Secondary field fill, for fields on a card or surface: a step stronger than the primary field fill. */
+  --h-field-secondary: var(--h-default);
+  --h-field-secondary-hover: var(--h-default-hover);
+  /* Tick colour inside a selected checkbox. */
+  --h-check-fg: var(--h-accent-foreground);
+  /* Selected radio dot: a darker green than the fill. Dark mode is deeper, light mode has no dot, the green fill alone marks the selection. */
+  --h-radio-dot: color-mix(in oklab, var(--h-accent) 45%, black);
+  --h-radio-hole: 0px;
+  --h-control-outline: inset 0 0 0 1px rgb(255 255 255 / 0.17);
+  --h-control-outline-hover: inset 0 0 0 1px rgb(255 255 255 / 0.3);
 }
-@media (max-width: 900px) {
-  .ssb-desktop {
-    display: none !important;
-  }
-  .ssb-mobile {
-    display: block;
-  }
+:root[data-nt="light"] {
+  --h-radio-dot: transparent;
+  --h-control-outline: inset 0 0 0 1px rgba(10, 10, 10, 0.2);
+  --h-control-outline-hover: inset 0 0 0 1px rgba(10, 10, 10, 0.38);
+  --h-radio-hole: 4.5px; /* a true cutout: the middle of the selected radio shows what is behind it */
 }
-@media (min-width: 901px) {
-  .ssb-sheet {
-    display: none;
+
+/* Field edge: light and dark follow the same recipe. A flat fill a clear step off the page, a crisp 1px inner edge, no
+   shadow. Light fields are a faint grey with a 7% dark edge; dark fields are a lifted dark grey with a 7% white edge. The
+   secondary fill is a step lighter than the primary fill (near white in light, a step above it in dark), and a focused light field turns white under its ring. */
+:root[data-nt="light"] {
+  --h-field-background: oklch(0.977 0.002 286);
+  --h-field-focus: var(--h-white);
+  --h-field-outline: inset 0 0 0 1px rgb(10 10 10 / 0.07);
+  --h-field-secondary: oklch(0.997 0 286);
+  --h-field-secondary-hover: oklch(0.988 0 286);
+}
+:root:not([data-nt="light"]) {
+  --h-field-outline: inset 0 0 0 1px rgb(255 255 255 / 0.07);
+}
+
+/* ===== Motion tokens and fallbacks (from the component-library motion review) =====
+   Strong ease-out for enters and presses, drawer curve for panels, three durations. Reduced motion keeps fades
+   and removes movement. */
+:root {
+  --e-out: cubic-bezier(0.23, 1, 0.32, 1);
+  --e-in-out: cubic-bezier(0.77, 0, 0.175, 1);
+  --e-drawer: cubic-bezier(0.32, 0.72, 0, 1);
+  --d-press: 120ms;
+  --d-fade: 150ms;
+  --d-overlay: 200ms;
+}
+
+/* 44px invisible hit area for small controls. The element must be relative and must not clip overflow. */
+@utility h-touch-44 {
+  &::after {
+    content: "";
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: 2.75rem;
+    height: 2.75rem;
+    transform: translate(-50%, -50%);
   }
 }
 
-/* Route-transition cover: keep the outgoing page from scrolling underneath. */
-body[data-bt-route-transition] {
-  overflow: hidden;
+@media (prefers-reduced-motion: reduce) {
+  /* Overlays keep their fade but lose the zoom and slide travel (tw-animate-css variables). */
+  [data-state] {
+    --tw-enter-scale: 1;
+    --tw-enter-translate-x: 0;
+    --tw-enter-translate-y: 0;
+    --tw-exit-scale: 1;
+    --tw-exit-translate-x: 0;
+    --tw-exit-translate-y: 0;
+  }
+  /* Press scale and hover lifts are movement too. */
+  [data-slot="button"]:active,
+  [data-slot="toggle"]:active,
+  [data-slot="tabs-trigger"]:active,
+  [data-slot="switch"]:active,
+  [data-slot="checkbox"]:active,
+  [data-slot="select-trigger"]:active {
+    transform: none;
+  }
 }
+
+/* Animatable parts of the radio: the fill colour and the size of the cutout in its middle. */
+@property --radio-fill { syntax: "<color>"; inherits: false; initial-value: transparent; }
+@property --radio-hole { syntax: "<length>"; inherits: false; initial-value: 0px; }
+
+/* Accordion panel: height and opacity, 200ms. */
+@keyframes accordion-open {
+  from { height: 0; opacity: 0; }
+  to { height: var(--radix-accordion-content-height); opacity: 1; }
+}
+@keyframes accordion-close {
+  from { height: var(--radix-accordion-content-height); opacity: 1; }
+  to { height: 0; opacity: 0; }
+}
+
+/* Input OTP: each character arrives from below, fading in while growing from 80%. */
+@keyframes slot-value-in {
+  0% { opacity: 0; transform: translateY(8px) scale(0.8); }
+  100% { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+/* ScrollShadow (reference scroll-shadow.css, as plain CSS): content that scrolls fades out at the edges where there is more
+   to see. Where scroll timelines exist the fade follows the real scroll position from the first paint; elsewhere the
+   component sets data-*-scroll attributes from a scroll listener and the same gradients apply. */
+.scroll-shadow { position: relative; --scroll-shadow-size: 40px; --scroll-shadow-scrollbar-size: 10px; --scroll-shadow-offset: 0px; }
+@property --scroll-shadow-start-fade { syntax: "<length>"; inherits: false; initial-value: 0px; }
+@property --scroll-shadow-end-fade { syntax: "<length>"; inherits: false; initial-value: 0px; }
+@keyframes scroll-shadow-start-fade { from { --scroll-shadow-start-fade: 0px; } to { --scroll-shadow-start-fade: var(--scroll-shadow-size); } }
+@keyframes scroll-shadow-end-fade { from { --scroll-shadow-end-fade: var(--scroll-shadow-size); } to { --scroll-shadow-end-fade: 0px; } }
+.scroll-shadow--vertical { overflow-y: auto; }
+.scroll-shadow--horizontal { overflow-x: auto; }
+.scroll-shadow--fade.scroll-shadow--vertical:where([data-top-scroll="true"], [data-bottom-scroll="true"], [data-top-bottom-scroll="true"], [data-scroll-shadow-mode="auto"]) {
+  mask-image: linear-gradient(var(--scroll-linear-gradient)), linear-gradient(#000, #000);
+  mask-position: left top, right top; mask-repeat: no-repeat; mask-size: 100% 100%, var(--scroll-shadow-scrollbar-size) 100%;
+  -webkit-mask-image: linear-gradient(var(--scroll-linear-gradient)), linear-gradient(#000, #000);
+  -webkit-mask-position: left top, right top; -webkit-mask-repeat: no-repeat; -webkit-mask-size: 100% 100%, var(--scroll-shadow-scrollbar-size) 100%;
+}
+.scroll-shadow--fade.scroll-shadow--vertical[data-top-scroll="true"] { --scroll-linear-gradient: 0deg, #000 calc(100% - var(--scroll-shadow-size)), transparent; }
+.scroll-shadow--fade.scroll-shadow--vertical[data-bottom-scroll="true"] { --scroll-linear-gradient: 180deg, #000 calc(100% - var(--scroll-shadow-size)), transparent; }
+.scroll-shadow--fade.scroll-shadow--vertical[data-top-bottom-scroll="true"] { --scroll-linear-gradient: #000, #000, transparent 0, #000 var(--scroll-shadow-size), #000 calc(100% - var(--scroll-shadow-size)), transparent; }
+.scroll-shadow--fade.scroll-shadow--horizontal:where([data-left-scroll="true"], [data-right-scroll="true"], [data-left-right-scroll="true"], [data-scroll-shadow-mode="auto"]) {
+  mask-image: linear-gradient(var(--scroll-linear-gradient)), linear-gradient(#000, #000);
+  mask-position: left top, left bottom; mask-repeat: no-repeat; mask-size: 100% 100%, 100% var(--scroll-shadow-scrollbar-size);
+  -webkit-mask-image: linear-gradient(var(--scroll-linear-gradient)), linear-gradient(#000, #000);
+  -webkit-mask-position: left top, left bottom; -webkit-mask-repeat: no-repeat; -webkit-mask-size: 100% 100%, 100% var(--scroll-shadow-scrollbar-size);
+}
+.scroll-shadow--fade.scroll-shadow--horizontal[data-left-scroll="true"] { --scroll-linear-gradient: 270deg, #000 calc(100% - var(--scroll-shadow-size)), transparent; }
+.scroll-shadow--fade.scroll-shadow--horizontal[data-left-scroll="true"]:dir(rtl) { --scroll-linear-gradient: 90deg, #000 calc(100% - var(--scroll-shadow-size)), transparent; }
+.scroll-shadow--fade.scroll-shadow--horizontal[data-right-scroll="true"] { --scroll-linear-gradient: 90deg, #000 calc(100% - var(--scroll-shadow-size)), transparent; }
+.scroll-shadow--fade.scroll-shadow--horizontal[data-right-scroll="true"]:dir(rtl) { --scroll-linear-gradient: 270deg, #000 calc(100% - var(--scroll-shadow-size)), transparent; }
+.scroll-shadow--fade.scroll-shadow--horizontal[data-left-right-scroll="true"] { --scroll-linear-gradient: to right, #000, #000, transparent 0, #000 var(--scroll-shadow-size), #000 calc(100% - var(--scroll-shadow-size)), transparent; }
+.scroll-shadow--hide-scrollbar { scrollbar-width: none; --scroll-shadow-scrollbar-size: 0px; }
+.scroll-shadow--hide-scrollbar::-webkit-scrollbar { display: none; }
+@supports (animation-timeline: scroll(self)) {
+  .scroll-shadow.scroll-shadow--fade[data-scroll-shadow-mode="auto"] {
+    animation: scroll-shadow-start-fade linear both, scroll-shadow-end-fade linear both;
+    animation-range: var(--scroll-shadow-offset) calc(var(--scroll-shadow-offset) + var(--scroll-shadow-size)), calc(100% - var(--scroll-shadow-size) - var(--scroll-shadow-offset)) calc(100% - var(--scroll-shadow-offset));
+  }
+  .scroll-shadow.scroll-shadow--fade.scroll-shadow--vertical[data-scroll-shadow-mode="auto"] {
+    animation-timeline: scroll(self block), scroll(self block);
+    --scroll-linear-gradient: 180deg, transparent 0, #000 var(--scroll-shadow-start-fade), #000 calc(100% - var(--scroll-shadow-end-fade)), transparent 100%;
+  }
+  .scroll-shadow.scroll-shadow--fade.scroll-shadow--horizontal[data-scroll-shadow-mode="auto"] {
+    animation-timeline: scroll(self inline), scroll(self inline);
+    --scroll-linear-gradient: 90deg, transparent 0, #000 var(--scroll-shadow-start-fade), #000 calc(100% - var(--scroll-shadow-end-fade)), transparent 100%;
+  }
+  .scroll-shadow.scroll-shadow--fade.scroll-shadow--horizontal[data-scroll-shadow-mode="auto"]:dir(rtl) {
+    --scroll-linear-gradient: 270deg, transparent 0, #000 var(--scroll-shadow-start-fade), #000 calc(100% - var(--scroll-shadow-end-fade)), transparent 100%;
+  }
+}
+
+/* Disclosure panel: height and opacity, 200ms. */
+@keyframes disclosure-open { from { height: 0; opacity: 0; } to { height: var(--radix-collapsible-content-height); opacity: 1; } }
+@keyframes disclosure-close { from { height: var(--radix-collapsible-content-height); opacity: 1; } to { height: 0; opacity: 0; } }
+
+/* Stepper: the indicator pop when a step completes, and the checkmark that draws in. */
+@keyframes stepper-indicator-complete {
+  0% { transform: scale(1); }
+  50% { transform: scale(1.15); }
+  100% { transform: scale(1); }
+}
+@keyframes stepper-checkmark-draw {
+  0% { stroke-dashoffset: 22px; }
+  100% { stroke-dashoffset: 0; }
+}
+
+/* AvatarGroup clip seam: the cut follows the next avatar's own outline (see avatar.tsx). */
+[data-slot=avatar-group][data-overlap=clip] > [data-slot=avatar]:not(:last-child) {
+  --avatar-group-cut-size: calc(var(--avatar-size, 2.5rem) + 2 * var(--avatar-group-seam, 2px));
+  /* Browsers clamp a border-radius at half the box, so clamp here too — a
+     themed radius above that ceiling paints a circle, not an overshooting arc. */
+  --avatar-group-cut-radius: calc(
+    min(
+        var(--avatar-radius, calc(var(--avatar-size, 2.5rem) / 2)),
+        calc(var(--avatar-size, 2.5rem) / 2)
+      ) +
+      var(--avatar-group-seam, 2px)
+  );
+  --avatar-group-cut-diameter: calc(2 * var(--avatar-group-cut-radius));
+  /* Length of the straight run between two corner arcs. Collapses to 0 on a
+     circular avatar, which leaves the four arcs forming one circle. */
+  --avatar-group-cut-span: calc(var(--avatar-group-cut-size) - var(--avatar-group-cut-diameter));
+  --avatar-group-cut-x: calc(
+    var(--avatar-size, 2.5rem) - var(--avatar-group-overlap, 0.5rem) - var(--avatar-group-seam, 2px)
+  );
+  --avatar-group-cut-y: calc(-1 * var(--avatar-group-seam, 2px));
+  --avatar-group-cut-x2: calc(var(--avatar-group-cut-x) + var(--avatar-group-cut-span));
+  --avatar-group-cut-y2: calc(var(--avatar-group-cut-y) + var(--avatar-group-cut-span));
+  --avatar-group-cut-fill: linear-gradient(#000 0 0);
+  --avatar-group-cut-arc: radial-gradient(circle closest-side, #000 99%, #0000);
+
+  mask:
+    var(--avatar-group-cut-fill) 0 0 / 100% 100% no-repeat exclude,
+    var(--avatar-group-cut-fill) calc(var(--avatar-group-cut-x) + var(--avatar-group-cut-radius))
+      var(--avatar-group-cut-y) / var(--avatar-group-cut-span) var(--avatar-group-cut-size)
+      no-repeat add,
+    var(--avatar-group-cut-fill) var(--avatar-group-cut-x)
+      calc(var(--avatar-group-cut-y) + var(--avatar-group-cut-radius)) /
+      var(--avatar-group-cut-size) var(--avatar-group-cut-span) no-repeat add,
+    var(--avatar-group-cut-arc) var(--avatar-group-cut-x) var(--avatar-group-cut-y) /
+      var(--avatar-group-cut-diameter) var(--avatar-group-cut-diameter) no-repeat add,
+    var(--avatar-group-cut-arc) var(--avatar-group-cut-x2) var(--avatar-group-cut-y) /
+      var(--avatar-group-cut-diameter) var(--avatar-group-cut-diameter) no-repeat add,
+    var(--avatar-group-cut-arc) var(--avatar-group-cut-x) var(--avatar-group-cut-y2) /
+      var(--avatar-group-cut-diameter) var(--avatar-group-cut-diameter) no-repeat add,
+    var(--avatar-group-cut-arc) var(--avatar-group-cut-x2) var(--avatar-group-cut-y2) /
+      var(--avatar-group-cut-diameter) var(--avatar-group-cut-diameter) no-repeat add;
+}
+
+[data-slot=avatar-group][data-overlap=clip]:dir(rtl) > [data-slot=avatar]:not(:last-child) {
+  --avatar-group-cut-x: calc(
+    var(--avatar-group-overlap, 0.5rem) - var(--avatar-size, 2.5rem) - var(--avatar-group-seam, 2px)
+  );
+}
+
+/* the app-launch loader follows the visitor's choice: html[data-lt] is set from localStorage before first paint (see app/layout.tsx), and with no choice it follows the device */
+.bt-loader{--bl-bg:#fff;--bl-fg:#0a0a0a;--bl-mute:rgba(10,10,10,.56)}
+html[data-lt="dark"] .bt-loader{--bl-bg:#000;--bl-fg:#fff;--bl-mute:rgba(255,255,255,.58)}
+@media(prefers-color-scheme:dark){html:not([data-lt]) .bt-loader{--bl-bg:#000;--bl-fg:#fff;--bl-mute:rgba(255,255,255,.58)}}
+
+/* ---- page skeletons for the server-built pages (route loading.tsx): the overlay in the visitor's light or dark; the shapes are the library Skeleton (pulse) ---- */
+.bt-sk{--bl-bg:#fff;--bl-fg:#0a0a0a;--sk-1:rgba(10,10,10,.035);--sk-2:rgba(10,10,10,.06);position:fixed;inset:0;z-index:50;overflow:auto;background:var(--bl-bg);color:var(--bl-fg)}
+html[data-lt="dark"] .bt-sk{--bl-bg:#0a0a0a;--bl-fg:#fff;--sk-1:rgba(255,255,255,.04);--sk-2:rgba(255,255,255,.07)}
+@media(prefers-color-scheme:dark){html:not([data-lt]) .bt-sk{--bl-bg:#0a0a0a;--bl-fg:#fff;--sk-1:rgba(255,255,255,.04);--sk-2:rgba(255,255,255,.07)}}
+/* PageGate: fade out when the page is ready; if scripts never run, hide anyway after 8s */
+.bt-sk[data-done="1"]{opacity:0;pointer-events:none;transition:opacity .3s cubic-bezier(.23,1,.32,1)}
+.bt-sk[data-gate]{animation:bt-gate-fail 0s linear 8s forwards}
+@keyframes bt-gate-fail{to{opacity:0;visibility:hidden;pointer-events:none}}
+@media(prefers-reduced-motion:reduce){.bt-sk[data-done="1"]{transition:none}}
+
+/* Text and surfaces that sit on photos or team-coloured art. Same value in both themes, so they do not
+   flip with the page. Use these instead of #fff, #000 or near-black in storefront pages. */
+:root {
+  --on-photo: #fff;
+  --shade: #000;
+  --photo-bg: #0a0508;
+}
+
+
+/* Dialog: the panel keeps its slide-and-fade entrance (set on DialogContent). Content inside does not move on its own. A centred
+   header gets one celebratory moment on its icon tile: a slight overshoot, a halo ring that ripples out once, and the glyph
+   wiping in. Never on `instant` dialogs or reduced motion. */
+@media (prefers-reduced-motion: no-preference) {
+  [data-slot="dialog-content"][data-state="open"]:not([data-instant]) [data-align="center"] > [data-slot="dialog-icon"] {
+    animation: dialog-tile 520ms cubic-bezier(0.34, 1.4, 0.64, 1) 60ms backwards;
+  }
+  [data-slot="dialog-content"][data-state="open"]:not([data-instant]) [data-align="center"] > [data-slot="dialog-icon"]::after {
+    content: ""; position: absolute; inset: 0; border-radius: inherit; pointer-events: none;
+    box-shadow: 0 0 0 2px currentColor; opacity: 0;
+    animation: dialog-ring 900ms cubic-bezier(0.23, 1, 0.32, 1) 360ms;
+  }
+  [data-slot="dialog-content"][data-state="open"]:not([data-instant]) [data-align="center"] > [data-slot="dialog-icon"] svg {
+    animation: dialog-glyph 360ms cubic-bezier(0.23, 1, 0.32, 1) 280ms backwards;
+  }
+}
+@keyframes dialog-tile { from { opacity: 0; transform: scale(0.7) rotate(-8deg); } }
+@keyframes dialog-ring { 0% { opacity: 0.45; transform: scale(1); } 100% { opacity: 0; transform: scale(1.7); } }
+@keyframes dialog-glyph { from { clip-path: inset(0 100% 0 0); } to { clip-path: inset(0 0 0 0); } }
+
+
+/* Modal open / close, from transitions.dev: scale 0.96 to 1 and fade in over 250ms, dip to 0.96 and fade out in 150ms, one
+   ease. Tokens are shared CSS variables. Radix keeps the panel mounted while the close animation plays, so the transition
+   runs as keyframes on the same tokens. Reduced motion: none. */
+:root {
+  --modal-open-dur: 250ms;
+  --modal-close-dur: 150ms;
+  --modal-scale: 0.96;
+  --modal-scale-close: 0.96;
+  --modal-ease: cubic-bezier(0.22, 1, 0.36, 1);
+}
+@media (prefers-reduced-motion: no-preference) {
+  [data-slot="dialog-content"]:not([data-instant]) { transform-origin: center; will-change: transform, opacity; }
+  [data-slot="dialog-content"][data-state="open"]:not([data-instant]) { animation: t-modal-in var(--modal-open-dur) var(--modal-ease) both; }
+  [data-slot="dialog-content"][data-state="closed"]:not([data-instant]) { animation: t-modal-out var(--modal-close-dur) var(--modal-ease) both; }
+}
+@keyframes t-modal-in { from { opacity: 0; transform: scale(var(--modal-scale)); } to { opacity: 1; transform: scale(1); } }
+@keyframes t-modal-out { from { opacity: 1; transform: scale(1); } to { opacity: 0; transform: scale(var(--modal-scale-close)); } }
+
+
+/* Error state shake, from transitions.dev: when a field turns invalid it shakes (6px right, 6px left, 4px overshoot, 280ms, one
+   ease per leg) and its message fades in over 280ms. The danger border and fill are the field's own invalid styling. The
+   shake runs each time a field becomes invalid (the selector starts matching), so re-validate by clearing the invalid state
+   first if you want a repeat. Tokens are shared CSS variables. Reduced motion: none. */
+:root {
+  --shake-distance: 6px;
+  --shake-overshoot: 4px;
+  --shake-dur-a: 80ms;
+  --shake-dur-b: 60ms;
+  --shake-ease: cubic-bezier(0.22, 1, 0.36, 1);
+  --revert-dur: 280ms;
+}
+@media (prefers-reduced-motion: no-preference) {
+  :is([data-slot="input"], [data-slot="textarea"], [data-slot="input-group"]):is([aria-invalid="true"], [data-invalid="true"], :has([data-slot][aria-invalid="true"])) {
+    animation: t-input-shake calc(var(--shake-dur-a) * 2 + var(--shake-dur-b) * 2) linear;
+  }
+  [data-slot="field-error"] { overflow: clip; animation: t-error-in var(--revert-dur) var(--shake-ease) backwards; }
+}
+@keyframes t-input-shake {
+  0%      { transform: translateX(0);                                 animation-timing-function: var(--shake-ease); }
+  28.57%  { transform: translateX(var(--shake-distance));             animation-timing-function: var(--shake-ease); }
+  57.14%  { transform: translateX(calc(var(--shake-distance) * -1)); animation-timing-function: var(--shake-ease); }
+  78.57%  { transform: translateX(var(--shake-overshoot));            animation-timing-function: var(--shake-ease); }
+  100%    { transform: translateX(0); }
+}
+/* The message grows into place (height and fade) so whatever sits below it, such as the submit button, glides down instead of jumping. */
+@keyframes t-error-in { from { opacity: 0; max-height: 0; } to { opacity: 1; max-height: 8rem; } }
+
+
+/* Skeleton loader and reveal, from transitions.dev: both layers share one grid cell (no layout shift) and cross-fade with a
+   matching cross-blur when `.is-revealed` lands. Tokens are shared CSS variables. Reduced motion: none. */
+:root {
+  --reveal-dur: 400ms;
+  --reveal-blur: 2px;
+  --reveal-ease: ease-in-out;
+}
+.t-skel > .t-skel-skeleton, .t-skel > .t-skel-content { grid-area: 1 / 1; min-width: 0; }
+.t-skel-skeleton { z-index: 1; opacity: 1; filter: blur(0); transition: opacity var(--reveal-dur) var(--reveal-ease), filter var(--reveal-dur) var(--reveal-ease); }
+.t-skel-content { z-index: 2; opacity: 0; filter: blur(var(--reveal-blur)); transition: opacity var(--reveal-dur) var(--reveal-ease), filter var(--reveal-dur) var(--reveal-ease); }
+.t-skel.is-revealed .t-skel-skeleton { opacity: 0; filter: blur(var(--reveal-blur)); pointer-events: none; }
+.t-skel.is-revealed .t-skel-content { opacity: 1; filter: blur(0); }
+@media (prefers-reduced-motion: reduce) { .t-skel-skeleton, .t-skel-content { transition: none !important; } }
+
+/* Skeleton pulse, from transitions.dev. Count is infinite here (the source default is 1) because a loading state has no known end. */
+:root { --pulse-dur: 1000ms; --pulse-min: 0.5; --pulse-count: infinite; }
+@keyframes t-skel-pulse { 0%, 100% { opacity: 1; } 50% { opacity: var(--pulse-min); } }
+
+
+/* Glass for floating menus and popovers (dropdown, context menu, menubar, select, popover, hover card, autocomplete, colour picker).
+   Recipe reverse-engineered from heroui.pro: a translucent fill, blur(40px) saturate(1.5), a thick (2px), faint reflection along the top edge
+   and a faint 1px rim all round (both inset shadows, so no extra element). Light is white at 66%, dark is the overlay grey at 60%. */
+:root, :root[data-nt="light"] {
+  --glass-fill: rgb(255 255 255 / 0.78);            /* menus and popovers: the most opaque, they hold text to read */
+  --glass-fill-panel: rgb(255 255 255 / 0.7);       /* command palette, search panel */
+  --glass-fill-float: rgb(255 255 255 / 0.58);      /* floating bars and small tips: the most see-through */
+  --glass-highlight: rgb(255 255 255 / 0.2);
+  --glass-edge: rgb(255 255 255 / 0.5);
+  --glass-shadow: 0 2px 6px 0 rgb(0 0 0 / 0.03), 0 12px 32px -6px rgb(0 0 0 / 0.07); /* soft and wide, no hard edge */
+}
+:root:not([data-nt="light"]) {
+  --glass-fill: color-mix(in oklab, var(--h-overlay) 72%, transparent);
+  --glass-fill-panel: color-mix(in oklab, var(--h-overlay) 64%, transparent);
+  --glass-fill-float: color-mix(in oklab, var(--h-overlay) 52%, transparent);
+  --glass-highlight: rgb(255 255 255 / 0.06);
+  --glass-edge: rgb(255 255 255 / 0.07);
+  --glass-shadow: var(--h-overlay-shadow);
+}
+.glass {
+  background: var(--glass-fill);
+  -webkit-backdrop-filter: blur(40px) saturate(1.5);
+  backdrop-filter: blur(40px) saturate(1.5);
+  box-shadow: inset 0 2px 0 var(--glass-highlight), inset 0 0 0 1px var(--glass-edge), var(--glass-shadow);
+}
+.glass-panel { background: var(--glass-fill-panel); }
+.glass-float { background: var(--glass-fill-float); }
+
+/* Theme change as a circle growing from the button (see app/concept/ThemeButton.tsx): the old page stays still underneath, the new one is clipped by the circle. */
+html.theme-vt::view-transition-old(root), html.theme-vt::view-transition-new(root) { animation: none; mix-blend-mode: normal; }
+html.theme-vt::view-transition-old(root) { z-index: 1; }
+html.theme-vt::view-transition-new(root) { z-index: 2; }
+
+
+/* phone baseline: no grey tap flash, no 300ms tap delay, no font inflation in landscape, no page zoom when an input takes focus */
+html { -webkit-tap-highlight-color: transparent; -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
+button, a, [role="button"], summary, label { touch-action: manipulation; }
+@media (pointer: coarse) { input, textarea, select { font-size: max(16px, 1em); } }
+
+/* the seat map's seats ease in after the zoom has begun, so a tap on a section never flashes */
+@keyframes sm-seats-in { from { opacity: 0 } to { opacity: 1 } }
+@media (prefers-reduced-motion: reduce) { .seats { animation: none !important } }
+
+/* the frosted pills over the seat map keep ONE blur at all times (swapping it while the map pans or zooms made every pill's frost jump at the start and end of each gesture).
+   It is lighter than the site's 40px, which is the costliest thing to repaint over a map that moves every frame, and the fill and saturation stay as the recipe has them. */
+[aria-label="Choose your seats"] .glass { -webkit-backdrop-filter: blur(20px) saturate(1.5); backdrop-filter: blur(20px) saturate(1.5); }
+
+/* Overlay motion and the ticket-stub shape (tooltip, popover). `bt-pop-out` ends at opacity 0 and holds (fill both), so Radix unmounts the layer when it finishes. */
+@keyframes bt-pop-in {
+  from { opacity: 0; transform: translateY(var(--pop-shift, 0px)) scale(0.9); }
+  to { opacity: 1; transform: none; }
+}
+@keyframes bt-tip-in {
+  from { opacity: 0; transform: translateY(var(--pop-shift, 0px)) scale(0.92); }
+  to { opacity: 1; transform: none; }
+}
+@keyframes bt-pop-out {
+  from { opacity: 1; transform: none; }
+  to { opacity: 0; transform: scale(0.96); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .bt-pop, .bt-tip { animation-duration: 1ms !important; }
+}
+/* a half-circle masked out of each side at --stub-y (default centre), radius --stub-r */
+.stub {
+  -webkit-mask:
+    radial-gradient(circle var(--stub-r, 10px) at 0 var(--stub-y, 50%), #0000 calc(100% - 0.5px), #000) left / 51% 100% no-repeat,
+    radial-gradient(circle var(--stub-r, 10px) at 100% var(--stub-y, 50%), #0000 calc(100% - 0.5px), #000) right / 51% 100% no-repeat;
+  mask:
+    radial-gradient(circle var(--stub-r, 10px) at 0 var(--stub-y, 50%), #0000 calc(100% - 0.5px), #000) left / 51% 100% no-repeat,
+    radial-gradient(circle var(--stub-r, 10px) at 100% var(--stub-y, 50%), #0000 calc(100% - 0.5px), #000) right / 51% 100% no-repeat;
+}
+
+@keyframes bt-fade-in { from { opacity: 0; } to { opacity: 1; } }
+@keyframes bt-ping { 0% { transform: scale(1); opacity: 0.5; } 80%, 100% { transform: scale(2); opacity: 0; } }
+@media (prefers-reduced-motion: reduce) { @keyframes bt-ping { 0%, 100% { transform: none; opacity: 0; } } }
+
+/* Checkout */
+/* a refused tear: the button shakes once */
+@keyframes cx-nope { 10%, 90% { translate: -1px 0; } 20%, 80% { translate: 3px 0; } 30%, 50%, 70% { translate: -6px 0; } 40%, 60% { translate: 6px 0; } }
+.cx-nope { animation: cx-nope 0.42s cubic-bezier(0.36, 0.07, 0.19, 0.97); }
+/* Apple's own button element, sized and rounded like the buttons around it */
+.ap-btn { display: block; width: 100%; --apple-pay-button-width: 100%; --apple-pay-button-height: 48px; --apple-pay-button-border-radius: 36px; --apple-pay-button-padding: 0px; --apple-pay-button-box-sizing: border-box; }
+@media (min-width: 768px) { .ap-btn { --apple-pay-button-height: 44px; } }
+@media (prefers-reduced-motion: reduce) { .cx-nope { animation: none; } }
+/* the checkout scene's countdown, in its last minute: a red halo that breathes out from the pill */
+@keyframes cx-halo { 0% { box-shadow: 0 0 0 0 color-mix(in oklab, var(--h-danger) 60%, transparent); } 70%, 100% { box-shadow: 0 0 0 14px color-mix(in oklab, var(--h-danger) 0%, transparent); } }
+.cx-halo { animation: cx-halo 1.4s ease-out infinite; }
+@media (prefers-reduced-motion: reduce) { .cx-halo { animation: none; box-shadow: 0 0 0 4px color-mix(in oklab, var(--h-danger) 30%, transparent); } }
+/* the checkout scene's fuse (a line along the top edge that drains with the hold): in the last minute it turns red and breathes */
+@keyframes cx-beat { 0%, 100% { opacity: 1; box-shadow: 0 0 14px 1px color-mix(in oklab, var(--h-danger) 75%, transparent); } 50% { opacity: 0.55; box-shadow: 0 0 4px 0 color-mix(in oklab, var(--h-danger) 30%, transparent); } }
+.cx-beat { animation: cx-beat 1.4s ease-in-out infinite; }
+@media (prefers-reduced-motion: reduce) { .cx-beat { animation: none; box-shadow: 0 0 10px 1px color-mix(in oklab, var(--h-danger) 55%, transparent); } }

@@ -1,6 +1,5 @@
 "use client";
 
-import Link from "next/link";
 import { cardCls } from "@/components/molecules/Card";
 import { ArrowRight } from "@/components/atoms/icons";
 import { imageUrl, type ApiImage } from "@/lib/helpers";
@@ -24,11 +23,11 @@ export default function ProductCard({
   const img = Array.isArray(image) ? image[0] : image;
 
   return (
-    <Link
+    <a
       href={href}
       className={`${cardCls} group flex flex-col overflow-hidden transition-transform hover:-translate-y-0.5 ${className}`}
     >
-      <div className="relative flex aspect-[16/10] items-center justify-center overflow-hidden bg-[#06203c]">
+      <div className="relative flex aspect-[16/10] items-center justify-center overflow-hidden bg-card">
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img
           src={imageUrl(img)}
@@ -39,7 +38,7 @@ export default function ProductCard({
           className="absolute inset-0"
           style={{
             background:
-              "linear-gradient(180deg, transparent 45%, rgba(5,27,53,0.9) 100%)",
+              "linear-gradient(180deg, transparent 45%, color-mix(in srgb, var(--paper) 90%, transparent) 100%)",
           }}
           aria-hidden
         />
@@ -50,7 +49,7 @@ export default function ProductCard({
             {title}
           </h3>
           {meta && (
-            <p className="mt-1.5 text-[13px] leading-relaxed text-[#9DA2B3]">
+            <p className="mt-1.5 text-[13px] leading-relaxed text-ink2">
               {meta}
             </p>
           )}
@@ -65,6 +64,6 @@ export default function ProductCard({
           <ArrowRight className="h-3.5 w-3.5" />
         </span>
       </div>
-    </Link>
+    </a>
   );
 }

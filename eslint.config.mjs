@@ -5,22 +5,20 @@ import nextTs from "eslint-config-next/typescript";
 const eslintConfig = defineConfig([
   ...nextVitals,
   ...nextTs,
+  // The React Compiler rules in eslint-plugin-react-hooks are new and strict: they flag patterns that work today (reading a ref
+  // during render, setting state in an effect). Keep them visible as warnings and fix them as components are touched.
   {
     rules: {
-      // React Compiler rules from eslint-config-next. Visible in `npm run lint`,
-      // but not CI-blocking until the existing patterns are migrated.
-      "react-hooks/set-state-in-effect": "warn",
       "react-hooks/refs": "warn",
-      "react-hooks/preserve-manual-memoization": "warn",
+      "react-hooks/set-state-in-effect": "warn",
+      "react-hooks/purity": "warn",
       "react-hooks/static-components": "warn",
-      "react-hooks/use-memo": "warn",
     },
   },
+  // Storybook `render` functions are components, but ESLint cannot tell, so it reports their hooks as misplaced.
   {
-    files: ["components/legal/**"],
-    rules: {
-      "react/no-unescaped-entities": "off",
-    },
+    files: ["**/*.stories.@(ts|tsx)"],
+    rules: { "react-hooks/rules-of-hooks": "off", "react-hooks/static-components": "off" },
   },
   // Override default ignores of eslint-config-next.
   globalIgnores([
@@ -29,6 +27,13 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // Vendored, minified or tooling files are not ours to lint.
+    "brand/**",
+    "public/vendor/**",
+    ".claude/**",
+    ".agents/**",
+    "**/*.min.js",
+    "storybook-static/**",
   ]),
 ]);
 

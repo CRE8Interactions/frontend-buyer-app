@@ -11,7 +11,7 @@ function withHl(text: string, hl?: string) {
   return (
     <>
       {text.slice(0, i)}
-      <span className="text-[#a6e773]">{hl}</span>
+      <span className="text-primary">{hl}</span>
       {text.slice(i + hl.length)}
     </>
   );
@@ -93,7 +93,7 @@ export default function SwitchTimeline({ items, heading, sub }: { items: Item[];
           <span className="pointer-events-none absolute bottom-5 left-4 top-2 w-px -translate-x-1/2 bg-white/10" />
           {/* progress fill */}
           <span
-            className="pointer-events-none absolute left-4 top-2 w-px -translate-x-1/2 bg-[#a6e773] transition-[height] duration-500 ease-out"
+            className="pointer-events-none absolute left-4 top-2 w-px -translate-x-1/2 bg-primary transition-[height] duration-500 ease-out"
             style={{ height: fill }}
           />
           {items.map((it, i) => {
@@ -109,14 +109,14 @@ export default function SwitchTimeline({ items, heading, sub }: { items: Item[];
                 <button
                   onClick={() => select(i)}
                   aria-label={it.t}
-                  className={`relative z-10 flex h-8 w-8 items-center justify-center rounded-full border text-[13px] font-medium tabular-nums transition-all duration-300 ${current ? "border-[#a6e773] bg-[#a6e773] text-[#051B35]" : "border-white/10 bg-white/[0.04] text-[#9DA2B3]"
+                  className={`relative z-10 flex h-8 w-8 items-center justify-center rounded-full border text-[13px] font-medium tabular-nums transition-all duration-300 ${current ? "border-primary bg-primary text-primary-foreground" : "border-white/10 bg-white/[0.04] text-ink2"
                     }`}
                 >
                   {i + 1}
                 </button>
                 <div className={`pt-0.5 transition-opacity duration-300 ${current ? "opacity-100" : "opacity-35"}`}>
                   <h3 className="text-[clamp(20px,2.2vw,30px)] font-semibold leading-tight tracking-[-0.02em] text-white">{current ? withHl(it.t, it.hl) : it.t}</h3>
-                  <p className="mt-2 max-w-[520px] text-[15px] leading-relaxed text-[#9DA2B3]">{it.d}</p>
+                  <p className="mt-2 max-w-[520px] text-[15px] leading-relaxed text-ink2">{it.d}</p>
                 </div>
               </li>
             );

@@ -7,11 +7,9 @@
  */
 
 import { useEffect, useState } from "react";
-import Link from "next/link";
-import useAutoFocus from "@/hooks/useAutoFocus";
 
-const NAVY = "#051b35";
-const GREEN = "#a6e773";
+const NAVY = "var(--paper)";
+const GREEN = "var(--green)";
 const SUB = "#6e7180";
 const MUTE = "#8a93a3";
 const FAINT = "#4a5567";
@@ -22,7 +20,6 @@ const labelSpan: React.CSSProperties = { fontSize: 13, fontWeight: 600, color: F
 const groupLabel: React.CSSProperties = { fontSize: 12, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.1em", color: MUTE };
 
 export default function SellWithUs() {
-  const autoFocusField = useAutoFocus<HTMLInputElement>(true);
   const [vw, setVw] = useState(1100);
   const [screen, setScreen] = useState<"form" | "done">("form");
   const [org, setOrg] = useState("");
@@ -60,14 +57,12 @@ export default function SellWithUs() {
   );
 
   return (
-    <div data-bt-scroll-page="" style={{ minHeight: "100vh", display: "flex", flexDirection: "column", background: "#f7f8fc", color: NAVY, fontFamily: "'Geist', system-ui, -apple-system, sans-serif", WebkitFontSmoothing: "antialiased" }}>
+    <div style={{ minHeight: "100vh", display: "flex", flexDirection: "column", background: "#f7f8fc", color: NAVY, fontFamily: "'Geist', system-ui, -apple-system, sans-serif", WebkitFontSmoothing: "antialiased" }}>
       <header style={{ background: NAVY, position: "sticky", top: 0, zIndex: 20 }}>
         <div style={{ maxWidth: 1100, margin: "0 auto", padding: narrow ? "14px 16px" : "18px 32px", display: "flex", alignItems: "center", gap: 16 }}>
-          <Link href="/" aria-label="Blocktickets home" style={{ display: "flex", alignItems: "center", flexShrink: 0 }}>
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src={LOCKUP} alt="Blocktickets" style={{ height: 20, width: "auto", display: "block" }} />
-          </Link>
-          <Link href="/browse" style={{ marginLeft: "auto", fontSize: 14, fontWeight: 600, color: "#fff", textDecoration: "none" }}>Browse events</Link>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src={LOCKUP} alt="Blocktickets" style={{ height: 20, width: "auto", display: "block" }} />
+          <a href="/browse" style={{ marginLeft: "auto", fontSize: 14, fontWeight: 600, color: "#fff", textDecoration: "none" }}>Browse events</a>
         </div>
       </header>
 
@@ -80,14 +75,14 @@ export default function SellWithUs() {
               <p style={{ margin: 0, fontSize: 16, lineHeight: 1.6, color: SUB }}>Tell us about your venue or team and we&apos;ll come back within one business day to schedule a discovery call.</p>
             </div>
 
-            <div style={{ background: "#fff", border: "1px solid rgba(5,27,53,0.10)", borderRadius: 24, boxShadow: "0 1px 2px rgba(5,27,53,0.05), 0 20px 46px -26px rgba(5,27,53,0.30)", padding: cardPad, display: "flex", flexDirection: "column", gap: 22 }}>
+            <div style={{ background: "#fff", border: "1px solid color-mix(in srgb, var(--paper) 10%, transparent)", borderRadius: 24, boxShadow: "0 1px 2px color-mix(in srgb, var(--paper) 5%, transparent), 0 20px 46px -26px color-mix(in srgb, var(--paper) 30%, transparent)", padding: cardPad, display: "flex", flexDirection: "column", gap: 22 }}>
               {/* organization */}
               <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
                 <div style={groupLabel}>Your organization</div>
                 <div style={{ display: "grid", gridTemplateColumns: twoCol, gap: 12 }}>
                   <label style={{ display: "flex", flexDirection: "column", gap: 7 }}>
                     <span style={labelSpan}>Organization name</span>
-                    <input ref={autoFocusField} value={org} onChange={(e) => setOrg(e.target.value)} placeholder="Aggie Memorial Stadium" style={input} />
+                    <input value={org} onChange={(e) => setOrg(e.target.value)} placeholder="Aggie Memorial Stadium" style={input} />
                   </label>
                   <label style={{ display: "flex", flexDirection: "column", gap: 7 }}>
                     <span style={labelSpan}>City</span>
@@ -101,7 +96,7 @@ export default function SellWithUs() {
               </div>
 
               {/* volume */}
-              <div style={{ display: "flex", flexDirection: "column", gap: 12, paddingTop: 20, borderTop: "1px solid rgba(5,27,53,0.08)" }}>
+              <div style={{ display: "flex", flexDirection: "column", gap: 12, paddingTop: 20, borderTop: "1px solid color-mix(in srgb, var(--paper) 8%, transparent)" }}>
                 <div style={groupLabel}>Your volume</div>
                 <div style={{ display: "grid", gridTemplateColumns: twoCol, gap: 12 }}>
                   <div style={{ display: "flex", flexDirection: "column", gap: 7 }}>
@@ -120,7 +115,7 @@ export default function SellWithUs() {
               </div>
 
               {/* contact */}
-              <div style={{ display: "flex", flexDirection: "column", gap: 12, paddingTop: 20, borderTop: "1px solid rgba(5,27,53,0.08)" }}>
+              <div style={{ display: "flex", flexDirection: "column", gap: 12, paddingTop: 20, borderTop: "1px solid color-mix(in srgb, var(--paper) 8%, transparent)" }}>
                 <div style={groupLabel}>How we reach you</div>
                 <div style={{ display: "grid", gridTemplateColumns: twoCol, gap: 12 }}>
                   <label style={{ display: "flex", flexDirection: "column", gap: 7 }}>
@@ -145,15 +140,15 @@ export default function SellWithUs() {
             </div>
           </>
         ) : (
-          <div style={{ background: "#fff", border: "1px solid rgba(5,27,53,0.10)", borderRadius: 24, boxShadow: "0 1px 2px rgba(5,27,53,0.05), 0 20px 46px -26px rgba(5,27,53,0.30)", padding: cardPad, display: "flex", flexDirection: "column", gap: 16, maxWidth: 620 }}>
+          <div style={{ background: "#fff", border: "1px solid color-mix(in srgb, var(--paper) 10%, transparent)", borderRadius: 24, boxShadow: "0 1px 2px color-mix(in srgb, var(--paper) 5%, transparent), 0 20px 46px -26px color-mix(in srgb, var(--paper) 30%, transparent)", padding: cardPad, display: "flex", flexDirection: "column", gap: 16, maxWidth: 620 }}>
             <div style={{ width: 52, height: 52, borderRadius: 999, background: GREEN, display: "flex", alignItems: "center", justifyContent: "center" }}>
               <svg viewBox="0 0 24 24" fill="none" stroke={NAVY} strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round" style={{ width: 24, height: 24 }}><polyline points="20 6 9 17 4 12" /></svg>
             </div>
             <h1 style={{ margin: 0, fontSize: h1Size, fontWeight: 600, letterSpacing: "-0.03em", lineHeight: 1.1 }}>Got it, {firstName}</h1>
             <p style={{ margin: 0, fontSize: 16, lineHeight: 1.6, color: SUB }}>We&apos;ll email {email || "your inbox"} within one business day with pricing for {org || "your venue"}.</p>
             <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-              <Link href="/browse" style={{ fontFamily: "inherit", fontSize: 15, fontWeight: 600, color: NAVY, background: GREEN, border: "none", borderRadius: 999, padding: "13px 22px", minHeight: 48, cursor: "pointer", textDecoration: "none", display: "inline-flex", alignItems: "center" }}>Browse events</Link>
-              <button onClick={() => { setScreen("form"); setOrg(""); setCity(""); setName(""); setEmail(""); setNotes(""); setProvider(""); }} style={{ fontFamily: "inherit", fontSize: 15, fontWeight: 600, color: NAVY, background: "#fff", border: "1px solid rgba(5,27,53,0.14)", borderRadius: 999, padding: "13px 22px", minHeight: 48, cursor: "pointer" }}>Submit another</button>
+              <a href="/browse" style={{ fontFamily: "inherit", fontSize: 15, fontWeight: 600, color: NAVY, background: GREEN, border: "none", borderRadius: 999, padding: "13px 22px", minHeight: 48, cursor: "pointer", textDecoration: "none", display: "inline-flex", alignItems: "center" }}>Browse events</a>
+              <button onClick={() => { setScreen("form"); setOrg(""); setCity(""); setName(""); setEmail(""); setNotes(""); setProvider(""); }} style={{ fontFamily: "inherit", fontSize: 15, fontWeight: 600, color: NAVY, background: "#fff", border: "1px solid color-mix(in srgb, var(--paper) 14%, transparent)", borderRadius: 999, padding: "13px 22px", minHeight: 48, cursor: "pointer" }}>Submit another</button>
             </div>
           </div>
         )}

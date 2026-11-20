@@ -52,8 +52,8 @@ export default function SeatViewModal({
   return (
     <Modal title="Your view" onClose={onClose}>
       <div className="mt-5">
-        <p className="mb-3 text-[13px] text-[#9DA2B3]">{label}</p>
-        <div className="relative overflow-hidden rounded-xl border border-white/10 bg-[#051B35]">
+        <p className="mb-3 text-[13px] text-ink2">{label}</p>
+        <div className="relative overflow-hidden rounded-xl border border-white/10 bg-background">
           <div className="aspect-[16/10] w-full">
             {current ? (
               <SeatViewImage
@@ -80,7 +80,7 @@ export default function SeatViewModal({
                 aria-label="Previous image"
                 disabled={slide === 0}
                 onClick={() => setSlide((s) => Math.max(0, s - 1))}
-                className="absolute left-2 top-1/2 flex h-9 w-9 -translate-y-1/2 items-center justify-center rounded-full border border-white/20 bg-[#0a2747]/90 text-white transition-colors hover:bg-[#0a2747] disabled:opacity-30"
+                className="absolute left-2 top-1/2 flex h-9 w-9 -translate-y-1/2 items-center justify-center rounded-full border border-white/20 bg-card/90 text-white transition-colors hover:bg-card disabled:opacity-30"
               >
                 <Chevron direction="left" />
               </button>
@@ -91,7 +91,7 @@ export default function SeatViewModal({
                 onClick={() =>
                   setSlide((s) => Math.min(slides.length - 1, s + 1))
                 }
-                className="absolute right-2 top-1/2 flex h-9 w-9 -translate-y-1/2 items-center justify-center rounded-full border border-white/20 bg-[#0a2747]/90 text-white transition-colors hover:bg-[#0a2747] disabled:opacity-30"
+                className="absolute right-2 top-1/2 flex h-9 w-9 -translate-y-1/2 items-center justify-center rounded-full border border-white/20 bg-card/90 text-white transition-colors hover:bg-card disabled:opacity-30"
               >
                 <Chevron direction="right" />
               </button>
@@ -109,7 +109,7 @@ export default function SeatViewModal({
                 aria-current={i === slide}
                 onClick={() => setSlide(i)}
                 className={`h-2 w-2 rounded-full transition-colors ${
-                  i === slide ? "bg-[#a6e773]" : "bg-white/25 hover:bg-white/40"
+                  i === slide ? "bg-primary" : "bg-white/25 hover:bg-white/40"
                 }`}
               />
             ))}

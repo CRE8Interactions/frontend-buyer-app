@@ -64,7 +64,7 @@ export default function BlockStack({ className = "" }: { className?: string }) {
               <span
                 key={row}
                 className={`h-9 w-9 rounded-[7px] transition-all duration-300 sm:h-10 sm:w-10 ${on ? "translate-y-0 opacity-100" : "translate-y-2 opacity-0"
-                  } ${top ? "bg-[#a6e773] shadow-[0_0_18px_rgba(166,231,115,0.35)]" : ""}`}
+                  } ${top ? "bg-primary shadow-[0_0_18px_rgba(166,231,115,0.35)]" : ""}`}
                 style={top ? undefined : { background: `rgba(166,231,115,${0.18 + row * 0.12})` }}
               />
             );

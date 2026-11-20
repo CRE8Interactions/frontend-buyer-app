@@ -2,13 +2,12 @@
 
 // Blocktickets loading spinners — React components
 // Usage: import { EmblemAssemble, SquareSpin, Ring, BlockPulse, Dots, Bar, ShimmerSkeleton } from '@/components/atoms/spinners';
-// Every component accepts `size` (px) and `color` (defaults to brand green #A6E773).
+// Every component accepts `size` (px) and `color` (defaults to brand green var(--green)).
 // Keyframes live in app/globals.css so motion works on first paint.
 
 import type { CSSProperties } from "react";
-import { motionPhase } from "@/lib/motionPhase";
 
-const GREEN = "#A6E773";
+const GREEN = "var(--green)";
 const LINE = "rgba(158,182,216,0.14)";
 const SURFACE_2 = "rgba(158,182,216,0.10)";
 
@@ -109,17 +108,12 @@ export function Ring({
 }) {
   return (
     <div
-      ref={motionPhase(800)}
       role="status"
       aria-label="Loading"
       className="bt-sp-ring"
       style={{
-        display: "inline-block",
-        flexShrink: 0,
-        boxSizing: "border-box",
         width: size,
         height: size,
-        verticalAlign: "middle",
         borderRadius: "50%",
         border: `${strokeWidth}px solid ${trackColor}`,
         borderTopColor: color,

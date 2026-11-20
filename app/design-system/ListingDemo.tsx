@@ -20,11 +20,11 @@ export default function ListingDemo() {
             {b}
           </FilterChip>
         ))}
-        <span className="ml-2 inline-flex items-center gap-2.5 text-[13.5px] font-medium text-[#BCBFCC]">
+        <span className="ml-2 inline-flex items-center gap-2.5 text-[13.5px] font-medium text-ink3">
           Accessible seating <Switch checked={on} onChange={setOn} label="Accessible seating" />
         </span>
       </div>
-      <div className="max-w-[560px] divide-y divide-white/[0.06] overflow-hidden rounded-2xl border border-white/12 bg-[#0a2747]">
+      <div className="max-w-[560px] divide-y divide-white/[0.06] overflow-hidden rounded-2xl border border-white/12 bg-card">
         <ListingRow
           sec="K"
           row="A"
@@ -39,7 +39,7 @@ export default function ListingDemo() {
         />
         <ListingRow sec="C" row="E" qtyMin={2} qtyMax={6} price={18.92} tier={2} />
       </div>
-      <p className="text-[12px] text-[#9DA2B3]">Click the row to select it — selection is the green “act here” state. Prices are always all-in.</p>
+      <p className="text-[12px] text-ink2">Click the row to select it — selection is the green “act here” state. Prices are always all-in.</p>
     </div>
   );
 }

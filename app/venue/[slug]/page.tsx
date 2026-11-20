@@ -1,10 +1,15 @@
-"use client";
+import TeamShell from "../../[slug]/shell";
+import TeamStudio from "../../[slug]/TeamStudio";
+import { getVenue } from "../../[slug]/teams";
 
-import { useParams } from "next/navigation";
-import VenueProfile from "@/components/organisms/VenueProfile";
+type Props = { params: Promise<{ slug: string }> };
 
-export default function VenuePage() {
-  const params = useParams<{ slug: string }>();
-  const slug = params.slug;
-  return <VenueProfile key={slug} slug={slug} />;
+export default async function VenuePage({ params }: Props) {
+  const { slug } = await params;
+  const v = getVenue(slug);
+  return (
+    <TeamShell team={v.team}>
+      <TeamStudio key={slug} team={v.team} venue={{ name: v.name, info: v.info, events: v.events }} />
+    </TeamShell>
+  );
 }

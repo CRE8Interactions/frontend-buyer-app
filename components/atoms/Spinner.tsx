@@ -8,17 +8,12 @@ export default function Spinner({
   size = 20,
   label = "Loading",
   variant = "auto",
-  color,
-  trackColor,
 }: {
   className?: string;
   size?: number;
   label?: string;
   /** `branded` uses the emblem spin; `assemble` builds the emblem; `compact` forces the ring; `auto` picks by size. */
   variant?: "auto" | "branded" | "assemble" | "compact";
-  /** Ring color (compact / small sizes). */
-  color?: string;
-  trackColor?: string;
 }) {
   const useAssemble = variant === "assemble";
   const useBranded =
@@ -37,7 +32,7 @@ export default function Spinner({
       ) : useBranded ? (
         <SquareSpin size={size} />
       ) : (
-        <Ring size={size} color={color} trackColor={trackColor} />
+        <Ring size={size} />
       )}
     </span>
   );

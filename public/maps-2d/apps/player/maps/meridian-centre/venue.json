@@ -1,0 +1,123 @@
+{
+  "format": "seatmap-venue",
+  "version": 1,
+  "slug": "meridian-centre",
+  "mapId": "e8896c55-57df-448a-9407-c56b28eb6050",
+  "name": "Meridian Centre",
+  "team": "Niagara IceDogs",
+  "files": {
+    "map": "venue-map.json",
+    "artwork": "venue-map.svg",
+    "sectionNames": "section-names.json",
+    "manifest": "manifest.json",
+    "decor": "venue-decor.svg",
+    "mapPack": "venue-map.pack.json"
+  },
+  "view2d": {
+    "currency": "CAD",
+    "demoSectionAvailability": {
+      "45f320fd-c714-44c0-a835-400eec8f4f6f": "nearly-sold-out",
+      "73ce94a6-8871-4598-8891-1b19e6eccb93": "sold-out"
+    },
+    "schematic": {
+      "keep": [
+        "g.logo",
+        "g.icedogs.shoot.twice",
+        "path.ICEDOGS",
+        "path.VISITORS",
+        "path.PENALTY"
+      ]
+    },
+    "sectionLabels": {
+      "Suite Overflow": [
+        {
+          "x": 1670,
+          "y": 185
+        },
+        {
+          "x": 1624,
+          "y": 2068
+        }
+      ],
+      "114": [
+        {
+          "x": 1380,
+          "y": 512
+        }
+      ]
+    },
+    "locale": "en-CA",
+    "sample": {
+      "exclusive": [
+        {
+          "section": "105",
+          "rows": [
+            "A",
+            "B",
+            "C"
+          ]
+        }
+      ],
+      "obstructed": [
+        {
+          "section": "103",
+          "row": "G",
+          "seat": "5",
+          "label": "Obstructed view - Rail"
+        }
+      ],
+      "obstructedEvery": 41,
+      "obstructedLabel": "Obstructed view - Rail"
+    }
+  },
+  "view3d": {
+    "rows": {
+      "rebuild": true,
+      "facets": 4,
+      "firstRowLift": 0
+    },
+    "surface": {
+      "kick": "#c8202b",
+      "net": "ends",
+      "benches": true
+    },
+    "raisedLevelHeight": 3.4,
+    "levels": [
+      {
+        "role": "club",
+        "sections": "^Club\\b",
+        "raised": true,
+        "overhang": 4.8,
+        "ceiling": true,
+        "seat": "#8d9095"
+      },
+      {
+        "role": "suite",
+        "sections": "^S\\d+$",
+        "overhang": 1.5,
+        "rooms": "furnished",
+        "seat": "#7f848c"
+      },
+      {
+        "role": "lounge",
+        "sections": "^Suite Overflow$",
+        "glazed": true
+      }
+    ],
+    "seats": {
+      "bowl": "#27478f"
+    },
+    "roof": {
+      "trusses": 8,
+      "fixtures": "grid",
+      "ducts": true
+    },
+    "scoreboard": {
+      "screen": [
+        4.1,
+        2.3
+      ]
+    },
+    "banners": true
+  }
+}

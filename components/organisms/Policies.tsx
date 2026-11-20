@@ -10,11 +10,9 @@
  */
 
 import { useEffect, useState } from "react";
-import Link from "next/link";
-import { ShopperFluidTypeStyles } from "@/components/templates/ShopperFluidType";
 import { policies, type PolicyBlock } from "@/lib/policies-data";
 
-const NAVY = "#051b35";
+const NAVY = "var(--paper)";
 const SUB = "#6e7180";
 const MUTE = "#8a93a3";
 const FAINT = "#4a5567";
@@ -43,19 +41,15 @@ export default function Policies({ initial = "purchase" }: { initial?: string })
   const narrow = vw < 900;
   const doc = policies.find((d) => d.slug === slug) || policies[0];
 
-  // lineHeight opts the prose column out of the `.shopper-page` 1.6 body leading.
   return (
-    <div className="shopper-page" data-bt-scroll-page="" style={{ minHeight: "100vh", display: "flex", flexDirection: "column", background: "#f7f8fc", color: NAVY, fontFamily: "'Geist', system-ui, -apple-system, sans-serif", lineHeight: 1.5, WebkitFontSmoothing: "antialiased" }}>
-      <ShopperFluidTypeStyles />
+    <div style={{ minHeight: "100vh", display: "flex", flexDirection: "column", background: "#f7f8fc", color: NAVY, fontFamily: "'Geist', system-ui, -apple-system, sans-serif", WebkitFontSmoothing: "antialiased" }}>
       <style>{`.pol-nav::-webkit-scrollbar{height:0}`}</style>
 
       <header style={{ background: NAVY, position: "sticky", top: 0, zIndex: 20 }}>
         <div style={{ maxWidth: 1180, margin: "0 auto", padding: narrow ? "14px 16px" : "18px 32px", display: "flex", alignItems: "center", gap: 16 }}>
-          <Link href="/" aria-label="Blocktickets home" style={{ display: "flex", alignItems: "center", flexShrink: 0 }}>
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src={LOCKUP} alt="Blocktickets" style={{ height: 20, width: "auto", display: "block" }} />
-          </Link>
-          <Link href="/browse" style={{ marginLeft: "auto", fontSize: 14, fontWeight: 600, color: "#fff", textDecoration: "none" }}>Browse events</Link>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src={LOCKUP} alt="Blocktickets" style={{ height: 20, width: "auto", display: "block" }} />
+          <a href="/browse" style={{ marginLeft: "auto", fontSize: 14, fontWeight: 600, color: "#fff", textDecoration: "none" }}>Browse events</a>
         </div>
       </header>
 
@@ -69,8 +63,8 @@ export default function Policies({ initial = "purchase" }: { initial?: string })
           })}
         </nav>
 
-        <article style={{ background: "#fff", border: "1px solid rgba(5,27,53,0.10)", borderRadius: 24, boxShadow: "0 1px 2px rgba(5,27,53,0.05), 0 20px 46px -26px rgba(5,27,53,0.30)", padding: narrow ? "22px 18px" : "36px 44px", minWidth: 0 }}>
-          <div style={{ display: "flex", flexDirection: "column", gap: 6, paddingBottom: 20, borderBottom: "1px solid rgba(5,27,53,0.08)" }}>
+        <article style={{ background: "#fff", border: "1px solid color-mix(in srgb, var(--paper) 10%, transparent)", borderRadius: 24, boxShadow: "0 1px 2px color-mix(in srgb, var(--paper) 5%, transparent), 0 20px 46px -26px color-mix(in srgb, var(--paper) 30%, transparent)", padding: narrow ? "22px 18px" : "36px 44px", minWidth: 0 }}>
+          <div style={{ display: "flex", flexDirection: "column", gap: 6, paddingBottom: 20, borderBottom: "1px solid color-mix(in srgb, var(--paper) 8%, transparent)" }}>
             <div style={{ fontSize: 11, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.12em", color: MUTE }}>Legal</div>
             <h1 style={{ margin: 0, fontSize: narrow ? 30 : 38, fontWeight: 600, letterSpacing: "-0.03em", lineHeight: 1.1 }}>{doc.title}</h1>
             <div style={{ fontSize: 14, color: SUB }}>Last updated {doc.updated}</div>
@@ -85,7 +79,7 @@ export default function Policies({ initial = "purchase" }: { initial?: string })
             ))}
           </div>
 
-          <div style={{ marginTop: 28, paddingTop: 20, borderTop: "1px solid rgba(5,27,53,0.08)", fontSize: 14, color: SUB }}>
+          <div style={{ marginTop: 28, paddingTop: 20, borderTop: "1px solid color-mix(in srgb, var(--paper) 8%, transparent)", fontSize: 14, color: SUB }}>
             Questions? Email <a href="mailto:help@blocktickets.xyz" style={{ fontWeight: 600, color: NAVY }}>help@blocktickets.xyz</a>
           </div>
         </article>

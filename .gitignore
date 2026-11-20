@@ -40,10 +40,19 @@ yarn-error.log*
 *.tsbuildinfo
 next-env.d.ts
 
-# Cursor plan files — keep local; do not commit or push
-.cursor/plans/
-**/*.plan.md
+*storybook.log
+storybook-static
 
-# Local UI captures — keep out of the repo
-.screenshots/
+# generated archives of the brand and design system folders (the folders themselves are tracked)
+*.zip
 
+# agent tooling that is installed per machine, including its platform binaries
+/.agents/
+/.codex/
+/.do/
+.claude/skills/*/scripts/bin/
+
+# visual regression working output (the baseline in tests/visual/baseline IS tracked)
+/tests/visual/tmp/
+
+/.brand-dist/

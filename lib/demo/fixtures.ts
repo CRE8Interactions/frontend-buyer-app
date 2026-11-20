@@ -1,46 +1,10 @@
 /**
- * Demo fixtures — local dummy data used when NEXT_PUBLIC_DEMO=true
- * and as the shared source of truth for unit/component tests.
+ * Demo fixtures — local dummy data used when NEXT_PUBLIC_DEMO=true.
  * Nothing here touches a backend or network; images are local /public assets.
  * Shapes mirror what the pages/components consume (see EventCard / OrganizationCard).
  */
 
-import type { TicketingData } from "@/components/organisms/PremiumTicketing";
-import { brandingToTicketingTheme } from "@/lib/branding";
-import { CHECKOUT_HOLD_SECONDS } from "@/lib/checkoutBranding";
-import { isSportingEvent } from "@/lib/eventCategory";
-import {
-  resolveEventMatchup,
-  eventWhenShortWithDoors,
-  eventWhenWithDoors,
-  formatEventWhen,
-} from "@/lib/helpers";
-import {
-  formatVenueCityState,
-  formatVenueLocationLine,
-} from "@/lib/venueLocation";
-import { demoDate } from "@/lib/demo/now";
-import type { SeatmapMapping } from "@/lib/seatmapLookups";
-import { groupsToListings, type RawTicketGroup } from "@/lib/ticketListings";
-
-/** Keep the base object's types when tests pass a partial override bag. */
-function applyOverrides<T extends object>(base: T, overrides?: object): T {
-  return { ...base, ...(overrides ?? {}) } as T;
-}
-
-export { DEMO_FIXTURES_NOW } from "@/lib/demo/now";
-
 export type DemoImage = { url: string };
-
-export type DemoVenue = {
-  name: string;
-  city: string;
-  state: string;
-  slug: string;
-  timezone?: string;
-  website?: string;
-  address: Array<{ address_1?: string; city: string; state: string }>;
-};
 
 export const DEMO_USER = {
   id: 1,
@@ -48,132 +12,12 @@ export const DEMO_USER = {
   email: "fan@blocktickets.xyz",
   firstName: "Demo",
   lastName: "Fan",
-  phoneNumber: "+14155552671",
+  phoneNumber: "+15555550123",
   dob: "01/01/1995",
-  smsOptIn: false,
   role: { name: "Authenticated" },
 };
 
 export const DEMO_SESSION = { jwt: "demo-jwt-token", user: DEMO_USER };
-
-const DEMO_BRANDING: Record<
-  string,
-  {
-    enabled: boolean;
-    primaryColor: string;
-    buttonColor: string;
-    buttonTextColor?: string;
-    logo: DemoImage;
-  }
-> = {
-  "niagara-icedogs": {
-    enabled: true,
-    primaryColor: "#c8102e",
-    buttonColor: "#c8102e",
-    logo: { url: "/clients/icedogs.svg" },
-  },
-  "des-moines-buccaneers": {
-    enabled: true,
-    primaryColor: "#003366",
-    buttonColor: "#003366",
-    logo: { url: "/clients/buccaneers.svg" },
-  },
-  "ogden-raptors": {
-    enabled: true,
-    primaryColor: "#1a3a6b",
-    buttonColor: "#007b85",
-    buttonTextColor: "#ffffff",
-    logo: { url: "/clients/raptors.svg" },
-  },
-  "nm-state": {
-    enabled: true,
-    primaryColor: "#8c0b42",
-    buttonColor: "#8c0b42",
-    logo: { url: "/clients/nmstate.png" },
-  },
-};
-
-function slugify(value: string) {
-  return value
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-|-$/g, "");
-}
-
-function demoVenue(
-  name: string,
-  city: string,
-  state: string,
-  timezone = "America/Denver",
-  address_1?: string,
-  website?: string,
-): DemoVenue {
-  return {
-    name,
-    city,
-    state,
-    slug: slugify(name),
-    timezone,
-    website,
-    address: [{ ...(address_1 ? { address_1 } : {}), city, state }],
-  };
-}
-
-/** Pricing levels used on team/venue event rows. Lowest is P2. */
-export const DEMO_EVENT_PRICING_LEVELS = {
-  1: { id: 1, name: "P1", price: 45 },
-  2: { id: 2, name: "P2", price: 25 },
-};
-
-const DEMO_ORG_WEBSITES: Record<string, string> = {
-  "nm-state": "https://nmstatesports.com",
-};
-
-const DEMO_VENUE_WEBSITES: Record<string, string> = {
-  "aggie-memorial-stadium":
-    "https://nmstatesports.com/facilities/aggie-memorial-stadium/5",
-};
-
-function demoOrg(slug: string, name: string, category?: string) {
-  return {
-    name,
-    slug,
-    branding: DEMO_BRANDING[slug],
-    image: DEMO_BRANDING[slug]?.logo,
-    category: category ? { name: category } : undefined,
-    website: DEMO_ORG_WEBSITES[slug],
-    enableTransfer: true,
-    enableResale: true,
-    setting: { printTickets: true, allowResales: true },
-  };
-}
-
-const VENUE_MERIDIAN = demoVenue(
-  "Meridian Centre",
-  "St. Catharines",
-  "ON",
-  "America/Toronto",
-);
-const VENUE_BUCS = demoVenue("Buccaneer Arena", "Urbandale", "IA");
-const VENUE_LINDQUIST = demoVenue("Lindquist Field", "Ogden", "UT");
-const VENUE_AGGIE = demoVenue(
-  "Aggie Memorial Stadium",
-  "Las Cruces",
-  "NM",
-  "America/Denver",
-  "1810 E University Ave",
-  DEMO_VENUE_WEBSITES["aggie-memorial-stadium"],
-);
-const VENUE_PAN_AM = demoVenue(
-  "Pan American Center",
-  "Las Cruces",
-  "NM",
-  "America/Denver",
-);
-
-function DEMO_ORG_EVENT_COUNT(n: number) {
-  return Array.from({ length: n }, (_, i) => ({ id: i + 1 }));
-}
 
 /** Organizations shown on Browse + org storefronts. */
 export const DEMO_ORGS = [
@@ -183,12 +27,7 @@ export const DEMO_ORGS = [
     uuid: "org-icedogs",
     subtitle: "OHL · St. Catharines, ON",
     image: { url: "/clients/icedogs.svg" },
-    branding: DEMO_BRANDING["niagara-icedogs"],
-    category: { name: "Hockey" },
-    venue: VENUE_MERIDIAN,
-    homeVenue: VENUE_MERIDIAN,
-    venues: [VENUE_MERIDIAN],
-    upcomingEventsCount: 6,
+    venue: { name: "Meridian Centre", city: "St. Catharines", state: "ON" },
     events: DEMO_ORG_EVENT_COUNT(6),
   },
   {
@@ -197,12 +36,7 @@ export const DEMO_ORGS = [
     uuid: "org-buccaneers",
     subtitle: "USHL · Des Moines, IA",
     image: { url: "/clients/buccaneers.svg" },
-    branding: DEMO_BRANDING["des-moines-buccaneers"],
-    category: { name: "Hockey" },
-    venue: VENUE_BUCS,
-    homeVenue: VENUE_BUCS,
-    venues: [VENUE_BUCS],
-    upcomingEventsCount: 4,
+    venue: { name: "Buccaneer Arena", city: "Urbandale", state: "IA" },
     events: DEMO_ORG_EVENT_COUNT(4),
   },
   {
@@ -211,12 +45,7 @@ export const DEMO_ORGS = [
     uuid: "org-raptors",
     subtitle: "Pioneer League · Ogden, UT",
     image: { url: "/clients/raptors.svg" },
-    branding: DEMO_BRANDING["ogden-raptors"],
-    category: { name: "Baseball" },
-    venue: VENUE_LINDQUIST,
-    homeVenue: VENUE_LINDQUIST,
-    venues: [VENUE_LINDQUIST],
-    upcomingEventsCount: 5,
+    venue: { name: "Lindquist Field", city: "Ogden", state: "UT" },
     events: DEMO_ORG_EVENT_COUNT(5),
   },
   {
@@ -225,19 +54,14 @@ export const DEMO_ORGS = [
     uuid: "org-nmstate",
     subtitle: "Conference USA · Las Cruces, NM",
     image: { url: "/clients/nmstate.png" },
-    branding: DEMO_BRANDING["nm-state"],
-    category: { name: "Football" },
-    venue: VENUE_AGGIE,
-    homeVenue: VENUE_AGGIE,
-    venues: [VENUE_AGGIE, VENUE_PAN_AM],
-    website: DEMO_ORG_WEBSITES["nm-state"],
-    upcomingEventsCount: 7,
+    venue: { name: "Aggie Memorial Stadium", city: "Las Cruces", state: "NM" },
     events: DEMO_ORG_EVENT_COUNT(7),
   },
 ];
 
-for (const org of DEMO_ORGS) {
-  Object.assign(org, { setting: { printTickets: true } });
+function DEMO_ORG_EVENT_COUNT(n: number) {
+  // some org cards show an upcoming-event count; keep it a simple array of stubs
+  return Array.from({ length: n }, (_, i) => ({ id: i + 1 }));
 }
 
 /** Events shown on Browse (trending) + event detail. */
@@ -246,285 +70,118 @@ export const DEMO_EVENTS = [
     id: 101,
     uuid: "evt-icedogs-vs-otters",
     shortcode: "ICEDOG1",
-    shortCode: "ICEDOG1",
     name: "IceDogs vs. Erie Otters",
     slug: "icedogs-vs-otters",
-    seoUrl: "icedogs-vs-otters",
-    start: demoDate({ days: -5 }, "23:00"),
-    doorsOpen: demoDate({ days: -5 }, "22:00"),
-    status: "on_sale",
-    pricingLevels: DEMO_EVENT_PRICING_LEVELS,
+    start: "2026-08-15T23:00:00.000Z",
     image: { url: "/cases/icedogs.jpg" },
-    venue: { ...VENUE_MERIDIAN, isGeneralAdmissionOnly: true },
+    venue: { name: "Meridian Centre", city: "St. Catharines", state: "ON" },
     seatmap: { ga_only: true },
     attractions: [
-      {
-        name: "Niagara IceDogs",
-        order: 0,
-        primary: true,
-        artwork: { url: "/clients/icedogs.svg" },
-      },
-      {
-        name: "Erie Otters",
-        order: 1,
-        primary: false,
-        artwork: { url: "/clients/pjhl.png" },
-      },
+      { name: "Niagara IceDogs", order: 0, primary: true, artwork: { url: "/clients/icedogs.svg" } },
+      { name: "Erie Otters", order: 1, primary: false, artwork: { url: "/clients/pjhl.png" } },
     ],
-    organization: demoOrg("niagara-icedogs", "Niagara IceDogs", "Hockey"),
+    organization: { name: "Niagara IceDogs", slug: "niagara-icedogs" },
   },
   {
     id: 102,
     uuid: "evt-bucs-vs-fighting-saints",
     shortcode: "BUCS002",
-    shortCode: "BUCS002",
     name: "Buccaneers vs. Dubuque Fighting Saints",
     slug: "bucs-vs-fighting-saints",
-    seoUrl: "bucs-vs-fighting-saints",
-    start: demoDate({ days: 2 }, "00:05"),
-    doorsOpen: demoDate({ days: 1 }, "23:05"),
-    status: "on_sale",
-    pricingLevels: DEMO_EVENT_PRICING_LEVELS,
+    start: "2026-08-22T00:05:00.000Z",
     image: { url: "/cases/buccaneers.jpg" },
-    venue: { ...VENUE_BUCS, isGeneralAdmissionOnly: true },
+    venue: { name: "Buccaneer Arena", city: "Urbandale", state: "IA" },
     seatmap: { ga_only: true },
     attractions: [
-      {
-        name: "Des Moines Buccaneers",
-        order: 0,
-        primary: true,
-        artwork: { url: "/clients/buccaneers.svg" },
-      },
-      {
-        name: "Dubuque Fighting Saints",
-        order: 1,
-        primary: false,
-        artwork: { url: "/clients/iowa-bulls.png" },
-      },
+      { name: "Des Moines Buccaneers", order: 0, primary: true, artwork: { url: "/clients/buccaneers.svg" } },
+      { name: "Dubuque Fighting Saints", order: 1, primary: false, artwork: { url: "/clients/iowa-bulls.png" } },
     ],
-    organization: demoOrg(
-      "des-moines-buccaneers",
-      "Des Moines Buccaneers",
-      "Hockey",
-    ),
+    organization: { name: "Des Moines Buccaneers", slug: "des-moines-buccaneers" },
   },
   {
     id: 103,
     uuid: "evt-raptors-vs-voyagers",
     shortcode: "RAPT003",
-    shortCode: "RAPT003",
     name: "Raptors vs. Great Falls Voyagers",
     slug: "raptors-vs-voyagers",
-    seoUrl: "raptors-vs-voyagers",
-    start: demoDate({ days: -11 }, "01:35"),
-    doorsOpen: demoDate({ days: -11 }, "00:35"),
-    status: "on_sale",
-    pricingLevels: DEMO_EVENT_PRICING_LEVELS,
+    start: "2026-08-09T01:35:00.000Z",
     image: { url: "/cases/raptors.jpg" },
-    venue: { ...VENUE_LINDQUIST, isGeneralAdmissionOnly: true },
+    venue: { name: "Lindquist Field", city: "Ogden", state: "UT" },
     seatmap: { ga_only: true },
     attractions: [
-      {
-        name: "Ogden Raptors",
-        order: 0,
-        primary: true,
-        artwork: { url: "/clients/raptors.svg" },
-      },
-      {
-        name: "Great Falls Voyagers",
-        order: 1,
-        primary: false,
-        artwork: { url: "/clients/houston-bulls.png" },
-      },
+      { name: "Ogden Raptors", order: 0, primary: true, artwork: { url: "/clients/raptors.svg" } },
+      { name: "Great Falls Voyagers", order: 1, primary: false, artwork: { url: "/clients/houston-bulls.png" } },
     ],
-    organization: demoOrg("ogden-raptors", "Ogden Raptors", "Baseball"),
+    organization: { name: "Ogden Raptors", slug: "ogden-raptors" },
   },
   {
     id: 104,
     uuid: "evt-nmstate-vs-liberty",
     shortcode: "NMST004",
-    shortCode: "NMST004",
     name: "NM State Aggies vs. Liberty Flames",
     slug: "nmstate-vs-liberty",
-    seoUrl: "nmstate-vs-liberty",
-    start: demoDate({ days: 16 }, "23:00"),
-    doorsOpen: demoDate({ days: 16 }, "22:00"),
-    status: "on_sale",
-    pricingLevels: DEMO_EVENT_PRICING_LEVELS,
+    start: "2026-09-05T23:00:00.000Z",
     image: { url: "/cases/nmstate.jpg" },
-    venue: { ...VENUE_AGGIE, isGeneralAdmissionOnly: true },
+    venue: { name: "Aggie Memorial Stadium", city: "Las Cruces", state: "NM" },
     seatmap: { ga_only: true },
     attractions: [
-      {
-        name: "NM State Aggies",
-        order: 0,
-        primary: true,
-        artwork: { url: "/clients/nmstate.png" },
-      },
-      {
-        name: "Liberty Flames",
-        order: 1,
-        primary: false,
-        artwork: { url: "/clients/pjhl.png" },
-      },
+      { name: "NM State Aggies", order: 0, primary: true, artwork: { url: "/clients/nmstate.png" } },
+      { name: "Liberty Flames", order: 1, primary: false, artwork: { url: "/clients/pjhl.png" } },
     ],
-    organization: demoOrg("nm-state", "NM State Athletics", "Football"),
-    entryGate: "Gate 3",
+    organization: { name: "NM State Athletics", slug: "nm-state" },
   },
   {
     id: 105,
     uuid: "evt-icedogs-vs-spitfires",
     shortcode: "ICEDOG5",
-    shortCode: "ICEDOG5",
     name: "IceDogs vs. Windsor Spitfires",
     slug: "icedogs-vs-spitfires",
-    seoUrl: "icedogs-vs-spitfires",
-    start: demoDate({ days: 9 }, "23:00"),
-    doorsOpen: demoDate({ days: 9 }, "22:00"),
-    status: "presale",
-    pricingLevels: DEMO_EVENT_PRICING_LEVELS,
+    start: "2026-08-29T23:00:00.000Z",
     image: { url: "/cases/icedogs.jpg" },
-    venue: { ...VENUE_MERIDIAN, isGeneralAdmissionOnly: false },
-    seatmap: { ga_only: false },
+    venue: { name: "Meridian Centre", city: "St. Catharines", state: "ON" },
+    seatmap: { ga_only: true },
     attractions: [
-      {
-        name: "Niagara IceDogs",
-        order: 0,
-        primary: true,
-        artwork: { url: "/clients/icedogs.svg" },
-      },
-      {
-        name: "Windsor Spitfires",
-        order: 1,
-        primary: false,
-        artwork: { url: "/clients/iowa-bulls.png" },
-      },
+      { name: "Niagara IceDogs", order: 0, primary: true, artwork: { url: "/clients/icedogs.svg" } },
+      { name: "Windsor Spitfires", order: 1, primary: false, artwork: { url: "/clients/iowa-bulls.png" } },
     ],
-    organization: demoOrg("niagara-icedogs", "Niagara IceDogs", "Hockey"),
+    organization: { name: "Niagara IceDogs", slug: "niagara-icedogs" },
   },
   {
     id: 106,
     uuid: "evt-raptors-vs-chukars",
     shortcode: "RAPT006",
-    shortCode: "RAPT006",
     name: "Raptors vs. Idaho Falls Chukars",
     slug: "raptors-vs-chukars",
-    seoUrl: "raptors-vs-chukars",
-    start: demoDate({ days: -4 }, "01:35"),
-    doorsOpen: demoDate({ days: -4 }, "00:35"),
-    status: "on_sale",
-    pricingLevels: DEMO_EVENT_PRICING_LEVELS,
+    start: "2026-08-16T01:35:00.000Z",
     image: { url: "/cases/raptors.jpg" },
-    venue: { ...VENUE_LINDQUIST, isGeneralAdmissionOnly: false },
-    seatmap: { ga_only: false },
+    venue: { name: "Lindquist Field", city: "Ogden", state: "UT" },
+    seatmap: { ga_only: true },
     attractions: [
-      {
-        name: "Ogden Raptors",
-        order: 0,
-        primary: true,
-        artwork: { url: "/clients/raptors.svg" },
-      },
-      {
-        name: "Idaho Falls Chukars",
-        order: 1,
-        primary: false,
-        artwork: { url: "/clients/houston-bulls.png" },
-      },
+      { name: "Ogden Raptors", order: 0, primary: true, artwork: { url: "/clients/raptors.svg" } },
+      { name: "Idaho Falls Chukars", order: 1, primary: false, artwork: { url: "/clients/houston-bulls.png" } },
     ],
-    organization: demoOrg("ogden-raptors", "Ogden Raptors", "Baseball"),
+    organization: { name: "Ogden Raptors", slug: "ogden-raptors" },
   },
 ];
 
-export type DemoSmsTicket = {
-  id: number;
-  uuid: string;
-  checkInCode: string;
-  sectionNumber: string;
-  rowNumber?: string;
-  seatNumber?: string;
-  generalAdmission: boolean;
-  name?: string;
-  accessible?: boolean;
-  accessibleType?: string;
-};
-
-/** One ticket on a public SMS link. Defaults to general admission. */
-export function demoSmsTicket(
-  overrides: Partial<DemoSmsTicket> = {},
-): DemoSmsTicket {
-  return {
-    id: 1,
-    uuid: "sms-ticket-ga",
-    checkInCode: "GA-ICE-1",
-    sectionNumber: "GA",
-    generalAdmission: true,
-    name: "General admission",
-    ...overrides,
-  };
-}
-
-/**
- * Public payload for GET /orders/sms-tickets/:token.
- * Two tickets so the page can offer an add-all wallet download.
- */
-export function demoSmsTickets(overrides?: {
-  tickets?: DemoSmsTicket[];
-  displayStartTime?: boolean;
-}) {
-  const event = DEMO_EVENTS[0];
-  return {
-    event: {
-      name: event.name,
-      start: event.start,
-      display_start_time: overrides?.displayStartTime ?? true,
-      image: event.image,
-      venue: event.venue,
-    },
-    tickets: overrides?.tickets ?? [
-      demoSmsTicket(),
-      demoSmsTicket({
-        id: 2,
-        uuid: "sms-ticket-seat",
-        checkInCode: "SEAT-ICE-2",
-        generalAdmission: false,
-        sectionNumber: "101",
-        rowNumber: "A",
-        seatNumber: "4",
-        name: "Reserved",
-      }),
-    ],
-    expiresAt: null,
-  };
-}
-
 /** Full event-detail payload for GET /events/{slug}/{shortcode} (getEventByShortCode). */
 export function demoEventDetail(shortcode: string) {
-  const base = DEMO_EVENTS.find(
-    (e) => e.shortcode === shortcode || e.shortCode === shortcode,
-  );
+  const base = DEMO_EVENTS.find((e) => e.shortcode === shortcode);
   if (!base) return { status: 404 };
   return {
     event: {
       ...base,
       summary:
         "Dummy event for UI/UX review — all data here is local demo content, not real inventory.",
-      status: base.status || "on_sale",
-      waitingRoomEnabled: false,
-      waitingRoomMaxConcurrent: 75,
-      waitingRoomAdmissionTtlMinutes: 15,
+      status: "on_sale",
       venue: {
-        ...base.venue,
-        timezone: base.venue.timezone || "America/Denver",
-        address: base.venue.address || [
-          { city: base.venue.city, state: base.venue.state },
-        ],
+        name: base.venue.name,
+        timezone: "America/Denver",
+        address: [{ city: base.venue.city, state: base.venue.state }],
       },
     },
   };
 }
-
-/** Section that the GA demo inventory sits in, and that demoSeatmapMapping draws. */
-export const DEMO_GA_SECTION_ID = "sec-ga";
 
 /** GA ticket groups for GET/POST ticket-group lookups. Prices are in dollars. */
 export function demoTicketGroups() {
@@ -534,28 +191,10 @@ export function demoTicketGroups() {
       {
         id: "grp-ga",
         price: 25,
-        PLName: "Standard",
         availableCount: 240,
-        sectionId: DEMO_GA_SECTION_ID,
         sectionName: "General Admission",
         sectionNumber: "GA",
         GA: true,
-        offer: {
-          id: "off-ga-std",
-          name: "Standard Admission",
-          connected_offers: [
-            {
-              id: "off-student-rate",
-              name: "Student Rate",
-              isConnectedOffer: true,
-              minQuantity: 2,
-              maxQuantity: 6,
-              multipleOf: 2,
-              description: "Valid student ID required at the gate.",
-              am_pricing_objects: [{ name: "Standard", totalDue: 15 }],
-            },
-          ],
-        },
       },
       {
         id: "grp-vip",
@@ -564,11 +203,7 @@ export function demoTicketGroups() {
         sectionName: "VIP Club",
         sectionNumber: "VIP",
         GA: true,
-        offer: {
-          id: "off-vip",
-          name: "VIP Club",
-          description: "Premium club access + in-seat service.",
-        },
+        offer: { id: "off-vip", name: "VIP Club", description: "Premium club access + in-seat service." },
       },
       {
         id: "grp-family",
@@ -585,1335 +220,13 @@ export function demoTicketGroups() {
         sectionName: "Season-Ticket Holder Presale",
         sectionNumber: "PRE",
         GA: true,
-        offer: {
-          id: "off-presale",
-          name: "STH Presale",
-          accessCode: "GO2026",
-          unlocked: false,
-          description: "Locked — enter your presale code.",
-        },
-      },
-      // A sold-out GA offer arrives like this: the offer is still on sale, its
-      // inventory is drained. Offers flagged sold out are dropped server-side,
-      // catalog and groups alike, so they never reach the page at all.
-      {
-        id: "grp-student",
-        price: 12,
-        availableCount: 0,
-        sectionName: "Student Rush",
-        sectionNumber: "STU",
-        GA: true,
-        offer: {
-          id: "off-student",
-          name: "Student Rush",
-          description: "Valid student ID required at the gate.",
-        },
-      },
-    ],
-    // Offer catalog as the real response carries it: every offer still on sale.
-    offers: [
-      { id: "off-vip", name: "VIP Club", am_pricing_objects: [{ totalDue: 75 }] },
-      {
-        id: "off-student-rate",
-        name: "Student Rate",
-        isConnectedOffer: true,
-        am_pricing_objects: [{ totalDue: 15 }],
-      },
-      {
-        id: "off-presale",
-        name: "STH Presale",
-        accessCode: "GO2026",
-        am_pricing_objects: [{ totalDue: 30 }],
-      },
-      {
-        id: "off-student",
-        name: "Student Rush",
-        am_pricing_objects: [{ totalDue: 12 }],
+        offer: { id: "off-presale", name: "STH Presale", accessCode: "GO2026", unlocked: false, description: "Locked — enter your presale code." },
       },
     ],
   };
-}
-
-/**
- * Seated inventory used by select-tickets tests and demo seated flows.
- * Includes coded / sold-out / duplicate rows so listing helpers can be covered.
- */
-export const DEMO_SEATED_TICKET_GROUPS: RawTicketGroup[] = [
-  {
-    id: 1,
-    sectionId: "sec-m",
-    sectionNumber: "M",
-    rowNumber: "M3",
-    // Best-seat rank from the API: lower is closer to the action.
-    sortOrder: 1,
-    price: 33.59,
-    availableCount: 4,
-    maxContiguous: 4,
-    seatIds: ["s1", "s2", "s3", "s4"],
-    GA: false,
-    accessible: false,
-    offer: {
-      id: 10,
-      name: "Field Club",
-      description:
-        "Premium field-level club seats with covered concourse access.",
-      color: "#F032E6",
-      inventoryType: "exclusive",
-      minQuantity: 1,
-      maxQuantity: null,
-    },
-  },
-  {
-    id: 2,
-    sectionId: "sec-a",
-    sectionNumber: "A",
-    rowNumber: "12",
-    PLName: "Level A",
-    sortOrder: 2,
-    price: 21.94,
-    availableCount: 6,
-    maxContiguous: 6,
-    seatIds: ["a1", "a2", "a3", "a4", "a5", "a6"],
-    GA: false,
-    accessible: true,
-    accessibleType: "DA",
-    offer: {
-      id: 11,
-      name: "Section A-B",
-      color: "#F58231",
-      inventoryType: "exclusive",
-      minQuantity: 2,
-      maxQuantity: 6,
-      connected_offers: [
-        {
-          id: 14,
-          name: "Companion Seat",
-          isConnectedOffer: true,
-          minQuantity: 1,
-          maxQuantity: 2,
-          description: "Must be purchased with a full-price seat in this row.",
-          am_pricing_objects: [{ name: "Level A", totalDue: 12 }],
-        },
-      ],
-    },
-  },
-  {
-    id: 3,
-    sectionNumber: "Z",
-    rowNumber: "1",
-    price: 99,
-    availableCount: 8,
-    maxContiguous: 8,
-    seatIds: ["z1", "z2"],
-    offer: {
-      id: 12,
-      name: "VIP Coded",
-      color: "#9757D7",
-      inventoryType: "exclusive",
-      accessCode: "SECRET",
-      minQuantity: 1,
-      maxQuantity: 4,
-    },
-  },
-  {
-    id: 4,
-    sectionId: "sec-b",
-    sectionNumber: "B",
-    rowNumber: "2",
-    price: 15,
-    availableCount: 0,
-    maxContiguous: 0,
-    seatIds: [],
-    GA: false,
-    // Every seat is gone, so this row is not sellable inventory.
-    offer: { id: 13, name: "Sold Out Row" },
-  },
-  // Duplicate of group 2 — groupsToListings should keep only one.
-  {
-    id: 2,
-    sectionId: "sec-a",
-    sectionNumber: "A",
-    rowNumber: "12",
-    PLName: "Level A",
-    sortOrder: 2,
-    price: 21.94,
-    availableCount: 6,
-    maxContiguous: 6,
-    seatIds: ["a1", "a2", "a3", "a4", "a5", "a6"],
-    GA: false,
-    accessible: true,
-    accessibleType: "DA",
-    offer: {
-      id: 11,
-      name: "Section A-B",
-      color: "#F58231",
-      inventoryType: "exclusive",
-      minQuantity: 2,
-      maxQuantity: 6,
-      connected_offers: [
-        {
-          id: 14,
-          name: "Companion Seat",
-          isConnectedOffer: true,
-          minQuantity: 1,
-          maxQuantity: 2,
-          am_pricing_objects: [{ name: "Level A", totalDue: 12 }],
-        },
-      ],
-    },
-  },
-  {
-    id: 5,
-    sectionId: "sec-n",
-    sectionNumber: "N",
-    rowNumber: "I",
-    sortOrder: 3,
-    price: 11.64,
-    availableCount: 8,
-    maxContiguous: 8,
-    seatIds: ["n1", "n2", "n3", "n4", "n5", "n6", "n7", "n8"],
-    GA: false,
-    accessible: false,
-    offer: {
-      id: 14,
-      name: "Section M-N & GA",
-      color: "#FFE119",
-      inventoryType: "exclusive",
-      minQuantity: 1,
-      maxQuantity: 8,
-    },
-  },
-  {
-    id: 90,
-    sectionId: "sec-a",
-    sectionNumber: "A",
-    rowNumber: "1",
-    price: 45,
-    availableCount: 2,
-    maxContiguous: 2,
-    seatIds: ["a-resale-1", "a-resale-2"],
-    GA: false,
-    accessible: false,
-    resale: true,
-    on_sale_status: "resaleAvailable",
-    listing: { id: 8, quantity: 2 },
-    offer: {
-      id: 90,
-      name: "Section A-B",
-      color: "#F58231",
-      inventoryType: "exclusive",
-      minQuantity: 1,
-      maxQuantity: 2,
-    },
-  },
-];
-
-/** Attach sellable ticket inventory so FROM prices come from tickets, not tiers. */
-for (const event of DEMO_EVENTS) {
-  Object.assign(event, {
-    enableTransfers: true,
-    enableResale: true,
-    resaleMinimumPercent: 10,
-    secondaryServiceFeeSeller: 0.1,
-    ticketGroups:
-      event.seatmap?.ga_only === false
-        ? DEMO_SEATED_TICKET_GROUPS
-        : demoTicketGroups().ticketGroups,
-  });
-}
-
-/**
- * Fill the demo mapping authors on every section, the way real venue maps do.
- * Deliberately not the seatmap's own available blue, so tests can tell an
- * authored colour apart from an availability colour.
- */
-export const DEMO_SECTION_FILL = "#1F6FD0";
-
-/** Seated geometry, keyed to the sectionIds/seatIds in DEMO_SEATED_TICKET_GROUPS. */
-const DEMO_MAPPING_SECTIONS = [
-  { sectionId: "sec-m", sectionNumber: "M", rowId: "row-m3", seats: ["s1", "s2", "s3", "s4"] },
-  {
-    sectionId: "sec-a",
-    sectionNumber: "A",
-    rowId: "row-a12",
-    seats: ["a1", "a2", "a3", "a4", "a5", "a6", "a-resale-1", "a-resale-2"],
-  },
-  {
-    sectionId: "sec-n",
-    sectionNumber: "N",
-    rowId: "row-n1",
-    seats: ["n1", "n2", "n3", "n4", "n5", "n6", "n7", "n8"],
-  },
-  // Geometry exists but its group has no sellable seats — the sold-out case.
-  { sectionId: "sec-b", sectionNumber: "B", rowId: "row-b2", seats: ["b1", "b2"] },
-];
-
-/**
- * Lindquist Field-style mapping: seated sections marked zoomable with their
- * seats hanging off rows, GA areas as plain sections, and an authored fill on
- * every section.
- */
-export function demoSeatmapMapping(): SeatmapMapping {
-  const sections: NonNullable<SeatmapMapping["sections"]> = {};
-  const rows: NonNullable<SeatmapMapping["rows"]> = {};
-  const seats: NonNullable<SeatmapMapping["seats"]> = {};
-
-  DEMO_MAPPING_SECTIONS.forEach((section, sectionIndex) => {
-    rows[section.rowId] = {
-      rowId: section.rowId,
-      sectionId: section.sectionId,
-      seats: [...section.seats],
-    };
-    section.seats.forEach((seatId, seatIndex) => {
-      seats[seatId] = {
-        seatId,
-        seatNumber: seatIndex + 1,
-        rowId: section.rowId,
-        sectionId: section.sectionId,
-        cx: 100 + seatIndex * 14,
-        cy: 200 + sectionIndex * 60,
-        w: 10,
-        h: 10,
-        ...(section.sectionId === "sec-a"
-          ? { accessible: true, accessibleType: "DA" }
-          : {}),
-        ...(section.sectionId === "sec-n" && seatIndex < 2
-          ? { accessible: true, accessibleType: "DB" }
-          : {}),
-      };
-    });
-    sections[section.sectionId] = {
-      sectionId: section.sectionId,
-      sectionNumber: section.sectionNumber,
-      path: `M0 ${sectionIndex * 60} H240 V${sectionIndex * 60 + 40} H0 Z`,
-      fill: DEMO_SECTION_FILL,
-      zoomable: true,
-      rows: [section.rowId],
-    };
-  });
-
-  sections[DEMO_GA_SECTION_ID] = {
-    sectionId: DEMO_GA_SECTION_ID,
-    sectionNumber: "The Tar Pit",
-    path: "M0 300 H320 V380 H0 Z",
-    fill: DEMO_SECTION_FILL,
-    zoomable: false,
-    spots: ["ga-spot-1", "ga-spot-2"],
-  };
-
-  return { sections, rows, seats };
 }
 
 /** Cart stub returned when adding GA tickets to cart. */
 export function demoCart() {
-  return {
-    cartId: "demo-cart-0001",
-    sessionId: "demo-session-0001",
-    freeOffer: false,
-  };
-}
-
-/** Full checkout cart for GET /cart/myCart — Raptors seated hold by default. */
-export function demoCheckoutCart(
-  overrides: {
-    organization?: null | (typeof DEMO_EVENTS)[number]["organization"];
-    remainingTime?: number | null;
-    ticketCount?: number;
-    serviceFee?: number;
-    processingFee?: number;
-    ga?: boolean;
-  } = {},
-) {
-  const ga = Boolean(overrides.ga);
-  const event = ga
-    ? DEMO_EVENTS.find((e) => e.seatmap?.ga_only) || DEMO_EVENTS[0]
-    : DEMO_EVENTS.find((e) => e.shortCode === "RAPT006") || DEMO_EVENTS[0];
-  const organization =
-    overrides.organization === null
-      ? undefined
-      : (overrides.organization ?? event.organization);
-  const listing = ga
-    ? demoTicketGroups().ticketGroups[0]
-    : DEMO_SEATED_TICKET_GROUPS[0];
-  const unitPrice = listing.price ?? 0;
-  const ticketCount = Math.max(1, overrides.ticketCount ?? 1);
-  const serviceFee = overrides.serviceFee ?? 0;
-  const processingFee = overrides.processingFee ?? 0;
-  return {
-    id: ga ? "cart-ga-1" : "cart-raptors-1",
-    remainingTime:
-      overrides.remainingTime === undefined
-        ? CHECKOUT_HOLD_SECONDS
-        : overrides.remainingTime ?? undefined,
-    event: {
-      uuid: event.uuid,
-      name: event.name,
-      start: event.start,
-      doorsOpen: event.doorsOpen,
-      realDoorsOpen: (event as { realDoorsOpen?: string }).realDoorsOpen,
-      slug: event.slug,
-      seoUrl: event.seoUrl,
-      shortCode: event.shortCode,
-      shortcode: event.shortcode,
-      image: event.image,
-      branding: organization?.branding,
-      organization,
-      venue: event.venue,
-      seatmap: event.seatmap,
-    },
-    tickets: Array.from({ length: ticketCount }, (_, index) => ({
-      id: 7001 + index,
-      uuid: `ticket-${ga ? "ga" : "raptors"}-${index + 1}`,
-      checkInCode: `${ga ? "GA" : "RAPTORS"}-${index + 1}`,
-      eventUUID: event.uuid,
-      sectionName: ga
-        ? listing.sectionName || listing.sectionNumber
-        : listing.sectionNumber,
-      sectionNumber: listing.sectionNumber,
-      rowNumber: "rowNumber" in listing ? listing.rowNumber : undefined,
-      seatNumber: ga ? undefined : 7 + index,
-      cost: unitPrice,
-      price: unitPrice,
-      offerName: listing.offer?.name,
-      accessible: Boolean("accessible" in listing && listing.accessible),
-      accessibleType:
-        "accessibleType" in listing
-          ? (listing as { accessibleType?: string }).accessibleType
-          : undefined,
-      ...(ga
-        ? { GA: true, generalAdmission: true, offer: listing.offer }
-        : {}),
-    })),
-    total: unitPrice * ticketCount + serviceFee + processingFee,
-    serviceFee,
-    processingFee,
-    estimatedProcessingFee: processingFee,
-  };
-}
-
-/** Browse-page event list derived from DEMO_EVENTS (no duplicated fixtures). */
-export function demoBrowseEvents() {
-  return DEMO_EVENTS.map((event) => ({ ...event }));
-}
-
-/** Browse-page org list derived from DEMO_ORGS. */
-export function demoBrowseOrgs() {
-  return DEMO_ORGS.map((org) => ({ ...org }));
-}
-
-/** Upcoming events that belong to a venue slug. */
-export function demoVenueEvents(slug: string) {
-  return DEMO_EVENTS.filter((event) => event.venue?.slug === slug);
-}
-
-export function demoVenueBySlug(slug: string): DemoVenue | null {
-  for (const org of DEMO_ORGS) {
-    const match = [org.homeVenue, ...(org.venues || [])].find(
-      (venue) => venue?.slug === slug,
-    );
-    if (match) return match;
-  }
-  return null;
-}
-
-/** `/venues/:slug/upcoming-events` — the venue record around its event list. */
-export function demoVenueUpcomingEvents(slug: string) {
-  const venue = demoVenueBySlug(slug);
-  return {
-    ...(venue || { slug }),
-    allEvents: demoVenueEvents(slug),
-  };
-}
-
-/** Browse-page venue list derived from org home venues. */
-export function demoBrowseVenues() {
-  const seen = new Set<string>();
-  const venues: Array<{
-    name: string;
-    slug: string;
-    address: Array<{ city: string; state: string }>;
-    upcomingEventsCount?: number;
-  }> = [];
-  for (const org of DEMO_ORGS) {
-    const venue = org.homeVenue || org.venue;
-    if (!venue?.slug || seen.has(venue.slug)) continue;
-    seen.add(venue.slug);
-    venues.push({
-      name: venue.name,
-      slug: venue.slug,
-      address: venue.address,
-      upcomingEventsCount: org.upcomingEventsCount,
-    });
-  }
-  return venues;
-}
-
-const DEMO_SEATED_EVENT =
-  DEMO_EVENTS.find((e) => e.shortcode === "RAPT006") || DEMO_EVENTS[0];
-
-/**
- * PremiumTicketing payload for the seated Raptors demo event.
- * Listings come from DEMO_SEATED_TICKET_GROUPS via groupsToListings.
- */
-export function demoSeatedTicketingData(
-  overrides: Partial<TicketingData> = {},
-): TicketingData {
-  const event = DEMO_SEATED_EVENT;
-  const org = event.organization;
-  const theme = brandingToTicketingTheme(event, org);
-  const listings = groupsToListings(DEMO_SEATED_TICKET_GROUPS);
-  const matchup = resolveEventMatchup(event.attractions, {
-    orgName: org.name,
-    sportingEvent: isSportingEvent(event),
-  });
-  const venueCityState = formatVenueCityState(event.venue.address);
-  const venueLine = formatVenueLocationLine(event.venue.name, event.venue.address);
-  const tz = event.venue.timezone;
-  const whenPlain = formatEventWhen(event.start, tz);
-  const whenLong = eventWhenWithDoors(event.start, event.doorsOpen, tz);
-
-  return {
-    eventId: event.id,
-    eventUuid: event.uuid,
-    ...theme,
-    eventName: event.name,
-    whenLong,
-    whenShort: eventWhenShortWithDoors(event.start, event.doorsOpen, tz),
-    whenPlain,
-    doorsLine: whenLong,
-    venueName: event.venue.name,
-    venueSlug: event.venue.slug,
-    venueLine,
-    venueAddress: venueLine,
-    venueCityState,
-    mapsQuery: `${event.venue.name} ${event.venue.city} ${event.venue.state}`,
-    orgHref: org.slug ? `/${org.slug}/` : undefined,
-    orgLabel: org.name,
-    providerLabel: `Official ticketing marketplace for ${org.name}`,
-    aboutText:
-      "Dummy event for UI/UX review — all data here is local demo content, not real inventory.",
-    homeLabel: matchup.homeLabel,
-    awayLabel: matchup.awayLabel,
-    awayShort: matchup.awayShort,
-    homeLogoSrc: matchup.homeLogoSrc,
-    awayLogoSrc: matchup.awayLogoSrc,
-    showMatchupSection: matchup.showMatchupSection,
-    showAwayTeam: matchup.showAwayTeam,
-    offerNames: ["Field Club", "Section A-B", "Section M-N & GA"],
-    listings,
-    ...overrides,
-  };
-}
-
-export function demoLockedTicketingData(
-  overrides: Partial<TicketingData> = {},
-): TicketingData {
-  return demoSeatedTicketingData({
-    lockedZones: [{ zone: "Field Club", code: "CLUB26" }],
-    ...overrides,
-  });
-}
-
-const DEMO_NM_STATE_EVENT =
-  DEMO_EVENTS.find((e) => e.shortCode === "NMST004") || DEMO_EVENTS[0];
-
-const DEMO_NM_STATE_ORG =
-  DEMO_ORGS.find((o) => o.slug === "nm-state") || DEMO_ORGS[0];
-
-/**
- * Season-package payload for GET /packages/get-package-fe.
- * Included games start from the NM State demo event and share its venue/org.
- */
-export function demoSeasonPackage(
-  overrides: Record<string, unknown> = {},
-) {
-  const event = DEMO_NM_STATE_EVENT;
-  const org = DEMO_NM_STATE_ORG;
-  const venue = {
-    name: event.venue.name,
-    slug: event.venue.slug,
-    timezone: event.venue.timezone,
-  };
-  const events = [
-    {
-      uuid: event.uuid,
-      name: event.name,
-      start: event.start,
-      slug: event.slug,
-      shortCode: event.shortCode,
-      venue,
-    },
-    {
-      uuid: "evt-nmstate-vs-lobos",
-      name: `${event.attractions?.[0]?.name || org.name} vs. New Mexico Lobos`,
-      start: demoDate({ days: 37 }, "19:30"),
-      venue,
-    },
-    {
-      uuid: "evt-nmstate-vs-wku",
-      name: `${event.attractions?.[0]?.name || org.name} vs. Western Kentucky Hilltoppers`,
-      start: demoDate({ days: 43 }),
-      venue,
-    },
-    {
-      uuid: "evt-nmstate-vs-jax",
-      name: `${event.attractions?.[0]?.name || org.name} vs. Jacksonville State Gamecocks`,
-      start: demoDate({ days: 69 }),
-      venue,
-    },
-    {
-      uuid: "evt-nmstate-vs-delaware",
-      name: `${event.attractions?.[0]?.name || org.name} vs. Delaware Fightin' Blue Hens`,
-      start: demoDate({ days: 93 }, "19:00"),
-      venue,
-    },
-  ];
-
-  return applyOverrides(
-    {
-    id: "pkg-nms-level-a",
-    uuid: "pkg-nms-level-a",
-    name: "NMS Football Season Seats - Pricing Level A",
-    start: events[0].start,
-    end: events[events.length - 1].start,
-    maxQuantity: 4,
-    pricingTiers: [{ price: 200, name: "Level A" }],
-    image: event.image,
-    venue,
-    organization: org,
-    category: org.category,
-    timezone: event.venue.timezone,
-    events,
-    seatmap: {
-      id: "pkg-map-1",
-      mapping: demoSeatmapMapping(),
-      background: {
-        url: "https://example.com/pkg-seatmap.svg",
-        width: 1000,
-        height: 800,
-      },
-    },
-    package_tickets: DEMO_SEATED_TICKET_GROUPS.filter(
-      (group) => !group.GA && (group.seatIds?.length || group.seatId),
-    ) as Array<Record<string, unknown>>,
-    },
-    overrides,
-  );
-}
-
-type DemoPackageCartTicket = {
-  id?: number;
-  uuid?: string;
-  checkInCode?: string;
-  eventUUID?: string;
-  sectionName?: string | number;
-  sectionNumber?: string | number;
-  rowNumber?: string | number;
-  seatNumber?: string | number;
-  cost?: number;
-  price?: number;
-  offerName?: string;
-  generalAdmission?: boolean;
-  GA?: boolean;
-  accessible?: boolean;
-  accessibleType?: string;
-};
-
-/** Checkout cart for a season package hold — NM State seats by default. */
-export function demoPackageCheckoutCart(
-  overrides: {
-    tickets?: DemoPackageCartTicket[];
-    serviceFee?: number;
-    processingFee?: number;
-    remainingTime?: number | null;
-    total?: number;
-    package?: Record<string, unknown>;
-    organization?: Record<string, unknown> | null;
-  } = {},
-) {
-  const pkg = demoSeasonPackage(overrides.package);
-  const listing = DEMO_SEATED_TICKET_GROUPS[0];
-  const unit = Number(pkg.pricingTiers[0].price);
-  const tickets: DemoPackageCartTicket[] =
-    overrides.tickets ??
-    [
-      {
-        sectionName: listing.sectionNumber,
-        sectionNumber: listing.sectionNumber,
-        rowNumber: listing.rowNumber,
-        seatNumber: 21,
-        cost: unit,
-        price: unit,
-        offerName: listing.offer?.name,
-      },
-    ];
-  const serviceFee = overrides.serviceFee ?? 8;
-  const processingFee = overrides.processingFee ?? 4;
-  const subtotal = tickets.reduce(
-    (sum, ticket) => sum + Number(ticket.cost || ticket.price || 0),
-    0,
-  );
-  return {
-    id: "cart-package-1",
-    remainingTime:
-      overrides.remainingTime === undefined
-        ? CHECKOUT_HOLD_SECONDS
-        : overrides.remainingTime ?? undefined,
-    package: pkg,
-    organization:
-      overrides.organization === undefined
-        ? pkg.organization
-        : overrides.organization,
-    tickets,
-    total: overrides.total ?? subtotal + serviceFee + processingFee,
-    serviceFee,
-    processingFee,
-    totalTax: 0,
-  };
-}
-
-/** Completed single-event order used by checkout-success receipt PDFs. */
-export function demoCompletedTicketOrder(
-  overrides: Record<string, unknown> = {},
-) {
-  const cart = demoCheckoutCart({ ticketCount: 4 });
-  const subtotal = cart.tickets.reduce(
-    (sum, ticket) => sum + Number(ticket.cost || ticket.price || 0),
-    0,
-  );
-  const serviceFee = 14;
-  const processingFee = 3.92;
-  return applyOverrides(
-    {
-      id: 1474,
-      orderId: "1474-643535-0700",
-      processedAt: demoDate({ days: -2 }, "16:00"),
-      dateOfIssue: demoDate({ days: -2 }, "16:00"),
-      firstName: DEMO_USER.firstName,
-      lastName: DEMO_USER.lastName,
-      email: DEMO_USER.email,
-      paymentMethodType: "mastercard",
-      last4: "5652",
-      tickets: cart.tickets,
-      event: cart.event,
-      organization: cart.event.organization,
-      total: subtotal + serviceFee + processingFee,
-      serviceFee,
-      estimatedProcessingFee: processingFee,
-      processingFee,
-      salesTax: 0,
-    },
-    overrides,
-  );
-}
-
-function demoListingTicketsFromOrder(
-  order: ReturnType<typeof demoCompletedTicketOrder>,
-  ticketIds: number[],
-) {
-  return (order.tickets as Array<Record<string, unknown>>).filter((ticket) =>
-    ticketIds.includes(Number(ticket.id)),
-  );
-}
-
-/** Canonical wallet listing records: new / complete / expired (status only). */
-export function demoActiveListing(overrides: Record<string, unknown> = {}) {
-  const order = demoCompletedTicketOrder();
-  const event = {
-    ...(order.event as Record<string, unknown>),
-    start: demoDate({ days: 8 }, "23:00"),
-    resaleMinimumPercent: 10,
-    secondaryServiceFeeSeller: 0.1,
-  };
-  const tickets = demoListingTicketsFromOrder(order, [7001]);
-  return applyOverrides(
-    {
-      id: "listing-active-1",
-      status: "new",
-      askingPrice: 55,
-      quantity: tickets.length,
-      tickets,
-      event,
-      fromOrder: order.id,
-      createdAt: demoDate({ days: -1 }, "15:00"),
-    },
-    overrides,
-  );
-}
-
-export function demoActiveListingLater(overrides: Record<string, unknown> = {}) {
-  const order = demoCompletedTicketOrder();
-  const event = {
-    ...(order.event as Record<string, unknown>),
-    name: `${order.event.name} (later)`,
-    start: demoDate({ days: 21 }, "19:00"),
-    resaleMinimumPercent: 10,
-    secondaryServiceFeeSeller: 0.1,
-  };
-  const tickets = demoListingTicketsFromOrder(order, [7002]);
-  return applyOverrides(
-    {
-      id: "listing-active-2",
-      status: "new",
-      askingPrice: 48,
-      quantity: tickets.length,
-      tickets,
-      event,
-      fromOrder: order.id,
-      createdAt: demoDate({ days: -2 }, "12:00"),
-    },
-    overrides,
-  );
-}
-
-/** Sold listing whose event start is in the past stays `complete`. */
-export function demoSoldListing(overrides: Record<string, unknown> = {}) {
-  const order = demoCompletedTicketOrder();
-  const event = {
-    ...(order.event as Record<string, unknown>),
-    name: `${order.event.name} (sold)`,
-    start: demoDate({ days: -12 }, "23:00"),
-  };
-  const tickets = demoListingTicketsFromOrder(order, [7003]);
-  return applyOverrides(
-    {
-      id: "listing-sold-1",
-      status: "complete",
-      askingPrice: 60,
-      quantity: tickets.length,
-      tickets,
-      event,
-      fromOrder: order.id,
-      createdAt: demoDate({ days: -20 }, "14:00"),
-      soldAt: demoDate({ days: -14 }, "18:30"),
-      soldToEmail: "buyer@example.com",
-    },
-    overrides,
-  );
-}
-
-export function demoExpiredListing(overrides: Record<string, unknown> = {}) {
-  const order = demoCompletedTicketOrder();
-  const event = {
-    ...(order.event as Record<string, unknown>),
-    name: `${order.event.name} (expired)`,
-    start: demoDate({ days: 4 }, "19:00"),
-  };
-  const tickets = demoListingTicketsFromOrder(order, [7004]);
-  return applyOverrides(
-    {
-      id: "listing-expired-1",
-      status: "expired",
-      askingPrice: 40,
-      quantity: tickets.length,
-      tickets,
-      event,
-      fromOrder: order.id,
-      createdAt: demoDate({ days: -8 }, "10:00"),
-      expiredAt: demoDate({ days: -1 }, "09:00"),
-    },
-    overrides,
-  );
-}
-
-export function demoWalletListings() {
-  return [
-    demoActiveListingLater(),
-    demoSoldListing(),
-    demoExpiredListing(),
-    demoActiveListing(),
-  ];
-}
-
-/** Completed season-package order used by checkout-success receipt PDFs. */
-export function demoCompletedPackageOrder(
-  overrides: Record<string, unknown> = {},
-) {
-  const listing = DEMO_SEATED_TICKET_GROUPS[0];
-  const pkg = demoSeasonPackage();
-  const unit = Number(pkg.pricingTiers[0].price);
-  const cart = demoPackageCheckoutCart({
-    tickets: [21, 22].map((seatNumber) => ({
-      id: 8000 + seatNumber,
-      uuid: `ticket-nms-package-${seatNumber}`,
-      checkInCode: `NMS-${seatNumber}`,
-      sectionName: listing.sectionNumber,
-      sectionNumber: listing.sectionNumber,
-      rowNumber: listing.rowNumber,
-      seatNumber,
-      cost: unit,
-      price: unit,
-      offerName: listing.offer?.name,
-    })),
-  });
-  return applyOverrides(
-    {
-    id: 1474,
-    orderId: "1474-601490-8744",
-    processedAt: demoDate({ days: -3 }, "16:00"),
-    dateOfIssue: demoDate({ days: -3 }, "16:00"),
-    firstName: DEMO_USER.firstName,
-    lastName: DEMO_USER.lastName,
-    email: DEMO_USER.email,
-    paymentMethodType: "mastercard",
-    last4: "5652",
-    tickets: cart.tickets,
-    package: cart.package,
-    organization: cart.organization,
-    total: cart.total,
-    serviceFee: cart.serviceFee,
-    estimatedProcessingFee: cart.processingFee,
-    processingFee: cart.processingFee,
-    salesTax: 0,
-    },
-    overrides,
-  );
-}
-
-const DEMO_ICEDOGS_ORG =
-  DEMO_ORGS.find((o) => o.slug === "niagara-icedogs") || DEMO_ORGS[0];
-
-/** Flex-pack payload for GET /flex-pack/get-flex-pack and storefront `flexPacks`. */
-export function demoFlexPack(overrides: Record<string, unknown> = {}) {
-  const org = DEMO_ICEDOGS_ORG;
-  const venue = org.homeVenue || org.venue;
-  return {
-    id: "flex-icedogs-gold-6",
-    uuid: "cfa9c3cb-e81c-4141-ac56-c8edcd0f0303",
-    name: "6 - Gold Flex Pack",
-    description:
-      "Six Gold vouchers for any IceDogs home game. Redeem when you know you can go.",
-    price: 145,
-    gameTickets: 6,
-    start: demoDate({ days: 12 }),
-    end: demoDate({ months: 8, days: 10 }),
-    image: { url: "/cases/icedogs.jpg" },
-    venue: {
-      name: venue.name,
-      slug: venue.slug,
-      timezone: venue.timezone,
-    },
-    organization: org,
-    ...overrides,
-  };
-}
-
-/** Org tax rate and Stripe fees that make a flex pack price all-in. */
-export function demoFlexPackTaxableOrganization() {
-  return {
-    isTaxable: true,
-    taxRate: { estimatedCombinedRate: 0.07 },
-    fee_structure: {
-      stripeCharge: "0.30",
-      stripeServicePecentage: "0.029",
-    },
-  };
-}
-
-/**
- * Two $13.16 general-admission tickets whose face price and fees add back
- * to the all-in cost (face $10, service $2, facility $1, processing $0.16).
- */
-export function demoItemizedFeeCheckoutCart() {
-  const cart = demoCheckoutCart({ ga: true, ticketCount: 2 });
-  const cost = 13.16;
-  return {
-    ...cart,
-    tickets: cart.tickets.map((ticket) => ({
-      ...ticket,
-      name: "General Admission",
-      cost,
-      price: cost,
-    })),
-    total: 26.32,
-    totalTax: 0,
-    am_pricing_objects: [
-      {
-        id: 4,
-        name: "Adult",
-        offerPrice: 10,
-        serviceFee: 2,
-        ticketFacilityFee: 1,
-        taxPerTicket: 0,
-        paymentProcessingFee: 0.16,
-        totalDue: cost,
-      },
-    ],
-  };
-}
-
-/** Completed order whose saved pricing still itemizes like checkout. */
-export function demoItemizedFeeCompletedOrder() {
-  const cart = demoItemizedFeeCheckoutCart();
-  const pricing = cart.am_pricing_objects[0];
-  const ticketCount = cart.tickets.length;
-  const serviceFee = pricing.serviceFee * ticketCount;
-  const processingFee = pricing.paymentProcessingFee * ticketCount;
-  return {
-    ...demoCompletedTicketOrder({
-      tickets: cart.tickets,
-      event: cart.event,
-      total: cart.total,
-      salesTax: pricing.taxPerTicket * ticketCount,
-      serviceFee,
-      processingFee,
-      estimatedProcessingFee: processingFee,
-    }),
-    priceObject: {
-      ...pricing,
-      estimatedPaymentProcessingFee: processingFee,
-    },
-  };
-}
-
-/** Adult and Student tickets that itemize onto different face prices. */
-export function demoMixedFacePriceCheckoutCart() {
-  const cart = demoCheckoutCart({ ga: true, ticketCount: 2 });
-  return {
-    ...cart,
-    tickets: [
-      {
-        ...cart.tickets[0],
-        cost: 13.16,
-        price: 13.16,
-        pricingLevelName: "Adult",
-        name: "Standard Admission",
-        offerName: "Standard Admission",
-        offer: { name: "Standard Admission" },
-      },
-      {
-        ...cart.tickets[1],
-        cost: 11.16,
-        price: 11.16,
-        pricingLevelName: "Student",
-        name: "Standard Admission",
-        offerName: "Standard Admission",
-        offer: { name: "Standard Admission" },
-      },
-    ],
-    total: 24.32,
-    totalTax: 0,
-    am_pricing_objects: [
-      {
-        id: 1,
-        name: "Adult",
-        offerPrice: 10,
-        serviceFee: 2,
-        ticketFacilityFee: 1,
-        paymentProcessingFee: 0.16,
-        totalDue: 13.16,
-      },
-      {
-        id: 2,
-        name: "Student",
-        offerPrice: 8,
-        serviceFee: 2,
-        ticketFacilityFee: 1,
-        paymentProcessingFee: 0.16,
-        totalDue: 11.16,
-      },
-    ],
-  };
-}
-
-/** Active fan access pass returned by GET /events/myAccessPasses. */
-export function demoAccessPass(overrides: Record<string, unknown> = {}) {
-  const org = DEMO_ICEDOGS_ORG;
-  const events = DEMO_EVENTS.filter(
-    (event) => event.organization?.slug === org.slug,
-  ).slice(0, 3);
-  return applyOverrides(
-    {
-      uuid: "access-pass-icedogs-1",
-      orderId: "1474-900001-0001",
-      checkInCode: "PASS2026",
-      type: "organizer",
-      name: "IceDogs All-Access Pass",
-      status: "active",
-      generalAdmission: true,
-      sectionNumber: "Club",
-      backgroundColor: org.branding.primaryColor,
-      fontColor: "#ffffff",
-      artwork: org.image,
-      events,
-    },
-    overrides,
-  );
-}
-
-/** Season pass linked to the demo package order. */
-export function demoPackageAccessPass(
-  overrides: Record<string, unknown> = {},
-) {
-  const pkg = demoSeasonPackage();
-  const order = demoCompletedPackageOrder();
-  const ticket = order.tickets[0];
-  return applyOverrides(
-    {
-      uuid: "access-pass-nms-package-1",
-      orderId: order.orderId,
-      email: DEMO_USER.email,
-      checkInCode: "NMSPASS2026",
-      type: "package",
-      name: pkg.name,
-      status: "active",
-      generalAdmission: false,
-      sectionNumber: ticket.sectionNumber,
-      rowNumber: ticket.rowNumber,
-      seatNumber: ticket.seatNumber,
-      backgroundColor: "#8c0b42",
-      fontColor: "#ffffff",
-      artwork: pkg.image,
-      package: {
-        uuid: pkg.uuid,
-        name: pkg.name,
-        image: pkg.image,
-        events: pkg.events,
-      },
-      events: pkg.events,
-    },
-    overrides,
-  );
-}
-
-/**
- * Group-purchase invitation attributes for
- * GET /group-purchase-invitations (Strapi data/attributes shape).
- */
-export function demoGroupInvitation(overrides: Record<string, unknown> = {}) {
-  const event = DEMO_EVENTS.find((row) => row.shortCode === "RAPT003")!;
-  return {
-    groupCode: "RAPTORS26",
-    inviteLink: "https://blocktickets.xyz/group/RAPTORS26/",
-    event: {
-      data: {
-        attributes: {
-          name: event.name,
-          start: event.start,
-          image: event.image,
-          venue: {
-            data: {
-              attributes: {
-                name: event.venue.name,
-                timezone: event.venue.timezone,
-              },
-            },
-          },
-        },
-      },
-    },
-    ...overrides,
-  };
-}
-
-/** In-venue menu payload for GET /fnb-items/public-menu/{org}/{section}/{row}/{seat}. */
-export function demoPublicMenu(overrides: Record<string, unknown> = {}) {
-  return {
-    accessMode: "seat_delivery",
-    location: { name: "Lindquist Field Concessions" },
-    categories: [
-      { id: "cat-food", name: "Food", displayOrder: 1 },
-      { id: "cat-drinks", name: "Drinks", displayOrder: 2 },
-      { id: "cat-sweets", name: "Sweets", displayOrder: 3 },
-    ],
-    items: [
-      {
-        id: "item-hot-dog",
-        name: "Stadium hot dog",
-        description: "Quarter-pound all-beef dog on a toasted bun.",
-        price: 7.5,
-        categoryId: "cat-food",
-        available: true,
-      },
-      {
-        id: "item-nachos",
-        name: "Loaded nachos",
-        description: "Warm cheese, jalapeños, and pico.",
-        price: 11,
-        categoryId: "cat-food",
-        available: true,
-      },
-      {
-        id: "item-garlic-fries",
-        name: "Garlic fries",
-        description: "Hand-cut, tossed with parsley and parmesan.",
-        price: 8.25,
-        categoryId: "cat-food",
-        available: true,
-      },
-      {
-        id: "item-draft-beer",
-        name: "Local draft beer",
-        description: "16 oz pour from Ogden Brewing. ID required at delivery.",
-        price: 12,
-        categoryId: "cat-drinks",
-        available: true,
-      },
-      {
-        id: "item-soda",
-        name: "Fountain soda",
-        description: "Free refills at any concession stand.",
-        price: 5,
-        categoryId: "cat-drinks",
-        available: true,
-      },
-      {
-        id: "item-ice-cream",
-        name: "Helmet sundae",
-        description: "Vanilla soft serve in a souvenir mini helmet.",
-        price: 9.5,
-        categoryId: "cat-sweets",
-        available: true,
-      },
-    ],
-    ...overrides,
-  };
-}
-
-/** Public campaign payload for GET /fundraising-campaigns/public/{slug}. */
-export function demoFundraisingCampaign(overrides: Record<string, unknown> = {}) {
-  const org = DEMO_ICEDOGS_ORG;
-  return {
-    slug: "power-play-fund",
-    title: "Power Play Fund",
-    description:
-      "Dummy fundraiser for UI/UX review — all data here is local demo content. Donations help cover ice time, travel, and equipment for the season.",
-    heroImage: { url: "/cases/icedogs.jpg" },
-    enableLandingPageDonation: true,
-    organizationUUID: org.uuid,
-    organization: org,
-    suggestedAmounts: [25, 50, 100, 250],
-    participants: [
-      { uuid: "demo-participant-1", name: "Skate-a-thon team" },
-      { uuid: "demo-participant-2", name: "Equipment drive" },
-    ],
-    ...overrides,
-  };
-}
-
-/** Completed flex-pack order used by the wallet Flex packs tab. */
-export function demoCompletedFlexPackOrder(
-  overrides: Record<string, unknown> = {},
-) {
-  const pack = demoFlexPack(
-    (overrides.flex_pack as Record<string, unknown> | undefined) || {},
-  );
-  const cart = demoFlexPackCheckoutCart({
-    flex_pack: pack,
-  });
-  const codes = ["868364", "146459", "229187", "551034", "774210", "903812"];
-  return {
-    id: 128185,
-    orderId: "1474-145929-3862",
-    status: "complete",
-    createdAt: demoDate({ days: -1 }, "22:47:16.540"),
-    email: DEMO_USER.email,
-    event: null,
-    package: null,
-    tickets: [],
-    flex_pack: pack,
-    vouchers: codes.map((code, index) => ({
-      id: 2000 + index,
-      uuid: `vouch-flex-${index + 1}`,
-      code,
-      status: "active",
-      flex_pack: pack,
-    })),
-    type: "primary",
-    paymentMethodType: "visa",
-    last4: "4242",
-    total: cart.total,
-    serviceFee: cart.serviceFee,
-    processingFee: cart.processingFee,
-    estimatedProcessingFee: cart.processingFee,
-    salesTax: 0,
-    ...overrides,
-  };
-}
-
-/** Checkout cart for a flex-pack hold — $1 service fee per voucher. */
-export function demoFlexPackCheckoutCart(
-  overrides: {
-    flex_pack?: Record<string, unknown>;
-    serviceFee?: number;
-    processingFee?: number;
-    remainingTime?: number | null;
-    total?: number;
-  } = {},
-) {
-  const pack = demoFlexPack(overrides.flex_pack);
-  const gameTickets = Number(pack.gameTickets || 0);
-  const serviceFee = overrides.serviceFee ?? gameTickets;
-  const processingFee = overrides.processingFee ?? 4;
-  const subtotal = Number(pack.price || 0);
-  return {
-    id: "cart-flex-1",
-    remainingTime:
-      overrides.remainingTime === undefined
-        ? CHECKOUT_HOLD_SECONDS
-        : overrides.remainingTime ?? undefined,
-    flex_pack: pack,
-    organization: pack.organization,
-    total: overrides.total ?? subtotal + serviceFee + processingFee,
-    serviceFee,
-    processingFee,
-    totalTax: 0,
-  };
-}
-
-/** Access pass template for GET cart payloads with `access_pass_template`. */
-export function demoAccessPassTemplate(
-  overrides: Record<string, unknown> = {},
-) {
-  const org = DEMO_ICEDOGS_ORG;
-  const venue = org.homeVenue || org.venue;
-  return {
-    id: "apt-icedogs-club",
-    uuid: "apt-icedogs-club",
-    name: "IceDogs Club Access Pass",
-    price: 75,
-    venue: {
-      name: venue.name,
-      slug: venue.slug,
-      timezone: venue.timezone,
-    },
-    organization: org,
-    events: [],
-    ...overrides,
-  };
-}
-
-/** Checkout cart for an access-pass hold. */
-export function demoAccessPassCheckoutCart(
-  overrides: {
-    access_pass_template?: Record<string, unknown>;
-    remainingTime?: number | null;
-    total?: number;
-  } = {},
-) {
-  const template = demoAccessPassTemplate(overrides.access_pass_template);
-  return {
-    id: "cart-access-pass-1",
-    remainingTime:
-      overrides.remainingTime === undefined
-        ? CHECKOUT_HOLD_SECONDS
-        : overrides.remainingTime ?? undefined,
-    access_pass_template: template,
-    organization: template.organization,
-    total: overrides.total ?? Number(template.price || 0),
-    totalTax: 0,
-  };
-}
-
-/** Stripe connected account with one external bank, matching payment-information. */
-export function demoLinkedBankAccount(overrides: Record<string, unknown> = {}) {
-  return applyOverrides(
-    {
-      id: "acct-1",
-      external_accounts: { data: [{ bank_name: "Chase", last4: "5556" }] },
-      charges_enabled: true,
-      payouts_enabled: true,
-    },
-    overrides,
-  );
+  return { cartId: "demo-cart-0001", sessionId: "demo-session-0001", freeOffer: false };
 }

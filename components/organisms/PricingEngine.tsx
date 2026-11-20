@@ -37,7 +37,7 @@ function useGrow(target: string) {
 
 function Tag({ children }: { children: React.ReactNode }) {
   return (
-    <span className="rounded-full border border-[#a6e773]/25 bg-[#a6e773]/10 px-2.5 py-1 text-[12px] font-semibold text-[#a6e773]">
+    <span className="rounded-full border border-primary/25 bg-primary/10 px-2.5 py-1 text-[12px] font-semibold text-primary">
       {children}
     </span>
   );
@@ -55,7 +55,7 @@ function PanelHead({ title, tag }: { title: string; tag: string }) {
 function Metric({ v, l, lime }: { v: string; l: string; lime?: boolean }) {
   return (
     <div className="rounded-xl border border-white/10 bg-white/[0.03] p-[18px]">
-      <div className={`text-[26px] font-bold tracking-[-0.02em] ${lime ? "text-[#a6e773]" : "text-white"}`}>{v}</div>
+      <div className={`text-[26px] font-bold tracking-[-0.02em] ${lime ? "text-primary" : "text-white"}`}>{v}</div>
       <div className="mt-1.5 text-[12px] leading-snug text-white/40">{l}</div>
     </div>
   );
@@ -75,7 +75,7 @@ function Fill({ pct }: { pct: string }) {
     <div className="h-2 overflow-hidden rounded-full bg-white/[0.06]">
       <span
         className="block h-full rounded-full"
-        style={{ width: w, background: "linear-gradient(90deg,#a6e773,#7fd14a)", transition: "width 1.4s cubic-bezier(.2,.8,.2,1)" }}
+        style={{ width: w, background: "linear-gradient(90deg,var(--green),#7fd14a)", transition: "width 1.4s cubic-bezier(.2,.8,.2,1)" }}
       />
     </div>
   );
@@ -90,7 +90,7 @@ function Bar({ h, hot, label }: { h: number; hot: boolean; label: string }) {
         style={{
           height: ht,
           transition: "height 1s cubic-bezier(.2,.8,.2,1)",
-          background: hot ? "linear-gradient(180deg,#a6e773,#7fd14a)" : "rgba(255,255,255,.12)",
+          background: hot ? "linear-gradient(180deg,var(--green),#7fd14a)" : "rgba(255,255,255,.12)",
         }}
       />
       <span className="text-[10px] text-white/40">{label}</span>
@@ -104,7 +104,7 @@ function Split({ fans, rev }: { fans: string; rev: string }) {
   return (
     <div className="flex h-[30px] overflow-hidden rounded-lg bg-white/[0.05]">
       <span style={{ width: f, background: "rgba(255,255,255,.18)", transition: "width 1.2s cubic-bezier(.2,.8,.2,1)" }} />
-      <span style={{ width: r, background: "linear-gradient(90deg,#a6e773,#7fd14a)", transition: "width 1.2s cubic-bezier(.2,.8,.2,1) .15s" }} />
+      <span style={{ width: r, background: "linear-gradient(90deg,var(--green),#7fd14a)", transition: "width 1.2s cubic-bezier(.2,.8,.2,1) .15s" }} />
     </div>
   );
 }
@@ -139,7 +139,7 @@ function Panel({ active }: { active: number }) {
             <div>
               <div className="mb-2.5 flex justify-between text-[13px] text-white/60">
                 <span>Data quality after cleaning</span>
-                <b className="font-semibold text-[#a6e773]">99.8%</b>
+                <b className="font-semibold text-primary">99.8%</b>
               </div>
               <Fill pct="99.8%" />
             </div>
@@ -155,7 +155,7 @@ function Panel({ active }: { active: number }) {
                 "Dashboard updating in real time",
               ].map((row) => (
                 <div key={row} className="flex items-center gap-3 text-[14px] text-white/60">
-                  <span className="grid h-[18px] w-[18px] shrink-0 place-items-center rounded-full bg-[#a6e773]/15 text-[#a6e773]">
+                  <span className="grid h-[18px] w-[18px] shrink-0 place-items-center rounded-full bg-primary/15 text-primary">
                     <Check className="h-2.5 w-2.5" />
                   </span>
                   {row}
@@ -180,7 +180,7 @@ function Panel({ active }: { active: number }) {
               <div className="mb-4 flex justify-between text-[13px] text-white/60">
                 <span>Occupancy by event</span>
                 <span>
-                  <b className="font-semibold text-[#a6e773]">3 events</b> near sellout
+                  <b className="font-semibold text-primary">3 events</b> near sellout
                 </span>
               </div>
               <div className="flex h-[130px] items-end gap-2.5">
@@ -203,20 +203,20 @@ function Panel({ active }: { active: number }) {
                 <div>
                   <div className="text-[15px] font-semibold text-white">
                     {r.seg}
-                    <span className="ml-2 inline-block rounded-md bg-[#a6e773]/12 px-2 py-0.5 text-[11px] font-semibold text-[#a6e773]">{r.chip}</span>
+                    <span className="ml-2 inline-block rounded-md bg-primary/12 px-2 py-0.5 text-[11px] font-semibold text-primary">{r.chip}</span>
                   </div>
                   <div className="mt-1 text-[13px] text-white/40">{r.why}</div>
                 </div>
                 <div className="shrink-0 text-right">
-                  <div className="text-[22px] font-bold text-[#a6e773]">{r.move}</div>
+                  <div className="text-[22px] font-bold text-primary">{r.move}</div>
                   <div className="mt-0.5 text-[12px] text-white/40">per seat</div>
                 </div>
               </div>
             ))}
-            <div className="flex items-center justify-between gap-4 rounded-xl border border-[#a6e773]/20 bg-[#a6e773]/[0.06] px-5 py-3.5">
+            <div className="flex items-center justify-between gap-4 rounded-xl border border-primary/20 bg-primary/[0.06] px-5 py-3.5">
               <div className="max-w-[60%] text-[13px] text-white/60">Applying these moves across the season, before any manual review.</div>
               <div className="shrink-0 text-right">
-                <div className="text-[24px] font-bold text-[#a6e773]">+$11,400</div>
+                <div className="text-[24px] font-bold text-primary">+$11,400</div>
                 <div className="mt-0.5 text-[11px] text-white/40">projected revenue</div>
               </div>
             </div>
@@ -238,7 +238,7 @@ function Panel({ active }: { active: number }) {
                 <i className="inline-block h-2.5 w-2.5 rounded-[3px] bg-white/[0.18]" />Share of fan base
               </span>
               <span className="inline-flex items-center gap-2">
-                <i className="inline-block h-2.5 w-2.5 rounded-[3px] bg-[#a6e773]" />Share of revenue
+                <i className="inline-block h-2.5 w-2.5 rounded-[3px] bg-primary" />Share of revenue
               </span>
             </div>
             <div className="grid grid-cols-1 gap-3.5 sm:grid-cols-3">
@@ -325,10 +325,10 @@ export default function PricingEngine() {
                     }`}
                 >
                   <span
-                    className={`absolute bottom-3.5 left-0 top-3.5 w-0.5 rounded-full transition-colors duration-300 ${on ? "bg-[#a6e773] shadow-[0_0_12px_rgba(166,231,115,.6)]" : "bg-white/10"
+                    className={`absolute bottom-3.5 left-0 top-3.5 w-0.5 rounded-full transition-colors duration-300 ${on ? "bg-primary shadow-[0_0_12px_rgba(166,231,115,.6)]" : "bg-white/10"
                       }`}
                   />
-                  <div className={`text-[11px] font-semibold uppercase tracking-[0.1em] transition-colors ${on ? "text-[#a6e773]" : "text-white/40"}`}>
+                  <div className={`text-[11px] font-semibold uppercase tracking-[0.1em] transition-colors ${on ? "text-primary" : "text-white/40"}`}>
                     {s.k}
                   </div>
                   <div className={`mt-1.5 text-[15px] font-medium transition-colors ${on ? "text-white" : "text-white/60"}`}>{s.t}</div>

@@ -1,4 +1,6 @@
 import moment from "moment-timezone";
+
+export const COUNTDOWN_NUM = 9;
 export const COUNTDOWN_DURATION = 1000;
 
 const ABBR_TO_IANA: Record<string, string> = {
@@ -69,18 +71,6 @@ const cartErrorStatus = (err: unknown) =>
     ? (err as { response?: { status?: number } }).response?.status
     : undefined;
 
-/** Browser or React aborted an in-flight request (Strict Mode remount, navigation). */
-export const isRequestCanceled = (err: unknown) => {
-  if (!err || typeof err !== "object") return false;
-  const e = err as { code?: string; name?: string; message?: string };
-  return (
-    e.code === "ERR_CANCELED" ||
-    e.name === "CanceledError" ||
-    e.name === "AbortError" ||
-    e.message === "canceled"
-  );
-};
-
 /** Server still has the cart row but marks it abandoned/timed out. */
 export const isCartExpiredResponse = (err: unknown) =>
   cartErrorStatus(err) === 410;
@@ -145,6 +135,8 @@ export const stateOpt = [
   { value: "WY", name: "Wyoming" },
 ];
 
+export const namePatternMatch = "^[A-Za-z'\\- ]+$";
+
 export const isPlural = (amount: number) => amount === 0 || amount > 1;
 
 export const getSingularOrPluralWord = (amount: number, text = "Ticket") => {
@@ -160,85 +152,32 @@ export const formatCurrency = (num?: number | string | null) =>
     maximumFractionDigits: 2,
   });
 
-function offerIsFree(offer?: object | null): boolean {
-  return Boolean(
-    offer && "freeOffer" in offer && (offer as { freeOffer?: boolean }).freeOffer,
-  );
-}
-
-/** Complimentary offers list at $0 even when the inventory price includes fees. */
-export function listedUnitPrice(
-  amount?: number | null,
-  offer?: object | null,
-  listing?: { askingPrice?: number | null } | null,
-) {
-  if (offerIsFree(offer)) return 0;
-  if (amount != null && Number.isFinite(Number(amount))) return Number(amount);
-  const asking = listing?.askingPrice;
-  if (asking != null && Number.isFinite(Number(asking))) return Number(asking);
-  return 0;
-}
-
 export const formatOfferListPrice = (
   amount: number,
-  offer?: object | null,
-) => formatCurrency(listedUnitPrice(amount, offer));
+  offer?: { freeOffer?: boolean } | null,
+) => formatCurrency(offer?.freeOffer ? 0 : amount);
 
 export const formatNumber = (num?: number | string | null) =>
   parseFloat(String(num ?? 0)).toLocaleString("en-US");
 
-/**
- * Description copy for a `<pre>`: keep newlines and spacing, turn HTML
- * block breaks into newlines, and drop tags so markup is not shown raw.
- */
-export function descriptionPlainText(value?: string | null): string {
-  if (!value) return "";
-  const withBreaks = value
-    .replace(/\r\n?/g, "\n")
-    .replace(/<br\s*\/?>/gi, "\n")
-    .replace(/<\/(?:p|div|h[1-6]|li|tr|blockquote)>/gi, "\n")
-    .replace(/<[^>]*>/g, "");
-  const decoded = withBreaks
-    .replace(/&nbsp;/gi, " ")
-    .replace(/&amp;/gi, "&")
-    .replace(/&lt;/gi, "<")
-    .replace(/&gt;/gi, ">")
-    .replace(/&#39;|&apos;/gi, "'")
-    .replace(/&quot;/gi, '"');
-  return decoded
-    .split("\n")
-    .map((line) => line.replace(/[ \t]+$/g, ""))
-    .join("\n")
-    .replace(/\n{3,}/g, "\n\n")
-    .trim();
-}
+export const emailPatternMatch = (val?: string | null) => {
+  const emailPattern = /^\w+([\.-]?\w+)*@\w+([\.-]?\w+)*(\.\w{2,})+$/g;
+  return val ? new RegExp(emailPattern).test(val) : true;
+};
 
-/** Event "About" copy prefers summary, then description. Empty when neither is set. */
-export function eventAboutText(ev?: {
-  summary?: string | null;
-  description?: string | null;
-}): string {
-  const summary = descriptionPlainText(ev?.summary);
-  if (summary) return summary;
-  return descriptionPlainText(ev?.description);
-}
+export const isBlockedEmail = (email?: string) => {
+  if (!email) return false;
+  const blocked = ["mailinator.com", "guerrillamail.com", "tempmail.com"];
+  const domain = email.split("@")[1]?.toLowerCase();
+  return Boolean(domain && blocked.includes(domain));
+};
 
-export {
-  emailPatternMatch,
-  isBlockedEmail,
-  namePatternMatch,
-  normalizeEmail,
-} from "@/lib/fieldValidation";
-
-// trailingSlash is enabled, so canonical hrefs end in "/" to avoid a 308 on
-// prefetch and client navigation.
 export const getUrl = (link: string, isGAOnlyEvent?: boolean) =>
-  isGAOnlyEvent ? `${link}/` : `${link}/tickets/`;
+  isGAOnlyEvent ? link : `${link}/tickets`;
 
 export const RESERVED_ORG_SLUGS = new Set([
   "browse",
   "login",
-  "sign-out",
   "search",
   "checkout",
   "settings",
@@ -258,21 +197,11 @@ export const RESERVED_ORG_SLUGS = new Set([
   "my-packages",
   "guest-passes",
   "event-details",
-  "my-tickets",
-  "my-profile",
-  "giving",
-  "wallet",
-  "concert",
-  "nm-state-ticketing",
-  "season-tickets",
-  "flex-pack",
   "our-story",
   "case-study",
   "design-system",
   "e",
   "venue",
-  "t",
-  "tickets",
 ]);
 
 export const isOrganizationLandingPage = (url: string) => {
@@ -305,94 +234,6 @@ export const formatEventWhen = (
   const m = tz ? moment.tz(start, tz) : moment(start);
   return m.format(format);
 };
-
-/** "Fri, Aug 28 at 10:00 AM MDT" — matches blocktickets Countdown on-sale copy. */
-export const formatOnSaleWhen = (
-  start?: string,
-  timezone?: TimezoneLike,
-) => {
-  if (!start) return "";
-  const tz = toIanaTimezone(timezone);
-  const m = tz ? moment.tz(start, tz) : moment(start);
-  if (!m.isValid()) return "";
-  const abbr = m.zoneAbbr();
-  const when = `${m.format("ddd, MMM D")} at ${m.format("h:mm A")}`;
-  return abbr ? `${when} ${abbr}` : when;
-};
-
-/**
- * Compact on-sale badge. Date only until the sale is inside 24 hours, then
- * "On sale today · 10 AM MST" or "On sale tomorrow · 10 AM MST". Drops :00
- * on the hour. The abbreviation is the venue zone at the sale instant.
- * `now` is for tests.
- */
-export const formatOnSaleBadge = (
-  start?: string,
-  timezone?: TimezoneLike,
-  now?: string | number | Date,
-) => {
-  if (!start) return "";
-  const tz = toIanaTimezone(timezone);
-  const m = tz ? moment.tz(start, tz) : moment(start);
-  if (!m.isValid()) return "";
-  const current = tz
-    ? now != null
-      ? moment.tz(now, tz)
-      : moment.tz(tz)
-    : now != null
-      ? moment(now)
-      : moment();
-  if (!current.isValid()) return "";
-  const minutesAway = m.diff(current, "minutes", true);
-  const withinDay = minutesAway >= 0 && minutesAway <= 24 * 60;
-  const clock = m.minute() === 0 ? m.format("h A") : m.format("h:mm A");
-  const abbr = m.zoneAbbr();
-  const time = abbr ? `${clock} ${abbr}` : clock;
-  if (!withinDay) return `On sale ${m.format("MMM D")}`;
-  if (m.isSame(current, "day")) return `On sale today · ${time}`;
-  if (m.isSame(current.clone().add(1, "day"), "day")) {
-    return `On sale tomorrow · ${time}`;
-  }
-  return `On sale ${m.format("MMM D")} · ${time}`;
-};
-
-/** Prefer the scheduled doors time the API stores separately from `doorsOpen`. */
-export const eventDoorsIso = (ev?: {
-  doorsOpen?: string;
-  realDoorsOpen?: string;
-} | null) => ev?.realDoorsOpen || ev?.doorsOpen;
-
-export const formatDoorsTime = (iso?: string, timezone?: TimezoneLike) => {
-  if (!iso) return "";
-  const tz = toIanaTimezone(timezone);
-  const m = tz ? moment.tz(iso, tz) : moment(iso);
-  return m.isValid() ? m.format("h:mm A") : "";
-};
-
-const withDoorsSuffix = (when: string, doors: string) =>
-  when && doors ? `${when} · Doors ${doors}` : when || (doors ? `Doors ${doors}` : "");
-
-/** "Sat, Aug 15, 2026 7:35 PM · Doors 6:35 PM" */
-export const eventWhenWithDoors = (
-  start?: string,
-  doorsIso?: string,
-  timezone?: TimezoneLike,
-) =>
-  withDoorsSuffix(
-    formatEventWhen(start, timezone),
-    formatDoorsTime(doorsIso, timezone),
-  );
-
-/** "Sat, Aug 15, 2026 · Doors 6:35 PM" */
-export const eventWhenShortWithDoors = (
-  start?: string,
-  doorsIso?: string,
-  timezone?: TimezoneLike,
-) =>
-  withDoorsSuffix(
-    formatEventWhen(start, timezone, "ddd, MMM D, YYYY"),
-    formatDoorsTime(doorsIso, timezone),
-  );
 
 export const dateChip = (start?: string, timezone?: TimezoneLike) => {
   if (!start) return { m: "—", d: "—" };
@@ -428,211 +269,17 @@ export const eventPurchasePath = (event: {
   return getUrl(base, Boolean(gaOnly));
 };
 
-type OrgOrVenueProduct = {
-  uuid?: string | number;
-  id?: string | number;
-  organization?: { slug?: string } | null;
-  venue?: { slug?: string } | null;
-} | null;
-
-function orgOrVenueProductPath(
-  kind: "package" | "flex-pack",
-  product?: OrgOrVenueProduct,
-): string | null {
-  const id = product?.uuid ?? product?.id;
-  if (id == null || String(id).trim() === "") return null;
-  const orgSlug = String(product?.organization?.slug || "").trim();
-  if (orgSlug) return `/${orgSlug}/${kind}/${id}/`;
-  const venueSlug = String(product?.venue?.slug || "").trim();
-  if (venueSlug) return `/venue/${venueSlug}/${kind}/${id}/`;
-  return null;
-}
-
-export function packagePurchasePath(pkg?: OrgOrVenueProduct) {
-  return orgOrVenueProductPath("package", pkg);
-}
-
-export function flexPackPurchasePath(pack?: OrgOrVenueProduct) {
-  return orgOrVenueProductPath("flex-pack", pack);
-}
-
 export type ApiImage =
   | string
   | { url?: string; formats?: { small?: { url?: string }; thumbnail?: { url?: string } } }
   | null
   | undefined;
 
-export type AttractionLike = {
-  artwork?: ApiImage | unknown;
-  images?: ApiImage[] | unknown;
-  logo?: ApiImage | unknown;
-};
-
-type ResolvedApiImage = Exclude<ApiImage, null | undefined>;
-
-/** Unwrap Strapi media shapes (arrays, `data`, `attributes`) to a plain image object or URL. */
-export function normalizeApiImage(img: unknown): ResolvedApiImage | null {
-  if (img == null) return null;
+export const imageUrl = (img?: ApiImage, fallback = "/blocktickets-logo.svg") => {
+  if (!img) return fallback;
   if (typeof img === "string") return img;
-  if (Array.isArray(img)) {
-    for (const item of img) {
-      const resolved = normalizeApiImage(item);
-      if (resolved) return resolved;
-    }
-    return null;
-  }
-  if (typeof img === "object") {
-    const obj = img as Record<string, unknown>;
-    if ("data" in obj) return normalizeApiImage(obj.data);
-    if ("attributes" in obj && obj.attributes && typeof obj.attributes === "object") {
-      return normalizeApiImage(obj.attributes);
-    }
-    if ("url" in obj || "formats" in obj) return obj as ResolvedApiImage;
-  }
-  return null;
-}
-
-export const imageUrl = (img?: ApiImage | unknown, fallback = "/blocktickets-logo.svg") => {
-  const normalized = normalizeApiImage(img);
-  if (!normalized) return fallback;
-  if (typeof normalized === "string") return normalized;
-  return (
-    normalized.url ||
-    normalized.formats?.small?.url ||
-    normalized.formats?.thumbnail?.url ||
-    fallback
-  );
+  return img.url || img.formats?.small?.url || img.formats?.thumbnail?.url || fallback;
 };
-
-/** Attraction logo from `artwork`, `logo`, or the first resolvable entry in `images`. */
-export function attractionImageUrl(
-  attraction?: AttractionLike | null,
-): string | null {
-  if (!attraction) return null;
-  const fromArtwork = imageUrl(attraction.artwork, "");
-  if (fromArtwork) return fromArtwork;
-  const fromLogo = imageUrl(attraction.logo, "");
-  if (fromLogo) return fromLogo;
-  if (Array.isArray(attraction.images)) {
-    for (const item of attraction.images) {
-      const url = imageUrl(item, "");
-      if (url) return url;
-    }
-    return null;
-  }
-  const fromImages = imageUrl(attraction.images, "");
-  return fromImages || null;
-}
-
-export type MatchupAttraction = AttractionLike & {
-  name?: string | null;
-  primary?: boolean | null;
-  order?: number | null;
-};
-
-export type EventMatchup = {
-  home: MatchupAttraction | null;
-  away: MatchupAttraction | null;
-  homeLabel: string;
-  awayLabel: string;
-  homeLogoSrc?: string;
-  awayLogoSrc?: string;
-  awayShort: string;
-  /** True when the event has at least one attraction to show. */
-  showMatchupSection: boolean;
-  /** True when there are two or more attractions (no visitor placeholder). */
-  showAwayTeam: boolean;
-};
-
-/** Unwrap a Strapi attraction entry onto a flat matchup shape. */
-export function normalizeAttractionEntry(raw: unknown): MatchupAttraction | null {
-  if (!raw || typeof raw !== "object") return null;
-  const row = raw as Record<string, unknown>;
-  const attrs =
-    row.attributes && typeof row.attributes === "object"
-      ? (row.attributes as Record<string, unknown>)
-      : null;
-  const merged = attrs ? { ...row, ...attrs } : row;
-  const name = merged.name;
-  return {
-    name: typeof name === "string" ? name : undefined,
-    primary:
-      typeof merged.primary === "boolean"
-        ? merged.primary
-        : merged.primary == null
-          ? undefined
-          : Boolean(merged.primary),
-    order: typeof merged.order === "number" ? merged.order : undefined,
-    artwork: merged.artwork,
-    images: merged.images as AttractionLike["images"],
-    logo: merged.logo,
-  };
-}
-
-/** Unwrap Strapi relation arrays (`data`, nested `attributes`) for event attractions. */
-export function normalizeAttractions(raw: unknown): MatchupAttraction[] {
-  if (!raw) return [];
-  if (Array.isArray(raw)) {
-    return raw
-      .map(normalizeAttractionEntry)
-      .filter((entry): entry is MatchupAttraction => entry != null);
-  }
-  if (typeof raw === "object" && "data" in raw) {
-    return normalizeAttractions((raw as { data: unknown }).data);
-  }
-  return [];
-}
-
-/** Resolve home/away labels and artwork for event pages and modals. */
-export function resolveEventMatchup(
-  rawAttractions: unknown,
-  options?: {
-    orgName?: string;
-    defaultAwayLabel?: string;
-    sportingEvent?: boolean;
-  },
-): EventMatchup {
-  const attractions = normalizeAttractions(rawAttractions);
-  const sorted = [...attractions].sort((a, b) => {
-    if (a.primary && !b.primary) return -1;
-    if (!a.primary && b.primary) return 1;
-    return (a.order ?? 0) - (b.order ?? 0);
-  });
-  const home = sorted.find((a) => a.primary) ?? sorted[0] ?? null;
-  const away = sorted.find((a) => a !== home) ?? sorted[1] ?? null;
-  const orgName = options?.orgName ?? "";
-  const defaultAwayLabel = options?.defaultAwayLabel ?? "Visitor";
-  const sportingEvent = options?.sportingEvent ?? false;
-  const hasAwayAttraction = away != null;
-  const showVisitorPlaceholder = !hasAwayAttraction && sportingEvent;
-  const showMatchupSection = sorted.length > 0 || Boolean(orgName);
-  const showAwayTeam = hasAwayAttraction || showVisitorPlaceholder;
-  const homeLabel = home?.name || orgName || "Home";
-  const awayLabel = hasAwayAttraction
-    ? away?.name || defaultAwayLabel
-    : showVisitorPlaceholder
-      ? defaultAwayLabel
-      : "";
-  const awayShort = hasAwayAttraction
-    ? (away?.name || "AWAY").slice(0, 3).toUpperCase()
-    : showVisitorPlaceholder
-      ? "AWA"
-      : "";
-
-  return {
-    home,
-    away,
-    homeLabel,
-    awayLabel,
-    homeLogoSrc: attractionImageUrl(home) || undefined,
-    awayLogoSrc: hasAwayAttraction
-      ? attractionImageUrl(away) || undefined
-      : undefined,
-    awayShort,
-    showMatchupSection,
-    showAwayTeam,
-  };
-}
 
 function seatIdCount(value: unknown): number {
   if (Array.isArray(value)) return value.length;

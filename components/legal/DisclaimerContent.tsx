@@ -1,5 +1,3 @@
-import Link from "next/link";
-
 /** Ported from legacy frontend — keep legal text accurate. */
 export default function DisclaimerContent() {
   return (
@@ -44,9 +42,9 @@ export default function DisclaimerContent() {
               <dt>Website </dt>
               <dd>
                 refers to Blocktickets, accessible from{" "}
-                <Link target="_blank" rel="noopener noreferrer" href="/">
+                <a target="_blank" rel="noopener noreferrer" href="/">
                   www.blocktickets.xyz
-                </Link>
+                </a>
               </dd>
             </dl>
           </li>

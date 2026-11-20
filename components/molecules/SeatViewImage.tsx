@@ -30,7 +30,7 @@ export default function SeatViewImage({
         <div
           role="img"
           aria-label="Image not available"
-          className={`flex items-center justify-center bg-[#051B35] text-[12px] text-[#9DA2B3] ${className}`}
+          className={`flex items-center justify-center bg-background text-[12px] text-ink2 ${className}`}
         >
           Not available
         </div>

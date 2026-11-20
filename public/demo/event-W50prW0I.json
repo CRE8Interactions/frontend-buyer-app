@@ -85,15 +85,7 @@
       "tiktok_pixel_id": null,
       "linkedin_partner_id": null,
       "name": "New Mexico State venues",
-      "slug": "nm-state",
-      "branding": {
-        "enabled": true,
-        "primaryColor": "#1a3a6b",
-        "buttonColor": "#1a3a6b",
-        "logo": {
-          "url": "/clients/raptors.svg"
-        }
-      }
+      "slug": "nm-state"
     },
     "venue": {
       "id": 46,

@@ -1,12 +1,8 @@
-"use client";
+import SmsTicketsPage from "../../t/[token]/page";
 
-import { Suspense } from "react";
-import SmsTicketsClient from "@/components/organisms/SmsTickets/SmsTicketsClient";
+export const metadata = {
+  title: "Your tickets | Blocktickets",
+};
 
-export default function SmsTicketsPage() {
-  return (
-    <Suspense fallback={<p>Loading your tickets</p>}>
-      <SmsTicketsClient />
-    </Suspense>
-  );
-}
+/* The same page as /t/[token]; texts may link to either path. */
+export default SmsTicketsPage;

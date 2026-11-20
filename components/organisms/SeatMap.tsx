@@ -62,7 +62,7 @@ export default function SeatMap({
 
   const fill = (band: SeatMapBand | undefined, hoverable = true) => {
     if (!band) return "rgba(255,255,255,0.04)";
-    if (selected.includes(band.id)) return "#a6e773";
+    if (selected.includes(band.id)) return "var(--green)";
     return TIER_FILL[band.tier] ?? TIER_FILL[0];
   };
 
@@ -96,7 +96,7 @@ export default function SeatMap({
             <path
               d={`M${P(202, 60).join(" ")} A202 202 0 0 0 ${P(202, 120).join(" ")} L${P(226, 120).join(" ")} A226 226 0 0 1 ${P(226, 60).join(" ")}Z`}
               fill={highlightSections.includes("GA") && !selected.includes(gaBand.id) ? "rgba(166,231,115,0.45)" : fill(gaBand)}
-              stroke={highlightSections.includes("GA") ? "#a6e773" : "none"}
+              stroke={highlightSections.includes("GA") ? "var(--green)" : "none"}
               strokeWidth="2"
             />
             <text
@@ -107,7 +107,7 @@ export default function SeatMap({
               fontSize="11"
               fontWeight="600"
               letterSpacing="2"
-              fill={selected.includes(gaBand.id) ? "#051B35" : "#9DA2B3"}
+              fill={selected.includes(gaBand.id) ? "var(--paper)" : "#9DA2B3"}
             >
               GA LAWN
             </text>
@@ -135,7 +135,7 @@ export default function SeatMap({
               <path
                 d={wedge(96, 146, a, b)}
                 fill={hot && !on ? "rgba(166,231,115,0.45)" : fill(band)}
-                stroke={hot ? "#a6e773" : "#051B35"}
+                stroke={hot ? "var(--green)" : "var(--paper)"}
                 strokeWidth="2.5"
               />
               <text
@@ -145,7 +145,7 @@ export default function SeatMap({
                 className="pointer-events-none select-none"
                 fontSize="12"
                 fontWeight="600"
-                fill={on ? "#051B35" : "#BCBFCC"}
+                fill={on ? "var(--paper)" : "#BCBFCC"}
               >
                 {s}
               </text>
@@ -174,7 +174,7 @@ export function SeatMapThumb({ section, className = "" }: { section: string; cla
       />
       <path
         d={`M${P(202, 60).join(" ")} A202 202 0 0 0 ${P(202, 120).join(" ")} L${P(226, 120).join(" ")} A226 226 0 0 1 ${P(226, 60).join(" ")}Z`}
-        fill={section === "GA" ? "#a6e773" : "rgba(255,255,255,0.08)"}
+        fill={section === "GA" ? "var(--green)" : "rgba(255,255,255,0.08)"}
       />
       {SECTIONS.map((s, i) => {
         const a = ARC_START + i * STEP;
@@ -182,7 +182,7 @@ export function SeatMapThumb({ section, className = "" }: { section: string; cla
           <path
             key={s}
             d={wedge(96, 146, a, a + STEP)}
-            fill={s === section ? "#a6e773" : "rgba(255,255,255,0.08)"}
+            fill={s === section ? "var(--green)" : "rgba(255,255,255,0.08)"}
             stroke="#0a2747"
             strokeWidth="3"
           />
