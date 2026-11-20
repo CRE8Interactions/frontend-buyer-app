@@ -367,8 +367,18 @@ export const savePassGoogle = () => instance.get("/aaa/google");
 export const removeBankAccount = () =>
   instance.get("/payment-information/deactive");
 
-/** Legacy wallet uses populate=* so transfer rows include tickets with seat fields. */
-export const TICKET_TRANSFER_POPULATE_QUERY = "populate=*";
+/**
+ * Transfer rows need tickets (seat fields) and the event's venue timezone.
+ * populate=* stops one level deep, so the event arrives without its venue and
+ * kickoff times fall back to the browser's timezone.
+ */
+export const TICKET_TRANSFER_POPULATE_QUERY = [
+  "populate[fromUser]=true",
+  "populate[toUser]=true",
+  "populate[tickets]=true",
+  "populate[order]=true",
+  "populate[event][populate][venue][fields][0]=timezone",
+].join("&");
 
 export const getMySentTransfers = (
   userEmail: string,

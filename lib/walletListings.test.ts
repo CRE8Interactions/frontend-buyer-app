@@ -13,8 +13,10 @@ import {
   buildCreateListingPayload,
   eventResaleMinimumPercent,
   askingPriceInput,
+  LISTING_PRICE_FIELD_LABEL,
   listingAskingPriceError,
   listingFaceValue,
+  listingPriceDraft,
   listingStatusDotLine,
   listingTab,
   listingsForTab,
@@ -101,6 +103,41 @@ describe("walletListings", () => {
     expect(askingPriceInput("42.50")).toBe("42.50");
     expect(askingPriceInput("12.3.4a$")).toBe("12.34");
     expect(askingPriceInput("abc")).toBe("");
+  });
+
+  it("shares the sell and edit price message and whether it can continue", () => {
+    const rules = { face: 40, resaleMinimumPercent: 10 };
+    expect(listingPriceDraft("", rules)).toMatchObject({
+      asking: 0,
+      message: LISTING_PRICE_FIELD_LABEL,
+      invalid: false,
+      canContinue: false,
+    });
+    expect(
+      listingPriceDraft("0", { ...rules, fieldError: LISTING_PRICE_COPY.greaterThanZero }),
+    ).toMatchObject({
+      message: LISTING_PRICE_COPY.greaterThanZero,
+      invalid: true,
+      canContinue: false,
+    });
+    const belowMinimum = listingAskingPriceError("41", { ...rules, mode: "blur" });
+    expect(listingPriceDraft("41", rules)).toMatchObject({
+      message: belowMinimum,
+      invalid: true,
+      canContinue: false,
+    });
+    expect(
+      listingPriceDraft("80", { ...rules, fieldError: "Could not update the price." }),
+    ).toMatchObject({
+      message: "Could not update the price.",
+      invalid: true,
+      canContinue: true,
+    });
+    expect(listingPriceDraft("80", rules)).toMatchObject({
+      message: LISTING_PRICE_FIELD_LABEL,
+      invalid: false,
+      canContinue: true,
+    });
   });
 
   it("validates asking price on blur vs submit", () => {

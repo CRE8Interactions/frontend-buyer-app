@@ -79,14 +79,14 @@ describe("ticketTransfers", () => {
         email: "sender@example.com",
         on: "Sep 11, 2026",
       }),
-    ).toBe("From sender@example.com · received on Sep 11, 2026");
+    ).toBe("From sender@example.com · Sent Sep 11, 2026");
     expect(
       transferPartyDateLine({
         direction: "sent",
         email: "recipient@example.com",
         on: "Sep 11, 2026",
       }),
-    ).toBe("To recipient@example.com · sent Sep 11, 2026");
+    ).toBe("Sent to recipient@example.com · Sep 11, 2026");
   });
 
   it("omits the send date when the transfer has none", () => {
@@ -101,7 +101,7 @@ describe("ticketTransfers", () => {
         direction: "sent",
         email: "recipient@example.com",
       }),
-    ).toBe("To recipient@example.com");
+    ).toBe("Sent to recipient@example.com");
   });
 
   it("sorts transfers newest first", () => {
@@ -851,6 +851,130 @@ describe("ticketTransfers", () => {
     expect(enriched[0]?.event?.uuid).toBe(correctEvent.uuid);
     expect(mapSentTransferRows(enriched)[0]?.title).toBe(correctEvent.name);
     expect(mapSentTransferRows(enriched)[0]?.schedule).toContain("2026");
+  });
+
+  it("shows the kickoff in the venue timezone when the transfer event has no timezone", () => {
+    const rows = mapSentTransferRows([
+      {
+        id: "tz-fallback",
+        status: "pending",
+        createdAt: "2026-11-19T18:00:00.000Z",
+        emailAddressToUser: "kwoods@nmsu.edu",
+        event: {
+          uuid: "evt-elp",
+          name: "Houston Bulls vs. El Paso Rhinos",
+          start: "2026-12-19T02:05:00.000Z",
+        },
+        order: {
+          event: {
+            uuid: "evt-elp",
+            name: "Houston Bulls vs. El Paso Rhinos",
+            start: "2026-12-19T02:05:00.000Z",
+            venue: { name: "Sun Bowl", timezone: "America/Denver" },
+          },
+        },
+      },
+    ] as never);
+
+    expect(rows[0]?.schedule).toBe("Fri, Dec 18, 2026 7:05 PM");
+  });
+
+  it("uses the received transfer venue timezone instead of the incoming copy", () => {
+    const start = "2026-12-19T02:05:00.000Z";
+    const received = {
+      id: "recv-tz",
+      status: "pending",
+      createdAt: "2026-11-19T18:00:00.000Z",
+      fromUserEmail: "sender@example.com",
+      emailAddressToUser: "me@example.com",
+      event: {
+        uuid: "evt-elp",
+        name: "Houston Bulls vs. El Paso Rhinos",
+        start,
+        venue: {
+          data: { attributes: { name: "Sun Bowl", timezone: "America/Denver" } },
+        },
+      },
+    };
+    const incoming = {
+      ...received,
+      event: {
+        uuid: "evt-elp",
+        name: "Houston Bulls vs. El Paso Rhinos",
+        start,
+        venue: { name: "Sun Bowl", timezone: "America/Chicago" },
+      },
+    };
+
+    const rows = buildWalletReceivedTransferRows([received], [incoming], []);
+
+    expect(rows[0]?.schedule).toBe("Fri, Dec 18, 2026 7:05 PM");
+  });
+
+  it("uses the wallet order venue timezone when a sent transfer event has none", () => {
+    const start = "2026-12-19T02:05:00.000Z";
+    const event = {
+      uuid: "evt-elp",
+      name: "Houston Bulls vs. El Paso Rhinos",
+      start,
+    };
+    const rows = buildWalletSentTransferRows(
+      [
+        {
+          id: "sent-tz",
+          status: "claimed",
+          createdAt: "2026-11-19T18:00:00.000Z",
+          transferedOn: "2026-11-19T20:00:00.000Z",
+          emailAddressToUser: "kwoods@nmsu.edu",
+          orderId: "order-elp",
+          event,
+          order: { orderId: "order-elp", event },
+          tickets: [
+            {
+              id: 16,
+              sectionNumber: "210",
+              rowNumber: "9",
+              seatNumber: "16",
+              eventUUID: "evt-elp",
+            },
+          ],
+        },
+      ],
+      [
+        {
+          id: 9,
+          orderId: "order-elp",
+          event: {
+            ...event,
+            venue: { name: "Sun Bowl", timezone: "America/Denver" },
+          },
+          tickets: [],
+        },
+      ],
+    );
+
+    expect(rows[0]?.schedule).toBe("Fri, Dec 18, 2026 7:05 PM");
+  });
+
+  it("reads a nested venue timezone on a sent transfer event", () => {
+    const rows = mapSentTransferRows([
+      {
+        id: "sent-nested-tz",
+        status: "pending",
+        createdAt: "2026-11-19T18:00:00.000Z",
+        emailAddressToUser: "kwoods@nmsu.edu",
+        event: {
+          uuid: "evt-elp",
+          name: "Houston Bulls vs. El Paso Rhinos",
+          start: "2026-12-19T02:05:00.000Z",
+          venue: {
+            data: { attributes: { name: "Sun Bowl", timezone: "America/Denver" } },
+          },
+        },
+      },
+    ] as never);
+
+    expect(rows[0]?.schedule).toBe("Fri, Dec 18, 2026 7:05 PM");
   });
 
   it("keeps event name when ticket eventUUID differs from transfer event uuid", () => {

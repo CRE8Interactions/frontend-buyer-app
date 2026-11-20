@@ -300,6 +300,40 @@ export function listingAskingPriceError(
   return null;
 }
 
+export const LISTING_PRICE_FIELD_LABEL = "Price per ticket";
+
+/** Shared sell-step and edit-listing price state. */
+export function listingPriceDraft(
+  raw: string,
+  {
+    face,
+    resaleMinimumPercent,
+    fieldError = null,
+  }: {
+    face: number;
+    resaleMinimumPercent: number | null;
+    fieldError?: string | null;
+  },
+) {
+  const asking = parseAskingPrice(raw || "") ?? 0;
+  const minimumError =
+    asking > 0
+      ? listingAskingPriceError(raw, {
+          face,
+          resaleMinimumPercent,
+          mode: "blur",
+        })
+      : null;
+  const fieldMessage = asking > 0 ? fieldError || minimumError : fieldError;
+  return {
+    asking,
+    minimumError,
+    message: fieldMessage || LISTING_PRICE_FIELD_LABEL,
+    invalid: Boolean(fieldMessage),
+    canContinue: asking > 0 && !minimumError,
+  };
+}
+
 export function listingSellerFeeAmount(askingPrice: number, event?: EventLike | null): number {
   return askingPrice * eventSellerFeeRate(event);
 }

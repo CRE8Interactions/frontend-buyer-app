@@ -28,8 +28,12 @@ describe("transfer modal copy", () => {
     expect(transferRecipientDescriptor("ticket", { count: 2 })).toBe(
       "these tickets",
     );
-    expect(transferWalletRemovalCopy("ticket", 1)).toMatch(/^This ticket /);
-    expect(transferWalletRemovalCopy("ticket", 2)).toMatch(/^These tickets /);
+    expect(transferWalletRemovalCopy("ticket", 1)).toBe(
+      "This ticket leaves your wallet right away. You can cancel any time before it's claimed.",
+    );
+    expect(transferWalletRemovalCopy("ticket", 2)).toBe(
+      "These tickets leave your wallet right away. You can cancel any time before they're claimed.",
+    );
     expect(transferConfirmTitle("ticket", 1)).toBe(
       "You are about to transfer 1 ticket",
     );
@@ -54,10 +58,12 @@ describe("transfer modal copy", () => {
     expect(transferSuccessTitle("ticket", 2)).toBe(
       "Your tickets have been transferred",
     );
-    expect(transferSuccessBody("ticket", 1)).toContain("your ticket");
-    expect(transferSuccessBody("ticket", 1)).toMatch(/The ticket left your wallet/);
-    expect(transferSuccessBody("ticket", 2)).toContain("your tickets");
-    expect(transferSuccessBody("ticket", 2)).toMatch(/The tickets left your wallet/);
+    expect(transferSuccessBody("ticket", 1, "amy@example.com")).toBe(
+      "Sent to amy@example.com. You can cancel from My transfers until they claim it.",
+    );
+    expect(transferSuccessBody("ticket", 2, "amy@example.com")).toBe(
+      "Sent to amy@example.com. You can cancel from My transfers until they claim them.",
+    );
     expect(transferLoadingTitle("ticket", 2)).toBe(
       "Transferring your tickets…",
     );
@@ -87,17 +93,23 @@ describe("transfer modal copy", () => {
         passSeat: "GA",
       }),
     ).toBe("All-access");
-    expect(transferWalletRemovalCopy("season pass")).toMatch(
-      /^The season pass /,
+    expect(transferWalletRemovalCopy("season pass")).toBe(
+      "This season pass leaves your wallet right away. You can cancel any time before it's claimed.",
     );
-    expect(transferWalletRemovalCopy("access pass")).toMatch(
-      /^The access pass /,
+    expect(transferWalletRemovalCopy("access pass")).toBe(
+      "This access pass leaves your wallet right away. You can cancel any time before it's claimed.",
+    );
+    expect(transferConfirmTitle("season pass")).toBe(
+      "You are about to transfer 1 season pass",
+    );
+    expect(transferConfirmTitle("access pass")).toBe(
+      "You are about to transfer 1 access pass",
     );
     expect(transferSuccessTitle("season pass")).toBe(
-      "Season pass transfer pending",
+      "Your season pass has been transferred",
     );
     expect(transferSuccessTitle("access pass")).toBe(
-      "Access pass transfer pending",
+      "Your access pass has been transferred",
     );
     expect(transferCancelReturnCopy("season pass", 1)).toBe(
       "Cancelling this transfer returns this season pass to your wallet and removes it from the recipient's account. If the recipient has claimed the transfer already, it can't be cancelled.",
@@ -128,7 +140,7 @@ describe("transfer modal copy", () => {
       when: undefined,
       games: "5 games",
       remaining: undefined,
-      from: "From sender@example.com · received on Sep 11, 2026",
+      from: "From sender@example.com · Sent Sep 11, 2026",
     });
     expect(
       transferModalDetailLines({
@@ -145,7 +157,7 @@ describe("transfer modal copy", () => {
       when: undefined,
       games: "3 games",
       remaining: undefined,
-      from: "From sender@example.com · received on Sep 10, 2026",
+      from: "From sender@example.com · Sent Sep 10, 2026",
     });
     expect(
       transferModalDetailLines({
@@ -159,7 +171,7 @@ describe("transfer modal copy", () => {
       when: "Fri, Oct 30, 2026 7:00 PM",
       games: undefined,
       remaining: undefined,
-      from: "From sender@example.com · received on Sep 11, 2026",
+      from: "From sender@example.com · Sent Sep 11, 2026",
     });
     expect(
       transferModalDetailLines({
@@ -174,25 +186,25 @@ describe("transfer modal copy", () => {
       when: "Fri, Oct 30, 2026 7:00 PM",
       games: undefined,
       remaining: undefined,
-      from: "To recipient@example.com · sent Sep 11, 2026",
+      from: "Sent to recipient@example.com · Sep 11, 2026",
     });
   });
 
-  it("tells the recipient they will be emailed about the transferred entity", () => {
+  it("tells the recipient they will be emailed to claim the tickets", () => {
     expect(transferRecipientNotifyCopy("ticket", 1)).toBe(
-      "They'll get an email saying you sent them a ticket.",
+      "We'll send them an email to claim the ticket in their Blocktickets account.",
     );
     expect(transferRecipientNotifyCopy("ticket", 2)).toBe(
-      "They'll get an email saying you sent them tickets.",
+      "We'll send them an email to claim the tickets in their Blocktickets account.",
     );
     expect(transferRecipientNotifyCopy("ticket", 4)).toBe(
-      "They'll get an email saying you sent them tickets.",
+      "We'll send them an email to claim the tickets in their Blocktickets account.",
     );
-    expect(transferRecipientNotifyCopy("season pass")).toContain(
-      "you sent them a season pass",
+    expect(transferRecipientNotifyCopy("season pass")).toBe(
+      "We'll send them an email to claim the season pass in their Blocktickets account.",
     );
-    expect(transferRecipientNotifyCopy("access pass")).toContain(
-      "you sent them an access pass",
+    expect(transferRecipientNotifyCopy("access pass")).toBe(
+      "We'll send them an email to claim the access pass in their Blocktickets account.",
     );
     expect(transferRecipientReceivedCopy("ticket", 1)).toBe(
       "The recipient has received an email that you have transferred your ticket to them.",
@@ -201,12 +213,8 @@ describe("transfer modal copy", () => {
       "your tickets",
     );
     expect(transferLoadingTitle("ticket", 1)).toBe("Transferring your ticket…");
-    expect(transferSuccessBody("ticket", 1)).toContain(
-      "pending until the recipient claims it",
-    );
-    expect(transferSuccessBody("ticket", 1)).not.toMatch(/@/);
-    expect(transferSuccessBody("season pass", 1)).toContain(
-      "The season pass left your wallet",
+    expect(transferSuccessBody("season pass", 1, "amy@example.com")).toBe(
+      "Sent to amy@example.com. You can cancel from My transfers until they claim it.",
     );
   });
 });
