@@ -77,7 +77,9 @@ import {
 } from "@/lib/cancelTransferErrors";
 import {
   PASS_TRANSFER_DISPLAY_COPY,
+  organizationResaleEnabled,
   parsePassTransferApiError,
+  seasonPassBlockedTransferCopy,
 } from "@/lib/passTransferErrors";
 import {
   parseTicketTransferApiError,
@@ -372,6 +374,21 @@ function ProfileFieldForm({
   );
 }
 
+function LeadingMetaDot({ color }: { color: string }) {
+  return (
+    <span
+      aria-hidden
+      style={{
+        width: 5,
+        height: 5,
+        borderRadius: 999,
+        background: color,
+        flexShrink: 0,
+      }}
+    />
+  );
+}
+
 function EventScheduleMeta({
   today,
   scheduleLine,
@@ -408,9 +425,7 @@ function EventScheduleMeta({
           Today
         </span>
       ) : (
-        <span
-          style={{ width: 5, height: 5, borderRadius: 999, background: SUB }}
-        />
+        <LeadingMetaDot color={SUB} />
       )}
       {scheduleLine}
     </div>
@@ -4203,6 +4218,12 @@ export default function SeasonTickets({
   // to the order record id, which /access-passes/by-order cannot resolve.
   const selectedPackageOrderId =
     routedOrderId || selectedSeasonPackage?.orderId || "";
+  const selectedPackageOrder =
+    fullOrders[selectedPackageOrderId] ??
+    walletOrders.find(
+      (row) => String(row.orderId || row.id || "") === selectedPackageOrderId,
+    );
+  const packageResaleEnabled = organizationResaleEnabled(selectedPackageOrder);
 
   const reloadPackagePasses = useCallback(
     async (
@@ -5456,16 +5477,39 @@ export default function SeasonTickets({
               Transfer season pass
             </button>
             {seasonPassTransferBlocked ? (
-              <p
+              <div
                 style={{
-                  margin: 0,
+                  display: "flex",
+                  alignItems: "flex-start",
+                  gap: 8,
                   fontSize: fluidSize(13),
                   lineHeight: browseLeading("body"),
-                  color: DANGER,
+                  color: FAINT,
                 }}
               >
-                {PASS_TRANSFER_DISPLAY_COPY.seasonPassTransferred}
-              </p>
+                <svg
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth={2}
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  aria-hidden="true"
+                  style={{
+                    width: 16,
+                    height: 16,
+                    flexShrink: 0,
+                    marginTop: 2,
+                  }}
+                >
+                  <circle cx="12" cy="12" r="10" />
+                  <line x1="12" y1="16" x2="12" y2="12" />
+                  <line x1="12" y1="8" x2="12.01" y2="8" />
+                </svg>
+                <p style={{ margin: 0 }}>
+                  {seasonPassBlockedTransferCopy(packageResaleEnabled)}
+                </p>
+              </div>
             ) : null}
           </div>
         ) : null}
@@ -6835,8 +6879,8 @@ export default function SeasonTickets({
             <div key={t.id} style={{ ...card, borderRadius: 20, padding: cardPad, display: "flex", alignItems: "center", gap: 14, flexWrap: "wrap" }}>
               <div style={{ flex: 1, minWidth: 200, display: "flex", flexDirection: "column", gap: 5 }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: fluidSize(12), fontWeight: 600, whiteSpace: "nowrap", color: pending ? "#c07a12" : GREEN }}>
-                  <span style={{ width: 5, height: 5, flexShrink: 0, borderRadius: 999, background: pending ? "#c07a12" : GREEN }} />
-                  {pending ? "Pending · awaiting claim" : "Claimed · " + (t.claimedOn || t.on)}
+                  <LeadingMetaDot color={pending ? "#c07a12" : GREEN} />
+                  <span>{pending ? "Pending · awaiting claim" : "Claimed · " + (t.claimedOn || t.on)}</span>
                 </div>
                 <div style={{ fontSize: fluidSize(17), fontWeight: 600, letterSpacing: "-0.015em" }}>{t.title}</div>
                 {t.schedule ? (
@@ -6959,8 +7003,8 @@ export default function SeasonTickets({
             <div key={listing.id} style={{ ...card, borderRadius: 20, padding: cardPad, display: "flex", alignItems: "center", gap: 14, flexWrap: "wrap" }}>
               <div style={{ flex: 1, minWidth: 200, display: "flex", flexDirection: "column", gap: 5 }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: fluidSize(12), fontWeight: 600, whiteSpace: "nowrap", color: active ? GREEN : SUB }}>
-                  <span style={{ width: 5, height: 5, flexShrink: 0, borderRadius: 999, background: active ? GREEN : MUTE }} />
-                  {listingStatusDotLine(listing)}
+                  <LeadingMetaDot color={active ? GREEN : SUB} />
+                  <span>{listingStatusDotLine(listing)}</span>
                 </div>
                 <div style={{ fontSize: fluidSize(17), fontWeight: 600, letterSpacing: "-0.015em" }}>{listingEventName(listing)}</div>
                 {schedule ? (
@@ -7544,7 +7588,11 @@ export default function SeasonTickets({
       return null;
     } catch (err) {
       return activeTf.passKind
-        ? parsePassTransferApiError(err, activeTf.passKind)
+        ? parsePassTransferApiError(
+            err,
+            activeTf.passKind,
+            packageResaleEnabled,
+          )
         : parseTicketTransferApiError(err, activeTfSelectedTickets.length);
     }
   };

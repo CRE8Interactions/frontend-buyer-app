@@ -66,9 +66,10 @@ describe("walletListings", () => {
     const active = mapWalletListing(demoActiveListing())!;
     const sold = mapWalletListing(demoSoldListing())!;
     const expired = mapWalletListing(demoExpiredListing())!;
-    expect(listingStatusDotLine(active)).toMatch(/^active on /);
-    expect(listingStatusDotLine(sold)).toMatch(/^sold to buyer@example.com · sold on /);
-    expect(listingStatusDotLine(expired)).toMatch(/^expired on /);
+    expect(listingStatusDotLine(active)).toMatch(/^Active · /);
+    expect(listingStatusDotLine(sold)).toMatch(/^Sold to buyer@example.com · /);
+    expect(listingStatusDotLine(sold)).not.toMatch(/sold on /);
+    expect(listingStatusDotLine(expired)).toMatch(/^Expired · /);
   });
 
   it("merges listings by id", () => {

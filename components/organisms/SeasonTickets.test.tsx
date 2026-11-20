@@ -2839,6 +2839,61 @@ describe("SeasonTickets package tab", () => {
     expect(mockedCreateTicketTransfer).not.toHaveBeenCalled();
   });
 
+  it("mentions listed when the organization has resale on", async () => {
+    const order = demoCompletedPackageOrder();
+    const seat22 = order.tickets[1];
+    const pass22 = demoPackageAccessPass({
+      uuid: "access-pass-seat-22",
+      seatNumber: seat22.seatNumber,
+    });
+    const [, activeEvent, transferredEvent] = pkg.events;
+    const events = [
+      activeEvent,
+      { ...transferredEvent, start: "2099-09-19T23:00:00.000Z" },
+    ];
+    const tickets = events.flatMap((event) =>
+      order.tickets.map((ticket) => ({
+        ...ticket,
+        id: `${ticket.id}-${event.uuid}`,
+        eventUUID: event.uuid,
+        ...(event.uuid === transferredEvent.uuid &&
+        ticket.seatNumber === seat22.seatNumber
+          ? { transferStatus: "transferred" }
+          : {}),
+      })),
+    );
+    navigationMocks.pathname = `/wallet/my-tickets/order/${packageOrderId}/package/${pkg.uuid}/`;
+    mockedGetMyEvents.mockResolvedValue({
+      data: [
+        demoCompletedPackageOrder({
+          event: null,
+          organization: {
+            ...order.organization,
+            setting: { allowResales: true },
+          },
+          package: {
+            ...order.package,
+            events: events.map((event) => ({ ...event, enableResale: true })),
+            organization: { name: order.package.organization?.name },
+          },
+          tickets,
+        }),
+      ],
+    } as never);
+    mockedGetAccessPassesByOrder.mockResolvedValue({
+      data: { data: [pass22] },
+    } as never);
+
+    render(<SeasonTickets />);
+
+    expect(
+      await screen.findByRole("button", { name: "Transfer season pass" }),
+    ).toBeDisabled();
+    expect(
+      screen.getByText(PASS_TRANSFER_DISPLAY_COPY.seasonPassTransferredOrResold),
+    ).toBeInTheDocument();
+  });
+
   it("disables both season passes when two package games were transferred without ticket payloads", async () => {
     const order = demoCompletedPackageOrder();
     const [seat21, seat22] = order.tickets;
@@ -9930,7 +9985,7 @@ describe("SeasonTickets listings and sell", { timeout: 30_000 }, () => {
 
     expect(await screen.findByRole("heading", { name: "Listings", level: 1 })).toBeInTheDocument();
     expect(mockedGetMyListings).toHaveBeenCalled();
-    expect((await screen.findAllByText(/^active on /i)).length).toBe(2);
+    expect((await screen.findAllByText(/^Active · /)).length).toBe(2);
     const active = mapWalletListing(demoActiveListing())!;
     const later = mapWalletListing(demoActiveListingLater())!;
     expect(screen.getByText(later.event!.name!)).toBeInTheDocument();

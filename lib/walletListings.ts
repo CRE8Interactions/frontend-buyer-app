@@ -162,17 +162,18 @@ export function listingStatusDotLine(listing: WalletListing): string {
   const tab = listingTab(listing.status);
   if (tab === "active") {
     const on = listingTimestamp(listing.createdAt, listing);
-    return on ? `active on ${on}` : "active";
+    return on ? `Active · ${on}` : "Active";
   }
   if (tab === "sold") {
     const on = listingTimestamp(listing.soldAt || listing.createdAt, listing);
     const email = listing.soldToEmail;
-    const soldOn = on ? `sold on ${on}` : "sold";
-    return email ? `sold to ${email} · ${soldOn}` : soldOn;
+    if (email && on) return `Sold to ${email} · ${on}`;
+    if (email) return `Sold to ${email}`;
+    return on ? `Sold · ${on}` : "Sold";
   }
   if (tab === "expired") {
     const on = listingTimestamp(listing.expiredAt || listing.createdAt, listing);
-    return on ? `expired on ${on}` : "expired";
+    return on ? `Expired · ${on}` : "Expired";
   }
   return listing.status;
 }
