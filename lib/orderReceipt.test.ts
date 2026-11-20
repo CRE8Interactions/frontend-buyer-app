@@ -19,6 +19,7 @@ import * as completedOrderApi from "@/lib/completedOrder";
 import {
   buildOrderReceipt,
   downloadOrderReceipt,
+  formatReceiptDate,
   formatReceiptPaymentMethod,
   openOrderReceiptPdf,
   printOrderReceiptHtml,
@@ -103,6 +104,55 @@ describe("buildOrderReceipt", () => {
         amountDue: true,
       },
     ]);
+  });
+
+  it("prints the admin refund invoice for a refunded order", () => {
+    const refundedAt = "2026-11-02T15:00:00.000Z";
+    const order = demoCompletedTicketOrder({
+      status: "refunded",
+      updatedAt: refundedAt,
+    });
+    const receipt = buildOrderReceipt(order)!;
+    const when = formatReceiptDate(
+      refundedAt,
+      order.event?.venue?.timezone,
+    );
+
+    expect(receipt.title).toBe("Refund");
+    expect(receipt.billToLabel).toBe("Refunded to");
+    expect(receipt.paidOnLabel).toBe(`Refund processed on ${when}`);
+    expect(receipt.supportNote).toMatch(
+      /credited back to your original payment method/i,
+    );
+    expect(receipt.meta.map((row) => row.label)).toEqual([
+      "Invoice number",
+      "Payment method",
+      "Date paid",
+    ]);
+    expect(receipt.totals.at(-1)).toEqual({
+      label: "Amount refunded",
+      amount: formatCurrency(order.total),
+      strong: true,
+      amountDue: true,
+    });
+
+    const html = renderOrderReceiptHtml(receipt);
+    expect(html).toContain("Refund processed on");
+    expect(html).toContain("Amount refunded");
+    expect(html).toContain("Refunded to");
+    expect(html).not.toContain("Amount paid");
+    expect(html).not.toContain("Marked as paid");
+  });
+
+  it("keeps a released order on the regular receipt", () => {
+    const receipt = buildOrderReceipt(
+      demoCompletedTicketOrder({ status: "released" }),
+    )!;
+
+    expect(receipt.title).toBe("Receipt");
+    expect(receipt.billToLabel).toBe("Bill to");
+    expect(receipt.paidOnLabel).toMatch(/^Marked as paid on /);
+    expect(receipt.totals.at(-1)?.label).toBe("Amount paid");
   });
 
   it("prices event ticket lines from the fee-exclusive subtotal", () => {
@@ -426,6 +476,62 @@ describe("buildOrderReceipt", () => {
       `${pkg.name} – Sec ${listing.sectionNumber} – Row ${listing.rowNumber} – Seat ${ticket.seatNumber}`,
     );
     expect(receipt.lines[0].qty).toBe(String(pkg.events.length));
+  });
+
+  it("counts every package game when a past game is missing from the profile order", () => {
+    const pkg = demoSeasonPackage();
+    const base = demoCompletedPackageOrder();
+    const ticket = (base.tickets as Array<Record<string, unknown>>)[0];
+    const section = "Standing Room Right";
+    const events = Array.from({ length: 10 }, (_, index) => ({
+      uuid: `evt-lily-${index + 1}`,
+      name: `Game ${index + 1}`,
+    }));
+    const gameTicket = (eventId: string, index: number) => ({
+      ...ticket,
+      id: index + 1,
+      eventUUID: eventId,
+      sectionNumber: section,
+      sectionName: section,
+      rowNumber: "GA",
+      seatNumber: "GA",
+      generalAdmission: true,
+      cost: index === 0 ? 100 : 0,
+      price: index === 0 ? 100 : 0,
+    });
+    const packageOrder = {
+      ...pkg,
+      name: "Lily O'Donnell (10 Game Package)",
+      events,
+    };
+    const fees = {
+      total: 100,
+      serviceFee: 0,
+      processingFee: 0,
+      estimatedProcessingFee: 0,
+      salesTax: 0,
+    };
+    const fromCheckout = buildOrderReceipt(
+      demoCompletedPackageOrder({
+        tickets: events.map((event, index) => gameTicket(event.uuid, index)),
+        package: packageOrder,
+        ...fees,
+      }),
+    )!;
+    const fromProfile = buildOrderReceipt(
+      demoCompletedPackageOrder({
+        tickets: events
+          .slice(0, 9)
+          .map((event, index) => gameTicket(event.uuid, index)),
+        package: packageOrder,
+        ...fees,
+      }),
+    )!;
+
+    expect(fromProfile.lines[0].qty).toBe("10");
+    expect(fromProfile.lines[0].unitPrice).toBe(formatCurrency(10));
+    expect(fromProfile.lines[0].amount).toBe(formatCurrency(100));
+    expect(fromProfile.lines).toEqual(fromCheckout.lines);
   });
 
   it("returns no line items when the order has no tickets", () => {

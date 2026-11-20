@@ -208,6 +208,11 @@ type Props = {
   hideChrome?: boolean;
   /** Package maps use the same legend rules; resale pricing copy differs. */
   mapLegend?: "event" | "package";
+  /**
+   * Show "Incl. taxes & fees" on seat and section tooltips.
+   * Defaults to event maps only. A package passes true when its price already includes them.
+   */
+  pricesIncludeFees?: boolean;
   /** Parent (seat-map modal) already shows the org loader. */
   hideLoadingSpinner?: boolean;
   /** Increment to clear the seat/section tooltip (mobile View selection / Checkout). */
@@ -229,6 +234,7 @@ export default function InteractiveSeatmap({
   compactChrome = false,
   hideChrome = false,
   mapLegend = "event",
+  pricesIncludeFees = mapLegend !== "package",
   hideLoadingSpinner = false,
   dismissTooltipKey = 0,
   onUnlockOffer,
@@ -1336,7 +1342,7 @@ export default function InteractiveSeatmap({
         accent={accent}
         buttonColor={buttonColor}
         buttonTextColor={buttonTextColor}
-        pricesIncludeFees={mapLegend !== "package"}
+        pricesIncludeFees={pricesIncludeFees}
       />
     </div>
   );

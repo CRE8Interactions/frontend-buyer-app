@@ -86,6 +86,7 @@ type MapProps = {
   updatingInventory?: boolean;
   itemPriceNote?: string;
   mapLegend?: "event" | "package";
+  pricesIncludeFees?: boolean;
 };
 
 function overlay(props: MapProps) {
@@ -356,6 +357,41 @@ describe("SeatMapSelectionOverlay map readiness", () => {
     expect(screen.queryByText(/incl\. taxes & fees/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/prices are all-in/i)).not.toBeInTheDocument();
     expect(screen.getByText(/buyer protection/i)).toBeInTheDocument();
+  });
+
+  it("shows taxes and fees on a package selection when the price already includes them", () => {
+    const pkg = demoSeasonPackage();
+    const group = DEMO_SEATED_TICKET_GROUPS[0];
+    useSeatmapStore.setState({
+      selectedFromMap: [
+        {
+          ...group,
+          GA: false,
+          quantity: 1,
+          seatId: "s1",
+          seatNumber: 1,
+          package: { name: pkg.name, maxQuantity: pkg.maxQuantity },
+        },
+      ],
+      totalCount: 1,
+      totalPrice: Number(group.price || 0),
+    });
+    const gameCount = pkg.events.length;
+    renderOverlay({
+      mapMapping: demoSeatmapMapping(),
+      mapBackground: BACKGROUND,
+      mapLegend: "package",
+      pricesIncludeFees: true,
+      itemPriceNote: `All ${gameCount} games`,
+    });
+    fireEvent.load(backgroundPreload()!);
+
+    expect(screen.getByText("Incl. taxes & fees")).toBeInTheDocument();
+    expect(screen.getByText(`All ${gameCount} games`)).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: /details/i }));
+    expect(screen.getByText("incl. taxes & fees")).toBeInTheDocument();
+    expect(screen.getByText(/prices are all-in/i)).toBeInTheDocument();
   });
 
   it("lists a complimentary ticket at $0.00 instead of the fee-inclusive price", () => {

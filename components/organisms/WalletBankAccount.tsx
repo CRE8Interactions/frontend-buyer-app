@@ -168,7 +168,7 @@ export default function WalletBankAccount({ processing = false }: { processing?:
 
   return (
     <div style={{ maxWidth: 720, margin: "0 auto", padding: "28px 20px 48px", display: "flex", flexDirection: "column", gap: 16, color: NAVY }}>
-      <InAppBackLink href="/wallet/my-profile/" aria-label="Back to profile" style={backLinkStyle}>
+      <InAppBackLink href="/wallet/my-profile/" aria-label="Back to profile" toProfile style={backLinkStyle}>
         <BackArrow />
         Back to profile
       </InAppBackLink>

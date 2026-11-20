@@ -73,6 +73,16 @@ export type OrderReceiptSource = {
   paymentProcessor?: string | null;
   paymentType?: string | null;
   paymentStatus?: string | null;
+  status?: string | null;
+  createdAt?: string;
+  updatedAt?: string;
+  details?:
+    | string
+    | {
+        lastPartialRefundAt?: string;
+        voided?: { at?: string };
+      }
+    | null;
   intentDetails?: {
     id?: string;
     charges?: {
@@ -163,6 +173,7 @@ export type OrderReceipt = {
   sellerTiname?: string;
   sellerTincode?: string;
   inquiryEmail: string;
+  meta: Array<{ label: string; value: string }>;
   invoiceNumber: string;
   paymentMethod: string;
   issueDate: string;
@@ -293,6 +304,38 @@ function initialsFromName(name: string) {
   return `${parts[0][0] || ""}${parts[1][0] || ""}`.toUpperCase();
 }
 
+function orderDetails(order: OrderReceiptSource) {
+  const raw = order.details;
+  if (!raw) return {};
+  if (typeof raw === "string") {
+    try {
+      const parsed = JSON.parse(raw) as unknown;
+      return parsed && typeof parsed === "object"
+        ? (parsed as { lastPartialRefundAt?: string; voided?: { at?: string } })
+        : {};
+    } catch {
+      return {};
+    }
+  }
+  return raw;
+}
+
+/** A full refund gets the admin refund invoice. A released order was cancelled, not refunded. */
+function orderIsRefunded(order: OrderReceiptSource) {
+  return String(order.status || "").trim().toLowerCase() === "refunded";
+}
+
+function refundProcessedAt(order: OrderReceiptSource) {
+  const details = orderDetails(order);
+  return (
+    details.lastPartialRefundAt ||
+    details.voided?.at ||
+    order.updatedAt ||
+    order.processedAt ||
+    order.createdAt
+  );
+}
+
 function receiptTimezone(order: OrderReceiptSource): TimezoneLike {
   return (
     order.event?.venue?.timezone ||
@@ -385,6 +428,36 @@ function allocateCents(totalCents: number, weights: number[]): number[] {
   });
 }
 
+function ticketEventKey(ticket: Record<string, unknown>): string {
+  const value =
+    ticket.eventUUID ?? ticket.eventId ?? ticket.event_uuid ?? ticket.event_id;
+  if (value == null || value === "") return "";
+  return String(value);
+}
+
+/**
+ * A season seat is sold for every game. Profile orders drop a game that
+ * already ended, so the copies on the ticket list can be short of the
+ * package. Quantity stays one per game when those copies are one set of
+ * games with some missing.
+ */
+function packageGameQuantity(
+  copies: number,
+  eventIds: ReadonlySet<string>,
+  gameCount: number,
+): number {
+  const gamesOnLine = eventIds.size;
+  if (
+    gameCount > gamesOnLine &&
+    gamesOnLine > 1 &&
+    copies > 0 &&
+    copies % gamesOnLine === 0
+  ) {
+    return (copies / gamesOnLine) * gameCount;
+  }
+  return copies;
+}
+
 /**
  * One receipt line per season seat. Game copies of that seat stay together
  * even when only one copy carries the offer name or the package price.
@@ -394,6 +467,7 @@ function packageReceiptLines(
   tickets: Array<Record<string, unknown>>,
   title: string,
   subtotal: number,
+  gameCount: number,
 ): OrderReceiptLine[] {
   const groups = new Map<
     string,
@@ -402,6 +476,7 @@ function packageReceiptLines(
       section: string;
       row: string;
       seats: Array<string | number>;
+      events: Set<string>;
       count: number;
     }
   >();
@@ -414,10 +489,12 @@ function packageReceiptLines(
     const row = ticketRowValue(ticket);
     const key = ga ? `ga:${section}` : `seat:${section}:${row}`;
     const seat = ticketSeatValue(ticket);
+    const eventId = ticketEventKey(ticket);
     const existing = groups.get(key);
     if (existing) {
       existing.count += 1;
       if (seat) existing.seats.push(seat);
+      if (eventId) existing.events.add(eventId);
       continue;
     }
     groups.set(key, {
@@ -425,24 +502,29 @@ function packageReceiptLines(
       section,
       row,
       seats: seat ? [seat] : [],
+      events: new Set(eventId ? [eventId] : []),
       count: 1,
     });
   }
 
   const grouped = [...groups.values()];
+  const quantities = grouped.map((group) =>
+    packageGameQuantity(group.count, group.events, gameCount),
+  );
   const amounts = allocateCents(
     Math.max(0, Math.round(subtotal * 100)),
-    grouped.map((group) => group.count),
+    quantities,
   );
 
   return grouped.map((group, index) => {
     const amount = amounts[index] / 100;
+    const quantity = quantities[index];
     const fallback = group.ga ? "GA" : "N/A";
     const seats = formatSeatRange(group.seats);
     return {
       description: `${title} – Sec ${group.section || fallback} – Row ${group.row || fallback} – Seat ${seats || fallback}`,
-      qty: String(group.count),
-      unitPrice: formatCurrency(group.count > 0 ? amount / group.count : amount),
+      qty: String(quantity),
+      unitPrice: formatCurrency(quantity > 0 ? amount / quantity : amount),
       amount: formatCurrency(amount),
     };
   });
@@ -619,7 +701,12 @@ export function buildOrderReceipt(
       : 0;
   const title = lineItemTitle(order);
   const ticketLines = order.package
-    ? packageReceiptLines(tickets, title, subtotal)
+    ? packageReceiptLines(
+        tickets,
+        title,
+        subtotal,
+        Array.isArray(order.package.events) ? order.package.events.length : 0,
+      )
     : feeBreakdown && feeBreakdown.groups.length > 1
       ? feeBreakdown.groups.map((group) => ({
           description: `${title} – ${group.label}`,
@@ -712,10 +799,11 @@ export function buildOrderReceipt(
       amount: `-${formatCurrency(discount)}`,
     });
   }
+  const refunded = orderIsRefunded(order);
   totals.push(
     { label: "Total", amount: formatCurrency(total), strong: true },
     {
-      label: "Amount paid",
+      label: refunded ? "Amount refunded" : "Amount paid",
       amount: formatCurrency(total),
       strong: true,
       amountDue: true,
@@ -731,9 +819,11 @@ export function buildOrderReceipt(
   }
 
   const address = sellerAddress(org);
+  const paidOn = formatReceiptDate(paidSource, timezone);
+  const paymentMethod = formatReceiptPaymentMethod(order);
 
   return {
-    title: "Receipt",
+    title: refunded ? "Refund" : "Receipt",
     sellerName,
     sellerLogoUrl:
       options?.sellerLogoUrl ||
@@ -750,13 +840,27 @@ export function buildOrderReceipt(
     sellerTiname: org?.tiname || undefined,
     sellerTincode: org?.tincode || undefined,
     inquiryEmail: org?.email || "info@blocktickets.net",
+    meta: [
+      { label: "Invoice number", value: invoiceNumber || "N/A" },
+      { label: "Payment method", value: paymentMethod },
+      ...(refunded
+        ? [{ label: "Date paid", value: paidOn }]
+        : [
+            { label: "Date of issue", value: issueDate },
+            { label: "Date due", value: formatReceiptDate(dueSource, timezone) },
+          ]),
+    ],
     invoiceNumber,
-    paymentMethod: formatReceiptPaymentMethod(order),
+    paymentMethod,
     issueDate,
     dueDate: formatReceiptDate(dueSource, timezone),
-    paidOnLabel: `Marked as paid on ${formatReceiptDate(paidSource, timezone)}`,
-    supportNote: "We appreciate your support",
-    billToLabel: "Bill to",
+    paidOnLabel: refunded
+      ? `Refund processed on ${formatReceiptDate(refundProcessedAt(order) || paidSource, timezone)}`
+      : `Marked as paid on ${paidOn}`,
+    supportNote: refunded
+      ? "The refund will be credited back to your original payment method within 5-10 business days."
+      : "We appreciate your support",
+    billToLabel: refunded ? "Refunded to" : "Bill to",
     billToName,
     billToEmail,
     lines,

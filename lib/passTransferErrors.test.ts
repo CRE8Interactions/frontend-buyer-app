@@ -3,7 +3,9 @@ import { FIELD_COPY } from "@/lib/fieldValidation";
 import {
   PASS_TRANSFER_API_ERROR_MESSAGES,
   PASS_TRANSFER_DISPLAY_COPY,
+  organizationResaleEnabled,
   parsePassTransferApiError,
+  seasonPassBlockedTransferCopy,
 } from "@/lib/passTransferErrors";
 
 function axiosError(status: number, data: unknown) {
@@ -22,6 +24,59 @@ describe("parsePassTransferApiError", () => {
         "season pass",
       ),
     ).toBe(PASS_TRANSFER_DISPLAY_COPY.seasonPassTransferred);
+    expect(
+      parsePassTransferApiError(
+        axiosError(400, {
+          error: {
+            message: PASS_TRANSFER_API_ERROR_MESSAGES.seasonPassUnavailable,
+          },
+        }),
+        "season pass",
+        true,
+      ),
+    ).toBe(PASS_TRANSFER_DISPLAY_COPY.seasonPassTransferredOrResold);
+  });
+
+  it("mentions listed only when the organization has resale on", () => {
+    expect(seasonPassBlockedTransferCopy(false)).toBe(
+      PASS_TRANSFER_DISPLAY_COPY.seasonPassTransferred,
+    );
+    expect(seasonPassBlockedTransferCopy(true)).toBe(
+      PASS_TRANSFER_DISPLAY_COPY.seasonPassTransferredOrResold,
+    );
+    expect(organizationResaleEnabled({ organization: { enableResale: true } })).toBe(
+      true,
+    );
+    expect(
+      organizationResaleEnabled({
+        event: null,
+        organization: { name: "Houston Bulls" },
+        package: {
+          organization: { name: "Houston Bulls" },
+          events: [
+            {
+              enableResale: true,
+              organization: { setting: { allowResales: true } },
+            },
+          ],
+        },
+      }),
+    ).toBe(true);
+    expect(
+      organizationResaleEnabled({
+        package: {
+          events: [
+            {
+              enableResale: false,
+              organization: { setting: { allowResales: false } },
+            },
+          ],
+        },
+      }),
+    ).toBe(false);
+    expect(organizationResaleEnabled({ package: { organization: {} } })).toBe(
+      false,
+    );
   });
 
   it("returns assigned and scanned copy for mapped 402 responses", () => {

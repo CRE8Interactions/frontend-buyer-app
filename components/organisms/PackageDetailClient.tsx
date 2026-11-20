@@ -37,7 +37,9 @@ import { cacheOrgBranding } from "@/lib/orgBrandingCache";
 import { packageTabTitle } from "@/lib/seo";
 import {
   formatPackageFromPrice,
+  packageFeesIncludedInPrice,
   packageFromPrice,
+  type PackageWebsiteSeatFees,
 } from "@/lib/eventFromPrice";
 import {
   createPackageLookupTables,
@@ -102,6 +104,7 @@ type EventPackage = {
   incrementsOf?: number;
   limit?: number;
   pricingTiers?: { price?: number }[];
+  websiteSeatFees?: PackageWebsiteSeatFees | null;
   package_tickets?: PackageTicket[];
   seatmap?: {
     id?: string | number;
@@ -209,6 +212,12 @@ export default function PackageDetailClient({
 
   const theme = brandingToTicketingTheme(null, pkg?.organization);
   const mobile = vw < 900;
+  const pricesIncludeTaxesAndFees = packageFeesIncludedInPrice(
+    pkg?.websiteSeatFees,
+  );
+  const feeCaption = pricesIncludeTaxesAndFees
+    ? "Taxes and fees included"
+    : "Taxes and fees added at checkout";
 
   useEffect(() => {
     const title = packageTabTitle(pkg?.name);
@@ -303,6 +312,7 @@ export default function PackageDetailClient({
   const seasonYear = pkg ? packageSeasonYear(pkg, events, timezone) : "";
   const dateRange = packageDateRange(events, timezone);
   const gameCount = events.length;
+  const selectionPriceNote = `All ${gameCount || 1} games`;
   const sameSeatLabel =
     gameCount === 1 ? "Same seat, 1 game" : `Same seat, ${gameCount} games`;
 
@@ -841,7 +851,7 @@ export default function PackageDetailClient({
                           : "See tickets"}
                       </span>
                       <span style={{ fontSize: fluidSize(13), lineHeight: 1.5, color: MUTE }}>
-                        Fees added at checkout
+                        {feeCaption}
                       </span>
                     </div>
                     <BrandedActionButton
@@ -912,7 +922,7 @@ export default function PackageDetailClient({
                   </div>
                 )}
                 <div style={{ fontSize: fluidSize(12), lineHeight: 1.5, color: MUTE }}>
-                  Fees added at checkout
+                  {feeCaption}
                 </div>
               </div>
               <BrandedActionButton
@@ -946,7 +956,8 @@ export default function PackageDetailClient({
           onClose={closeSeatmap}
           onCheckout={checkout}
           checkoutLoading={checkingOut}
-          itemPriceNote={`All ${gameCount || 1} games`}
+          itemPriceNote={selectionPriceNote}
+          pricesIncludeFees={pricesIncludeTaxesAndFees}
           subtotalCaption={subtotalCaption}
           mapBackground={background}
           mapMapping={storeMapping}

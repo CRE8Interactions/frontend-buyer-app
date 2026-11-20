@@ -3,7 +3,14 @@ import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import WalletBankAccount from "@/components/organisms/WalletBankAccount";
 import { demoLinkedBankAccount } from "@/lib/demo/fixtures";
+import { __resetInAppBackForTests, markInAppNavigation } from "@/lib/inAppBack";
 import { __resetWalletAccountCacheForTests } from "@/lib/walletAccountCache";
+
+const routerMocks = vi.hoisted(() => ({
+  push: vi.fn(),
+  back: vi.fn(),
+  replace: vi.fn(),
+}));
 
 vi.mock("next/link", () => ({
   default: ({
@@ -22,7 +29,7 @@ vi.mock("next/link", () => ({
 }));
 
 vi.mock("next/navigation", () => ({
-  useRouter: () => ({ push: vi.fn(), back: vi.fn(), replace: vi.fn() }),
+  useRouter: () => routerMocks,
 }));
 
 vi.mock("@/lib/api", () => ({
@@ -53,10 +60,27 @@ const linkedStripeAccount = {
 
 describe("WalletBankAccount", () => {
   beforeEach(() => {
+    __resetInAppBackForTests();
+    routerMocks.push.mockReset();
+    routerMocks.back.mockReset();
+    routerMocks.replace.mockReset();
     __resetWalletAccountCacheForTests();
     mockedGetBankAccount.mockReset();
     mockedCreateBankAccount.mockReset();
     mockedRemoveBankAccount.mockReset();
+  });
+
+  it("returns to My Profile instead of the previous wallet tab", async () => {
+    const user = userEvent.setup();
+    markInAppNavigation();
+    mockedGetBankAccount.mockResolvedValue({ data: {} } as never);
+    render(<WalletBankAccount />);
+
+    await user.click(await screen.findByRole("link", { name: "Back to profile" }));
+
+    expect(routerMocks.push).toHaveBeenCalledWith("/wallet/my-profile/");
+    expect(routerMocks.back).not.toHaveBeenCalled();
+    expect(routerMocks.replace).not.toHaveBeenCalled();
   });
 
   it("offers to link a bank when none is connected", async () => {

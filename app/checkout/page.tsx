@@ -48,6 +48,7 @@ import {
   packageCartTickets,
   packageOrderSummary,
   promoSummaryLabel,
+  isPackageProcessingFeeWaived,
   resolveFlexPackCheckoutTotals,
   resolvePackageCheckoutTotals,
   ticketSelectionSummary,
@@ -317,11 +318,16 @@ function CheckoutPaymentForm({
     ? resolveFlexPackCheckoutTotals(cart)
     : null;
 
+  const accessPassProcessingFee = isPackageProcessingFeeWaived(
+    cart.packageWebsiteFeeSnapshot,
+  )
+    ? 0
+    : Number(cart.processingFee ?? 0);
   const accessPassChargeTotal =
     Number(cart.total ?? 0) +
     Number(cart.totalTax ?? cart.salesTax ?? 0) +
     Number(cart.serviceFee ?? 0) +
-    Number(cart.processingFee ?? 0) +
+    accessPassProcessingFee +
     Number(donationChargeTotal || 0);
 
   const displayTotal = isDiscountApplied
@@ -1202,13 +1208,10 @@ function CheckoutPage() {
     ? resolveFlexPackCheckoutTotals(cart)
     : null;
   const flexVoucherCount = flexPackVoucherCount(cart?.flex_pack?.gameTickets);
-  const flexHasCustomFee = Boolean(flexTotals?.customFeeLines.length);
-  const flexLineAmount = flexHasCustomFee
-    ? flexTotals?.total || 0
-    : flexTotals?.subtotal || 0;
-  const flexEach = flexHasCustomFee
-    ? flexPackEachPrice(flexTotals?.total, flexVoucherCount)
-    : flexPackEachPrice(cart?.flex_pack?.price, flexVoucherCount);
+  // The voucher price is the amount due. A waived processing fee is already
+  // out of that total, so the per-voucher figure matches the pack card.
+  const flexLineAmount = flexTotals?.total || 0;
+  const flexEach = flexPackEachPrice(flexLineAmount, flexVoucherCount);
   const summaryWhen =
     packageSummary?.seasonLine ||
     (cart?.flex_pack ? flexPackSeasonLine(cart.flex_pack) : when);

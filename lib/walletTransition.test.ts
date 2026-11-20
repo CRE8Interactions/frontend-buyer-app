@@ -1,14 +1,14 @@
 import { afterEach, describe, expect, it } from "vitest";
 import {
+  __resetWalletNavigationForTests,
   beginWalletNavigation,
-  clearWalletNavigation,
   getWalletNavigationPending,
   isWalletNavigationPending,
   syncWalletNavigationCommitted,
 } from "@/lib/walletTransition";
 
 afterEach(() => {
-  clearWalletNavigation();
+  __resetWalletNavigationForTests();
   window.history.replaceState({}, "", "/");
 });
 

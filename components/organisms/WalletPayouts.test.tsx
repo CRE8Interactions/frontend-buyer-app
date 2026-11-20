@@ -1,8 +1,16 @@
 import { render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import WalletPayouts from "@/components/organisms/WalletPayouts";
+import { __resetInAppBackForTests, markInAppNavigation } from "@/lib/inAppBack";
 import { __resetWalletAccountCacheForTests } from "@/lib/walletAccountCache";
 import { demoLinkedBankAccount } from "@/lib/demo/fixtures";
+
+const routerMocks = vi.hoisted(() => ({
+  push: vi.fn(),
+  back: vi.fn(),
+  replace: vi.fn(),
+}));
 
 vi.mock("next/link", () => ({
   default: ({
@@ -21,7 +29,7 @@ vi.mock("next/link", () => ({
 }));
 
 vi.mock("next/navigation", () => ({
-  useRouter: () => ({ push: vi.fn(), back: vi.fn(), replace: vi.fn() }),
+  useRouter: () => routerMocks,
 }));
 
 vi.mock("@/lib/api", () => ({
@@ -36,11 +44,30 @@ const mockedGetAvailableFunds = vi.mocked(getAvailableFunds);
 
 describe("WalletPayouts", () => {
   beforeEach(() => {
+    __resetInAppBackForTests();
+    routerMocks.push.mockReset();
+    routerMocks.back.mockReset();
+    routerMocks.replace.mockReset();
     __resetWalletAccountCacheForTests();
     mockedGetBankAccount.mockReset();
     mockedGetAvailableFunds.mockReset();
     Object.defineProperty(window, "innerWidth", { configurable: true, value: 1280 });
     mockedGetBankAccount.mockResolvedValue({ data: demoLinkedBankAccount() } as never);
+  });
+
+  it("returns to My Profile instead of the previous wallet tab", async () => {
+    const user = userEvent.setup();
+    markInAppNavigation();
+    mockedGetAvailableFunds.mockResolvedValue({
+      data: { available: [], onHold: [] },
+    } as never);
+    render(<WalletPayouts />);
+
+    await user.click(await screen.findByRole("link", { name: "Back to profile" }));
+
+    expect(routerMocks.push).toHaveBeenCalledWith("/wallet/my-profile/");
+    expect(routerMocks.back).not.toHaveBeenCalled();
+    expect(routerMocks.replace).not.toHaveBeenCalled();
   });
 
   it("shows the saved payouts again without loading them", async () => {

@@ -28,6 +28,11 @@ import { cacheOrgBranding } from "@/lib/orgBrandingCache";
 import { buildOrderReceipt } from "@/lib/orderReceipt";
 import { purchaseTabTitle } from "@/lib/seo";
 import { setGuestCheckoutBuyer } from "@/lib/guestCheckout";
+import {
+  beginWalletNavigation,
+  clearWalletNavigation,
+  getWalletNavigationPending,
+} from "@/lib/walletTransition";
 
 vi.mock("next/link", () => ({
   default: ({
@@ -158,6 +163,7 @@ describe("Checkout success receipt", () => {
 
   afterEach(() => {
     __setOrderPaymentDetailsPollForTests(null);
+    clearWalletNavigation();
     vi.useRealTimers();
   });
 
@@ -536,20 +542,33 @@ describe("Checkout success receipt", () => {
     ).toBeInTheDocument();
   });
 
-  it("shows Standard admission for a package order with no offer", async () => {
+  it("shows Season package above the seat when a package order has no offer", async () => {
     const order = demoCompletedPackageOrder();
     mockedGetOrderByPi.mockResolvedValue({
       data: demoCompletedPackageOrder({
         tickets: (order.tickets as Array<Record<string, unknown>>).map(
-          (ticket) => ({ ...ticket, offerName: undefined, offer: undefined }),
+          (ticket, index) =>
+            index === 0
+              ? {
+                  ...ticket,
+                  offerName: "Standard Admission",
+                  offer: { name: "Standard Admission" },
+                }
+              : { ...ticket, offerName: undefined, offer: undefined },
         ),
       }),
     } as never);
     render(<CheckoutSuccessPageRoute />);
-    expect(await screen.findByText("Standard admission")).toBeInTheDocument();
+    const badge = await screen.findByText("Season package");
+    const section = String(
+      (order.tickets[0] as { sectionNumber?: string }).sectionNumber,
+    );
+    const seat = screen.getByText(new RegExp(`Sec ${section}\\b`));
     expect(
-      screen.queryByText(DEMO_SEATED_TICKET_GROUPS[0].offer!.name!),
-    ).not.toBeInTheDocument();
+      badge.compareDocumentPosition(seat) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    expect(screen.queryByText("Standard admission")).not.toBeInTheDocument();
+    expect(screen.queryByText("Standard Admission")).not.toBeInTheDocument();
   });
 
   it("shows Blocktickets completed-order fee lines for a package", async () => {
@@ -1101,6 +1120,20 @@ describe("Checkout success receipt", () => {
     expect(
       screen.getByText(new RegExp(`We've emailed it to ${DEMO_USER.email}`)),
     ).toBeInTheDocument();
+  });
+
+  it("opens My tickets from checkout success instead of a stored Profile path", async () => {
+    window.history.replaceState({}, "", "/wallet/my-tickets/");
+    beginWalletNavigation("/wallet/my-profile/");
+    expect(getWalletNavigationPending()).toBe("/wallet/my-profile");
+
+    render(<CheckoutSuccessPageRoute />);
+
+    const wallet = await screen.findByRole("link", { name: /go to my wallet/i });
+    expect(wallet).toHaveAttribute("href", "/wallet/my-tickets/");
+    await userEvent.click(wallet);
+
+    expect(getWalletNavigationPending()).toBeNull();
   });
 
   it("shows an error when the completed order cannot be loaded", async () => {

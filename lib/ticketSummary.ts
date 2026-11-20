@@ -103,6 +103,26 @@ export function selectionOfferName(
   return offerNameFromSource(group) || fallback;
 }
 
+const STANDARD_ADMISSION_OFFER = /^standard admission$/i;
+
+/**
+ * Season-package confirmation badge. One shared offer name stays; Standard
+ * Admission, a missing offer, or a mix of those says Season package.
+ */
+export function packageConfirmationOfferName(
+  tickets?: ReadonlyArray<unknown> | null,
+): string {
+  const names = new Set<string>();
+  for (const ticket of tickets || []) {
+    if (!ticket || typeof ticket !== "object") continue;
+    const name = offerNameFromSource(ticket as OfferNameSource);
+    if (!name || STANDARD_ADMISSION_OFFER.test(name)) continue;
+    names.add(name);
+  }
+  if (names.size === 1) return [...names][0]!;
+  return tickets?.length ? "Season package" : "";
+}
+
 type ResaleOfferSource = OfferNameSource & {
   resale?: boolean;
   on_sale_status?: string;
@@ -582,6 +602,29 @@ function roundMoney(value: number) {
   return Math.round(value * 100) / 100;
 }
 
+function packageFeeSnapshotRecord(
+  snapshot: unknown,
+): Record<string, unknown> | null {
+  let source = snapshot;
+  if (typeof source === "string") {
+    try {
+      source = JSON.parse(source) as unknown;
+    } catch {
+      return null;
+    }
+  }
+  if (!source || typeof source !== "object") return null;
+  return source as Record<string, unknown>;
+}
+
+/**
+ * Organization turned card processing off for this package or flex pack hold.
+ * A missing snapshot still charges the fee stored on the cart.
+ */
+export function isPackageProcessingFeeWaived(snapshot: unknown): boolean {
+  return packageFeeSnapshotRecord(snapshot)?.processingFeeMode === "waived";
+}
+
 /**
  * Package custom fees stored on the cart when the hold was priced.
  * Legacy checkout reads the same snapshot: one named line per fee, or the
@@ -590,16 +633,8 @@ function roundMoney(value: number) {
 export function packageCustomFeeLines(
   snapshot: unknown,
 ): PackageCustomFeeLine[] {
-  let source = snapshot;
-  if (typeof source === "string") {
-    try {
-      source = JSON.parse(source) as unknown;
-    } catch {
-      return [];
-    }
-  }
-  if (!source || typeof source !== "object") return [];
-  const record = source as Record<string, unknown>;
+  const record = packageFeeSnapshotRecord(snapshot);
+  if (!record) return [];
   const raw = record.customFeeLines;
   if (Array.isArray(raw)) {
     const lines = raw.flatMap((line) => {
@@ -797,9 +832,13 @@ export function resolvePackageCheckoutTotals(
   customFeeLines: PackageCustomFeeLine[];
 } {
   const serviceFee = Number(cart?.serviceFee || 0);
-  const processingFee = Number(
-    cart?.estimatedProcessingFee ?? cart?.processingFee ?? 0,
-  );
+  // A waived hold lists the fee as $0 and leaves it out of the amount due,
+  // even when the cart still carries a stored or estimated processing fee.
+  const processingFee = isPackageProcessingFeeWaived(
+    cart?.packageWebsiteFeeSnapshot,
+  )
+    ? 0
+    : Number(cart?.estimatedProcessingFee ?? cart?.processingFee ?? 0);
   // Legacy adds only cart.totalTax on top. Included tax and cart.salesTax
   // are not part of the charged total.
   const tax = Number(cart?.totalTax) || 0;

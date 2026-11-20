@@ -1406,6 +1406,35 @@ describe("Checkout page", { timeout: 20_000 }, () => {
     expect(screen.getAllByText(formatCurrency(0)).length).toBeGreaterThan(0);
   });
 
+  it("lists a waived package processing fee as $0.00 and leaves it off the amount due", async () => {
+    const priced = demoPackageCheckoutCart({
+      processingFee: 4,
+      serviceFee: 8,
+      total: 0,
+    });
+    const summary = packageOrderSummary(priced.package, priced.tickets);
+    const dueWithoutFee = summary.subtotal + Number(priced.serviceFee);
+    const cart = {
+      ...priced,
+      packageWebsiteFeeSnapshot: { processingFeeMode: "waived" },
+    };
+    mockedGetCart.mockResolvedValue({ data: cart } as never);
+    render(<CheckoutPageRoute />);
+
+    expect(await screen.findByText(priced.package.name)).toBeInTheDocument();
+    expect(screen.getByText("Processing Fee").parentElement).toHaveTextContent(
+      formatCurrency(0),
+    );
+    expect(screen.getByText("Service Fee").parentElement).toHaveTextContent(
+      formatCurrency(priced.serviceFee),
+    );
+    expect(
+      await screen.findByRole("button", {
+        name: `Pay ${formatCurrency(dueWithoutFee)}`,
+      }),
+    ).toBeInTheDocument();
+  });
+
   it("does not show a promo code field for a package purchase", async () => {
     const cart = demoPackageCheckoutCart();
     mockedGetCart.mockResolvedValue({ data: cart } as never);
@@ -1530,6 +1559,11 @@ describe("Checkout page", { timeout: 20_000 }, () => {
       formatCurrency(3.5),
     );
     expect(
+      screen.getByText(
+        `${formatCurrency(expectedTotal / base.flex_pack.gameTickets)} each`,
+      ),
+    ).toBeInTheDocument();
+    expect(
       screen
         .getByText("Service Fee")
         .compareDocumentPosition(screen.getByText("Tax")) &
@@ -1552,6 +1586,65 @@ describe("Checkout page", { timeout: 20_000 }, () => {
     expect(screen.getByText("Service Fee")).toBeInTheDocument();
     expect(screen.getByText("Processing Fee")).toBeInTheDocument();
     expect(screen.getAllByText(formatCurrency(0)).length).toBeGreaterThan(0);
+  });
+
+  it("lists a waived flex pack processing fee as $0.00 and leaves it off the amount due", async () => {
+    const cart = {
+      ...demoFlexPackCheckoutCart({ processingFee: 1.52 }),
+      totalTax: 2,
+      packageWebsiteFeeSnapshot: { processingFeeMode: "waived" },
+    };
+    const dueWithoutFee =
+      Number(cart.flex_pack.price) + Number(cart.serviceFee) + 2;
+    mockedGetCart.mockResolvedValue({ data: cart } as never);
+    render(<CheckoutPageRoute />);
+
+    expect(await screen.findByText(cart.flex_pack.name)).toBeInTheDocument();
+    expect(screen.getByText("Processing Fee").parentElement).toHaveTextContent(
+      formatCurrency(0),
+    );
+    expect(
+      screen.getByText(
+        `${formatCurrency(dueWithoutFee / cart.flex_pack.gameTickets)} each`,
+      ),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByText(
+        `${formatCurrency(Number(cart.flex_pack.price) / cart.flex_pack.gameTickets)} each`,
+      ),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.getByText(`${cart.flex_pack.gameTickets} flex vouchers`)
+        .parentElement?.parentElement,
+    ).toHaveTextContent(formatCurrency(dueWithoutFee));
+    expect(screen.getByText("Tax").parentElement).toHaveTextContent(
+      formatCurrency(2),
+    );
+    expect(
+      await screen.findByRole("button", {
+        name: `Pay ${formatCurrency(dueWithoutFee)}`,
+      }),
+    ).toBeInTheDocument();
+  });
+
+  it("leaves a waived processing fee off an access pass amount due", async () => {
+    const base = demoAccessPassCheckoutCart();
+    const serviceFee = 1;
+    const processingFee = 2.48;
+    const cart = {
+      ...base,
+      serviceFee,
+      processingFee,
+      packageWebsiteFeeSnapshot: { processingFeeMode: "waived" },
+    };
+    mockedGetCart.mockResolvedValue({ data: cart } as never);
+    render(<CheckoutPageRoute />);
+
+    expect(
+      await screen.findByRole("button", {
+        name: `Pay ${formatCurrency(Number(base.total) + serviceFee)}`,
+      }),
+    ).toBeInTheDocument();
   });
 
   it("prices each flex voucher from the amount due and lists the custom fee", async () => {

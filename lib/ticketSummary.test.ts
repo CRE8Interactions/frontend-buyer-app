@@ -43,6 +43,7 @@ import {
   selectionIsResale,
   selectionIsUnnamedResale,
   selectionOfferDescription,
+  packageConfirmationOfferName,
   selectionOfferName,
   selectionTicketCards,
   selectionTooltipOfferLabel,
@@ -65,6 +66,20 @@ describe("selectionOfferName", () => {
       package?: { name?: string };
     } = { package: { name: pkg.name } };
     expect(selectionOfferName(group)).toBe("Standard admission");
+  });
+
+  it("uses Season package when package tickets have no shared offer", () => {
+    const named = { offer: { name: listing.offer?.name } };
+    expect(packageConfirmationOfferName([named, named])).toBe(
+      listing.offer?.name,
+    );
+    expect(
+      packageConfirmationOfferName([
+        { offer: { name: "Standard Admission" } },
+        { offerName: "" },
+      ]),
+    ).toBe("Season package");
+    expect(packageConfirmationOfferName([])).toBe("");
   });
 
   it("reads a nested Strapi offer name", () => {
@@ -1170,6 +1185,27 @@ describe("resolvePackageCheckoutTotals", () => {
     );
   });
 
+  it("drops a stored processing fee from a waived package total", () => {
+    const cart = demoPackageCheckoutCart({ processingFee: 4, serviceFee: 8 });
+    const summary = packageOrderSummary(cart.package, cart.tickets);
+    const dueWithoutFee = summary.subtotal + Number(cart.serviceFee);
+    const totals = resolvePackageCheckoutTotals(
+      {
+        ...cart,
+        total: dueWithoutFee,
+        estimatedProcessingFee: 4,
+        packageWebsiteFeeSnapshot: JSON.stringify({
+          processingFeeMode: "waived",
+        }),
+      },
+      summary.subtotal,
+    );
+
+    expect(totals.processingFee).toBe(0);
+    expect(totals.subtotal).toBe(summary.subtotal);
+    expect(totals.total).toBe(dueWithoutFee);
+  });
+
   it("uses the cart total minus fees when a game copy underprices the package", () => {
     const totals = resolvePackageCheckoutTotals(
       {
@@ -1319,6 +1355,20 @@ describe("resolveFlexPackCheckoutTotals", () => {
 
     expect(totals.total).toBe(
       Number(base.flex_pack.price) + Number(base.serviceFee) + 1.85 + 3.5,
+    );
+  });
+
+  it("drops a stored processing fee from a waived flex pack total", () => {
+    const cart = demoFlexPackCheckoutCart({ processingFee: 1.52 });
+    const totals = resolveFlexPackCheckoutTotals({
+      ...cart,
+      totalTax: 2,
+      packageWebsiteFeeSnapshot: { processingFeeMode: "waived" },
+    });
+
+    expect(totals.processingFee).toBe(0);
+    expect(totals.total).toBe(
+      Number(cart.flex_pack.price) + Number(cart.serviceFee) + 2,
     );
   });
 

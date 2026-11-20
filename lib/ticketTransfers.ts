@@ -952,10 +952,13 @@ function mergeTransferRecord(
             : {}),
         }
       : primary.order ?? secondary.order;
+  const mergedEvent = primary.event?.name
+    ? primary.event
+    : secondary.event ?? primary.event;
   return {
     ...secondary,
     ...primary,
-    event: primary.event?.name ? primary.event : secondary.event ?? primary.event,
+    event: mergedEvent,
     tickets,
     access_pass: accessPass,
     accessPass,
@@ -1818,6 +1821,33 @@ export function dedupeActivePendingReceivedByTicketIds(
   return [...claimedOrOther, ...pendingByTicketKey.values()];
 }
 
+/** Kickoff time comes from getMyReceivedTransfers, not the incoming route. */
+function applyReceivedVenueTimezone(
+  merged: TransferLike[],
+  received: TransferLike[],
+): TransferLike[] {
+  const timezones = new Map<string, string>();
+  for (const transfer of received) {
+    const id = String(transfer.id ?? "").trim();
+    const timezone = eventTimezone(transfer.event as EventLike | undefined);
+    if (id && timezone) timezones.set(id, timezone);
+  }
+  if (!timezones.size) return merged;
+  return merged.map((transfer) => {
+    const timezone = timezones.get(String(transfer.id ?? "").trim());
+    const event = transfer.event;
+    if (!timezone || !event) return transfer;
+    if (eventTimezone(event as EventLike) === timezone) return transfer;
+    return {
+      ...transfer,
+      event: {
+        ...event,
+        venue: { ...(event.venue ?? {}), timezone },
+      },
+    };
+  });
+}
+
 /** Blocktickets My Transfers → Received merges pending incoming pass transfers. */
 export function buildWalletReceivedTransferRows(
   receivedTransfers: TransferLike[],
@@ -1842,8 +1872,11 @@ export function buildWalletReceivedTransferRows(
       (!id || !receivedIds.has(id))
     );
   });
-  const mergedReceived = dedupeActivePendingReceivedByTicketIds(
-    mergeTransferRecords(activeReceived, incomingToMerge),
+  const mergedReceived = applyReceivedVenueTimezone(
+    dedupeActivePendingReceivedByTicketIds(
+      mergeTransferRecords(activeReceived, incomingToMerge),
+    ),
+    activeReceived,
   );
   const buildContext = { ...context, orders };
   return mapReceivedTransferRows(
@@ -1928,7 +1961,45 @@ function transferScheduleLine(
 
   const event = resolveTransferEvent(transfer);
   if (!event?.start) return "";
-  return eventWhenLabel(event as EventLike, eventTimezone(event as EventLike));
+  // History rows often omit venue.timezone. Use the transfer, its order, then
+  // any wallet order for the same game before falling back to the browser zone.
+  const timezone = transferScheduleTimezone(transfer, event as EventLike, context);
+  return eventWhenLabel(event as EventLike, timezone);
+}
+
+function timezoneForEventUuid(
+  eventUUID: string,
+  events: Array<EventLike | null | undefined>,
+): string | undefined {
+  if (!eventUUID) return undefined;
+  for (const event of events) {
+    if (!event || String(event.uuid || "").trim() !== eventUUID) continue;
+    const timezone = eventTimezone(event);
+    if (timezone) return timezone;
+  }
+  return undefined;
+}
+
+function transferScheduleTimezone(
+  transfer: TransferLike,
+  event: EventLike,
+  context: WalletTransferBuildContext,
+): string | undefined {
+  const eventUUID = String(
+    event.uuid || transfer.eventUUID || transferTicketEventUUID(transfer) || "",
+  ).trim();
+  const orders = context.orders ?? [];
+  return (
+    eventTimezone(event) ||
+    eventTimezone(transfer.event as EventLike | undefined) ||
+    eventTimezone(transfer.order?.event as EventLike | undefined) ||
+    timezoneForEventUuid(eventUUID, transfer.order?.package?.events ?? []) ||
+    timezoneForEventUuid(
+      eventUUID,
+      orders.flatMap((order) => [order.event, ...(order.package?.events ?? [])]),
+    ) ||
+    undefined
+  );
 }
 
 function formatTransferTimestamp(
@@ -1961,7 +2032,7 @@ function transferWhen(transfer: TransferLike) {
   );
 }
 
-/** Card and modal party line: `From email · received on DATE` / `To email · sent DATE`. */
+/** Card and modal party line: `From email · Sent DATE` / `Sent to email · DATE`. */
 export function transferPartyDateLine(opts: {
   direction: "sent" | "received";
   email?: string;
@@ -1971,9 +2042,9 @@ export function transferPartyDateLine(opts: {
   if (!email) return "";
   const on = String(opts.on || "").trim();
   if (opts.direction === "sent") {
-    return on ? `To ${email} · sent ${on}` : `To ${email}`;
+    return on ? `Sent to ${email} · ${on}` : `Sent to ${email}`;
   }
-  return on ? `From ${email} · received on ${on}` : `From ${email}`;
+  return on ? `From ${email} · Sent ${on}` : `From ${email}`;
 }
 
 function transferClaimedWhen(transfer: TransferLike) {
