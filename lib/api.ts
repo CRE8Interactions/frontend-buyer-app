@@ -6,8 +6,12 @@ import { demoAdapter } from "@/lib/demo/adapter";
 /** Demo mode: serve local dummy data, never hit a backend. */
 const DEMO = process.env.NEXT_PUBLIC_DEMO === "true";
 
+/** In the browser, a hosted preview can send its calls through this app's own server (/api/proxy) instead of straight to the backend, which refuses some browser
+ *  calls from addresses it does not know (CORS). The server side always calls the backend directly. Off unless NEXT_PUBLIC_API_PROXY is set. */
+const BASE_URL = typeof window !== "undefined" && process.env.NEXT_PUBLIC_API_PROXY ? process.env.NEXT_PUBLIC_API_PROXY : process.env.NEXT_PUBLIC_API;
+
 const instance = axios.create({
-  baseURL: process.env.NEXT_PUBLIC_API,
+  baseURL: BASE_URL,
   timeout: 30000,
   withCredentials: false,
   ...(DEMO ? { adapter: demoAdapter } : {}),
