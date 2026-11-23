@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, useEffect, useState } from "react";
+import { Suspense, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import BrandedActionButton, {
@@ -155,6 +155,7 @@ function CheckoutSuccessPage() {
 
   const [loading, setLoading] = useState(true);
   const [order, setOrder] = useState<OrderData | null>(null);
+  const purchaseTrackedRef = useRef(false);
 
   useEffect(() => {
     const title = purchaseTabTitle(order);
@@ -214,10 +215,14 @@ function CheckoutSuccessPage() {
         | TrackingOrganization
         | undefined;
       cacheOrgBranding(organization as BrandingOrganization | undefined);
-      trackPurchase({
-        organization,
-        order: orderData,
-      });
+      if (!purchaseTrackedRef.current) {
+        purchaseTrackedRef.current = true;
+        trackPurchase({
+          organization,
+          order: orderData,
+          paymentIntentId: intentId,
+        });
+      }
       trackCheckoutCompleted(cartId);
     };
 

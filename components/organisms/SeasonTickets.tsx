@@ -1979,10 +1979,10 @@ function SellModal({
               >
                 <div style={{ fontSize: transferModalType.stepTitle, lineHeight: 1.5, fontWeight: 600, letterSpacing: "-0.015em" }}>Link a bank account</div>
                 <div style={{ display: "grid", alignItems: "start" }}>
-                  <p style={{ gridArea: "1 / 1", margin: 0, fontSize: transferModalType.body, lineHeight: browseLeading("body"), color: SUB, visibility: sellPayoutInProgress ? "hidden" : "visible" }}>
+                  <p style={{ gridArea: "1 / 1", margin: 0, fontSize: transferModalType.body, lineHeight: browseLeading("body"), color: SUB, visibility: sellPayoutInProgress ? "hidden" : "inherit" }}>
                     A payout account is required before you can list tickets. After the event, your payout is sent to that account.
                   </p>
-                  <p style={{ gridArea: "1 / 1", margin: 0, fontSize: transferModalType.body, lineHeight: browseLeading("body"), color: SUB, visibility: sellPayoutInProgress ? "visible" : "hidden" }}>
+                  <p style={{ gridArea: "1 / 1", margin: 0, fontSize: transferModalType.body, lineHeight: browseLeading("body"), color: SUB, visibility: sellPayoutInProgress ? "inherit" : "hidden" }}>
                     You haven&apos;t finished setting up your banking info, please continue to finish setting up your bank account
                   </p>
                 </div>

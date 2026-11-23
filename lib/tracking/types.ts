@@ -60,6 +60,7 @@ export type TrackingCart = {
 
 export type TrackingOrder = {
   orderId?: string | number;
+  paymentIntentId?: string;
   id?: string | number;
   total?: number;
   currency?: string;

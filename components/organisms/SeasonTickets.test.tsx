@@ -10285,6 +10285,8 @@ describe("SeasonTickets listings and sell", { timeout: 30_000 }, () => {
     expect(screen.queryByRole("button", { name: "Link bank account" })).not.toBeInTheDocument();
     expect(screen.getByText("Link a bank account")).not.toBeVisible();
     expect(screen.getByText("Select tickets to sell")).not.toBeVisible();
+    expect(screen.getByText(/A payout account is required/)).not.toBeVisible();
+    expect(screen.getByText(/You haven't finished setting up your banking info/)).not.toBeVisible();
     expect(mockedCreateBankAccount).not.toHaveBeenCalled();
 
     resolveAccount({
@@ -10292,6 +10294,7 @@ describe("SeasonTickets listings and sell", { timeout: 30_000 }, () => {
     });
 
     const linkButton = await screen.findByRole("button", { name: "Link bank account" });
+    expect(screen.getByText(/A payout account is required/)).toBeVisible();
     expect(screen.getByLabelText("Account type")).toHaveValue("company");
     mockedCreateBankAccount.mockReturnValue(new Promise(() => {}) as never);
     await user.click(linkButton);

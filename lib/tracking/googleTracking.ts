@@ -318,24 +318,76 @@ export const trackGoogleAdsPurchase = ({
   (window as unknown as Record<string, boolean>)[dedupeKey] = true;
 };
 
+const PURCHASE_DEDUPE_STORAGE_PREFIX = "bt:gtm:purchase:";
+
+/** Order number shared by the GTM purchase event and the Google Ads conversion. */
+export const getGooglePurchaseTransactionId = (order?: TrackingOrder | null) =>
+  String(order?.orderId || "").trim();
+
+const getPurchaseDedupeId = ({
+  order,
+  paymentIntentId,
+}: {
+  order?: TrackingOrder | null;
+  paymentIntentId?: string;
+} = {}) => {
+  const fromParam = String(paymentIntentId || "").trim();
+  if (fromParam) return fromParam;
+  const fromOrder = String(order?.paymentIntentId || "").trim();
+  if (fromOrder) return fromOrder;
+  return String(order?.orderId || "").trim();
+};
+
+const hasGtmPurchaseBeenTracked = (dedupeId: string) => {
+  if (!dedupeId) return false;
+  const windowFlag = getSafeScriptId("purchase-event", dedupeId);
+  if ((window as unknown as Record<string, boolean>)[windowFlag]) return true;
+  try {
+    return (
+      window.sessionStorage?.getItem(
+        `${PURCHASE_DEDUPE_STORAGE_PREFIX}${dedupeId}`,
+      ) === "1"
+    );
+  } catch {
+    return false;
+  }
+};
+
+const markGtmPurchaseTracked = (dedupeId: string) => {
+  if (!dedupeId) return;
+  const windowFlag = getSafeScriptId("purchase-event", dedupeId);
+  (window as unknown as Record<string, boolean>)[windowFlag] = true;
+  try {
+    window.sessionStorage?.setItem(
+      `${PURCHASE_DEDUPE_STORAGE_PREFIX}${dedupeId}`,
+      "1",
+    );
+  } catch {
+    // ignore quota / private mode
+  }
+};
+
 export const trackPurchase = ({
   organization,
   order,
+  paymentIntentId,
 }: {
   organization?: TrackingOrganization | null;
   order?: TrackingOrder | null;
+  paymentIntentId?: string;
 }) => {
   if (typeof window === "undefined" || !canTrackPurchases(organization) || !order?.orderId)
     return;
-  const dedupeKey = getSafeScriptId("purchase-event", order.orderId);
-  if ((window as unknown as Record<string, boolean>)[dedupeKey]) return;
+  const dedupeId = getPurchaseDedupeId({ order, paymentIntentId });
+  if (!dedupeId || hasGtmPurchaseBeenTracked(dedupeId)) return;
   injectGoogleTracking(organization || {});
   const items = mapOrderToItems(order);
   pushDataLayerEvent("purchase", {
-    transaction_id: String(order?.orderId),
+    transaction_id: getGooglePurchaseTransactionId(order),
+    event_id: dedupeId,
     value: Number(order?.total) || 0,
     currency: String(order?.currency || "USD").toUpperCase(),
     items,
   });
-  (window as unknown as Record<string, boolean>)[dedupeKey] = true;
+  markGtmPurchaseTracked(dedupeId);
 };

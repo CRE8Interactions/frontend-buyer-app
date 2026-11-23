@@ -101,6 +101,7 @@ import {
 import { seatLabel } from "@/lib/wallet";
 import { __resetCompletedOrderInflightForTests } from "@/lib/completedOrder";
 import { useAuth } from "@/lib/auth";
+import { trackPurchase } from "@/lib/tracking";
 import {
   __setOrderPaymentDetailsPollForTests,
   formatOrderPaymentMethodSummary,
@@ -131,6 +132,7 @@ function gaCompletedOrder() {
   });
 }
 const mockedUseAuth = vi.mocked(useAuth);
+const mockedTrackPurchase = vi.mocked(trackPurchase);
 const mockedDownload = vi.mocked(downloadOrderReceipt);
 const mockedDownloadApplePass = vi.mocked(downloadApplePass);
 const mockedDownloadGooglePass = vi.mocked(downloadGooglePass);
@@ -140,6 +142,7 @@ describe("Checkout success receipt", () => {
     __resetCompletedOrderInflightForTests();
     __setOrderPaymentDetailsPollForTests({ attempts: 5, delayMs: 0 });
     sessionStorage.clear();
+    mockedTrackPurchase.mockClear();
     mockedUseAuth.mockReturnValue({
       isAuthenticated: true,
       ready: true,
@@ -194,6 +197,24 @@ describe("Checkout success receipt", () => {
       await screen.findByText(DEMO_SEATED_TICKET_GROUPS[0].offer!.name!),
     ).toBeInTheDocument();
     expect(mockedGetOrder).not.toHaveBeenCalled();
+  });
+
+  it("tracks the purchase once with the payment intent id from the url", async () => {
+    render(<CheckoutSuccessPageRoute />);
+    await screen.findByText(DEMO_SEATED_TICKET_GROUPS[0].offer!.name!);
+
+    expect(mockedTrackPurchase).toHaveBeenCalledTimes(1);
+    expect(mockedTrackPurchase).toHaveBeenCalledWith(
+      expect.objectContaining({ paymentIntentId: "pi_test" }),
+    );
+  });
+
+  it("does not track a purchase when the order cannot be loaded", async () => {
+    mockedGetOrderByPi.mockRejectedValue(new Error("unavailable"));
+    render(<CheckoutSuccessPageRoute />);
+    await screen.findByText(/unable to load your order/i);
+
+    expect(mockedTrackPurchase).not.toHaveBeenCalled();
   });
 
   it("labels the doors time as Doors", async () => {

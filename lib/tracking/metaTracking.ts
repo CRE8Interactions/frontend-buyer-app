@@ -108,23 +108,76 @@ const getSafeWindowFlag = (prefix: string, value: unknown) => {
   return `${prefix}-${normalized}`;
 };
 
+const PURCHASE_DEDUPE_STORAGE_PREFIX = "bt:meta:purchase:";
+
+export const getMetaPurchaseEventId = ({
+  order,
+  paymentIntentId,
+}: {
+  order?: TrackingOrder | null;
+  paymentIntentId?: string;
+} = {}) => {
+  const fromParam = String(paymentIntentId || "").trim();
+  if (fromParam) return fromParam;
+  const fromOrder = String(order?.paymentIntentId || "").trim();
+  if (fromOrder) return fromOrder;
+  return String(order?.orderId || "").trim();
+};
+
+export const hasMetaPurchaseBeenTracked = (eventId: string) => {
+  if (!eventId) return false;
+  const windowFlag = getSafeWindowFlag("meta-purchase-event", eventId);
+  if (
+    typeof window !== "undefined" &&
+    (window as unknown as Record<string, boolean>)[windowFlag]
+  )
+    return true;
+  try {
+    return (
+      window.sessionStorage?.getItem(
+        `${PURCHASE_DEDUPE_STORAGE_PREFIX}${eventId}`,
+      ) === "1"
+    );
+  } catch {
+    return false;
+  }
+};
+
+export const markMetaPurchaseTracked = (eventId: string) => {
+  if (!eventId) return;
+  const windowFlag = getSafeWindowFlag("meta-purchase-event", eventId);
+  if (typeof window !== "undefined")
+    (window as unknown as Record<string, boolean>)[windowFlag] = true;
+  try {
+    window.sessionStorage?.setItem(
+      `${PURCHASE_DEDUPE_STORAGE_PREFIX}${eventId}`,
+      "1",
+    );
+  } catch {
+    // ignore quota / private mode
+  }
+};
+
 const trackMeta = ({
   organization,
   standardEventName,
   customEventName,
   payload = {},
+  eventID,
 }: {
   organization?: TrackingOrganization | null;
   standardEventName?: string;
   customEventName?: string;
   payload?: Record<string, unknown>;
+  eventID?: string;
 }) => {
   if (!shouldTrackForOrganization(organization) || !organization?.meta_pixel_id)
     return;
   injectMetaPixel(organization.meta_pixel_id);
   if (!window.fbq) return;
   if (standardEventName) {
-    window.fbq("track", standardEventName, payload);
+    const options = eventID ? { eventID: String(eventID) } : {};
+    window.fbq("track", standardEventName, payload, options);
   }
   if (customEventName) {
     window.fbq("trackCustom", customEventName, payload);
@@ -252,9 +305,11 @@ export const trackMetaAddPaymentInfo = ({
 export const trackMetaPurchase = ({
   organization,
   order,
+  paymentIntentId,
 }: {
   organization?: TrackingOrganization | null;
   order?: TrackingOrder | null;
+  paymentIntentId?: string;
 }) => {
   if (
     typeof window === "undefined" ||
@@ -262,13 +317,13 @@ export const trackMetaPurchase = ({
     !order?.orderId
   )
     return;
-  const dedupeKey = getSafeWindowFlag("meta-purchase-event", order.orderId);
-  if ((window as unknown as Record<string, boolean>)[dedupeKey]) return;
+  const eventId = getMetaPurchaseEventId({ order, paymentIntentId });
+  if (!eventId || hasMetaPurchaseBeenTracked(eventId)) return;
   const contents = mapOrderToContents(order);
   trackMeta({
     organization,
     standardEventName: "Purchase",
-    customEventName: "purchase",
+    eventID: eventId,
     payload: {
       content_type: "product",
       content_ids: contents.map((item) => item.id),
@@ -278,5 +333,5 @@ export const trackMetaPurchase = ({
       order_id: String(order.orderId),
     },
   });
-  (window as unknown as Record<string, boolean>)[dedupeKey] = true;
+  markMetaPurchaseTracked(eventId);
 };
