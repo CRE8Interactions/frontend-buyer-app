@@ -1,13 +1,18 @@
 import { describe, expect, it } from "vitest";
 import {
+  DEMO_SEATED_TICKET_GROUPS,
   DEMO_USER,
   demoCheckoutCart,
+  demoCheckoutDonationCampaign,
   demoFlexPackCheckoutCart,
+  demoPackageSectionCheckoutCart,
 } from "@/lib/demo/fixtures";
 import {
   buildFundraisingPayload,
   buildPaymentIntentRequest,
+  computeRoundUpDonation,
   createInitialFundraisingSelection,
+  getCartSectionIds,
   isFundraisingDonationSatisfied,
   paymentEventFromCart,
 } from "@/lib/fundraisingCheckout";
@@ -99,15 +104,47 @@ describe("fundraising donation rules", () => {
   });
 
   it("allows optional campaigns with no donation", () => {
-    const campaign = {
-      campaignUuid: "camp-1",
-      donationRequirements: { minimumAmount: 5, mandatory: false },
-    };
+    const base = demoCheckoutDonationCampaign();
+    const campaign = demoCheckoutDonationCampaign({
+      donationRequirements: {
+        ...base.donationRequirements,
+        mandatory: false,
+      },
+    });
     expect(isFundraisingDonationSatisfied(campaign, createInitialFundraisingSelection())).toBe(
       true,
     );
     expect(
       buildFundraisingPayload(campaign, createInitialFundraisingSelection()),
     ).toBeNull();
+    expect(
+      buildFundraisingPayload(campaign, {
+        ...createInitialFundraisingSelection(),
+        donationAmount: base.donationRequirements.minimumAmount,
+      }),
+    ).not.toHaveProperty("donationRuleId");
+  });
+
+  it("sends the donation rule when the gift is mandatory", () => {
+    const campaign = demoCheckoutDonationCampaign();
+    const payload = buildFundraisingPayload(
+      campaign,
+      createInitialFundraisingSelection(campaign),
+    );
+
+    expect(payload?.donationAmount).toBe(campaign.donationRequirements.minimumAmount);
+    expect(payload?.donationRuleId).toBe(campaign.donationRequirements.ruleId);
+  });
+
+  it("matches a package seat by section number and offer name", () => {
+    const listing = DEMO_SEATED_TICKET_GROUPS[0];
+    const tokens = getCartSectionIds(demoPackageSectionCheckoutCart());
+
+    expect(tokens).toEqual([listing.sectionNumber, listing.offer?.name]);
+  });
+
+  it("rounds a gift up to the next five dollars", () => {
+    expect(computeRoundUpDonation(47.5)).toBe(2.5);
+    expect(computeRoundUpDonation(50)).toBe(5);
   });
 });

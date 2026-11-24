@@ -10,6 +10,7 @@ import {
   DEMO_USER,
   demoAccessPassCheckoutCart,
   demoCheckoutCart,
+  demoCheckoutDonationCampaign,
   demoAddonOnlyCart,
   demoCheckoutCartWithAddons,
   demoEventAddonProducts,
@@ -26,6 +27,7 @@ import { quoteFlexPackPurchase } from "@/lib/flexPackDisplay";
 import { packageOrderSummary, gaTierSubtitle, ticketSelectionSummary } from "@/lib/ticketSummary";
 import { formatVenueLocationFromVenue } from "@/lib/venueLocation";
 import { purchaseTabTitle } from "@/lib/seo";
+import { computeRoundUpDonation } from "@/lib/fundraisingCheckout";
 
 const navState = { cartId: "cart-raptors-1", extra: "" };
 const routerMocks = vi.hoisted(() => ({
@@ -2013,10 +2015,12 @@ describe("Checkout page", { timeout: 20_000 }, () => {
 
     render(<CheckoutPageRoute />);
 
-    expect(await screen.findByText("Spring fund")).toBeInTheDocument();
     expect(
-      screen.getByPlaceholderText(/donation amount/i),
+      await screen.findByRole("heading", { name: "Spring fund" }),
     ).toBeInTheDocument();
+    expect(screen.getByText("Optional gift amount")).toBeInTheDocument();
+    expect(screen.getByPlaceholderText("Other amount")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "No thanks" })).toBeInTheDocument();
   });
 
   it("sends logged-out package shoppers to login without flashing checkout", async () => {
@@ -2755,5 +2759,80 @@ describe("Checkout page", { timeout: 20_000 }, () => {
       formatCurrency(cart.addonQuote.customerTotal),
     );
     expect(screen.queryByText("Promo code")).not.toBeInTheDocument();
+  });
+
+  it("does not look up a donation campaign for a resale cart", async () => {
+    const campaign = demoCheckoutDonationCampaign();
+    const cart = demoCheckoutCart();
+    const resaleCart = {
+      ...cart,
+      resaleListing: { id: "listing-active-1" },
+      event: {
+        ...cart.event,
+        organization: { ...cart.event.organization, uuid: raptorsOrg.uuid },
+      },
+    };
+    mockedGetCart.mockResolvedValue({ data: resaleCart } as never);
+    mockedResolveFundraising.mockResolvedValue({
+      data: { campaign },
+    } as never);
+
+    render(<CheckoutPageRoute />);
+
+    expect(
+      await screen.findByRole("button", { name: `Pay ${formatCurrency(resaleCart.total)}` }),
+    ).toBeInTheDocument();
+    expect(mockedResolveFundraising).not.toHaveBeenCalled();
+    expect(
+      screen.queryByRole("heading", { name: campaign.donationTitle }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("adds a round-up gift and the mandatory rule to the payment", async () => {
+    const user = userEvent.setup();
+    const baseCampaign = demoCheckoutDonationCampaign();
+    const campaign = demoCheckoutDonationCampaign({
+      donationRequirements: {
+        ...baseCampaign.donationRequirements,
+        minimumAmount: 1,
+      },
+    });
+    const cart = demoCheckoutCart();
+    const roundUp = computeRoundUpDonation(cart.total);
+    mockedGetCart.mockResolvedValue({
+      data: {
+        ...cart,
+        event: {
+          ...cart.event,
+          organization: { ...cart.event.organization, uuid: raptorsOrg.uuid },
+        },
+      },
+    } as never);
+    mockedResolveFundraising.mockResolvedValue({
+      data: { campaign },
+    } as never);
+
+    render(<CheckoutPageRoute />);
+
+    const roundUpButton = await screen.findByRole("button", {
+      name: `Round up ${formatCurrency(roundUp)} to the nearest $5`,
+    });
+    await waitFor(() => expect(roundUpButton).toBeEnabled());
+    await user.click(roundUpButton);
+
+    await waitFor(() => {
+      const request = mockedGetPaymentIntent.mock.calls.at(-1)?.[0] as {
+        fundraising?: {
+          donationAmount?: number;
+          donationRuleId?: number;
+          campaignUuid?: string;
+        };
+      };
+      expect(request.fundraising).toMatchObject({
+        campaignUuid: campaign.campaignUuid,
+        donationAmount: roundUp,
+        donationRuleId: campaign.donationRequirements.ruleId,
+      });
+    });
   });
 });

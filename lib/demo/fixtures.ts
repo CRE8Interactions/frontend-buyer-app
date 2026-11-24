@@ -1872,6 +1872,53 @@ export function demoFundraisingCampaign(overrides: Record<string, unknown> = {})
   };
 }
 
+/** Checkout campaign with a mandatory rule, round-up, and match copy. */
+export function demoCheckoutDonationCampaign(
+  overrides: Record<string, unknown> = {},
+) {
+  const campaign = demoFundraisingCampaign();
+  return {
+    ...campaign,
+    campaignUuid: "camp-power-play",
+    donationTitle: campaign.title,
+    donationDescription: campaign.description,
+    checkoutUpsell: true,
+    roundUpEnabled: true,
+    beneficiaryName: campaign.organization.name,
+    taxId: "81-0000000",
+    feeCoverageMessage: "Blocktickets covers the processing fee.",
+    matchSponsorName: "IceDogs boosters",
+    matchRatio: 1,
+    matchCap: 100,
+    donationRequirements: {
+      mandatory: true,
+      ruleId: 9,
+      ruleName: "Section gift",
+      minimumAmount: campaign.suggestedAmounts[0],
+      suggestedAmounts: campaign.suggestedAmounts.slice(0, 2),
+    },
+    ...overrides,
+  };
+}
+
+/**
+ * Package hold whose seats are matched to a donation rule by section number
+ * and offer name. A blank section id is present so callers can prove it is ignored.
+ */
+export function demoPackageSectionCheckoutCart() {
+  const listing = DEMO_SEATED_TICKET_GROUPS[0];
+  return {
+    ...demoPackageCheckoutCart({ tickets: [] }),
+    package_tickets: [
+      {
+        sectionNumber: listing.sectionNumber,
+        sectionName: listing.offer?.name,
+        sectionId: " ",
+      },
+    ],
+  };
+}
+
 /** Completed flex-pack order used by the wallet Flex packs tab. */
 export function demoCompletedFlexPackOrder(
   overrides: Record<string, unknown> = {},

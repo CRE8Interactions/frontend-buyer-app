@@ -34,6 +34,7 @@ type CampaignLike = {
   donationRequirements?: {
     minimumAmount?: number;
     mandatory?: boolean;
+    ruleId?: number;
   };
   pricingPreview?: {
     platformFee?: number;
@@ -55,11 +56,18 @@ export const getCartSectionIds = (cart: CartLike) => {
     ...(Array.isArray(cart?.package_tickets) ? cart.package_tickets : []),
   ];
 
+  const pushSectionToken = (value: unknown) => {
+    const trimmed = String(value || "").trim();
+    if (trimmed) sectionIds.add(trimmed);
+  };
+
   ticketLists.forEach((ticket) => {
-    const sectionId = String(
-      ticket?.sectionId || ticket?.section_id || "",
-    ).trim();
-    if (sectionId) sectionIds.add(sectionId);
+    pushSectionToken(ticket?.sectionId);
+    pushSectionToken(ticket?.section_id);
+    pushSectionToken(ticket?.sectionNumber);
+    pushSectionToken(ticket?.section_number);
+    pushSectionToken(ticket?.sectionName);
+    pushSectionToken(ticket?.section_name);
   });
 
   return [...sectionIds];
@@ -120,13 +128,30 @@ export const buildFundraisingPayload = (
     return null;
   }
 
+  const ruleId = Number(campaign?.donationRequirements?.ruleId);
+  const mandatory = Boolean(campaign?.donationRequirements?.mandatory);
+
   return {
     campaignUuid: campaign.campaignUuid,
     participantUuid: selection?.participantUuid || "",
     donationAmount,
     anonymous: Boolean(selection?.anonymous),
     donorMessage: selection?.donorMessage || "",
+    ...(mandatory && Number.isFinite(ruleId) && ruleId > 0
+      ? { donationRuleId: ruleId }
+      : {}),
   };
+};
+
+/** Gift that reaches the next $5, or another $5 when the total is already there. */
+export const computeRoundUpDonation = (orderTotal: number) => {
+  const total = Number(orderTotal);
+  if (!Number.isFinite(total) || total <= 0) return 0;
+
+  const nextMultipleOfFive = Math.ceil(total / 5) * 5;
+  const delta = nextMultipleOfFive - total;
+  if (delta >= 0.01) return Math.round(delta * 100) / 100;
+  return 5;
 };
 
 export const buildPaymentIntentRequest = (

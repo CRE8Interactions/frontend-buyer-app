@@ -8,6 +8,7 @@ import CheckoutPaymentForm, {
   type CheckoutPromoDiscount,
 } from "@/components/organisms/CheckoutPaymentForm";
 import CheckoutAddOns from "@/components/organisms/CheckoutAddOns";
+import CheckoutFundraisingDonation from "@/components/organisms/CheckoutFundraisingDonation";
 import AddonPickupDetails from "@/components/molecules/AddonPickupDetails";
 import BrandedCheckoutShell from "@/components/organisms/BrandedCheckoutShell";
 import GuestContact from "@/components/organisms/GuestContact";
@@ -577,7 +578,7 @@ function CheckoutPage() {
         let resolvedCampaign: Record<string, unknown> | null = null;
         try {
           const resolveContext = getCartFundraisingContext(cartData);
-          if (resolveContext.organizationUUID) {
+          if (resolveContext.organizationUUID && !cartData?.resaleListing) {
             const resolveRes = await resolveFundraisingCampaign(resolveContext);
             resolvedCampaign =
               (resolveRes.data?.campaign as Record<string, unknown>) || null;
@@ -740,8 +741,20 @@ function CheckoutPage() {
     }
   };
 
-  const handleFundraisingAmount = async (amount: number) => {
-    const next = { ...fundraisingSelection, donationAmount: amount };
+  const checkoutOrderSubtotal = useMemo(() => {
+    if (!cart) return 0;
+    if (cart.flex_pack || cart.access_pass_template) {
+      return (
+        (Number(cart.total) || 0) +
+        (Number(cart.totalTax) || 0) +
+        (Number(cart.processingFee) || 0) +
+        (Number(cart.serviceFee) || 0)
+      );
+    }
+    return Number(cart.total) || 0;
+  }, [cart]);
+
+  const handleFundraisingChange = async (next: FundraisingSelection) => {
     setFundraisingSelection(next);
     if (!cartRef.current) return;
     if (!isAuthenticated && !guestBuyerRef.current) return;
@@ -1035,28 +1048,17 @@ function CheckoutPage() {
                 </p>
               </div>
               )}
-              {fundraisingCampaign && !needsGuestContact ? (
+              {fundraisingCampaign && !needsGuestContact && !cart?.resaleListing ? (
                 <div className="rounded-[14px] border border-[rgba(5,27,53,0.08)] bg-[#f7f8fc] p-4">
-                  <p className="text-[14px] font-semibold">
-                    {(fundraisingCampaign.title as string) ||
-                      "Support the campaign"}
-                  </p>
-                  <p className={`mt-1 text-[13px] ${muted}`}>
-                    Optional donation added to your checkout.
-                  </p>
-                  <input
-                    className="mt-3 h-12 w-full rounded-full border border-[rgba(5,27,53,0.16)] bg-white px-[18px] text-[15px] text-[#051b35] outline-none"
-                    type="number"
-                    min={0}
-                    step="1"
-                    value={fundraisingSelection.donationAmount || ""}
-                    onChange={(e) =>
-                      handleFundraisingAmount(Number(e.target.value) || 0)
-                    }
-                    placeholder="Donation amount"
+                  <CheckoutFundraisingDonation
+                    campaign={fundraisingCampaign}
+                    selection={fundraisingSelection}
+                    orderSubtotal={checkoutOrderSubtotal}
+                    disabled={isRefreshingIntent}
+                    onChange={(next) => void handleFundraisingChange(next)}
                   />
                   {donationPricing.donationAmount > 0 ? (
-                    <p className={`mt-2 text-[13px] ${muted}`}>
+                    <p className={`text-[13px] ${muted}`}>
                       Donation total {formatCurrency(donationPricing.totalCharge)}
                     </p>
                   ) : null}

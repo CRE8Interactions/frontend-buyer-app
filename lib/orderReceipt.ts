@@ -13,6 +13,7 @@ import {
   normalizeOrderPayload,
 } from "@/lib/completedOrder";
 import { formatCurrency, toIanaTimezone, type TimezoneLike } from "@/lib/helpers";
+import { getInvoiceDonationLines, getInvoiceDonationMerchandiseSubtotal } from "@/lib/invoiceDonationLines";
 import { flexPackVoucherCount } from "@/lib/flexPackDisplay";
 import { formatOrderPaymentMethodSummary, resolveCardLast4 } from "@/lib/orderPayment";
 import {
@@ -679,12 +680,20 @@ export function buildOrderReceipt(
     subtotal,
   } = resolveCompletedOrderFees(order);
   const feeBreakdown = orderPrimaryFeeBreakdown(order);
+  const donationLines = getInvoiceDonationLines(order);
+  const donationMerchandise = feeBreakdown
+    ? 0
+    : getInvoiceDonationMerchandiseSubtotal(order);
+  const pricedSubtotal = Math.max(
+    0,
+    Math.round((subtotal - donationMerchandise) * 100) / 100,
+  );
   const qty = groups.reduce((sum, group) => sum + group.count, 0);
   const unitFromTickets = groups.every((group) => group.count > 0)
     ? groups[0] && groups.every((group) => group.amount / group.count === groups[0].amount / groups[0].count)
       ? groups[0].amount / groups[0].count
       : qty > 0
-        ? subtotal / qty
+        ? pricedSubtotal / qty
         : 0
     : 0;
   // Event ticket `cost` often includes fees; line items must match the
@@ -696,15 +705,15 @@ export function buildOrderReceipt(
     ? faceUnit
     : qty > 0
       ? order.package
-        ? unitFromTickets || subtotal / qty
-        : subtotal / qty
+        ? unitFromTickets || pricedSubtotal / qty
+        : pricedSubtotal / qty
       : 0;
   const title = lineItemTitle(order);
   const ticketLines = order.package
     ? packageReceiptLines(
         tickets,
         title,
-        subtotal,
+        pricedSubtotal,
         Array.isArray(order.package.events) ? order.package.events.length : 0,
       )
     : feeBreakdown && feeBreakdown.groups.length > 1
@@ -723,7 +732,7 @@ export function buildOrderReceipt(
             amount: formatCurrency(unitPrice * group.count),
           };
         });
-  const flexLine = ticketLines.length ? null : flexPackReceiptLine(order, subtotal);
+  const flexLine = ticketLines.length ? null : flexPackReceiptLine(order, pricedSubtotal);
   const lines = ticketLines.length ? ticketLines : flexLine ? [flexLine] : [];
 
   const billTo = receiptPurchaserFromSources({ order, purchaser });
@@ -754,9 +763,9 @@ export function buildOrderReceipt(
           groups: [
             {
               label: "Tickets",
-              unitPrice: subtotal,
+              unitPrice: pricedSubtotal,
               quantity: 1,
-              subtotal,
+              subtotal: pricedSubtotal,
             },
           ],
           serviceFee,
@@ -776,11 +785,29 @@ export function buildOrderReceipt(
         amount: formatCurrency(row.amount),
       }))
     : [
-        { label: "Subtotal", amount: formatCurrency(subtotal) },
+        { label: "Subtotal", amount: formatCurrency(pricedSubtotal) },
         { label: "Processing Fee", amount: formatCurrency(processingFee) },
         { label: "Service Fee", amount: formatCurrency(serviceFee) },
         ...(deferTax ? [] : [taxRow]),
       ];
+  const donationRows = donationLines.map((line) => ({
+    label: line.name,
+    amount: formatCurrency(line.amount),
+  }));
+  if (donationRows.length) {
+    const serviceIndex = totals.findIndex((row) => row.label === "Service Fee");
+    const processingIndex = totals.findIndex((row) => row.label === "Processing Fee");
+    const subtotalIndex = totals.findIndex((row) => row.label === "Subtotal");
+    const insertAt =
+      serviceIndex >= 0
+        ? serviceIndex + 1
+        : processingIndex >= 0
+          ? processingIndex + 1
+          : subtotalIndex >= 0
+            ? subtotalIndex + 1
+            : totals.length;
+    totals.splice(insertAt, 0, ...donationRows);
+  }
   if (!feeBreakdown) {
     const customRows = customFeeLines.map((line) => ({
       label: line.name,
@@ -810,8 +837,8 @@ export function buildOrderReceipt(
     },
   );
 
-  if (org?.display_tin && subtotal > 0) {
-    const includedTax = +(subtotal - subtotal / 1.13).toFixed(2);
+  if (org?.display_tin && pricedSubtotal > 0) {
+    const includedTax = +(pricedSubtotal - pricedSubtotal / 1.13).toFixed(2);
     const subtotalRow = totals.find((row) => row.label === "Subtotal");
     if (subtotalRow) {
       subtotalRow.note = `includes ${formatCurrency(includedTax)} HST (13%)`;

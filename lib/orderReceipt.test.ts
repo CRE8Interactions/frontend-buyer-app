@@ -6,6 +6,7 @@ import {
   demoCheckoutCart,
   demoCompletedFlexPackOrder,
   demoCompletedPackageOrder,
+  demoCheckoutDonationCampaign,
   demoCompletedTicketOrder,
   demoItemizedFeeCompletedOrder,
   demoMixedFacePriceCheckoutCart,
@@ -104,6 +105,62 @@ describe("buildOrderReceipt", () => {
         amountDue: true,
       },
     ]);
+  });
+
+  it("lists a checkout donation on its own row after the service fee", () => {
+    const campaign = demoCheckoutDonationCampaign();
+    const donation = campaign.donationRequirements.minimumAmount;
+    const base = demoCompletedTicketOrder();
+    const listing = DEMO_SEATED_TICKET_GROUPS[0];
+    const ticketSubtotal = base.tickets.length * (listing.price ?? 0);
+    const order = demoCompletedTicketOrder({
+      total: Number(base.total) + donation,
+      details: {
+        fundraising: {
+          donationAmount: donation,
+          donationTitle: campaign.donationTitle,
+        },
+      },
+    });
+    const receipt = buildOrderReceipt(order)!;
+    const labels = receipt.totals.map((row) => row.label);
+    const serviceIndex = labels.indexOf("Service Fee");
+    const donationLabel = `${campaign.donationTitle} Donation`;
+
+    expect(receipt.lines[0].amount).toBe(formatCurrency(ticketSubtotal));
+    expect(receipt.totals[0]).toEqual({
+      label: "Subtotal",
+      amount: formatCurrency(ticketSubtotal),
+    });
+    expect(labels[serviceIndex + 1]).toBe(donationLabel);
+    expect(receipt.totals[serviceIndex + 1].amount).toBe(formatCurrency(donation));
+    expect(receipt.totals.find((row) => row.label === "Total")?.amount).toBe(
+      formatCurrency(order.total),
+    );
+  });
+
+  it("leaves a pending external donation out of the ticket receipt", () => {
+    const campaign = demoCheckoutDonationCampaign();
+    const base = demoCompletedTicketOrder();
+    const listing = DEMO_SEATED_TICKET_GROUPS[0];
+    const ticketSubtotal = base.tickets.length * (listing.price ?? 0);
+    const order = demoCompletedTicketOrder({
+      donation_total: base.total,
+      details: {
+        donation: {
+          amount: campaign.donationRequirements.minimumAmount,
+          ruleName: campaign.donationTitle,
+          externalPending: true,
+        },
+      },
+    });
+    const receipt = buildOrderReceipt(order)!;
+
+    expect(receipt.totals[0]).toEqual({
+      label: "Subtotal",
+      amount: formatCurrency(ticketSubtotal),
+    });
+    expect(receipt.totals.some((row) => /donation/i.test(row.label))).toBe(false);
   });
 
   it("prints the admin refund invoice for a refunded order", () => {
