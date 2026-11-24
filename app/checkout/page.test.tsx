@@ -10,6 +10,10 @@ import {
   DEMO_USER,
   demoAccessPassCheckoutCart,
   demoCheckoutCart,
+  demoAddonOnlyCart,
+  demoCheckoutCartWithAddons,
+  demoEventAddonProducts,
+  DEMO_ADDON_PARKING,
   demoItemizedFeeCheckoutCart,
   demoSeatmapMapping,
   demoFlexPack,
@@ -115,7 +119,9 @@ vi.mock("@stripe/react-stripe-js", () => ({
 vi.mock("@/lib/api", () => ({
   dropUserCart: vi.fn(),
   getCart: vi.fn(),
+  getEventAddons: vi.fn(async () => ({ data: [] })),
   getPaymentIntent: vi.fn(),
+  saveCartAddon: vi.fn(),
   getSeatmapByShortCode: vi.fn(),
   getTicketGroups: vi.fn(),
   processFreeOrder: vi.fn(),
@@ -152,7 +158,9 @@ import GlobalRouteTransitionLoader from "@/components/molecules/GlobalRouteTrans
 import {
   dropUserCart,
   getCart,
+  getEventAddons,
   getPaymentIntent,
+  saveCartAddon,
   getSeatmapByShortCode,
   getTicketGroups,
   processFreeOrder,
@@ -182,6 +190,8 @@ async function fillBillingAndPay(user: UserEvent, payName: string) {
 }
 
 const mockedGetCart = vi.mocked(getCart);
+const mockedGetEventAddons = vi.mocked(getEventAddons);
+const mockedSaveCartAddon = vi.mocked(saveCartAddon);
 const mockedGetPaymentIntent = vi.mocked(getPaymentIntent);
 const mockedGetSeatmap = vi.mocked(getSeatmapByShortCode);
 const mockedGetTicketGroups = vi.mocked(getTicketGroups);
@@ -259,6 +269,10 @@ describe("Checkout page", { timeout: 20_000 }, () => {
     mockedGetCart.mockResolvedValue({
       data: demoCheckoutCart(),
     } as never);
+    mockedGetEventAddons.mockReset();
+    mockedGetEventAddons.mockResolvedValue({ data: [] } as never);
+    mockedSaveCartAddon.mockReset();
+    mockedSaveCartAddon.mockResolvedValue({ data: { ok: true } } as never);
     mockedGetSeatmap.mockReset();
     mockedGetSeatmap.mockResolvedValue({ data: null } as never);
     mockedGetTicketGroups.mockResolvedValue({
@@ -2674,5 +2688,72 @@ describe("Checkout page", { timeout: 20_000 }, () => {
       screen.queryByRole("button", { name: /^pay /i }),
     ).not.toBeInTheDocument();
     expect(screen.queryByTestId("payment-element")).not.toBeInTheDocument();
+  });
+
+  it("saves a checkout add-on and includes its amount", async () => {
+    const user = userEvent.setup();
+    const updated = demoCheckoutCartWithAddons();
+    mockedGetEventAddons.mockResolvedValue({
+      data: demoEventAddonProducts(),
+    } as never);
+    mockedGetCart
+      .mockResolvedValueOnce({ data: demoCheckoutCart() } as never)
+      .mockResolvedValue({ data: updated } as never);
+
+    render(<CheckoutPageRoute />);
+
+    expect(await screen.findByRole("heading", { name: "Add-ons" })).toBeInTheDocument();
+    expect(screen.getByText(DEMO_ADDON_PARKING.name)).toBeInTheDocument();
+    await user.click(
+      screen.getByRole("button", { name: `Increase ${DEMO_ADDON_PARKING.name}` }),
+    );
+
+    await waitFor(() => {
+      expect(mockedSaveCartAddon).toHaveBeenCalledWith(
+        demoCheckoutCart().id,
+        expect.objectContaining({
+          productUuid: DEMO_ADDON_PARKING.uuid,
+          quantity: 1,
+        }),
+      );
+    });
+    expect(await screen.findByText(/Includes/)).toHaveTextContent(
+      formatCurrency(updated.addonQuote.customerTotal),
+    );
+    expect(screen.getAllByText(DEMO_ADDON_PARKING.pickupLocation).length).toBeGreaterThan(0);
+  });
+
+  it("shows an error and leaves the add-on quantity unchanged when saving fails", async () => {
+    const user = userEvent.setup();
+    mockedGetEventAddons.mockResolvedValue({
+      data: demoEventAddonProducts(),
+    } as never);
+    mockedSaveCartAddon.mockRejectedValue({
+      response: { data: { message: "This add-on is no longer available." } },
+    });
+
+    render(<CheckoutPageRoute />);
+    await user.click(
+      await screen.findByRole("button", {
+        name: `Increase ${DEMO_ADDON_PARKING.name}`,
+      }),
+    );
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "This add-on is no longer available.",
+    );
+    expect(screen.getByText("0")).toBeInTheDocument();
+  });
+
+  it("hides the promo form when the cart is only add-ons", async () => {
+    const cart = demoAddonOnlyCart();
+    mockedGetCart.mockResolvedValue({ data: cart } as never);
+
+    render(<CheckoutPageRoute />);
+
+    expect(await screen.findByText(/Includes/)).toHaveTextContent(
+      formatCurrency(cart.addonQuote.customerTotal),
+    );
+    expect(screen.queryByText("Promo code")).not.toBeInTheDocument();
   });
 });

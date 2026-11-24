@@ -31,6 +31,13 @@ import {
 import Link from "next/link";
 import { useParams, usePathname } from "next/navigation";
 import { QRCodeSVG } from "qrcode.react";
+import AddonDigitalPasses from "@/components/organisms/AddonDigitalPasses";
+import PostPurchaseAddonOffer from "@/components/organisms/PostPurchaseAddonOffer";
+import { useOrderDigitalPasses } from "@/hooks/useOrderDigitalPasses";
+import {
+  resolveOrderUUID,
+  type DigitalAddonPass,
+} from "@/lib/addonCatalog";
 import Spinner from "@/components/atoms/Spinner";
 import EntryQrSheet from "@/components/molecules/EntryQrSheet";
 import ListingAskingPriceField from "@/components/molecules/ListingAskingPriceField";
@@ -3353,6 +3360,24 @@ export default function SeasonTickets({
           ),
         )
       : events[evId]) || events.lobos;
+  const digitalAddonPasses = useOrderDigitalPasses(
+    ticketOrder
+      ? {
+          uuid: typeof ticketOrder.uuid === "string" ? ticketOrder.uuid : undefined,
+          digitalAddonPasses: Array.isArray(ticketOrder.digitalAddonPasses)
+            ? (ticketOrder.digitalAddonPasses as DigitalAddonPass[])
+            : undefined,
+        }
+      : null,
+    ev.eventUUID ||
+      (typeof ev.event?.uuid === "string" ? ev.event.uuid : undefined),
+  );
+  const showPostPurchaseAddons =
+    Boolean(sessionUser) &&
+    !ev.isCart &&
+    !ticketOrder?.flex_pack &&
+    !ticketOrder?.access_pass_template &&
+    Boolean(resolveOrderUUID(ticketOrder));
   const attractionCards: AttractionCard[] = ev.attractions?.length
     ? ev.attractions
     : ev.teams.map((t) => ({
@@ -6375,14 +6400,30 @@ export default function SeasonTickets({
             </div>
           </div>
         ))}
+        {digitalAddonPasses.map((pass) => (
+          <div key={pass.checkInCode} style={{ flex: "0 0 94%", scrollSnapAlign: "center", overflow: "hidden", borderRadius: 20, background: "#fff", boxShadow: "0 1px 2px rgba(5,27,53,0.06), 0 18px 38px -22px rgba(5,27,53,0.55)", display: "flex", flexDirection: "column", padding: 18, gap: 10 }}>
+            <span style={{ alignSelf: "flex-start", fontSize: fluidSize(11), fontWeight: 600, color: INK, background: SOFT, borderRadius: 999, padding: "4px 10px" }}>Add-on</span>
+            <div style={{ fontSize: fluidSize(17), fontWeight: 600 }}>{pass.productName || "Add-on pass"}</div>
+            <div style={{ alignSelf: "center" }}>
+              <QRCodeSVG value={pass.checkInCode} size={140} />
+            </div>
+            <div style={{ textAlign: "center", fontSize: fluidSize(14) }}>{pass.checkInCode}</div>
+          </div>
+        ))}
       </div>
 
       {/* dots */}
       <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 7 }}>
-        {ticketRows.map((_, i) => (
+        {[...ticketRows, ...digitalAddonPasses].map((_, i) => (
           <div key={i} style={{ width: 7, height: 7, borderRadius: 999, background: i === 0 ? ACCENT : "rgba(5,27,53,0.22)" }} />
         ))}
       </div>
+      <AddonDigitalPasses
+        passes={digitalAddonPasses}
+        event={ev.event as Record<string, unknown> | undefined}
+        eventName={ev.title}
+      />
+      {showPostPurchaseAddons ? <PostPurchaseAddonOffer order={ticketOrder} /> : null}
 
       </div>
     {pendingIncomingEvent ? (
@@ -6542,11 +6583,26 @@ export default function SeasonTickets({
                 </div>
               </div>
             ))}
+            {digitalAddonPasses.map((pass) => (
+              <div key={pass.checkInCode} className="st-ev-seat" style={{ padding: cardPad, borderBottom: "1px solid rgba(5,27,53,0.07)" }}>
+                <div style={{ flex: 1, minWidth: 150, display: "flex", flexDirection: "column", gap: 5 }}>
+                  <span style={{ alignSelf: "flex-start", fontSize: fluidSize(11), lineHeight: 1.5, fontWeight: 600, color: INK, background: SOFT, borderRadius: 999, padding: "4px 10px" }}>Add-on</span>
+                  <div style={{ fontSize: 17, lineHeight: 1.5, fontWeight: 600 }}>{pass.productName || "Add-on pass"}</div>
+                  <div style={{ fontSize: fluidSize(13), color: SUB }}>{pass.checkInCode}</div>
+                </div>
+              </div>
+            ))}
             <div style={{ padding: `14px ${padX}px`, background: "#fbfcfe", display: "flex", alignItems: "center", gap: 12 }}>
               <svg viewBox="0 0 24 24" fill="none" stroke={INK} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" style={{ width: 18, height: 18, flexShrink: 0 }}><rect x="3" y="3" width="7" height="7" /><rect x="14" y="3" width="7" height="7" /><rect x="3" y="14" width="7" height="7" /><line x1="14" y1="14" x2="21" y2="14" /><line x1="14" y1="18" x2="18" y2="18" /><line x1="18" y1="21" x2="21" y2="21" /></svg>
               <div style={{ fontSize: fluidSize(13), lineHeight: mobile ? browseLeading("body") : 1.5, color: FAINT }}><strong style={{ fontWeight: 600, color: INK }}>Your phone is your ticket.</strong> Show the QR code straight from your phone to scan at entry, or add each ticket to your Apple/Google wallet ahead of time.</div>
             </div>
           </div>
+          <AddonDigitalPasses
+            passes={digitalAddonPasses}
+            event={ev.event as Record<string, unknown> | undefined}
+            eventName={ev.title}
+          />
+          {showPostPurchaseAddons ? <PostPurchaseAddonOffer order={ticketOrder} /> : null}
         </div>
 
         <aside className="st-ev-aside">

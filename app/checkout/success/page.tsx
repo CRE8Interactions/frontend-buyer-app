@@ -11,6 +11,9 @@ import VerifiedResaleBadge from "@/components/atoms/VerifiedResaleBadge";
 import RouteLoader from "@/components/molecules/RouteLoader";
 import MobileStickyFooter from "@/components/molecules/MobileStickyFooter";
 import { ShopperFluidTypeStyles } from "@/components/templates/ShopperFluidType";
+import AddonDigitalPasses from "@/components/organisms/AddonDigitalPasses";
+import PostPurchaseAddonOffer from "@/components/organisms/PostPurchaseAddonOffer";
+import { useOrderDigitalPasses } from "@/hooks/useOrderDigitalPasses";
 import { useAuth } from "@/lib/auth";
 import { BLOCKTICKETS_NAVY, type BrandingOrganization } from "@/lib/branding";
 import {
@@ -173,6 +176,10 @@ function CheckoutSuccessPage() {
   const [walletError, setWalletError] = useState("");
   const [addedWalletKeys, setAddedWalletKeys] = useState<string[]>([]);
   const allowCachedBranding = useClientReady();
+  const digitalPasses = useOrderDigitalPasses(
+    order,
+    typeof order?.event?.uuid === "string" ? order.event.uuid : undefined,
+  );
 
   useEffect(() => {
     hideIntercomLauncher();
@@ -414,11 +421,15 @@ function CheckoutSuccessPage() {
     (typeof order?.email === "string" ? order.email : "") ||
     (typeof order?.purchaserEmail === "string" ? order.purchaserEmail : "") ||
     getGuestCheckoutBuyer().email;
-  const mobileTicketMessage = ticketEmail
-    ? `We've emailed it to ${ticketEmail} — add it to your wallet now.`
-    : isAuthenticated
-      ? "You will instantly receive your ticket and store it in your account."
-      : "We've emailed your tickets. Create an account to manage them in your wallet.";
+  const mobileTicketMessage = digitalPasses.length
+    ? isAuthenticated
+      ? "Your tickets and add-on passes are in My events. Show the add-on QR code when staff ask for it."
+      : "We've emailed your confirmation. Your add-on pass codes are below — save this page or use the email to find them at the venue."
+    : ticketEmail
+      ? `We've emailed it to ${ticketEmail} — add it to your wallet now.`
+      : isAuthenticated
+        ? "You will instantly receive your ticket and store it in your account."
+        : "We've emailed your tickets. Create an account to manage them in your wallet.";
   const walletHref = isAuthenticated ? accessPassHref : ticketsHref;
   const openWallet = () => {
     clearWalletNavigation();
@@ -805,13 +816,28 @@ function CheckoutSuccessPage() {
                   <line x1="12" y1="18" x2="12.01" y2="18" />
                 </svg>
                 <div className="text-[14px]" style={{ color: "#4a5567" }}>
-                  <span className="font-semibold" style={{ color: NAVY }}>
-                    Your phone is your ticket.
-                  </span>
-                  {` ${mobileTicketMessage}`}
+                  {digitalPasses.length ? null : (
+                    <span className="font-semibold" style={{ color: NAVY }}>
+                      Your phone is your ticket.{" "}
+                    </span>
+                  )}
+                  {mobileTicketMessage}
                 </div>
               </div>
             </div>
+            {digitalPasses.length ? (
+              <div className={`${CARD} flex flex-col gap-4 p-5`}>
+                <AddonDigitalPasses
+                  passes={digitalPasses}
+                  event={event as Record<string, unknown> | null}
+                  eventName={event?.name}
+                  title="Your add-on passes"
+                />
+              </div>
+            ) : null}
+            {isAuthenticated && !order.flex_pack && !order.access_pass_template ? (
+              <PostPurchaseAddonOffer order={order} />
+            ) : null}
           </div>
         </div>
       )}

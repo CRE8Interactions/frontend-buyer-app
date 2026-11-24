@@ -11,6 +11,7 @@ import {
   demoCompletedPackageOrder,
   demoCheckoutCart,
   demoCompletedTicketOrder,
+  demoDigitalAddonPass,
   demoFlexPack,
   demoPackageAccessPass,
   demoSeasonPackage,
@@ -78,6 +79,9 @@ vi.mock("@/lib/api", () => ({
   createBankAccount: vi.fn(async () => ({ data: { link: "https://connect.stripe.test/setup" } })),
   getResaleFeeRules: vi.fn(async () => ({ data: { rules: [] } })),
   getOrder: vi.fn(),
+  getOrderAvailableAddons: vi.fn(async () => ({ data: [] })),
+  getOrderDigitalPasses: vi.fn(async () => ({ data: { digitalPasses: [] } })),
+  createPostPurchaseAddonCheckout: vi.fn(),
   searchEvents: vi.fn(async () => ({ data: [] })),
   validateEmail: vi.fn(async () => ({ data: { verdict: "Valid" } })),
 }));
@@ -5786,6 +5790,26 @@ describe("SeasonTickets routed event screen", { timeout: 20_000 }, () => {
       "href",
       expect.stringMatching(/^\/wallet\/my-tickets\/?$/),
     );
+  });
+
+  it("lists an add-on pass without offering it for transfer", async () => {
+    const pass = demoDigitalAddonPass();
+    const order = demoCompletedTicketOrder({
+      event: icedogs,
+      uuid: "order-icedogs",
+      digitalAddonPasses: [pass],
+    });
+    mockedGetMyEvents.mockResolvedValue({ data: [order] } as never);
+    mockedGetOrder.mockResolvedValue({ data: order } as never);
+
+    render(<SeasonTickets initialScreen="event" eventUUID={icedogs.uuid} />);
+
+    const passes = await screen.findByRole("region", { name: "Add-on passes" });
+    expect(within(passes).getByText(pass.productName)).toBeInTheDocument();
+    expect(within(passes).getByText(pass.checkInCode)).toBeInTheDocument();
+    expect(
+      within(passes).queryByRole("button", { name: "Transfer" }),
+    ).not.toBeInTheDocument();
   });
 
   it("shows the promotional description below the event name and date", async () => {

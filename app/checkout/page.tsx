@@ -1,21 +1,19 @@
 "use client";
 
-import { Suspense, useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from "react";
-import Link from "next/link";
+import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { loadStripe, type Stripe } from "@stripe/stripe-js";
-import {
-  Elements,
-  PaymentElement,
-  useElements,
-  useStripe,
-} from "@stripe/react-stripe-js";
+import { Elements } from "@stripe/react-stripe-js";
+import CheckoutPaymentForm, {
+  type CheckoutPromoDiscount,
+} from "@/components/organisms/CheckoutPaymentForm";
+import CheckoutAddOns from "@/components/organisms/CheckoutAddOns";
+import AddonPickupDetails from "@/components/molecules/AddonPickupDetails";
 import BrandedCheckoutShell from "@/components/organisms/BrandedCheckoutShell";
 import GuestContact from "@/components/organisms/GuestContact";
 import BrandedActionButton from "@/components/atoms/BrandedActionButton";
 import AccessibleSeatingBadge from "@/components/atoms/AccessibleSeatingBadge";
 import VerifiedResaleBadge from "@/components/atoms/VerifiedResaleBadge";
-import MobileStickyFooter from "@/components/molecules/MobileStickyFooter";
 import Button from "@/components/atoms/Button";
 import Spinner from "@/components/atoms/Spinner";
 import Modal from "@/components/molecules/Modal";
@@ -33,9 +31,6 @@ import {
 import { cacheOrgBranding, orgSlugFromPathname } from "@/lib/orgBrandingCache";
 import { beginRouteTransition } from "@/lib/routeTransition";
 import { useClientReady } from "@/lib/useClientReady";
-import { promoCodeRedeemDisplayMessage } from "@/lib/fieldValidation";
-import MarketingOptIn from "@/components/molecules/MarketingOptIn";
-import PromoCodeForm, { type PromoRedeemResult } from "@/components/molecules/PromoCodeForm";
 import {
   flexPackEachPrice,
   flexPackSeasonLine,
@@ -48,7 +43,6 @@ import {
   packageCartTickets,
   packageOrderSummary,
   promoSummaryLabel,
-  isPackageProcessingFeeWaived,
   resolveFlexPackCheckoutTotals,
   resolvePackageCheckoutTotals,
   ticketSelectionSummary,
@@ -59,14 +53,12 @@ import {
   dropUserCart,
   getCart,
   getPaymentIntent,
+  getEventAddons,
   getSeatmapByShortCode,
   processFreeOrder,
-  processOrder,
-  redeemPromoCode,
-  removePromoCode,
+  saveCartAddon,
   resolveFundraisingCampaign,
 } from "@/lib/api";
-import { buildProcessOrderRequest } from "@/lib/checkoutPaymentIntent";
 import { readTrackingCodeForCart } from "@/lib/trackingLink";
 import {
   buildFundraisingPayload,
@@ -80,9 +72,6 @@ import {
 import {
   CHECKOUT_PAYMENT_COPY,
   paymentIntentLoadOutcome,
-  purchaseFailureDisplayMessage,
-  stripeConfirmDisplayMessage,
-  waitForPaymentIntentSucceeded,
 } from "@/lib/checkoutPaymentErrors";
 import {
   formatCurrency,
@@ -119,7 +108,6 @@ import {
 import { hideIntercomLauncher } from "@/lib/intercom";
 import { BACK_FALLBACK_HREF } from "@/lib/inAppBack";
 import {
-  checkoutSuccessReturnUrl,
   leaveCheckoutForSuccess,
   paymentIntentAlreadySucceeded,
   succeededStripeRedirectIntentId,
@@ -139,95 +127,25 @@ import {
 } from "@/lib/seatmapLookups";
 import {
   injectMetaPixel,
-  trackAddPaymentInfo,
   trackBeginCheckout,
-  trackCheckoutStage,
   trackCheckoutStarted,
   type TrackingOrganization,
 } from "@/lib/tracking";
 import {
   STRIPE_PAYMENT_ELEMENT_FONTS,
-  checkoutPaymentElementOptions,
   stripePaymentElementAppearance,
 } from "@/lib/stripePaymentElement";
 
-type CartData = {
-  id: string | number;
-  tickets?: Array<Record<string, unknown>>;
-  package_tickets?: Array<Record<string, unknown>>;
-  package?: {
-    uuid?: string | number;
-    id?: string | number;
-    name?: string;
-    price?: number;
-    pricingTiers?: Array<{ price?: number } | null> | null;
-    start?: string;
-    image?: { url?: string };
-    events?: Array<{
-      uuid?: string;
-      name?: string;
-      start?: string;
-      venue?: { name?: string; timezone?: string };
-      [key: string]: unknown;
-    }>;
-    venue?: { name?: string; timezone?: string };
-    organization?: Record<string, unknown>;
-  } | null;
-  flex_pack?: {
-    name?: string;
-    price?: number;
-    gameTickets?: number;
-    start?: string;
-    end?: string;
-    image?: { url?: string };
-    venue?: { name?: string; timezone?: string };
-    organization?: Record<string, unknown>;
-    [key: string]: unknown;
-  } | null;
-  access_pass_template?: {
-    name?: string;
-    price?: number;
-    artwork?: { url?: string };
-    events?: Array<{
-      uuid?: string;
-      name?: string;
-      start?: string;
-      [key: string]: unknown;
-    }>;
-    organization?: {
-      connected_account_id?: string;
-      test_connected_account_id?: string;
-      uuid?: string;
-      meta_pixel_id?: string;
-      name?: string;
-    };
-    venue?: { timezone?: string; name?: string };
-    [key: string]: unknown;
-  } | null;
-  event?: {
-    name?: string;
-    start?: string;
-    organization?: {
-      connected_account_id?: string;
-      test_connected_account_id?: string;
-      uuid?: string;
-      name?: string;
-      branding?: BrandingOrganization["branding"];
-    } & BrandingOrganization;
-    venue?: { timezone?: string; name?: string };
-    [key: string]: unknown;
-  } | null;
-  total?: number;
-  totalTax?: number;
-  serviceFee?: number;
-  processingFee?: number;
-  estimatedProcessingFee?: number;
-  discountApplied?: number;
-  salesTax?: number;
-  remainingTime?: number;
-  ipAddress?: string;
-  [key: string]: unknown;
-};
+import type { CheckoutCart as CartData } from "@/lib/checkoutCart";
+import {
+  addonApiErrorMessage,
+  addonCustomerTotal,
+  addonFeeRemainder,
+  addonSummaryLines,
+  normalizeAddonCatalogPayload,
+  resolveAddonCatalogContext,
+  type AddonProduct,
+} from "@/lib/addonCatalog";
 
 async function loadCheckoutSeatLocation(event: CartData["event"]) {
   const slug = event?.slug || event?.seoUrl;
@@ -258,364 +176,6 @@ const lightCard =
   "rounded-[18px] border border-[rgba(5,27,53,0.08)] bg-white shadow-[0_10px_30px_-20px_rgba(5,27,53,0.35)]";
 const muted = "text-[#6e7180]";
 
-type CheckoutPromoDiscount = { label: string; amount: number };
-
-function CheckoutPaymentForm({
-  intentId,
-  clientSecret,
-  cart,
-  donationChargeTotal = 0,
-  donationRequirementMet,
-  isRefreshingIntent,
-  buttonColor,
-  buttonTextColor,
-  accent,
-  orgLabel,
-  onTotalChange,
-  onPromoChange,
-  onSuccess,
-  onDeclined,
-  onExpired,
-  showMarketingOptIn = false,
-  organizationName,
-  optInMessage,
-}: {
-  intentId: string;
-  clientSecret: string;
-  cart: CartData;
-  donationChargeTotal?: number;
-  donationRequirementMet: boolean;
-  isRefreshingIntent: boolean;
-  buttonColor: string;
-  buttonTextColor: string;
-  accent: string;
-  orgLabel: string;
-  onTotalChange?: (total: number) => void;
-  onPromoChange?: (promo: CheckoutPromoDiscount | null) => void;
-  onSuccess: () => void;
-  onDeclined: (msg: string) => void;
-  onExpired: () => void;
-  showMarketingOptIn?: boolean;
-  organizationName?: string | null;
-  optInMessage?: string | null;
-}) {
-  const stripe = useStripe();
-  const elements = useElements();
-  // Only the applied code — the promo form owns the value being typed.
-  const [promoCode, setPromoCode] = useState("");
-  const [isDiscountApplied, setIsDiscountApplied] = useState(false);
-  const [discountedPrice, setDiscountedPrice] = useState<number | null>(null);
-  const [promoDetails, setPromoDetails] = useState<Record<string, unknown> | null>(
-    null,
-  );
-  const [removingPromo, setRemovingPromo] = useState(false);
-  const [purchasing, setPurchasing] = useState(false);
-  const [paymentReady, setPaymentReady] = useState(false);
-  const [marketingEmailOptIn, setMarketingEmailOptIn] = useState(false);
-  const hasTrackedPaymentInfoRef = useRef(false);
-
-  const flexPackTotals = cart.flex_pack
-    ? resolveFlexPackCheckoutTotals(cart)
-    : null;
-
-  const accessPassProcessingFee = isPackageProcessingFeeWaived(
-    cart.packageWebsiteFeeSnapshot,
-  )
-    ? 0
-    : Number(cart.processingFee ?? 0);
-  const accessPassChargeTotal =
-    Number(cart.total ?? 0) +
-    Number(cart.totalTax ?? cart.salesTax ?? 0) +
-    Number(cart.serviceFee ?? 0) +
-    accessPassProcessingFee +
-    Number(donationChargeTotal || 0);
-
-  const displayTotal = isDiscountApplied
-    ? Number(discountedPrice ?? cart.total ?? 0) + Number(donationChargeTotal || 0)
-    : cart.flex_pack
-      ? (flexPackTotals?.total || 0) + Number(donationChargeTotal || 0)
-      : cart.access_pass_template
-        ? accessPassChargeTotal
-        : cart.package
-          ? resolvePackageCheckoutTotals(
-              cart,
-              packageOrderSummary(
-                cart.package,
-                packageCartTickets(cart),
-                cart.package_tickets?.length || 0,
-              ).subtotal,
-            ).total + Number(donationChargeTotal || 0)
-          : Number(cart.total ?? 0) + Number(donationChargeTotal || 0);
-
-  useEffect(() => {
-    onTotalChange?.(displayTotal);
-  }, [displayTotal, onTotalChange]);
-
-  const promoPricing = promoDetails?.promoPricingDetails as
-    | {
-        code?: string;
-        name?: string;
-        amountDiscounted?: number;
-        originalPrice?: number;
-        discountedPrice?: number;
-      }
-    | undefined;
-  // Blocktickets sends the discount as amountDiscounted; older payloads only
-  // carry the before/after prices.
-  const promoDiscountAmount = isDiscountApplied
-    ? Number(promoPricing?.amountDiscounted) ||
-      Math.max(
-        0,
-        Number(promoPricing?.originalPrice || 0) -
-          Number(promoPricing?.discountedPrice || 0),
-      )
-    : 0;
-  const promoDiscountCode = promoPricing?.code || promoCode.trim();
-  const promoDiscountLabel =
-    String(promoPricing?.name || "").trim() || promoDiscountCode;
-
-  useEffect(() => {
-    onPromoChange?.(
-      promoDiscountAmount > 0
-        ? { label: promoDiscountLabel, amount: promoDiscountAmount }
-        : null,
-    );
-  }, [onPromoChange, promoDiscountAmount, promoDiscountLabel]);
-
-  const redeemPromo = async (code: string): Promise<PromoRedeemResult> => {
-    try {
-      const res = await redeemPromoCode({
-        code: code.trim(),
-        paymentIntentId: intentId,
-        cart,
-      });
-      setPromoCode(code);
-      setIsDiscountApplied(true);
-      setDiscountedPrice(res.data?.promoPricingDetails?.discountedPrice);
-      setPromoDetails(res.data);
-      return null;
-    } catch (err: unknown) {
-      return { rejectedMessage: promoCodeRedeemDisplayMessage(err) };
-    }
-  };
-
-  const handleRemovePromo = async () => {
-    setRemovingPromo(true);
-    try {
-      await removePromoCode({ paymentIntentId: intentId, cart });
-      setIsDiscountApplied(false);
-      setDiscountedPrice(null);
-      setPromoDetails(null);
-      setPromoCode("");
-    } catch {
-      /* ignore */
-    } finally {
-      setRemovingPromo(false);
-    }
-  };
-
-  const completePurchase = async (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    if (!donationRequirementMet || isRefreshingIntent || purchasing) return;
-    if (!stripe || !elements) return;
-    setPurchasing(true);
-    try {
-      // Elements already has the PaymentIntent client secret. Legacy checkout
-      // confirms once; a prior elements.submit() makes confirmPayment reject
-      // in the browser before Stripe's confirm request.
-      await processOrder(
-        buildProcessOrderRequest(
-          cart,
-          intentId,
-          readTrackingCodeForCart(cart),
-          showMarketingOptIn ? marketingEmailOptIn : undefined,
-        ),
-      );
-      const confirmed = await stripe.confirmPayment({
-        elements,
-        confirmParams: {
-          return_url: checkoutSuccessReturnUrl(intentId),
-        },
-        redirect: "if_required",
-      });
-      const confirmError = await waitForPaymentIntentSucceeded(
-        stripe,
-        clientSecret,
-        confirmed,
-      );
-      if (confirmError) {
-        onDeclined(stripeConfirmDisplayMessage(confirmError.message));
-        setPurchasing(false);
-        return;
-      }
-      sessionStorage.setItem("order", JSON.stringify({ id: cart.id }));
-      onSuccess();
-    } catch (err: unknown) {
-      setPurchasing(false);
-      if (isRequestCanceled(err)) return;
-      if (isCartExpiredResponse(err)) {
-        onExpired();
-        return;
-      }
-      onDeclined(purchaseFailureDisplayMessage(err));
-    }
-  };
-
-  return (
-    <div>
-      <form
-        id="checkout-payment"
-        noValidate
-        onSubmit={completePurchase}
-      >
-        <PaymentElement
-          onChange={(e) => {
-            setPaymentReady(Boolean(e.complete));
-            if (e.complete && !hasTrackedPaymentInfoRef.current) {
-              const organization = (cart?.event?.organization ||
-                cart?.package?.organization ||
-                cart?.flex_pack?.organization ||
-                cart?.access_pass_template?.organization) as
-                | TrackingOrganization
-                | undefined;
-              trackAddPaymentInfo({ organization, cart });
-              trackCheckoutStage(
-                "payment",
-                { payment_info_entered: true },
-                cart?.id,
-              );
-              hasTrackedPaymentInfoRef.current = true;
-            }
-          }}
-          options={checkoutPaymentElementOptions}
-        />
-      </form>
-
-      {!cart.flex_pack && !cart.package && !cart.access_pass_template ? (
-        <div className="mt-6">
-          {isDiscountApplied ? (
-            <div className="flex items-center justify-between gap-3 rounded-[14px] border border-[rgba(5,27,53,0.10)] bg-[#f7f8fc] p-4">
-              <div>
-                <p className="text-[14px] font-semibold">
-                  {(promoDetails?.promoPricingDetails as { code?: string } | undefined)
-                    ?.code || "Promo"}
-                </p>
-                <p className={`text-[13px] ${muted}`}>Promo code applied</p>
-              </div>
-              <BrandedActionButton
-                tone="secondary"
-                loading={removingPromo}
-                loadingLabel="Removing…"
-                onClick={handleRemovePromo}
-                className="!w-auto px-[18px] py-2.5 text-[14px]"
-              >
-                Remove
-              </BrandedActionButton>
-            </div>
-          ) : (
-            <div>
-              <p className="mb-2 text-[12px] font-semibold uppercase tracking-[0.1em] text-[#8a93a3]">
-                Promo code
-              </p>
-              <PromoCodeForm onRedeem={redeemPromo} />
-            </div>
-          )}
-        </div>
-      ) : null}
-
-      {showMarketingOptIn ? (
-        <MarketingOptIn
-          className="mt-6"
-          checked={marketingEmailOptIn}
-          onChange={setMarketingEmailOptIn}
-          organizationName={organizationName}
-          optInMessage={optInMessage}
-          disabled={purchasing || isRefreshingIntent}
-        />
-      ) : null}
-      <label className="mt-6">
-        <input type="checkbox" defaultChecked />
-        <span className="text-[13px] text-[#4a5567]">
-          Save my info for one-click checkout with Link
-          {orgLabel && orgLabel !== "Blocktickets"
-            ? ` at ${orgLabel} venues`
-            : ""}
-          .
-        </span>
-      </label>
-      <div className="mt-4 flex flex-wrap items-center justify-between gap-3.5">
-        <p className="max-w-[380px] text-[12px] leading-relaxed text-[#8a93a3]">
-          By paying you agree to the Blocktickets{" "}
-          <Link href="/purchase-policy/" className="underline">
-            Purchase Policy
-          </Link>{" "}
-          and{" "}
-          <Link href="/terms-conditions/" className="underline">
-            Terms &amp; Conditions
-          </Link>
-          . All prices are all-in.
-        </p>
-        <div className="flex items-center gap-1.5 whitespace-nowrap text-[12px] text-[#8a93a3]">
-          <svg
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth={2}
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            className="h-[13px] w-[13px]"
-            aria-hidden
-          >
-            <rect x="3" y="11" width="18" height="11" rx="2" />
-            <path d="M7 11V7a5 5 0 0 1 10 0v4" />
-          </svg>
-          Payments secured by Stripe
-        </div>
-      </div>
-
-      <MobileStickyFooter
-        accentColor={accent}
-        zIndex={3}
-        innerPadding="0"
-        boxShadow="none"
-        shellClassName="md:bg-white/94 md:backdrop-blur"
-      >
-        <div className="mx-auto flex max-w-[1140px] px-3.5 py-3 md:justify-end md:px-5">
-          <BrandedActionButton
-            type="submit"
-            form="checkout-payment"
-            primaryColor={buttonColor}
-            textColor={buttonTextColor}
-            loading={purchasing}
-            loadingLabel="Processing…"
-            disabled={
-              !paymentReady ||
-              !donationRequirementMet ||
-              isRefreshingIntent ||
-              !stripe
-            }
-            className="w-full px-[34px] py-4 text-[17px] md:ml-auto md:w-[340px]"
-          >
-            <svg
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth={2}
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              className="h-[17px] w-[17px]"
-              aria-hidden
-            >
-              <rect x="3" y="11" width="18" height="11" rx="2" />
-              <path d="M7 11V7a5 5 0 0 1 10 0v4" />
-            </svg>
-            Pay {formatCurrency(displayTotal)}
-          </BrandedActionButton>
-        </div>
-      </MobileStickyFooter>
-    </div>
-  );
-}
 
 function CheckoutPage() {
   const router = useRouter();
@@ -626,6 +186,8 @@ function CheckoutPage() {
 
   const [loading, setLoading] = useState(true);
   const [cart, setCart] = useState<CartData | null>(null);
+  const [addonProducts, setAddonProducts] = useState<AddonProduct[]>([]);
+  const [addonError, setAddonError] = useState("");
 
   useEffect(() => {
     const title = purchaseTabTitle(cart);
@@ -675,6 +237,37 @@ function CheckoutPage() {
     connectedAccountId?: string | null;
   } | null>(null);
   const guestBuyerRef = useRef<GuestBuyer | null>(null);
+
+  useEffect(() => {
+    const { eventUUID, packageUUID } = resolveAddonCatalogContext(cart);
+    if (!eventUUID) {
+      setAddonProducts([]);
+      return undefined;
+    }
+    let cancelled = false;
+    getEventAddons(eventUUID, packageUUID, { requireCheckoutAddons: true })
+      .then((res) => {
+        if (!cancelled) {
+          setAddonProducts(
+            normalizeAddonCatalogPayload(res.data) as AddonProduct[],
+          );
+        }
+      })
+      .catch(() => {
+        if (!cancelled) setAddonProducts([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    cart,
+    cart?.event?.uuid,
+    cart?.eventUUID,
+    cart?.event_uuid,
+    cart?.package?.uuid,
+    cart?.access_pass_template?.uuid,
+    cart?.resaleListing,
+  ]);
 
   const goToSuccess = useCallback(
     (id: string) => {
@@ -1091,6 +684,62 @@ function CheckoutPage() {
     fundraisingSelection,
   );
 
+  const handleAddonChange = async (selection: {
+    productUuid: string;
+    variantUuid: string | null;
+    quantity: number;
+  }) => {
+    if (!cartRef.current?.id) return;
+    setAddonError("");
+    try {
+      await saveCartAddon(cartRef.current.id, selection);
+    } catch (err) {
+      setAddonError(
+        addonApiErrorMessage(
+          err,
+          "This add-on could not be updated. Please try again.",
+        ),
+      );
+      return;
+    }
+    let cartData: CartData;
+    try {
+      const res = await getCart(String(cartRef.current.id));
+      cartData = res.data as CartData;
+      cartData.tickets = await ticketsWithGaSections(
+        cartData.tickets || [],
+        cartData.event,
+      );
+      setCart(cartData);
+      cartRef.current = cartData;
+    } catch (err) {
+      if (
+        isCartExpiredResponse(err) ||
+        paymentIntentLoadOutcome(err) === "gone"
+      ) {
+        handleHoldExpired();
+      }
+      return;
+    }
+    if (!isAuthenticated && !guestBuyerRef.current) return;
+    setIsRefreshingIntent(true);
+    try {
+      await loadPaymentIntent(
+        cartData,
+        eventRef.current,
+        buildFundraisingPayload(
+          fundraisingCampaign as never,
+          fundraisingSelection,
+        ),
+        guestBuyerRef.current,
+      );
+    } catch (err) {
+      if (paymentIntentLoadOutcome(err) === "gone") handleHoldExpired();
+    } finally {
+      setIsRefreshingIntent(false);
+    }
+  };
+
   const handleFundraisingAmount = async (amount: number) => {
     const next = { ...fundraisingSelection, donationAmount: amount };
     setFundraisingSelection(next);
@@ -1261,13 +910,15 @@ function CheckoutPage() {
           summaryTicket?.sectionNumber as string | number | undefined,
           summaryTicket?.sectionName as string | number | undefined,
         );
-  const dueAmount =
-    dueTotal ||
-    (cart?.package
-      ? packageTotals.total
-      : cart?.flex_pack
-        ? flexTotals?.total || 0
-        : Number(cart?.total || 0));
+  const addonTotal = addonCustomerTotal(cart);
+  const addonLines = addonSummaryLines(cart);
+  const addonFees = addonFeeRemainder(cart);
+  const merchandiseDue = cart?.package
+    ? packageTotals.total
+    : cart?.flex_pack
+      ? flexTotals?.total || 0
+      : Number(cart?.total || 0);
+  const dueAmount = dueTotal || merchandiseDue + addonTotal;
   const taxLine = checkoutTaxLine(cart);
   const singleEvent =
     Boolean(cart?.tickets?.length) &&
@@ -1410,6 +1061,26 @@ function CheckoutPage() {
                     </p>
                   ) : null}
                 </div>
+              ) : null}
+              {!needsGuestContact && !cart?.resaleListing ? (
+                <>
+                  {addonError ? (
+                    <p role="alert" className="text-[14px] text-[var(--bt-error,#c0374a)]">
+                      {addonError}
+                    </p>
+                  ) : null}
+                  <CheckoutAddOns
+                    products={addonProducts}
+                    items={cart?.addonItems || []}
+                    disabled={isRefreshingIntent}
+                    onChange={handleAddonChange}
+                    onSkip={() =>
+                      document
+                        .getElementById("checkout-payment")
+                        ?.scrollIntoView({ behavior: "smooth" })
+                    }
+                  />
+                </>
               ) : null}
               <div>
                 {needsGuestContact ? (
@@ -1868,6 +1539,27 @@ function CheckoutPage() {
                   </span>
                 </div>
               ) : null}
+              {addonLines.map((line) => (
+                <div key={line.key} className="flex flex-col gap-1 text-[14px] text-[#4a5567]">
+                  <div className="flex justify-between gap-3">
+                    <span>
+                      {line.name}: {formatCurrency(line.unitPrice)} x {line.quantity}
+                    </span>
+                    <span className="tabular-nums text-[#051b35]">
+                      {formatCurrency(line.subtotal)}
+                    </span>
+                  </div>
+                  {line.pickup ? <AddonPickupDetails product={line.pickup} /> : null}
+                </div>
+              ))}
+              {addonFees > 0 ? (
+                <div className="flex justify-between gap-3 text-[14px] text-[#4a5567]">
+                  <span>Add-on fees</span>
+                  <span className="tabular-nums text-[#051b35]">
+                    {formatCurrency(addonFees)}
+                  </span>
+                </div>
+              ) : null}
               {promoDiscount ? (
                 <div className="flex justify-between gap-3 text-[14px] text-[#4a5567]">
                   <span>{promoSummaryLabel(promoDiscount.label)}</span>
@@ -1884,6 +1576,11 @@ function CheckoutPage() {
                   {formatCurrency(dueAmount)}
                 </span>
               </div>
+              {addonTotal > 0 ? (
+                <p className={`text-[13px] ${muted}`}>
+                  Includes {formatCurrency(addonTotal)} in add-ons
+                </p>
+              ) : null}
             </div>
             </div>
           </div>

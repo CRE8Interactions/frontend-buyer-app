@@ -9,6 +9,9 @@ import {
   DEMO_SEATED_TICKET_GROUPS,
   DEMO_USER,
   demoCheckoutCart,
+  demoDigitalAddonPass,
+  demoEventAddonProducts,
+  DEMO_ADDON_PARKING,
   demoCompletedFlexPackOrder,
   demoCompletedPackageOrder,
   demoCompletedTicketOrder,
@@ -58,7 +61,10 @@ vi.mock("next/navigation", () => ({
 
 vi.mock("@/lib/api", () => ({
   getOrder: vi.fn(),
+  getOrderAvailableAddons: vi.fn(async () => ({ data: [] })),
   getOrderByPaymentIntentId: vi.fn(),
+  getOrderDigitalPasses: vi.fn(async () => ({ data: { digitalPasses: [] } })),
+  createPostPurchaseAddonCheckout: vi.fn(),
   getEventByUuid: vi.fn(),
   getEventByShortCode: vi.fn(),
   getOrganizationStorefront: vi.fn(),
@@ -91,10 +97,13 @@ vi.mock("@/lib/orderReceipt", async (importOriginal) => {
 
 import CheckoutSuccessPageRoute from "@/app/checkout/success/page";
 import {
+  createPostPurchaseAddonCheckout,
   downloadApplePass,
   downloadGooglePass,
   getOrder,
+  getOrderAvailableAddons,
   getOrderByPaymentIntentId,
+  getOrderDigitalPasses,
   getSeatmapByShortCode,
   getTicketGroups,
 } from "@/lib/api";
@@ -114,6 +123,11 @@ import {
 
 const mockedGetOrderByPi = vi.mocked(getOrderByPaymentIntentId);
 const mockedGetOrder = vi.mocked(getOrder);
+const mockedGetOrderAvailableAddons = vi.mocked(getOrderAvailableAddons);
+const mockedGetOrderDigitalPasses = vi.mocked(getOrderDigitalPasses);
+const mockedCreatePostPurchaseAddonCheckout = vi.mocked(
+  createPostPurchaseAddonCheckout,
+);
 const mockedGetTicketGroups = vi.mocked(getTicketGroups);
 const mockedGetSeatmap = vi.mocked(getSeatmapByShortCode);
 
@@ -155,6 +169,13 @@ describe("Checkout success receipt", () => {
     mockedGetOrderByPi.mockResolvedValue({
       data: demoCompletedTicketOrder(),
     } as never);
+    mockedGetOrderAvailableAddons.mockReset();
+    mockedGetOrderAvailableAddons.mockResolvedValue({ data: [] } as never);
+    mockedGetOrderDigitalPasses.mockReset();
+    mockedGetOrderDigitalPasses.mockResolvedValue({
+      data: { digitalPasses: [] },
+    } as never);
+    mockedCreatePostPurchaseAddonCheckout.mockReset();
     mockedGetOrder.mockReset();
     mockedGetTicketGroups.mockReset();
     mockedGetTicketGroups.mockResolvedValue({
@@ -1170,6 +1191,70 @@ describe("Checkout success receipt", () => {
   });
 });
 
+describe("Checkout success add-ons", () => {
+  beforeEach(() => {
+    __resetCompletedOrderInflightForTests();
+    mockedUseAuth.mockReturnValue({
+      isAuthenticated: true,
+      ready: true,
+      user: DEMO_USER,
+      session: null,
+      login: vi.fn(),
+      logout: vi.fn(),
+      refresh: vi.fn(),
+    });
+  });
+
+  afterEach(() => {
+    __resetCompletedOrderInflightForTests();
+  });
+
+  it("shows add-on passes and offers a separate payment", async () => {
+    const pass = demoDigitalAddonPass();
+    mockedGetOrderByPi.mockResolvedValue({
+      data: demoCompletedTicketOrder({
+        uuid: "order-uuid-1",
+        digitalAddonPasses: [pass],
+      }),
+    } as never);
+    mockedGetOrderAvailableAddons.mockResolvedValue({
+      data: demoEventAddonProducts(),
+    } as never);
+
+    render(<CheckoutSuccessPageRoute />);
+
+    expect(await screen.findByText(pass.checkInCode)).toBeInTheDocument();
+    expect(screen.getAllByText(DEMO_ADDON_PARKING.name).length).toBeGreaterThan(0);
+    expect(
+      screen.getByText(/add-on passes are in My events/i),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("heading", { name: "Add more for this event" }),
+    ).toBeInTheDocument();
+  });
+
+  it("does not offer a separate add-on payment for a flex pack", async () => {
+    mockedGetOrderByPi.mockResolvedValue({
+      data: {
+        ...demoCompletedFlexPackOrder(),
+        uuid: "flex-order-1",
+      },
+    } as never);
+    mockedGetOrderAvailableAddons.mockResolvedValue({
+      data: demoEventAddonProducts(),
+    } as never);
+
+    render(<CheckoutSuccessPageRoute />);
+
+    expect(
+      await screen.findByRole("heading", { name: "Order confirmation" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("heading", { name: "Add more for this event" }),
+    ).not.toBeInTheDocument();
+  });
+});
+
 describe("Checkout success guest wallet", () => {
   const order = demoCompletedTicketOrder();
   const tickets = (order.tickets as Array<Record<string, unknown>>).slice(0, 2);
@@ -1219,6 +1304,7 @@ describe("Checkout success guest wallet", () => {
   }
 
   beforeEach(() => {
+    __resetCompletedOrderInflightForTests();
     guestAuth();
     mockedGetOrderByPi.mockResolvedValue({
       data: demoCompletedTicketOrder({ tickets }),
