@@ -134,12 +134,12 @@ function isLockedOffer(offer: TicketGroup) {
   return Boolean(offer.offer?.accessCode && !offer.offer?.unlocked);
 }
 
-/** Single game ticket prices include taxes and fees; package prices do not. */
+/** The map decides. Event prices include taxes and fees; a package does only when its price already does. */
 function priceIncludesTaxesAndFees(
-  offer: TicketGroup,
+  _offer: TicketGroup,
   pricesIncludeFees: boolean,
 ) {
-  return pricesIncludeFees && !offer.package;
+  return pricesIncludeFees;
 }
 
 function OfferPriceNote({ color }: { color: string }) {

@@ -162,17 +162,18 @@ export function listingStatusDotLine(listing: WalletListing): string {
   const tab = listingTab(listing.status);
   if (tab === "active") {
     const on = listingTimestamp(listing.createdAt, listing);
-    return on ? `active on ${on}` : "active";
+    return on ? `Active · ${on}` : "Active";
   }
   if (tab === "sold") {
     const on = listingTimestamp(listing.soldAt || listing.createdAt, listing);
     const email = listing.soldToEmail;
-    const soldOn = on ? `sold on ${on}` : "sold";
-    return email ? `sold to ${email} · ${soldOn}` : soldOn;
+    if (email && on) return `Sold to ${email} · ${on}`;
+    if (email) return `Sold to ${email}`;
+    return on ? `Sold · ${on}` : "Sold";
   }
   if (tab === "expired") {
     const on = listingTimestamp(listing.expiredAt || listing.createdAt, listing);
-    return on ? `expired on ${on}` : "expired";
+    return on ? `Expired · ${on}` : "Expired";
   }
   return listing.status;
 }
@@ -298,6 +299,40 @@ export function listingAskingPriceError(
     return listingPriceBelowMinimumCopy(floor);
   }
   return null;
+}
+
+export const LISTING_PRICE_FIELD_LABEL = "Price per ticket";
+
+/** Shared sell-step and edit-listing price state. */
+export function listingPriceDraft(
+  raw: string,
+  {
+    face,
+    resaleMinimumPercent,
+    fieldError = null,
+  }: {
+    face: number;
+    resaleMinimumPercent: number | null;
+    fieldError?: string | null;
+  },
+) {
+  const asking = parseAskingPrice(raw || "") ?? 0;
+  const minimumError =
+    asking > 0
+      ? listingAskingPriceError(raw, {
+          face,
+          resaleMinimumPercent,
+          mode: "blur",
+        })
+      : null;
+  const fieldMessage = asking > 0 ? fieldError || minimumError : fieldError;
+  return {
+    asking,
+    minimumError,
+    message: fieldMessage || LISTING_PRICE_FIELD_LABEL,
+    invalid: Boolean(fieldMessage),
+    canContinue: asking > 0 && !minimumError,
+  };
 }
 
 export function listingSellerFeeAmount(askingPrice: number, event?: EventLike | null): number {

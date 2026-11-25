@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, useEffect, useState } from "react";
+import { Suspense, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import BrandedActionButton, {
@@ -11,6 +11,9 @@ import VerifiedResaleBadge from "@/components/atoms/VerifiedResaleBadge";
 import RouteLoader from "@/components/molecules/RouteLoader";
 import MobileStickyFooter from "@/components/molecules/MobileStickyFooter";
 import { ShopperFluidTypeStyles } from "@/components/templates/ShopperFluidType";
+import AddonDigitalPasses from "@/components/organisms/AddonDigitalPasses";
+import PostPurchaseAddonOffer from "@/components/organisms/PostPurchaseAddonOffer";
+import { useOrderDigitalPasses } from "@/hooks/useOrderDigitalPasses";
 import { useAuth } from "@/lib/auth";
 import { BLOCKTICKETS_NAVY, type BrandingOrganization } from "@/lib/branding";
 import {
@@ -37,6 +40,7 @@ import { hideIntercomLauncher } from "@/lib/intercom";
 import { cacheOrgBranding } from "@/lib/orgBrandingCache";
 import {
   completedOrderResaleSummary,
+  packageConfirmationOfferName,
   resolveCompletedOrderFees,
   ticketSelectionSummary,
 } from "@/lib/ticketSummary";
@@ -48,6 +52,7 @@ import {
 } from "@/lib/flexPackDisplay";
 import { holdDocumentTitle, purchaseTabTitle } from "@/lib/seo";
 import { walletSectionHref } from "@/lib/walletNav";
+import { clearWalletNavigation } from "@/lib/walletTransition";
 import {
   formatVenueLocationFromVenue,
   formatVenueStreetAddressFromVenue,
@@ -153,6 +158,7 @@ function CheckoutSuccessPage() {
 
   const [loading, setLoading] = useState(true);
   const [order, setOrder] = useState<OrderData | null>(null);
+  const purchaseTrackedRef = useRef(false);
 
   useEffect(() => {
     const title = purchaseTabTitle(order);
@@ -170,6 +176,10 @@ function CheckoutSuccessPage() {
   const [walletError, setWalletError] = useState("");
   const [addedWalletKeys, setAddedWalletKeys] = useState<string[]>([]);
   const allowCachedBranding = useClientReady();
+  const digitalPasses = useOrderDigitalPasses(
+    order,
+    typeof order?.event?.uuid === "string" ? order.event.uuid : undefined,
+  );
 
   useEffect(() => {
     hideIntercomLauncher();
@@ -212,10 +222,14 @@ function CheckoutSuccessPage() {
         | TrackingOrganization
         | undefined;
       cacheOrgBranding(organization as BrandingOrganization | undefined);
-      trackPurchase({
-        organization,
-        order: orderData,
-      });
+      if (!purchaseTrackedRef.current) {
+        purchaseTrackedRef.current = true;
+        trackPurchase({
+          organization,
+          order: orderData,
+          paymentIntentId: intentId,
+        });
+      }
       trackCheckoutCompleted(cartId);
     };
 
@@ -375,7 +389,6 @@ function CheckoutSuccessPage() {
   const ticketSummary = ticketSelectionSummary(tickets, {
     ...(order?.package
       ? {
-          defaultOffer: "Standard admission",
           gameCount: Array.isArray(order.package.events)
             ? order.package.events.length
             : undefined,
@@ -384,8 +397,10 @@ function CheckoutSuccessPage() {
     seatedGaSection: showsNamedGaSectionTicketCount(tickets, order?.event),
   });
   const purchase = completedOrderResaleSummary(order);
-  // Package default offer and ticket names win; a sold resale falls back to its listing offer.
-  const offerPillName = ticketSummary.offerName || purchase.offerName;
+  // A package badge sits above the seat name. A sold resale falls back to its listing offer.
+  const offerPillName = order?.package
+    ? packageConfirmationOfferName(tickets)
+    : ticketSummary.offerName || purchase.offerName;
   const receiptFeeRows = (receiptSummary?.totals || []).filter(
     (row) => !row.strong && !row.amountDue,
   );
@@ -406,12 +421,19 @@ function CheckoutSuccessPage() {
     (typeof order?.email === "string" ? order.email : "") ||
     (typeof order?.purchaserEmail === "string" ? order.purchaserEmail : "") ||
     getGuestCheckoutBuyer().email;
-  const mobileTicketMessage = ticketEmail
-    ? `We've emailed it to ${ticketEmail} — add it to your wallet now.`
-    : isAuthenticated
-      ? "You will instantly receive your ticket and store it in your account."
-      : "We've emailed your tickets. Create an account to manage them in your wallet.";
+  const mobileTicketMessage = digitalPasses.length
+    ? isAuthenticated
+      ? "Your tickets and add-on passes are in My events. Show the add-on QR code when staff ask for it."
+      : "We've emailed your confirmation. Your add-on pass codes are below — save this page or use the email to find them at the venue."
+    : ticketEmail
+      ? `We've emailed it to ${ticketEmail} — add it to your wallet now.`
+      : isAuthenticated
+        ? "You will instantly receive your ticket and store it in your account."
+        : "We've emailed your tickets. Create an account to manage them in your wallet.";
   const walletHref = isAuthenticated ? accessPassHref : ticketsHref;
+  const openWallet = () => {
+    clearWalletNavigation();
+  };
   const walletLabel =
     isAuthenticated && isAccessPass ? "View access pass" : "Go to my wallet";
   const walletTheme = sheetWallet ? phoneWalletTheme(sheetWallet) : null;
@@ -525,6 +547,7 @@ function CheckoutSuccessPage() {
           </p>
           <Link
             href={walletHref}
+            onClick={openWallet}
             className="mt-6 inline-flex w-full items-center justify-center rounded-full px-5 py-3 text-[15px] font-semibold no-underline"
             style={{ background: accent, color: branding.theme.buttonTextColor }}
           >
@@ -695,6 +718,7 @@ function CheckoutSuccessPage() {
               </div>
               <Link
                 href={walletHref}
+                onClick={openWallet}
                 className="flex w-full items-center justify-center gap-2.5 rounded-full px-[26px] py-4 text-[16px] font-semibold no-underline"
                 style={{ background: accent, color: branding.theme.buttonTextColor }}
               >
@@ -792,13 +816,28 @@ function CheckoutSuccessPage() {
                   <line x1="12" y1="18" x2="12.01" y2="18" />
                 </svg>
                 <div className="text-[14px]" style={{ color: "#4a5567" }}>
-                  <span className="font-semibold" style={{ color: NAVY }}>
-                    Your phone is your ticket.
-                  </span>
-                  {` ${mobileTicketMessage}`}
+                  {digitalPasses.length ? null : (
+                    <span className="font-semibold" style={{ color: NAVY }}>
+                      Your phone is your ticket.{" "}
+                    </span>
+                  )}
+                  {mobileTicketMessage}
                 </div>
               </div>
             </div>
+            {digitalPasses.length ? (
+              <div className={`${CARD} flex flex-col gap-4 p-5`}>
+                <AddonDigitalPasses
+                  passes={digitalPasses}
+                  event={event as Record<string, unknown> | null}
+                  eventName={event?.name}
+                  title="Your add-on passes"
+                />
+              </div>
+            ) : null}
+            {isAuthenticated && !order.flex_pack && !order.access_pass_template ? (
+              <PostPurchaseAddonOffer order={order} />
+            ) : null}
           </div>
         </div>
       )}

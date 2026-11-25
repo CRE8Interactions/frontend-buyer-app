@@ -9,6 +9,9 @@ import {
   DEMO_SEATED_TICKET_GROUPS,
   DEMO_USER,
   demoCheckoutCart,
+  demoDigitalAddonPass,
+  demoEventAddonProducts,
+  DEMO_ADDON_PARKING,
   demoCompletedFlexPackOrder,
   demoCompletedPackageOrder,
   demoCompletedTicketOrder,
@@ -28,6 +31,11 @@ import { cacheOrgBranding } from "@/lib/orgBrandingCache";
 import { buildOrderReceipt } from "@/lib/orderReceipt";
 import { purchaseTabTitle } from "@/lib/seo";
 import { setGuestCheckoutBuyer } from "@/lib/guestCheckout";
+import {
+  beginWalletNavigation,
+  clearWalletNavigation,
+  getWalletNavigationPending,
+} from "@/lib/walletTransition";
 
 vi.mock("next/link", () => ({
   default: ({
@@ -53,7 +61,10 @@ vi.mock("next/navigation", () => ({
 
 vi.mock("@/lib/api", () => ({
   getOrder: vi.fn(),
+  getOrderAvailableAddons: vi.fn(async () => ({ data: [] })),
   getOrderByPaymentIntentId: vi.fn(),
+  getOrderDigitalPasses: vi.fn(async () => ({ data: { digitalPasses: [] } })),
+  createPostPurchaseAddonCheckout: vi.fn(),
   getEventByUuid: vi.fn(),
   getEventByShortCode: vi.fn(),
   getOrganizationStorefront: vi.fn(),
@@ -86,16 +97,20 @@ vi.mock("@/lib/orderReceipt", async (importOriginal) => {
 
 import CheckoutSuccessPageRoute from "@/app/checkout/success/page";
 import {
+  createPostPurchaseAddonCheckout,
   downloadApplePass,
   downloadGooglePass,
   getOrder,
+  getOrderAvailableAddons,
   getOrderByPaymentIntentId,
+  getOrderDigitalPasses,
   getSeatmapByShortCode,
   getTicketGroups,
 } from "@/lib/api";
 import { seatLabel } from "@/lib/wallet";
 import { __resetCompletedOrderInflightForTests } from "@/lib/completedOrder";
 import { useAuth } from "@/lib/auth";
+import { trackPurchase } from "@/lib/tracking";
 import {
   __setOrderPaymentDetailsPollForTests,
   formatOrderPaymentMethodSummary,
@@ -108,6 +123,11 @@ import {
 
 const mockedGetOrderByPi = vi.mocked(getOrderByPaymentIntentId);
 const mockedGetOrder = vi.mocked(getOrder);
+const mockedGetOrderAvailableAddons = vi.mocked(getOrderAvailableAddons);
+const mockedGetOrderDigitalPasses = vi.mocked(getOrderDigitalPasses);
+const mockedCreatePostPurchaseAddonCheckout = vi.mocked(
+  createPostPurchaseAddonCheckout,
+);
 const mockedGetTicketGroups = vi.mocked(getTicketGroups);
 const mockedGetSeatmap = vi.mocked(getSeatmapByShortCode);
 
@@ -126,6 +146,7 @@ function gaCompletedOrder() {
   });
 }
 const mockedUseAuth = vi.mocked(useAuth);
+const mockedTrackPurchase = vi.mocked(trackPurchase);
 const mockedDownload = vi.mocked(downloadOrderReceipt);
 const mockedDownloadApplePass = vi.mocked(downloadApplePass);
 const mockedDownloadGooglePass = vi.mocked(downloadGooglePass);
@@ -135,6 +156,7 @@ describe("Checkout success receipt", () => {
     __resetCompletedOrderInflightForTests();
     __setOrderPaymentDetailsPollForTests({ attempts: 5, delayMs: 0 });
     sessionStorage.clear();
+    mockedTrackPurchase.mockClear();
     mockedUseAuth.mockReturnValue({
       isAuthenticated: true,
       ready: true,
@@ -147,6 +169,13 @@ describe("Checkout success receipt", () => {
     mockedGetOrderByPi.mockResolvedValue({
       data: demoCompletedTicketOrder(),
     } as never);
+    mockedGetOrderAvailableAddons.mockReset();
+    mockedGetOrderAvailableAddons.mockResolvedValue({ data: [] } as never);
+    mockedGetOrderDigitalPasses.mockReset();
+    mockedGetOrderDigitalPasses.mockResolvedValue({
+      data: { digitalPasses: [] },
+    } as never);
+    mockedCreatePostPurchaseAddonCheckout.mockReset();
     mockedGetOrder.mockReset();
     mockedGetTicketGroups.mockReset();
     mockedGetTicketGroups.mockResolvedValue({
@@ -158,6 +187,7 @@ describe("Checkout success receipt", () => {
 
   afterEach(() => {
     __setOrderPaymentDetailsPollForTests(null);
+    clearWalletNavigation();
     vi.useRealTimers();
   });
 
@@ -188,6 +218,24 @@ describe("Checkout success receipt", () => {
       await screen.findByText(DEMO_SEATED_TICKET_GROUPS[0].offer!.name!),
     ).toBeInTheDocument();
     expect(mockedGetOrder).not.toHaveBeenCalled();
+  });
+
+  it("tracks the purchase once with the payment intent id from the url", async () => {
+    render(<CheckoutSuccessPageRoute />);
+    await screen.findByText(DEMO_SEATED_TICKET_GROUPS[0].offer!.name!);
+
+    expect(mockedTrackPurchase).toHaveBeenCalledTimes(1);
+    expect(mockedTrackPurchase).toHaveBeenCalledWith(
+      expect.objectContaining({ paymentIntentId: "pi_test" }),
+    );
+  });
+
+  it("does not track a purchase when the order cannot be loaded", async () => {
+    mockedGetOrderByPi.mockRejectedValue(new Error("unavailable"));
+    render(<CheckoutSuccessPageRoute />);
+    await screen.findByText(/unable to load your order/i);
+
+    expect(mockedTrackPurchase).not.toHaveBeenCalled();
   });
 
   it("labels the doors time as Doors", async () => {
@@ -536,20 +584,33 @@ describe("Checkout success receipt", () => {
     ).toBeInTheDocument();
   });
 
-  it("shows Standard admission for a package order with no offer", async () => {
+  it("shows Season package above the seat when a package order has no offer", async () => {
     const order = demoCompletedPackageOrder();
     mockedGetOrderByPi.mockResolvedValue({
       data: demoCompletedPackageOrder({
         tickets: (order.tickets as Array<Record<string, unknown>>).map(
-          (ticket) => ({ ...ticket, offerName: undefined, offer: undefined }),
+          (ticket, index) =>
+            index === 0
+              ? {
+                  ...ticket,
+                  offerName: "Standard Admission",
+                  offer: { name: "Standard Admission" },
+                }
+              : { ...ticket, offerName: undefined, offer: undefined },
         ),
       }),
     } as never);
     render(<CheckoutSuccessPageRoute />);
-    expect(await screen.findByText("Standard admission")).toBeInTheDocument();
+    const badge = await screen.findByText("Season package");
+    const section = String(
+      (order.tickets[0] as { sectionNumber?: string }).sectionNumber,
+    );
+    const seat = screen.getByText(new RegExp(`Sec ${section}\\b`));
     expect(
-      screen.queryByText(DEMO_SEATED_TICKET_GROUPS[0].offer!.name!),
-    ).not.toBeInTheDocument();
+      badge.compareDocumentPosition(seat) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    expect(screen.queryByText("Standard admission")).not.toBeInTheDocument();
+    expect(screen.queryByText("Standard Admission")).not.toBeInTheDocument();
   });
 
   it("shows Blocktickets completed-order fee lines for a package", async () => {
@@ -1103,6 +1164,20 @@ describe("Checkout success receipt", () => {
     ).toBeInTheDocument();
   });
 
+  it("opens My tickets from checkout success instead of a stored Profile path", async () => {
+    window.history.replaceState({}, "", "/wallet/my-tickets/");
+    beginWalletNavigation("/wallet/my-profile/");
+    expect(getWalletNavigationPending()).toBe("/wallet/my-profile");
+
+    render(<CheckoutSuccessPageRoute />);
+
+    const wallet = await screen.findByRole("link", { name: /go to my wallet/i });
+    expect(wallet).toHaveAttribute("href", "/wallet/my-tickets/");
+    await userEvent.click(wallet);
+
+    expect(getWalletNavigationPending()).toBeNull();
+  });
+
   it("shows an error when the completed order cannot be loaded", async () => {
     mockedGetOrderByPi.mockRejectedValue(new Error("unavailable"));
     render(<CheckoutSuccessPageRoute />);
@@ -1113,6 +1188,70 @@ describe("Checkout success receipt", () => {
     expect(
       screen.getByRole("heading", { name: /order not found/i }),
     ).toBeInTheDocument();
+  });
+});
+
+describe("Checkout success add-ons", () => {
+  beforeEach(() => {
+    __resetCompletedOrderInflightForTests();
+    mockedUseAuth.mockReturnValue({
+      isAuthenticated: true,
+      ready: true,
+      user: DEMO_USER,
+      session: null,
+      login: vi.fn(),
+      logout: vi.fn(),
+      refresh: vi.fn(),
+    });
+  });
+
+  afterEach(() => {
+    __resetCompletedOrderInflightForTests();
+  });
+
+  it("shows add-on passes and offers a separate payment", async () => {
+    const pass = demoDigitalAddonPass();
+    mockedGetOrderByPi.mockResolvedValue({
+      data: demoCompletedTicketOrder({
+        uuid: "order-uuid-1",
+        digitalAddonPasses: [pass],
+      }),
+    } as never);
+    mockedGetOrderAvailableAddons.mockResolvedValue({
+      data: demoEventAddonProducts(),
+    } as never);
+
+    render(<CheckoutSuccessPageRoute />);
+
+    expect(await screen.findByText(pass.checkInCode)).toBeInTheDocument();
+    expect(screen.getAllByText(DEMO_ADDON_PARKING.name).length).toBeGreaterThan(0);
+    expect(
+      screen.getByText(/add-on passes are in My events/i),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("heading", { name: "Add more for this event" }),
+    ).toBeInTheDocument();
+  });
+
+  it("does not offer a separate add-on payment for a flex pack", async () => {
+    mockedGetOrderByPi.mockResolvedValue({
+      data: {
+        ...demoCompletedFlexPackOrder(),
+        uuid: "flex-order-1",
+      },
+    } as never);
+    mockedGetOrderAvailableAddons.mockResolvedValue({
+      data: demoEventAddonProducts(),
+    } as never);
+
+    render(<CheckoutSuccessPageRoute />);
+
+    expect(
+      await screen.findByRole("heading", { name: "Order confirmation" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("heading", { name: "Add more for this event" }),
+    ).not.toBeInTheDocument();
   });
 });
 
@@ -1165,6 +1304,7 @@ describe("Checkout success guest wallet", () => {
   }
 
   beforeEach(() => {
+    __resetCompletedOrderInflightForTests();
     guestAuth();
     mockedGetOrderByPi.mockResolvedValue({
       data: demoCompletedTicketOrder({ tickets }),

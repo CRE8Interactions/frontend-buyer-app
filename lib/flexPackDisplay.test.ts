@@ -83,6 +83,31 @@ describe("flexPackDisplay", () => {
     expect(flexPackDisplayPrice(pack)).toBe(quote.buyerTotal);
   });
 
+  it("leaves the processing fee out of the price when the organization waives it", () => {
+    const organization = demoFlexPackTaxableOrganization();
+    const charged = demoFlexPack({
+      price: 79,
+      gameTickets: 7,
+      organization,
+    });
+    const waived = demoFlexPack({
+      price: 79,
+      gameTickets: 7,
+      processingFeeWaived: true,
+      organization,
+    });
+    const chargedQuote = quoteFlexPackPurchase(charged);
+    const waivedQuote = quoteFlexPackPurchase(waived);
+
+    expect(chargedQuote.processingFee).toBeGreaterThan(0);
+    expect(waivedQuote.processingFee).toBe(0);
+    expect(waivedQuote.salesTax).toBe(chargedQuote.salesTax);
+    expect(flexPackDisplayPrice(waived)).toBe(
+      chargedQuote.buyerTotal - chargedQuote.processingFee,
+    );
+    expect(flexPackPriceCaption(waived)).toBe("Taxes and fees included");
+  });
+
   it("keeps the pack price when the organization has no tax or card fees", () => {
     const pack = demoFlexPack();
     const quote = quoteFlexPackPurchase(pack);

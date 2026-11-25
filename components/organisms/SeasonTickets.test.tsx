@@ -11,6 +11,7 @@ import {
   demoCompletedPackageOrder,
   demoCheckoutCart,
   demoCompletedTicketOrder,
+  demoDigitalAddonPass,
   demoFlexPack,
   demoPackageAccessPass,
   demoSeasonPackage,
@@ -32,13 +33,15 @@ import {
   transferCancelReturnCopy,
   transferRecipientDescriptor,
   transferRecipientNotifyCopy,
-  transferRecipientReceivedCopy,
+  transferSuccessBody,
   transferSuccessTitle,
   transferWalletRemovalCopy,
 } from "@/lib/transferModalCopy";
 import {
+  listingFaceValue,
   listingStatusDotLine,
   mapWalletListing,
+  resaleSellerFeeAmount,
 } from "@/lib/walletListings";
 import { sellRemoveBody } from "@/lib/sellModalCopy";
 
@@ -76,6 +79,9 @@ vi.mock("@/lib/api", () => ({
   createBankAccount: vi.fn(async () => ({ data: { link: "https://connect.stripe.test/setup" } })),
   getResaleFeeRules: vi.fn(async () => ({ data: { rules: [] } })),
   getOrder: vi.fn(),
+  getOrderAvailableAddons: vi.fn(async () => ({ data: [] })),
+  getOrderDigitalPasses: vi.fn(async () => ({ data: { digitalPasses: [] } })),
+  createPostPurchaseAddonCheckout: vi.fn(),
   searchEvents: vi.fn(async () => ({ data: [] })),
   validateEmail: vi.fn(async () => ({ data: { verdict: "Valid" } })),
 }));
@@ -147,9 +153,11 @@ import {
   createBankAccount,
   getResaleFeeRules,
   getOrder,
+  getMyUpcomingOrders,
   validateEmail,
 } from "@/lib/api";
 import {
+  __resetWalletNavigationForTests,
   beginWalletNavigation,
   clearWalletNavigation,
 } from "@/lib/walletTransition";
@@ -179,6 +187,7 @@ const mockedCreateListing = vi.mocked(createListing);
 const mockedUpdateMyListings = vi.mocked(updateMyListings);
 const mockedRemoveMyListings = vi.mocked(removeMyListings);
 const mockedGetOrder = vi.mocked(getOrder);
+const mockedGetMyUpcomingOrders = vi.mocked(getMyUpcomingOrders);
 const mockedValidateEmail = vi.mocked(validateEmail);
 
 function ordersFromMyEventsPayload(payload: unknown) {
@@ -298,6 +307,8 @@ async function confirmAcceptTransferInPopup(
   beforeEach(() => {
   navigationMocks.pathname = "/wallet/my-tickets/";
   navigationMocks.search = "";
+  window.history.replaceState({}, "", "/wallet/my-tickets/");
+  __resetWalletNavigationForTests();
   resetWalletApiHydrationForTests();
   __resetActivitySnapshotForTests();
   __resetWalletAccountCacheForTests();
@@ -2157,12 +2168,10 @@ describe("SeasonTickets package tab", () => {
     await user.click(screen.getByRole("button", { name: "Transfer" }));
 
     expect(
-      await screen.findByText("Season pass transfer pending"),
+      await screen.findByText(transferSuccessTitle("season pass")),
     ).toBeInTheDocument();
     expect(
-      screen.getByText(transferRecipientReceivedCopy("season pass"), {
-        exact: false,
-      }),
+      screen.getByText(transferSuccessBody("season pass", 1, "recipient@example.com")),
     ).toBeInTheDocument();
     expect(mockedCreateTicketTransfer).toHaveBeenCalledWith({
       accessPassId: pass.uuid,
@@ -2215,7 +2224,7 @@ describe("SeasonTickets package tab", () => {
     await user.click(screen.getByRole("button", { name: "Next" }));
     await user.click(screen.getByRole("button", { name: "Transfer" }));
     expect(
-      await screen.findByText("Season pass transfer pending"),
+      await screen.findByText(transferSuccessTitle("season pass")),
     ).toBeInTheDocument();
     await user.click(
       screen.getAllByRole("button", { name: "Close" }).at(-1)!,
@@ -2284,7 +2293,7 @@ describe("SeasonTickets package tab", () => {
     );
     await user.click(screen.getByRole("button", { name: "Next" }));
     await user.click(screen.getByRole("button", { name: "Transfer" }));
-    await screen.findByText("Season pass transfer pending");
+    await screen.findByText(transferSuccessTitle("season pass"));
     const closeButtons = screen.getAllByRole("button", { name: "Close" });
     await user.click(closeButtons[closeButtons.length - 1]!);
 
@@ -2359,7 +2368,7 @@ describe("SeasonTickets package tab", () => {
     await user.click(screen.getByRole("button", { name: "Transfer" }));
 
     expect(
-      await screen.findByText("Season pass transfer pending"),
+      await screen.findByText(transferSuccessTitle("season pass")),
     ).toBeInTheDocument();
     expect(mockedGetMyEvents.mock.calls.length).toBe(eventsCallsBeforeTransfer);
     expect(mockedGetAccessPassesByOrder.mock.calls.length).toBe(
@@ -2431,7 +2440,7 @@ describe("SeasonTickets package tab", () => {
     );
     await user.click(screen.getByRole("button", { name: "Next" }));
     await user.click(screen.getByRole("button", { name: "Transfer" }));
-    await screen.findByText("Season pass transfer pending");
+    await screen.findByText(transferSuccessTitle("season pass"));
     await user.click(
       screen.getAllByRole("button", { name: "Close" }).at(-1)!,
     );
@@ -2530,7 +2539,7 @@ describe("SeasonTickets package tab", () => {
     );
     await user.click(screen.getByRole("button", { name: "Next" }));
     await user.click(screen.getByRole("button", { name: "Transfer" }));
-    await screen.findByText("Season pass transfer pending");
+    await screen.findByText(transferSuccessTitle("season pass"));
     await user.click(screen.getAllByRole("button", { name: "Close" }).at(-1)!);
 
     navigationMocks.pathname = "/wallet/my-transfers/";
@@ -2586,7 +2595,7 @@ describe("SeasonTickets package tab", () => {
     );
     await user.click(screen.getByRole("button", { name: "Next" }));
     await user.click(screen.getByRole("button", { name: "Transfer" }));
-    await screen.findByText("Season pass transfer pending");
+    await screen.findByText(transferSuccessTitle("season pass"));
     await user.click(screen.getAllByRole("button", { name: "Close" }).at(-1)!);
 
     await user.click(screen.getByRole("tab", { name: /Game tickets/i }));
@@ -2651,7 +2660,7 @@ describe("SeasonTickets package tab", () => {
     );
     await user.click(screen.getByRole("button", { name: "Next" }));
     await user.click(screen.getByRole("button", { name: "Transfer" }));
-    await screen.findByText("Season pass transfer pending");
+    await screen.findByText(transferSuccessTitle("season pass"));
     const closeButtons = screen.getAllByRole("button", { name: "Close" });
     await user.click(closeButtons[closeButtons.length - 1]!);
 
@@ -2834,6 +2843,61 @@ describe("SeasonTickets package tab", () => {
     expect(mockedCreateTicketTransfer).not.toHaveBeenCalled();
   });
 
+  it("mentions listed when the organization has resale on", async () => {
+    const order = demoCompletedPackageOrder();
+    const seat22 = order.tickets[1];
+    const pass22 = demoPackageAccessPass({
+      uuid: "access-pass-seat-22",
+      seatNumber: seat22.seatNumber,
+    });
+    const [, activeEvent, transferredEvent] = pkg.events;
+    const events = [
+      activeEvent,
+      { ...transferredEvent, start: "2099-09-19T23:00:00.000Z" },
+    ];
+    const tickets = events.flatMap((event) =>
+      order.tickets.map((ticket) => ({
+        ...ticket,
+        id: `${ticket.id}-${event.uuid}`,
+        eventUUID: event.uuid,
+        ...(event.uuid === transferredEvent.uuid &&
+        ticket.seatNumber === seat22.seatNumber
+          ? { transferStatus: "transferred" }
+          : {}),
+      })),
+    );
+    navigationMocks.pathname = `/wallet/my-tickets/order/${packageOrderId}/package/${pkg.uuid}/`;
+    mockedGetMyEvents.mockResolvedValue({
+      data: [
+        demoCompletedPackageOrder({
+          event: null,
+          organization: {
+            ...order.organization,
+            setting: { allowResales: true },
+          },
+          package: {
+            ...order.package,
+            events: events.map((event) => ({ ...event, enableResale: true })),
+            organization: { name: order.package.organization?.name },
+          },
+          tickets,
+        }),
+      ],
+    } as never);
+    mockedGetAccessPassesByOrder.mockResolvedValue({
+      data: { data: [pass22] },
+    } as never);
+
+    render(<SeasonTickets />);
+
+    expect(
+      await screen.findByRole("button", { name: "Transfer season pass" }),
+    ).toBeDisabled();
+    expect(
+      screen.getByText(PASS_TRANSFER_DISPLAY_COPY.seasonPassTransferredOrResold),
+    ).toBeInTheDocument();
+  });
+
   it("disables both season passes when two package games were transferred without ticket payloads", async () => {
     const order = demoCompletedPackageOrder();
     const [seat21, seat22] = order.tickets;
@@ -3013,7 +3077,7 @@ describe("SeasonTickets package tab", () => {
       "This season pass already has a pending transfer.",
     );
     expect(
-      screen.queryByText("Season pass transfer pending"),
+      screen.queryByText(transferSuccessTitle("season pass")),
     ).not.toBeInTheDocument();
   });
 
@@ -3053,7 +3117,7 @@ describe("SeasonTickets package tab", () => {
       PASS_TRANSFER_DISPLAY_COPY.assigned,
     );
     expect(
-      screen.queryByText("Access pass transfer pending"),
+      screen.queryByText(transferSuccessTitle("access pass")),
     ).not.toBeInTheDocument();
   });
 
@@ -3089,7 +3153,7 @@ describe("SeasonTickets package tab", () => {
       "We couldn't transfer this season pass. Please try again.",
     );
     expect(
-      screen.queryByText("Season pass transfer pending"),
+      screen.queryByText(transferSuccessTitle("season pass")),
     ).not.toBeInTheDocument();
   });
 
@@ -3489,12 +3553,10 @@ describe("SeasonTickets package tab", () => {
     await user.click(screen.getByRole("button", { name: "Transfer" }));
 
     expect(
-      await screen.findByText("Access pass transfer pending"),
+      await screen.findByText(transferSuccessTitle("access pass")),
     ).toBeInTheDocument();
     expect(
-      screen.getByText(transferRecipientReceivedCopy("access pass"), {
-        exact: false,
-      }),
+      screen.getByText(transferSuccessBody("access pass", 1, "recipient@example.com")),
     ).toBeInTheDocument();
     expect(mockedCreateTicketTransfer).toHaveBeenCalledWith({
       accessPassId: pass.uuid,
@@ -3565,7 +3627,7 @@ describe("SeasonTickets package tab", () => {
       "Unable to transfer this access pass. Please try again.",
     );
     expect(
-      screen.queryByText("Access pass transfer pending"),
+      screen.queryByText(transferSuccessTitle("access pass")),
     ).not.toBeInTheDocument();
   });
 
@@ -3597,7 +3659,7 @@ describe("SeasonTickets package tab", () => {
     await user.click(screen.getByRole("button", { name: "Next" }));
     await user.click(screen.getByRole("button", { name: "Transfer" }));
     expect(
-      await screen.findByText("Access pass transfer pending"),
+      await screen.findByText(transferSuccessTitle("access pass")),
     ).toBeInTheDocument();
     expect(mockedCreateTicketTransfer).toHaveBeenCalledTimes(1);
     expect(mockedGetMyEvents.mock.calls.length).toBe(eventsCallsBeforeTransfer);
@@ -3646,7 +3708,7 @@ describe("SeasonTickets package tab", () => {
     await user.click(screen.getByRole("button", { name: "Next" }));
     await user.click(screen.getByRole("button", { name: "Transfer" }));
     expect(
-      await screen.findByText("Access pass transfer pending"),
+      await screen.findByText(transferSuccessTitle("access pass")),
     ).toBeInTheDocument();
 
     mockedGetMySentTransfers.mockResolvedValue({
@@ -3711,7 +3773,7 @@ describe("SeasonTickets package tab", () => {
     await user.click(screen.getByRole("button", { name: "Next" }));
     await user.click(screen.getByRole("button", { name: "Transfer" }));
     expect(
-      await screen.findByText("Access pass transfer pending"),
+      await screen.findByText(transferSuccessTitle("access pass")),
     ).toBeInTheDocument();
 
     navigationMocks.pathname = "/wallet/my-transfers/";
@@ -3767,7 +3829,7 @@ describe("SeasonTickets package tab", () => {
     await user.click(screen.getByRole("button", { name: "Next" }));
     await user.click(screen.getByRole("button", { name: "Transfer" }));
     expect(
-      await screen.findByText("Access pass transfer pending"),
+      await screen.findByText(transferSuccessTitle("access pass")),
     ).toBeInTheDocument();
 
     navigationMocks.pathname = "/wallet/my-transfers/";
@@ -4171,7 +4233,7 @@ describe("SeasonTickets package tab", () => {
     await user.click(screen.getByRole("button", { name: "Next" }));
     await user.click(screen.getByRole("button", { name: "Transfer" }));
     expect(
-      await screen.findByText("Access pass transfer pending"),
+      await screen.findByText(transferSuccessTitle("access pass")),
     ).toBeInTheDocument();
     await user.click(screen.getAllByRole("button", { name: "Close" }).at(-1)!);
 
@@ -4453,7 +4515,7 @@ describe("SeasonTickets package transfers tab", () => {
         screen.getByRole("heading", { name: "Cancel this transfer?" })
           .parentElement!,
       ).getByText(
-        `To recipient@example.com · sent ${formatEventWhen(
+        `Sent to recipient@example.com · ${formatEventWhen(
           seasonTransfer.createdAt,
           undefined,
           "MMM D, YYYY",
@@ -4483,7 +4545,7 @@ describe("SeasonTickets package transfers tab", () => {
         screen.getByRole("heading", { name: "Cancel this transfer?" })
           .parentElement!,
       ).getByText(
-        `To recipient@example.com · sent ${formatEventWhen(
+        `Sent to recipient@example.com · ${formatEventWhen(
           accessTransfer.createdAt,
           undefined,
           "MMM D, YYYY",
@@ -4580,7 +4642,7 @@ describe("SeasonTickets package transfers tab", () => {
         screen.getByRole("heading", { name: "Cancel this transfer?" })
           .parentElement!,
       ).getByText(
-        `To recipient@example.com · sent ${formatEventWhen(
+        `Sent to recipient@example.com · ${formatEventWhen(
           singleTransfer.createdAt,
           ticketOrder.event?.venue?.timezone,
           "MMM D, YYYY",
@@ -4602,7 +4664,7 @@ describe("SeasonTickets package transfers tab", () => {
         screen.getByRole("heading", { name: "Cancel this transfer?" })
           .parentElement!,
       ).getByText(
-        `To recipient@example.com · sent ${formatEventWhen(
+        `Sent to recipient@example.com · ${formatEventWhen(
           packageTransfer.createdAt,
           packageEvent.venue?.timezone,
           "MMM D, YYYY",
@@ -4617,7 +4679,7 @@ describe("SeasonTickets package transfers tab", () => {
     expect(screen.getByText(packageEvent.name)).toBeInTheDocument();
     expect(
       screen.getByText(
-        `From ${DEMO_SESSION.user.email} · received on ${formatEventWhen(
+        `From ${DEMO_SESSION.user.email} · Sent ${formatEventWhen(
           singleTransfer.createdAt,
           ticketOrder.event?.venue?.timezone,
           "MMM D, YYYY",
@@ -4626,7 +4688,7 @@ describe("SeasonTickets package transfers tab", () => {
     ).toBeInTheDocument();
     expect(
       screen.getByText(
-        `From ${DEMO_SESSION.user.email} · received on ${formatEventWhen(
+        `From ${DEMO_SESSION.user.email} · Sent ${formatEventWhen(
           packageTransfer.createdAt,
           packageEvent.venue?.timezone,
           "MMM D, YYYY",
@@ -4651,7 +4713,7 @@ describe("SeasonTickets package transfers tab", () => {
         screen.getByRole("heading", { name: "Accept this transfer?" })
           .parentElement!,
       ).getByText(
-        `From ${DEMO_SESSION.user.email} · received on ${formatEventWhen(
+        `From ${DEMO_SESSION.user.email} · Sent ${formatEventWhen(
           singleTransfer.createdAt,
           ticketOrder.event?.venue?.timezone,
           "MMM D, YYYY",
@@ -4673,7 +4735,7 @@ describe("SeasonTickets package transfers tab", () => {
         screen.getByRole("heading", { name: "Accept this transfer?" })
           .parentElement!,
       ).getByText(
-        `From ${DEMO_SESSION.user.email} · received on ${formatEventWhen(
+        `From ${DEMO_SESSION.user.email} · Sent ${formatEventWhen(
           packageTransfer.createdAt,
           packageEvent.venue?.timezone,
           "MMM D, YYYY",
@@ -4978,6 +5040,8 @@ describe("SeasonTickets section routes", () => {
     expect(
       screen.getByRole("heading", { name: "Cancel this transfer?" }),
     ).toBeInTheDocument();
+    expect(screen.getByText("Pending · awaiting claim")).toBeInTheDocument();
+    expect(screen.queryByText("Transfer cancelled")).not.toBeInTheDocument();
   });
 
   it("shows could not cancel transfer in the cancel popup for other 4xx errors", async () => {
@@ -5237,7 +5301,7 @@ describe("SeasonTickets section routes", () => {
 
     expect(await screen.findByText(claimedCopy)).toBeInTheDocument();
     expect(
-      screen.getByText(`To recipient@example.com · sent ${sentOnCopy}`),
+      screen.getByText(`Sent to recipient@example.com · ${sentOnCopy}`),
     ).toBeInTheDocument();
 
     await user.click(screen.getByRole("button", { name: /received/i }));
@@ -5245,7 +5309,7 @@ describe("SeasonTickets section routes", () => {
     expect(await screen.findByText(claimedCopy)).toBeInTheDocument();
     expect(
       screen.getByText(
-        `From jaimeconvery@hotmail.com · received on ${sentOnCopy}`,
+        `From jaimeconvery@hotmail.com · Sent ${sentOnCopy}`,
       ),
     ).toBeInTheDocument();
   });
@@ -5359,7 +5423,7 @@ describe("SeasonTickets section routes", () => {
   });
 
   it("focuses the email field on the wallet sign-in screen", async () => {
-    navigationMocks.search = "login=1";
+    window.history.replaceState({}, "", "/wallet/my-tickets/?login=1");
 
     render(<SeasonTickets />);
 
@@ -5371,6 +5435,42 @@ describe("SeasonTickets section routes", () => {
 
     expect(await screen.findByText(icedogs.name)).toBeInTheDocument();
     expect(document.activeElement).toBe(document.body);
+  });
+
+  it("holds the transfers list until the transfer routes are called", async () => {
+    const order = demoCompletedTicketOrder({ event: icedogs });
+    const [ticket] = order.tickets;
+    mockedGetMyEvents.mockResolvedValue({ data: [order] } as never);
+    mockedGetMySentTransfers.mockResolvedValue({
+      data: [
+        {
+          id: "sent-early",
+          status: "pending",
+          emailAddressToUser: "recipient@example.com",
+          orderId: order.orderId,
+          event: order.event,
+          tickets: [ticket],
+          createdAt: "2026-09-13T12:00:00.000Z",
+        },
+      ],
+    } as never);
+
+    render(<SeasonTickets />);
+
+    expect(await screen.findByText(icedogs.name)).toBeInTheDocument();
+    expect(mockedGetMyReceivedTransfers).not.toHaveBeenCalled();
+    const sentCalls = mockedGetMySentTransfers.mock.calls.length;
+
+    act(() => {
+      beginWalletNavigation("/wallet/my-transfers/");
+    });
+
+    expect(screen.getByRole("heading", { name: "Transfers", level: 1 })).toBeInTheDocument();
+    expect(screen.getByLabelText("Loading tickets")).toBeInTheDocument();
+    expect(screen.queryByText(icedogs.name)).not.toBeInTheDocument();
+    expect(screen.queryByText("No transfers sent")).not.toBeInTheDocument();
+    expect(mockedGetMyReceivedTransfers).not.toHaveBeenCalled();
+    expect(mockedGetMySentTransfers).toHaveBeenCalledTimes(sentCalls);
   });
 
   it("shows the blocks loader immediately while an in-wallet route is committing", async () => {
@@ -5398,8 +5498,85 @@ describe("SeasonTickets section routes", () => {
     expect(
       screen.getByRole("heading", { name: "Profile", level: 1 }),
     ).toBeInTheDocument();
+    expect(screen.getByRole("status", { name: "Loading profile" })).toBeInTheDocument();
+    expect(screen.queryByText("Account activity")).not.toBeInTheDocument();
+    expect(screen.queryByRole("status", { name: "Loading activity" })).not.toBeInTheDocument();
     expect(screen.queryByLabelText("Loading tickets")).not.toBeInTheDocument();
     expect(screen.queryByText(icedogs.name)).not.toBeInTheDocument();
+    expect(await screen.findByRole("link", { name: /^sign out$/i })).toBeInTheDocument();
+    expect(screen.getByText("Account activity")).toBeInTheDocument();
+    expect(screen.queryByRole("status", { name: "Loading profile" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("status", { name: "Loading activity" })).not.toBeInTheDocument();
+    expect(document.querySelector(".shopper-page")).toHaveAttribute(
+      "data-bt-scroll-page",
+      "",
+    );
+  });
+
+  it("keeps the profile page loader and activity spinner until orders load", async () => {
+    navigationMocks.pathname = "/wallet/my-profile/";
+    mockedGetMyUpcomingOrders.mockReturnValue(new Promise(() => {}) as never);
+
+    try {
+      render(<SeasonTickets />);
+
+      expect(await screen.findByRole("heading", { name: "Profile", level: 1 })).toBeInTheDocument();
+      expect(screen.getByRole("status", { name: "Loading profile" })).toBeInTheDocument();
+      expect(screen.queryByText("Account activity")).not.toBeInTheDocument();
+      expect(screen.queryByRole("status", { name: "Loading activity" })).not.toBeInTheDocument();
+      expect(screen.queryByRole("link", { name: /^sign out$/i })).not.toBeInTheDocument();
+    } finally {
+      mockedGetMyUpcomingOrders.mockReset();
+      mockedGetMyUpcomingOrders.mockResolvedValue({ data: [] } as never);
+    }
+  });
+
+  it("returns to My Profile when Back is pressed on Account activity", async () => {
+    window.history.replaceState({}, "", "/wallet/my-profile/activity/");
+    navigationMocks.pathname = "/wallet/my-profile/activity/";
+    const user = userEvent.setup();
+    const view = render(<SeasonTickets />);
+
+    expect(
+      await screen.findByRole("heading", { name: "Account activity", level: 1 }),
+    ).toBeInTheDocument();
+
+    await user.click(screen.getByRole("link", { name: "Back to profile" }));
+
+    expect(
+      screen.getByRole("heading", { name: "Profile", level: 1 }),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("heading", { name: "Account activity", level: 1 }),
+    ).not.toBeInTheDocument();
+
+    view.unmount();
+    render(<SeasonTickets />);
+
+    expect(
+      await screen.findByRole("heading", { name: "Profile", level: 1 }),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("heading", { name: "Account activity", level: 1 }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("opens My tickets when an earlier Profile visit is still stored", async () => {
+    window.history.replaceState({}, "", "/wallet/my-tickets/");
+    beginWalletNavigation("/wallet/my-profile/");
+    navigationMocks.pathname = "/wallet/my-tickets/";
+
+    render(<SeasonTickets />);
+
+    expect(await screen.findByText(icedogs.name)).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "Profile", level: 1 })).not.toBeInTheDocument();
+  });
+
+  it("leaves the ticket list unmarked so its loader still owns the route cover", async () => {
+    render(<SeasonTickets />);
+
+    expect(await screen.findByText(icedogs.name)).toBeInTheDocument();
+    expect(document.querySelector("[data-bt-scroll-page]")).toBeNull();
   });
 
   it("filters listings by Active, Sold, and Expired", async () => {
@@ -5475,43 +5652,88 @@ describe("SeasonTickets section routes", () => {
     expect(screen.queryByText("Payout account for resale")).not.toBeInTheDocument();
   });
 
-  it("does not load the profile again when returning from activity", async () => {
+  it("reloads profile activity when opening My Profile again", async () => {
     navigationMocks.pathname = "/wallet/my-profile/";
-    const last4 = demoLinkedBankAccount().external_accounts.data[0].last4;
-    mockedGetBankAccount.mockResolvedValue({ data: demoLinkedBankAccount() } as never);
+    const earlier = demoCompletedTicketOrder();
+    const eventName = (earlier.event as { name?: string }).name || "";
+    const flex = demoCompletedFlexPackOrder();
+    const packName = (flex.flex_pack as { name?: string }).name || "";
+    mockedGetMyUpcomingOrders.mockResolvedValue({ data: [earlier] } as never);
     const { rerender } = render(<SeasonTickets />);
 
-    expect(await screen.findByText(`Account ••${last4}`)).toBeInTheDocument();
-    const calls = mockedGetBankAccount.mock.calls.length;
+    expect(await screen.findByText(eventName)).toBeInTheDocument();
+    expect(screen.queryByText(packName)).not.toBeInTheDocument();
+    const calls = mockedGetMyUpcomingOrders.mock.calls.length;
+
+    navigationMocks.pathname = "/wallet/my-tickets/";
+    rerender(<SeasonTickets />);
+    expect(await screen.findByText(icedogs.name)).toBeInTheDocument();
+
+    mockedGetMyUpcomingOrders.mockResolvedValue({ data: [flex, earlier] } as never);
+    navigationMocks.pathname = "/wallet/my-profile/";
+    rerender(<SeasonTickets />);
+
+    expect(screen.getByRole("status", { name: "Loading profile" })).toBeInTheDocument();
+    expect(screen.queryByText("Account activity")).not.toBeInTheDocument();
+    expect(await screen.findByText(packName)).toBeInTheDocument();
+    expect(screen.getByText(eventName)).toBeInTheDocument();
+    expect(screen.queryByRole("status", { name: "Loading profile" })).not.toBeInTheDocument();
+    expect(mockedGetMyUpcomingOrders.mock.calls.length).toBeGreaterThan(calls);
+  });
+
+  it("keeps the profile purchase when reopening profile cannot load orders", async () => {
+    navigationMocks.pathname = "/wallet/my-profile/";
+    const earlier = demoCompletedTicketOrder();
+    const eventName = (earlier.event as { name?: string }).name || "";
+    mockedGetMyUpcomingOrders.mockResolvedValue({ data: [earlier] } as never);
+    const { rerender } = render(<SeasonTickets />);
+
+    expect(await screen.findByText(eventName)).toBeInTheDocument();
+
+    navigationMocks.pathname = "/wallet/my-tickets/";
+    rerender(<SeasonTickets />);
+    expect(await screen.findByText(icedogs.name)).toBeInTheDocument();
+
+    mockedGetMyUpcomingOrders.mockRejectedValue(new Error("offline"));
+    navigationMocks.pathname = "/wallet/my-profile/";
+    rerender(<SeasonTickets />);
+
+    expect(screen.getByRole("status", { name: "Loading profile" })).toBeInTheDocument();
+    expect(await screen.findByText(eventName)).toBeInTheDocument();
+    expect(screen.queryByText("Nothing here yet")).not.toBeInTheDocument();
+    expect(screen.queryByRole("status", { name: "Loading profile" })).not.toBeInTheDocument();
+  });
+
+  it("returns to My Profile from its own pages without refetching", async () => {
+    navigationMocks.pathname = "/wallet/my-profile/";
+    const earlier = demoCompletedTicketOrder();
+    const eventName = (earlier.event as { name?: string }).name || "";
+    mockedGetMyUpcomingOrders.mockResolvedValue({ data: [earlier] } as never);
+    const { rerender } = render(<SeasonTickets />);
+
+    expect(await screen.findByText(eventName)).toBeInTheDocument();
+    const calls = mockedGetMyUpcomingOrders.mock.calls.length;
 
     navigationMocks.pathname = "/wallet/my-profile/activity/";
     rerender(<SeasonTickets />);
     expect(await screen.findByRole("link", { name: "Back to profile" })).toBeInTheDocument();
+    expect(screen.getByText(eventName)).toBeInTheDocument();
 
     navigationMocks.pathname = "/wallet/my-profile/";
     rerender(<SeasonTickets />);
-    expect(screen.getByText(`Account ••${last4}`)).toBeInTheDocument();
-    expect(mockedGetBankAccount).toHaveBeenCalledTimes(calls);
-  });
-
-  it("does not load the bank account again when returning from the bank page", async () => {
-    navigationMocks.pathname = "/wallet/my-profile/";
-    const last4 = demoLinkedBankAccount().external_accounts.data[0].last4;
-    mockedGetBankAccount.mockResolvedValue({ data: demoLinkedBankAccount() } as never);
-    const { rerender } = render(<SeasonTickets />);
-
-    expect(await screen.findByText(`Account ••${last4}`)).toBeInTheDocument();
-    const calls = mockedGetBankAccount.mock.calls.length;
+    expect(screen.getByText(eventName)).toBeInTheDocument();
+    expect(screen.queryByRole("status", { name: "Loading profile" })).not.toBeInTheDocument();
+    expect(mockedGetMyUpcomingOrders).toHaveBeenCalledTimes(calls);
 
     navigationMocks.pathname = "/wallet/my-profile/bank-account/";
     rerender(<SeasonTickets />);
     expect(await screen.findByRole("heading", { name: "Bank Information" })).toBeInTheDocument();
-    expect(screen.getByText("XXXXX5556")).toBeInTheDocument();
 
     navigationMocks.pathname = "/wallet/my-profile/";
     rerender(<SeasonTickets />);
-    expect(screen.getByText(`Account ••${last4}`)).toBeInTheDocument();
-    expect(mockedGetBankAccount).toHaveBeenCalledTimes(calls);
+    expect(screen.getByText(eventName)).toBeInTheDocument();
+    expect(screen.queryByRole("status", { name: "Loading profile" })).not.toBeInTheDocument();
+    expect(mockedGetMyUpcomingOrders).toHaveBeenCalledTimes(calls);
   });
 
   it("keeps the payout label until the bank link is complete", async () => {
@@ -5568,6 +5790,26 @@ describe("SeasonTickets routed event screen", { timeout: 20_000 }, () => {
       "href",
       expect.stringMatching(/^\/wallet\/my-tickets\/?$/),
     );
+  });
+
+  it("lists an add-on pass without offering it for transfer", async () => {
+    const pass = demoDigitalAddonPass();
+    const order = demoCompletedTicketOrder({
+      event: icedogs,
+      uuid: "order-icedogs",
+      digitalAddonPasses: [pass],
+    });
+    mockedGetMyEvents.mockResolvedValue({ data: [order] } as never);
+    mockedGetOrder.mockResolvedValue({ data: order } as never);
+
+    render(<SeasonTickets initialScreen="event" eventUUID={icedogs.uuid} />);
+
+    const passes = await screen.findByRole("region", { name: "Add-on passes" });
+    expect(within(passes).getByText(pass.productName)).toBeInTheDocument();
+    expect(within(passes).getByText(pass.checkInCode)).toBeInTheDocument();
+    expect(
+      within(passes).queryByRole("button", { name: "Transfer" }),
+    ).not.toBeInTheDocument();
   });
 
   it("shows the promotional description below the event name and date", async () => {
@@ -6436,12 +6678,7 @@ describe("SeasonTickets routed event screen", { timeout: 20_000 }, () => {
     ).toBeInTheDocument();
     expect(screen.queryByLabelText("Loading tickets")).not.toBeInTheDocument();
     expect(
-      screen.getByText(transferRecipientReceivedCopy("ticket", 1), {
-        exact: false,
-      }),
-    ).toBeInTheDocument();
-    expect(
-      screen.getByText(/pending until the recipient claims it/i),
+      screen.getByText(transferSuccessBody("ticket", 1, "recipient@example.com")),
     ).toBeInTheDocument();
     expect(screen.queryByText("recipient@example.com")).not.toBeInTheDocument();
     expect(mockedCreateTicketTransfer).toHaveBeenCalledWith({
@@ -7206,7 +7443,7 @@ describe("SeasonTickets routed event screen", { timeout: 20_000 }, () => {
     ).toBeTruthy();
     expect(
       screen.getByText(
-        `To recipient@example.com · sent ${formatEventWhen(
+        `Sent to recipient@example.com · ${formatEventWhen(
           "2026-09-13T12:00:00.000Z",
           icedogs.venue?.timezone,
           "MMM D, YYYY",
@@ -7701,6 +7938,65 @@ describe("SeasonTickets routed event screen", { timeout: 20_000 }, () => {
       expect(screen.getByText("1 ticket")).toBeInTheDocument();
     });
 
+    it("cancels in-flight My Tickets requests when Profile is requested", async () => {
+      sessionMocks.getSession.mockReturnValue(DEMO_SESSION);
+      mockedGetMyEvents.mockImplementation(
+        () => new Promise(() => {}) as never,
+      );
+      mockedGetMyAccessPasses.mockImplementation(
+        () => new Promise(() => {}) as never,
+      );
+      mockedGetIncomingTransfers.mockImplementation(
+        () => new Promise(() => {}) as never,
+      );
+
+      navigationMocks.pathname = "/wallet/my-tickets/";
+      render(<SeasonTickets />);
+      await waitFor(() => expect(mockedGetMyEvents).toHaveBeenCalled());
+      const eventsSignal = (
+        mockedGetMyEvents.mock.calls.at(-1)?.[0] as { signal?: AbortSignal } | undefined
+      )?.signal;
+
+      act(() => {
+        beginWalletNavigation("/wallet/my-profile/");
+      });
+
+      await waitFor(() => expect(eventsSignal?.aborted).toBe(true));
+    });
+
+    it("cancels in-flight profile requests when My Tickets is requested", async () => {
+      sessionMocks.getSession.mockReturnValue(DEMO_SESSION);
+      mockedGetMyUpcomingOrders.mockImplementation(
+        () => new Promise(() => {}) as never,
+      );
+      mockedGetMyListings.mockImplementation(
+        () => new Promise(() => {}) as never,
+      );
+
+      window.history.replaceState({}, "", "/wallet/my-profile/");
+      navigationMocks.pathname = "/wallet/my-profile/";
+      render(<SeasonTickets />);
+      await waitFor(() => {
+        expect(mockedGetMyUpcomingOrders).toHaveBeenCalled();
+        expect(mockedGetMyListings).toHaveBeenCalled();
+      });
+      const ordersSignal = (
+        mockedGetMyUpcomingOrders.mock.calls.at(-1)?.[0] as { signal?: AbortSignal } | undefined
+      )?.signal;
+      const listingsSignal = (
+        mockedGetMyListings.mock.calls.at(-1)?.[0] as { signal?: AbortSignal } | undefined
+      )?.signal;
+
+      act(() => {
+        beginWalletNavigation("/wallet/my-tickets/");
+      });
+
+      await waitFor(() => {
+        expect(ordersSignal?.aborted).toBe(true);
+        expect(listingsSignal?.aborted).toBe(true);
+      });
+    });
+
     it("cancels in-flight My Transfers reload when navigating to My Tickets", async () => {
       sessionMocks.getSession.mockReturnValue(DEMO_SESSION);
       const ownedOrder = demoCompletedTicketOrder({ event: icedogs });
@@ -7735,10 +8031,14 @@ describe("SeasonTickets routed event screen", { timeout: 20_000 }, () => {
       navigationMocks.pathname = "/wallet/my-transfers/";
       const { rerender } = render(<SeasonTickets />);
       await waitFor(() => expect(mockedGetMySentTransfers).toHaveBeenCalled());
+      const transferSignal = (
+        mockedGetMySentTransfers.mock.calls.at(-1)?.[2] as { signal?: AbortSignal } | undefined
+      )?.signal;
 
       navigationMocks.pathname = "/wallet/my-tickets/";
       rerender(<SeasonTickets />);
       await waitFor(() => expect(mockedGetMyEvents).toHaveBeenCalled());
+      expect(transferSignal?.aborted).toBe(true);
 
       await act(async () => {
         resolveSentTransfers({ data: [staleTransfer] });
@@ -9709,7 +10009,7 @@ describe("SeasonTickets listings and sell", { timeout: 30_000 }, () => {
 
     expect(await screen.findByRole("heading", { name: "Listings", level: 1 })).toBeInTheDocument();
     expect(mockedGetMyListings).toHaveBeenCalled();
-    expect((await screen.findAllByText(/^active on /i)).length).toBe(2);
+    expect((await screen.findAllByText(/^Active · /)).length).toBe(2);
     const active = mapWalletListing(demoActiveListing())!;
     const later = mapWalletListing(demoActiveListingLater())!;
     expect(screen.getByText(later.event!.name!)).toBeInTheDocument();
@@ -9789,13 +10089,30 @@ describe("SeasonTickets listings and sell", { timeout: 30_000 }, () => {
     await user.type(price, "80");
     expect(payout).toBeEnabled();
     const eventsCalls = mockedGetMyEvents.mock.calls.length;
+    const orderCalls = mockedGetOrder.mock.calls.length;
     await user.click(screen.getByRole("button", { name: "Payout summary" }));
-    expect(screen.getByText("Payment Summary")).toBeInTheDocument();
+    expect(screen.getByText("Payment summary")).toBeInTheDocument();
     expect(screen.getByText("Service Fees: $8.00 x 1")).toBeInTheDocument();
     expect(screen.getByText("(-$8.00)")).toBeInTheDocument();
     expect(screen.getByText("Your Payout")).toBeInTheDocument();
-    await user.click(screen.getByRole("button", { name: "Agree and sell" }));
-    expect(await screen.findByText("Your ticket is listed for sale!")).toBeInTheDocument();
+    let finishCreate: (value: unknown) => void = () => {};
+    mockedCreateListing.mockReturnValue(
+      new Promise((resolve) => {
+        finishCreate = resolve;
+      }) as never,
+    );
+    const agreeButton = screen.getByRole("button", { name: "Agree and sell" });
+    await user.click(agreeButton);
+    expect(agreeButton).toBeDisabled();
+    expect(agreeButton).toHaveAccessibleName("Agree and sell");
+    expect(within(agreeButton).getByRole("status", { hidden: true, name: "Loading" })).toBeInTheDocument();
+    expect(within(sheet).getByRole("button", { name: "Back" })).toBeDisabled();
+    finishCreate({ data: { id: "listing-created-1", status: "new", askingPrice: 80 } });
+    await waitFor(() => {
+      expect(screen.getByText("Your ticket is listed for sale!")).toBeVisible();
+    });
+    expect(screen.getByText(/We will notify you via email if a purchase is made/)).toBeInTheDocument();
+    expect(screen.getByText(/This ticket leaves your wallet right away/)).toBeInTheDocument();
     expect(mockedCreateListing).toHaveBeenCalledTimes(1);
     const payload = mockedCreateListing.mock.calls[0][0] as Record<string, unknown>;
     expect(payload).toMatchObject({
@@ -9806,6 +10123,7 @@ describe("SeasonTickets listings and sell", { timeout: 30_000 }, () => {
     });
     expect(Array.isArray(payload.tickets)).toBe(true);
     expect(mockedGetMyEvents.mock.calls.length).toBe(eventsCalls);
+    expect(mockedGetOrder.mock.calls.length).toBe(orderCalls);
     expect(mockedGetMyListings).not.toHaveBeenCalled();
     expect(screen.getByRole("link", { name: "Go to My listings" })).toHaveAttribute(
       "href",
@@ -9816,6 +10134,57 @@ describe("SeasonTickets listings and sell", { timeout: 30_000 }, () => {
         name: (_accessible, el) => el?.textContent?.trim() === "Close",
       }),
     ).toBeInTheDocument();
+  });
+
+  it("lists the last ticket from memory without refetching the order", async () => {
+    const base = demoCompletedTicketOrder({
+      event: { ...icedogs, enableResale: true },
+    });
+    const [ticket] = base.tickets;
+    const order = { ...base, tickets: [ticket] };
+    mockedGetMyEvents.mockResolvedValue({ data: [order] } as never);
+    navigationMocks.pathname = `/wallet/my-tickets/order/${order.orderId}/`;
+    const user = userEvent.setup();
+    const { rerender } = render(<SeasonTickets />);
+
+    await user.click(await screen.findByRole("button", { name: "Sell" }));
+    const sheet = (await screen.findByRole("heading", { name: "Sell" }))
+      .parentElement?.parentElement as HTMLElement;
+    await user.click(
+      within(sheet).getByRole("button", { name: `Seat ${ticket.seatNumber}` }),
+    );
+    await user.click(within(sheet).getByRole("button", { name: "Set price" }));
+    const price = within(sheet).getByRole("textbox");
+    await user.clear(price);
+    await user.type(price, "80");
+    const orderCalls = mockedGetOrder.mock.calls.length;
+    const eventsCalls = mockedGetMyEvents.mock.calls.length;
+    await user.click(within(sheet).getByRole("button", { name: "Payout summary" }));
+    await user.click(screen.getByRole("button", { name: "Agree and sell" }));
+
+    await waitFor(() => {
+      expect(screen.getByText("Your ticket is listed for sale!")).toBeVisible();
+    });
+    expect(mockedCreateListing).toHaveBeenCalledTimes(1);
+    expect(mockedGetOrder.mock.calls.length).toBe(orderCalls);
+    expect(mockedGetMyEvents.mock.calls.length).toBe(eventsCalls);
+    expect(screen.queryByText("Order not found")).not.toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: icedogs.name })).toBeInTheDocument();
+
+    await user.click(
+      screen.getByRole("button", {
+        name: (_accessible, el) => el?.textContent?.trim() === "Close",
+      }),
+    );
+    expect(screen.queryByText(seatLabel(ticket))).not.toBeInTheDocument();
+
+    navigationMocks.pathname = "/wallet/my-tickets/";
+    rerender(<SeasonTickets />);
+
+    expect(await screen.findByText("No upcoming tickets yet")).toBeInTheDocument();
+    expect(screen.queryByText(icedogs.name)).not.toBeInTheDocument();
+    expect(mockedGetOrder.mock.calls.length).toBe(orderCalls);
+    expect(mockedGetMyEvents.mock.calls.length).toBe(eventsCalls);
   });
 
   it("only lets digits and one decimal point into the sell price, including pasted text", async () => {
@@ -9875,13 +10244,48 @@ describe("SeasonTickets listings and sell", { timeout: 30_000 }, () => {
 
     await user.click(await screen.findByRole("button", { name: "Sell" }));
     expect(await screen.findByText("Link a bank account")).toBeInTheDocument();
-    expect(screen.queryByText("Select tickets to sell")).not.toBeInTheDocument();
+    expect(screen.getByText("Select tickets to sell")).not.toBeVisible();
     expect(await screen.findByLabelText("Account type")).toHaveValue("individual");
     expect(screen.getByRole("button", { name: "Link bank account" })).toBeEnabled();
+    expect(screen.queryByRole("button", { name: "I've finished linking" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Try again" })).not.toBeInTheDocument();
+  });
 
-    mockedGetBankAccount.mockResolvedValueOnce({ data: { payouts_enabled: true } } as never);
-    await user.click(screen.getByRole("button", { name: "I've finished linking" }));
-    expect(await screen.findByText("Select tickets to sell")).toBeInTheDocument();
+  it("asks to continue an unfinished bank account instead of linking a new one", async () => {
+    mockedGetBankAccount.mockResolvedValue({
+      data: demoLinkedBankAccount({ charges_enabled: false, payouts_enabled: false }),
+    } as never);
+    const order = demoCompletedTicketOrder({
+      event: { ...icedogs, enableResale: true },
+    });
+    mockedGetMyEvents.mockResolvedValue({ data: [order] } as never);
+    navigationMocks.pathname = `/wallet/my-tickets/order/${order.orderId}/`;
+    const user = userEvent.setup();
+    render(<SeasonTickets />);
+
+    await user.click(await screen.findByRole("button", { name: "Sell" }));
+    expect(
+      await screen.findByText(
+        "You haven't finished setting up your banking info, please continue to finish setting up your bank account",
+      ),
+    ).toBeInTheDocument();
+    expect(screen.getByText("Link a bank account")).toBeVisible();
+    expect(screen.queryByRole("button", { name: "Link bank account" })).not.toBeInTheDocument();
+    expect(screen.getByText("Select tickets to sell")).not.toBeVisible();
+    const continueButton = screen.getByRole("button", { name: "Continue" });
+    mockedCreateBankAccount.mockResolvedValue({
+      data: { link: "https://connect.stripe.test/setup" },
+    } as never);
+    const assign = vi.fn();
+    vi.stubGlobal("location", { assign });
+    await user.click(continueButton);
+    await waitFor(() =>
+      expect(mockedCreateBankAccount).toHaveBeenCalledWith({
+        businessType: "individual",
+      }),
+    );
+    expect(assign).toHaveBeenCalledWith("https://connect.stripe.test/setup");
+    vi.unstubAllGlobals();
   });
 
   it("does not link a bank account until the existing account type is known", async () => {
@@ -9903,6 +10307,10 @@ describe("SeasonTickets listings and sell", { timeout: 30_000 }, () => {
     await user.click(await screen.findByRole("button", { name: "Sell" }));
     expect(screen.getAllByRole("status", { name: "Loading" }).length).toBeGreaterThan(0);
     expect(screen.queryByRole("button", { name: "Link bank account" })).not.toBeInTheDocument();
+    expect(screen.getByText("Link a bank account")).not.toBeVisible();
+    expect(screen.getByText("Select tickets to sell")).not.toBeVisible();
+    expect(screen.getByText(/A payout account is required/)).not.toBeVisible();
+    expect(screen.getByText(/You haven't finished setting up your banking info/)).not.toBeVisible();
     expect(mockedCreateBankAccount).not.toHaveBeenCalled();
 
     resolveAccount({
@@ -9910,6 +10318,7 @@ describe("SeasonTickets listings and sell", { timeout: 30_000 }, () => {
     });
 
     const linkButton = await screen.findByRole("button", { name: "Link bank account" });
+    expect(screen.getByText(/A payout account is required/)).toBeVisible();
     expect(screen.getByLabelText("Account type")).toHaveValue("company");
     mockedCreateBankAccount.mockReturnValue(new Promise(() => {}) as never);
     await user.click(linkButton);
@@ -9970,11 +10379,12 @@ describe("SeasonTickets listings and sell", { timeout: 30_000 }, () => {
     const linkButton = await screen.findByRole("button", { name: "Link bank account" });
     await user.click(linkButton);
 
-    expect(
-      await screen.findByText("Live and test mode accounts cannot be mixed."),
-    ).toBeInTheDocument();
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent("Live and test mode accounts cannot be mixed.");
+    expect(linkButton.compareDocumentPosition(alert) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(linkButton).toBeEnabled();
     expect(linkButton).not.toHaveAttribute("aria-busy");
+    expect(screen.queryByRole("button", { name: "I've finished linking" })).not.toBeInTheDocument();
   });
 
   it("does not send the individual default when the account lookup fails", async () => {
@@ -9990,54 +10400,12 @@ describe("SeasonTickets listings and sell", { timeout: 30_000 }, () => {
     const linkButton = await screen.findByRole("button", { name: "Link bank account" });
     expect(linkButton).toBeDisabled();
     expect(screen.queryByLabelText("Account type")).not.toBeInTheDocument();
-    expect(
-      screen.getByText(/try again before linking a bank account/i),
-    ).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "I've finished linking" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Try again" })).not.toBeInTheDocument();
+    const alert = screen.getByRole("alert");
+    expect(alert).toHaveTextContent(/try again before linking a bank account/i);
+    expect(linkButton.compareDocumentPosition(alert) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(mockedCreateBankAccount).not.toHaveBeenCalled();
-  });
-
-  it("sends the loaded organization type after a failed lookup is retried", async () => {
-    let resolveRetry: (value: unknown) => void = () => {};
-    mockedGetBankAccount.mockRejectedValueOnce(new Error("network"));
-    mockedGetBankAccount.mockRejectedValueOnce(new Error("network"));
-    mockedGetBankAccount.mockImplementationOnce(
-      () =>
-        new Promise((resolve) => {
-          resolveRetry = resolve;
-        }) as never,
-    );
-    const order = demoCompletedTicketOrder({
-      event: { ...icedogs, enableResale: true },
-    });
-    mockedGetMyEvents.mockResolvedValue({ data: [order] } as never);
-    navigationMocks.pathname = `/wallet/my-tickets/order/${order.orderId}/`;
-    const user = userEvent.setup();
-    render(<SeasonTickets />);
-
-    await user.click(await screen.findByRole("button", { name: "Sell" }));
-    await user.click(await screen.findByRole("button", { name: "Try again" }));
-
-    expect(screen.getAllByRole("status", { name: "Loading" }).length).toBeGreaterThan(0);
-    expect(screen.queryByRole("button", { name: "Link bank account" })).not.toBeInTheDocument();
-    expect(mockedCreateBankAccount).not.toHaveBeenCalled();
-
-    resolveRetry({
-      data: { payouts_enabled: false, business_type: "non_profit" },
-    });
-
-    await waitFor(() =>
-      expect(screen.getByRole("button", { name: "Link bank account" })).toBeEnabled(),
-    );
-    expect(screen.getByLabelText("Account type")).toHaveValue("non_profit");
-    mockedCreateBankAccount.mockReturnValue(new Promise(() => {}) as never);
-    await user.click(screen.getByRole("button", { name: "Link bank account" }));
-
-    await waitFor(() =>
-      expect(mockedCreateBankAccount).toHaveBeenCalledWith({
-        businessType: "non_profit",
-        currentBusinessType: "non_profit",
-      }),
-    );
   });
 
   it("removes an active listing without refetching listings", async () => {
@@ -10068,14 +10436,59 @@ describe("SeasonTickets listings and sell", { timeout: 30_000 }, () => {
     render(<SeasonTickets />);
 
     await user.click(await screen.findByRole("button", { name: "Edit" }));
-    const field = screen.getByLabelText("Asking price per ticket");
+    const title = screen.getByRole("heading", { name: "Edit asking price" });
+    const sheet = title.parentElement?.parentElement as HTMLElement;
+    const mapped = mapWalletListing(listing)!;
+    expect(within(sheet).getByText(mapped.tickets.length === 1 ? "Price your ticket" : "Price your tickets")).toBeInTheDocument();
+    expect(within(sheet).getByText(`Ticket face value ${formatCurrency(listingFaceValue(mapped.tickets))}`)).toBeInTheDocument();
+    const field = within(sheet).getByRole("textbox");
+    expect(field).toHaveValue(String(mapped.askingPrice));
+    expect(within(sheet).getByText("Price per ticket")).toBeInTheDocument();
+    expect(within(sheet).getByRole("button", { name: "Review payout" })).toBeDisabled();
     await user.clear(field);
-    await user.type(field, "70");
+    await user.type(field, String(mapped.askingPrice));
+    expect(within(sheet).getByRole("button", { name: "Review payout" })).toBeDisabled();
+    await user.clear(field);
+    await user.type(field, "1");
+    expect(within(sheet).getByText(/Asking price must be at least/)).toBeInTheDocument();
+    expect(within(sheet).getByRole("button", { name: "Review payout" })).toBeDisabled();
+    expect(within(sheet).queryByRole("button", { name: "Cancel" })).not.toBeInTheDocument();
+    expect(within(sheet).queryByRole("button", { name: "Save" })).not.toBeInTheDocument();
+    await user.clear(field);
+    await user.type(field, "70a");
+    expect(field).toHaveValue("70");
     const listingCalls = mockedGetMyListings.mock.calls.length;
-    await user.click(screen.getByRole("button", { name: "Save" }));
-    await waitFor(() =>
-      expect(mockedUpdateMyListings).toHaveBeenCalledWith(listing.id, { askingPrice: 70 }),
+    await user.click(within(sheet).getByRole("button", { name: "Review payout" }));
+    expect(mockedUpdateMyListings).not.toHaveBeenCalled();
+    const asking = 70;
+    const count = mapped.tickets.length;
+    const fee = resaleSellerFeeAmount(asking, [], mapped.event);
+    expect(within(sheet).getByText("Payment summary")).toBeInTheDocument();
+    expect(within(sheet).getByText(/By clicking 'Update price'/)).toBeInTheDocument();
+    expect(within(sheet).getByText(`Tickets: ${formatCurrency(asking)} x ${count}`)).toBeInTheDocument();
+    expect(within(sheet).getByText(`Service Fees: ${formatCurrency(fee)} x ${count}`)).toBeInTheDocument();
+    expect(within(sheet).getByText(`(-${formatCurrency(fee * count)})`)).toBeInTheDocument();
+    expect(within(sheet).getByText(formatCurrency((asking - fee) * count))).toBeInTheDocument();
+    let finishUpdate: (value: unknown) => void = () => {};
+    mockedUpdateMyListings.mockReturnValue(
+      new Promise((resolve) => {
+        finishUpdate = resolve;
+      }) as never,
     );
+    const updateButton = within(sheet).getByRole("button", { name: "Update price" });
+    await user.click(updateButton);
+    expect(updateButton).toBeDisabled();
+    expect(updateButton).toHaveAccessibleName("Update price");
+    expect(within(updateButton).getByRole("status", { hidden: true, name: "Loading" })).toBeInTheDocument();
+    expect(within(sheet).getByRole("button", { name: "Back" })).toBeDisabled();
+    finishUpdate({ data: { askingPrice: 70 } });
+    await waitFor(() =>
+      expect(within(sheet).getByText("Your ticket price has been updated")).toBeInTheDocument(),
+    );
+    expect(mockedUpdateMyListings).toHaveBeenCalledWith(listing.id, { askingPrice: 70 });
     expect(mockedGetMyListings.mock.calls.length).toBe(listingCalls);
+    expect(within(sheet).getByText(/in effect within 2 hours/i)).toBeInTheDocument();
+    await user.click(within(sheet).getByText("Close"));
+    expect(screen.queryByRole("heading", { name: "Edit asking price" })).not.toBeInTheDocument();
   });
 });

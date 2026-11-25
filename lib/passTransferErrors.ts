@@ -20,7 +20,72 @@ export const PASS_TRANSFER_DISPLAY_COPY = {
   scanned: "These tickets have already been scanned and can't be transferred.",
   seasonPassTransferred:
     "This season pass can't be transferred because one or more included game tickets have already been transferred.",
+  seasonPassTransferredOrResold:
+    "This season pass can't be transferred because one or more included game tickets have already been transferred or listed for resale.",
 } as const;
+
+/** Card and API copy for a season pass blocked by an included game. */
+export function seasonPassBlockedTransferCopy(resaleEnabled = false): string {
+  return resaleEnabled
+    ? PASS_TRANSFER_DISPLAY_COPY.seasonPassTransferredOrResold
+    : PASS_TRANSFER_DISPLAY_COPY.seasonPassTransferred;
+}
+
+function asRecord(value: unknown): Record<string, unknown> | undefined {
+  if (!value || typeof value !== "object") return undefined;
+  const row = value as { data?: unknown; attributes?: Record<string, unknown> };
+  if (row.attributes && typeof row.attributes === "object") {
+    return row.attributes;
+  }
+  if (row.data && typeof row.data === "object" && !Array.isArray(row.data)) {
+    return asRecord(row.data);
+  }
+  return value as Record<string, unknown>;
+}
+
+function booleanFlag(value: unknown): boolean | undefined {
+  return typeof value === "boolean" ? value : undefined;
+}
+
+/** GET /orders?filters[orderId] omits organization.enableResale. Resale is on the games and the org setting. */
+export function organizationResaleEnabled(source: unknown): boolean {
+  const flags: boolean[] = [];
+  const pushOrg = (org: unknown) => {
+    const record = asRecord(org);
+    if (!record) return;
+    const enableResale = booleanFlag(record.enableResale);
+    if (enableResale !== undefined) flags.push(enableResale);
+    const allowResales = booleanFlag(asRecord(record.setting)?.allowResales);
+    if (allowResales !== undefined) flags.push(allowResales);
+  };
+  const pushEvent = (event: unknown) => {
+    const record = asRecord(event);
+    if (!record) return;
+    const enableResale = booleanFlag(record.enableResale);
+    if (enableResale !== undefined) flags.push(enableResale);
+    pushOrg(record.organization);
+  };
+  const pushEvents = (events: unknown) => {
+    const list = Array.isArray(events)
+      ? events
+      : Array.isArray(asRecord(events)?.data)
+        ? (asRecord(events)?.data as unknown[])
+        : [];
+    for (const event of list) pushEvent(event);
+  };
+
+  const record = asRecord(source);
+  if (!record) return false;
+  pushOrg(record.organization);
+  pushEvent(record.event);
+  const pkg = asRecord(record.package);
+  if (pkg) {
+    pushOrg(pkg.organization);
+    pushEvents(pkg.events);
+  }
+  pushEvents(record.events);
+  return flags.some((flag) => flag);
+}
 
 function extractPassTransferApiMessage(error: unknown): string | undefined {
   if (!error || typeof error !== "object") return undefined;
@@ -41,6 +106,7 @@ function extractPassTransferApiMessage(error: unknown): string | undefined {
 export function parsePassTransferApiError(
   error: unknown,
   kind: "season pass" | "access pass",
+  resaleEnabled = false,
 ): string {
   const status = (error as { response?: { status?: number } }).response?.status;
   const raw = extractPassTransferApiMessage(error);
@@ -52,7 +118,7 @@ export function parsePassTransferApiError(
     return PASS_TRANSFER_DISPLAY_COPY.scanned;
   }
   if (raw === PASS_TRANSFER_API_ERROR_MESSAGES.seasonPassUnavailable) {
-    return PASS_TRANSFER_DISPLAY_COPY.seasonPassTransferred;
+    return seasonPassBlockedTransferCopy(resaleEnabled);
   }
   // The API sends the access-pass wording for both kinds on this shared route.
   if (raw === PASS_TRANSFER_API_ERROR_MESSAGES.accessPassPending) {

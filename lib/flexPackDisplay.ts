@@ -100,9 +100,14 @@ export type FlexPackQuoteInput = {
   gameTickets?: unknown;
   customFees?: unknown;
   custom_fees?: unknown;
+  /** Set when the organization has turned card processing off. */
+  processingFeeWaived?: unknown;
+  packageWebsiteFeeSnapshot?: { processingFeeMode?: unknown } | null;
   organization?: {
     name?: string;
     isTaxable?: unknown;
+    processingFeeEnabled?: unknown;
+    setting?: { processingFeeEnabled?: unknown } | null;
     taxRate?: { estimatedCombinedRate?: unknown } | null;
     tax_rate?: { estimatedCombinedRate?: unknown } | null;
     fee_structure?: {
@@ -168,6 +173,19 @@ function parseFlexPackPrice(flexPack: FlexPackQuoteInput): number {
 
 function isCompFlexPack(flexPack: FlexPackQuoteInput): boolean {
   return parseFlexPackPrice(flexPack) === 0;
+}
+
+/** Explicit false only. A missing setting still charges the fee. */
+function flexPackProcessingFeeWaived(flexPack: FlexPackQuoteInput): boolean {
+  if (!flexPack) return false;
+  if (flexPack.processingFeeWaived === true) return true;
+  if (flexPack.packageWebsiteFeeSnapshot?.processingFeeMode === "waived") {
+    return true;
+  }
+  const organization = recordAttributes(flexPack.organization);
+  if (organization?.processingFeeEnabled === false) return true;
+  const setting = recordAttributes(organization?.setting);
+  return setting?.processingFeeEnabled === false;
 }
 
 function readCustomFees(flexPack: FlexPackQuoteInput): Array<{
@@ -262,6 +280,9 @@ export function quoteFlexPackPurchase(
     const chargeBase = roundMoney(baseWithoutProcessing + customFeeAmount);
     processingFee = processingFor(chargeBase);
   }
+  // Checkout lists a waived processing fee as $0 and leaves it out of the
+  // amount due. The card price has to match that total.
+  if (flexPackProcessingFeeWaived(flexPack)) processingFee = 0;
 
   const total = roundMoney(subtotal + customFeeAmount);
   const buyerTotal = roundMoney(total + salesTax + processingFee);

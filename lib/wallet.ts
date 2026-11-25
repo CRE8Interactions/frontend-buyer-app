@@ -915,7 +915,9 @@ export function transferSeatChip(
 }
 
 export function eventTimezone(event?: EventLike | null, fallback?: string) {
-  return event?.venue?.timezone || fallback || undefined;
+  // The transfers REST list returns venue as a Strapi relation, so timezone sits under data.attributes.
+  const nested = strapiRel<VenueLike>(event?.venue);
+  return event?.venue?.timezone || nested?.timezone || fallback || undefined;
 }
 
 export function eventWhenLabel(event?: EventLike | null, timezone?: string) {

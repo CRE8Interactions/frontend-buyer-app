@@ -10,15 +10,17 @@ const SHIMMER: CSSProperties = {
 /** Centered Blocktickets blocks while my-tickets loads (matches /search). */
 export function WalletTicketsBlocksLoading({
   routeDestination = false,
+  label = "Loading tickets",
 }: {
   /** Hands off from the global transition cover into wallet. */
   routeDestination?: boolean;
+  label?: string;
 }) {
   return (
     <div
       role="status"
       aria-busy="true"
-      aria-label="Loading tickets"
+      aria-label={label}
       data-bt-destination-loader={routeDestination ? "" : undefined}
       className="flex min-h-[30vh] items-center justify-center"
     >

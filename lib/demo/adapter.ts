@@ -15,6 +15,8 @@ import {
   DEMO_SEATED_TICKET_GROUPS,
   demoAccessPass,
   demoCart,
+  demoDigitalAddonPass,
+  demoEventAddonProducts,
   demoCompletedFlexPackOrder,
   demoCompletedPackageOrder,
   demoCompletedTicketOrder,
@@ -514,6 +516,32 @@ const routes: Route[] = [
         },
       };
     },
+  },
+
+  {
+    methods: ["get"],
+    match: (path) => /\/events\/[^/]+\/addon-products/.test(path),
+    handle: () => ({ data: demoEventAddonProducts() }),
+  },
+  {
+    methods: ["post"],
+    match: (path) => /\/carts\/[^/]+\/addon-items/.test(path),
+    handle: () => ({ data: { ok: true } }),
+  },
+  {
+    methods: ["get"],
+    match: (path) => /\/orders\/[^/]+\/available-addons/.test(path),
+    handle: () => ({ data: demoEventAddonProducts() }),
+  },
+  {
+    methods: ["post"],
+    match: (path) => /\/orders\/[^/]+\/addon-checkout/.test(path),
+    handle: () => ({ data: { cartId: 15 } }),
+  },
+  {
+    methods: ["get"],
+    match: (path) => /\/orders\/[^/]+\/addon-items/.test(path),
+    handle: () => ({ data: { digitalPasses: [demoDigitalAddonPass()] } }),
   },
 
   // ---- Cart / checkout stubs ----

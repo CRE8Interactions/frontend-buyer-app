@@ -1,6 +1,17 @@
-import axios, { type AxiosRequestConfig, type AxiosResponse } from "axios";
+import axios, {
+  type AxiosRequestConfig,
+  type AxiosResponse,
+  type InternalAxiosRequestConfig,
+} from "axios";
 import moment from "moment";
-import { getToken, isLoggedIn } from "@/lib/auth";
+import {
+  addonAuthRetryClearsSession,
+  isPublicFanAddonCatalogRequest,
+  normalizeAddonCatalogPayload,
+  shouldRetryAddonRequestWithoutAuth,
+  type AddonSelection,
+} from "@/lib/addonCatalog";
+import { clearSession, getToken, isLoggedIn } from "@/lib/auth";
 import { demoAdapter } from "@/lib/demo/adapter";
 import { createInflightCache } from "@/lib/inflightCache";
 import {
@@ -36,9 +47,36 @@ const WAITING_ROOM_GATED_URLS = [
   /\/flex-pack\/add-to-cart/,
 ];
 
+type AddonRetryConfig = InternalAxiosRequestConfig & {
+  _omitAuthHeader?: boolean;
+  _retriedWithoutAuth?: boolean;
+};
+
+function headerAuthorization(config?: { headers?: InternalAxiosRequestConfig["headers"] }) {
+  const headers = config?.headers;
+  if (!headers) return undefined;
+  if (typeof headers.get === "function") {
+    return headers.get("Authorization") || headers.get("authorization");
+  }
+  const record = headers as unknown as Record<string, unknown>;
+  return record.Authorization || record.authorization;
+}
+
+function stripAuthHeader(config: AddonRetryConfig) {
+  if (typeof config.headers?.delete === "function") {
+    config.headers.delete("Authorization");
+    config.headers.delete("authorization");
+    return;
+  }
+  const record = config.headers as unknown as Record<string, unknown>;
+  delete record.Authorization;
+  delete record.authorization;
+}
+
 instance.interceptors.request.use(
   (config) => {
-    if (isLoggedIn()) {
+    const retryable = config as AddonRetryConfig;
+    if (!retryable._omitAuthHeader && isLoggedIn()) {
       const token = getToken();
       if (token) config.headers.Authorization = `Bearer ${token}`;
     }
@@ -79,8 +117,39 @@ instance.interceptors.request.use(
 );
 
 instance.interceptors.response.use(
-  (response) => response,
+  (response) => {
+    const url = response?.config?.url || "";
+    const method = String(response?.config?.method || "get").toLowerCase();
+    if (
+      isPublicFanAddonCatalogRequest(url) &&
+      (method === "get" || method === "head") &&
+      response?.data != null
+    ) {
+      response.data = normalizeAddonCatalogPayload(response.data);
+    }
+    return response;
+  },
   (error) => {
+    const original = error?.config as AddonRetryConfig | undefined;
+    const status = error?.response?.status;
+    const method = String(original?.method || "get").toLowerCase();
+    const url = original?.url || "";
+    if (
+      status === 403 &&
+      headerAuthorization(original) &&
+      original &&
+      !original._retriedWithoutAuth &&
+      shouldRetryAddonRequestWithoutAuth({ url, method })
+    ) {
+      original._retriedWithoutAuth = true;
+      if (addonAuthRetryClearsSession({ url, method })) {
+        clearSession();
+      } else {
+        original._omitAuthHeader = true;
+      }
+      stripAuthHeader(original);
+      return instance(original);
+    }
     const data = error?.response?.data as
       | { code?: string; eventUuid?: string; joinUrl?: string }
       | undefined;
@@ -131,8 +200,10 @@ export const processFreeOrder = (data: unknown) =>
 export const getPricing = (data: unknown) =>
   instance.post("/orders/pricing", data);
 
-export const getOrder = (orderId: string) =>
-  instance.get(`/orders?filters[orderId][$eq]=${orderId}`);
+export const getOrder = (orderId: string, options?: { signal?: AbortSignal }) =>
+  instance.get(`/orders?filters[orderId][$eq]=${orderId}`, {
+    signal: options?.signal,
+  });
 
 export const getAccessPassesByOrder = (orderId: string) =>
   instance.get(`/access-passes/by-order/${orderId}`);
@@ -318,8 +389,8 @@ export function __resetMyEventsCacheForTests() {
   invalidateMyEventsCache();
 }
 
-export const getMyUpcomingOrders = () =>
-  instance.get("/events/myUpcomingOrders");
+export const getMyUpcomingOrders = (options?: { signal?: AbortSignal }) =>
+  instance.get("/events/myUpcomingOrders", { signal: options?.signal });
 
 export const getEvent = (id: string) =>
   instance.get(`/events/${id}?filters[status][$eq]=on_sale`);
@@ -354,7 +425,8 @@ export const updatePersonalDetails = (data: unknown) =>
 export const createBankAccount = (data: unknown) =>
   instance.post("/payment-information/generate", data);
 
-export const getBankAccount = () => instance.get("/payment-informations/0");
+export const getBankAccount = (options?: { signal?: AbortSignal }) =>
+  instance.get("/payment-informations/0", { signal: options?.signal });
 
 export const savePassApple = () =>
   instance.get("/aaa/apple", { responseType: "blob" });
@@ -364,8 +436,18 @@ export const savePassGoogle = () => instance.get("/aaa/google");
 export const removeBankAccount = () =>
   instance.get("/payment-information/deactive");
 
-/** Legacy wallet uses populate=* so transfer rows include tickets with seat fields. */
-export const TICKET_TRANSFER_POPULATE_QUERY = "populate=*";
+/**
+ * Transfer rows need tickets (seat fields) and the event's venue timezone.
+ * populate=* stops one level deep, so the event arrives without its venue and
+ * kickoff times fall back to the browser's timezone.
+ */
+export const TICKET_TRANSFER_POPULATE_QUERY = [
+  "populate[fromUser]=true",
+  "populate[toUser]=true",
+  "populate[tickets]=true",
+  "populate[order]=true",
+  "populate[event][populate][venue][fields][0]=timezone",
+].join("&");
 
 export const getMySentTransfers = (
   userEmail: string,
@@ -544,6 +626,36 @@ export function isWaitingRoomRequiredError(error: unknown) {
 export const getCart = (cartId: string) =>
   instance.get(`/cart/myCart?cartId=${cartId}`);
 
+export const getEventAddons = (
+  eventUUID: string,
+  packageUUID?: string | null,
+  { requireCheckoutAddons = false }: { requireCheckoutAddons?: boolean } = {},
+) => {
+  const search = new URLSearchParams();
+  if (packageUUID) search.set("packageUUID", packageUUID);
+  if (requireCheckoutAddons) search.set("requireCheckoutAddons", "true");
+  const qs = search.toString();
+  return instance.get(
+    `/events/${eventUUID}/addon-products${qs ? `?${qs}` : ""}`,
+  );
+};
+
+export const saveCartAddon = (cartId: string | number, data: AddonSelection) =>
+  instance.post(`/carts/${cartId}/addon-items`, data);
+
+export const getOrderAvailableAddons = (orderUUID: string) =>
+  instance.get(`/orders/${orderUUID}/available-addons`);
+
+export const createPostPurchaseAddonCheckout = (
+  orderUUID: string,
+  data: { items: AddonSelection[] },
+) => instance.post(`/orders/${orderUUID}/addon-checkout`, data);
+
+export const getOrderDigitalPasses = (orderUUID: string, eventUUID?: string) =>
+  instance.get(`/orders/${orderUUID}/addon-items`, {
+    params: eventUUID ? { eventUUID } : undefined,
+  });
+
 export const dropUserCart = (data: unknown = {}) =>
   instance.post(`/cart/drop-user-cart`, dropCartRequestBody(data));
 
@@ -622,8 +734,10 @@ export const getTicketsByEvent = (uuid: string) =>
 export const getVenueFlexPacks = (venueUUID: string) =>
   instance.get(`/flex-pack/get-venue-flex-packs?venueUUID=${venueUUID}`);
 
-export const getFlexPack = (uuid: string) =>
-  instance.get(`/flex-pack/get-flex-pack?uuid=${uuid}`);
+export const getFlexPack = (uuid: string, options?: { signal?: AbortSignal }) =>
+  instance.get(`/flex-pack/get-flex-pack?uuid=${uuid}`, {
+    signal: options?.signal,
+  });
 
 export const placeFlexPackIntoCart = (flexPackId: string | number) =>
   instance.post(`/flex-pack/add-to-cart?id=${flexPackId}`, withCallerCart({}));

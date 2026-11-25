@@ -10,6 +10,11 @@ import {
   DEMO_USER,
   demoAccessPassCheckoutCart,
   demoCheckoutCart,
+  demoCheckoutDonationCampaign,
+  demoAddonOnlyCart,
+  demoCheckoutCartWithAddons,
+  demoEventAddonProducts,
+  DEMO_ADDON_PARKING,
   demoItemizedFeeCheckoutCart,
   demoSeatmapMapping,
   demoFlexPack,
@@ -22,6 +27,7 @@ import { quoteFlexPackPurchase } from "@/lib/flexPackDisplay";
 import { packageOrderSummary, gaTierSubtitle, ticketSelectionSummary } from "@/lib/ticketSummary";
 import { formatVenueLocationFromVenue } from "@/lib/venueLocation";
 import { purchaseTabTitle } from "@/lib/seo";
+import { computeRoundUpDonation } from "@/lib/fundraisingCheckout";
 
 const navState = { cartId: "cart-raptors-1", extra: "" };
 const routerMocks = vi.hoisted(() => ({
@@ -115,7 +121,9 @@ vi.mock("@stripe/react-stripe-js", () => ({
 vi.mock("@/lib/api", () => ({
   dropUserCart: vi.fn(),
   getCart: vi.fn(),
+  getEventAddons: vi.fn(async () => ({ data: [] })),
   getPaymentIntent: vi.fn(),
+  saveCartAddon: vi.fn(),
   getSeatmapByShortCode: vi.fn(),
   getTicketGroups: vi.fn(),
   processFreeOrder: vi.fn(),
@@ -152,7 +160,9 @@ import GlobalRouteTransitionLoader from "@/components/molecules/GlobalRouteTrans
 import {
   dropUserCart,
   getCart,
+  getEventAddons,
   getPaymentIntent,
+  saveCartAddon,
   getSeatmapByShortCode,
   getTicketGroups,
   processFreeOrder,
@@ -182,6 +192,8 @@ async function fillBillingAndPay(user: UserEvent, payName: string) {
 }
 
 const mockedGetCart = vi.mocked(getCart);
+const mockedGetEventAddons = vi.mocked(getEventAddons);
+const mockedSaveCartAddon = vi.mocked(saveCartAddon);
 const mockedGetPaymentIntent = vi.mocked(getPaymentIntent);
 const mockedGetSeatmap = vi.mocked(getSeatmapByShortCode);
 const mockedGetTicketGroups = vi.mocked(getTicketGroups);
@@ -259,6 +271,10 @@ describe("Checkout page", { timeout: 20_000 }, () => {
     mockedGetCart.mockResolvedValue({
       data: demoCheckoutCart(),
     } as never);
+    mockedGetEventAddons.mockReset();
+    mockedGetEventAddons.mockResolvedValue({ data: [] } as never);
+    mockedSaveCartAddon.mockReset();
+    mockedSaveCartAddon.mockResolvedValue({ data: { ok: true } } as never);
     mockedGetSeatmap.mockReset();
     mockedGetSeatmap.mockResolvedValue({ data: null } as never);
     mockedGetTicketGroups.mockResolvedValue({
@@ -1406,6 +1422,35 @@ describe("Checkout page", { timeout: 20_000 }, () => {
     expect(screen.getAllByText(formatCurrency(0)).length).toBeGreaterThan(0);
   });
 
+  it("lists a waived package processing fee as $0.00 and leaves it off the amount due", async () => {
+    const priced = demoPackageCheckoutCart({
+      processingFee: 4,
+      serviceFee: 8,
+      total: 0,
+    });
+    const summary = packageOrderSummary(priced.package, priced.tickets);
+    const dueWithoutFee = summary.subtotal + Number(priced.serviceFee);
+    const cart = {
+      ...priced,
+      packageWebsiteFeeSnapshot: { processingFeeMode: "waived" },
+    };
+    mockedGetCart.mockResolvedValue({ data: cart } as never);
+    render(<CheckoutPageRoute />);
+
+    expect(await screen.findByText(priced.package.name)).toBeInTheDocument();
+    expect(screen.getByText("Processing Fee").parentElement).toHaveTextContent(
+      formatCurrency(0),
+    );
+    expect(screen.getByText("Service Fee").parentElement).toHaveTextContent(
+      formatCurrency(priced.serviceFee),
+    );
+    expect(
+      await screen.findByRole("button", {
+        name: `Pay ${formatCurrency(dueWithoutFee)}`,
+      }),
+    ).toBeInTheDocument();
+  });
+
   it("does not show a promo code field for a package purchase", async () => {
     const cart = demoPackageCheckoutCart();
     mockedGetCart.mockResolvedValue({ data: cart } as never);
@@ -1530,6 +1575,11 @@ describe("Checkout page", { timeout: 20_000 }, () => {
       formatCurrency(3.5),
     );
     expect(
+      screen.getByText(
+        `${formatCurrency(expectedTotal / base.flex_pack.gameTickets)} each`,
+      ),
+    ).toBeInTheDocument();
+    expect(
       screen
         .getByText("Service Fee")
         .compareDocumentPosition(screen.getByText("Tax")) &
@@ -1552,6 +1602,65 @@ describe("Checkout page", { timeout: 20_000 }, () => {
     expect(screen.getByText("Service Fee")).toBeInTheDocument();
     expect(screen.getByText("Processing Fee")).toBeInTheDocument();
     expect(screen.getAllByText(formatCurrency(0)).length).toBeGreaterThan(0);
+  });
+
+  it("lists a waived flex pack processing fee as $0.00 and leaves it off the amount due", async () => {
+    const cart = {
+      ...demoFlexPackCheckoutCart({ processingFee: 1.52 }),
+      totalTax: 2,
+      packageWebsiteFeeSnapshot: { processingFeeMode: "waived" },
+    };
+    const dueWithoutFee =
+      Number(cart.flex_pack.price) + Number(cart.serviceFee) + 2;
+    mockedGetCart.mockResolvedValue({ data: cart } as never);
+    render(<CheckoutPageRoute />);
+
+    expect(await screen.findByText(cart.flex_pack.name)).toBeInTheDocument();
+    expect(screen.getByText("Processing Fee").parentElement).toHaveTextContent(
+      formatCurrency(0),
+    );
+    expect(
+      screen.getByText(
+        `${formatCurrency(dueWithoutFee / cart.flex_pack.gameTickets)} each`,
+      ),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByText(
+        `${formatCurrency(Number(cart.flex_pack.price) / cart.flex_pack.gameTickets)} each`,
+      ),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.getByText(`${cart.flex_pack.gameTickets} flex vouchers`)
+        .parentElement?.parentElement,
+    ).toHaveTextContent(formatCurrency(dueWithoutFee));
+    expect(screen.getByText("Tax").parentElement).toHaveTextContent(
+      formatCurrency(2),
+    );
+    expect(
+      await screen.findByRole("button", {
+        name: `Pay ${formatCurrency(dueWithoutFee)}`,
+      }),
+    ).toBeInTheDocument();
+  });
+
+  it("leaves a waived processing fee off an access pass amount due", async () => {
+    const base = demoAccessPassCheckoutCart();
+    const serviceFee = 1;
+    const processingFee = 2.48;
+    const cart = {
+      ...base,
+      serviceFee,
+      processingFee,
+      packageWebsiteFeeSnapshot: { processingFeeMode: "waived" },
+    };
+    mockedGetCart.mockResolvedValue({ data: cart } as never);
+    render(<CheckoutPageRoute />);
+
+    expect(
+      await screen.findByRole("button", {
+        name: `Pay ${formatCurrency(Number(base.total) + serviceFee)}`,
+      }),
+    ).toBeInTheDocument();
   });
 
   it("prices each flex voucher from the amount due and lists the custom fee", async () => {
@@ -1906,10 +2015,12 @@ describe("Checkout page", { timeout: 20_000 }, () => {
 
     render(<CheckoutPageRoute />);
 
-    expect(await screen.findByText("Spring fund")).toBeInTheDocument();
     expect(
-      screen.getByPlaceholderText(/donation amount/i),
+      await screen.findByRole("heading", { name: "Spring fund" }),
     ).toBeInTheDocument();
+    expect(screen.getByText("Optional gift amount")).toBeInTheDocument();
+    expect(screen.getByPlaceholderText("Other amount")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "No thanks" })).toBeInTheDocument();
   });
 
   it("sends logged-out package shoppers to login without flashing checkout", async () => {
@@ -2581,5 +2692,147 @@ describe("Checkout page", { timeout: 20_000 }, () => {
       screen.queryByRole("button", { name: /^pay /i }),
     ).not.toBeInTheDocument();
     expect(screen.queryByTestId("payment-element")).not.toBeInTheDocument();
+  });
+
+  it("saves a checkout add-on and includes its amount", async () => {
+    const user = userEvent.setup();
+    const updated = demoCheckoutCartWithAddons();
+    mockedGetEventAddons.mockResolvedValue({
+      data: demoEventAddonProducts(),
+    } as never);
+    mockedGetCart
+      .mockResolvedValueOnce({ data: demoCheckoutCart() } as never)
+      .mockResolvedValue({ data: updated } as never);
+
+    render(<CheckoutPageRoute />);
+
+    expect(await screen.findByRole("heading", { name: "Add-ons" })).toBeInTheDocument();
+    expect(screen.getByText(DEMO_ADDON_PARKING.name)).toBeInTheDocument();
+    await user.click(
+      screen.getByRole("button", { name: `Increase ${DEMO_ADDON_PARKING.name}` }),
+    );
+
+    await waitFor(() => {
+      expect(mockedSaveCartAddon).toHaveBeenCalledWith(
+        demoCheckoutCart().id,
+        expect.objectContaining({
+          productUuid: DEMO_ADDON_PARKING.uuid,
+          quantity: 1,
+        }),
+      );
+    });
+    expect(await screen.findByText(/Includes/)).toHaveTextContent(
+      formatCurrency(updated.addonQuote.customerTotal),
+    );
+    expect(screen.getAllByText(DEMO_ADDON_PARKING.pickupLocation).length).toBeGreaterThan(0);
+  });
+
+  it("shows an error and leaves the add-on quantity unchanged when saving fails", async () => {
+    const user = userEvent.setup();
+    mockedGetEventAddons.mockResolvedValue({
+      data: demoEventAddonProducts(),
+    } as never);
+    mockedSaveCartAddon.mockRejectedValue({
+      response: { data: { message: "This add-on is no longer available." } },
+    });
+
+    render(<CheckoutPageRoute />);
+    await user.click(
+      await screen.findByRole("button", {
+        name: `Increase ${DEMO_ADDON_PARKING.name}`,
+      }),
+    );
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "This add-on is no longer available.",
+    );
+    expect(screen.getByText("0")).toBeInTheDocument();
+  });
+
+  it("hides the promo form when the cart is only add-ons", async () => {
+    const cart = demoAddonOnlyCart();
+    mockedGetCart.mockResolvedValue({ data: cart } as never);
+
+    render(<CheckoutPageRoute />);
+
+    expect(await screen.findByText(/Includes/)).toHaveTextContent(
+      formatCurrency(cart.addonQuote.customerTotal),
+    );
+    expect(screen.queryByText("Promo code")).not.toBeInTheDocument();
+  });
+
+  it("does not look up a donation campaign for a resale cart", async () => {
+    const campaign = demoCheckoutDonationCampaign();
+    const cart = demoCheckoutCart();
+    const resaleCart = {
+      ...cart,
+      resaleListing: { id: "listing-active-1" },
+      event: {
+        ...cart.event,
+        organization: { ...cart.event.organization, uuid: raptorsOrg.uuid },
+      },
+    };
+    mockedGetCart.mockResolvedValue({ data: resaleCart } as never);
+    mockedResolveFundraising.mockResolvedValue({
+      data: { campaign },
+    } as never);
+
+    render(<CheckoutPageRoute />);
+
+    expect(
+      await screen.findByRole("button", { name: `Pay ${formatCurrency(resaleCart.total)}` }),
+    ).toBeInTheDocument();
+    expect(mockedResolveFundraising).not.toHaveBeenCalled();
+    expect(
+      screen.queryByRole("heading", { name: campaign.donationTitle }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("adds a round-up gift and the mandatory rule to the payment", async () => {
+    const user = userEvent.setup();
+    const baseCampaign = demoCheckoutDonationCampaign();
+    const campaign = demoCheckoutDonationCampaign({
+      donationRequirements: {
+        ...baseCampaign.donationRequirements,
+        minimumAmount: 1,
+      },
+    });
+    const cart = demoCheckoutCart();
+    const roundUp = computeRoundUpDonation(cart.total);
+    mockedGetCart.mockResolvedValue({
+      data: {
+        ...cart,
+        event: {
+          ...cart.event,
+          organization: { ...cart.event.organization, uuid: raptorsOrg.uuid },
+        },
+      },
+    } as never);
+    mockedResolveFundraising.mockResolvedValue({
+      data: { campaign },
+    } as never);
+
+    render(<CheckoutPageRoute />);
+
+    const roundUpButton = await screen.findByRole("button", {
+      name: `Round up ${formatCurrency(roundUp)} to the nearest $5`,
+    });
+    await waitFor(() => expect(roundUpButton).toBeEnabled());
+    await user.click(roundUpButton);
+
+    await waitFor(() => {
+      const request = mockedGetPaymentIntent.mock.calls.at(-1)?.[0] as {
+        fundraising?: {
+          donationAmount?: number;
+          donationRuleId?: number;
+          campaignUuid?: string;
+        };
+      };
+      expect(request.fundraising).toMatchObject({
+        campaignUuid: campaign.campaignUuid,
+        donationAmount: roundUp,
+        donationRuleId: campaign.donationRequirements.ruleId,
+      });
+    });
   });
 });

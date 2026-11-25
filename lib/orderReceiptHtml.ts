@@ -152,22 +152,14 @@ export function renderOrderReceiptHtml(receipt: OrderReceipt) {
         ${receipt.sellerEmail ? `<div class="invoice-doc__muted">${escapeHtml(receipt.sellerEmail)}</div>` : ""}
       </div>
       <div class="invoice-doc__meta">
-        <div class="invoice-doc__meta-row">
-          <div class="invoice-doc__meta-label">Invoice number:</div>
-          <div class="invoice-doc__meta-value">${escapeHtml(receipt.invoiceNumber)}</div>
-        </div>
-        <div class="invoice-doc__meta-row">
-          <div class="invoice-doc__meta-label">Payment method:</div>
-          <div class="invoice-doc__meta-value">${escapeHtml(receipt.paymentMethod)}</div>
-        </div>
-        <div class="invoice-doc__meta-row">
-          <div class="invoice-doc__meta-label">Date of issue:</div>
-          <div class="invoice-doc__meta-value">${escapeHtml(receipt.issueDate)}</div>
-        </div>
-        <div class="invoice-doc__meta-row">
-          <div class="invoice-doc__meta-label">Date due:</div>
-          <div class="invoice-doc__meta-value">${escapeHtml(receipt.dueDate)}</div>
-        </div>
+        ${receipt.meta
+          .map(
+            (row) => `<div class="invoice-doc__meta-row">
+          <div class="invoice-doc__meta-label">${escapeHtml(row.label)}</div>
+          <div class="invoice-doc__meta-value">${escapeHtml(row.value)}</div>
+        </div>`,
+          )
+          .join("")}
       </div>
     </div>
     <div class="invoice-doc__amount-due">

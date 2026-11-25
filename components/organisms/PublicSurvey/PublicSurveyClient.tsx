@@ -42,6 +42,19 @@ function storageKey(token: string) {
   return `blocktickets-survey:${token}`;
 }
 
+function recipientStorageKey(token: string) {
+  return `blocktickets-survey-r:${token}`;
+}
+
+function persistRecipientToken(surveyToken: string) {
+  const fromUrl = new URLSearchParams(window.location.search).get("r");
+  if (fromUrl) {
+    window.sessionStorage.setItem(recipientStorageKey(surveyToken), fromUrl);
+    return fromUrl;
+  }
+  return window.sessionStorage.getItem(recipientStorageKey(surveyToken));
+}
+
 function schemaFor(survey: PublicSurvey | null) {
   return {
     questions: survey?.questions || [],
@@ -108,7 +121,10 @@ export default function PublicSurveyClient() {
           setState(payload.state || "unavailable");
           return;
         }
-        await startPublicSurvey(token, { idempotencyKey });
+        await startPublicSurvey(token, {
+          idempotencyKey,
+          recipientToken: persistRecipientToken(token),
+        });
         if (!cancelled) setState("open");
       } catch (error) {
         if (!cancelled) {
@@ -147,7 +163,7 @@ export default function PublicSurveyClient() {
       await submitPublicSurvey(token, {
         answers: result.answers,
         idempotencyKey: window.sessionStorage.getItem(storageKey(token)),
-        recipientToken: new URLSearchParams(window.location.search).get("r"),
+        recipientToken: persistRecipientToken(token),
       });
       setState("completed");
     } catch (error) {

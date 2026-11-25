@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import Link from "next/link";
 import InAppBackLink from "@/components/molecules/InAppBackLink";
 import moment from "moment-timezone";
@@ -65,6 +65,8 @@ type Invoice = {
   originalTickets?: InvoiceTicket[];
   package_tickets?: Array<{ id?: string | number }>;
   users_permissions_user?: InvoiceBuyer | null;
+  paymentStatus?: string;
+  details?: { voided?: unknown } | null;
 };
 
 type InvoiceTicket = {
@@ -113,7 +115,7 @@ function relationList<T>(value: unknown): T[] | null {
 
 /** The activity list often leaves relations wrapped, or omits the flex pack entirely. */
 function presentInvoice(invoice: Invoice): Invoice {
-  const record = invoice as Invoice & Record<string, unknown>;
+  const record = (relationRecord<Invoice>(invoice) || invoice) as Invoice & Record<string, unknown>;
   const vouchers =
     relationList<{ code?: string; flex_pack?: unknown }>(record.vouchers) ??
     invoice.vouchers ??
@@ -125,8 +127,8 @@ function presentInvoice(invoice: Invoice): Invoice {
     relationRecord<NonNullable<Invoice["flex_pack"]>>(record.flex_pack ?? record.flexPack) ||
     null;
   return {
-    ...invoice,
-    event: relationRecord(invoice.event),
+    ...record,
+    event: relationRecord(record.event ?? invoice.event),
     package: relationRecord(record.package ?? record.seasonPackage),
     flex_pack: (flex?.name?.trim() ? flex : null) || voucherPack || flex,
     vouchers: vouchers?.map((voucher) => ({ code: voucher.code })) ?? invoice.vouchers,
@@ -208,13 +210,16 @@ function unwrapFlexPack(data: unknown): NonNullable<Invoice["flex_pack"]> | null
   );
 }
 
-async function hydrateUntitledInvoice(invoice: Invoice): Promise<Invoice> {
-  if (productName(invoice)) return invoice;
+async function hydrateUntitledInvoice(
+  invoice: Invoice,
+  signal?: AbortSignal,
+): Promise<Invoice> {
+  if (signal?.aborted || productName(invoice)) return invoice;
   let next = invoice;
   const orderId = String(invoice.orderId || "");
   if (orderId) {
     try {
-      const res = await getOrder(orderId);
+      const res = await getOrder(orderId, { signal });
       next = mergeActivityInvoice(
         invoice,
         presentInvoice(normalizeOrderPayload(res.data) as Invoice),
@@ -227,7 +232,7 @@ async function hydrateUntitledInvoice(invoice: Invoice): Promise<Invoice> {
     const uuid = flexPackUuid(next) || flexPackUuid(invoice);
     if (uuid) {
       try {
-        const res = await getFlexPack(uuid);
+        const res = await getFlexPack(uuid, { signal });
         const pack = unwrapFlexPack(res.data);
         if (pack?.name?.trim()) {
           next = mergeActivityInvoice(next, {
@@ -250,9 +255,16 @@ async function hydrateUntitledInvoice(invoice: Invoice): Promise<Invoice> {
   }
 }
 
-async function labelUntitledInvoices(invoices: Invoice[]): Promise<Invoice[]> {
-  if (!invoices.some((invoice) => !productName(invoice))) return invoices;
-  return Promise.all(invoices.map((invoice) => hydrateUntitledInvoice(invoice)));
+async function labelUntitledInvoices(
+  invoices: Invoice[],
+  signal?: AbortSignal,
+): Promise<Invoice[]> {
+  if (signal?.aborted || !invoices.some((invoice) => !productName(invoice))) {
+    return invoices;
+  }
+  return Promise.all(
+    invoices.map((invoice) => hydrateUntitledInvoice(invoice, signal)),
+  );
 }
 
 function flexPackPurchase(invoice: Invoice) {
@@ -305,9 +317,23 @@ function ticketCount(invoice: Invoice) {
   return invoice.package_tickets?.length ?? 0;
 }
 
+function statusText(value: unknown) {
+  return typeof value === "string" ? value.trim().toLowerCase() : "";
+}
+
 function invoiceBadge(invoice: Invoice) {
-  const status = invoice.status?.toLowerCase() || "";
-  if (status === "refunded" || status === "released") return "Refunded";
+  const status = statusText(invoice.status);
+  const paymentStatus = statusText(invoice.paymentStatus);
+  const voided = Boolean(invoice.details && typeof invoice.details === "object" && invoice.details.voided);
+  if (
+    status === "refunded" ||
+    status === "released" ||
+    paymentStatus === "refunded" ||
+    paymentStatus === "released" ||
+    voided
+  ) {
+    return "Refunded";
+  }
   return "";
 }
 
@@ -390,10 +416,27 @@ type ActivitySnapshot = {
 
 let activitySnapshot: ActivitySnapshot | null = null;
 let activityRequest: Promise<ActivitySnapshot> | null = null;
+let activityGeneration = 0;
+let activityAbort: AbortController | null = null;
+let activitySubscribers = 0;
+/** Profile visit that already loaded. Inner profile pages reuse it. */
+let loadedProfileVisit = 0;
+const activityListeners = new Set<(snapshot: ActivitySnapshot) => void>();
 
 export function __resetActivitySnapshotForTests() {
+  activityAbort?.abort();
+  activityAbort = null;
+  activitySubscribers = 0;
   activitySnapshot = null;
   activityRequest = null;
+  activityGeneration += 1;
+  loadedProfileVisit = 0;
+  activityListeners.clear();
+}
+
+function publishActivitySnapshot(snapshot: ActivitySnapshot) {
+  activitySnapshot = snapshot;
+  activityListeners.forEach((listener) => listener(snapshot));
 }
 
 /** Assigned and transferred-in tickets were not bought by this shopper, so they stay out of activity. */
@@ -405,52 +448,150 @@ function isPurchaseActivity(invoice: Invoice) {
   return source !== "ticket_assignment" && source !== "transfer";
 }
 
-function loadActivitySnapshot() {
-  if (activitySnapshot) return Promise.resolve(activitySnapshot);
-  if (!activityRequest) {
-    activityRequest = Promise.all([
-      Promise.resolve().then(() => getMyUpcomingOrders()).catch(() => ({ data: [] })),
-      Promise.resolve().then(() => getMyListings()).catch(() => ({ data: [] })),
-      Promise.resolve().then(() => getBankAccount()).catch(() => ({ data: null })),
-    ]).then(async ([orders, listings, account]) => {
-      const listed = (Array.isArray(orders.data) ? orders.data : [])
-        .filter((row) => isPurchaseActivity(row as Invoice))
-        .map((row) => presentInvoice(row as Invoice));
-      const snapshot: ActivitySnapshot = {
-        invoices: await labelUntitledInvoices(listed),
-        sales: soldListings(listings),
-        last4: accountLast4(account),
-      };
-      activitySnapshot = snapshot;
-      return snapshot;
-    });
+function loadActivitySnapshot(options?: { refresh?: boolean; force?: boolean }) {
+  const force = Boolean(options?.force);
+  if (!options?.refresh && !force && activitySnapshot) return Promise.resolve(activitySnapshot);
+  if (!options?.refresh && !force && activityRequest) return activityRequest;
+
+  activityAbort?.abort();
+  const controller = new AbortController();
+  activityAbort = controller;
+  const signal = controller.signal;
+  const generation = ++activityGeneration;
+  const previous = activitySnapshot;
+  const refreshing = Boolean(options?.refresh && !force && previous);
+  let bankLast4 = previous?.last4 || "";
+  // The bank lookup can sit open while the shopper links an account. Profile
+  // still shows purchases; the account number fills in when the bank returns.
+  if (!refreshing) {
+    void Promise.resolve()
+      .then(() => getBankAccount({ signal }))
+      .catch(() => ({ data: null }))
+      .then((account) => {
+        if (generation !== activityGeneration) return;
+        bankLast4 = accountLast4(account);
+        if (!activitySnapshot || activitySnapshot.last4 === bankLast4) return;
+        publishActivitySnapshot({ ...activitySnapshot, last4: bankLast4 });
+      });
   }
+  const request = Promise.all([
+    Promise.resolve()
+      .then(() => getMyUpcomingOrders({ signal }))
+      .then((orders) => ({ ok: true as const, orders }))
+      .catch(() => ({ ok: false as const, orders: { data: [] as unknown[] } })),
+    refreshing
+      ? Promise.resolve(null)
+      : Promise.resolve().then(() => getMyListings({ signal })).catch(() => ({ data: [] })),
+  ]).then(([ordersResult, listings]) => {
+    if ((refreshing || force) && !ordersResult.ok && previous) {
+      if (generation === activityGeneration) publishActivitySnapshot(previous);
+      return activitySnapshot ?? previous;
+    }
+    const orders = ordersResult.orders;
+    const listed = (Array.isArray(orders.data) ? orders.data : [])
+      .filter((row) => isPurchaseActivity(row as Invoice))
+      .map((row) => presentInvoice(row as Invoice));
+    const snapshot: ActivitySnapshot = {
+      invoices: listed,
+      sales: listings ? soldListings(listings) : previous?.sales ?? [],
+      last4: bankLast4,
+    };
+    if (generation !== activityGeneration) return activitySnapshot ?? snapshot;
+    publishActivitySnapshot(snapshot);
+    // The purchase row is already visible. Fill in a missing flex pack name
+    // afterward, and resolve with that named list so it cannot be overwritten.
+    return labelUntitledInvoices(listed, signal).then((invoices) => {
+      if (generation !== activityGeneration) return activitySnapshot ?? snapshot;
+      const named = { ...snapshot, invoices, last4: bankLast4 };
+      publishActivitySnapshot(named);
+      return named;
+    });
+  });
+  activityRequest = request.finally(() => {
+    if (activityRequest === request) activityRequest = null;
+  });
   return activityRequest;
 }
 
-function useActivityData() {
-  const cached = activitySnapshot;
+function useActivityData(options?: { reloadKey?: number; refreshOnMount?: boolean }) {
+  const reloadKey = options?.reloadKey ?? 0;
+  const refreshOnMount = options?.refreshOnMount !== false;
+  const visitRef = useRef<{ key: number; force: boolean } | null>(null);
+  if (!visitRef.current || visitRef.current.key !== reloadKey) {
+    const nextForce = reloadKey > loadedProfileVisit;
+    if (nextForce) loadedProfileVisit = reloadKey;
+    visitRef.current = { key: reloadKey, force: nextForce };
+  }
+  const force = visitRef.current.force;
+  const cached = force ? null : activitySnapshot;
   const [ready, setReady] = useState(Boolean(cached));
-  const [invoices, setInvoices] = useState<Invoice[]>(cached?.invoices ?? []);
-  const [sales, setSales] = useState<SoldListing[]>(cached?.sales ?? []);
-  const [last4, setLast4] = useState(cached?.last4 ?? "");
+  const [invoices, setInvoices] = useState<Invoice[]>(cached?.invoices ?? activitySnapshot?.invoices ?? []);
+  const [sales, setSales] = useState<SoldListing[]>(cached?.sales ?? activitySnapshot?.sales ?? []);
+  const [last4, setLast4] = useState(cached?.last4 ?? activitySnapshot?.last4 ?? "");
 
   useEffect(() => {
-    if (activitySnapshot) return;
     let cancelled = false;
-    void loadActivitySnapshot().then((snapshot) => {
+    const apply = (snapshot: ActivitySnapshot) => {
       if (cancelled) return;
       setInvoices(snapshot.invoices);
       setSales(snapshot.sales);
       setLast4(snapshot.last4);
       setReady(true);
-    });
+    };
+    activitySubscribers += 1;
+    activityListeners.add(apply);
+    // A new arrival from outside Profile waits for a fetch. Pages inside
+    // Profile mount again with the same visit and keep what is already loaded.
+    if (force) {
+      setReady(false);
+      void loadActivitySnapshot({ force: true }).then(apply);
+    } else if (activitySnapshot) {
+      apply(activitySnapshot);
+      if (refreshOnMount) {
+        void loadActivitySnapshot({ refresh: true }).then(apply);
+      }
+    } else {
+      void loadActivitySnapshot().then(apply);
+    }
     return () => {
       cancelled = true;
+      activityListeners.delete(apply);
+      activitySubscribers = Math.max(0, activitySubscribers - 1);
+      if (activitySubscribers === 0) {
+        activityAbort?.abort();
+        activityAbort = null;
+        activityGeneration += 1;
+      }
     };
-  }, []);
+  }, [force, refreshOnMount]);
 
   return { ready, invoices, sales, last4 };
+}
+
+/** Profile page loader. Account activity stays hidden until that load finishes. */
+export function WalletProfileBody({
+  leading,
+  activity,
+  trailing,
+  reloadKey = 0,
+}: {
+  leading: ReactNode;
+  activity: ReactNode;
+  trailing: ReactNode;
+  /** Increments each time the shopper opens /wallet/my-profile. */
+  reloadKey?: number;
+}) {
+  const { ready } = useActivityData({ reloadKey, refreshOnMount: false });
+  if (!ready) {
+    return <WalletTicketsBlocksLoading routeDestination label="Loading profile" />;
+  }
+  return (
+    <>
+      {leading}
+      {activity}
+      {trailing}
+    </>
+  );
 }
 
 function activityLine(invoice: Invoice) {
@@ -607,8 +748,15 @@ async function downloadActivityReceipt(invoice: Invoice) {
   );
 }
 
-export default function WalletAccountActivity() {
-  const { ready, invoices, sales, last4 } = useActivityData();
+export default function WalletAccountActivity({
+  reloadKey,
+}: {
+  /** Set on the profile page so inner profile pages do not fetch again. */
+  reloadKey?: number;
+} = {}) {
+  const { ready, invoices, sales, last4 } = useActivityData(
+    reloadKey == null ? undefined : { reloadKey, refreshOnMount: false },
+  );
   const [downloadingId, setDownloadingId] = useState<string | null>(null);
   const [receiptError, setReceiptError] = useState("");
 
@@ -744,8 +892,15 @@ function feedEntries(invoices: Invoice[], sales: SoldListing[], filter: Activity
   return entries.sort((a, b) => b.at - a.at);
 }
 
-export function WalletActivityPage() {
-  const { ready, invoices, sales, last4 } = useActivityData();
+export function WalletActivityPage({
+  reloadKey,
+}: {
+  /** Set on the profile page so inner profile pages do not fetch again. */
+  reloadKey?: number;
+} = {}) {
+  const { ready, invoices, sales, last4 } = useActivityData(
+    reloadKey == null ? undefined : { reloadKey, refreshOnMount: false },
+  );
   const [filter, setFilter] = useState<ActivityFilter>("all");
   const [downloadingId, setDownloadingId] = useState<string | null>(null);
   const [receiptError, setReceiptError] = useState("");
@@ -780,7 +935,7 @@ export function WalletActivityPage() {
 
   return (
     <div style={{ maxWidth: 1100, margin: "0 auto", padding: "28px 20px 48px", display: "flex", flexDirection: "column", gap: 18, color: NAVY }}>
-      <InAppBackLink href="/wallet/my-profile/" aria-label="Back to profile" style={{ alignSelf: "flex-start", display: "inline-flex", alignItems: "center", gap: 8, fontSize: 14, fontWeight: 600, color: NAVY, background: "#fff", border: "1px solid rgba(5,27,53,0.16)", borderRadius: 999, padding: "9px 16px 9px 12px", textDecoration: "none" }}>
+      <InAppBackLink href="/wallet/my-profile/" aria-label="Back to profile" toProfile style={{ alignSelf: "flex-start", display: "inline-flex", alignItems: "center", gap: 8, fontSize: 14, fontWeight: 600, color: NAVY, background: "#fff", border: "1px solid rgba(5,27,53,0.16)", borderRadius: 999, padding: "9px 16px 9px 12px", textDecoration: "none" }}>
         <ActivityBackArrow />
         Back to profile
       </InAppBackLink>

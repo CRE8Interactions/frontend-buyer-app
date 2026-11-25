@@ -7,6 +7,7 @@ import {
   trackAddPaymentInfo as trackGoogleAddPaymentInfo,
   trackPurchase as trackGooglePurchase,
   trackGoogleAdsPurchase,
+  getGooglePurchaseTransactionId,
 } from "./googleTracking";
 import { injectMetaPixel } from "./metaPixel";
 import {
@@ -337,9 +338,11 @@ export const trackAddPaymentInfo = ({
 export const trackPurchase = ({
   organization,
   order,
+  paymentIntentId,
 }: {
   organization?: TrackingOrganization | null;
   order?: TrackingOrder | null;
+  paymentIntentId?: string;
 }) => {
   initializeTracking(organization);
   const orderWithId = {
@@ -349,10 +352,11 @@ export const trackPurchase = ({
   debugTracking("event purchase", {
     organizationId: organization?.id || organization?.uuid,
     orderId: orderWithId?.orderId,
+    paymentIntentId,
     value: Number(orderWithId?.total) || 0,
     currency: String(orderWithId?.currency || "USD").toUpperCase(),
   });
-  const payload = { organization, order: orderWithId };
+  const payload = { organization, order: orderWithId, paymentIntentId };
   trackGooglePurchase(payload);
   trackMetaPurchase(payload);
 
@@ -366,7 +370,7 @@ export const trackPurchase = ({
   trackGoogleAdsPurchase({
     googleAdsId: organization?.google_ads_id,
     conversionLabel: organization?.google_ads_conversion_label,
-    orderId: orderWithId?.orderId,
+    orderId: getGooglePurchaseTransactionId(orderWithId),
     value: orderWithId?.total,
     currency: orderWithId?.currency,
   });

@@ -134,6 +134,29 @@ describe("Flex pack detail (FlexPackDetailClient)", () => {
     ).toBeInTheDocument();
   });
 
+  it("shows the checkout total without a processing fee when the organization waives it", async () => {
+    const charged = demoFlexPack({
+      price: 79,
+      gameTickets: 7,
+      organization: demoFlexPackTaxableOrganization(),
+    });
+    const waived = demoFlexPack({
+      price: 79,
+      gameTickets: 7,
+      processingFeeWaived: true,
+      organization: demoFlexPackTaxableOrganization(),
+    });
+    await renderFlex(waived);
+
+    expect(
+      await screen.findByText(formatCurrency(flexPackDisplayPrice(waived))),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByText(formatCurrency(flexPackDisplayPrice(charged))),
+    ).not.toBeInTheDocument();
+    expect(screen.getByText("Taxes and fees included")).toBeInTheDocument();
+  });
+
   it("shows an all-in price that includes taxes and the voucher fee", async () => {
     const pack = demoFlexPack({
       price: 79,

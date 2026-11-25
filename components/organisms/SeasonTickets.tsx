@@ -29,10 +29,19 @@ import {
   type ReactNode,
 } from "react";
 import Link from "next/link";
-import { useParams, usePathname, useSearchParams } from "next/navigation";
+import { useParams, usePathname } from "next/navigation";
 import { QRCodeSVG } from "qrcode.react";
+import AddonDigitalPasses from "@/components/organisms/AddonDigitalPasses";
+import PostPurchaseAddonOffer from "@/components/organisms/PostPurchaseAddonOffer";
+import { useOrderDigitalPasses } from "@/hooks/useOrderDigitalPasses";
+import {
+  resolveOrderUUID,
+  type DigitalAddonPass,
+} from "@/lib/addonCatalog";
 import Spinner from "@/components/atoms/Spinner";
 import EntryQrSheet from "@/components/molecules/EntryQrSheet";
+import ListingAskingPriceField from "@/components/molecules/ListingAskingPriceField";
+import { ListingSaleSuccess, ListingSaleSummary } from "@/components/molecules/ListingSaleReview";
 import PayoutBusinessTypeField from "@/components/molecules/PayoutBusinessTypeField";
 import MobileStickyFooter from "@/components/molecules/MobileStickyFooter";
 import WalletChrome from "@/components/organisms/WalletChrome";
@@ -42,8 +51,9 @@ import {
   loadCachedBankAccount,
   readCachedBankAccount,
   rememberCachedBankAccount,
+  type CachedBankAccount,
 } from "@/lib/walletAccountCache";
-import WalletAccountActivity, { WalletActivityPage } from "@/components/organisms/WalletAccountActivity";
+import WalletAccountActivity, { WalletActivityPage, WalletProfileBody } from "@/components/organisms/WalletAccountActivity";
 import {
   WalletTicketsBlocksLoading,
 } from "@/components/organisms/WalletTicketsLoader";
@@ -69,13 +79,14 @@ import {
 } from "@/lib/acceptTransferErrors";
 import {
   CANCEL_TRANSFER_API_ERROR_MESSAGES,
-  isCancelTransferAlreadyClaimedStatus,
   parseCancelTransferApiError,
   parseCancelTransferApiResponse,
 } from "@/lib/cancelTransferErrors";
 import {
   PASS_TRANSFER_DISPLAY_COPY,
+  organizationResaleEnabled,
   parsePassTransferApiError,
+  seasonPassBlockedTransferCopy,
 } from "@/lib/passTransferErrors";
 import {
   parseTicketTransferApiError,
@@ -104,6 +115,7 @@ import {
   listingAskingPriceError,
   listingEventName,
   listingFaceValue,
+  listingPriceDraft,
   listingSchedule,
   listingSeatLines,
   resaleSellerFeeAmount,
@@ -111,7 +123,6 @@ import {
   listingsForTab,
   mapWalletListing,
   mergeListingsById,
-  askingPriceInput,
   parseAskingPrice,
   parseListingApiError,
   removeListingById,
@@ -282,7 +293,7 @@ import { notifyWalletShellReady } from "@/lib/routeTransition";
 import { isWalletNavigationPending } from "@/lib/walletTransition";
 import { useWalletNavigationPending } from "@/hooks/useWalletNavigationPending";
 import { Ticket } from "@/components/atoms/icons";
-import { ButtonBusyContents } from "@/components/atoms/BrandedActionButton";
+import { ButtonBusyContents, CenteredBusyLabel } from "@/components/atoms/BrandedActionButton";
 import { printedTicketHolderName, printTicketsPdf } from "@/lib/ticketPdf";
 import {
   formatPrintedOfferLine,
@@ -370,6 +381,21 @@ function ProfileFieldForm({
   );
 }
 
+function LeadingMetaDot({ color }: { color: string }) {
+  return (
+    <span
+      aria-hidden
+      style={{
+        width: 5,
+        height: 5,
+        borderRadius: 999,
+        background: color,
+        flexShrink: 0,
+      }}
+    />
+  );
+}
+
 function EventScheduleMeta({
   today,
   scheduleLine,
@@ -406,9 +432,7 @@ function EventScheduleMeta({
           Today
         </span>
       ) : (
-        <span
-          style={{ width: 5, height: 5, borderRadius: 999, background: SUB }}
-        />
+        <LeadingMetaDot color={SUB} />
       )}
       {scheduleLine}
     </div>
@@ -1404,7 +1428,11 @@ function TransferModal({
               <svg viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth={2.6} strokeLinecap="round" strokeLinejoin="round" style={{ width: 38, height: 38 }}><polyline points="20 6 9 17 4 12" /></svg>
             </div>
             <div style={{ fontSize: modalType.success, lineHeight: 1.5, fontWeight: 600, letterSpacing: "-0.02em", textAlign: "center" }}>{transferSuccessTitle(kind, count)}</div>
-            <p style={{ margin: 0, fontSize: modalType.body, lineHeight: browseLeading("body"), color: SUB, textAlign: "center" }}>{transferSuccessBody(kind, count)}</p>
+            <p style={{ margin: 0, fontSize: modalType.body, lineHeight: browseLeading("body"), color: SUB, textAlign: "center" }}>{transferSuccessBody(kind, count, transfer.email)}</p>
+            <p style={{ margin: 0, fontSize: fluidSize(12), lineHeight: browseLeading("body"), color: SUB, textAlign: "center" }}>
+              If you have any question please reach out to{" "}
+              <a href="mailto:help@blocktickets.xyz" style={{ color: INK }}>help@blocktickets.xyz</a>
+            </p>
           </div>
         ) : null}
 
@@ -1485,6 +1513,12 @@ function linkedDetailForRoute(
   );
 }
 
+function payoutAccountHasExternal(account: CachedBankAccount) {
+  const raw = account?.external_accounts;
+  if (Array.isArray(raw)) return raw.length > 0;
+  return Boolean(raw);
+}
+
 function linkedBankLast4(account: {
   external_accounts?: { data?: Array<{ last4?: string | number }> } | Array<{ last4?: string | number }> | null;
   last4?: string | number;
@@ -1561,10 +1595,11 @@ function SellModal({
   const [sellFeeRules, setSellFeeRules] = useState<ResaleFeeRule[] | null>(null);
   const [sellPayoutError, setSellPayoutError] = useState("");
   const [sellLinking, setSellLinking] = useState(false);
+  const [sellBankAccount, setSellBankAccount] = useState<CachedBankAccount>(
+    cachedKnown ? cachedAccount ?? null : null,
+  );
 
-  const applySellPayoutAccount = (
-    data: { payouts_enabled?: boolean; business_type?: string } | null | undefined,
-  ) => {
+  const applySellPayoutAccount = (data: CachedBankAccount | undefined) => {
     const linkedType = data?.business_type;
     if (isPayoutBusinessType(linkedType)) {
       setSellBusinessType(linkedType);
@@ -1572,6 +1607,7 @@ function SellModal({
     } else {
       setSellExistingBusinessType(null);
     }
+    setSellBankAccount(data ?? null);
     setSellPayoutReady(data?.payouts_enabled === true);
     setSellPayoutLookup("ready");
     rememberCachedBankAccount(data ?? null);
@@ -1585,9 +1621,7 @@ function SellModal({
     return getBankAccount()
       .then((res) => {
         if (requestId !== sellPayoutLookupRequest.current) return;
-        applySellPayoutAccount(
-          res.data as { payouts_enabled?: boolean; business_type?: string } | undefined,
-        );
+        applySellPayoutAccount(res.data as CachedBankAccount | undefined);
       })
       .catch(() => {
         if (requestId !== sellPayoutLookupRequest.current) return;
@@ -1656,17 +1690,13 @@ function SellModal({
     sellSelectedTickets.map(({ ticket }) => (ticket.raw ?? ticket) as TicketLike),
   );
   const sellMinPercent = eventResaleMinimumPercent(sellEv?.event);
-  const sellAsking = parseAskingPrice(sell.price || "") ?? 0;
-  const sellMinimumError =
-    sellAsking > 0
-      ? listingAskingPriceError(sell.price, {
-          face: sellFace,
-          resaleMinimumPercent: sellMinPercent,
-          mode: "blur",
-        })
-      : null;
+  const sellPrice = listingPriceDraft(sell.price, {
+    face: sellFace,
+    resaleMinimumPercent: sellMinPercent,
+    fieldError: sellPriceErr,
+  });
+  const sellAsking = sellPrice.asking;
   const sellFee = resaleSellerFeeAmount(sellAsking, sellFeeRules, sellEv?.event);
-  const sellPayout = (sellAsking - sellFee) * (sellSelectedTickets.length || 1);
   const closeSellModal = () => {
     if (sellSaving) return;
     onClose();
@@ -1694,13 +1724,12 @@ function SellModal({
     }
     setSellLinking(false);
   };
-  const sellPriceAmount = parseAskingPrice(sell.price || "") ?? 0;
   const sellCanNext =
     !sellSaving &&
     (sellStep === 1
       ? sellSelectedTickets.length > 0
       : sellStep === 2
-        ? sellPriceAmount > 0 && !sellMinimumError
+        ? sellPrice.canContinue
         : true);
   const doSellPrimary = async () => {
     if (sellStep === 1 && sellSelectedTickets.length === 0) return;
@@ -1771,11 +1800,10 @@ function SellModal({
       }
     }
   };
-  const inFlight = sellSaving && sellStep === 3;
+  const sellPrimaryLabel =
+    sellStep === 1 ? "Set price" : sellStep === 2 ? "Payout summary" : sellStep === 3 ? "Agree and sell" : "Close";
+  const sellPrimaryReady = sellCanNext || sellSaving;
   const sellTicketCount = Math.max(sellSelectedTickets.length, 1);
-  const sellTicketsWord = sellTicketCount === 1 ? "ticket" : "tickets";
-  const sellFeeTotal = sellFee * sellTicketCount;
-  const sellTicketsTotal = sellAsking * sellTicketCount;
   const transferModalType = {
     title: 21,
     stepTitle: 17,
@@ -1804,8 +1832,99 @@ function SellModal({
     sellStep === 1 &&
     sellPayoutReady !== true &&
     (sellPayoutLookup === "loading" || sellPayoutLookup === null);
-  const reserveTicketHeight =
-    checkingPayout && readCachedBankAccount()?.payouts_enabled === true;
+  const sellPayoutInProgress =
+    sellPayoutLookup === "ready" &&
+    sellPayoutReady !== true &&
+    payoutAccountHasExternal(sellBankAccount);
+  const showTicketStep = sellStep === 1 && sellPayoutReady === true;
+  // A known linked account locks every step before the lookup spinner clears.
+  // No account, or a partial one, stays at the tallest step-1 layout.
+  const cachedLinked = cachedKnown && cachedAccount?.payouts_enabled === true;
+  const lockAllSteps = sellPayoutReady === true || (sellPayoutReady == null && cachedLinked);
+  const showBankStep = sellStep === 1 && !showTicketStep && !checkingPayout;
+  const ticketPaneRef = useRef<HTMLDivElement>(null);
+  const bankPaneRef = useRef<HTMLDivElement>(null);
+  const pricePaneRef = useRef<HTMLDivElement>(null);
+  const summaryPaneRef = useRef<HTMLDivElement>(null);
+  const successPaneRef = useRef<HTMLDivElement>(null);
+  const [sellBodyMinHeight, setSellBodyMinHeight] = useState(0);
+  useLayoutEffect(() => {
+    if (!lockAllSteps && sellStep !== 1) return;
+    const panes = lockAllSteps
+      ? [ticketPaneRef, pricePaneRef, summaryPaneRef, successPaneRef]
+      : [ticketPaneRef, bankPaneRef];
+    const next = Math.ceil(
+      Math.max(0, ...panes.map((pane) => pane.current?.scrollHeight ?? 0)),
+    );
+    setSellBodyMinHeight((current) => {
+      const resolved = lockAllSteps ? Math.max(current, next) : next;
+      return current === resolved ? current : resolved;
+    });
+  }, [
+    lockAllSteps,
+    sellStep,
+    sellTickets.length,
+    sellSelectedTickets.length,
+    sellPayoutInProgress,
+    checkingPayout,
+    sellPayoutLookup,
+    showTicketStep,
+    showBankStep,
+    sellPayoutError,
+    sellError,
+    sellPriceErr,
+    sellLinking,
+    sellSaving,
+    sell.price,
+    sellAsking,
+    sellFee,
+    sellTicketCount,
+  ]);
+  const sellPaneStyle = (visible: boolean): CSSProperties => ({
+    display: "flex",
+    flexDirection: "column",
+    gap: 18,
+    width: "100%",
+    top: 0,
+    left: 0,
+    visibility: visible ? "visible" : "hidden",
+    position: visible ? "relative" : "absolute",
+    pointerEvents: visible ? undefined : "none",
+  });
+  const sellStepActions = (step: 2 | 3 | 4) => {
+    const label = step === 2 ? "Payout summary" : step === 3 ? "Agree and sell" : "Close";
+    const active = step === sellStep;
+    const ready = active && (sellCanNext || sellSaving);
+    return (
+      <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+        {step === 2 || step === 3 ? (
+          <button type="button" disabled={!active || sellSaving} onClick={() => { setSellError(""); setSellPriceErr(null); setSell((current) => ({ ...current, step: current.step - 1 })); }} style={{ fontFamily: "inherit", flexShrink: 0, display: "flex", alignItems: "center", gap: 8, fontSize: transferModalType.button, lineHeight: 1.5, fontWeight: 600, color: INK, background: "#fff", border: "none", padding: "14px 12px", minHeight: 48, cursor: active && !sellSaving ? "pointer" : "default" }}><BackArrow />Back</button>
+        ) : null}
+        {step === 4 ? (
+          <Link href={walletSectionHref("resale")} onClick={() => { closeSellModal(); }} style={{ fontFamily: "inherit", flex: 1, display: "flex", alignItems: "center", justifyContent: "center", fontSize: transferModalType.button, fontWeight: 600, color: INK, background: "#f1f3f8", borderRadius: 999, padding: 14, minHeight: 48, textDecoration: "none", cursor: "pointer" }}>Go to My listings</Link>
+        ) : null}
+        <button
+          type="button"
+          onClick={() => void doSellPrimary()}
+          disabled={!active || !sellCanNext || sellSaving}
+          aria-label={label}
+          aria-busy={active && sellSaving || undefined}
+          style={{ fontFamily: "inherit", flex: 1, display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 8, fontSize: transferModalType.button, lineHeight: 1.5, fontWeight: 600, color: ready ? INK : MUTE, background: ready ? ACCENT : "#d7dbe6", border: "none", borderRadius: 999, padding: 14, minHeight: 48, cursor: active && !sellSaving ? "pointer" : "default", opacity: active && sellSaving ? 0.55 : 1 }}
+        >
+          <CenteredBusyLabel loading={active && sellSaving} spinnerColor={INK} trackColor="rgba(5,27,53,0.2)">
+            <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
+              {label}
+              {step === 2 ? (
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.75} strokeLinecap="round" strokeLinejoin="round" aria-hidden style={{ width: 16, height: 16, display: "block", transform: "translateY(1px)" }}>
+                  <path d="M5 12h14M13 6l6 6-6 6" />
+                </svg>
+              ) : null}
+            </span>
+          </CenteredBusyLabel>
+        </button>
+      </div>
+    );
+  };
   const BackArrow = () => (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" style={{ width: 16, height: 16 }}><line x1="19" y1="12" x2="5" y2="12" /><polyline points="12 19 5 12 12 5" /></svg>
   );
@@ -1822,47 +1941,92 @@ function SellModal({
             </button>
           )}
           </div>
-          {sellPayoutReady !== true && sellStep === 1 && !reserveTicketHeight ? (
-            <div
-              aria-hidden={sellPayoutLookup === "loading" || sellPayoutLookup === null || undefined}
-              style={{
-                display: "flex",
-                flexDirection: "column",
-                gap: 12,
-                visibility: sellPayoutLookup === "loading" || sellPayoutLookup === null ? "hidden" : "visible",
-              }}
-            >
-              <div style={{ fontSize: transferModalType.stepTitle, lineHeight: 1.5, fontWeight: 600, letterSpacing: "-0.015em" }}>Link a bank account</div>
-              <p style={{ margin: 0, fontSize: transferModalType.body, lineHeight: browseLeading("body"), color: SUB }}>
-                A payout account is required before you can list tickets. After the event, your payout is sent to that account.
-              </p>
-              {sellPayoutLookup === "error" ? null : (
-                <PayoutBusinessTypeField
-                  id="sell-payout-business-type"
-                  value={sellBusinessType}
-                  onChange={setSellBusinessType}
-                  currentBusinessType={sellExistingBusinessType}
-                  disabled={sellLinking}
-                />
-              )}
-              {sellPayoutError ? (
-                <div role="alert" style={{ fontSize: transferModalType.error, color: DANGER }}>{sellPayoutError}</div>
-              ) : null}
-              <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          {sellStep === 1 || lockAllSteps ? (
+            <div style={{ position: "relative", minHeight: sellBodyMinHeight || undefined }}>
+              <div
+                ref={ticketPaneRef}
+                inert={!showTicketStep || checkingPayout}
+                aria-hidden={!showTicketStep || checkingPayout}
+                style={{ display: "flex", flexDirection: "column", gap: 18, width: "100%", top: 0, left: 0, visibility: showTicketStep && !checkingPayout ? "visible" : "hidden", position: showTicketStep && !checkingPayout ? "relative" : "absolute", pointerEvents: showTicketStep && !checkingPayout ? undefined : "none" }}
+              >
+                <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+                  <div style={{ fontSize: transferModalType.stepTitle, lineHeight: 1.5, fontWeight: 600, letterSpacing: "-0.015em" }}>Select tickets to sell</div>
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
+                    <div style={{ fontSize: transferModalType.meta, lineHeight: 1.5, fontWeight: 600, color: mobile ? SUB : FAINT }}>{sellRowLabel}</div>
+                    <div style={{ fontSize: transferModalType.metaMuted, lineHeight: 1.5, fontWeight: 600, color: mobile ? SUB : MUTE }}>{sellTickets.length} {sellTickets.length === 1 ? "ticket" : "tickets"}</div>
+                  </div>
+                  <div style={{ display: "flex", flexWrap: "wrap", gap: 10 }}>
+                    {sellTickets.map(({ key, seatNo, isGA, ariaLabel }) => {
+                      const picked = sellSel.includes(key);
+                      return (
+                        <button key={key} type="button" aria-pressed={picked} aria-label={ariaLabel} onClick={() => setSell((current) => ({ ...current, sel: picked ? current.sel.filter((x) => x !== key) : [...current.sel, key] }))} style={{ fontFamily: "inherit", ...transferChipStyle, display: "flex", flexDirection: "column", alignItems: "center", gap: isGA ? 0 : 2, background: picked ? ACCENT : FIELD, color: INK, border: `1px solid ${picked ? ACCENT : "rgba(5,27,53,0.10)"}`, borderRadius: 16, cursor: "pointer" }}>
+                          {!isGA ? (
+                            <span style={{ fontSize: transferChipType.seatLabel, lineHeight: 1.5, fontWeight: 500, color: picked ? "rgba(255,255,255,0.72)" : MUTE }}>Seat</span>
+                          ) : null}
+                          <span style={{ fontSize: transferChipType.seatNo, fontWeight: 600, letterSpacing: "-0.02em", lineHeight: 1.5 }}>{seatNo}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => void doSellPrimary()}
+                  disabled={!sellCanNext}
+                  style={{ fontFamily: "inherit", display: "inline-flex", alignItems: "center", justifyContent: "center", fontSize: transferModalType.button, lineHeight: 1.5, fontWeight: 600, color: sellCanNext ? INK : MUTE, background: sellCanNext ? ACCENT : "#d7dbe6", border: "none", borderRadius: 999, padding: 14, minHeight: 48, cursor: "pointer" }}
+                >
+                  Set price
+                </button>
+              </div>
+              <div
+                ref={bankPaneRef}
+                inert={!showBankStep}
+                aria-hidden={!showBankStep}
+                style={{ display: "flex", flexDirection: "column", gap: 12, width: "100%", top: 0, left: 0, visibility: showBankStep ? "visible" : "hidden", position: showBankStep ? "relative" : "absolute", pointerEvents: showBankStep ? undefined : "none" }}
+              >
+                <div style={{ fontSize: transferModalType.stepTitle, lineHeight: 1.5, fontWeight: 600, letterSpacing: "-0.015em" }}>Link a bank account</div>
+                <div style={{ display: "grid", alignItems: "start" }}>
+                  <p style={{ gridArea: "1 / 1", margin: 0, fontSize: transferModalType.body, lineHeight: browseLeading("body"), color: SUB, visibility: sellPayoutInProgress ? "hidden" : "inherit" }}>
+                    A payout account is required before you can list tickets. After the event, your payout is sent to that account.
+                  </p>
+                  <p style={{ gridArea: "1 / 1", margin: 0, fontSize: transferModalType.body, lineHeight: browseLeading("body"), color: SUB, visibility: sellPayoutInProgress ? "inherit" : "hidden" }}>
+                    You haven&apos;t finished setting up your banking info, please continue to finish setting up your bank account
+                  </p>
+                </div>
+                {sellPayoutLookup === "error" ? null : (
+                  <PayoutBusinessTypeField
+                    id="sell-payout-business-type"
+                    value={sellBusinessType}
+                    onChange={setSellBusinessType}
+                    currentBusinessType={sellExistingBusinessType}
+                    disabled={sellLinking}
+                  />
+                )}
                 <button
                   type="button"
                   onClick={() => void linkSellBank()}
                   disabled={sellPayoutLookup !== "ready" || sellLinking}
                   aria-busy={sellLinking || undefined}
-                  style={{ fontFamily: "inherit", flex: "1 1 0", display: "flex", alignItems: "center", justifyContent: "center", fontSize: transferModalType.button, fontWeight: 600, color: INK, background: ACCENT, border: "none", borderRadius: 999, padding: "14px 12px", minHeight: 48, opacity: sellLinking ? 0.55 : 1, cursor: sellPayoutLookup === "ready" && !sellLinking ? "pointer" : "default" }}
+                  style={{ fontFamily: "inherit", width: "100%", display: "flex", alignItems: "center", justifyContent: "center", fontSize: transferModalType.button, fontWeight: 600, color: INK, background: ACCENT, border: "none", borderRadius: 999, padding: "14px 12px", minHeight: 48, opacity: sellLinking ? 0.55 : 1, cursor: sellPayoutLookup === "ready" && !sellLinking ? "pointer" : "default" }}
                 >
                   <span style={{ position: "relative", display: "inline-flex", alignItems: "center", justifyContent: "center", maxWidth: "100%" }}>
                     <span style={{ opacity: sellLinking ? 0 : 1, display: "inline-flex", alignItems: "center", gap: 8, whiteSpace: "nowrap" }}>
-                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.4} strokeLinecap="round" aria-hidden style={{ width: 16, height: 16, flexShrink: 0 }}>
-                        <line x1="12" y1="5" x2="12" y2="19" />
-                        <line x1="5" y1="12" x2="19" y2="12" />
-                      </svg>
-                      Link bank account
+                      {sellPayoutInProgress ? (
+                        <>
+                          Continue
+                          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.75} strokeLinecap="round" strokeLinejoin="round" aria-hidden style={{ width: 16, height: 16, display: "block" }}>
+                            <path d="M5 12h14M13 6l6 6-6 6" />
+                          </svg>
+                        </>
+                      ) : (
+                        <>
+                          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.4} strokeLinecap="round" aria-hidden style={{ width: 16, height: 16, flexShrink: 0 }}>
+                            <line x1="12" y1="5" x2="12" y2="19" />
+                            <line x1="5" y1="12" x2="19" y2="12" />
+                          </svg>
+                          Link bank account
+                        </>
+                      )}
                     </span>
                     {sellLinking ? (
                       <span aria-hidden style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center" }}>
@@ -1871,15 +2035,47 @@ function SellModal({
                     ) : null}
                   </span>
                 </button>
-                <button
-                  type="button"
-                  onClick={() => void refreshSellPayout()}
-                  disabled={sellPayoutLookup === "loading" || sellPayoutLookup === null}
-                  style={{ fontFamily: "inherit", flex: "1 1 0", fontSize: transferModalType.button, fontWeight: 600, color: INK, background: "#fff", border: "1px solid rgba(5,27,53,0.14)", borderRadius: 999, padding: "14px 12px", minHeight: 48, cursor: sellPayoutLookup === "loading" || sellPayoutLookup === null ? "default" : "pointer" }}
-                >
-                  {sellPayoutLookup === "error" ? "Try again" : "I've finished linking"}
-                </button>
+                {sellPayoutError ? (
+                  <div role="alert" style={{ fontSize: transferModalType.error, color: DANGER }}>{sellPayoutError}</div>
+                ) : null}
               </div>
+              {lockAllSteps ? (
+                <>
+                  <div ref={pricePaneRef} inert={sellStep !== 2} aria-hidden={sellStep !== 2} style={sellPaneStyle(sellStep === 2)}>
+                    <ListingAskingPriceField
+                      id="sell-asking-price"
+                      value={sell.price}
+                      ticketCount={sellSelectedTickets.length}
+                      face={sellFace}
+                      resaleMinimumPercent={sellMinPercent}
+                      fieldError={sellPriceErr}
+                      autoFocus={sellStep === 2}
+                      onValueChange={(price) => {
+                        setSell((current) => ({ ...current, price }));
+                        if (sellPriceErr) setSellPriceErr(null);
+                      }}
+                      onFieldError={setSellPriceErr}
+                      onSubmit={() => void doSellPrimary()}
+                    />
+                    {sellStepActions(2)}
+                  </div>
+                  <div ref={summaryPaneRef} inert={sellStep !== 3} aria-hidden={sellStep !== 3} style={sellPaneStyle(sellStep === 3)}>
+                    <ListingSaleSummary
+                      asking={sellAsking}
+                      ticketCount={sellTicketCount}
+                      fee={sellFee}
+                    />
+                    {sellError ? (
+                      <div role="alert" style={{ fontSize: transferModalType.error, color: DANGER }}>{sellError}</div>
+                    ) : null}
+                    {sellStepActions(3)}
+                  </div>
+                  <div ref={successPaneRef} inert={sellStep !== 4} aria-hidden={sellStep !== 4} style={sellPaneStyle(sellStep === 4)}>
+                    <ListingSaleSuccess mode="listed" ticketCount={sellTicketCount} />
+                    {sellStepActions(4)}
+                  </div>
+                </>
+              ) : null}
             </div>
           ) : null}
           {checkingPayout ? (
@@ -1887,163 +2083,39 @@ function SellModal({
               <Spinner size={18} variant="compact" color={ACCENT} trackColor="rgba(166,231,115,0.35)" label="Loading" />
             </div>
           ) : null}
-          {reserveTicketHeight ? (
-            <div aria-hidden style={{ visibility: "hidden", pointerEvents: "none", display: "flex", flexDirection: "column", gap: 18 }}>
-              <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-                <div style={{ fontSize: transferModalType.stepTitle, lineHeight: 1.5, fontWeight: 600, letterSpacing: "-0.015em" }}>Select tickets to sell</div>
-                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
-                  <div style={{ fontSize: transferModalType.meta, lineHeight: 1.5, fontWeight: 600, color: mobile ? SUB : FAINT }}>{sellRowLabel}</div>
-                  <div style={{ fontSize: transferModalType.metaMuted, lineHeight: 1.5, fontWeight: 600, color: mobile ? SUB : MUTE }}>{sellTickets.length} {sellTickets.length === 1 ? "ticket" : "tickets"}</div>
-                </div>
-                <div style={{ height: 87 }} />
-              </div>
-              <button type="button" tabIndex={-1} disabled style={{ fontFamily: "inherit", display: "inline-flex", alignItems: "center", justifyContent: "center", fontSize: transferModalType.button, lineHeight: 1.5, fontWeight: 600, color: MUTE, background: "#d7dbe6", border: "none", borderRadius: 999, padding: 14, minHeight: 48 }}>Set price</button>
-            </div>
-          ) : null}
-          {sellPayoutReady === true && sellStep === 1 && (
-            <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-              <div style={{ fontSize: transferModalType.stepTitle, lineHeight: 1.5, fontWeight: 600, letterSpacing: "-0.015em" }}>Select tickets to sell</div>
-              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
-                <div style={{ fontSize: transferModalType.meta, lineHeight: 1.5, fontWeight: 600, color: mobile ? SUB : FAINT }}>{sellRowLabel}</div>
-                <div style={{ fontSize: transferModalType.metaMuted, lineHeight: 1.5, fontWeight: 600, color: mobile ? SUB : MUTE }}>{sellTickets.length} {sellTickets.length === 1 ? "ticket" : "tickets"}</div>
-              </div>
-              <div style={{ display: "flex", flexWrap: "wrap", gap: 10 }}>
-                {sellTickets.map(({ key, seatNo, isGA, ariaLabel }) => {
-                  const picked = sellSel.includes(key);
-                  return (
-                    <button key={key} type="button" aria-pressed={picked} aria-label={ariaLabel} onClick={() => setSell((current) => ({ ...current, sel: picked ? current.sel.filter((x) => x !== key) : [...current.sel, key] }))} style={{ fontFamily: "inherit", ...transferChipStyle, display: "flex", flexDirection: "column", alignItems: "center", gap: isGA ? 0 : 2, background: picked ? ACCENT : FIELD, color: INK, border: `1px solid ${picked ? ACCENT : "rgba(5,27,53,0.10)"}`, borderRadius: 16, cursor: "pointer" }}>
-                      {!isGA ? (
-                        <span style={{ fontSize: transferChipType.seatLabel, lineHeight: 1.5, fontWeight: 500, color: picked ? "rgba(255,255,255,0.72)" : MUTE }}>Seat</span>
-                      ) : null}
-                      <span style={{ fontSize: transferChipType.seatNo, fontWeight: 600, letterSpacing: "-0.02em", lineHeight: 1.5 }}>{seatNo}</span>
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
+          {!lockAllSteps && sellStep === 2 && (
+            <ListingAskingPriceField
+              id="sell-asking-price"
+              value={sell.price}
+              ticketCount={sellSelectedTickets.length}
+              face={sellFace}
+              resaleMinimumPercent={sellMinPercent}
+              fieldError={sellPriceErr}
+              onValueChange={(price) => {
+                setSell((current) => ({ ...current, price }));
+                if (sellPriceErr) setSellPriceErr(null);
+              }}
+              onFieldError={setSellPriceErr}
+              onSubmit={() => void doSellPrimary()}
+            />
           )}
-          {sellStep === 2 && (
-            <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-              <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-                <div style={{ fontSize: transferModalType.stepTitle, lineHeight: 1.5, fontWeight: 600, letterSpacing: "-0.015em" }}>
-                  Price your {sellSelectedTickets.length === 1 ? "ticket" : "tickets"}
-                </div>
-                <div style={{ fontSize: transferModalType.body, lineHeight: browseLeading("body"), color: SUB }}>
-                  Ticket face value {formatCurrency(sellFace)}
-                </div>
-              </div>
-              <label
-                htmlFor="sell-asking-price"
-                style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 2, background: FIELD, borderRadius: 14, padding: "18px 16px", border: `1px solid ${sellPriceErr || sellMinimumError ? DANGER : "transparent"}` }}
-              >
-                <span
-                  onMouseDown={(event) => {
-                    const field = event.currentTarget.querySelector("input");
-                    if (!field) return;
-                    event.preventDefault();
-                    field.focus();
-                    const end = field.value.length;
-                    field.setSelectionRange(end, end);
-                  }}
-                  style={{ display: "flex", alignItems: "center", justifyContent: "center", width: "100%", minHeight: 35, cursor: "text" }}
-                >
-                  <span style={{ fontSize: fluidSize(28), fontWeight: 700, color: INK, lineHeight: 1 }}>$</span>
-                  <input
-                    id="sell-asking-price"
-                    inputMode="decimal"
-                    autoFocus
-                    value={sell.price}
-                    onFocus={(event) => {
-                      const end = event.currentTarget.value.length;
-                      event.currentTarget.setSelectionRange(end, end);
-                    }}
-                    onChange={(e) => {
-                      setSell((current) => ({ ...current, price: askingPriceInput(e.target.value) }));
-                      if (sellPriceErr) setSellPriceErr(null);
-                    }}
-                    onBlur={() => {
-                      setSellPriceErr(
-                        listingAskingPriceError(sell.price, {
-                          face: sellFace,
-                          resaleMinimumPercent: sellMinPercent,
-                          mode: "blur",
-                        }),
-                      );
-                    }}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter") {
-                        e.preventDefault();
-                        void doSellPrimary();
-                      }
-                    }}
-                    style={{ fontFamily: "inherit", width: `${Math.max(String(sell.price || "0").length, 1)}ch`, boxSizing: "content-box", fontSize: fluidSize(28), fontWeight: 700, color: INK, lineHeight: 1, textAlign: "left", background: "transparent", border: "none", outline: "none", padding: 0 }}
-                  />
-                </span>
-                <span role={sellPriceErr || sellMinimumError ? "alert" : undefined} style={{ fontSize: transferModalType.fieldLabel, fontWeight: 500, color: sellPriceErr || sellMinimumError ? DANGER : FAINT }}>
-                  {(sellAsking > 0 ? sellMinimumError : sellPriceErr) || "Price per ticket"}
-                </span>
-              </label>
-            </div>
+          {!lockAllSteps && sellStep === 3 && (
+            <ListingSaleSummary
+              asking={sellAsking}
+              ticketCount={sellTicketCount}
+              fee={sellFee}
+            />
           )}
-          {sellStep === 3 && (
-            <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-              <div style={{ display: "flex", flexDirection: "column", gap: 6, paddingBottom: 14, borderBottom: "1px solid rgba(5,27,53,0.08)" }}>
-                <div style={{ fontSize: transferModalType.stepTitle, lineHeight: 1.5, fontWeight: 600, letterSpacing: "-0.015em" }}>Payment Summary</div>
-                <p style={{ margin: 0, fontSize: transferModalType.body, lineHeight: browseLeading("body"), color: SUB }}>
-                  Please go to &apos;Settings&apos; in your &apos;Wallet&apos; and make sure your bank account is linked in order to receive funds from ticket sales.
-                </p>
-              </div>
-              <div style={{ fontSize: transferModalType.fieldLabel, fontWeight: 600, letterSpacing: "0.06em", textTransform: "uppercase", color: FAINT }}>Ticket Breakdown</div>
-              <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-                <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                  <div style={{ fontSize: transferModalType.fieldValue, fontWeight: 600 }}>Tickets</div>
-                  <div style={{ display: "flex", justifyContent: "space-between", gap: 12, fontSize: transferModalType.body, color: SUB }}>
-                    <span>Tickets: {formatCurrency(sellAsking)} x {sellTicketCount}</span>
-                    <span>{formatCurrency(sellTicketsTotal)}</span>
-                  </div>
-                </div>
-                <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                  <div style={{ fontSize: transferModalType.fieldValue, fontWeight: 600 }}>Service Fees</div>
-                  <div style={{ display: "flex", justifyContent: "space-between", gap: 12, fontSize: transferModalType.body, color: SUB }}>
-                    <span>Service Fees: {formatCurrency(sellFee)} x {sellTicketCount}</span>
-                    <span>(-{formatCurrency(sellFeeTotal)})</span>
-                  </div>
-                </div>
-                <div style={{ display: "flex", justifyContent: "space-between", gap: 12, fontSize: transferModalType.fieldValue, fontWeight: 600 }}>
-                  <span>Your Payout</span>
-                  <span>{formatCurrency(sellPayout)}</span>
-                </div>
-              </div>
-              <p style={{ margin: 0, fontSize: transferModalType.fieldLabel, lineHeight: browseLeading("body"), color: SUB }}>
-                By clicking &apos;Agree and sell&apos; you are consenting to Blocktickets{" "}
-                <Link href="/terms-conditions/" target="_blank" style={{ color: INK }}>terms and conditions</Link>.
-              </p>
-            </div>
-          )}
-          {sellError && sellStep !== 2 ? (
+          {!lockAllSteps && sellError && sellStep !== 2 ? (
             <div role="alert" style={{ fontSize: transferModalType.error, color: DANGER }}>{sellError}</div>
           ) : null}
-          {sellStep === 4 && !sellSaving ? (
-            <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 14, padding: "6px 0 2px" }}>
-              <div style={{ width: 78, height: 78, borderRadius: 999, background: GREEN, display: "flex", alignItems: "center", justifyContent: "center" }}>
-                <svg viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth={2.6} strokeLinecap="round" strokeLinejoin="round" style={{ width: 38, height: 38 }}><polyline points="20 6 9 17 4 12" /></svg>
-              </div>
-              <div style={{ fontSize: transferModalType.success, lineHeight: 1.5, fontWeight: 600, letterSpacing: "-0.02em", textAlign: "center" }}>
-                Your {sellTicketsWord} {sellTicketCount === 1 ? "is" : "are"} listed for sale!
-              </div>
-              <p style={{ margin: 0, fontSize: transferModalType.body, lineHeight: browseLeading("body"), color: SUB, textAlign: "center" }}>
-                We will notify you via sms if a purchase is made. While your {sellTicketsWord} {sellTicketCount === 1 ? "is" : "are"} listed, you can change the price or delist {sellTicketCount === 1 ? "it" : "them"} from the marketplace in &apos;My listings&apos; at anytime.
-              </p>
-              <p style={{ margin: 0, fontSize: transferModalType.fieldLabel, lineHeight: browseLeading("body"), color: SUB, textAlign: "center" }}>
-                If you have any question please reach out to{" "}
-                <a href="mailto:help@blocktickets.xyz" style={{ color: INK }}>help@blocktickets.xyz</a>
-              </p>
-            </div>
+          {!lockAllSteps && sellStep === 4 && !sellSaving ? (
+            <ListingSaleSuccess mode="listed" ticketCount={sellTicketCount} />
           ) : null}
-          {sellStep > 1 || sellPayoutReady === true ? (
+          {!lockAllSteps && sellStep > 1 ? (
           <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-            {(sellStep === 2 || (sellStep === 3 && !inFlight)) ? (
-              <button type="button" onClick={() => { setSellError(""); setSellPriceErr(null); setSell((current) => ({ ...current, step: current.step - 1 })); }} style={{ fontFamily: "inherit", flexShrink: 0, display: "flex", alignItems: "center", gap: 8, fontSize: transferModalType.button, lineHeight: 1.5, fontWeight: 600, color: INK, background: "#fff", border: "none", padding: "14px 12px", minHeight: 48, cursor: "pointer" }}><BackArrow />Back</button>
+            {(sellStep === 2 || sellStep === 3) ? (
+              <button type="button" disabled={sellSaving} onClick={() => { setSellError(""); setSellPriceErr(null); setSell((current) => ({ ...current, step: current.step - 1 })); }} style={{ fontFamily: "inherit", flexShrink: 0, display: "flex", alignItems: "center", gap: 8, fontSize: transferModalType.button, lineHeight: 1.5, fontWeight: 600, color: INK, background: "#fff", border: "none", padding: "14px 12px", minHeight: 48, cursor: sellSaving ? "default" : "pointer" }}><BackArrow />Back</button>
             ) : null}
             {sellStep === 4 && !sellSaving && (
               <Link href={walletSectionHref("resale")} onClick={() => { closeSellModal(); }} style={{ fontFamily: "inherit", flex: 1, display: "flex", alignItems: "center", justifyContent: "center", fontSize: transferModalType.button, fontWeight: 600, color: INK, background: "#f1f3f8", borderRadius: 999, padding: 14, minHeight: 48, textDecoration: "none", cursor: "pointer" }}>Go to My listings</Link>
@@ -2052,30 +2124,32 @@ function SellModal({
               type="button"
               onClick={() => void doSellPrimary()}
               disabled={!sellCanNext || sellSaving}
+              aria-label={sellPrimaryLabel}
               aria-busy={sellSaving || undefined}
-              style={{ fontFamily: "inherit", flex: 1, display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 8, fontSize: transferModalType.button, lineHeight: 1.5, fontWeight: 600, color: sellCanNext ? INK : MUTE, background: sellCanNext ? ACCENT : "#d7dbe6", border: "none", borderRadius: 999, padding: 14, minHeight: 48, cursor: "pointer" }}
+              style={{ fontFamily: "inherit", flex: 1, display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 8, fontSize: transferModalType.button, lineHeight: 1.5, fontWeight: 600, color: sellPrimaryReady ? INK : MUTE, background: sellPrimaryReady ? ACCENT : "#d7dbe6", border: "none", borderRadius: 999, padding: 14, minHeight: 48, cursor: sellSaving ? "default" : "pointer", opacity: sellSaving ? 0.55 : 1 }}
             >
-              <ButtonBusyContents
-                loading={sellSaving}
-                loadingLabel="Listing…"
-                spinnerColor={INK}
-                trackColor="rgba(5,27,53,0.2)"
-              >
+              <CenteredBusyLabel loading={sellSaving} spinnerColor={INK} trackColor="rgba(5,27,53,0.2)">
                 <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
-                  {sellStep === 1 ? "Set price" : sellStep === 2 ? "Payout summary" : sellStep === 3 ? "Agree and sell" : "Close"}
+                  {sellPrimaryLabel}
                   {sellStep === 2 ? (
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.75} strokeLinecap="round" strokeLinejoin="round" aria-hidden style={{ width: 16, height: 16, display: "block", transform: "translateY(1px)" }}>
                       <path d="M5 12h14M13 6l6 6-6 6" />
                     </svg>
                   ) : null}
                 </span>
-              </ButtonBusyContents>
+              </CenteredBusyLabel>
             </button>
           </div>
           ) : null}
         </div>
       </div>
   );
+}
+
+/** Query flags without useSearchParams, which suspends the wallet on the first navigation. */
+function walletLocationQuery(name: string) {
+  if (typeof window === "undefined") return "";
+  return new URLSearchParams(window.location.search).get(name) || "";
 }
 
 export default function SeasonTickets({
@@ -2096,7 +2170,11 @@ export default function SeasonTickets({
   }>();
   const pathname = usePathname() || "";
   const pendingNavPath = useWalletNavigationPending();
-  const searchParams = useSearchParams();
+  // Read the query from the address bar. useSearchParams suspends this screen
+  // during development navigations, and the wallet layout has no fallback, so
+  // the first visit to profile would paint nothing.
+  const loginQuery = walletLocationQuery("login");
+  const bankProcessing = Boolean(walletLocationQuery("processing"));
   const route = walletRouteFromPath(pathname, params);
   const routedOrderId = route.orderId;
   const routedEventUUID = eventUUID || route.eventUUID;
@@ -2105,11 +2183,20 @@ export default function SeasonTickets({
   const routedAccessPassUUID = route.accessPassUUID;
   const section = walletSectionFromPath(pathname);
   const displaySection = walletSectionFromPath(pendingNavPath || pathname);
+  const profileGroup = walletNavSectionFromPath(pendingNavPath || pathname);
+  // Arriving from Tickets, Transfers, Listings, or Giving refetches Profile.
+  // Activity, bank, and payouts stay inside Profile and reuse that visit.
+  const [profileVisit, setProfileVisit] = useState(0);
+  const [profileGroupTrack, setProfileGroupTrack] = useState(profileGroup);
+  if (profileGroup !== profileGroupTrack) {
+    setProfileGroupTrack(profileGroup);
+    if (profileGroup === "profile") setProfileVisit((visit) => visit + 1);
+  }
   const walletNavPending = isWalletNavigationPending(pathname, pendingNavPath);
   const resolvedInitialScreen =
     initialScreen !== "events"
       ? initialScreen
-      : searchParams?.has("login")
+      : loginQuery
         ? "login"
         : section === "bank" || section === "payouts" || section === "activity"
           ? "profile"
@@ -2149,6 +2236,8 @@ export default function SeasonTickets({
   const [editListingPrice, setEditListingPrice] = useState("");
   const [editListingErr, setEditListingErr] = useState<string | null>(null);
   const [editListingSaving, setEditListingSaving] = useState(false);
+  const [editListingStep, setEditListingStep] = useState<2 | 3 | 4>(2);
+  const [editFeeRules, setEditFeeRules] = useState<ResaleFeeRule[] | null>(null);
   const [qrPass, setQrPass] = useState<{
     pass: AccessPassSummary;
     kind: "season pass" | "access pass";
@@ -2196,15 +2285,13 @@ export default function SeasonTickets({
     setResaleListingsLoading(false);
   }, []);
   const acquireWalletReloadSignal = useCallback(() => {
-    if (
-      !walletReloadAbortRef.current ||
-      walletReloadAbortRef.current.signal.aborted
-    ) {
-      walletReloadAbortRef.current = new AbortController();
-    }
+    walletReloadAbortRef.current?.abort();
+    walletReloadGenerationRef.current += 1;
+    const controller = new AbortController();
+    walletReloadAbortRef.current = controller;
     return {
       generation: walletReloadGenerationRef.current,
-      signal: walletReloadAbortRef.current.signal,
+      signal: controller.signal,
     };
   }, []);
   const walletReloadFetch = useCallback(
@@ -2240,7 +2327,9 @@ export default function SeasonTickets({
   >({});
   const [packagePassRetryTick, setPackagePassRetryTick] = useState(0);
   const walletOrdersLocallyMutatedRef = useRef(false);
-  const [listingsSnapshotStale, setListingsSnapshotStale] = useState(false);
+  const [listingsSnapshotStale, setListingsSnapshotStale] = useState(
+    () => section === "listings",
+  );
   const restoreSeasonPassPackageAfterCancelRef = useRef<
     (
       cancelledRecord?: PendingSentTransfer | null,
@@ -2274,6 +2363,7 @@ export default function SeasonTickets({
   >({});
   const [flexPackKey, setFlexPackKey] = useState<string | null>(null);
   const [eventDetails, setEventDetails] = useState<Record<string, CartEventDetail>>({});
+  const eventDetailsRef = useRef(eventDetails);
   const [eventsChecked, setEventsChecked] = useState(false);
   const [resaleListingsChecked, setResaleListingsChecked] = useState(false);
   const [phoneDevice, setPhoneDevice] = useState(false);
@@ -2429,14 +2519,35 @@ export default function SeasonTickets({
           incomingTransfers: pendingIncoming as PendingReceivedTransfer[],
         });
       if (snapshot.removedTicketIds?.length) {
+        // Rebuilding from the stripped order drops an event that just lost its
+        // last ticket. The open order route then looks missing and refetches
+        // GET /orders?filters. Keep the in-memory detail, as a transfer does.
+        const kept = removeTicketsFromWalletDetails(
+          eventDetailsRef.current,
+          snapshot.removedTicketIds,
+        );
+        for (const [key, detail] of Object.entries(kept)) {
+          if (!allDetails[key]) allDetails[key] = detail;
+        }
         allDetails = removeTicketsFromWalletDetails(
           allDetails,
           snapshot.removedTicketIds,
         );
-        walletUpcoming = summarizeUpcomingWalletEvents(allDetails);
+        walletUpcoming = summarizeUpcomingWalletEvents(allDetails).filter(
+          (row) => {
+            const detail = allDetails[row.key];
+            if (!detail || detail.tickets.length > 0) return true;
+            return Boolean(
+              detail.pendingIncomingTransfer ||
+                detail.incomingPassTransfer ||
+                detail.showInUpcomingTab,
+            );
+          },
+        );
       }
 
       walletOrdersRef.current = snapshot.orders;
+      eventDetailsRef.current = allDetails;
       setWalletOrders(snapshot.orders);
       setSentTransferRecords(sentAsPending);
       setIncomingTransferRecords(pendingIncoming);
@@ -2506,6 +2617,7 @@ export default function SeasonTickets({
       setAccessPassDetails({});
       setAccessPassDetailChecked({});
       setEventDetails({});
+      eventDetailsRef.current = {};
       setWalletOrders([]);
       walletOrdersRef.current = [];
       setSentTransferRecords([]);
@@ -2608,6 +2720,7 @@ export default function SeasonTickets({
       setAccessPassDetails({});
       setAccessPassDetailChecked({});
       setEventDetails({});
+      eventDetailsRef.current = {};
       setWalletOrders([]);
       walletOrdersRef.current = [];
       setSentTransferRecords([]);
@@ -2831,6 +2944,15 @@ export default function SeasonTickets({
     reloadResaleListings,
     section,
   ]);
+
+  const prevDisplayedSectionRef = useRef(displaySection);
+  useLayoutEffect(() => {
+    const prevDisplayed = prevDisplayedSectionRef.current;
+    if (prevDisplayed !== displaySection && walletApiHydratedInBrowserSession) {
+      cancelInFlightWalletSectionReloads();
+    }
+    prevDisplayedSectionRef.current = displaySection;
+  }, [cancelInFlightWalletSectionReloads, displaySection]);
 
   const prevWalletSectionRef = useRef(section);
   useLayoutEffect(() => {
@@ -3238,6 +3360,24 @@ export default function SeasonTickets({
           ),
         )
       : events[evId]) || events.lobos;
+  const digitalAddonPasses = useOrderDigitalPasses(
+    ticketOrder
+      ? {
+          uuid: typeof ticketOrder.uuid === "string" ? ticketOrder.uuid : undefined,
+          digitalAddonPasses: Array.isArray(ticketOrder.digitalAddonPasses)
+            ? (ticketOrder.digitalAddonPasses as DigitalAddonPass[])
+            : undefined,
+        }
+      : null,
+    ev.eventUUID ||
+      (typeof ev.event?.uuid === "string" ? ev.event.uuid : undefined),
+  );
+  const showPostPurchaseAddons =
+    Boolean(sessionUser) &&
+    !ev.isCart &&
+    !ticketOrder?.flex_pack &&
+    !ticketOrder?.access_pass_template &&
+    Boolean(resolveOrderUUID(ticketOrder));
   const attractionCards: AttractionCard[] = ev.attractions?.length
     ? ev.attractions
     : ev.teams.map((t) => ({
@@ -3715,7 +3855,6 @@ export default function SeasonTickets({
     if (!confirmCancel?.id || confirmCancelSaving) return;
     setConfirmCancelSaving(true);
     setConfirmCancelError("");
-    let resolvedCancelIdForPersist: string | number | undefined;
     const dropCancelledTransfer = async (
       resolvedTransferId?: string | number,
     ) => {
@@ -3816,12 +3955,10 @@ export default function SeasonTickets({
         setConfirmCancelError(CANCEL_TRANSFER_API_ERROR_MESSAGES.couldNotCancel);
         return;
       }
-      resolvedCancelIdForPersist = resolvedCancelId;
       const res = await cancelMyTransfers(resolvedCancelId);
       const alreadyClaimed = parseCancelTransferApiResponse(res);
       if (alreadyClaimed) {
         setConfirmCancelError(alreadyClaimed);
-        await dropCancelledTransfer(resolvedCancelId);
         return;
       }
       await dropCancelledTransfer(resolvedCancelId);
@@ -3832,16 +3969,7 @@ export default function SeasonTickets({
         setConfirmCancelError(CANCEL_TRANSFER_API_ERROR_MESSAGES.couldNotCancel);
         return;
       }
-      const message = parseCancelTransferApiError(err);
-      setConfirmCancelError(message);
-      if (
-        isCancelTransferAlreadyClaimedStatus(
-          (err as { response?: { status?: number } }).response?.status,
-        ) ||
-        message === CANCEL_TRANSFER_API_ERROR_MESSAGES.alreadyClaimed
-      ) {
-        await dropCancelledTransfer(resolvedCancelIdForPersist);
-      }
+      setConfirmCancelError(parseCancelTransferApiError(err));
     } finally {
       setConfirmCancelSaving(false);
     }
@@ -4115,6 +4243,12 @@ export default function SeasonTickets({
   // to the order record id, which /access-passes/by-order cannot resolve.
   const selectedPackageOrderId =
     routedOrderId || selectedSeasonPackage?.orderId || "";
+  const selectedPackageOrder =
+    fullOrders[selectedPackageOrderId] ??
+    walletOrders.find(
+      (row) => String(row.orderId || row.id || "") === selectedPackageOrderId,
+    );
+  const packageResaleEnabled = organizationResaleEnabled(selectedPackageOrder);
 
   const reloadPackagePasses = useCallback(
     async (
@@ -5368,16 +5502,39 @@ export default function SeasonTickets({
               Transfer season pass
             </button>
             {seasonPassTransferBlocked ? (
-              <p
+              <div
                 style={{
-                  margin: 0,
+                  display: "flex",
+                  alignItems: "flex-start",
+                  gap: 8,
                   fontSize: fluidSize(13),
                   lineHeight: browseLeading("body"),
-                  color: DANGER,
+                  color: FAINT,
                 }}
               >
-                {PASS_TRANSFER_DISPLAY_COPY.seasonPassTransferred}
-              </p>
+                <svg
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth={2}
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  aria-hidden="true"
+                  style={{
+                    width: 16,
+                    height: 16,
+                    flexShrink: 0,
+                    marginTop: 2,
+                  }}
+                >
+                  <circle cx="12" cy="12" r="10" />
+                  <line x1="12" y1="16" x2="12" y2="12" />
+                  <line x1="12" y1="8" x2="12.01" y2="8" />
+                </svg>
+                <p style={{ margin: 0 }}>
+                  {seasonPassBlockedTransferCopy(packageResaleEnabled)}
+                </p>
+              </div>
             ) : null}
           </div>
         ) : null}
@@ -6243,14 +6400,30 @@ export default function SeasonTickets({
             </div>
           </div>
         ))}
+        {digitalAddonPasses.map((pass) => (
+          <div key={pass.checkInCode} style={{ flex: "0 0 94%", scrollSnapAlign: "center", overflow: "hidden", borderRadius: 20, background: "#fff", boxShadow: "0 1px 2px rgba(5,27,53,0.06), 0 18px 38px -22px rgba(5,27,53,0.55)", display: "flex", flexDirection: "column", padding: 18, gap: 10 }}>
+            <span style={{ alignSelf: "flex-start", fontSize: fluidSize(11), fontWeight: 600, color: INK, background: SOFT, borderRadius: 999, padding: "4px 10px" }}>Add-on</span>
+            <div style={{ fontSize: fluidSize(17), fontWeight: 600 }}>{pass.productName || "Add-on pass"}</div>
+            <div style={{ alignSelf: "center" }}>
+              <QRCodeSVG value={pass.checkInCode} size={140} />
+            </div>
+            <div style={{ textAlign: "center", fontSize: fluidSize(14) }}>{pass.checkInCode}</div>
+          </div>
+        ))}
       </div>
 
       {/* dots */}
       <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 7 }}>
-        {ticketRows.map((_, i) => (
+        {[...ticketRows, ...digitalAddonPasses].map((_, i) => (
           <div key={i} style={{ width: 7, height: 7, borderRadius: 999, background: i === 0 ? ACCENT : "rgba(5,27,53,0.22)" }} />
         ))}
       </div>
+      <AddonDigitalPasses
+        passes={digitalAddonPasses}
+        event={ev.event as Record<string, unknown> | undefined}
+        eventName={ev.title}
+      />
+      {showPostPurchaseAddons ? <PostPurchaseAddonOffer order={ticketOrder} /> : null}
 
       </div>
     {pendingIncomingEvent ? (
@@ -6410,11 +6583,26 @@ export default function SeasonTickets({
                 </div>
               </div>
             ))}
+            {digitalAddonPasses.map((pass) => (
+              <div key={pass.checkInCode} className="st-ev-seat" style={{ padding: cardPad, borderBottom: "1px solid rgba(5,27,53,0.07)" }}>
+                <div style={{ flex: 1, minWidth: 150, display: "flex", flexDirection: "column", gap: 5 }}>
+                  <span style={{ alignSelf: "flex-start", fontSize: fluidSize(11), lineHeight: 1.5, fontWeight: 600, color: INK, background: SOFT, borderRadius: 999, padding: "4px 10px" }}>Add-on</span>
+                  <div style={{ fontSize: 17, lineHeight: 1.5, fontWeight: 600 }}>{pass.productName || "Add-on pass"}</div>
+                  <div style={{ fontSize: fluidSize(13), color: SUB }}>{pass.checkInCode}</div>
+                </div>
+              </div>
+            ))}
             <div style={{ padding: `14px ${padX}px`, background: "#fbfcfe", display: "flex", alignItems: "center", gap: 12 }}>
               <svg viewBox="0 0 24 24" fill="none" stroke={INK} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" style={{ width: 18, height: 18, flexShrink: 0 }}><rect x="3" y="3" width="7" height="7" /><rect x="14" y="3" width="7" height="7" /><rect x="3" y="14" width="7" height="7" /><line x1="14" y1="14" x2="21" y2="14" /><line x1="14" y1="18" x2="18" y2="18" /><line x1="18" y1="21" x2="21" y2="21" /></svg>
               <div style={{ fontSize: fluidSize(13), lineHeight: mobile ? browseLeading("body") : 1.5, color: FAINT }}><strong style={{ fontWeight: 600, color: INK }}>Your phone is your ticket.</strong> Show the QR code straight from your phone to scan at entry, or add each ticket to your Apple/Google wallet ahead of time.</div>
             </div>
           </div>
+          <AddonDigitalPasses
+            passes={digitalAddonPasses}
+            event={ev.event as Record<string, unknown> | undefined}
+            eventName={ev.title}
+          />
+          {showPostPurchaseAddons ? <PostPurchaseAddonOffer order={ticketOrder} /> : null}
         </div>
 
         <aside className="st-ev-aside">
@@ -6703,7 +6891,8 @@ export default function SeasonTickets({
   const listingsTabsPending =
     sentTransferListLoading ||
     receivedTransferListLoading ||
-    listingsSnapshotStale;
+    listingsSnapshotStale ||
+    (walletNavPending && displaySection === "listings");
   const transfersListPending = listingsTabsPending;
   const Listings = () => (
     <div style={{ maxWidth: 1100, margin: "0 auto", padding: bodyPad, display: "flex", flexDirection: "column", gap: 18 }}>
@@ -6746,8 +6935,8 @@ export default function SeasonTickets({
             <div key={t.id} style={{ ...card, borderRadius: 20, padding: cardPad, display: "flex", alignItems: "center", gap: 14, flexWrap: "wrap" }}>
               <div style={{ flex: 1, minWidth: 200, display: "flex", flexDirection: "column", gap: 5 }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: fluidSize(12), fontWeight: 600, whiteSpace: "nowrap", color: pending ? "#c07a12" : GREEN }}>
-                  <span style={{ width: 5, height: 5, flexShrink: 0, borderRadius: 999, background: pending ? "#c07a12" : GREEN }} />
-                  {pending ? "Pending · awaiting claim" : "Claimed · " + (t.claimedOn || t.on)}
+                  <LeadingMetaDot color={pending ? "#c07a12" : GREEN} />
+                  <span>{pending ? "Pending · awaiting claim" : "Claimed · " + (t.claimedOn || t.on)}</span>
                 </div>
                 <div style={{ fontSize: fluidSize(17), fontWeight: 600, letterSpacing: "-0.015em" }}>{t.title}</div>
                 {t.schedule ? (
@@ -6812,6 +7001,8 @@ export default function SeasonTickets({
     setEditListingPrice(String(listing.askingPrice || ""));
     setEditListingErr(null);
     setEditListingSaving(false);
+    setEditListingStep(2);
+    setEditFeeRules(null);
   };
   const openRemoveListing = (listing: WalletListing) => {
     setConfirmRemoveError("");
@@ -6868,8 +7059,8 @@ export default function SeasonTickets({
             <div key={listing.id} style={{ ...card, borderRadius: 20, padding: cardPad, display: "flex", alignItems: "center", gap: 14, flexWrap: "wrap" }}>
               <div style={{ flex: 1, minWidth: 200, display: "flex", flexDirection: "column", gap: 5 }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: fluidSize(12), fontWeight: 600, whiteSpace: "nowrap", color: active ? GREEN : SUB }}>
-                  <span style={{ width: 5, height: 5, flexShrink: 0, borderRadius: 999, background: active ? GREEN : MUTE }} />
-                  {listingStatusDotLine(listing)}
+                  <LeadingMetaDot color={active ? GREEN : SUB} />
+                  <span>{listingStatusDotLine(listing)}</span>
                 </div>
                 <div style={{ fontSize: fluidSize(17), fontWeight: 600, letterSpacing: "-0.015em" }}>{listingEventName(listing)}</div>
                 {schedule ? (
@@ -6987,6 +7178,9 @@ export default function SeasonTickets({
   const Profile = () => (
     <div style={{ maxWidth: 1100, margin: "0 auto", padding: bodyPad, display: "flex", flexDirection: "column", gap: 18 }}>
       <h1 style={{ margin: 0, fontSize: fluidSize(42), fontWeight: 600, letterSpacing: "-0.03em", lineHeight: browseLeading("h2") }}>Profile</h1>
+      <WalletProfileBody
+        reloadKey={profileVisit}
+        leading={
       <div style={{ ...card, borderRadius: 24, boxShadow: "0 1px 2px rgba(5,27,53,0.05), 0 20px 46px -22px rgba(5,27,53,0.45)", padding: cardPad, display: "flex", alignItems: "center", gap: 16 }}>
         <div style={{ width: 56, height: 56, borderRadius: 999, background: ACCENT, color: INK, display: "flex", alignItems: "center", justifyContent: "center", fontSize: fluidSize(19), fontWeight: 600, flexShrink: 0 }}>{isHolder ? "HC" : (email[0] || "?").toUpperCase()}</div>
         <div style={{ minWidth: 0, display: "flex", flexDirection: "column", gap: 3 }}>
@@ -6995,14 +7189,17 @@ export default function SeasonTickets({
         </div>
         <Link href="/sign-out/" style={{ fontFamily: "inherit", marginLeft: "auto", flexShrink: 0, fontSize: fluidSize(13), fontWeight: 600, color: DANGER, background: "#fff", border: "1px solid rgba(194,57,74,0.28)", borderRadius: 999, padding: "10px 16px", minHeight: 40, whiteSpace: "nowrap", cursor: "pointer", textDecoration: "none", display: "inline-flex", alignItems: "center" }}>Sign out</Link>
       </div>
-
+        }
+        activity={
       <div style={{ ...card, borderRadius: 20, overflow: "hidden" }}>
         <div style={{ padding: `14px ${padX}px`, borderBottom: "1px solid rgba(5,27,53,0.06)" }}>
           <div style={{ ...eyebrow, whiteSpace: "nowrap" }}>Account activity</div>
         </div>
-        <WalletAccountActivity />
+        <WalletAccountActivity reloadKey={profileVisit} />
       </div>
-
+        }
+        trailing={
+      <>
       {profileDefs.map((g) => (
         <div key={g.title} style={{ ...card, borderRadius: 20, overflow: "hidden" }}>
           <div style={{ padding: `14px ${padX}px`, ...eyebrow, borderBottom: "1px solid rgba(5,27,53,0.06)" }}>{g.title}</div>
@@ -7031,6 +7228,9 @@ export default function SeasonTickets({
         </div>
       ))}
       <ProfileSmsPreference />
+      </>
+        }
+      />
     </div>
   );
 
@@ -7444,7 +7644,11 @@ export default function SeasonTickets({
       return null;
     } catch (err) {
       return activeTf.passKind
-        ? parsePassTransferApiError(err, activeTf.passKind)
+        ? parsePassTransferApiError(
+            err,
+            activeTf.passKind,
+            packageResaleEnabled,
+          )
         : parseTicketTransferApiError(err, activeTfSelectedTickets.length);
     }
   };
@@ -7582,78 +7786,149 @@ export default function SeasonTickets({
     );
   };
 
+  useEffect(() => {
+    const eventId = editListing?.event && "id" in editListing.event ? editListing.event.id : undefined;
+    if (eventId == null) {
+      setEditFeeRules(editListing ? [] : null);
+      return;
+    }
+    let cancelled = false;
+    void getResaleFeeRules(eventId)
+      .then((res) => {
+        if (cancelled) return;
+        const rules = (res.data as { rules?: ResaleFeeRule[] } | undefined)?.rules;
+        setEditFeeRules(Array.isArray(rules) ? rules : []);
+      })
+      .catch(() => {
+        if (!cancelled) setEditFeeRules([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [editListing]);
+
   const EditListingModal = () => {
     if (!editListing) return null;
     const face = listingFaceValue(editListing.tickets);
     const minPercent = eventResaleMinimumPercent(editListing.event);
+    const priceDraft = listingPriceDraft(editListingPrice, {
+      face,
+      resaleMinimumPercent: minPercent,
+      fieldError: editListingErr,
+    });
+    const priceUnchanged = priceDraft.asking === editListing.askingPrice;
+    const canSave = !editListingSaving && priceDraft.canContinue && !priceUnchanged;
+    const ticketCount = Math.max(editListing.tickets.length, 1);
+    const editFee = resaleSellerFeeAmount(priceDraft.asking, editFeeRules, editListing.event);
+    const saveEditedPrice = async () => {
+      const error = listingAskingPriceError(editListingPrice, {
+        face,
+        resaleMinimumPercent: minPercent,
+        mode: "submit",
+      });
+      setEditListingErr(error);
+      if (error) return;
+      const price = parseAskingPrice(editListingPrice);
+      if (price == null || price === editListing.askingPrice) return;
+      setEditListingSaving(true);
+      try {
+        await updateMyListings(editListing.id, { askingPrice: price });
+        setWalletListings(
+          walletListingsRef.current.map((row) =>
+            row.id === editListing.id ? { ...row, askingPrice: price } : row,
+          ),
+        );
+        setEditListingStep(4);
+      } catch (err) {
+        setEditListingErr(parseListingApiError(err, "update"));
+      } finally {
+        setEditListingSaving(false);
+      }
+    };
     return (
       <div style={{ ...overlay, zIndex: 88, alignItems: mobile ? "flex-end" : "center", padding: mobile ? 0 : 32 }}>
         <div className={mobileSheetClass} onClick={(e) => e.stopPropagation()} style={sheet} aria-busy={editListingSaving || undefined}>
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, paddingBottom: 16, borderBottom: "1px solid rgba(5,27,53,0.08)" }}>
             <h2 style={{ margin: 0, fontSize: 21, lineHeight: 1.5, fontWeight: 600, letterSpacing: "-0.02em" }}>Edit asking price</h2>
             {editListingSaving ? null : closeX(() => setEditListing(null))}
           </div>
-          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-            <label htmlFor="edit-listing-price" style={{ fontSize: fluidSize(12), fontWeight: 600, color: FAINT }}>Asking price per ticket</label>
-            <input
+          {editListingStep === 2 ? (
+            <ListingAskingPriceField
               id="edit-listing-price"
-              inputMode="decimal"
               value={editListingPrice}
-              onChange={(e) => {
-                setEditListingPrice(e.target.value);
+              ticketCount={ticketCount}
+              face={face}
+              resaleMinimumPercent={minPercent}
+              fieldError={editListingErr}
+              onValueChange={(price) => {
+                setEditListingPrice(price);
                 if (editListingErr) setEditListingErr(null);
               }}
-              onBlur={() => {
-                setEditListingErr(
-                  listingAskingPriceError(editListingPrice, {
-                    face,
-                    resaleMinimumPercent: minPercent,
-                    mode: "blur",
-                  }),
-                );
+              onFieldError={setEditListingErr}
+              onSubmit={() => {
+                if (canSave) setEditListingStep(3);
               }}
-              style={{ fontFamily: "inherit", width: "100%", boxSizing: "border-box", fontSize: fluidSize(16), color: INK, background: "#fff", border: `1px solid ${editListingErr ? DANGER : "rgba(5,27,53,0.12)"}`, borderRadius: 14, padding: "14px 16px", outline: "none" }}
             />
-            {editListingErr ? (
-              <div role="alert" style={{ fontSize: fluidSize(13), color: DANGER }}>{editListingErr}</div>
-            ) : null}
-          </div>
-          <div style={{ display: "flex", gap: 8 }}>
-            <button type="button" disabled={editListingSaving} onClick={() => { if (!editListingSaving) setEditListing(null); }} style={{ fontFamily: "inherit", flex: 1, fontSize: fluidSize(15), fontWeight: 600, color: INK, background: "#f1f3f8", border: "none", borderRadius: 999, padding: 14, minHeight: 48, cursor: "pointer" }}>Cancel</button>
+          ) : null}
+          {editListingStep === 3 ? (
+            <ListingSaleSummary
+              asking={priceDraft.asking}
+              ticketCount={ticketCount}
+              fee={editFee}
+              actionLabel="Update price"
+            />
+          ) : null}
+          {editListingErr && editListingStep === 3 ? (
+            <div role="alert" style={{ fontSize: fluidSize(13), color: DANGER }}>{editListingErr}</div>
+          ) : null}
+          {editListingStep === 4 ? (
+            <ListingSaleSuccess mode="updated" ticketCount={ticketCount} />
+          ) : null}
+          {editListingStep === 2 ? (
             <button
               type="button"
-              disabled={editListingSaving}
-              aria-busy={editListingSaving || undefined}
-              onClick={async () => {
-                const error = listingAskingPriceError(editListingPrice, {
-                  face,
-                  resaleMinimumPercent: minPercent,
-                  mode: "submit",
-                });
-                setEditListingErr(error);
-                if (error) return;
-                const price = parseAskingPrice(editListingPrice);
-                if (price == null) return;
-                setEditListingSaving(true);
-                try {
-                  await updateMyListings(editListing.id, { askingPrice: price });
-                  setWalletListings(
-                    walletListingsRef.current.map((row) =>
-                      row.id === editListing.id ? { ...row, askingPrice: price } : row,
-                    ),
-                  );
-                  setEditListing(null);
-                } catch (err) {
-                  setEditListingErr(parseListingApiError(err, "update"));
-                } finally {
-                  setEditListingSaving(false);
-                }
-              }}
-              style={{ fontFamily: "inherit", flex: 1, display: "inline-flex", alignItems: "center", justifyContent: "center", fontSize: fluidSize(15), fontWeight: 600, color: INK, background: ACCENT, border: "none", borderRadius: 999, padding: 14, minHeight: 48, cursor: "pointer" }}
+              disabled={!canSave}
+              onClick={() => setEditListingStep(3)}
+              style={{ fontFamily: "inherit", width: "100%", display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 8, fontSize: fluidSize(15), fontWeight: 600, color: canSave ? INK : MUTE, background: canSave ? ACCENT : "#d7dbe6", border: "none", borderRadius: 999, padding: 14, minHeight: 48, cursor: canSave ? "pointer" : "default" }}
             >
-              <ButtonBusyContents loading={editListingSaving} loadingLabel="Saving…" spinnerColor={INK} trackColor="rgba(5,27,53,0.2)">Save</ButtonBusyContents>
+              <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
+                Review payout
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.75} strokeLinecap="round" strokeLinejoin="round" aria-hidden style={{ width: 16, height: 16, display: "block" }}>
+                  <path d="M5 12h14M13 6l6 6-6 6" />
+                </svg>
+              </span>
             </button>
-          </div>
+          ) : null}
+          {editListingStep === 3 ? (
+            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+              <button
+                type="button"
+                disabled={editListingSaving}
+                onClick={() => { setEditListingErr(null); setEditListingStep(2); }}
+                style={{ fontFamily: "inherit", flexShrink: 0, display: "flex", alignItems: "center", gap: 8, fontSize: fluidSize(15), lineHeight: 1.5, fontWeight: 600, color: INK, background: "#fff", border: "none", padding: "14px 12px", minHeight: 48, cursor: editListingSaving ? "default" : "pointer" }}
+              >
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" aria-hidden style={{ width: 16, height: 16 }}><line x1="19" y1="12" x2="5" y2="12" /><polyline points="12 19 5 12 12 5" /></svg>
+                Back
+              </button>
+              <button
+                type="button"
+                disabled={editListingSaving}
+                aria-label="Update price"
+                aria-busy={editListingSaving || undefined}
+                onClick={() => void saveEditedPrice()}
+                style={{ fontFamily: "inherit", flex: 1, display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 8, fontSize: fluidSize(15), fontWeight: 600, color: INK, background: ACCENT, border: "none", borderRadius: 999, padding: 14, minHeight: 48, cursor: editListingSaving ? "default" : "pointer", opacity: editListingSaving ? 0.55 : 1 }}
+              >
+                <CenteredBusyLabel loading={editListingSaving} spinnerColor={INK} trackColor="rgba(5,27,53,0.2)">
+                  Update price
+                </CenteredBusyLabel>
+              </button>
+            </div>
+          ) : null}
+          {editListingStep === 4 ? (
+            <button type="button" onClick={() => setEditListing(null)} style={{ fontFamily: "inherit", width: "100%", display: "inline-flex", alignItems: "center", justifyContent: "center", fontSize: fluidSize(15), fontWeight: 600, color: INK, background: ACCENT, border: "none", borderRadius: 999, padding: 14, minHeight: 48, cursor: "pointer" }}>
+              Close
+            </button>
+          ) : null}
         </div>
       </div>
     );
@@ -7940,8 +8215,14 @@ export default function SeasonTickets({
     };
   }, [walletTabTitle]);
 
+  const profilePageReady =
+    displaySection === "profile" ||
+    displaySection === "bank" ||
+    displaySection === "payouts" ||
+    displaySection === "activity";
+
   return (
-    <div className="shopper-page" style={{ width: "100%", maxWidth: "100%", minHeight: "100vh", color: INK, background: "#eef1f8", backgroundImage: "radial-gradient(120% 80% at 50% -10%, #ffffff 0%, #f5f7fc 42%, #e9edf6 100%)", fontFamily: "'Geist', system-ui, -apple-system, sans-serif", WebkitFontSmoothing: "antialiased", ...(showingAccessPass ? { display: "flex", flexDirection: "column", height: "100dvh", maxHeight: "100dvh", overflow: "hidden" } : {}) }}>
+    <div className="shopper-page" {...(profilePageReady ? { "data-bt-scroll-page": "" } : {})} style={{ width: "100%", maxWidth: "100%", minHeight: "100vh", color: INK, background: "#eef1f8", backgroundImage: "radial-gradient(120% 80% at 50% -10%, #ffffff 0%, #f5f7fc 42%, #e9edf6 100%)", fontFamily: "'Geist', system-ui, -apple-system, sans-serif", WebkitFontSmoothing: "antialiased", ...(showingAccessPass ? { display: "flex", flexDirection: "column", height: "100dvh", maxHeight: "100dvh", overflow: "hidden" } : {}) }}>
       <style>{`${shopperPageTypeCss()}\n.st-noscroll::-webkit-scrollbar{width:0;height:0;display:none}.st-noscroll{-ms-overflow-style:none;scrollbar-width:none}.st-sheet-up{animation:stUp .3s cubic-bezier(.22,.61,.36,1)}@keyframes stUp{from{transform:translateY(100%)}to{transform:translateY(0)}}${EVENT_CSS}`}</style>
       {showHeader ? (
         <div style={showingAccessPass ? { flexShrink: 0 } : undefined}>{Header()}</div>
@@ -7974,10 +8255,10 @@ export default function SeasonTickets({
           {displaySection === "giving" && Giving()}
           {displaySection === "profile" && Profile()}
           {displaySection === "bank" && (
-            <WalletBankAccount processing={Boolean(searchParams.get("processing"))} />
+            <WalletBankAccount processing={bankProcessing} />
           )}
           {displaySection === "payouts" && <WalletPayouts />}
-          {displaySection === "activity" && <WalletActivityPage />}
+          {displaySection === "activity" && <WalletActivityPage reloadKey={profileVisit} />}
         </>
       )}
 

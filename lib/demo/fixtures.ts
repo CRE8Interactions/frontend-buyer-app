@@ -991,6 +991,87 @@ export function demoCheckoutCart(
   };
 }
 
+export const DEMO_ADDON_PARKING = {
+  uuid: "addon-parking",
+  name: "Parking pass",
+  description: "Lot C, enter from 20th Street",
+  basePrice: 20,
+  available: 40,
+  minQuantity: 0,
+  fulfillmentType: "PICKUP",
+  pickupLocation: "Lot C gate",
+  pickupInstructions: "Show this pass at the gate.",
+  imageUrls: ["https://example.com/parking.jpg"],
+};
+
+export function demoEventAddonProducts() {
+  return [DEMO_ADDON_PARKING];
+}
+
+export function demoAddonQuote() {
+  return {
+    customerTotal: 44,
+    lines: [
+      {
+        productUuid: DEMO_ADDON_PARKING.uuid,
+        name: DEMO_ADDON_PARKING.name,
+        quantity: 2,
+        unitPrice: 20,
+        subtotal: 40,
+        totalAmount: 44,
+        fulfillmentType: DEMO_ADDON_PARKING.fulfillmentType,
+        pickupLocation: DEMO_ADDON_PARKING.pickupLocation,
+        pickupInstructions: DEMO_ADDON_PARKING.pickupInstructions,
+      },
+    ],
+  };
+}
+
+export function demoAddonCartItems() {
+  return [
+    {
+      uuid: "addon-line-1",
+      productUuid: DEMO_ADDON_PARKING.uuid,
+      variantUuid: null,
+      name: DEMO_ADDON_PARKING.name,
+      quantity: 2,
+      unitPrice: 20,
+      fulfillmentType: DEMO_ADDON_PARKING.fulfillmentType,
+      pickupLocation: DEMO_ADDON_PARKING.pickupLocation,
+      pickupInstructions: DEMO_ADDON_PARKING.pickupInstructions,
+    },
+  ];
+}
+
+export function demoCheckoutCartWithAddons() {
+  return {
+    ...demoCheckoutCart(),
+    addonItems: demoAddonCartItems(),
+    addonQuote: demoAddonQuote(),
+  };
+}
+
+export function demoAddonOnlyCart() {
+  const event = demoCheckoutCart().event;
+  return {
+    id: 15,
+    tickets: [],
+    event,
+    addonItems: demoAddonCartItems(),
+    addonQuote: demoAddonQuote(),
+  };
+}
+
+export function demoDigitalAddonPass() {
+  return {
+    uuid: "pass-parking-1",
+    checkInCode: "PARK-1001",
+    productName: DEMO_ADDON_PARKING.name,
+    status: "ready",
+    scope: "event",
+  };
+}
+
 /** Browse-page event list derived from DEMO_EVENTS (no duplicated fixtures). */
 export function demoBrowseEvents() {
   return DEMO_EVENTS.map((event) => ({ ...event }));
@@ -1788,6 +1869,53 @@ export function demoFundraisingCampaign(overrides: Record<string, unknown> = {})
       { uuid: "demo-participant-2", name: "Equipment drive" },
     ],
     ...overrides,
+  };
+}
+
+/** Checkout campaign with a mandatory rule, round-up, and match copy. */
+export function demoCheckoutDonationCampaign(
+  overrides: Record<string, unknown> = {},
+) {
+  const campaign = demoFundraisingCampaign();
+  return {
+    ...campaign,
+    campaignUuid: "camp-power-play",
+    donationTitle: campaign.title,
+    donationDescription: campaign.description,
+    checkoutUpsell: true,
+    roundUpEnabled: true,
+    beneficiaryName: campaign.organization.name,
+    taxId: "81-0000000",
+    feeCoverageMessage: "Blocktickets covers the processing fee.",
+    matchSponsorName: "IceDogs boosters",
+    matchRatio: 1,
+    matchCap: 100,
+    donationRequirements: {
+      mandatory: true,
+      ruleId: 9,
+      ruleName: "Section gift",
+      minimumAmount: campaign.suggestedAmounts[0],
+      suggestedAmounts: campaign.suggestedAmounts.slice(0, 2),
+    },
+    ...overrides,
+  };
+}
+
+/**
+ * Package hold whose seats are matched to a donation rule by section number
+ * and offer name. A blank section id is present so callers can prove it is ignored.
+ */
+export function demoPackageSectionCheckoutCart() {
+  const listing = DEMO_SEATED_TICKET_GROUPS[0];
+  return {
+    ...demoPackageCheckoutCart({ tickets: [] }),
+    package_tickets: [
+      {
+        sectionNumber: listing.sectionNumber,
+        sectionName: listing.offer?.name,
+        sectionId: " ",
+      },
+    ],
   };
 }
 

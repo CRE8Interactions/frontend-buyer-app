@@ -147,6 +147,35 @@ export function packageFromPrice(
   return asNumber(pricingTierList(pkg)[0]?.price) ?? asNumber(pkg?.price);
 }
 
+/** Org season-package fees from the package payload (`websiteSeatFees`). */
+export type PackageWebsiteSeatFees = {
+  serviceFeePerSeat?: number | null;
+  flatServiceFee?: number | null;
+  taxPerSeat?: number | null;
+  facilityFeePerSeat?: number | null;
+  chargebackProtectionFeePerSeat?: number | null;
+  processingFeeWaived?: boolean | null;
+};
+
+/**
+ * True only when the org publishes its package fees and none of them are added
+ * to the ticket price: no service fee, tax, facility or chargeback fee, and
+ * card processing is waived. Missing fee data keeps "Taxes and fees added at checkout".
+ */
+export function packageFeesIncludedInPrice(
+  fees?: PackageWebsiteSeatFees | null,
+): boolean {
+  if (!fees || fees.processingFeeWaived !== true) return false;
+  const charges = [
+    fees.serviceFeePerSeat,
+    fees.flatServiceFee,
+    fees.taxPerSeat,
+    fees.facilityFeePerSeat,
+    fees.chargebackProtectionFeePerSeat,
+  ];
+  return !charges.some((amount) => (Number(amount) || 0) > 0);
+}
+
 export function packageFromPriceLabel(
   pkg?: PackagePriceSource | null,
 ): string | null {
