@@ -57,6 +57,7 @@ const mockedRemember = vi.mocked(setLastKnown);
 describe("Public survey page", () => {
   beforeEach(() => {
     window.sessionStorage.clear();
+    vi.stubGlobal("location", { search: "" });
     if (!window.crypto.randomUUID) {
       window.crypto.randomUUID = (() => "test-idempotency-key") as typeof window.crypto.randomUUID;
     }
@@ -158,6 +159,62 @@ describe("Public survey page", () => {
 
     expect(await screen.findByRole("button", { name: "Submit" })).toBeInTheDocument();
     expect(document.title).toBe("Survey - Houston Bulls");
+  });
+
+  it("keeps the recipient token after the survey link drops it", async () => {
+    vi.stubGlobal("location", { search: "?r=recipient" });
+    mockedGet.mockResolvedValue({
+      data: {
+        title: "Game day",
+        state: "open",
+        responseMode: "anonymous",
+        questions: [],
+        logic: [],
+      },
+    } as never);
+    mockedStart.mockResolvedValue({ data: { state: "started" } } as never);
+    mockedSubmit.mockResolvedValue({ data: { state: "completed" } } as never);
+
+    render(<PublicSurveyClient />);
+
+    expect(await screen.findByRole("button", { name: "Submit" })).toBeInTheDocument();
+    await waitFor(() => expect(mockedStart).toHaveBeenCalledTimes(1));
+    expect(mockedStart.mock.calls[0][1]).toMatchObject({
+      recipientToken: "recipient",
+    });
+
+    vi.stubGlobal("location", { search: "" });
+    await userEvent.click(screen.getByRole("button", { name: "Submit" }));
+
+    await waitFor(() => expect(mockedSubmit).toHaveBeenCalledTimes(1));
+    expect(mockedSubmit.mock.calls[0][1]).toMatchObject({
+      recipientToken: "recipient",
+    });
+  });
+
+  it("starts and submits without a recipient token when the link has none", async () => {
+    mockedGet.mockResolvedValue({
+      data: {
+        title: "Game day",
+        state: "open",
+        responseMode: "anonymous",
+        questions: [],
+        logic: [],
+      },
+    } as never);
+    mockedStart.mockResolvedValue({ data: { state: "started" } } as never);
+    mockedSubmit.mockResolvedValue({ data: { state: "completed" } } as never);
+
+    render(<PublicSurveyClient />);
+
+    expect(await screen.findByRole("button", { name: "Submit" })).toBeInTheDocument();
+    await waitFor(() => expect(mockedStart).toHaveBeenCalledTimes(1));
+    expect(mockedStart.mock.calls[0][1]).toMatchObject({ recipientToken: null });
+
+    await userEvent.click(screen.getByRole("button", { name: "Submit" }));
+
+    await waitFor(() => expect(mockedSubmit).toHaveBeenCalledTimes(1));
+    expect(mockedSubmit.mock.calls[0][1]).toMatchObject({ recipientToken: null });
   });
 
   it("still starts an anonymous survey for a logged-out fan", async () => {
